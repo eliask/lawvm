@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json as json  # noqa: F401
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Protocol, Sequence
 
@@ -1117,6 +1118,59 @@ def _classify_compiled_effect_source_pathology(
     )
 
 
+@dataclass(frozen=True)
+class _EffectSourceSelection:
+    source_context: UKAffectingSourceContext
+    extracted_el: Optional[ET.Element]
+    source_required_for_replay: bool
+
+
+def _select_source_for_effect(
+    *,
+    effect: UKEffectRecord,
+    archive: Any,
+    applicability_mode: str,
+    extraction_cache: dict[str, UKAffectingSourceContext],
+    enacted_extraction_cache: dict[str, UKAffectingSourceContext],
+    effect_diagnostics_out: Optional[list[dict[str, Any]]],
+) -> _EffectSourceSelection:
+    source_required_for_replay = uk_effect_requires_affecting_source_for_replay(
+        effect,
+        applicability_mode=applicability_mode,
+    )
+    source_context = _source_context_for_effect(
+        effect=effect,
+        source_required_for_replay=source_required_for_replay,
+        archive=archive,
+        extraction_cache=extraction_cache,
+        effect_diagnostics_out=effect_diagnostics_out,
+    )
+    extracted_el, source_extraction_observations = (
+        _extract_from_affecting_source_context_with_observations(
+            source_context,
+            effect,
+        )
+    )
+    source_context, extracted_el, source_lane_observations = (
+        _select_enacted_source_for_current_shell(
+            effect=effect,
+            archive=archive,
+            current_context=source_context,
+            current_el=extracted_el,
+            enacted_context_cache=enacted_extraction_cache,
+            enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
+        )
+    )
+    if effect_diagnostics_out is not None:
+        effect_diagnostics_out.extend(source_extraction_observations)
+        effect_diagnostics_out.extend(source_lane_observations)
+    return _EffectSourceSelection(
+        source_context=source_context,
+        extracted_el=extracted_el,
+        source_required_for_replay=source_required_for_replay,
+    )
+
+
 def _extracted_tag_and_text(el: Optional[ET.Element]) -> tuple[Optional[str], str]:
     if el is None:
         return None, ""
@@ -1198,32 +1252,17 @@ class UKReplayPipeline:
                     effect=e,
                 )
                 continue
-            source_required_for_replay = uk_effect_requires_affecting_source_for_replay(
-                e,
-                applicability_mode=applicability_mode,
-            )
-            source_context = _source_context_for_effect(
+            source_selection = _select_source_for_effect(
                 effect=e,
-                source_required_for_replay=source_required_for_replay,
                 archive=archive,
+                applicability_mode=applicability_mode,
                 extraction_cache=extraction_cache,
+                enacted_extraction_cache=enacted_extraction_cache,
                 effect_diagnostics_out=effect_diagnostics_out,
             )
-            el, source_extraction_observations = _extract_from_affecting_source_context_with_observations(
-                source_context,
-                e,
-            )
-            source_context, el, source_lane_observations = _select_enacted_source_for_current_shell(
-                effect=e,
-                archive=archive,
-                current_context=source_context,
-                current_el=el,
-                enacted_context_cache=enacted_extraction_cache,
-                enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
-            )
-            if effect_diagnostics_out is not None:
-                effect_diagnostics_out.extend(source_extraction_observations)
-                effect_diagnostics_out.extend(source_lane_observations)
+            source_required_for_replay = source_selection.source_required_for_replay
+            source_context = source_selection.source_context
+            el = source_selection.extracted_el
             xml_bytes = source_context.xml_bytes
             root = source_context.root
 
