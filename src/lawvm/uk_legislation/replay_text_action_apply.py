@@ -572,6 +572,14 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "definition_at_end_selector"
+                elif recovery_rule_id == "uk_replay_in_definition_range_to_end_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a definition range-to-end text rewrite "
+                        "after proving a unique definition surface and start anchor."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "definition_range_to_end_selector"
                 else:
                     message = (
                         "UK replay applied text-based op after normalizing "
