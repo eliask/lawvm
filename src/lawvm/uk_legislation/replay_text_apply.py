@@ -18,6 +18,89 @@ from lawvm.uk_legislation.text_matching import (
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+_UK_DEFINITION_PREDICATE_PATTERN = r"""
+means
+|has\s+the\s+same\s+meaning\s+as
+|has\s+the\s+meaning
+|is\s+to\s+be\s+construed
+|shall\s+be\s+construed
+|includes
+"""
+
+_UK_NEXT_DEFINITION_PATTERN = re.compile(
+    rf"""
+    [;\.,]\s*
+    [“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019]
+    (?:\s*\([^;]*?\))*
+    \s+
+    (?:{_UK_DEFINITION_PREDICATE_PATTERN})\b
+    """,
+    flags=re.I | re.S | re.X,
+)
+
+
+def _definition_term_pattern(
+    term: str,
+    *,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> str:
+    return _text_patch_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+
+
+def _compile_definition_entry_start_pattern(
+    term: str,
+    *,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+    prefix_pattern: str = r"(?:^|[;\.,\u2014\u2013-]\s*)",
+) -> re.Pattern[str]:
+    term_pattern = _definition_term_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    return re.compile(
+        rf"""
+        (?P<prefix>{prefix_pattern})
+        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+        (?:\s*\([^;]*?\))*
+        \s+
+        (?:{_UK_DEFINITION_PREDICATE_PATTERN})\b
+        """,
+        flags=re.I | re.S | re.X,
+    )
+
+
+def _compile_definition_entry_range_pattern(
+    term: str,
+    *,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+    prefix_pattern: str = r"(?:^|[;\.]\s*)",
+) -> re.Pattern[str]:
+    term_pattern = _definition_term_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    return re.compile(
+        rf"""
+        (?P<prefix>{prefix_pattern})
+        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+        \s+
+        (?:{_UK_DEFINITION_PREDICATE_PATTERN})\b
+        .*?
+        (?P<terminator>;|$)
+        """,
+        flags=re.I | re.S | re.X,
+    )
+
+
 def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
     current = n
     for index in path:
@@ -880,50 +963,17 @@ class UKReplayTextApplyMixin:
                     return node, False
 
                 def _insert_at_end_of_definition(text: str) -> tuple[str, bool]:
-                    term_pattern = _text_patch_pattern(
+                    definition_start_pattern = _compile_definition_entry_start_pattern(
                         term,
                         allow_punctuation_spacing=allow_punctuation_spacing,
                         allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    definition_start_pattern = re.compile(
-                        rf"""
-                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*))
-                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
-                        (?:\s*\([^;]*?\))*
-                        \s+
-                        (?:
-                            means
-                            |has\s+the\s+same\s+meaning\s+as
-                            |has\s+the\s+meaning
-                            |is\s+to\s+be\s+construed
-                            |shall\s+be\s+construed
-                            |includes
-                        )\b
-                        """,
-                        flags=re.I | re.S | re.X,
+                        prefix_pattern=r"(?:^|[;\.,\u2014\u2013-]\s*)",
                     )
                     starts = list(definition_start_pattern.finditer(text))
                     if len(starts) != 1:
                         return text, False
                     definition_start = starts[0]
-                    next_definition_pattern = re.compile(
-                        r"""
-                        [;\.,]\s*
-                        [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
-                        (?:\s*\([^;]*?\))*
-                        \s+
-                        (?:
-                            means
-                            |has\s+the\s+same\s+meaning\s+as
-                            |has\s+the\s+meaning
-                            |is\s+to\s+be\s+construed
-                            |shall\s+be\s+construed
-                            |includes
-                        )\b
-                        """,
-                        flags=re.I | re.S | re.X,
-                    )
-                    next_definition = next_definition_pattern.search(text, definition_start.end())
+                    next_definition = _UK_NEXT_DEFINITION_PATTERN.search(text, definition_start.end())
                     if next_definition is not None:
                         insert_at = next_definition.start()
                     else:
@@ -957,28 +1007,10 @@ class UKReplayTextApplyMixin:
                     return node, False
 
                 def _rewrite_range_to_end_in_definition(text: str) -> tuple[str, bool]:
-                    term_pattern = _text_patch_pattern(
+                    definition_pattern = _compile_definition_entry_range_pattern(
                         term,
                         allow_punctuation_spacing=allow_punctuation_spacing,
                         allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    definition_pattern = re.compile(
-                        rf"""
-                        (?P<prefix>(?:^|[;\.]\s*))
-                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
-                        \s+
-                        (?:
-                            means
-                            |has\s+the\s+same\s+meaning\s+as
-                            |has\s+the\s+meaning
-                            |is\s+to\s+be\s+construed
-                            |shall\s+be\s+construed
-                            |includes
-                        )\b
-                        .*?
-                        (?P<terminator>;|$)
-                        """,
-                        flags=re.I | re.S | re.X,
                     )
                     definition_matches = list(definition_pattern.finditer(text))
                     if len(definition_matches) != 1:
@@ -1035,28 +1067,10 @@ class UKReplayTextApplyMixin:
                     return node, False
 
                 def _rewrite_range_in_definition(text: str) -> tuple[str, bool]:
-                    term_pattern = _text_patch_pattern(
+                    definition_pattern = _compile_definition_entry_range_pattern(
                         term,
                         allow_punctuation_spacing=allow_punctuation_spacing,
                         allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    definition_pattern = re.compile(
-                        rf"""
-                        (?P<prefix>(?:^|[;\.]\s*))
-                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
-                        \s+
-                        (?:
-                            means
-                            |has\s+the\s+same\s+meaning\s+as
-                            |has\s+the\s+meaning
-                            |is\s+to\s+be\s+construed
-                            |shall\s+be\s+construed
-                            |includes
-                        )\b
-                        .*?
-                        (?P<terminator>;|$)
-                        """,
-                        flags=re.I | re.S | re.X,
                     )
                     definition_matches = list(definition_pattern.finditer(text))
                     if len(definition_matches) != 1:
