@@ -322,6 +322,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_effect_table_column_insert",
         "uk_effect_table_entry_row_insert",
         "uk_replay_text_match_replacement_normalized_present",
+        "uk_replay_text_fragment_substitution_fallback_applied",
         "uk_replay_text_match_punctuation_space_normalized",
         "uk_replay_text_match_rotated_trailing_comma_omission",
         "uk_replay_text_match_word_punctuation_elided",
