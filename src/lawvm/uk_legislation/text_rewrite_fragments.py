@@ -30,6 +30,18 @@ UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID = (
 UK_SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RULE_ID = (
     "uk_effect_source_carried_subparagraph_tail_repeal_text_patch"
 )
+UK_SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_carried_child_tail_substitution_text_patch"
+)
+UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID = (
+    "uk_effect_source_carried_multi_subunit_repeal_text_patch"
+)
+UK_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RULE_ID = (
+    "uk_effect_amendment_inserted_text_substitution_text_patch"
+)
+UK_RANGE_INDEPENDENT_END_OCCURRENCE_RULE_ID = (
+    "uk_effect_range_independent_end_occurrence_text_patch"
+)
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
     {
@@ -301,6 +313,138 @@ def append_source_carried_tail_rewrite_observations(
                 "text_match": op_text_match,
                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+            },
+        )
+
+
+def append_source_carried_substitution_rewrite_observations(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    fragment_subs: Optional[list[dict[str, Any]]],
+    primary: dict[str, Any],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    op_text_occurrence: int,
+    op_text_end_occurrence: int,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_child_tail_substitution_lowered",
+            reason=(
+                "UK source text explicitly substitutes the words after "
+                "a named paragraph inside the affected subsection; lowering "
+                "preserves that as a bounded child-tail text selector instead "
+                "of replacing the whole parent."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
+                "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+            },
+        )
+    if UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_multi_subunit_repeal_lowered",
+            reason=(
+                "UK source text explicitly repeals quoted words where "
+                "they occur in named child subsections; lowering preserves "
+                "those child labels in a synthetic selector rather than "
+                "deleting from the whole parent section."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_child_labels": str(primary.get("source_child_labels") or ""),
+                "source_section_label": str(primary.get("source_section_label") or ""),
+            },
+        )
+    if UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="multi_quoted_word_repeal_split",
+            reason=(
+                "UK source text repeals multiple separately quoted word "
+                "fragments; lowering emits one bounded text delete per "
+                "quoted fragment instead of replaying a collapsed selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "fragments": tuple(str(item.get("original") or "") for item in fragment_subs or []),
+            },
+        )
+    if UK_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RULE_ID,
+            family="amendment_program_lowering",
+            reason_code="source_targets_inserted_text_in_amendment_instruction",
+            reason=(
+                "UK source text substitutes text inserted by a named amendment "
+                "instruction; lowering preserves that as a bounded rewrite of "
+                "the target amendment instruction's inserted payload, not as a "
+                "base-law text guess."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_paragraph_label": str(primary.get("source_paragraph_label") or ""),
+                "source_item_label": str(primary.get("source_item_label") or ""),
+            },
+        )
+    if op_text_end_occurrence:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_INDEPENDENT_END_OCCURRENCE_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_independent_end_occurrence_text_range",
+            reason=(
+                "UK source text gives separate ordinal occurrences for "
+                "the start and end anchors of a word-level range; lowering "
+                "preserves both ordinals in a typed text selector rather than "
+                "guessing the first end anchor after the start."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+                "end_occurrence": op_text_end_occurrence,
             },
         )
     if UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID in rule_ids:
