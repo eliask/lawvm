@@ -78,11 +78,6 @@ from lawvm.uk_legislation.uk_grafter import (
 )
 from lawvm.uk_legislation.nlp_parser import US, is_whole_node_replacement, parse_fragment_substitution
 from lawvm.uk_legislation.witnesses import UKLoweredOperationWitness
-from lawvm.uk_legislation.source_state import (
-    uk_affecting_act_xml_missing_rejection,
-    uk_affecting_act_xml_parse_rejection,
-    uk_affecting_act_xml_too_small_rejection,
-)
 from lawvm.uk_legislation.effects import (
     STRUCTURAL_EFFECT_TYPES,
     UKEffectRecord,
@@ -235,6 +230,7 @@ from lawvm.uk_legislation.replay_text import (
 )
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
+    _append_affecting_source_context_diagnostic,
     _build_affecting_source_context,
     _extract_from_affecting_source_context,
     _extract_from_affecting_source_context_with_observations,
@@ -5207,33 +5203,12 @@ class UKReplayPipeline:
                     authority_layer="AFFECTING_ACT_TEXT",
                     provision_extractor=extract_provision_element_from_bytes,
                 )
-                if effect_diagnostics_out is not None and e.affecting_act_id:
-                    if source_context.source_status == "absent":
-                        effect_diagnostics_out.append(
-                            uk_affecting_act_xml_missing_rejection(
-                                effect_id=str(e.effect_id or ""),
-                                affecting_act_id=str(e.affecting_act_id or ""),
-                                locator=current_locator,
-                            )
-                        )
-                    elif source_context.source_status == "too_small":
-                        effect_diagnostics_out.append(
-                            uk_affecting_act_xml_too_small_rejection(
-                                effect_id=str(e.effect_id or ""),
-                                affecting_act_id=str(e.affecting_act_id or ""),
-                                locator=current_locator,
-                                source_size=source_context.source_size,
-                            )
-                        )
-                    elif parse_error is not None:
-                        effect_diagnostics_out.append(
-                            uk_affecting_act_xml_parse_rejection(
-                                effect_id=str(e.effect_id or ""),
-                                affecting_act_id=str(e.affecting_act_id or ""),
-                                locator=current_locator,
-                                exc=parse_error,
-                            )
-                        )
+                _append_affecting_source_context_diagnostic(
+                    effect_diagnostics_out,
+                    effect=e,
+                    source_context=source_context,
+                    parse_error=parse_error,
+                )
                 extraction_cache[e.affecting_act_id] = source_context
             el, source_extraction_observations = _extract_from_affecting_source_context_with_observations(
                 source_context,

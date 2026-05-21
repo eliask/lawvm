@@ -30,6 +30,9 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_parenthesized_range_source_extracted,
+    uk_affecting_act_xml_missing_rejection,
+    uk_affecting_act_xml_parse_rejection,
+    uk_affecting_act_xml_too_small_rejection,
     uk_source_state_wire_tuple,
 )
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num
@@ -258,6 +261,43 @@ def _build_affecting_source_context(
         ),
         parse_error,
     )
+
+
+def _append_affecting_source_context_diagnostic(
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    source_context: UKAffectingSourceContext,
+    parse_error: Optional[Exception],
+) -> None:
+    if diagnostics_out is None or not effect.affecting_act_id:
+        return
+    if source_context.source_status == "absent":
+        diagnostics_out.append(
+            uk_affecting_act_xml_missing_rejection(
+                effect_id=str(effect.effect_id or ""),
+                affecting_act_id=str(effect.affecting_act_id or ""),
+                locator=source_context.locator,
+            )
+        )
+    elif source_context.source_status == "too_small":
+        diagnostics_out.append(
+            uk_affecting_act_xml_too_small_rejection(
+                effect_id=str(effect.effect_id or ""),
+                affecting_act_id=str(effect.affecting_act_id or ""),
+                locator=source_context.locator,
+                source_size=source_context.source_size,
+            )
+        )
+    elif parse_error is not None:
+        diagnostics_out.append(
+            uk_affecting_act_xml_parse_rejection(
+                effect_id=str(effect.effect_id or ""),
+                affecting_act_id=str(effect.affecting_act_id or ""),
+                locator=source_context.locator,
+                exc=parse_error,
+            )
+        )
 
 
 def _extract_from_affecting_source_context(
