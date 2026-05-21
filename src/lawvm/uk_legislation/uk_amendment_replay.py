@@ -147,7 +147,10 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
     append_manual_compile_frontier_diagnostic,
+    append_metadata_only_selection_rejection,
     append_no_ops_lowering_rejections,
+    append_pit_date_filter_rejection,
+    append_source_pathology_classified_diagnostic,
     append_source_pathology_filter_lowering_rejections,
     append_structural_no_ops_lowering_rejection,
     mark_nonreplay_lowering_rejections_nonblocking,
@@ -5155,25 +5158,12 @@ class UKReplayPipeline:
                 if effective_date <= pit_date:
                     pit_replayable.append(e)
                     continue
-                if effect_diagnostics_out is not None:
-                    effect_diagnostics_out.append(
-                        {
-                            "rule_id": "uk_effect_pit_date_filter_rejected",
-                            "family": "temporal_filter",
-                            "phase": "lowering",
-                            "effect_id": e.effect_id,
-                            "affecting_act_id": str(e.affecting_act_id or ""),
-                            "affected_provisions": e.affected_provisions,
-                            "affecting_provisions": e.affecting_provisions,
-                            "effect_type": e.effect_type,
-                            "effective_date": effective_date,
-                            "pit_date": pit_date,
-                            "reason": "UK effect effective date is later than requested point-in-time date",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
-                        }
-                    )
+                append_pit_date_filter_rejection(
+                    effect_diagnostics_out,
+                    effect=e,
+                    effective_date=effective_date,
+                    pit_date=pit_date,
+                )
             replayable = pit_replayable
 
         replayable = _order_uk_effects_for_replay(
@@ -5189,24 +5179,10 @@ class UKReplayPipeline:
         enacted_extraction_cache: dict[str, UKAffectingSourceContext] = {}
         for i, e in enumerate(replayable):
             if bool(e.metadata_only) and not allow_metadata_only_effects:
-                if lowering_rejections_out is not None:
-                    lowering_rejections_out.append(
-                        {
-                            "rule_id": "uk_effect_metadata_only_selection_rejected",
-                            "family": "applicability_filter",
-                            "phase": "lowering",
-                            "effect_id": e.effect_id,
-                            "affecting_act_id": e.affecting_act_id,
-                            "affected_provisions": e.affected_provisions,
-                            "affecting_provisions": e.affecting_provisions,
-                            "effect_type": e.effect_type,
-                            "metadata_only": True,
-                            "reason": "UK replay regime excludes metadata-only effect rows",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                        }
-                    )
+                append_metadata_only_selection_rejection(
+                    lowering_rejections_out,
+                    effect=e,
+                )
                 continue
             source_required_for_replay = uk_effect_requires_affecting_source_for_replay(
                 e,
@@ -5321,26 +5297,14 @@ class UKReplayPipeline:
                 effect_type=e.effect_type,
                 is_structural=structural_for_replay,
             )
-            if effect_diagnostics_out is not None:
-                effect_diagnostics_out.append(
-                    {
-                        "rule_id": "uk_effect_source_pathology_classified",
-                        "family": "source_pathology",
-                        "phase": "lowering",
-                        "effect_id": str(e.effect_id or ""),
-                        "affecting_act_id": str(e.affecting_act_id or ""),
-                        "affected_provisions": str(e.affected_provisions or ""),
-                        "affecting_provisions": str(e.affecting_provisions or ""),
-                        "effect_type": str(e.effect_type or ""),
-                        "source_pathology": source_pathology or "",
-                        "structural_for_replay": structural_for_replay,
-                        "replay_applicable": e.is_applicable_for_replay(applicability_mode=applicability_mode),
-                        "compiled_op_count": len(compiled),
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    }
-                )
+            append_source_pathology_classified_diagnostic(
+                effect_diagnostics_out,
+                effect=e,
+                source_pathology=source_pathology,
+                structural_for_replay=structural_for_replay,
+                replay_applicable=e.is_applicable_for_replay(applicability_mode=applicability_mode),
+                compiled_op_count=len(compiled),
+            )
 
             if not compiled:
                 append_no_ops_lowering_rejections(

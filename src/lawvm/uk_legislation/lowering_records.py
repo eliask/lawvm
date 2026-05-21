@@ -415,6 +415,96 @@ def append_manual_compile_frontier_diagnostic(
     )
 
 
+def append_pit_date_filter_rejection(
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    effective_date: str,
+    pit_date: str,
+) -> None:
+    """Record that a UK effect is later than the requested point-in-time."""
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": "uk_effect_pit_date_filter_rejected",
+            "family": "temporal_filter",
+            "phase": "lowering",
+            "effect_id": effect.effect_id,
+            "affecting_act_id": str(effect.affecting_act_id or ""),
+            "affected_provisions": effect.affected_provisions,
+            "affecting_provisions": effect.affecting_provisions,
+            "effect_type": effect.effect_type,
+            "effective_date": effective_date,
+            "pit_date": pit_date,
+            "reason": "UK effect effective date is later than requested point-in-time date",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    )
+
+
+def append_metadata_only_selection_rejection(
+    rejections_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+) -> None:
+    """Record that the selected UK replay regime excludes metadata-only effects."""
+    if rejections_out is None:
+        return
+    rejections_out.append(
+        {
+            "rule_id": "uk_effect_metadata_only_selection_rejected",
+            "family": "applicability_filter",
+            "phase": "lowering",
+            "effect_id": effect.effect_id,
+            "affecting_act_id": effect.affecting_act_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_provisions": effect.affecting_provisions,
+            "effect_type": effect.effect_type,
+            "metadata_only": True,
+            "reason": "UK replay regime excludes metadata-only effect rows",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
+
+
+def append_source_pathology_classified_diagnostic(
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    source_pathology: str,
+    structural_for_replay: bool,
+    replay_applicable: bool,
+    compiled_op_count: int,
+) -> None:
+    """Record the source-pathology classification for a lowered UK effect."""
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": "uk_effect_source_pathology_classified",
+            "family": "source_pathology",
+            "phase": "lowering",
+            "effect_id": str(effect.effect_id or ""),
+            "affecting_act_id": str(effect.affecting_act_id or ""),
+            "affected_provisions": str(effect.affected_provisions or ""),
+            "affecting_provisions": str(effect.affecting_provisions or ""),
+            "effect_type": str(effect.effect_type or ""),
+            "source_pathology": source_pathology or "",
+            "structural_for_replay": structural_for_replay,
+            "replay_applicable": replay_applicable,
+            "compiled_op_count": compiled_op_count,
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    )
+
+
 def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
     child_summaries = tuple(
         {
