@@ -200,58 +200,58 @@ def uk_recursive_kind_match(
     return None, None, None
 
 
+def _roman_suffix_sort_key(text: str) -> Optional[tuple[int, str]]:
+    raw = str(text or "").strip().lower()
+    if not raw or not re.fullmatch(r"[a-z]+", raw):
+        return None
+    for split_at in range(len(raw), 0, -1):
+        prefix = raw[:split_at]
+        suffix = raw[split_at:]
+        roman = roman_to_arabic(prefix)
+        if roman is not None:
+            return (roman, suffix)
+    return None
+
+
+def _effective_insert_label_key(label: Optional[str], *, peers: list[str], label_sort_key) -> tuple[int, object]:
+    raw = str(label or "").strip().lower()
+    peer_raw = [str(peer or "").strip().lower() for peer in peers if str(peer or "").strip()]
+    peer_alpha = bool(peer_raw) and all(re.fullmatch(r"[a-z]+", peer) for peer in peer_raw)
+    peer_roman_scheme = peer_alpha and all(_roman_suffix_sort_key(peer) is not None for peer in peer_raw)
+    raw_roman_key = _roman_suffix_sort_key(raw)
+    if raw_roman_key is not None and peer_roman_scheme:
+        roman, suffix = raw_roman_key
+        return (0, ((0, roman), (1, suffix)))
+
+    peer_single = {peer for peer in peer_raw if re.fullmatch(r"[a-z]", peer)}
+    peer_has_alpha_suffix = any(len(peer) > 1 and peer[0] in peer_single for peer in peer_raw)
+    peer_has_nonroman_alpha = any(
+        re.fullmatch(r"[a-z]+", peer)
+        and not re.fullmatch(r"[ivxlcdm]+", peer)
+        and _roman_suffix_sort_key(peer) is None
+        for peer in peer_raw
+    )
+    raw_is_alpha_suffix = len(raw) > 1 and raw[0] in peer_single
+    alphabetic_suffix_scheme = (
+        peer_alpha
+        and (
+            all(re.fullmatch(r"[a-z]", peer) for peer in peer_raw)
+            or (peer_has_alpha_suffix and peer_has_nonroman_alpha)
+            or (raw_is_alpha_suffix and peer_has_nonroman_alpha)
+            or (bool(re.fullmatch(r"[a-z]", raw)) and peer_has_nonroman_alpha)
+        )
+    )
+    if raw and re.fullmatch(r"[a-z]+", raw) and alphabetic_suffix_scheme:
+        return (0, ((1, raw),))
+    return (1, label_sort_key(label))
+
+
 def uk_insert_into_children(
     children: list[IRNode],
     node_to_insert: IRNode,
     *,
     label_sort_key,
 ) -> None:
-    def _roman_suffix_sort_key(text: str) -> Optional[tuple[int, str]]:
-        raw = str(text or "").strip().lower()
-        if not raw or not re.fullmatch(r"[a-z]+", raw):
-            return None
-        for split_at in range(len(raw), 0, -1):
-            prefix = raw[:split_at]
-            suffix = raw[split_at:]
-            roman = roman_to_arabic(prefix)
-            if roman is not None:
-                return (roman, suffix)
-        return None
-
-    def _effective_label_key(label: Optional[str], *, peers: list[str]) -> tuple[int, tuple[int, str, int]]:
-        raw = str(label or "").strip().lower()
-        peer_raw = [str(peer or "").strip().lower() for peer in peers if str(peer or "").strip()]
-        peer_alpha = bool(peer_raw) and all(re.fullmatch(r"[a-z]+", peer) for peer in peer_raw)
-        peer_roman_scheme = peer_alpha and all(_roman_suffix_sort_key(peer) is not None for peer in peer_raw)
-        raw_roman_key = _roman_suffix_sort_key(raw)
-        if raw_roman_key is not None and peer_roman_scheme:
-            roman, suffix = raw_roman_key
-            return (0, ((0, roman), (1, suffix)))
-
-        peer_single = {peer for peer in peer_raw if re.fullmatch(r"[a-z]", peer)}
-        peer_has_alpha_suffix = any(
-            len(peer) > 1 and peer[0] in peer_single for peer in peer_raw
-        )
-        peer_has_nonroman_alpha = any(
-            re.fullmatch(r"[a-z]+", peer)
-            and not re.fullmatch(r"[ivxlcdm]+", peer)
-            and _roman_suffix_sort_key(peer) is None
-            for peer in peer_raw
-        )
-        raw_is_alpha_suffix = len(raw) > 1 and raw[0] in peer_single
-        alphabetic_suffix_scheme = (
-            peer_alpha
-            and (
-                all(re.fullmatch(r"[a-z]", peer) for peer in peer_raw)
-                or (peer_has_alpha_suffix and peer_has_nonroman_alpha)
-                or (raw_is_alpha_suffix and peer_has_nonroman_alpha)
-                or (bool(re.fullmatch(r"[a-z]", raw)) and peer_has_nonroman_alpha)
-            )
-        )
-        if raw and re.fullmatch(r"[a-z]+", raw) and alphabetic_suffix_scheme:
-            return (0, ((1, raw),))
-        return (1, label_sort_key(label))
-
     if node_to_insert.label:
         insert_kind = str(node_to_insert.kind)
         insert_label = _clean_num(node_to_insert.label or "")
@@ -293,9 +293,9 @@ def uk_insert_into_children(
                 return
 
     same_kind_labels = [child.label or "" for _, child in same_kind]
-    new_key = _effective_label_key(node_to_insert.label, peers=same_kind_labels)
+    new_key = _effective_insert_label_key(node_to_insert.label, peers=same_kind_labels, label_sort_key=label_sort_key)
     for i, child in same_kind:
-        if _effective_label_key(child.label, peers=same_kind_labels) > new_key:
+        if _effective_insert_label_key(child.label, peers=same_kind_labels, label_sort_key=label_sort_key) > new_key:
             children.insert(i, node_to_insert)
             return
     children.insert(same_kind[-1][0] + 1, node_to_insert)
