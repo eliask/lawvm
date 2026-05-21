@@ -38,6 +38,48 @@ class UKDefinitionTextPatchLowering:
     op_text_replacement: Optional[str]
 
 
+def refine_source_definition_child_target(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    fragment: dict[str, str],
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> LegalAddress:
+    refined_target = _source_definition_child_refined_target(
+        target=target,
+        fragment=fragment,
+    )
+    if refined_target is None:
+        return target
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_source_parent_definition_child_target_refined",
+        family="source_context_elaboration",
+        reason_code="source_parent_definition_child_refines_direct_section_paragraph",
+        reason=(
+            "UK affected-provision metadata names a direct section paragraph, "
+            "while the source parent explicitly says that paragraph is inside "
+            "a named definition entry; lowering targets the containing section "
+            "and preserves the child paragraph as a scoped text selector."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "original_target": str(target),
+            "refined_target": str(refined_target),
+            "source_definition_term": str(fragment.get("source_definition_term") or ""),
+            "source_child_label": str(fragment.get("source_child_label") or ""),
+        },
+    )
+    return refined_target
+
+
 _SOURCE_CARRIED_AFTER_THAT_DEFINITION_CHILD_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){1,2}after\s+that\s+paragraph,?\s+"
     r"insert\s*[—-]\s*(?P<inserted>.+?)\s*$",
@@ -348,35 +390,15 @@ def lower_source_carried_definition_child_at_end_insert(
 
     text_match = detail["original"]
     replacement = detail["replacement"]
-    lowered_target = target
-    refined_target = _source_definition_child_refined_target(
+    lowered_target = refine_source_definition_child_target(
+        effect=effect,
         target=target,
         fragment=detail,
+        target_ref=target_ref,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
     )
-    if refined_target is not None:
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id="uk_effect_source_parent_definition_child_target_refined",
-            family="source_context_elaboration",
-            reason_code="source_parent_definition_child_refines_direct_section_paragraph",
-            reason=(
-                "UK affected-provision metadata names a direct section paragraph, "
-                "while the source parent explicitly says that paragraph is inside "
-                "a named definition entry; lowering targets the containing section "
-                "and preserves the child paragraph as a scoped text selector."
-            ),
-            effect=effect,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            detail={
-                "target_ref": target_ref,
-                "original_target": str(target),
-                "refined_target": str(refined_target),
-                "source_definition_term": str(detail.get("source_definition_term") or ""),
-                "source_child_label": str(detail.get("source_child_label") or ""),
-            },
-        )
-        lowered_target = refined_target
 
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
