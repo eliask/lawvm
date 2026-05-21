@@ -63,6 +63,18 @@ def _child_ordinal(label: str) -> Optional[int]:
     return None
 
 
+def _text_nodes_in_document_order(
+    n: UKMutableNode,
+    path: tuple[int, ...] = (),
+) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+    text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+    if n.text:
+        text_nodes.append((path, n))
+    for index, child in enumerate(n.children):
+        text_nodes.extend(_text_nodes_in_document_order(child, path + (index,)))
+    return text_nodes
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -343,15 +355,7 @@ class UKReplayTextApplyMixin:
         if node.text or not node.children:
             return self._apply_text_append_on_node_text_only(node, insertion)
 
-        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
-
-        def _collect(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-            if n.text:
-                text_nodes.append((path, n))
-            for i, child in enumerate(n.children):
-                _collect(child, path + (i,))
-
-        _collect(node)
+        text_nodes = _text_nodes_in_document_order(node)
         if not text_nodes:
             return node, False
         text_path, text_node = text_nodes[-1]
@@ -446,16 +450,7 @@ class UKReplayTextApplyMixin:
         Returns:
             True if at least one substitution was made; False otherwise.
         """
-        # Collect all nodes with text in document order (pre-order traversal)
-        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
-
-        def _collect(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-            if n.text:
-                text_nodes.append((path, n))
-            for i, child in enumerate(n.children):
-                _collect(child, path + (i,))
-
-        _collect(node)
+        text_nodes = _text_nodes_in_document_order(node)
 
         if match == "TEXT_OPENING_WORDS":
             if not node.text:
