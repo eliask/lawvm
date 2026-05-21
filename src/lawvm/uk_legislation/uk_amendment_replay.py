@@ -104,6 +104,7 @@ from lawvm.uk_legislation.effect_schedule_lowering import (
     try_lower_schedule_list_entry_mutation,
     try_lower_schedule_table_end_rows_insert,
 )
+from lawvm.uk_legislation.effect_table_lowering import try_lower_table_column_insert
 from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
     expand_single_target_prelude,
@@ -217,7 +218,6 @@ from lawvm.uk_legislation.source_text_reclassifications import (
 )
 from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID as _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID,
-    UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
     UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID as _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
     UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
     UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
@@ -230,12 +230,10 @@ from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
     _uk_schedule_list_entry_table_payload,
     _uk_single_logical_table_entry_group_payload,
-    _uk_single_table_column_payload,
     _uk_single_table_row_payload,
     _uk_broad_table_entry_instruction,
     _uk_parent_target_before_table_marker,
     _uk_table_column_text_patch_selector,
-    _uk_table_column_insert_selector,
     _uk_table_entry_inline_text_selector,
     _uk_table_entry_row_insert_selector,
 )
@@ -799,117 +797,22 @@ def compile_effect_to_ir_ops(
             if schedule_list_entry.op is not None:
                 ops.append(schedule_list_entry.op)
             continue
-        table_column_insert_selector = (
-            _uk_table_column_insert_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-                extracted_el=extracted_el,
-            )
-            if action == "insert"
-            else None
+        table_column_insert = try_lower_table_column_insert(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if table_column_insert_selector is not None:
-            table_marker_parent = _uk_parent_target_before_table_marker(target)
-            parent_target = table_marker_parent
-            if (
-                parent_target is not None
-                and len(parent_target.path) >= 2
-                and parent_target.path[-1] == ("subsection", "1")
-                and parent_target.path[-2][0] == "section"
-            ):
-                table_column_insert_selector = {
-                    **table_column_insert_selector,
-                    "allow_implicit_subsection_one_table": True,
-                    "table_marker_parent_target": str(parent_target),
-                }
-                parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
-            source_column_payload = _uk_single_table_column_payload(extracted_el)
-            if parent_target is None or source_column_payload is None:
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id=_UK_TABLE_COLUMN_INSERT_RULE_ID,
-                    family="source_table_elaboration",
-                    reason_code=(
-                        "table_marker_parent_missing"
-                        if parent_target is None
-                        else "between_columns_without_single_column_payload"
-                    ),
-                    reason=(
-                        "UK table-column insertion needs both a containing "
-                        "table target and an exactly one-column BlockAmendment "
-                        "table payload; lowering blocks instead of inventing "
-                        "column cells from flattened text."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={"target_ref": t_str, "target": str(target), **table_column_insert_selector},
-                )
-                continue
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_TABLE_COLUMN_INSERT_RULE_ID,
-                family="source_table_elaboration",
-                reason_code="explicit_between_columns_table_column_insert_selector",
-                reason=(
-                    "UK table-column insertion lowered as a typed column "
-                    "insert; replay must prove the visual column boundary, "
-                    "row alignment, and span adjustments before mutating the table."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "original_target": str(target),
-                    "containing_target": str(parent_target),
-                    **table_column_insert_selector,
-                },
-            )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=parent_target,
-                payload=source_column_payload,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=StructuralAction.INSERT,
-                    target=parent_target,
-                    payload=_payload_with_rewrite_witness(source_column_payload, lowered_witness),
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=(
-                        *_uk_lowered_op_provenance_tags(lowered_witness),
-                        (
-                            f"{_NOTE_TABLE_COLUMN_INSERT_SELECTOR}"
-                            f"{json.dumps(table_column_insert_selector, ensure_ascii=False)}"
-                        ),
-                    ),
-                    witness_rule_id=_UK_TABLE_COLUMN_INSERT_RULE_ID,
-                )
-            )
+        if table_column_insert.handled:
+            if table_column_insert.op is not None:
+                ops.append(table_column_insert.op)
             continue
         table_row_insert_selector = (
             _uk_table_entry_row_insert_selector(
