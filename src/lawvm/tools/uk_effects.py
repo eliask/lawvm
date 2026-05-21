@@ -958,7 +958,7 @@ def _manual_compile_suggested_claim_template(
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         replacement_match = re.search(
-            r"for\s+[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
+            r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
             source_preview,
             flags=re.I,
         )
@@ -994,6 +994,48 @@ def _manual_compile_suggested_claim_template(
                 "claim_preserves_host_body_text_and_children",
                 "claim_text_preimage_matches_target_facet_surface",
                 "changed_paths_are_within_declared_facet_target",
+            ],
+            "executable": False,
+        }
+    if summary.manual_compile_rule_id == "uk_manual_frontier_crossheading_candidate":
+        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+        replacement_match = re.search(
+            r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
+            source_preview,
+            flags=re.I,
+        )
+        return {
+            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+            "claim_kind": "semantic_compile",
+            "claim_status": "template_only_not_validated",
+            "action_family": "crossheading_text_rewrite",
+            "facet_family": "crossheading",
+            "placement_family": "explicit_crossheading_carrier_required",
+            "jurisdiction": "uk",
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_act_id": effect.affecting_act_id,
+            "affecting_provisions": effect.affecting_provisions,
+            "source_pathology": summary.source_pathology or "",
+            "candidate_target_surface": effect.affected_provisions,
+            "candidate_source_preview": source_preview[:500],
+            "text_match": (
+                " ".join(replacement_match.group("old").split())
+                if replacement_match is not None
+                else ""
+            ),
+            "replacement": (
+                " ".join(replacement_match.group("new").split())
+                if replacement_match is not None
+                else ""
+            ),
+            "required_validator_checks": [
+                "source_witness_targets_crossheading_surface",
+                "claim_identifies_exact_crossheading_carrier",
+                "claim_preserves_neighbouring_sections_and_body_text",
+                "claim_text_preimage_matches_crossheading_surface",
+                "changed_paths_are_within_declared_crossheading_target",
             ],
             "executable": False,
         }
