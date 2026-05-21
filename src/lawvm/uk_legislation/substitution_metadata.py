@@ -55,7 +55,7 @@ def _retarget_substituted_series_to_replaced_anchor(
         try:
             anchor_target = _parse_affected_target(anchor_refs[0])
             replacement_target = _parse_affected_target(target_refs[0])
-        except Exception:
+        except ValueError:
             return target_refs
 
         anchor_section = _addr_field(anchor_target, "section") or _addr_field(anchor_target, "schedule")
@@ -84,7 +84,7 @@ def _retarget_substituted_series_to_replaced_anchor(
         anchor_target = _parse_affected_target(anchor_refs[0])
         first_target = _parse_affected_target(target_refs[0])
         second_target = _parse_affected_target(target_refs[1])
-    except Exception:
+    except ValueError:
         return target_refs
 
     anchor_section = _addr_field(anchor_target, "section") or _addr_field(anchor_target, "schedule")
@@ -131,7 +131,7 @@ def _source_label_changing_substitution(
     try:
         source_target = canonicalize_uk_address(_parse_affected_target(source_ref))
         replacement_target = canonicalize_uk_address(_parse_affected_target(replacement_ref))
-    except Exception:
+    except ValueError:
         return None
     if tuple(source_target.path) == tuple(replacement_target.path):
         return None
@@ -243,7 +243,7 @@ def _repeal_tail_for_substituted_series_replacement(
     try:
         first_anchor = _parse_affected_target(anchor_refs[0])
         replacement_target = _parse_affected_target(original_target_refs[0])
-    except Exception:
+    except ValueError:
         return []
 
     anchor_section = _addr_field(first_anchor, "section") or _addr_field(first_anchor, "schedule")
@@ -288,7 +288,7 @@ def _source_replaced_sibling_count_from_substitution_text(
     for target_ref in target_refs[: len(labels)]:
         try:
             target_labels.append(_clean_num(_addr_leaf_label(_parse_affected_target(target_ref)) or ""))
-        except Exception:
+        except ValueError:
             return None
     if [_clean_num(label) for label in labels] != target_labels:
         return None
