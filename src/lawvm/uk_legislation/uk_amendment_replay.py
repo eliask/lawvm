@@ -279,18 +279,15 @@ from lawvm.uk_legislation.uk_prefetch import (
 from lawvm.uk_legislation.replay_applicability import (
     should_replay_nonstructural_ops,
 )
-from lawvm.uk_legislation.replay_prepare import prepare_replay_uk_ops
-from lawvm.uk_legislation.replay_records import (
-    UKReplayPrepareResult,
-    append_replay_fold_text_duplication_adjudications,
-    _append_uk_replay_adjudication,
-    _build_uk_replay_adjudication,
-)
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows,
     uk_table_cell_span,
 )
-from lawvm.uk_legislation.replay_executor import UKReplayExecutor
+from lawvm.uk_legislation.replay_executor import (
+    UKReplayExecutor,
+    _prepare_replay_uk_ops,
+    replay_uk_ops,
+)
 from lawvm.uk_legislation.schedule_list_selectors import (
     UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
@@ -4959,102 +4956,3 @@ class UKReplayPipeline:
         if oracle_alignment_events_out is not None:
             oracle_alignment_events_out.extend(dict(event) for event in executor.oracle_alignment_events)
         return executor.statute.to_irstatute()
-
-
-# ---------------------------------------------------------------------------
-# Commencement-aware EID filtering
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Public replay API
-# ---------------------------------------------------------------------------
-
-
-def _prepare_replay_uk_ops(
-    ops: list[LegalOperation],
-    *,
-    base_ir: Optional[IRStatute] = None,
-    verbose: bool = False,
-    adjudications_out: Optional[list[CompileAdjudication]] = None,
-) -> UKReplayPrepareResult:
-    """Normalize replay ops so every entry point applies the same semantics."""
-    base_executor: Optional[UKReplayExecutor] = UKReplayExecutor(base_ir) if base_ir is not None else None
-    return prepare_replay_uk_ops(
-        ops,
-        base_executor=base_executor,
-        verbose=verbose,
-        adjudications_out=adjudications_out,
-    )
-
-
-def replay_uk_ops(
-    base: IRStatute,
-    ops: list[LegalOperation],
-    *,
-    eid_map: Optional[dict[str, str]] = None,
-    text_map: Optional[dict[str, str]] = None,
-    allow_oracle_alignment: bool = True,
-    verbose: bool = False,
-    lo_ops_out: Optional[List[LegalOperation]] = None,
-    adjudications_out: Optional[List[CompileAdjudication]] = None,
-) -> IRStatute:
-    """Apply compiled UK legal operations to enacted base, return amended statute.
-
-    This is the primary public entry point for the UK replay engine.  It wraps
-    UKReplayExecutor with a clean function signature so callers do not need to
-    instantiate the executor directly.
-
-    Args:
-        base:       Enacted (base) IRStatute produced by parse_uk_statute_ir().
-        ops:        Compiled LegalOperation list from compile_effect_to_ir_ops()
-                    or UKReplayPipeline.compile_ops_for_statute().
-        eid_map:    Optional oracle EID map for grounding (key → oracle EID).
-        text_map:   Optional oracle text map for fuzzy-text grounding.
-        allow_oracle_alignment:
-                    When True, replay-time oracle adapter behavior is enabled:
-                    oracle-zombie collapse preparation plus post-apply EID grounding.
-                    When False, replay runs without ORACLE_ALIGNMENT_ONLY mutation help.
-        verbose:    If True, executor prints each applied op to stdout.
-        lo_ops_out: Optional list to collect top-section snapshots after each
-                    structural op.  Pass an empty list; it will be populated with
-                    legal operations suitable for replay timelines.
-        adjudications_out: Optional list to collect replay skip/no-op adjudications.
-                    Entries are `CompileAdjudication` with one of the `uk_replay_*`
-                    kinds defined by this executor.
-
-    Returns:
-        A new IRStatute with all ops applied (deep copy — base is not mutated).
-
-    Op ordering:
-        Ops are applied in the order supplied.  Callers should pre-sort by
-        (effective_date, sequence) before passing.  UKReplayPipeline already
-        does this in compile_ops_for_statute().
-    """
-    if verbose:
-        print(f"  replay_uk_ops: applying {len(ops)} ops to {base.statute_id}")
-    prepared_ops = _prepare_replay_uk_ops(
-        ops,
-        base_ir=base,
-        verbose=verbose,
-        adjudications_out=adjudications_out,
-    )
-
-    executor = UKReplayExecutor(
-        base,
-        eid_map=(eid_map or {}) if allow_oracle_alignment else {},
-        text_map=(text_map or {}) if allow_oracle_alignment else {},
-        verbose=verbose,
-        lo_ops_out=lo_ops_out,
-        adjudications_out=adjudications_out,
-    )
-    for op in prepared_ops.accepted_ops:
-        executor.apply_op(op)
-
-    if adjudications_out is not None:
-        append_replay_fold_text_duplication_adjudications(
-            adjudications_out,
-            frozen_statute=executor.statute.to_irstatute(),
-            source_statute=base.statute_id,
-        )
-
-    return executor.statute.to_irstatute()
