@@ -1066,6 +1066,7 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
     residual_candidate_samples_omitted: int = 0,
     manual_compile_status_counts: Mapping[str, int] | None = None,
     manual_compile_rule_counts: Mapping[str, int] | None = None,
+    suggested_claim_template_status_counts: Mapping[str, int] | None = None,
     lowering_observation_rule_counts: Mapping[str, int] | None = None,
     rows_with_lowering_observations: int = 0,
     replay_adjudication_kinds: set[str] | None = None,
@@ -1221,6 +1222,9 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
         "non_candidate_compare_counts": _count_map_jsonable(non_candidate_compare_counts),
         "manual_compile_status_counts": _count_map_jsonable(manual_compile_status_counts or {}),
         "manual_compile_rule_counts": _count_map_jsonable(manual_compile_rule_counts or {}),
+        "suggested_claim_template_status_counts": _count_map_jsonable(
+            suggested_claim_template_status_counts or {}
+        ),
         "lowering_observation_rule_counts": _count_map_jsonable(
             lowering_observation_rule_counts
             if lowering_observation_rule_counts is not None
@@ -1363,6 +1367,7 @@ def _uk_candidates_report_jsonable(
     source_acquisition_rejection_rule_counts: Counter[str] = Counter()
     manual_compile_status_counts: Counter[str] = Counter()
     manual_compile_rule_counts: Counter[str] = Counter()
+    suggested_claim_template_status_counts: Counter[str] = Counter()
     lowering_observation_rule_counts: Counter[str] = Counter()
     bench_authority_observation_count = 0
     bench_authority_observation_rule_counts: Counter[str] = Counter()
@@ -1630,6 +1635,8 @@ def _uk_candidates_report_jsonable(
             manual_compile_status_counts[str(key)] += int(count)
         for key, count in dict(row.get("manual_compile_rule_counts") or {}).items():
             manual_compile_rule_counts[str(key)] += int(count)
+        for key, count in dict(row.get("suggested_claim_template_status_counts") or {}).items():
+            suggested_claim_template_status_counts[str(key)] += int(count)
         row_lowering_observation_rule_counts = dict(
             row.get(
                 "lowering_observation_rule_counts",
@@ -1816,6 +1823,9 @@ def _uk_candidates_report_jsonable(
             "non_candidate_compare_counts": _count_map_jsonable(non_candidate_compare_counts),
             "manual_compile_status_counts": _count_map_jsonable(manual_compile_status_counts),
             "manual_compile_rule_counts": _count_map_jsonable(manual_compile_rule_counts),
+            "suggested_claim_template_status_counts": _count_map_jsonable(
+                suggested_claim_template_status_counts
+            ),
             "lowering_rejection_rule_counts": _count_map_jsonable(lowering_rejection_rule_counts),
             "blocking_lowering_rejection_rule_counts": _count_map_jsonable(
                 blocking_lowering_rejection_rule_counts
@@ -1976,11 +1986,17 @@ def _print_uk_candidates_text_summary(report: Mapping[str, Any]) -> None:
             f"candidate={_format_counts(summary.get('candidate_compare_counts'))} "
             f"non_candidate={_format_counts(summary.get('non_candidate_compare_counts'))}"
         )
-    if summary.get("manual_compile_status_counts") or summary.get("manual_compile_rule_counts"):
+    if (
+        summary.get("manual_compile_status_counts")
+        or summary.get("manual_compile_rule_counts")
+        or summary.get("suggested_claim_template_status_counts")
+    ):
         print(
             "  manual_compile_frontier: "
             f"status={_format_counts(summary.get('manual_compile_status_counts'))} "
-            f"rules={_format_counts(summary.get('manual_compile_rule_counts'))}"
+            f"rules={_format_counts(summary.get('manual_compile_rule_counts'))} "
+            "claim_templates="
+            f"{_format_counts(summary.get('suggested_claim_template_status_counts'))}"
         )
     if (
         summary.get("effect_feed_parse_rejection_rule_counts")
@@ -2439,6 +2455,9 @@ def _residual_analysis_unavailable_reason(context) -> str:  # noqa: ANN001
 
 def _summarize_effect_inventory(
     effect_summaries,
+    *,
+    effect_report_rows=(),
+    statute_id: str = "",
 ):
     source_counts: Counter[str] = Counter()
     compare_counts: Counter[str] = Counter()
@@ -2453,6 +2472,7 @@ def _summarize_effect_inventory(
     source_acquisition_rejection_rule_counts: Counter[str] = Counter()
     manual_compile_status_counts: Counter[str] = Counter()
     manual_compile_rule_counts: Counter[str] = Counter()
+    suggested_claim_template_status_counts: Counter[str] = Counter()
     rows_with_lowering_observations = 0
     rows_with_blocking_lowering_rejections = 0
     rows_with_source_acquisition_observations = 0
@@ -2509,6 +2529,16 @@ def _summarize_effect_inventory(
                 non_candidate_source_counts[summary.source_pathology] += 1
             if summary.compare_shape:
                 non_candidate_compare_counts[summary.compare_shape] += 1
+    if effect_report_rows and statute_id:
+        from lawvm.tools.uk_effects import _actionable_claim_template_status
+
+        for row in effect_report_rows:
+            template_status = _actionable_claim_template_status(
+                statute_id=statute_id,
+                row=row,
+            )
+            if template_status != "__not_actionable__":
+                suggested_claim_template_status_counts[template_status] += 1
     return {
         "source_counts": source_counts,
         "compare_counts": compare_counts,
@@ -2518,6 +2548,7 @@ def _summarize_effect_inventory(
         "non_candidate_compare_counts": non_candidate_compare_counts,
         "manual_compile_status_counts": manual_compile_status_counts,
         "manual_compile_rule_counts": manual_compile_rule_counts,
+        "suggested_claim_template_status_counts": suggested_claim_template_status_counts,
         "lowering_observation_rule_counts": lowering_observation_rule_counts,
         "rows_with_lowering_observations": rows_with_lowering_observations,
         "lowering_rejection_rule_counts": lowering_rejection_rule_counts,
@@ -2854,6 +2885,7 @@ def main(args: "argparse.Namespace") -> None:
         if residual_only and db_path.exists():
             from farchive import Farchive
             from lawvm.tools.uk_effects import (
+                _EffectReportRow,
                 build_uk_effect_summary_context,
                 summarize_uk_effect,
             )
@@ -2895,16 +2927,24 @@ def main(args: "argparse.Namespace") -> None:
                         )
                     )
                     context = build_uk_effect_summary_context(r.statute_id, archive=archive)
-                    effect_summaries = [
-                        summarize_uk_effect(
-                            effect,
-                            archive=archive,
-                            context=context,
-                            applicability_mode=str(replay_regime["applicability_mode"]),
+                    effect_report_rows = [
+                        _EffectReportRow(
+                            effect=effect,
+                            summary=summarize_uk_effect(
+                                effect,
+                                archive=archive,
+                                context=context,
+                                applicability_mode=str(replay_regime["applicability_mode"]),
+                            ),
                         )
                         for effect in replay_applicable_effects
                     ]
-                    inventory = _summarize_effect_inventory(effect_summaries)
+                    effect_summaries = [row.summary for row in effect_report_rows]
+                    inventory = _summarize_effect_inventory(
+                        effect_summaries,
+                        effect_report_rows=effect_report_rows,
+                        statute_id=r.statute_id,
+                    )
                     source_counts = inventory["source_counts"]
                     compare_counts = inventory["compare_counts"]
                     candidate_count = int(inventory["candidate_count"])
@@ -3056,6 +3096,10 @@ def main(args: "argparse.Namespace") -> None:
                         non_candidate_compare_counts=inventory["non_candidate_compare_counts"],
                         manual_compile_status_counts=inventory.get("manual_compile_status_counts", {}),
                         manual_compile_rule_counts=inventory.get("manual_compile_rule_counts", {}),
+                        suggested_claim_template_status_counts=inventory.get(
+                            "suggested_claim_template_status_counts",
+                            {},
+                        ),
                         lowering_observation_rule_counts=inventory.get(
                             "lowering_observation_rule_counts",
                             inventory["lowering_rejection_rule_counts"],
@@ -3565,7 +3609,11 @@ def main(args: "argparse.Namespace") -> None:
                     if effect_report_row.summary.manual_compile_status
                     in manual_compile_evidence_statuses
                 )
-            inventory = _summarize_effect_inventory(effect_summaries)
+            inventory = _summarize_effect_inventory(
+                effect_summaries,
+                effect_report_rows=effect_report_rows,
+                statute_id=r.statute_id,
+            )
             replay_only: set[str] = set()
             oracle_only: set[str] = set()
             residual_analysis_skipped = (
@@ -3724,6 +3772,10 @@ def main(args: "argparse.Namespace") -> None:
                 non_candidate_compare_counts=non_candidate_compare_counts,
                 manual_compile_status_counts=inventory.get("manual_compile_status_counts", {}),
                 manual_compile_rule_counts=inventory.get("manual_compile_rule_counts", {}),
+                suggested_claim_template_status_counts=inventory.get(
+                    "suggested_claim_template_status_counts",
+                    {},
+                ),
                 lowering_observation_rule_counts=lowering_observation_rule_counts,
                 rows_with_lowering_observations=rows_with_lowering_observations,
                 lowering_rejection_rule_counts=lowering_rejection_rule_counts,

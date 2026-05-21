@@ -524,6 +524,38 @@ def test_summarize_effect_inventory_counts_candidates_and_classifications() -> N
     assert inventory["candidate_summaries"] == [summaries[2]]
 
 
+def test_summarize_effect_inventory_counts_claim_template_statuses(monkeypatch) -> None:
+    from lawvm.tools import uk_effects
+
+    rows = (object(), object(), object())
+    statuses = {
+        rows[0]: "available",
+        rows[1]: "not_available",
+        rows[2]: "__not_actionable__",
+    }
+
+    def fake_actionable_claim_template_status(*, statute_id: str, row: object) -> str:
+        assert statute_id == "ukpga/2000/1"
+        return statuses[row]
+
+    monkeypatch.setattr(
+        uk_effects,
+        "_actionable_claim_template_status",
+        fake_actionable_claim_template_status,
+    )
+
+    inventory = _summarize_effect_inventory(
+        (),
+        effect_report_rows=rows,
+        statute_id="ukpga/2000/1",
+    )
+
+    assert inventory["suggested_claim_template_status_counts"] == {
+        "available": 1,
+        "not_available": 1,
+    }
+
+
 def test_replay_applicable_effects_with_budget_preserves_truncation_evidence() -> None:
     seen_modes: list[str] = []
 
@@ -781,6 +813,7 @@ def test_candidate_row_jsonable_records_defeated_residual_roots() -> None:
         non_candidate_compare_counts={"collapsed_subtree_oracle_shape": 1},
         manual_compile_status_counts={"manual_compile_candidate": 2},
         manual_compile_rule_counts={"uk_manual_frontier_heading_facet_candidate": 2},
+        suggested_claim_template_status_counts={"available": 1, "not_available": 1},
         lowering_rejection_rule_counts={"uk_effect_payload_missing": 2},
         blocking_lowering_rejection_rule_counts={"uk_effect_payload_missing": 1},
         source_acquisition_observation_rule_counts={
@@ -938,6 +971,10 @@ def test_candidate_row_jsonable_records_defeated_residual_roots() -> None:
     assert payload["manual_compile_status_counts"] == {"manual_compile_candidate": 2}
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 2,
+    }
+    assert payload["suggested_claim_template_status_counts"] == {
+        "available": 1,
+        "not_available": 1,
     }
     assert payload["lowering_observation_rule_counts"] == {"uk_effect_payload_missing": 2}
     assert payload["rows_with_lowering_observations"] == 0
@@ -1112,6 +1149,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
                 "candidate_compare_counts": {"commensurable": 1},
                 "non_candidate_source_counts": {"missing_extracted_source": 2},
                 "non_candidate_compare_counts": {"oracle_missing_live_branch": 1},
+                "suggested_claim_template_status_counts": {"available": 1},
                 "rows_with_source_acquisition_rejections": 1,
                 "source_acquisition_rejection_rule_counts": {
                     "uk_affecting_act_xml_missing_rejected": 1,
@@ -1183,6 +1221,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
                 "candidate_compare_counts": {"collapsed_subtree_oracle_shape": 2},
                 "non_candidate_source_counts": {},
                 "non_candidate_compare_counts": {},
+                "suggested_claim_template_status_counts": {"not_available": 1},
                 "rows_with_source_acquisition_rejections": 0,
                 "source_acquisition_rejection_rule_counts": {},
                 "bench_authority_rejection_count": 2,
@@ -1438,6 +1477,10 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
         "non_candidate_compare_counts": {"oracle_missing_live_branch": 1},
         "manual_compile_status_counts": {},
         "manual_compile_rule_counts": {},
+        "suggested_claim_template_status_counts": {
+            "available": 1,
+            "not_available": 1,
+        },
         "lowering_observation_rule_counts": {"rule-a": 2, "rule-b": 3},
         "lowering_rejection_rule_counts": {"rule-a": 2, "rule-b": 3},
         "blocking_lowering_rejection_rule_counts": {"rule-a": 1},
@@ -2262,7 +2305,6 @@ def test_uk_candidates_full_text_reports_saved_bench_rejection_rules(
 ) -> None:
     import farchive
     from lawvm.tools import uk_effects
-    from lawvm.uk_legislation import uk_amendment_replay
 
     db_path = tmp_path / "uk.farchive"
     db_path.write_bytes(b"placeholder")
@@ -2363,7 +2405,6 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
 ) -> None:
     import farchive
     from lawvm.tools import uk_effects
-    from lawvm.uk_legislation import uk_amendment_replay
     from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 
     db_path = tmp_path / "uk.farchive"
@@ -2548,7 +2589,6 @@ def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candida
 ) -> None:
     import farchive
     from lawvm.tools import uk_effects
-    from lawvm.uk_legislation import uk_amendment_replay
     from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 
     db_path = tmp_path / "uk.farchive"
@@ -2840,7 +2880,6 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_rows(
 ) -> None:
     import farchive
     from lawvm.tools import uk_effects
-    from lawvm.uk_legislation import uk_amendment_replay
 
     db_path = tmp_path / "uk.farchive"
     db_path.write_bytes(b"placeholder")
@@ -2902,7 +2941,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_rows(
     monkeypatch.setattr(
         uk_candidates,
         "_summarize_effect_inventory",
-        lambda _summaries: {
+        lambda _summaries, **_kwargs: {
             "source_counts": {},
             "compare_counts": {},
             "candidate_source_counts": {},
@@ -2958,7 +2997,6 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_without_candi
 ) -> None:
     import farchive
     from lawvm.tools import uk_effects
-    from lawvm.uk_legislation import uk_amendment_replay
 
     db_path = tmp_path / "uk.farchive"
     db_path.write_bytes(b"placeholder")
@@ -3012,7 +3050,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_without_candi
     monkeypatch.setattr(
         uk_candidates,
         "_summarize_effect_inventory",
-        lambda _summaries: {
+        lambda _summaries, **_kwargs: {
             "source_counts": {},
             "compare_counts": {},
             "candidate_source_counts": {},
@@ -3067,7 +3105,6 @@ def test_uk_candidates_fast_residual_only_keeps_budget_skipped_rows_without_cand
 ) -> None:
     import farchive
     from lawvm.tools import uk_effects
-    from lawvm.uk_legislation import uk_amendment_replay
 
     db_path = tmp_path / "uk.farchive"
     db_path.write_bytes(b"placeholder")
@@ -3121,7 +3158,7 @@ def test_uk_candidates_fast_residual_only_keeps_budget_skipped_rows_without_cand
     monkeypatch.setattr(
         uk_candidates,
         "_summarize_effect_inventory",
-        lambda _summaries: {
+        lambda _summaries, **_kwargs: {
             "source_counts": {},
             "compare_counts": {},
             "candidate_source_counts": {},
