@@ -340,7 +340,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
 )
 from lawvm.uk_legislation.source_structural_sibling import lower_source_structural_sibling_insert
 from lawvm.uk_legislation.source_table_entry_paragraph import (
-    UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID as _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
+    append_source_carried_table_entry_paragraph_observation,
 )
 from lawvm.uk_legislation.target_anchors import (
     _fallback_target_eid,
@@ -1660,35 +1660,18 @@ def compile_effect_to_ir_ops(
                         extracted_text=extracted_text,
                         lowering_rejections_out=lowering_rejections_out,
                     )
-                    if _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID in _fragment_rule_ids(fragment_subs):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=_UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
-                            family="source_table_elaboration",
-                            reason_code="source_carried_table_entry_paragraph_substitution_lowered",
-                            reason=(
-                                "UK child-row source names a paragraph or subparagraph "
-                                "inside a table entry, while the parent source names the "
-                                "entry; lowering combines those source-local facts into "
-                                "a bounded table-cell text patch instead of inventing "
-                                "schedule paragraph structure."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "source_parent_id": str(primary.get("source_parent_id") or ""),
-                                "source_entry_label": str(primary.get("source_entry_label") or ""),
-                                "source_paragraph_label": str(primary.get("source_paragraph_label") or ""),
-                                "source_subparagraph_label": str(
-                                    primary.get("source_subparagraph_label") or ""
-                                ),
-                            },
-                        )
+                    append_source_carried_table_entry_paragraph_observation(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        fragment_rule_ids=_fragment_rule_ids(fragment_subs),
+                        primary=primary,
+                        op_text_match=op_text_match,
+                        op_text_replacement=op_text_replacement,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
                     append_source_carried_substitution_rewrite_observations(
                         effect=effect,
                         target=target,
