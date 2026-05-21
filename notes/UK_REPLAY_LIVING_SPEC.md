@@ -3935,7 +3935,8 @@ Current bench replay-regime invariant:
     `source_range_kind`, `source_range_start`, `source_range_end`,
     `target_container_ref`, `compiled_targets`, `payload_kinds`,
     `payload_roots` (including root label/eId and bounded direct-child
-    summaries), and `required_ownership`
+    summaries plus bounded descendant section labels), and
+    `required_ownership`
   - manual-frontier classification emits
   `uk_manual_frontier_range_to_container_candidate`
   - a future replay implementation must own the replaced section range, the new

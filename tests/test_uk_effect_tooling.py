@@ -852,7 +852,13 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
         text="Chapter 1",
         attrs={"eId": "part-2-chapter-1"},
         children=(
-            IRNode(kind=IRNodeKind.SECTION, label="3A", attrs={"eId": "section-3A"}),
+            IRNode(
+                kind=IRNodeKind.CROSSHEADING,
+                text="Bus services improvement partnership plans",
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="3A", attrs={"eId": "section-3A"}),
+                ),
+            ),
         ),
     )
     compiled = [
@@ -927,9 +933,14 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
                     "eid": "part-2-chapter-1",
                     "direct_child_count": 1,
                     "direct_children": (
-                        {"kind": "section", "label": "3A", "eid": "section-3A"},
+                        {"kind": "crossheading", "label": "", "eid": ""},
                     ),
                     "truncated_direct_children": False,
+                    "descendant_section_count": 1,
+                    "descendant_sections": (
+                        {"label": "3A", "eid": "section-3A"},
+                    ),
+                    "truncated_descendant_sections": False,
                 },
             ),
             "required_ownership": (

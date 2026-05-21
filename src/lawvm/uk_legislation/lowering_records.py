@@ -570,6 +570,7 @@ def append_replay_applicability_filter_diagnostic(
 
 
 def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
+    descendant_sections = _range_to_container_descendant_section_summary(payload)
     child_summaries = tuple(
         {
             "kind": child.kind.value,
@@ -585,4 +586,32 @@ def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
         "direct_child_count": len(payload.children),
         "direct_children": child_summaries,
         "truncated_direct_children": len(payload.children) > len(child_summaries),
+        "descendant_section_count": descendant_sections["count"],
+        "descendant_sections": descendant_sections["items"],
+        "truncated_descendant_sections": descendant_sections["truncated"],
+    }
+
+
+def _range_to_container_descendant_section_summary(payload: IRNode) -> dict[str, Any]:
+    """Return bounded section-label evidence for blocked range-to-container payloads."""
+    limit = 24
+    sections: list[dict[str, str]] = []
+    total = 0
+    stack = list(reversed(payload.children))
+    while stack:
+        node = stack.pop()
+        if node.kind.value == "section":
+            total += 1
+            if len(sections) < limit:
+                sections.append(
+                    {
+                        "label": node.label or "",
+                        "eid": str(node.attrs.get("eId") or node.attrs.get("id") or ""),
+                    }
+                )
+        stack.extend(reversed(node.children))
+    return {
+        "count": total,
+        "items": tuple(sections),
+        "truncated": total > len(sections),
     }
