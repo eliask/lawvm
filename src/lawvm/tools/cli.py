@@ -3743,6 +3743,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="only show rows with this manual compile frontier rule ID",
     )
     uk_effects_p.add_argument(
+        "--claim-template-status",
+        choices=["available", "not_available"],
+        help=(
+            "only show actionable manual-frontier rows where a suggested claim "
+            "template is available or not_available"
+        ),
+    )
+    uk_effects_p.add_argument(
         "--applied-only",
         action="store_true",
         help="only show applied effects",

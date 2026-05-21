@@ -97,6 +97,7 @@ class _EffectFilters:
     source_acquisition_rule: str = ""
     manual_compile_status: str = ""
     manual_compile_rule: str = ""
+    claim_template_status: str = ""
     applied_only: bool = False
     structural_only: bool = False
     candidate_only: bool = False
@@ -603,15 +604,11 @@ def uk_effects_summary_counts(
         manual_compile_rule_counts[manual_rule_key] = (
             manual_compile_rule_counts.get(manual_rule_key, 0) + 1
         )
-        if summary.manual_compile_status in {
-            "deterministic_frontend_candidate",
-            "manual_compile_candidate",
-        } and summary.manual_compile_rule_id:
-            suggested_claim_template = _manual_compile_suggested_claim_template(
-                statute_id=statute_id,
-                row=row,
-            )
-            template_status = "available" if suggested_claim_template else "not_available"
+        template_status = _actionable_claim_template_status(
+            statute_id=statute_id,
+            row=row,
+        )
+        if template_status != "__not_actionable__":
             suggested_claim_template_status_counts[template_status] = (
                 suggested_claim_template_status_counts.get(template_status, 0) + 1
             )
@@ -804,6 +801,7 @@ def _effect_filters_jsonable(filters: _EffectFilters) -> dict[str, Any]:
         "source_acquisition_rule": filters.source_acquisition_rule,
         "manual_compile_status": filters.manual_compile_status,
         "manual_compile_rule": filters.manual_compile_rule,
+        "claim_template_status": filters.claim_template_status,
         "applied_only": filters.applied_only,
         "structural_only": filters.structural_only,
         "candidate_only": filters.candidate_only,
@@ -856,6 +854,50 @@ def _effect_summary_matches_filters(
         if actual_rule != manual_compile_rule:
             return False
     return True
+
+
+def _actionable_claim_template_status(
+    *,
+    statute_id: str,
+    row: _EffectReportRow,
+) -> str:
+    summary = row.summary
+    if summary.manual_compile_status not in {
+        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
+    } or not summary.manual_compile_rule_id:
+        return "__not_actionable__"
+    suggested_claim_template = _manual_compile_suggested_claim_template(
+        statute_id=statute_id,
+        row=row,
+    )
+    return "available" if suggested_claim_template else "not_available"
+
+
+def _effect_row_matches_filters(
+    row: _EffectReportRow,
+    *,
+    statute_id: str = "",
+    source_pathology: str = "",
+    lowering_rule: str = "",
+    source_acquisition_rule: str = "",
+    manual_compile_status: str = "",
+    manual_compile_rule: str = "",
+    claim_template_status: str = "",
+) -> bool:
+    if not _effect_summary_matches_filters(
+        row.summary,
+        source_pathology=source_pathology,
+        lowering_rule=lowering_rule,
+        source_acquisition_rule=source_acquisition_rule,
+        manual_compile_status=manual_compile_status,
+        manual_compile_rule=manual_compile_rule,
+    ):
+        return False
+    return not claim_template_status or (
+        _actionable_claim_template_status(statute_id=statute_id, row=row)
+        == claim_template_status
+    )
 
 
 def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
@@ -1246,6 +1288,7 @@ def main(args: "argparse.Namespace") -> None:
     source_acquisition_rule_filter: str = getattr(args, "source_acquisition_rule", "") or ""
     manual_compile_status_filter: str = getattr(args, "manual_compile_status", "") or ""
     manual_compile_rule_filter: str = getattr(args, "manual_compile_rule", "") or ""
+    claim_template_status_filter: str = getattr(args, "claim_template_status", "") or ""
     limit: Optional[int] = getattr(args, "limit", None)
     applied_only: bool = bool(getattr(args, "applied_only", False))
     structural_only: bool = bool(getattr(args, "structural_only", False))
@@ -1261,9 +1304,14 @@ def main(args: "argparse.Namespace") -> None:
     if limit is not None and limit < 0:
         print("error: --limit must be zero or a positive integer", file=sys.stderr)
         sys.exit(2)
-    if evidence_jsonl_arg and not (manual_compile_status_filter or manual_compile_rule_filter):
+    if evidence_jsonl_arg and not (
+        manual_compile_status_filter
+        or manual_compile_rule_filter
+        or claim_template_status_filter
+    ):
         print(
-            "error: --evidence-jsonl requires --manual-compile-status or --manual-compile-rule",
+            "error: --evidence-jsonl requires --manual-compile-status, "
+            "--manual-compile-rule, or --claim-template-status",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -1276,6 +1324,7 @@ def main(args: "argparse.Namespace") -> None:
         source_acquisition_rule=source_acquisition_rule_filter,
         manual_compile_status=manual_compile_status_filter,
         manual_compile_rule=manual_compile_rule_filter,
+        claim_template_status=claim_template_status_filter,
         applied_only=applied_only,
         structural_only=structural_only,
         candidate_only=candidate_only,
@@ -1348,17 +1397,20 @@ def main(args: "argparse.Namespace") -> None:
             or source_acquisition_rule_filter
             or manual_compile_status_filter
             or manual_compile_rule_filter
+            or claim_template_status_filter
         ):
             report_rows = tuple(
                 row
                 for row in report_rows
-                if _effect_summary_matches_filters(
-                    row.summary,
+                if _effect_row_matches_filters(
+                    row,
+                    statute_id=statute_id,
                     source_pathology=source_pathology_filter,
                     lowering_rule=lowering_rule_filter,
                     source_acquisition_rule=source_acquisition_rule_filter,
                     manual_compile_status=manual_compile_status_filter,
                     manual_compile_rule=manual_compile_rule_filter,
+                    claim_template_status=claim_template_status_filter,
                 )
             )
         matched_effect_count_before_limit = (
@@ -1371,6 +1423,7 @@ def main(args: "argparse.Namespace") -> None:
                 or source_acquisition_rule_filter
                 or manual_compile_status_filter
                 or manual_compile_rule_filter
+                or claim_template_status_filter
             )
             else len(rows)
         )
