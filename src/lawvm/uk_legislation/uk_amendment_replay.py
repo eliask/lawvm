@@ -534,23 +534,6 @@ def compile_effect_to_ir_ops(
             lowering_rejections_out=lowering_rejections_out,
         ):
             continue
-        append_target_shape_observations(
-            effect=effect,
-            t_str=t_str,
-            target=target,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            lowering_rejections_out=lowering_rejections_out,
-        )
-        target = refine_numbered_schedule_entry_repeal_target(
-            effect=effect,
-            action=action,
-            t_str=t_str,
-            target=target,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            lowering_rejections_out=lowering_rejections_out,
-        )
         if crossheading_compound_heading_text is not None:
             ops.append(
                 build_crossheading_compound_heading_op(

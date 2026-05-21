@@ -17102,6 +17102,12 @@ def test_compile_schedule_part_abbreviation_ref_records_target_normalization() -
 
     assert len(ops) == 1
     assert ops[0].target == LegalAddress(path=(("schedule", "4"), ("part", "1")))
+    schedule_part_observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_schedule_part_abbreviation_target_normalized"
+    ]
+    assert len(schedule_part_observations) == 1
     assert any(
         record["rule_id"] == "uk_effect_schedule_part_abbreviation_target_normalized"
         and record["family"] == "target_shape_normalization"
