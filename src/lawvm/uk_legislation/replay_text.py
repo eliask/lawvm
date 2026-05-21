@@ -30,6 +30,16 @@ def _compact_normalized_text(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
 
+def _range_anchor_matches(text: str, anchor: str) -> tuple[list[re.Match[str]], bool]:
+    """Return range-anchor matches, token-bounded for quoted single words."""
+    if re.fullmatch(r"[A-Za-z]+", anchor or ""):
+        token_pattern = rf"(?<![A-Za-z0-9]){re.escape(anchor)}(?![A-Za-z0-9])"
+        token_matches = list(re.finditer(token_pattern, text, flags=re.I))
+        if token_matches:
+            return token_matches, True
+    return list(re.finditer(re.escape(anchor), text)), False
+
+
 def _compact_schedule_entry_anchor_without_article(text: str) -> str:
     stripped = re.sub(
         r"^(?:the|a|an)\s+",
