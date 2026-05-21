@@ -93,7 +93,10 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_trailing_repeal_ops,
 )
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
-from lawvm.uk_legislation.effect_target_prelude import expand_single_target_prelude
+from lawvm.uk_legislation.effect_target_prelude import (
+    expand_single_target_prelude,
+    reject_unsupported_target_facet,
+)
 from lawvm.uk_legislation.addressing import (
     _action_name,
     _addr_container,
@@ -123,9 +126,7 @@ from lawvm.uk_legislation.heading_facets import (
     _heading_facet_full_replacement_fragment,
     _is_crossheading_ref,
     _is_direct_section_paragraph_ref,
-    _is_heading_facet_word_patch_supported,
     _is_heading_only_ref,
-    _is_schedule_note_ref,
     _is_schedule_part_abbreviation_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
@@ -689,37 +690,14 @@ def compile_effect_to_ir_ops(
     )
     for target_index, t_str in enumerate(targets_str):
         heading_facet_target = _is_heading_only_ref(t_str)
-        if _is_schedule_note_ref(t_str):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_schedule_note_target_rejected",
-                family="unsupported_target_facet",
-                reason_code="schedule_note_target_unsupported",
-                reason=(
-                    "UK effect target names a schedule note; lowering must "
-                    "not coerce that note into paragraph/subparagraph structure."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str, "target_candidate_count": len(targets_str)},
-            )
-            continue
-        if heading_facet_target and not _is_heading_facet_word_patch_supported(effect.effect_type, extracted_text):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_heading_only_ref_rejected",
-                family="unsupported_target_facet",
-                reason_code="heading_only_ref_unsupported",
-                reason=(
-                    "UK effect target names only a heading or sidenote facet; "
-                    "lowering cannot safely mutate the host provision body"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str, "target_candidate_count": len(targets_str)},
-            )
+        if reject_unsupported_target_facet(
+            effect=effect,
+            t_str=t_str,
+            target_candidate_count=len(targets_str),
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        ):
             continue
         parsed_target = _parse_affected_target(t_str)
         target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
