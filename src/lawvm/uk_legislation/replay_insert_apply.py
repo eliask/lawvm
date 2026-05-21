@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Optional, cast
 
-from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import (
+    _action_name,
     _addr_container,
     _addr_field,
     _addr_leaf_kind,
@@ -27,6 +28,13 @@ from lawvm.uk_legislation.provenance_notes import (
     _table_row_insert_selector,
 )
 from lawvm.uk_legislation.provision_extractor import _get_id_sequence
+from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_target_gaps import (
+    uk_crossheading_insert_target_gap,
+    uk_existing_target_insert_already_materialized,
+    uk_existing_target_insert_conflict_detail,
+    uk_existing_target_insert_gap,
+)
 from lawvm.uk_legislation.target_anchors import _body_target_eid_suffixes, uk_match_kind_label
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
@@ -34,6 +42,211 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 class UKReplayInsertApplyMixin:
     statute: UKMutableStatute
     eid_map: dict[str, str]
+
+    def _apply_insert_op(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        node: UKMutableNode | None,
+        insert_existing_target_resolution: str,
+    ) -> None:
+        if op.payload is not None:
+            if uk_crossheading_insert_target_gap(target, op):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_crossheading_target_gap",
+                    message=(
+                        "UK replay skipped crossheading insert: target has no explicit "
+                        "crossheading identity or placement anchor."
+                    ),
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(target),
+                        "payload_kind": str(op.payload.kind),
+                        "payload_text": (op.payload.text or "")[:200],
+                    },
+                )
+                return
+            if uk_existing_target_insert_gap(target, node, op):
+                if uk_existing_target_insert_already_materialized(node, op):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_existing_target_already_materialized",
+                        message=(
+                            "UK replay skipped insert: target already exists with the same "
+                            "normalized payload text."
+                        ),
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                            "target_resolution_recovery": insert_existing_target_resolution,
+                            "blocking": False,
+                            "strict_disposition": "record",
+                            "quirks_disposition": "record",
+                        },
+                    )
+                    return
+                if conflict_detail := uk_existing_target_insert_conflict_detail(node, op):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_existing_target_conflict_gap",
+                        message=(
+                            "UK replay skipped insert: target path already exists with "
+                            "different normalized payload text."
+                        ),
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                            "target_resolution_recovery": insert_existing_target_resolution,
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                            **conflict_detail,
+                        },
+                    )
+                    return
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_existing_target_gap",
+                    message="UK replay skipped insert: target path already exists before applying the op.",
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(target),
+                        "payload_kind": str(op.payload.kind),
+                        "payload_label": op.payload.label or "",
+                        "target_resolution_recovery": insert_existing_target_resolution,
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    },
+                )
+                return
+            # Clone payload so repeated ops (same source for multiple targets) don't share nodes
+            inserted = self._insert_node_v2(
+                target,
+                UKMutableNode.from_dict(op.payload.to_jsonable_dict()),
+                op,
+            )
+            if inserted:
+                self._record_invariant_violations(op)
+                self._emit_top_section_snapshot(op)
+            else:
+                if _schedule_list_entry_table_rows_selector(op) is not None:
+                    return
+                if _schedule_list_entry_selector(op) is not None:
+                    return
+                if self._malformed_target_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=self._malformed_target_gap_kind(target),
+                        message="UK replay skipped insert: lowered target path is malformed.",
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                        },
+                    )
+                    return
+                if self._missing_parent_shape_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=self._missing_parent_shape_gap_kind(target),
+                        message="UK replay skipped insert: immediate parent target path is structurally absent.",
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                        },
+                    )
+                    return
+                if self._schedule_paragraph_carrier_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=self._schedule_paragraph_carrier_gap_kind(target),
+                        message="UK replay skipped insert: schedule target expects a paragraph carrier that is absent or wrapped by legacy p1group structure.",
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                        },
+                    )
+                    return
+                if self._leading_blank_subparagraph_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped insert: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                        },
+                    )
+                    return
+                if self._missing_sibling_range_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped insert: target falls inside an absent sibling range under the parent path.",
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                        },
+                    )
+                    return
+                if self._empty_descendant_shape_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_empty_descendant_shape_gap",
+                        message="UK replay skipped insert: parent target exists but has no descendant structural shape.",
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_label": op.payload.label or "",
+                        },
+                    )
+                    return
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_payload_mismatch",
+                    message="UK replay skipped insert: payload could not be inserted by target path.",
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(target),
+                        "payload_kind": str(op.payload.kind),
+                        "payload_label": op.payload.label or "",
+                    },
+                )
+        else:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_payload_missing",
+                message="UK replay skipped insert: payload missing.",
+                op=op,
+                detail={"action": _action_name(op.action), "target": str(target)},
+            )
 
     def _insert_node_v2(
         self,
@@ -361,4 +574,3 @@ class UKReplayInsertApplyMixin:
             if res_node:
                 return res_node, res_parent, res_idx
         return None, None, None
-
