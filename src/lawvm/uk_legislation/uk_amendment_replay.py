@@ -1028,6 +1028,43 @@ def compile_effect_to_ir_ops(
 # ---------------------------------------------------------------------------
 
 
+def _source_context_for_effect(
+    *,
+    effect: UKEffectRecord,
+    source_required_for_replay: bool,
+    archive: Any,
+    extraction_cache: dict[str, UKAffectingSourceContext],
+    effect_diagnostics_out: Optional[list[dict[str, Any]]],
+) -> UKAffectingSourceContext:
+    """Return the current affecting-source context for one UK effect row."""
+    if not source_required_for_replay:
+        source_context, _parse_error = _build_affecting_source_context(
+            xml_bytes=None,
+            locator="",
+            authority_layer="EFFECT_FEED_INDEX",
+            provision_extractor=extract_provision_element_from_bytes,
+        )
+        return source_context
+    if effect.affecting_act_id in extraction_cache:
+        return extraction_cache[effect.affecting_act_id]
+
+    current_locator = f"https://www.legislation.gov.uk/{effect.affecting_act_id}/data.xml"
+    source_context, parse_error = _build_affecting_source_context(
+        xml_bytes=get_affecting_act_xml_from_archive(effect.affecting_act_id, archive),
+        locator=current_locator,
+        authority_layer="AFFECTING_ACT_TEXT",
+        provision_extractor=extract_provision_element_from_bytes,
+    )
+    _append_affecting_source_context_diagnostic(
+        effect_diagnostics_out,
+        effect=effect,
+        source_context=source_context,
+        parse_error=parse_error,
+    )
+    extraction_cache[effect.affecting_act_id] = source_context
+    return source_context
+
+
 class UKReplayPipeline:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -1106,31 +1143,13 @@ class UKReplayPipeline:
                 e,
                 applicability_mode=applicability_mode,
             )
-
-            if not source_required_for_replay:
-                source_context, _parse_error = _build_affecting_source_context(
-                    xml_bytes=None,
-                    locator="",
-                    authority_layer="EFFECT_FEED_INDEX",
-                    provision_extractor=extract_provision_element_from_bytes,
-                )
-            elif e.affecting_act_id in extraction_cache:
-                source_context = extraction_cache[e.affecting_act_id]
-            else:
-                current_locator = f"https://www.legislation.gov.uk/{e.affecting_act_id}/data.xml"
-                source_context, parse_error = _build_affecting_source_context(
-                    xml_bytes=get_affecting_act_xml_from_archive(e.affecting_act_id, archive),
-                    locator=current_locator,
-                    authority_layer="AFFECTING_ACT_TEXT",
-                    provision_extractor=extract_provision_element_from_bytes,
-                )
-                _append_affecting_source_context_diagnostic(
-                    effect_diagnostics_out,
-                    effect=e,
-                    source_context=source_context,
-                    parse_error=parse_error,
-                )
-                extraction_cache[e.affecting_act_id] = source_context
+            source_context = _source_context_for_effect(
+                effect=e,
+                source_required_for_replay=source_required_for_replay,
+                archive=archive,
+                extraction_cache=extraction_cache,
+                effect_diagnostics_out=effect_diagnostics_out,
+            )
             el, source_extraction_observations = _extract_from_affecting_source_context_with_observations(
                 source_context,
                 e,
