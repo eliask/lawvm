@@ -298,7 +298,6 @@ from lawvm.uk_legislation.source_amendment_program_fragments import (
 )
 from lawvm.uk_legislation.source_definition_context import (
     _scope_fragment_substitutions_to_source_definition_parent,
-    _source_definition_child_refined_target,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
     _fragment_substitution_source_carried_after_quoted_anchor_insert,
@@ -310,6 +309,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
     _fragment_substitution_source_carried_quoted_text_substitution,
     lower_source_carried_definition_child_at_end_insert,
     lower_source_carried_definition_child_text_omission,
+    refine_source_definition_child_target,
 )
 from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_after_words_inserted_by_sibling,
@@ -1550,34 +1550,15 @@ def compile_effect_to_ir_ops(
                     # Promote to text_replace / text_repeal with fields populated.
                     # Use the first pair as the primary; additional pairs stay in notes.
                     primary = subs[0]
-                    source_definition_child_refined_target = _source_definition_child_refined_target(
+                    target = refine_source_definition_child_target(
+                        effect=effect,
                         target=target,
                         fragment=primary,
+                        target_ref=t_str,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
                     )
-                    if source_definition_child_refined_target is not None:
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_parent_definition_child_target_refined",
-                            family="source_context_elaboration",
-                            reason_code="source_parent_definition_child_refines_direct_section_paragraph",
-                            reason=(
-                                "UK affected-provision metadata names a direct section paragraph, "
-                                "while the source parent explicitly says that paragraph is inside "
-                                "a named definition entry; lowering targets the containing section "
-                                "and preserves the child paragraph as a scoped text selector."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "original_target": str(target),
-                                "refined_target": str(source_definition_child_refined_target),
-                                "source_definition_term": str(primary.get("source_definition_term") or ""),
-                                "source_child_label": str(primary.get("source_child_label") or ""),
-                            },
-                        )
-                        target = source_definition_child_refined_target
                     primary_target_suffix = _fragment_target_suffix(primary)
                     if primary_target_suffix is not None:
                         labeled_child_end_selector = _labeled_child_end_range_selector(
