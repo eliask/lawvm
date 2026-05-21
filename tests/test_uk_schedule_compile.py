@@ -3280,6 +3280,114 @@ def test_compile_child_qualified_quoted_substitution() -> None:
     )
 
 
+def test_compile_child_qualified_word_omission() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-7-paragraph-13-c-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii the words “in the case of an area mentioned in subsection (2)(c),” in paragraph (c),</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_word_omission",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2004-11-29",
+        affected_uri="/id/asp/2002/3",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="s. 54(3)(c)",
+        affecting_uri="/id/asp/2004/6",
+        affecting_class="ScottishAct",
+        affecting_year="2004",
+        affecting_number="6",
+        affecting_provisions="sch. 7 para. 13(c)(ii)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2004-11-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "54"),
+        ("subsection", "3"),
+        ("paragraph", "c"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == (
+        "in the case of an area mentioned in subsection (2)(c),"
+    )
+    assert ops[0].text_patch.replacement is None
+    assert _fragment_substitution(ops[0]) == [
+        {
+            "original": "in the case of an area mentioned in subsection (2)(c),",
+            "replacement": "",
+        }
+    ]
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["blocking"] is False
+    assert lowering_records[-1]["source_child_kind"] == "paragraph"
+    assert lowering_records[-1]["source_child_label"] == "c"
+
+
+def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-7-paragraph-13-c-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii the words “in the case of an area mentioned in subsection (2)(c),” in paragraph (c),</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_word_omission_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2004-11-29",
+        affected_uri="/id/asp/2002/3",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="s. 54(3)(d)",
+        affecting_uri="/id/asp/2004/6",
+        affecting_class="ScottishAct",
+        affecting_year="2004",
+        affecting_number="6",
+        affecting_provisions="sch. 7 para. 13(c)(ii)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2004-11-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+
+
 def test_compile_at_end_definition_insert() -> None:
     extracted_el = ET.fromstring(
         f"""

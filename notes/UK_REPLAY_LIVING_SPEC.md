@@ -3014,6 +3014,12 @@ Current bench replay-regime invariant:
   action and target; the affecting XML owns the exact deleted fragment. This
   rule must not fire when surrounding residue contains substantive instruction
   text or when the effect expands to multiple targets.
+- A single-target `words repealed` / `word repealed` / `words omitted` /
+  `word omitted` effect whose source row says `the words "X" in paragraph (c)`
+  may lower to a typed `text_repeal` only when the source child kind/label
+  exactly matches the effect-feed target leaf. The owned rule is
+  `uk_effect_child_qualified_word_omission_text_patch`; mismatch cases remain
+  blocked overlap parse failures, not live-tree retargeting.
 - UK fragment substitution parsing accepts ordinary drafting variants such as
   `for "X" in both places where it occurs, substitute "Y"`,
   `for "X" in both places where it occurs, there is substituted "Y"`, and
