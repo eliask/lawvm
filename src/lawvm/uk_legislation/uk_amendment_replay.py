@@ -95,6 +95,8 @@ from lawvm.uk_legislation.effect_lowering_tail import (
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
 from lawvm.uk_legislation.effect_target_prelude import (
     expand_single_target_prelude,
+    refine_enacted_schedule_table_row_part_target,
+    refine_source_text_schedule_paragraph_target,
     reject_unsupported_target_facet,
 )
 from lawvm.uk_legislation.addressing import (
@@ -241,7 +243,6 @@ from lawvm.uk_legislation.substitution_metadata import (
     _repeal_tail_for_substituted_series_replacement,
     _retarget_substituted_series_to_replaced_anchor,
     _source_replaced_sibling_count_from_substitution_text,
-    _source_text_schedule_paragraph_target_override,
 )
 from lawvm.uk_legislation.witness_sidecars import (
     _lowered_witness_from_payload_data,
@@ -412,14 +413,8 @@ from lawvm.uk_legislation.xml_helpers import (
 
 
 _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
-_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
-    "uk_effect_enacted_schedule_table_row_part_target_refined"
-)
 _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
     "uk_effect_numbered_schedule_entry_repeal_target_refined"
-)
-_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
-    "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
 )
 _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 def compile_effect_to_ir_ops(
@@ -701,55 +696,15 @@ def compile_effect_to_ir_ops(
             continue
         parsed_target = _parse_affected_target(t_str)
         target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
-        source_schedule_table_row_part_label = (
-            str(extracted_el.get("source_part_label") or "")
-            if extracted_el is not None
-            and str(extracted_el.get("source_rule_id") or "")
-            == "uk_affecting_act_enacted_schedule_table_row_source_extracted"
-            else ""
+        target = refine_enacted_schedule_table_row_part_target(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if (
-            action == "insert"
-            and source_schedule_table_row_part_label
-            and _addr_container(target) == "schedule"
-            and _addr_field(target, "part") is None
-            and _addr_leaf_kind(target) == "paragraph"
-        ):
-            original_target = target
-            schedule_label = _addr_field(target, "schedule") or ""
-            paragraph_label = _addr_leaf_label(target) or ""
-            target = canonicalize_uk_address(
-                LegalAddress(
-                    path=(
-                        ("schedule", schedule_label),
-                        ("part", source_schedule_table_row_part_label),
-                        ("paragraph", paragraph_label),
-                    )
-                )
-            )
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID,
-                family="target_resolution_recovery",
-                reason_code="source_enacted_schedule_table_row_part_context",
-                reason=(
-                    "UK enacted affecting source exposed the added schedule "
-                    "paragraph as a unique row under a schedule Part; lowering "
-                    "refines the metadata paragraph target to that source-owned "
-                    "Part instead of inserting under the schedule root."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "metadata_target": str(original_target),
-                    "refined_target": str(target),
-                    "source_part_label": source_schedule_table_row_part_label,
-                    "source_rule_id": str(extracted_el.get("source_rule_id") or ""),
-                    "source_row_text": str(extracted_el.get("source_row_text") or ""),
-                },
-            )
         label_changing_substitution = next(
             (
                 substitution
@@ -763,36 +718,15 @@ def compile_effect_to_ir_ops(
         if label_changing_substitution is not None:
             target_replacement_leaf_override = _addr_leaf_label(label_changing_substitution.replacement_target)
             target_replacement_leaf_kind = _addr_leaf_kind(label_changing_substitution.replacement_target)
-        source_text_target_override = (
-            _source_text_schedule_paragraph_target_override(
-                extracted_text=extracted_text,
-                target=target,
-            )
-            if is_word_level and action == "replace"
-            else None
-        )
-        if source_text_target_override is not None:
-            original_target = target
-            target = canonicalize_uk_address(source_text_target_override)
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID,
-                family="target_resolution_recovery",
-                reason_code="explicit_source_schedule_paragraph_overrides_metadata",
-                reason=(
-                    "UK source text explicitly names a different paragraph in "
-                    "the same schedule than the effect metadata; lowering uses "
-                    "the source-named target and records the metadata target as "
-                    "overridden evidence."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "metadata_target": str(original_target),
-                    "source_target": str(target),
-                },
+        target = refine_source_text_schedule_paragraph_target(
+            effect=effect,
+            action=action,
+            is_word_level=is_word_level,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
         flat_p1para_schedule_insert_lowered = False
         flat_p1para_payload_detail: dict[str, Any] = {}
