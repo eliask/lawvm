@@ -39,7 +39,6 @@ from lawvm.uk_legislation.uk_grafter import (
     _clean_num,
 )
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS  # noqa: F401
-from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
 from lawvm.uk_legislation.effects import (
     UKEffectRecord,
     _COMMENCEMENT_EFFECT_TYPES,
@@ -93,6 +92,7 @@ from lawvm.uk_legislation.effect_table_lowering import (
     try_lower_table_column_insert,
     try_lower_table_row_insert,
 )
+from lawvm.uk_legislation.effect_text_fragment_lowering import lower_uk_text_fragment_rewrite
 from lawvm.uk_legislation.effect_target_prelude import (
     append_added_type_source_structuralized_observation,
     append_heading_facet_range_expansion_observation,
@@ -116,8 +116,6 @@ from lawvm.uk_legislation.authority_filter import (
 )
 from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
-    _heading_facet_after_anchor_insert_fragment,
-    _heading_facet_full_replacement_fragment,
     _is_heading_only_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
@@ -145,9 +143,6 @@ from lawvm.uk_legislation.provision_extractor import (
     _instruction_text_before_amendment_container,
     extract_provision_element_from_bytes,
 )
-from lawvm.uk_legislation.replay_text import (
-    _multi_fragment_text_selector,
-)
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
     _append_affecting_source_context_diagnostic,
@@ -160,7 +155,6 @@ from lawvm.uk_legislation.source_action_inference import (
     infer_uk_effect_action_from_source,
 )
 from lawvm.uk_legislation.source_text_reclassifications import (
-    lower_quote_only_word_omission,
     reclassify_word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.substitution_metadata import (
@@ -187,44 +181,12 @@ from lawvm.uk_legislation.replay_executor import (
     UKReplayExecutor,
     _prepare_replay_uk_ops,
 )
-from lawvm.uk_legislation.text_rewrite_fragments import (
-    _fragment_rule_ids,
-    append_all_occurrences_text_rewrite_observations,
-    append_basic_text_rewrite_observations,
-    append_source_carried_substitution_rewrite_observations,
-    append_source_carried_tail_rewrite_observations,
-    lower_labeled_child_end_range_selector,
-    _multi_quoted_word_repeal_fragments,
-)
-from lawvm.uk_legislation.source_child_tail_rewrites import (
-    _fragment_substitution_source_carried_child_tail_repeal,
-    _fragment_substitution_source_carried_child_tail_substitution,
-)
 from lawvm.uk_legislation.source_amendment_program_fragments import (
-    _fragment_substitution_amendment_inserted_text_substitution,
-    _fragment_substitution_source_carried_multi_subunit_repeal,
     reject_amendment_program_inserted_parent_structural_insert,
 )
-from lawvm.uk_legislation.source_definition_context import (
-    _scope_fragment_substitutions_to_source_definition_parent,
-)
 from lawvm.uk_legislation.source_definition_fragments import (
-    append_source_definition_fragment_observations,
-    _fragment_substitution_source_carried_after_quoted_anchor_insert,
-    _fragment_substitution_source_carried_definition_child_insert,
-    _fragment_substitution_source_carried_definition_child_text_omission,
-    _fragment_substitution_source_carried_definition_entry_insert,
-    _fragment_substitution_source_carried_definition_entry_substitution,
-    _fragment_substitution_source_carried_following_words_repeal,
-    _fragment_substitution_source_carried_quoted_text_substitution,
     lower_source_carried_definition_child_at_end_insert,
     lower_source_carried_definition_child_text_omission,
-    refine_source_definition_child_target,
-)
-from lawvm.uk_legislation.source_fragment_context import (
-    append_source_fragment_context_observations,
-    _fragment_substitution_after_words_inserted_by_sibling,
-    _fragment_substitution_grouped_anchor_occurrence,
 )
 from lawvm.uk_legislation.source_payload_helpers import (
     infer_source_payload_from_target,
@@ -233,9 +195,6 @@ from lawvm.uk_legislation.source_parent_payloads import (
     _source_after_paragraph_insert_labelled_series,
 )
 from lawvm.uk_legislation.source_structural_sibling import lower_source_structural_sibling_insert
-from lawvm.uk_legislation.source_table_entry_paragraph import (
-    append_source_carried_table_entry_paragraph_observation,
-)
 from lawvm.uk_legislation.target_anchors import (
     _fallback_target_eid,
     _source_after_insertion_anchor,
@@ -244,9 +203,6 @@ from lawvm.uk_legislation.target_anchors import (
 )
 from lawvm.uk_legislation.target_parser import (
     _split_metadata_provisions,
-)
-from lawvm.uk_legislation.table_sources import (
-    lower_uk_table_driven_corresponding_entry_word_substitution,
 )
 from lawvm.uk_legislation.text_patch_lowering import build_uk_text_patch_items
 from lawvm.uk_legislation.xml_helpers import (
@@ -940,403 +896,48 @@ def compile_effect_to_ir_ops(
         op_text_match = definition_child_at_end_insert_lowering.op_text_match
         op_text_replacement = definition_child_at_end_insert_lowering.op_text_replacement
 
-        word_level_text_patch_required = (
-            is_word_level
-            and curr_action != "repeal"
-            and structural_sibling_insert_detail is None
+        text_fragment_lowering = lower_uk_text_fragment_rewrite(
+            effect=effect,
+            effect_type=effect_type,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=fragment_subs,
+            op_text_match=op_text_match,
+            op_text_replacement=op_text_replacement,
+            op_text_occurrence=op_text_occurrence,
+            op_text_end_occurrence=op_text_end_occurrence,
+            target=target,
+            target_ref=t_str,
+            targets_str=targets_str,
+            is_word_level=is_word_level,
+            heading_facet_target=heading_facet_target,
+            source_structural_payload_matches_target=source_structural_payload_matches_target,
+            source_carried_table_entry_paragraph_substitution=(
+                source_carried_table_entry_paragraph_substitution
+            ),
+            table_cell_selector=table_cell_selector,
+            selector_rule_id=selector_rule_id,
+            structural_sibling_insert_detail=structural_sibling_insert_detail,
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if fragment_subs is None and (curr_action == "replace" or word_level_text_patch_required) and extracted_text:
-            treat_as_source_structural_replace = (
-                curr_action == "replace"
-                and not is_word_level
-                and source_structural_payload_matches_target
+        if text_fragment_lowering.skip_effect:
+            continue
+        target = text_fragment_lowering.target
+        curr_action = text_fragment_lowering.curr_action
+        content_ir = text_fragment_lowering.content_ir
+        fragment_subs = text_fragment_lowering.fragment_subs
+        op_text_match = text_fragment_lowering.op_text_match
+        op_text_replacement = text_fragment_lowering.op_text_replacement
+        op_text_occurrence = text_fragment_lowering.op_text_occurrence
+        op_text_end_occurrence = text_fragment_lowering.op_text_end_occurrence
+        if text_fragment_lowering.unlowered_overlap_reason:
+            unlowered_overlap_substitution_targets.append(t_str)
+            unlowered_overlap_substitution_reason = (
+                text_fragment_lowering.unlowered_overlap_reason
             )
-            heading_full_replacement_precheck = (
-                _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
-            )
-            source_carried_definition_child_text_omission_precheck = (
-                _fragment_substitution_source_carried_definition_child_text_omission(
-                    extracted_el=extracted_el,
-                    source_root=source_root,
-                    extracted_text=extracted_text,
-                )
-            )
-            if not treat_as_source_structural_replace and (
-                source_carried_definition_child_text_omission_precheck is not None
-                or
-                heading_full_replacement_precheck is not None
-                or not is_whole_node_replacement(extracted_text, effect.effect_type)
-            ):
-                table_substitution = lower_uk_table_driven_corresponding_entry_word_substitution(
-                    effect=effect,
-                    curr_action=curr_action,
-                    content_ir=content_ir,
-                    fragment_subs=fragment_subs,
-                    op_text_match=op_text_match,
-                    op_text_replacement=op_text_replacement,
-                    target=target,
-                    target_ref=t_str,
-                    extracted_el=extracted_el,
-                    source_root=source_root,
-                    extracted_text=extracted_text,
-                    lowering_rejections_out=lowering_rejections_out,
-                )
-                curr_action = table_substitution.curr_action
-                content_ir = table_substitution.content_ir
-                fragment_subs = table_substitution.fragment_subs
-                op_text_match = table_substitution.op_text_match
-                op_text_replacement = table_substitution.op_text_replacement
-                if table_substitution.skip_effect:
-                    continue
-                heading_after_anchor_insert = (
-                    _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
-                )
-                heading_full_replacement = (
-                    _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
-                )
-                subs = (
-                    fragment_subs
-                    if table_substitution.recognized
-                    else [source_carried_definition_child_text_omission_precheck]
-                    if source_carried_definition_child_text_omission_precheck is not None
-                    else [heading_after_anchor_insert]
-                    if heading_after_anchor_insert is not None
-                    else [heading_full_replacement]
-                    if heading_full_replacement is not None
-                    else parse_fragment_substitution(extracted_text)
-                )
-                multi_quoted_word_repeals = _multi_quoted_word_repeal_fragments(
-                    extracted_text=extracted_text,
-                    effect_type=effect.effect_type,
-                )
-                if (
-                    multi_quoted_word_repeals
-                    and len(subs) == 1
-                    and _multi_fragment_text_selector(str(subs[0].get("original") or ""))
-                ):
-                    subs = list(multi_quoted_word_repeals)
-                if not subs:
-                    after_inserted_by_sibling = _fragment_substitution_after_words_inserted_by_sibling(
-                        extracted_el=extracted_el,
-                        source_root=source_root,
-                        extracted_text=extracted_text,
-                    )
-                    if after_inserted_by_sibling is not None:
-                        subs = [after_inserted_by_sibling]
-                if not subs:
-                    grouped_anchor_occurrence = _fragment_substitution_grouped_anchor_occurrence(
-                        extracted_el=extracted_el,
-                        source_root=source_root,
-                        extracted_text=extracted_text,
-                    )
-                    if grouped_anchor_occurrence is not None:
-                        subs = [grouped_anchor_occurrence]
-                if not subs and source_carried_table_entry_paragraph_substitution is not None:
-                    subs = [
-                        {
-                            key: str(value)
-                            for key, value in source_carried_table_entry_paragraph_substitution.items()
-                            if key != "table_cell_selector"
-                        }
-                    ]
-                if not subs:
-                    source_carried_definition_child_insert = (
-                        _fragment_substitution_source_carried_definition_child_insert(
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                        )
-                    )
-                    if source_carried_definition_child_insert is not None:
-                        subs = [source_carried_definition_child_insert]
-                if not subs:
-                    source_carried_definition_entry_insert = (
-                        _fragment_substitution_source_carried_definition_entry_insert(
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                        )
-                    )
-                    if source_carried_definition_entry_insert is not None:
-                        subs = [source_carried_definition_entry_insert]
-                if not subs:
-                    source_carried_definition_entry_substitution = (
-                        _fragment_substitution_source_carried_definition_entry_substitution(
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                        )
-                    )
-                    if source_carried_definition_entry_substitution is not None:
-                        subs = [source_carried_definition_entry_substitution]
-                if not subs:
-                    source_carried_following_words_repeal = (
-                        _fragment_substitution_source_carried_following_words_repeal(
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                        )
-                    )
-                    if source_carried_following_words_repeal is not None:
-                        subs = [source_carried_following_words_repeal]
-                if not subs:
-                    source_carried_after_anchor_insert = (
-                        _fragment_substitution_source_carried_after_quoted_anchor_insert(
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                        )
-                    )
-                    if source_carried_after_anchor_insert is not None:
-                        subs = [source_carried_after_anchor_insert]
-                if not subs:
-                    source_carried_quoted_text_substitution = (
-                        _fragment_substitution_source_carried_quoted_text_substitution(
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                        )
-                    )
-                    if source_carried_quoted_text_substitution is not None:
-                        subs = [source_carried_quoted_text_substitution]
-                if not subs:
-                    source_carried_child_tail_repeal = (
-                        _fragment_substitution_source_carried_child_tail_repeal(
-                            extracted_text=extracted_text,
-                            target=target,
-                        )
-                    )
-                    if source_carried_child_tail_repeal is not None:
-                        subs = [source_carried_child_tail_repeal]
-                if not subs:
-                    source_carried_child_tail_substitution = (
-                        _fragment_substitution_source_carried_child_tail_substitution(
-                            extracted_text=extracted_text,
-                            target=target,
-                        )
-                    )
-                    if source_carried_child_tail_substitution is not None:
-                        subs = [source_carried_child_tail_substitution]
-                if not subs:
-                    source_carried_multi_subunit_repeal = (
-                        _fragment_substitution_source_carried_multi_subunit_repeal(
-                            extracted_text=extracted_text,
-                            target=target,
-                        )
-                    )
-                    if source_carried_multi_subunit_repeal is not None:
-                        subs = [source_carried_multi_subunit_repeal]
-                if not subs:
-                    amendment_inserted_text_substitution = (
-                        _fragment_substitution_amendment_inserted_text_substitution(
-                            extracted_text=extracted_text,
-                            target=target,
-                        )
-                    )
-                    if amendment_inserted_text_substitution is not None:
-                        subs = [amendment_inserted_text_substitution]
-                if subs:
-                    subs = _scope_fragment_substitutions_to_source_definition_parent(
-                        fragments=subs,
-                        extracted_el=extracted_el,
-                        source_root=source_root,
-                        extracted_text=extracted_text,
-                        target=target,
-                    )
-                    if table_cell_selector is not None:
-                        subs = [
-                            {
-                                **dict(item),
-                                "rule_id": str(item.get("rule_id") or selector_rule_id),
-                            }
-                            for item in subs
-                        ]
-                    fragment_subs = subs
-                    content_ir = None
-                    # Promote to text_replace / text_repeal with fields populated.
-                    # Use the first pair as the primary; additional pairs stay in notes.
-                    primary = subs[0]
-                    target = refine_source_definition_child_target(
-                        effect=effect,
-                        target=target,
-                        fragment=primary,
-                        target_ref=t_str,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    labeled_child_end_range_lowering = lower_labeled_child_end_range_selector(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        primary=primary,
-                        curr_action=curr_action,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    primary = labeled_child_end_range_lowering.primary
-                    curr_action = labeled_child_end_range_lowering.curr_action
-                    if labeled_child_end_range_lowering.skip_effect:
-                        continue
-                    op_text_match = primary["original"]
-                    op_text_replacement = primary["replacement"]
-                    op_text_occurrence = int(primary.get("occurrence", "0") or "0")
-                    op_text_end_occurrence = int(primary.get("end_occurrence", "0") or "0")
-                    # Word-level fragment edits are replayed as text_replace/text_repeal
-                    # regardless of whether the metadata verb was "replace" or "insert".
-                    if is_word_level and op_text_replacement == "":
-                        curr_action = "text_repeal"
-                    else:
-                        curr_action = "text_replace"
-                    append_all_occurrences_text_rewrite_observations(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_subs=fragment_subs,
-                        op_text_match=op_text_match,
-                        op_text_replacement=op_text_replacement,
-                        op_text_occurrence=op_text_occurrence,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    append_basic_text_rewrite_observations(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_subs=fragment_subs,
-                        op_text_match=op_text_match,
-                        op_text_replacement=op_text_replacement,
-                        op_text_occurrence=op_text_occurrence,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    append_source_definition_fragment_observations(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_subs=fragment_subs,
-                        op_text_match=op_text_match,
-                        op_text_replacement=op_text_replacement,
-                        op_text_occurrence=op_text_occurrence,
-                        op_text_end_occurrence=op_text_end_occurrence,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    append_source_carried_tail_rewrite_observations(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_subs=fragment_subs,
-                        primary=primary,
-                        op_text_match=op_text_match,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    append_source_carried_table_entry_paragraph_observation(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_rule_ids=_fragment_rule_ids(fragment_subs),
-                        primary=primary,
-                        op_text_match=op_text_match,
-                        op_text_replacement=op_text_replacement,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    append_source_carried_substitution_rewrite_observations(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_subs=fragment_subs,
-                        primary=primary,
-                        op_text_match=op_text_match,
-                        op_text_replacement=op_text_replacement,
-                        op_text_occurrence=op_text_occurrence,
-                        op_text_end_occurrence=op_text_end_occurrence,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    append_source_fragment_context_observations(
-                        effect=effect,
-                        target=target,
-                        target_ref=t_str,
-                        fragment_subs=fragment_subs,
-                        op_text_match=op_text_match,
-                        op_text_replacement=op_text_replacement,
-                        op_text_occurrence=op_text_occurrence,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                else:
-                    # Fallback regex for simple omissions not caught by NLP
-                    _OPEN_Q = "\"\u201c\u2018'"
-                    _CLOSE_Q = "\"\u201d\u2019'"
-                    m_omit = re.search("(?:omit|repeal) [" + _OPEN_Q + "](.*?)[" + _CLOSE_Q + "]", extracted_text, re.I)
-                    if not m_omit:
-                        m_omit = re.search(
-                            "[" + _OPEN_Q + "](.*?)[" + _CLOSE_Q + "] is (?:omitted|repealed)", extracted_text, re.I
-                        )
-                    if m_omit:
-                        fragment_subs = [{"original": m_omit.group(1), "replacement": ""}]
-                        content_ir = None
-                        op_text_match = m_omit.group(1)
-                        op_text_replacement = ""
-                        curr_action = "text_repeal" if is_word_level else "text_replace"
-                    elif (
-                        is_word_level
-                        and effect.effect_type == "substituted for words"
-                        and content_ir is not None
-                        and content_ir.get("kind") == _addr_leaf_kind(target)
-                        and _clean_num(str(content_ir.get("label") or "")) == _clean_num(_addr_leaf_label(target) or "")
-                    ):
-                        # Some archive-backed UK effects are labeled as word-level
-                        # substitutions even though the affecting source provides
-                        # the fully substituted structural node text. When we
-                        # already extracted a typed payload and no quoted fragment
-                        # can be recovered, treat this as a structural replace
-                        # rather than silently dropping the effect.
-                        curr_action = "replace"
-                    elif is_word_level:
-                        quote_only_omission_lowering = lower_quote_only_word_omission(
-                            effect=effect,
-                            effect_type=effect_type,
-                            curr_action=curr_action,
-                            content_ir=content_ir,
-                            is_word_level=is_word_level,
-                            targets_str=targets_str,
-                            target=target,
-                            target_ref=t_str,
-                            extracted_el=extracted_el,
-                            source_root=source_root,
-                            extracted_text=extracted_text,
-                            lowering_rejections_out=lowering_rejections_out,
-                        )
-                        if quote_only_omission_lowering.applied:
-                            fragment_subs = quote_only_omission_lowering.fragment_subs
-                            content_ir = quote_only_omission_lowering.content_ir
-                            op_text_match = quote_only_omission_lowering.op_text_match
-                            op_text_replacement = (
-                                quote_only_omission_lowering.op_text_replacement
-                            )
-                            curr_action = quote_only_omission_lowering.curr_action
-                        else:
-                            # We couldn't extract the fragment for a word-level effect.
-                            # Do NOT replace the whole node text with the amendment instruction!
-                            unlowered_overlap_substitution_targets.append(t_str)
-                            unlowered_overlap_substitution_reason = (
-                                "overlap_substitution_arity_unsupported"
-                                if len(targets_str) > 1
-                                else "overlap_substitution_parse_failed"
-                            )
-                            curr_action = None
 
         if curr_action:
             preceding_eid = None
