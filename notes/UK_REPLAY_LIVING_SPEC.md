@@ -454,6 +454,12 @@ families,
 `uk_manual_frontier_range_to_container_candidate`. They list required
 validator checks; replay must ignore them until a separate validated claim
 ledger emits canonical operations and provenance.
+`uk-effects` summary output also aggregates
+`suggested_claim_template_status_counts` for actionable frontier rows
+(`manual_compile_candidate` and `deterministic_frontend_candidate`) so review
+runs can distinguish template-ready rows from rows that still need a family
+model. Source-insufficient, already-supported, and out-of-scope rows are not
+counted as actionable template work.
 
 The claim output should be typed, for example:
 

@@ -1269,6 +1269,7 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "uk_manual_frontier_deterministic_supported": 1,
             "uk_manual_frontier_missing_payload_source_insufficient": 1,
         },
+        "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,
         "rows_with_lowering_observations": 1,
@@ -2595,6 +2596,7 @@ def test_print_uk_effects_summary_prints_manual_compile_frontier(capsys) -> None
             "manual_compile_rule_counts": {
                 "uk_manual_frontier_heading_facet_candidate": 1,
             },
+            "suggested_claim_template_status_counts": {"available": 1},
             "total_compiled_ops": 0,
             "rows_with_resolver_eids": 0,
             "rows_with_lowering_rejections": 0,
@@ -2606,8 +2608,87 @@ def test_print_uk_effects_summary_prints_manual_compile_frontier(capsys) -> None
 
     out = capsys.readouterr().out
     assert "Manual compile frontier statuses: manual_compile_candidate=1" in out
+    assert "Suggested claim templates: available=1" in out
     assert "Manual compile frontier rules:" in out
     assert "  uk_manual_frontier_heading_facet_candidate: 1" in out
+
+
+def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> None:
+    def _row(
+        *,
+        effect_id: str,
+        manual_compile_status: str,
+        manual_compile_rule_id: str,
+        source_text: str,
+    ) -> _EffectReportRow:
+        return _EffectReportRow(
+            effect=UKEffectRecord(
+                effect_id=effect_id,
+                effect_type="words substituted",
+                applied=True,
+                requires_applied=True,
+                modified="2024-01-01",
+                affected_uri="/id/ukpga/2000/1/section/1",
+                affected_class="UnitedKingdomPublicGeneralAct",
+                affected_year="2000",
+                affected_number="1",
+                affected_provisions="s. 1",
+                affecting_uri="/id/ukpga/2024/1",
+                affecting_class="UnitedKingdomPublicGeneralAct",
+                affecting_year="2024",
+                affecting_number="1",
+                affecting_provisions="s. 2",
+                affecting_title="Test Act 2024",
+            ),
+            summary=_EffectSummary(
+                source_pathology="unhandled_instruction_text",
+                compare_shape="",
+                n_ops=0,
+                candidate=False,
+                resolver_eids=(),
+                lowering_rejections=(
+                    {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+                ),
+                replay_applicable=True,
+                structural_for_replay=True,
+                source_extracted=True,
+                source_extracted_tag="P1",
+                source_extracted_text_preview=source_text,
+                manual_compile_status=manual_compile_status,
+                manual_compile_rule_id=manual_compile_rule_id,
+                manual_compile_reason="test",
+            ),
+        )
+
+    rows = (
+        _row(
+            effect_id="available-template",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
+            source_text='In the title, for "old" substitute "new".',
+        ),
+        _row(
+            effect_id="missing-template",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_unclassified",
+            source_text="Do something currently unclassified.",
+        ),
+        _row(
+            effect_id="out-of-scope",
+            manual_compile_status="non_textual_or_out_of_scope",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_as_if_application_modification_out_of_scope"
+            ),
+            source_text="The Act applies as if modified.",
+        ),
+    )
+
+    summary = uk_effects_summary_counts(rows, statute_id="ukpga/2000/1")
+
+    assert summary["suggested_claim_template_status_counts"] == {
+        "available": 1,
+        "not_available": 1,
+    }
 
 
 def test_uk_effects_summary_counts_preserve_pre_limit_match_count() -> None:
@@ -2669,6 +2750,7 @@ def test_uk_effects_summary_counts_preserve_pre_limit_match_count() -> None:
         "structural_for_replay": 1,
         "not_structural_for_replay": 0,
     }
+    assert report["summary"]["suggested_claim_template_status_counts"] == {}
 
 
 def test_uk_effects_limit_zero_summary_preserves_matched_count() -> None:
