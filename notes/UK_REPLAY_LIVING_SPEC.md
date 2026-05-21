@@ -3033,6 +3033,12 @@ Current bench replay-regime invariant:
   Witness: `asp/2003/1` `s. 17(3)`, affected by `asp/2005/12` Sch. 1
   para. 11(b), where enacted text says `paragraphs (a) to (h)` and the intended
   endpoint becomes `(i)`.
+- Conversely, unquoted preimage substitutions such as `for the period specified
+  in section 50(2) ... there is substituted the period of four years` are not
+  parser work by themselves. They are classified as
+  `uk_manual_frontier_unquoted_preimage_substitution_source_insufficient`
+  unless a separate source/preimage claim proves the old text to be replaced.
+  Witness: `asp/2003/1` `s. 50(2)`, affected by `ssi/2003/607` art. 2.
 - UK range substitution parsing preserves ordinal anchors in text spans. An
   instruction such as `for the words from "the" where it second occurs to the
   end substitute "..."` lowers to `TEXT_FROM_the_TO_END` with occurrence `2`,

@@ -1215,7 +1215,7 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
-def test_classify_uk_manual_compile_frontier_accepts_inflected_parser_verbs() -> None:
+def test_classify_uk_manual_compile_frontier_marks_unquoted_preimage_substitution_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
         source_pathology="unhandled_instruction_text",
@@ -1235,8 +1235,8 @@ def test_classify_uk_manual_compile_frontier_accepts_inflected_parser_verbs() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
-    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient"
 
 
 def test_classify_uk_manual_compile_frontier_accepts_dash_punctuated_instruction() -> None:
