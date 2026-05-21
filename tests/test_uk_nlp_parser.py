@@ -661,6 +661,20 @@ def test_parse_fragment_substitution_handles_for_insert_as_text_insertion() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_for_there_is_inserted_as_replacement() -> None:
+    subs = parse_fragment_substitution(
+        "in subsection (3), for \u201c(h)\u201d there is inserted \u201c(i)\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "(h)",
+            "replacement": "(i)",
+            "rule_id": "uk_effect_for_there_is_inserted_replacement_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_before_anchor_ordinal_insert() -> None:
     subs = parse_fragment_substitution(
         "ii before \u201cperiod\u201d, in the first place it occurs, insert \u201ccurrent\u201d , and"

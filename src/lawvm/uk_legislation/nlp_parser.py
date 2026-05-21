@@ -636,6 +636,20 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
             }
         )
 
+    matches_for_there_is_inserted = re.finditer(
+        r"for [“\"'‘](.*?)[”\"'’]\s+there\s+(?:is|are|shall\s+be)\s+inserted\s+[“\"'‘](.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_for_there_is_inserted:
+        subs.append(
+            {
+                "original": m.group(1).strip(),
+                "replacement": m.group(2).strip(),
+                "rule_id": "uk_effect_for_there_is_inserted_replacement_text_patch",
+            }
+        )
+
     matches_for_insert = re.finditer(
         r"for [“\"'‘](.*?)[”\"'’]\s+insert\s+[“\"'‘](.*?)[”\"'’]",
         text,

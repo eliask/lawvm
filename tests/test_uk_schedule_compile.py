@@ -10675,6 +10675,55 @@ def test_compile_for_insert_to_text_replace() -> None:
     assert "text_rewrite_rule:uk_effect_for_insert_text_insertion_patch" in ops[0].provenance_tags
 
 
+def test_compile_for_there_is_inserted_to_replacement_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-11-b">
+          <Pnumber>b</Pnumber>
+          <Text>in section 17 (reports etc. on implementation of community planning), in subsection (3), for “(h)” there is inserted “(i)”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_for_there_is_inserted_replacement",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2006-04-03",
+        affected_uri="/id/asp/2003/1/section/17/subsection/3",
+        affected_class="ScottishAct",
+        affected_year="2003",
+        affected_number="1",
+        affected_provisions="s. 17(3)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="Sch. 1 para. 11(b)",
+        affecting_title="Management of Offenders etc. (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-04-03", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "17"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "(h)"
+    assert ops[0].text_patch.replacement == "(i)"
+    assert _fragment_substitution(ops[0]) == [
+        {
+            "original": "(h)",
+            "replacement": "(i)",
+        }
+    ]
+    assert (
+        "text_rewrite_rule:uk_effect_for_there_is_inserted_replacement_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_substituted_for_words_expands_body_sibling_paragraph_targets() -> None:
     extracted_el = ET.fromstring(
         f"""
