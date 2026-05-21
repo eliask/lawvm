@@ -95,7 +95,6 @@ from lawvm.uk_legislation.effects import (
     _LEG_BASE,
     _USER_AGENT,
     _is_uk_renumber_effect_type,
-    _is_uk_repealed_by_effect_type,
     build_acquisition_manifest,
     fetch_effects_for_statute,
     fetch_metadata_for_statute,
@@ -159,7 +158,11 @@ from lawvm.uk_legislation.lowering_records import (
     append_structural_no_ops_lowering_rejection,
     mark_nonreplay_lowering_rejections_nonblocking,
 )
-from lawvm.uk_legislation.lowering_actions import _to_structural_action
+from lawvm.uk_legislation.lowering_actions import (
+    _is_uk_word_level_effect_type,
+    _to_structural_action,
+    _uk_effect_type_action,
+)
 from lawvm.uk_legislation.metadata_rewrites import (
     UKMetadataRenumberTargets,
     _select_whole_schedule_element,
@@ -588,52 +591,14 @@ def compile_effect_to_ir_ops(
     if effect_type in _COMMENCEMENT_EFFECT_TYPES:
         return []
 
-    _word_level_types = frozenset(
-        {
-            "words substituted",
-            "word substituted",
-            "substituted for words",
-            "words repealed",
-            "word repealed",
-            "words omitted",
-            "word omitted",
-            "words inserted",
-            "word inserted",
-        }
-    )
-    is_word_level = effect_type in _word_level_types
+    is_word_level = _is_uk_word_level_effect_type(effect_type)
 
-    # Map effect_type to a base action.  Word-level effects start as "replace"
-    # but may be promoted to text_replace / text_repeal after fragment extraction.
-    action_map = {
-        "inserted": "insert",
-        "word inserted": "insert",
-        "words inserted": "insert",
-        "entry inserted": "insert",
-        "added": "insert",
-        "repealed": "repeal",
-        "entry repealed": "repeal",
-        "repealed in part": "replace",
-        "words repealed": "replace",
-        "word repealed": "replace",
-        "substituted": "replace",
-        "words substituted": "replace",
-        "substituted for words": "replace",
-        "word substituted": "replace",
-        "replaced": "replace",
-        "words omitted": "replace",
-        "word omitted": "replace",
-        "omitted": "repeal",
-        "entry omitted": "repeal",
-        "ceases to have effect": "repeal",
-    }
-    action = action_map.get(effect_type)
-    if not action and effect_type.startswith("substituted for"):
-        action = "replace"
-    if not action and _is_uk_repealed_by_effect_type(effect_type):
-        action = "repeal"
-    if not action and metadata_renumber_targets is not None:
-        action = "renumber"
+    # Word-level effects start as "replace" but may be promoted to
+    # text_replace / text_repeal after fragment extraction.
+    action = _uk_effect_type_action(
+        effect_type,
+        has_metadata_renumber_targets=metadata_renumber_targets is not None,
+    )
     extracted_text = _text_content(extracted_el) if extracted_el is not None else None
     metadata_renumber_targets = _uk_source_text_corrected_renumber_targets(
         metadata_renumber_targets,
