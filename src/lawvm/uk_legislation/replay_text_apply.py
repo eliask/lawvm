@@ -18,6 +18,51 @@ from lawvm.uk_legislation.text_matching import (
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+    current = n
+    for index in path:
+        current = current.children[index]
+    return current
+
+
+def _definition_child_nodes(
+    n: UKMutableNode,
+    *,
+    term: str,
+    child_label: str,
+    path: tuple[int, ...] = (),
+) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+    matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+    normalized_term = _normalize_text(term)
+    normalized_label = child_label.lower()
+    for index, child in enumerate(n.children):
+        child_path = path + (index,)
+        if (
+            child.kind is IRNodeKind.ITEM
+            and str(child.attrs.get("definition_child_label") or "").lower() == normalized_label
+            and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
+            and _normalize_text(str(child.attrs.get("definition_term") or "")) == normalized_term
+        ):
+            matches.append((child_path, child))
+        matches.extend(
+            _definition_child_nodes(
+                child,
+                term=term,
+                child_label=child_label,
+                path=child_path,
+            )
+        )
+    return matches
+
+
+def _child_ordinal(label: str) -> Optional[int]:
+    if len(label) == 1 and label.isalpha():
+        return ord(label.lower()) - ord("a") + 1
+    if label.isdigit():
+        return int(label)
+    return None
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -640,17 +685,11 @@ class UKReplayTextApplyMixin:
                 for i, child in enumerate(n.children):
                     _find_child_anchor(child, path + (i,))
 
-            def _node_at_child_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
-                current = n
-                for idx in path:
-                    current = current.children[idx]
-                return current
-
             _find_child_anchor(node)
             if len(anchor_paths) != 1:
                 return node, False
             anchor_path = anchor_paths[0]
-            target_node = _node_at_child_path(node, anchor_path)
+            target_node = _node_at_path(node, anchor_path)
             joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
             new_text = f"{(target_node.text or '').rstrip()}{joiner}{replacement}".rstrip()
             rebuilt = self._replace_descendant_at_path(
@@ -1171,32 +1210,13 @@ class UKReplayTextApplyMixin:
             if child_kind != "paragraph" or not term or not child_label:
                 return node, False
 
-            def _definition_child_nodes(
-                n: UKMutableNode,
-                path: tuple[int, ...] = (),
-            ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
-                matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
-                for index, child in enumerate(n.children):
-                    child_path = path + (index,)
-                    if (
-                        child.kind is IRNodeKind.ITEM
-                        and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
-                        and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
-                        and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
-                    ):
-                        matches.append((child_path, child))
-                    matches.extend(_definition_child_nodes(child, child_path))
-                return matches
-
-            structured_child_matches = _definition_child_nodes(node)
+            structured_child_matches = _definition_child_nodes(
+                node,
+                term=term,
+                child_label=child_label,
+            )
             if len(structured_child_matches) == 1:
                 child_path, child_node = structured_child_matches[0]
-
-                def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
-                    current = n
-                    for index in path:
-                        current = current.children[index]
-                    return current
 
                 if replacement:
                     rebuilt_child = dc_replace(child_node, text=replacement.strip())
@@ -1227,13 +1247,6 @@ class UKReplayTextApplyMixin:
 
             if len(text_nodes) != 1:
                 return node, False
-
-            def _child_ordinal(label: str) -> Optional[int]:
-                if len(label) == 1 and label.isalpha():
-                    return ord(label.lower()) - ord("a") + 1
-                if label.isdigit():
-                    return int(label)
-                return None
 
             def _rewrite_definition_child(text: str) -> tuple[str, bool]:
                 ordinal = _child_ordinal(child_label)
@@ -1351,24 +1364,11 @@ class UKReplayTextApplyMixin:
             if (child_after_anchor and original) or (not child_after_anchor and not original and not child_at_end):
                 return node, False
 
-            def _definition_child_nodes(
-                n: UKMutableNode,
-                path: tuple[int, ...] = (),
-            ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
-                matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
-                for index, child in enumerate(n.children):
-                    child_path = path + (index,)
-                    if (
-                        child.kind is IRNodeKind.ITEM
-                        and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
-                        and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
-                        and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
-                    ):
-                        matches.append((child_path, child))
-                    matches.extend(_definition_child_nodes(child, child_path))
-                return matches
-
-            structured_child_matches = _definition_child_nodes(node)
+            structured_child_matches = _definition_child_nodes(
+                node,
+                term=term,
+                child_label=child_label,
+            )
             if child_after_anchor:
                 pattern = _text_patch_pattern(
                     child_after_anchor,
@@ -1414,13 +1414,6 @@ class UKReplayTextApplyMixin:
                         "uk_replay_in_definition_child_structured_text_rewrite_applied"
                     )
                 return rebuilt, True
-
-            def _child_ordinal(label: str) -> Optional[int]:
-                if len(label) == 1 and label.isalpha():
-                    return ord(label.lower()) - ord("a") + 1
-                if label.isdigit():
-                    return int(label)
-                return None
 
             def _rewrite_flat_definition_child(text: str) -> tuple[str, bool]:
                 ordinal = _child_ordinal(child_label)
@@ -1540,23 +1533,6 @@ class UKReplayTextApplyMixin:
                 if child_kind != "paragraph" or not term or not child_label:
                     return node, False
 
-                def _definition_child_nodes(
-                    n: UKMutableNode,
-                    path: tuple[int, ...] = (),
-                ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
-                    matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
-                    for index, child in enumerate(n.children):
-                        child_path = path + (index,)
-                        if (
-                            child.kind is IRNodeKind.ITEM
-                            and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
-                            and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
-                            and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
-                        ):
-                            matches.append((child_path, child))
-                        matches.extend(_definition_child_nodes(child, child_path))
-                    return matches
-
                 def _definition_insert_payload(
                     raw_replacement: str,
                 ) -> tuple[str, list[UKMutableNode]]:
@@ -1599,17 +1575,15 @@ class UKReplayTextApplyMixin:
                             )
                     return anchor_suffix, items
 
-                structured_child_matches = _definition_child_nodes(node)
+                structured_child_matches = _definition_child_nodes(
+                    node,
+                    term=term,
+                    child_label=child_label,
+                )
                 if len(structured_child_matches) == 1:
                     child_path, child_node = structured_child_matches[0]
                     parent_path = child_path[:-1]
                     child_index = child_path[-1]
-
-                    def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
-                        current = n
-                        for index in path:
-                            current = current.children[index]
-                        return current
 
                     anchor_suffix, inserted_children = _definition_insert_payload(replacement)
                     if inserted_children:
@@ -1931,12 +1905,6 @@ class UKReplayTextApplyMixin:
                     return
                 for i, child in enumerate(n.children):
                     _find_anchor(child, path + (i,))
-
-            def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
-                current = n
-                for idx in path:
-                    current = current.children[idx]
-                return current
 
             def _remove_trailing_word(text: str, needle: str) -> tuple[str, bool]:
                 pattern = re.compile(
