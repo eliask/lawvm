@@ -1481,16 +1481,11 @@ class UKReplayTextApplyMixin:
                 return node, False
             child_kind = child_match.group(1)
             child_label = child_match.group(2)
-            anchor_paths: list[tuple[int, ...]] = []
-
-            def _find_child_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-                kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
-                if kind_value == child_kind and _clean_num(n.label or "") == _clean_num(child_label):
-                    anchor_paths.append(path)
-                for i, child in enumerate(n.children):
-                    _find_child_anchor(child, path + (i,))
-
-            _find_child_anchor(node)
+            anchor_paths = _collect_descendant_paths_by_label_and_kinds(
+                node,
+                label=child_label,
+                allowed_kinds={child_kind},
+            )
             if len(anchor_paths) != 1:
                 return node, False
             anchor_path = anchor_paths[0]
