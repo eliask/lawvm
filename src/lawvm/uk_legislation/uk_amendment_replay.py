@@ -280,6 +280,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_rule_ids,
     _fragment_substitution,
     append_all_occurrences_text_rewrite_observations,
+    append_basic_text_rewrite_observations,
     lower_labeled_child_end_range_selector,
     _multi_quoted_word_repeal_fragments,
 )
@@ -370,8 +371,6 @@ from lawvm.uk_legislation.xml_helpers import (
 # UK replay helpers
 # ---------------------------------------------------------------------------
 
-
-_UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
     extracted_el: Optional[ET.Element],
@@ -1594,52 +1593,18 @@ def compile_effect_to_ir_ops(
                         extracted_text=extracted_text,
                         lowering_rejections_out=lowering_rejections_out,
                     )
-                    if "uk_effect_contextual_adjacent_word_omit_text_patch" in _fragment_rule_ids(
-                        fragment_subs
-                    ):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_contextual_adjacent_word_omit_text_patch",
-                            family="text_rewrite_lowering",
-                            reason_code="source_carried_contextual_adjacent_word_omission_lowered",
-                            reason=(
-                                "UK source text explicitly omits a quoted word following "
-                                "a named local child; lowering preserves that child anchor "
-                                "instead of deleting the quoted word from the whole parent."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "occurrence": op_text_occurrence,
-                            },
-                        )
-                    if _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID in _fragment_rule_ids(fragment_subs):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=_UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID,
-                            family="text_rewrite_lowering",
-                            reason_code="explicit_range_to_end_there_is_substituted_text_patch",
-                            reason=(
-                                "UK source text uses the drafting form 'there is substituted' "
-                                "for a word-level range ending at the end of the target; lowering "
-                                "preserves that as a bounded TEXT_FROM_*_TO_END text patch."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "occurrence": op_text_occurrence,
-                            },
-                        )
+                    append_basic_text_rewrite_observations(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        fragment_subs=fragment_subs,
+                        op_text_match=op_text_match,
+                        op_text_replacement=op_text_replacement,
+                        op_text_occurrence=op_text_occurrence,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
                     for source_definition_fragment in fragment_subs:
                         source_definition_rule_id = str(source_definition_fragment.get("rule_id") or "")
                         if source_definition_rule_id not in {

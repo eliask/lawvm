@@ -21,6 +21,8 @@ from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
 
 UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID = "uk_effect_multi_quoted_word_repeal_text_patches"
+UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
+UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
     {
@@ -196,6 +198,66 @@ def append_all_occurrences_text_rewrite_observations(
                     "occurrence": int(str(rewrite_fragment.get("occurrence") or "0") or "0"),
                 },
             )
+
+
+def append_basic_text_rewrite_observations(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    fragment_subs: Optional[list[dict[str, Any]]],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    op_text_occurrence: int,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_contextual_adjacent_word_omission_lowered",
+            reason=(
+                "UK source text explicitly omits a quoted word following "
+                "a named local child; lowering preserves that child anchor "
+                "instead of deleting the quoted word from the whole parent."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_to_end_there_is_substituted_text_patch",
+            reason=(
+                "UK source text uses the drafting form 'there is substituted' "
+                "for a word-level range ending at the end of the target; lowering "
+                "preserves that as a bounded TEXT_FROM_*_TO_END text patch."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
 
 
 def _fragment_target_suffix(fragment: object) -> tuple[str, str] | None:
