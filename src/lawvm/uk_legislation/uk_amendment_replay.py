@@ -94,8 +94,10 @@ from lawvm.uk_legislation.effect_lowering_tail import (
 )
 from lawvm.uk_legislation.effect_operation_builder import build_lowered_operation_provenance
 from lawvm.uk_legislation.effect_payload_rejections import (
+    reject_broad_schedule_flat_replace_payload,
     reject_missing_structural_payload,
     reject_mixed_heading_structural_insert_missing_payload,
+    reject_non_substantive_structural_payload,
 )
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     build_crossheading_context,
@@ -330,8 +332,6 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _prepend_inserted_section_heading_carrier,
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
-    _is_broad_schedule_flat_replace_payload,
-    _is_non_substantive_structural_payload,
     _retarget_instruction_element_to_target,
     _source_payload_matches_target_leaf,
     _substituted_series_new_sibling_insert_detail,
@@ -1844,56 +1844,27 @@ def compile_effect_to_ir_ops(
                     allow_payload_identity_synthesis=allow_payload_identity_synthesis,
                 )
 
-            if curr_action in ("insert", "replace") and _is_non_substantive_structural_payload(payload_node_mut):
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_non_substantive_payload_rejected",
-                    family="source_pathology_filter",
-                    reason_code="non_substantive_structural_payload",
-                    reason=(
-                        "UK structural effect payload contains only numbering "
-                        "or dot leaders, so replaying it would create a bogus "
-                        "legal unit"
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "action": curr_action,
-                        "payload_kind": str(payload_node_mut.kind) if payload_node_mut is not None else "",
-                    },
-                )
-                continue
-            if (
-                curr_action == "replace"
-                and _is_broad_schedule_flat_replace_payload(
-                    target=target,
-                    payload_node=payload_node_mut,
-                    actual_source_el=actual_el,
-                )
+            if reject_non_substantive_structural_payload(
+                effect=effect,
+                curr_action=curr_action,
+                t_str=t_str,
+                payload_node_mut=payload_node_mut,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
             ):
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_broad_schedule_flat_payload_rejected",
-                    family="payload_coverage_filter",
-                    reason_code="broad_schedule_or_part_replace_payload_undercovered",
-                    reason=(
-                        "UK structural replace targets a whole schedule or schedule part, "
-                        "but the extracted source payload is only flat text and does not "
-                        "claim the target's descendant structure."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "target": str(target),
-                        "payload_kind": str(payload_node_mut.kind),
-                        "payload_label": str(payload_node_mut.label or ""),
-                        "payload_text_preview": " ".join((payload_node_mut.text or "").split())[:240],
-                    },
-                )
+                continue
+            if reject_broad_schedule_flat_replace_payload(
+                effect=effect,
+                curr_action=curr_action,
+                t_str=t_str,
+                target=target,
+                payload_node_mut=payload_node_mut,
+                actual_el=actual_el,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
+            ):
                 continue
             payload_node = payload_node_mut.to_irnode() if payload_node_mut is not None else None
             text_patch_items = build_uk_text_patch_items(
