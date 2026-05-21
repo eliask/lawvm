@@ -146,11 +146,18 @@ def _range_to_container_substitution_detail(
         "target_container_ref": effect.affected_provisions,
     }
     if range_match is not None:
+        source_range_sections = _range_to_container_source_section_summary(
+            range_match.group("start"),
+            range_match.group("end"),
+        )
         detail.update(
             {
                 "source_range_kind": "section",
                 "source_range_start": range_match.group("start"),
                 "source_range_end": range_match.group("end"),
+                "source_range_section_count": source_range_sections["count"],
+                "source_range_sections": source_range_sections["items"],
+                "truncated_source_range_sections": source_range_sections["truncated"],
             }
         )
     return detail
@@ -614,4 +621,23 @@ def _range_to_container_descendant_section_summary(payload: IRNode) -> dict[str,
         "count": total,
         "items": tuple(sections),
         "truncated": total > len(sections),
+    }
+
+
+def _range_to_container_source_section_summary(start: str, end: str) -> dict[str, Any]:
+    """Return bounded source section labels displaced by a numeric source range."""
+    start_norm = str(start or "").strip()
+    end_norm = str(end or "").strip()
+    if not start_norm.isdigit() or not end_norm.isdigit():
+        return {"count": 0, "items": (), "truncated": False}
+    start_int = int(start_norm)
+    end_int = int(end_norm)
+    if end_int < start_int:
+        return {"count": 0, "items": (), "truncated": False}
+    labels = [str(value) for value in range(start_int, end_int + 1)]
+    limit = 32
+    return {
+        "count": len(labels),
+        "items": tuple({"label": label, "eid": ""} for label in labels[:limit]),
+        "truncated": len(labels) > limit,
     }

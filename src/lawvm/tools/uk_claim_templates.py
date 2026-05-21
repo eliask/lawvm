@@ -380,6 +380,7 @@ def manual_compile_suggested_claim_template(
         detail = dict(blocking_rows[0]) if blocking_rows else {}
         payload_roots = tuple(detail.get("payload_roots") or ())
         replacement_sections = _range_to_container_replacement_sections(payload_roots)
+        source_range_sections = tuple(detail.get("source_range_sections") or ())
         return {
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
@@ -396,6 +397,11 @@ def manual_compile_suggested_claim_template(
             "source_range_kind": detail.get("source_range_kind", ""),
             "source_range_start": detail.get("source_range_start", ""),
             "source_range_end": detail.get("source_range_end", ""),
+            "source_range_section_count": detail.get("source_range_section_count", 0),
+            "source_range_sections": list(source_range_sections),
+            "truncated_source_range_sections": bool(
+                detail.get("truncated_source_range_sections", False)
+            ),
             "target_container_surface": detail.get(
                 "target_container_ref",
                 effect.affected_provisions,
