@@ -6,7 +6,7 @@ from typing import Any
 
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
-from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind
+from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind
 from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
@@ -962,28 +962,24 @@ class UKReplayTextActionApplyMixin:
                     kind=kind,
                     message=message,
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(target),
-                        "text_match": text_patch.selector.match_text,
-                        "replacement_text": replacement,
-                        "blocking": kind in _UK_REPLAY_BLOCKING_TEXT_MISS_KINDS,
-                        "strict_disposition": (
-                            "block" if kind in _UK_REPLAY_BLOCKING_TEXT_MISS_KINDS else "record"
-                        ),
-                        "quirks_disposition": "record",
-                        "prior_same_target_text_patch_op_ids": tuple(
+                    detail=_text_patch_detail(
+                        op,
+                        target,
+                        text_patch,
+                        replacement,
+                        blocking=kind in _UK_REPLAY_BLOCKING_TEXT_MISS_KINDS,
+                        prior_same_target_text_patch_op_ids=tuple(
                             self._applied_text_patch_targets.get(str(target), ())
                         ),
-                        "prior_same_target_text_patch_count": len(
+                        prior_same_target_text_patch_count=len(
                             self._applied_text_patch_targets.get(str(target), ())
                         ),
-                        "target_container": _addr_container(target),
-                        "target_granularity": _addr_leaf_kind(target) or "",
-                        "source_shape": _uk_replay_text_miss_source_shape(kind),
-                        "target_text_preview": _replay_subtree_text_preview(node),
-                        "target_text_normalized_preview": _normalized_replay_subtree_text(node)[:240],
-                    },
+                        target_container=_addr_container(target),
+                        target_granularity=_addr_leaf_kind(target) or "",
+                        source_shape=_uk_replay_text_miss_source_shape(kind),
+                        target_text_preview=_replay_subtree_text_preview(node),
+                        target_text_normalized_preview=_normalized_replay_subtree_text(node)[:240],
+                    ),
                 )
         else:
             self._log(f"  EXECUTOR: WARN text_replace target not found: {op.target}")
