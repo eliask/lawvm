@@ -3025,6 +3025,14 @@ Current bench replay-regime invariant:
   preimage is `6` and whose replacement is `6 12`, with rule
   `uk_effect_for_insert_text_insertion_patch`; it must not silently turn the
   insertion into a replacement of `6` by `12`.
+- UK also has a narrow irregular formula where the source says `for "X" there
+  is inserted "Y"`. This is not the same as `for "X" insert "Y"`: it lowers to
+  replacement of `X` by `Y` with rule
+  `uk_effect_for_there_is_inserted_replacement_text_patch`. The family is owned
+  separately because generic insertion lowering would wrongly produce `X Y`.
+  Witness: `asp/2003/1` `s. 17(3)`, affected by `asp/2005/12` Sch. 1
+  para. 11(b), where enacted text says `paragraphs (a) to (h)` and the intended
+  endpoint becomes `(i)`.
 - UK range substitution parsing preserves ordinal anchors in text spans. An
   instruction such as `for the words from "the" where it second occurs to the
   end substitute "..."` lowers to `TEXT_FROM_the_TO_END` with occurrence `2`,
