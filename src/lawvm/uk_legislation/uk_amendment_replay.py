@@ -129,6 +129,7 @@ from lawvm.uk_legislation.heading_facets import (
     _expand_heading_facet_section_range_ref,
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_append_fragment,
+    _heading_facet_carrier_for_target,
     _heading_facet_full_replacement_fragment,
     _is_crossheading_ref,
     _is_direct_section_paragraph_ref,
@@ -349,9 +350,11 @@ from lawvm.uk_legislation.replay_table_geometry import (
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_broad_schedule_table_shape_gap,
     uk_chapter_order_shape_gap,
+    uk_crossheading_insert_target_gap,
     uk_existing_target_insert_already_materialized,
     uk_existing_target_insert_conflict_detail,
     uk_existing_target_insert_gap,
+    uk_is_explicit_direct_section_paragraph_target,
     uk_item_order_shape_gap,
     uk_malformed_target_note_or_crossheading_gap,
     uk_malformed_target_placeholder_label_gap,
@@ -5905,54 +5908,6 @@ class UKReplayExecutor:
             "replacement_fragment": " ".join(replacement.split())[:240],
         }
 
-    def _heading_facet_carrier_for_target(
-        self,
-        target: LegalAddress,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
-        *,
-        allow_crossheading_parent: bool = False,
-    ) -> Optional[UKMutableNode]:
-        """Return the replay node whose text owns a UK heading facet target."""
-        if target.special is not FacetKind.HEADING:
-            return None
-        node_kind = _uk_kind_value(node.kind).lower()
-        if node_kind in {"part", "chapter", "schedule", "p1group", "pblock", "crossheading"} and node.text:
-            return node
-        direct_heading_children = [
-            child for child in node.children if _uk_kind_value(child.kind).lower() == "heading" and child.text
-        ]
-        if len(direct_heading_children) == 1:
-            return direct_heading_children[0]
-        if parent is None or not parent.text:
-            return None
-        parent_kind = _uk_kind_value(parent.kind).lower()
-        if parent_kind not in {"p1group", "pgroup", "crossheading"}:
-            return None
-        structural_children = [
-            child
-            for child in parent.children
-            if _uk_kind_value(child.kind).lower()
-            in {"section", "article", "rule", "regulation", "subsection", "paragraph", "subparagraph", "item"}
-        ]
-        if parent_kind in {"p1group", "pgroup"} and len(structural_children) == 1 and structural_children[0] is node:
-            return parent
-        if (
-            parent_kind == "pgroup"
-            and structural_children
-            and structural_children[0] is node
-            and str(parent.attrs.get("source_rule_id") or "")
-            == "uk_parse_subordinate_pgroup_heading_carrier"
-        ):
-            return parent
-        if allow_crossheading_parent and parent_kind == "crossheading":
-            # Cross-heading refs say "heading before paragraph X". The carrier
-            # is the crossheading parent only when X is the first structural
-            # child under that heading; otherwise placement would be ambiguous.
-            if structural_children and structural_children[0] is node:
-                return parent
-        return None
-
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -8179,20 +8134,6 @@ class UKReplayExecutor:
                 return child, parent_candidate, child_idx, "explicit_parent_leaf_same_kind_label"
         return None, None, None, ""
 
-    def _crossheading_insert_target_gap(
-        self,
-        target: LegalAddress,
-        op: LegalOperation,
-    ) -> bool:
-        payload = getattr(op, "payload", None)
-        return (
-            _action_name(op.action) == "insert"
-            and _addr_leaf_kind(target) == "crossheading"
-            and not _clean_num(_addr_leaf_label(target) or "")
-            and payload is not None
-            and str(getattr(payload, "kind", "") or "").lower() == "crossheading"
-        )
-
     def _match_kind_label(self, node: Any, kind: str, label: Optional[str]) -> bool:
         """Shared matching logic for UK IR nodes."""
         nk = str(node.kind)
@@ -8335,7 +8276,7 @@ class UKReplayExecutor:
                 else (None, None, None)
             )
 
-        if self._is_explicit_direct_section_paragraph_target(target):
+        if uk_is_explicit_direct_section_paragraph_target(target):
             raw_node = _find(target)
             if raw_node[0] is not None:
                 return raw_node
@@ -8410,11 +8351,6 @@ class UKReplayExecutor:
             },
         )
         return recovered_node, recovered_parent, recovered_idx
-
-    @staticmethod
-    def _is_explicit_direct_section_paragraph_target(target: LegalAddress) -> bool:
-        path = tuple(target.path or ())
-        return len(path) >= 2 and path[0][0] == "section" and path[1][0] == "paragraph"
 
     def _find_recursive_match(
         self, node: UKMutableNode, kind: str, label: str
@@ -9135,7 +9071,7 @@ class UKReplayExecutor:
                     }
                     for note in (op.provenance_tags or ())
                 )
-                heading_carrier = self._heading_facet_carrier_for_target(
+                heading_carrier = _heading_facet_carrier_for_target(
                     target,
                     node,
                     parent,
@@ -10248,7 +10184,7 @@ class UKReplayExecutor:
                     )
         elif _action_name(op.action) == "insert":
             if op.payload is not None:
-                if self._crossheading_insert_target_gap(target, op):
+                if uk_crossheading_insert_target_gap(target, op):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind="uk_replay_crossheading_target_gap",

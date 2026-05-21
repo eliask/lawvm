@@ -9,7 +9,9 @@ import re
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
-from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
+from lawvm.core.semantic_types import FacetKind
+from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
+from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
@@ -19,6 +21,49 @@ def _is_heading_only_ref(ref: str) -> bool:
     if "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean:
         return False
     return ref_clean.endswith(" heading") or ref_clean.endswith(" title") or ref_clean.endswith(" sidenote")
+
+
+def _heading_facet_carrier_for_target(
+    target: LegalAddress,
+    node: UKMutableNode,
+    parent: Optional[UKMutableNode],
+    *,
+    allow_crossheading_parent: bool = False,
+) -> Optional[UKMutableNode]:
+    """Return the replay node whose text owns a UK heading facet target."""
+    if target.special is not FacetKind.HEADING:
+        return None
+    node_kind = _uk_kind_value(node.kind).lower()
+    if node_kind in {"part", "chapter", "schedule", "p1group", "pblock", "crossheading"} and node.text:
+        return node
+    direct_heading_children = [
+        child for child in node.children if _uk_kind_value(child.kind).lower() == "heading" and child.text
+    ]
+    if len(direct_heading_children) == 1:
+        return direct_heading_children[0]
+    if parent is None or not parent.text:
+        return None
+    parent_kind = _uk_kind_value(parent.kind).lower()
+    if parent_kind not in {"p1group", "pgroup", "crossheading"}:
+        return None
+    structural_children = [
+        child
+        for child in parent.children
+        if _uk_kind_value(child.kind).lower()
+        in {"section", "article", "rule", "regulation", "subsection", "paragraph", "subparagraph", "item"}
+    ]
+    if parent_kind in {"p1group", "pgroup"} and len(structural_children) == 1 and structural_children[0] is node:
+        return parent
+    if (
+        parent_kind == "pgroup"
+        and structural_children
+        and structural_children[0] is node
+        and str(parent.attrs.get("source_rule_id") or "") == "uk_parse_subordinate_pgroup_heading_carrier"
+    ):
+        return parent
+    if allow_crossheading_parent and parent_kind == "crossheading":
+        return parent if structural_children and structural_children[0] is node else None
+    return None
 
 
 def _expand_heading_facet_section_range_ref(ref: str) -> list[str]:

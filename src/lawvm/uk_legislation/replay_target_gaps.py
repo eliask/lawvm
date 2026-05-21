@@ -467,3 +467,19 @@ def uk_existing_target_insert_conflict_detail(
         "existing_text_preview": existing_text[:240],
         "payload_text_preview": payload_text[:240],
     }
+
+
+def uk_crossheading_insert_target_gap(target: LegalAddress, op: LegalOperation) -> bool:
+    payload = getattr(op, "payload", None)
+    return (
+        _action_name(op.action) == "insert"
+        and _addr_leaf_kind(target) == "crossheading"
+        and not _clean_num(_addr_leaf_label(target) or "")
+        and payload is not None
+        and str(getattr(payload, "kind", "") or "").lower() == "crossheading"
+    )
+
+
+def uk_is_explicit_direct_section_paragraph_target(target: LegalAddress) -> bool:
+    path = tuple(target.path or ())
+    return len(path) >= 2 and path[0][0] == "section" and path[1][0] == "paragraph"
