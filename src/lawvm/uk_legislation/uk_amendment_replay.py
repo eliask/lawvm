@@ -94,6 +94,10 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
 )
+from lawvm.uk_legislation.effect_crossheading_prelude import (
+    build_crossheading_context,
+    reject_unsupported_crossheading_replace,
+)
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
 from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
@@ -122,14 +126,10 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
     _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
-    _crossheading_and_structural_repeal_selector,
-    _crossheading_before_anchor_replacement_text,
-    _crossheading_before_anchor_text_patch_fragment,
     _expand_heading_facet_section_range_ref,
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
-    _is_crossheading_ref,
     _is_heading_only_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
@@ -355,7 +355,6 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _prepend_inserted_section_heading_carrier,
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
-    _crossheading_and_structural_replacement_heading_text,
     _is_broad_schedule_flat_replace_payload,
     _is_non_substantive_structural_payload,
     _retarget_instruction_element_to_target,
@@ -704,57 +703,27 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             lowering_rejections_out=lowering_rejections_out,
         )
-        crossheading_replacement_text = (
-            _crossheading_before_anchor_replacement_text(extracted_text)
-            if action == "replace" and _is_crossheading_ref(t_str)
-            else None
+        crossheading_context = build_crossheading_context(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
         )
-        crossheading_text_patch_fragment = (
-            _crossheading_before_anchor_text_patch_fragment(extracted_text)
-            if action == "replace" and _is_crossheading_ref(t_str)
-            else None
-        )
-        crossheading_compound_heading_text = (
-            _crossheading_and_structural_replacement_heading_text(
-                affected_ref=t_str,
-                extracted_el=extracted_el,
-                target=target,
-            )
-            if action == "replace" and _is_crossheading_ref(t_str)
-            else None
-        )
-        crossheading_group_repeal_selector = (
-            _crossheading_and_structural_repeal_selector(
-                affected_ref=t_str,
-                effect_type=effect.effect_type,
-                extracted_text=extracted_text,
-                target=target,
-            )
-            if action in {"replace", "repeal"} and _is_crossheading_ref(t_str)
-            else None
-        )
-        if (
-            action == "replace"
-            and _is_crossheading_ref(t_str)
-            and crossheading_replacement_text is None
-            and crossheading_text_patch_fragment is None
-            and crossheading_compound_heading_text is None
-            and crossheading_group_repeal_selector is None
+        crossheading_replacement_text = crossheading_context.replacement_text
+        crossheading_text_patch_fragment = crossheading_context.text_patch_fragment
+        crossheading_compound_heading_text = crossheading_context.compound_heading_text
+        crossheading_group_repeal_selector = crossheading_context.group_repeal_selector
+        if reject_unsupported_crossheading_replace(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            context=crossheading_context,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         ):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_crossheading_replace_rejected",
-                family="unsupported_target_facet",
-                reason_code="crossheading_replace_unsupported",
-                reason=(
-                    "UK cross-heading replacement target lacks an explicit "
-                    "heading-before-anchor replacement shape"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str},
-            )
             continue
         if extracted_el is None and effect_type in {"entry inserted", "entry repealed", "entry omitted"}:
             _append_uk_effect_lowering_rejection(
