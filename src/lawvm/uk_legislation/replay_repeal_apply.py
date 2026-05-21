@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.heading_facets import _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.provenance_notes import _crossheading_group_repeal_selector, _schedule_list_entry_repeal_selector
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
 )
 from lawvm.uk_legislation.replay_target_gaps import uk_missing_source_target_gap
@@ -63,15 +63,13 @@ class UKReplayRepealApplyMixin:
                         "was already repealed earlier in the chain."
                     ),
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(target),
-                        "reason_code": "target_previously_repealed",
-                        "family": "structural_repeal_idempotence",
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    },
+                    detail=uk_replay_action_target_detail(
+                        op,
+                        target,
+                        blocking=False,
+                        reason_code="target_previously_repealed",
+                        family="structural_repeal_idempotence",
+                    ),
                 )
             elif self._doubled_alpha_gap(target):
                 _append_uk_replay_adjudication(
