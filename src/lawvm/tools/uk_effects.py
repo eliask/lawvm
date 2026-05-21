@@ -998,6 +998,39 @@ def _surface_text_rewrite_claim_template(
     }
 
 
+def _bounded_mutation_claim_template(
+    *,
+    statute_id: str,
+    row: _EffectReportRow,
+    action_family: str,
+    placement_family: str,
+    required_ownership: list[str],
+    required_validator_checks: list[str],
+) -> dict[str, Any]:
+    summary = row.summary
+    effect = row.effect
+    source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+    return {
+        "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+        "claim_kind": "semantic_compile",
+        "claim_status": "template_only_not_validated",
+        "action_family": action_family,
+        "placement_family": placement_family,
+        "jurisdiction": "uk",
+        "statute_id": statute_id,
+        "effect_id": effect.effect_id,
+        "affected_provisions": effect.affected_provisions,
+        "affecting_act_id": effect.affecting_act_id,
+        "affecting_provisions": effect.affecting_provisions,
+        "source_pathology": summary.source_pathology or "",
+        "candidate_target_surface": effect.affected_provisions,
+        "candidate_source_preview": source_preview[:500],
+        "required_ownership": required_ownership,
+        "required_validator_checks": required_validator_checks,
+        "executable": False,
+    }
+
+
 def _manual_compile_suggested_claim_template(
     *,
     statute_id: str,
@@ -1052,37 +1085,25 @@ def _manual_compile_suggested_claim_template(
             ],
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_schedule_list_entry_candidate":
-        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-        return {
-            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
-            "claim_kind": "semantic_compile",
-            "claim_status": "template_only_not_validated",
-            "action_family": "schedule_list_entry_mutation",
-            "placement_family": "entry_anchor_requires_carrier_claim",
-            "jurisdiction": "uk",
-            "statute_id": statute_id,
-            "effect_id": effect.effect_id,
-            "affected_provisions": effect.affected_provisions,
-            "affecting_act_id": effect.affecting_act_id,
-            "affecting_provisions": effect.affecting_provisions,
-            "source_pathology": summary.source_pathology or "",
-            "candidate_target_surface": effect.affected_provisions,
-            "candidate_source_preview": source_preview[:500],
-            "required_ownership": [
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="schedule_list_entry_mutation",
+            placement_family="entry_anchor_requires_carrier_claim",
+            required_ownership=[
                 "source_named_entry_anchor",
                 "entry_carrier",
                 "sibling_insertion_or_replacement_boundary",
                 "mutation_boundary",
             ],
-            "required_validator_checks": [
+            required_validator_checks=[
                 "source_witness_names_schedule_or_list_entry_anchor",
                 "claim_identifies_exact_entry_carrier",
                 "claim_identifies_predecessor_or_replaced_entry",
                 "claim_preserves_unclaimed_sibling_entries",
                 "changed_paths_are_within_claimed_entry_boundary",
             ],
-            "executable": False,
-        }
+        )
     if summary.manual_compile_rule_id in {
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
@@ -1095,63 +1116,38 @@ def _manual_compile_suggested_claim_template(
             "uk_manual_frontier_table_column_insert_candidate": "table_column_boundary_required",
             "uk_manual_frontier_table_appropriate_place_candidate": "appropriate_place_table_entry_requires_ordering_claim",
         }
-        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-        return {
-            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
-            "claim_kind": "semantic_compile",
-            "claim_status": "template_only_not_validated",
-            "action_family": "table_surface_mutation",
-            "placement_family": placement_family_by_rule[
-                summary.manual_compile_rule_id
-            ],
-            "jurisdiction": "uk",
-            "statute_id": statute_id,
-            "effect_id": effect.effect_id,
-            "affected_provisions": effect.affected_provisions,
-            "affecting_act_id": effect.affecting_act_id,
-            "affecting_provisions": effect.affecting_provisions,
-            "source_pathology": summary.source_pathology or "",
-            "candidate_target_surface": effect.affected_provisions,
-            "candidate_source_preview": source_preview[:500],
-            "required_ownership": [
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="table_surface_mutation",
+            placement_family=placement_family_by_rule[summary.manual_compile_rule_id],
+            required_ownership=[
                 "source_named_table_surface",
                 "row_or_column_carrier",
                 "cell_alignment_or_column_boundary",
                 "mutation_boundary",
             ],
-            "required_validator_checks": [
+            required_validator_checks=[
                 "source_witness_targets_table_entry_or_column_surface",
                 "claim_identifies_exact_table_carrier",
                 "claim_identifies_row_or_column_boundary",
                 "claim_preserves_unclaimed_rows_columns_and_cells",
                 "changed_paths_are_within_claimed_table_surface",
             ],
-            "executable": False,
-        }
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_appropriate_place_candidate":
-        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-        return {
-            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
-            "claim_kind": "semantic_compile",
-            "claim_status": "template_only_not_validated",
-            "action_family": "appropriate_place_mutation",
-            "placement_family": "appropriate_place_requires_anchor_claim",
-            "jurisdiction": "uk",
-            "statute_id": statute_id,
-            "effect_id": effect.effect_id,
-            "affected_provisions": effect.affected_provisions,
-            "affecting_act_id": effect.affecting_act_id,
-            "affecting_provisions": effect.affecting_provisions,
-            "source_pathology": summary.source_pathology or "",
-            "candidate_target_surface": effect.affected_provisions,
-            "candidate_source_preview": source_preview[:500],
-            "required_ownership": [
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="appropriate_place_mutation",
+            placement_family="appropriate_place_requires_anchor_claim",
+            required_ownership=[
                 "source_named_insertion_payload",
                 "validated_predecessor_or_successor_anchor",
                 "target_container_boundary",
                 "mutation_boundary",
             ],
-            "required_validator_checks": [
+            required_validator_checks=[
                 "source_witness_uses_appropriate_place_formula",
                 "claim_supplies_exact_anchor_or_ordering_rule",
                 "claim_identifies_target_container_surface",
@@ -1159,40 +1155,27 @@ def _manual_compile_suggested_claim_template(
                 "claim_preserves_unclaimed_sibling_units",
                 "changed_paths_are_within_claimed_insertion_boundary",
             ],
-            "executable": False,
-        }
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_structural_sibling_insert_candidate":
-        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-        return {
-            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
-            "claim_kind": "semantic_compile",
-            "claim_status": "template_only_not_validated",
-            "action_family": "structural_sibling_insert",
-            "placement_family": "source_named_sibling_anchor_required",
-            "jurisdiction": "uk",
-            "statute_id": statute_id,
-            "effect_id": effect.effect_id,
-            "affected_provisions": effect.affected_provisions,
-            "affecting_act_id": effect.affecting_act_id,
-            "affecting_provisions": effect.affecting_provisions,
-            "source_pathology": summary.source_pathology or "",
-            "candidate_target_surface": effect.affected_provisions,
-            "candidate_source_preview": source_preview[:500],
-            "required_ownership": [
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="structural_sibling_insert",
+            placement_family="source_named_sibling_anchor_required",
+            required_ownership=[
                 "source_named_sibling_anchor",
                 "inserted_sibling_payload",
                 "sibling_order_boundary",
                 "mutation_boundary",
             ],
-            "required_validator_checks": [
+            required_validator_checks=[
                 "source_witness_names_before_or_after_sibling_anchor",
                 "claim_identifies_exact_parent_and_anchor_sibling",
                 "claim_identifies_each_inserted_sibling_payload",
                 "claim_preserves_anchor_and_unclaimed_siblings",
                 "changed_paths_are_within_declared_sibling_insertion_boundary",
             ],
-            "executable": False,
-        }
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_range_to_container_candidate":
         blocking_rows = tuple(
             row
