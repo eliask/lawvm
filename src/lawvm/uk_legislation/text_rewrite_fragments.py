@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -24,6 +25,38 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
 )
+
+
+def _multi_quoted_word_repeal_fragments(
+    *,
+    extracted_text: Optional[str],
+    effect_type: str,
+) -> tuple[dict[str, str], ...]:
+    norm_effect_type = (effect_type or "").strip().lower()
+    if norm_effect_type not in {"words repealed", "word repealed", "words omitted", "word omitted"}:
+        return ()
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return ()
+    if not re.search(r"\bthe\s+words?\b", text, flags=re.I):
+        return ()
+    if not re.search(r"\b(?:are|is)\s+(?:repealed|omitted)\b", text, flags=re.I):
+        return ()
+    quoted = tuple(
+        match.group("curly") if match.group("curly") is not None else match.group("double")
+        for match in re.finditer(r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\")", text)
+    )
+    quoted = tuple(" ".join(fragment.split()).strip() for fragment in quoted if " ".join(fragment.split()).strip())
+    if len(quoted) < 2:
+        return ()
+    return tuple(
+        {
+            "original": fragment,
+            "replacement": "",
+            "rule_id": UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+        }
+        for fragment in quoted
+    )
 
 
 def _fragment_substitution(op: LegalOperation) -> Optional[list]:
