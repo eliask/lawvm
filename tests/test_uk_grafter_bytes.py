@@ -7,6 +7,7 @@ from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.uk_grafter import (
     UKStatuteIR,
+    _clean_num,
     _definition_ordered_list_term,
     extract_eid_map_bytes,
     parse_uk_statute_ir_bytes,
@@ -39,6 +40,14 @@ _XML = b"""<?xml version="1.0" encoding="UTF-8"?>
   </Schedules>
 </Legislation>
 """
+
+
+def test_clean_num_handles_fused_container_prefixes() -> None:
+    assert _clean_num("Chapter 1A") == "1a"
+    assert _clean_num("CHAPTER1A") == "1a"
+    assert _clean_num("PartII") == "2"
+    assert _clean_num("Paragraph12B") == "12b"
+    assert _clean_num("Particular") == "particular"
 
 
 def test_definition_ordered_list_term_prefers_source_language_quoted_term() -> None:
