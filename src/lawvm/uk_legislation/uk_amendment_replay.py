@@ -320,21 +320,13 @@ from lawvm.uk_legislation.uk_prefetch import (
     fetch_affecting_act,
     fetch_affecting_acts_from_manifest,
 )
+from lawvm.uk_legislation.replay_prepare import prepare_replay_uk_ops
 from lawvm.uk_legislation.replay_records import (
     UKReplayPrepareResult,
-    append_same_source_text_patch_overlap_blocked_adjudication,
-    append_same_source_text_patch_overlap_disjoint_adjudication,
     append_replay_fold_text_duplication_adjudications,
-    append_schedule_entry_repeal_granularity_blocked_adjudication,
-    append_unsupported_whole_act_prepare_filter_adjudication,
     _append_uk_replay_adjudication,
     _build_uk_replay_adjudication,
 )
-from lawvm.uk_legislation.replay_prepare_ordering import (
-    _classify_same_source_text_patch_overlaps,
-    _order_ops_by_before_edges,
-)
-from lawvm.uk_legislation.replay_prepare_filters import _is_unsafe_schedule_entry_repeal_op
 from lawvm.uk_legislation.schedule_list_selectors import (
     UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
@@ -15574,64 +15566,11 @@ def _prepare_replay_uk_ops(
 ) -> UKReplayPrepareResult:
     """Normalize replay ops so every entry point applies the same semantics."""
     base_executor: Optional[UKReplayExecutor] = UKReplayExecutor(base_ir) if base_ir is not None else None
-    (
-        overlapping_text_patch_op_ids,
-        disjoint_text_patch_overlap_op_ids,
-        disjoint_text_patch_before_edges,
-    ) = _classify_same_source_text_patch_overlaps(
+    return prepare_replay_uk_ops(
         ops,
         base_executor=base_executor,
-    )
-
-    filtered_ops: list[LegalOperation] = []
-    rejected_adjudications: list[CompileAdjudication] = []
-    for op in ops:
-        if _is_unsafe_schedule_entry_repeal_op(op):
-            if verbose:
-                print("  replay_uk_ops: skipping unsafe schedule-entry repeal widened to schedule")
-            rejected_adjudications.append(
-                append_schedule_entry_repeal_granularity_blocked_adjudication(
-                    adjudications_out,
-                    op=op,
-                )
-            )
-            continue
-        if op.op_id in disjoint_text_patch_overlap_op_ids:
-            append_same_source_text_patch_overlap_disjoint_adjudication(
-                adjudications_out,
-                op=op,
-                ordered_before_op_ids=tuple(
-                    sorted(disjoint_text_patch_before_edges.get(op.op_id, ()))
-                ),
-            )
-        if op.op_id in overlapping_text_patch_op_ids:
-            if verbose:
-                print("  replay_uk_ops: skipping overlapping same-source ordinal text patch")
-            rejected_adjudications.append(
-                append_same_source_text_patch_overlap_blocked_adjudication(
-                    adjudications_out,
-                    op=op,
-                )
-            )
-            continue
-        if str(op.target.special or "") == "whole_act":
-            if _action_name(op.action) == "repeal":
-                filtered_ops.append(op)
-                continue
-            if verbose:
-                print("  replay_uk_ops: skipping unsupported whole_act op")
-            rejected_adjudications.append(
-                append_unsupported_whole_act_prepare_filter_adjudication(
-                    adjudications_out,
-                    op=op,
-                )
-            )
-            continue
-        filtered_ops.append(op)
-    filtered_ops = _order_ops_by_before_edges(filtered_ops, disjoint_text_patch_before_edges)
-    return UKReplayPrepareResult(
-        accepted_ops=tuple(filtered_ops),
-        rejected_adjudications=tuple(rejected_adjudications),
+        verbose=verbose,
+        adjudications_out=adjudications_out,
     )
 
 
