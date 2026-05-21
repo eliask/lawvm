@@ -23,6 +23,11 @@ from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_me
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID = (
+    "uk_effect_substituted_for_label_changing_target_rebound"
+)
+
+
 @dataclass(frozen=True)
 class UKSourceLabelChangingSubstitution:
     source_ref: str
