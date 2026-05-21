@@ -1634,6 +1634,88 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     )
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_crossheading_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-crossheading",
+        effect_type="cross-heading substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/crossheading/public-standards",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="cross-heading before s. 10",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="crossheading_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_crossheading_replace_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                'For the cross-heading "Old public standards" substitute '
+                '"New public standards".'
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_crossheading_candidate",
+            manual_compile_reason="Crossheading requires a validated carrier claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_crossheading_replace_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_crossheading_replace_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "crossheading_text_rewrite"
+    assert template["facet_family"] == "crossheading"
+    assert template["placement_family"] == "explicit_crossheading_carrier_required"
+    assert template["candidate_target_surface"] == "cross-heading before s. 10"
+    assert template["text_match"] == "Old public standards"
+    assert template["replacement"] == "New public standards"
+    assert "claim_identifies_exact_crossheading_carrier" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",
