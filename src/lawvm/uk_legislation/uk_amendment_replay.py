@@ -223,6 +223,7 @@ from lawvm.uk_legislation.replay_text import (
     _normalized_replacement_text_present,
     _normalized_text_match_present,
     _parenthetical_omission_text_selector,
+    _range_anchor_matches,
     _replay_subtree_text_preview,
     _schedule_entry_parenthetical_paragraph_anchor,
     _synthetic_text_selector,
@@ -6195,16 +6196,6 @@ class UKReplayExecutor:
                 return parent
         return None
 
-    @staticmethod
-    def _range_anchor_matches(text: str, anchor: str) -> tuple[list[re.Match[str]], bool]:
-        """Return range-anchor matches, token-bounded for quoted single words."""
-        if re.fullmatch(r"[A-Za-z]+", anchor or ""):
-            token_pattern = rf"(?<![A-Za-z0-9]){re.escape(anchor)}(?![A-Za-z0-9])"
-            token_matches = list(re.finditer(token_pattern, text, flags=re.I))
-            if token_matches:
-                return token_matches, True
-        return list(re.finditer(re.escape(anchor), text)), False
-
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -6350,7 +6341,7 @@ class UKReplayExecutor:
             start_ordinal = occurrence if occurrence > 0 else 1
             end_ordinal = end_occurrence if end_occurrence > 0 else 0
             if occurrence > 0:
-                start_matches, used_word_start = self._range_anchor_matches(text, start_text)
+                start_matches, used_word_start = _range_anchor_matches(text, start_text)
             else:
                 start_matches = list(re.finditer(re.escape(start_text), text))
                 used_word_start = False
@@ -6369,7 +6360,7 @@ class UKReplayExecutor:
                     return node, False
                 start_match = start_matches[start_ordinal - 1]
             if end_ordinal:
-                end_matches, used_word_end = self._range_anchor_matches(text, end_text)
+                end_matches, used_word_end = _range_anchor_matches(text, end_text)
                 if len(end_matches) >= end_ordinal:
                     end_match = end_matches[end_ordinal - 1]
                     if end_match.start() < start_match.end():
@@ -12848,7 +12839,7 @@ class UKReplayExecutor:
             def _find_start_index(start_text: str) -> int:
                 ordinal = occurrence if occurrence > 0 else 1
                 if occurrence > 0:
-                    range_matches, used_word_anchor = self._range_anchor_matches(full_text, start_text)
+                    range_matches, used_word_anchor = _range_anchor_matches(full_text, start_text)
                 else:
                     range_matches = list(re.finditer(re.escape(start_text), full_text))
                     used_word_anchor = False
@@ -12884,7 +12875,7 @@ class UKReplayExecutor:
                     end_idx = -1
                     if start_idx != -1:
                         if end_occurrence > 0:
-                            end_matches, used_word_end = self._range_anchor_matches(full_text, end_text)
+                            end_matches, used_word_end = _range_anchor_matches(full_text, end_text)
                             if len(end_matches) >= end_occurrence:
                                 end_match = end_matches[end_occurrence - 1]
                                 if end_match.start() >= start_idx + len(start_text):
