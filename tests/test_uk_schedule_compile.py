@@ -24213,6 +24213,41 @@ def test_append_no_ops_skips_generic_when_compile_recorded_specific_rejection() 
     ]
 
 
+def test_source_pathology_out_of_scope_reclassifies_no_supported_action_nonblocking() -> None:
+    lowering_rejections: list[dict[str, Any]] = [
+        {
+            "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+            "effect_id": "uk_test_as_if_application",
+            "blocking": True,
+            "strict_disposition": "block",
+        }
+    ]
+
+    changed = uk_replay_mod.mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
+        source_pathology="as_if_application_modification_unsupported",
+        lowering_rejections=lowering_rejections,
+        start_index=0,
+    )
+
+    assert changed is True
+    assert lowering_rejections == [
+        {
+            "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+            "effect_id": "uk_test_as_if_application",
+            "blocking": False,
+            "strict_disposition": "record",
+            "nonblocking_reclassification_rule_id": "uk_effect_nonreplay_lowering_observed",
+            "replay_relevance": "source_pathology_out_of_scope",
+            "source_pathology": "as_if_application_modification_unsupported",
+            "reclassification_reason": (
+                "Source-pathology classification proves this row is outside direct "
+                "UK text/tree replay; the lowering diagnostic is evidence, not a "
+                "replay blocker."
+            ),
+        }
+    ]
+
+
 def test_pipeline_compile_ops_records_nonstructural_replay_candidates_lowered_to_no_ops(monkeypatch) -> None:
     revoked_effect = UKEffectRecord(
         effect_id="uk_test_nonstructural_revoked_no_ops",
