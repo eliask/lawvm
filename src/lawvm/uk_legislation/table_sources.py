@@ -272,7 +272,7 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     if not text:
         return []
     clauses = re.split(
-        r"(?<=\.)\s+(?=(?:In\s+)?(?:section|sections|schedule|paragraph)\b)",
+        r"(?<=\.)\s+(?=(?:In\s+)?(?:part|parts|chapter|chapters|section|sections|schedule|paragraph)\b)",
         text,
         flags=re.I,
     )

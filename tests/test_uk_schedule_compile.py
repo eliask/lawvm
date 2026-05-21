@@ -7995,6 +7995,68 @@ def test_compile_repeal_table_structural_part_list_member_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_structural_part_clause_after_word_clause() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Housing (Scotland) Act 2001 (asp 10)</td>
+                  <td>Section 92(3) and (6). In section 93(1) and (3), the words “or (3)”. Part 6.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_part_after_words",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2010-04-01",
+        affected_uri="/id/asp/2001/10/part/6",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="10",
+        affected_provisions="Pt. 6",
+        affecting_uri="/id/asp/2006/1",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="1",
+        affecting_provisions="sch. 7",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("part", "6"),)
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["target"] == "part:6"
+        and record["extent_cell"] == "Part 6."
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_part_list_non_member_unresolved() -> None:
     source_root = ET.fromstring(
         """
