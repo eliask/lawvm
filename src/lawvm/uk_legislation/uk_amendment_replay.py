@@ -116,6 +116,8 @@ from lawvm.uk_legislation.effect_table_lowering import (
     try_lower_table_row_insert,
 )
 from lawvm.uk_legislation.effect_target_prelude import (
+    append_added_type_source_structuralized_observation,
+    append_heading_facet_range_expansion_observation,
     append_target_shape_observations,
     expand_single_target_prelude,
     refine_numbered_schedule_entry_repeal_target,
@@ -142,7 +144,6 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
     _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
-    _expand_heading_facet_section_range_ref,
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
@@ -289,9 +290,6 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     append_source_carried_tail_rewrite_observations,
     lower_labeled_child_end_range_selector,
     _multi_quoted_word_repeal_fragments,
-)
-from lawvm.uk_legislation.source_context import (
-    _first_amendment_container,
 )
 from lawvm.uk_legislation.source_child_tail_rewrites import (
     _fragment_substitution_source_carried_child_tail_repeal,
@@ -502,25 +500,14 @@ def compile_effect_to_ir_ops(
     raw_affected_provisions = effect.affected_provisions
     targets_str = _split_metadata_provisions(effect.affected_provisions)
     original_targets_str = list(targets_str)
-    heading_facet_range_targets = _expand_heading_facet_section_range_ref(raw_affected_provisions)
-    if heading_facet_range_targets and targets_str == heading_facet_range_targets:
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id="uk_effect_heading_facet_range_expanded",
-            family="target_shape_normalization",
-            reason_code="explicit_section_heading_facet_range_expanded",
-            reason=(
-                "UK effect metadata names an explicit range of section titles/headings; "
-                "lowering expands that range into one typed heading facet target per section."
-            ),
-            effect=effect,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            detail={
-                "original_target_ref": raw_affected_provisions,
-                "expanded_targets": list(heading_facet_range_targets),
-            },
-        )
+    append_heading_facet_range_expansion_observation(
+        effect=effect,
+        raw_affected_provisions=raw_affected_provisions,
+        targets_str=targets_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
     mixed_heading_source_ref_by_target: dict[str, str] = {}
     trailing_repeal_refs: list[str] = []
     replacement_leaf_override: Optional[str] = None
@@ -558,29 +545,15 @@ def compile_effect_to_ir_ops(
     )
     targets_str = target_prelude.targets_str
     mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
-    if effect_type == "added" and action == "insert" and extracted_el is not None:
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id="uk_effect_added_type_source_structuralized",
-            family="effect_feed_normalization",
-            reason_code="nonstructural_added_type_has_source_structural_insert",
-            reason=(
-                "UK effect feed classified the row as 'added', but the exact "
-                "affecting source provision resolves and contains a source-owned "
-                "insert payload for the affected target; lowering admits the row "
-                "as a structural insert without treating all 'added' rows as "
-                "structural by metadata alone."
-            ),
-            effect=effect,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            detail={
-                "target_refs": list(targets_str),
-                "source_container": _tag(_first_amendment_container(extracted_el))
-                if _first_amendment_container(extracted_el) is not None
-                else _tag(extracted_el),
-            },
-        )
+    append_added_type_source_structuralized_observation(
+        effect=effect,
+        effect_type=effect_type,
+        action=action,
+        targets_str=targets_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
     if not targets_str:
         append_no_targets_rejection(
             lowering_rejections_out,
