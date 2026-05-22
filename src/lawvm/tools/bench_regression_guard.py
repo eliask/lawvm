@@ -251,6 +251,31 @@ def _print_phase_timing_delta_summary(
     print()
 
 
+def _phase_regression_diffs(
+    baseline_phase_timings: dict[str, dict[str, float]],
+    current_phase_timings: dict[str, dict[str, float]],
+    *,
+    threshold_s: float,
+) -> tuple[int, list[tuple[str, str, float, float, float]]]:
+    common = sorted(set(baseline_phase_timings) & set(current_phase_timings))
+    regressions: list[tuple[str, str, float, float, float]] = []
+    comparable_cells = 0
+    for sid in common:
+        phase_names = (
+            set(baseline_phase_timings[sid])
+            | set(current_phase_timings[sid])
+        ) - {"total"}
+        for phase_name in sorted(phase_names):
+            old = baseline_phase_timings[sid].get(phase_name, 0.0)
+            new = current_phase_timings[sid].get(phase_name, 0.0)
+            comparable_cells += 1
+            delta = new - old
+            if delta > threshold_s:
+                regressions.append((sid, phase_name, old, new, delta))
+    regressions.sort(key=lambda item: item[4], reverse=True)
+    return comparable_cells, regressions
+
+
 def run_guard(
     baseline_label: str,
     current_label: str,
@@ -259,6 +284,8 @@ def run_guard(
     jurisdiction: str = "fi",
     duration_threshold_s: float = 1.0,
     max_duration_regressions: int | None = None,
+    phase_threshold_s: float = 1.0,
+    max_phase_regressions: int | None = None,
 ) -> int:
     """Run the regression guard and print a summary. Returns process-style exit code."""
     if threshold < 0.0:
@@ -272,6 +299,12 @@ def run_guard(
         return 1
     if max_duration_regressions is not None and max_duration_regressions < 0:
         print("ERROR: --max-duration-regressions must be nonnegative")
+        return 1
+    if phase_threshold_s < 0.0:
+        print("ERROR: --phase-threshold-s must be nonnegative")
+        return 1
+    if max_phase_regressions is not None and max_phase_regressions < 0:
+        print("ERROR: --max-phase-regressions must be nonnegative")
         return 1
 
     try:
@@ -412,6 +445,7 @@ def run_guard(
     fail = False
     fail_reasons: list[str] = []
     duration_regressions: list[tuple[str, float, float, float]] = []
+    phase_regressions: list[tuple[str, str, float, float, float]] = []
     if max_duration_regressions is not None:
         try:
             baseline_durations = load_durations(baseline_path)
@@ -456,6 +490,39 @@ def run_guard(
         else:
             print(f"Duration regressions > {duration_threshold_s:.3f}s : 0  (none)")
             print()
+    if max_phase_regressions is not None:
+        try:
+            baseline_phase_timings = load_phase_timings(baseline_path)
+            current_phase_timings = load_phase_timings(current_path)
+        except (ValueError, OSError) as exc:
+            print(f"ERROR loading phase timing CSV data: {exc}")
+            return 1
+        phase_common = sorted(set(baseline_phase_timings) & set(current_phase_timings))
+        if not phase_common:
+            print("ERROR: baseline and current have no common phase timing rows")
+            return 1
+        comparable_cells, phase_regressions = _phase_regression_diffs(
+            baseline_phase_timings,
+            current_phase_timings,
+            threshold_s=phase_threshold_s,
+        )
+        if comparable_cells == 0:
+            print("ERROR: baseline and current have no comparable non-total phase timing cells")
+            return 1
+        if phase_regressions:
+            print(
+                f"Phase regressions > {phase_threshold_s:.3f}s : "
+                f"{len(phase_regressions)} row/phase cell(s)  "
+                f"(max allowed: {max_phase_regressions})"
+            )
+            print(f"  {'Statute':<20} {'Phase':<16} {'Baseline':>10} {'Current':>10} {'Delta':>10}")
+            print(f"  {'-' * 20} {'-' * 16} {'-' * 10} {'-' * 10} {'-' * 10}")
+            for sid, phase_name, old, new, delta in phase_regressions:
+                print(f"  {sid:<20} {phase_name:<16} {old:>9.3f}s {new:>9.3f}s {delta:>+9.3f}s")
+            print()
+        else:
+            print(f"Phase regressions > {phase_threshold_s:.3f}s : 0  (none)")
+            print()
 
     agg_hard_limit = 0.005
     if agg_delta < -agg_hard_limit:
@@ -469,6 +536,12 @@ def run_guard(
         fail_reasons.append(
             f"{len(duration_regressions)} statutes slowed beyond duration threshold "
             f"(max allowed: {max_duration_regressions})"
+        )
+    if max_phase_regressions is not None and len(phase_regressions) > max_phase_regressions:
+        fail = True
+        fail_reasons.append(
+            f"{len(phase_regressions)} phase cells slowed beyond phase threshold "
+            f"(max allowed: {max_phase_regressions})"
         )
 
     if fail:
@@ -492,6 +565,8 @@ def main(args: "argparse.Namespace") -> None:
             jurisdiction=jurisdiction,
             duration_threshold_s=args.duration_threshold_s,
             max_duration_regressions=args.max_duration_regressions,
+            phase_threshold_s=args.phase_threshold_s,
+            max_phase_regressions=args.max_phase_regressions,
         )
     )
 
