@@ -1320,10 +1320,61 @@ def test_classify_uk_manual_compile_frontier_marks_feed_definition_fragment() ->
         structural_for_replay=True,
     )
 
+    assert result["status"] == "source_insufficient"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_definition_target_fragment_source_insufficient"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_definition_entry_payload_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "“regulated information” has the meaning given in Article 2(1)(k) "
+            "of the transparency obligations directive;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
     assert result["status"] == "deterministic_frontend_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_appropriate_place_definition_rejection() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="BlockAmendment",
+        extracted_text="“regulated information” has the meaning given in Article 2(1)(k);",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_appropriate_place_definition_entry_insert_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
     )
 
 

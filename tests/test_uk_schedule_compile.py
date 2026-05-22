@@ -15337,6 +15337,78 @@ def test_compile_appropriate_place_definition_entry_records_specific_rejection()
     assert "operational service standard" in rejection["extracted_text_preview"]
 
 
+def test_compile_parent_appropriate_place_definition_entry_records_specific_rejection() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="regulation-6">
+              <Pnumber>6</Pnumber>
+              <P1para>
+                <Text>
+                  In section 313D of the Act, insert each of the following
+                  definitions at the appropriate place—
+                </Text>
+                <BlockAmendment>
+                  <Para>
+                    <Text>
+                      “regulated information” has the meaning given in Article 2(1)(k)
+                      of the transparency obligations directive;
+                    </Text>
+                  </Para>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-parent-appropriate-place-definition-entry",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-09",
+        affected_uri="/id/ukpga/2000/8/section/313D",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 313D",
+        affecting_uri="/id/uksi/2010/1193",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2010",
+        affecting_number="1193",
+        affecting_provisions="reg. 6",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2010-04-09", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+            source_root=source_root,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_appropriate_place_definition_entry_insert_rejected"
+    assert rejection["reason_code"] == "appropriate_place_definition_entry_requires_anchor_claim"
+    assert rejection["placement_family"] == "appropriate_place_definition_entry_requires_anchor_claim"
+    assert rejection["source_parent_id"] == "regulation-6"
+    assert "definitions at the appropriate place" in rejection["source_parent_context_preview"]
+    assert rejection["unlowered_target_candidates"] == ["s. 313D"]
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""

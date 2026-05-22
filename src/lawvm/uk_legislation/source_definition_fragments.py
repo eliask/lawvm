@@ -476,6 +476,48 @@ def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> boo
     )
 
 
+def _source_parent_appropriate_place_definition_entry_insert_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Detect parent-owned appropriate-place definition entry insertions.
+
+    The extracted payload may be only the definition entry, while the parent
+    formula supplies "insert ... at the appropriate place". That is a real
+    source instruction, but not a deterministic placement without an explicit
+    anchor or claim.
+    """
+    inserted = " ".join((extracted_text or "").split()).strip()
+    if not inserted or not _looks_like_definition_entry_payload(inserted):
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_local_instruction_text_for_carried_payload(ancestor)
+        if not _looks_like_appropriate_place_definition_entry_insert_text(
+            f"{candidate_text} {inserted}"
+        ):
+            continue
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (
+                    str(candidate.get("id"))
+                    for candidate in ancestors[ancestor_index + 1 :]
+                    if candidate.get("id")
+                ),
+                "",
+            )
+        return {
+            "source_parent_id": source_parent_id,
+            "source_parent_context_preview": candidate_text[:500],
+        }
+    return None
+
+
 def _fragment_substitution_source_carried_definition_child_at_end_insert(
     *,
     extracted_el: Optional[ET.Element],
