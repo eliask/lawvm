@@ -300,12 +300,19 @@ class UKReplayTargetLookupMixin:
     def _find_recursive_match(
         self, node: UKMutableNode, kind: str, label: str
     ) -> tuple[Optional[IRNode], Optional[IRNode], Optional[int]]:
-        return uk_recursive_kind_match(
+        cache_key = self._recursive_match_cache_key(node, kind=kind, label=label)
+        cached = self._cached_recursive_match(cache_key)
+        if cached is not None:
+            return cached
+        result = uk_recursive_kind_match(
             cast(IRNode, node),
             kind=str(kind),
             label=label,
             match_kind_label=uk_match_kind_label,
         )
+        typed_result = cast(tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]], result)
+        self._store_recursive_match_cache(cache_key, typed_result)
+        return result
 
     def _empty_schedule_root_shape_gap(self, target: LegalAddress) -> bool:
         """Return True when a descendant target lands under an empty schedule root."""

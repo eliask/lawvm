@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+import lawvm.uk_legislation.replay_target_lookup as replay_target_lookup_mod
 import lawvm.uk_legislation.uk_amendment_replay as uk_replay_mod
 from lawvm.core.ir import (
     IRNode,
@@ -26,6 +27,7 @@ from lawvm.uk_legislation.source_adjudication import (
 )
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
@@ -10670,6 +10672,61 @@ def test_executor_target_lookup_uses_exact_eid_before_recursive_scan() -> None:
     assert node.text == "wrapped subsection"
     assert parent is executor.statute.body.children[0].children[0]
     assert idx == 0
+
+
+def test_executor_recursive_match_cache_tracks_structural_mutations(monkeypatch: pytest.MonkeyPatch) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            label=None,
+                            attrs={"eId": "section-1-wrapper"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    text="wrapped subsection",
+                                    attrs={"eId": "section-1-1"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    root = executor.statute.body.children[0]
+
+    node, parent, idx = executor._find_recursive_match(root, "subsection", "1")
+    assert node is not None
+    assert parent is root.children[0]
+    assert idx == 0
+
+    def fail_recursive_match(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("recursive target lookup should use the structure-serial cache")
+
+    monkeypatch.setattr(replay_target_lookup_mod, "uk_recursive_kind_match", fail_recursive_match)
+    cached_node, cached_parent, cached_idx = executor._find_recursive_match(root, "subsection", "1")
+    assert cached_node is node
+    assert cached_parent is parent
+    assert cached_idx == idx
+
+    root.children.append(UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2", text="new subsection"))
+    executor._note_structure_mutation()
+    assert executor._recursive_match_cache == {}
 
 
 def test_executor_eid_search_cache_tracks_structural_mutations() -> None:

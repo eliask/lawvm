@@ -72,6 +72,7 @@ class UKReplayExecutor(
         self._eid_lookup_ambiguous: set[str] = set()
         self._eid_search_cache = {}
         self._target_lookup_cache = {}
+        self._recursive_match_cache = {}
 
     def _log(self, message: str) -> None:
         if self.verbose:
