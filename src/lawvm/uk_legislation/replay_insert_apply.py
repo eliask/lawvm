@@ -567,8 +567,10 @@ class UKReplayInsertApplyMixin:
         eid: str,
         *,
         allow_sequence_match: bool = True,
+        target_seq: tuple[str, ...] | None = None,
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
-        target_seq = _get_id_sequence(eid)
+        if target_seq is None:
+            target_seq = _get_id_sequence(eid)
         for i, child in enumerate(node.children):
             c_eid = child.attrs.get("eId") or child.attrs.get("id")
             if c_eid:
@@ -582,6 +584,7 @@ class UKReplayInsertApplyMixin:
                 child,
                 eid,
                 allow_sequence_match=allow_sequence_match,
+                target_seq=target_seq,
             )
             if res_node:
                 return res_node, res_parent, res_idx
