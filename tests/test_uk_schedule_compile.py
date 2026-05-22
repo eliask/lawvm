@@ -31379,6 +31379,96 @@ def test_executor_skips_payload_invariant_check_without_new_tree_violation(
     assert [child.label for child in executor.statute.body.children] == ["1", "2"]
 
 
+def test_executor_skips_repeal_invariant_scan_without_existing_scoped_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.uk_legislation.replay_invariant_diagnostics as invariant_mod
+
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={"eId": "section-1"}),
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="", attrs={"eId": "section-2"}),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+
+    def fail_collect(*_args: object, **_kwargs: object) -> list[str]:
+        raise AssertionError("clean removal-only replay cannot create duplicate/order invariants")
+
+    monkeypatch.setattr(
+        invariant_mod,
+        "_collect_duplicate_order_invariants",
+        fail_collect,
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_clean_repeal_no_invariant_scan",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "1"),)),
+            source=OperationSource(statute_id="uk_test", title="Test Source"),
+        )
+    )
+
+    assert [child.label for child in executor.statute.body.children] == ["2"]
+    assert executor.adjudications_out == []
+
+
+def test_executor_rescans_repeal_when_existing_scoped_violation_may_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.uk_legislation.replay_invariant_diagnostics as invariant_mod
+
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={"eId": "section-1a"}),
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={"eId": "section-1b"}),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+    calls = 0
+
+    def collect_after_repeal(*_args: object, **_kwargs: object) -> list[str]:
+        nonlocal calls
+        calls += 1
+        return []
+
+    monkeypatch.setattr(
+        invariant_mod,
+        "_collect_duplicate_order_invariants",
+        collect_after_repeal,
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_dirty_repeal_rescans_invariants",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "1"),)),
+            source=OperationSource(statute_id="uk_test", title="Test Source"),
+        )
+    )
+
+    assert calls == 1
+    assert [child.label for child in executor.statute.body.children] == ["1"]
+    assert executor.adjudications_out == []
+
+
 def test_executor_sequence_match_does_not_alias_section_1_1_to_section_11() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/22",

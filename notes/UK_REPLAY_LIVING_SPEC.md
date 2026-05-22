@@ -1109,8 +1109,15 @@ Current tooling-consistency invariant:
     The witnesses remained score-equivalent: `1988/1` measured 51.82s wall
     time with `compile_ops=26.76s` and `replay=20.76s`, and `1990/42` measured
     6.30s wall time with `compile_ops=3.94s` and `replay=0.38s`. A local
-    improvement in one family should not be treated as global UK replay
-    progress without saved-run guard evidence.
+    duplicate/order invariant optimization skips post-repeal rescans only when
+    the scoped tree had no previously seen invariant violation, because pure
+    deletion cannot create duplicate labels or child-order inversions. If a
+    scoped violation was already seen, repeal still rescans so stale findings
+    can be cleared. The witnesses remained score-equivalent: `1988/1` measured
+    51.77s wall time with `compile_ops=26.80s` and `replay=20.66s`, and
+    `1990/42` measured 6.13s wall time with `compile_ops=3.82s` and
+    `replay=0.35s`. A local improvement in one family should not be treated as
+    global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence

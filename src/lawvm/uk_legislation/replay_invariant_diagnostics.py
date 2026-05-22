@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from lawvm.core import tree_ops
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -251,21 +252,29 @@ class UKReplayInvariantDiagnosticsMixin:
                 violations.add(f"{root_name}:{violation}")
         return violations
 
+    def _invariant_removal_only_op(self, op: LegalOperation) -> bool:
+        return op.action is StructuralAction.REPEAL
+
     def _record_invariant_violations(self, op: LegalOperation) -> None:
         if self._structure_mutation_serial == self._last_invariant_structure_serial:
             return
         target_roots = self._invariant_target_roots_for_op(op)
-        current_violations: set[str] = set()
         scoped_prefixes: set[str] = set()
-        for root_name, node, initial_path, scope_prefix in target_roots:
+        for _root_name, _node, _initial_path, scope_prefix in target_roots:
             scoped_prefixes.add(scope_prefix)
-            for violation in _collect_duplicate_order_invariants(node, initial_path=initial_path):
-                current_violations.add(f"{root_name}:{violation}")
         scoped_seen = {
             violation
             for violation in self._seen_invariant_violations
             if any(violation.startswith(scope_prefix) for scope_prefix in scoped_prefixes)
         }
+        if self._invariant_removal_only_op(op) and not scoped_seen:
+            self._last_invariant_structure_serial = self._structure_mutation_serial
+            return
+
+        current_violations: set[str] = set()
+        for root_name, node, initial_path, _scope_prefix in target_roots:
+            for violation in _collect_duplicate_order_invariants(node, initial_path=initial_path):
+                current_violations.add(f"{root_name}:{violation}")
         new_violations = sorted(current_violations - scoped_seen)
         if not new_violations:
             self._seen_invariant_violations.difference_update(scoped_seen)
