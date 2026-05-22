@@ -114,6 +114,16 @@ class UKReplayTargetLookupMixin:
             cached = self._cached_target_lookup(cache_key)
             if cached is not None:
                 return cached
+            target_eid = self._derive_target_eid(target)
+            if target_eid:
+                node, parent, idx = self._find_node_and_parent_statute(
+                    target_eid,
+                    allow_sequence_match=False,
+                )
+                if node is not None and self._eid_candidate_matches_target_leaf(node, target):
+                    result = (node, parent, idx)
+                    self._store_target_lookup_cache(cache_key, result)
+                    return result
 
         def _find(address: LegalAddress) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
             path = list(address.path)
