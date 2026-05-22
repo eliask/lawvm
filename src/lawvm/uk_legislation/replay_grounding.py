@@ -147,6 +147,7 @@ class UKReplayGroundingMixin:
         text_candidates_by_len: dict[int, list[tuple[int, str, str]]] = {}
         for order, (candidate_id, oracle_text) in enumerate(self.text_map.items()):
             text_candidates_by_len.setdefault(len(oracle_text), []).append((order, candidate_id, oracle_text))
+        text_candidate_window_cache: dict[int, list[tuple[str, str]]] = {}
 
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
             nonlocal seen_oracle_ids
@@ -272,10 +273,13 @@ class UKReplayGroundingMixin:
                 if len(node_norm) > 30:
                     best_score = 0
                     best_id = None
-                    for oid, otext in _grounding_length_window_text_candidates(
-                        text_candidates_by_len,
-                        len(node_norm),
-                    ):
+                    node_norm_len = len(node_norm)
+                    if node_norm_len not in text_candidate_window_cache:
+                        text_candidate_window_cache[node_norm_len] = _grounding_length_window_text_candidates(
+                            text_candidates_by_len,
+                            node_norm_len,
+                        )
+                    for oid, otext in text_candidate_window_cache[node_norm_len]:
                         if oid in seen_oracle_ids:
                             continue
                         score = Levenshtein.ratio(node_norm, otext)
