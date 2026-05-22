@@ -1015,6 +1015,14 @@ Current tooling-consistency invariant:
     explicitly say that the saved run has no measured phase timings. `uk-bench
     --compare` should report aggregate phase-time drift when both saved runs
     contain timings for common statutes.
+  - UK replay performance work should be phase-evidence-led. A 2026-05-23
+    `ukpga/1988/1` replay witness measured roughly 62s wall time with
+    `compile_ops` and `replay` each around 29s. Parent-process `cProfile` with
+    multiprocessing mostly measured process-pool waiting; use `--parallel 1`
+    or per-worker profiling for useful call stacks. A speculative unique
+    EID-sequence lookup index did not materially improve this witness and should
+    not be retried without hit-rate evidence showing sequence-alias lookup misses
+    dominate a different corpus slice.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
