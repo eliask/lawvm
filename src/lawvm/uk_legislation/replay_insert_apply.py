@@ -566,6 +566,19 @@ class UKReplayInsertApplyMixin:
         # Fallback to the first best guess
         return next(_get_candidates(), "")
 
+    def _eid_top_scope_lookup(
+        self,
+        eid: str,
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+        parts = str(eid or "").split("-")
+        if len(parts) < 3:
+            return None, None, None
+        prefix = parts[0]
+        if prefix not in {"annex", "article", "chapter", "division", "part", "schedule", "section"}:
+            return None, None, None
+        top_eid = f"{prefix}-{parts[1]}"
+        return self._cached_exact_eid_lookup(top_eid)
+
     def _find_node_and_parent_statute(
         self,
         eid: str,
@@ -581,6 +594,21 @@ class UKReplayInsertApplyMixin:
         )
         if cached_search is not None:
             return cached_search
+        scope_node, _scope_parent, _scope_idx = self._eid_top_scope_lookup(eid)
+        if scope_node is not None:
+            node, parent, idx = self._find_node_and_parent(
+                scope_node,
+                eid,
+                allow_sequence_match=allow_sequence_match,
+            )
+            if node:
+                result = (node, parent, idx)
+                self._store_eid_search_cache(
+                    eid,
+                    allow_sequence_match=allow_sequence_match,
+                    result=result,
+                )
+                return result
         node, parent, idx = self._find_node_and_parent(
             self.statute.body,
             eid,
