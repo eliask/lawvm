@@ -1030,6 +1030,14 @@ Current tooling-consistency invariant:
     witness measured 3.42s wall time with `compile_ops=0.43s`. Future perf work
     should treat anchored regexes with leading `\s*` over large XML payload text
     as suspect until profiled.
+  - Existing 2026-05-23 profiles show at least two separate remaining slow
+    families. `ukpga/1988/1` is replay-side heavy: invariant scans, target
+    lookup, insert/repeal apply, and recursive kind/label matching dominate.
+    `ukpga/1990/42` is compile-side heavy: repeated affecting-source context
+    selection and provision extraction dominate before replay. These should be
+    fixed as separate indexing/cache families with corpus witnesses; a local
+    improvement in one family should not be treated as global UK replay progress
+    without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
