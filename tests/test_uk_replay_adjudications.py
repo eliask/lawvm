@@ -2683,6 +2683,39 @@ def test_executor_classifies_missing_schedule_range_gap_separately_from_repeal()
     assert [schedule.label for schedule in statute.supplements] == ["1", "3"]
 
 
+def test_executor_classifies_missing_schedule_range_gap_for_text_patch() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/3",
+        title="Schedule Range Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Schedule 1."),
+            IRNode(kind=IRNodeKind.SCHEDULE, label="3", text="Schedule 3."),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_missing_schedule_range_text_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "2"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="new",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_missing_schedule_range_gap"
+    assert adjudications[0].detail["target"] == "schedule:2"
+
+
 def test_executor_classifies_missing_schedule_branch_gap_separately_from_repeal() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
@@ -2712,6 +2745,31 @@ def test_executor_classifies_missing_schedule_branch_gap_separately_from_repeal(
     assert adjudications[0].kind == "uk_replay_missing_schedule_branch_gap"
     assert adjudications[0].detail["target"] == "schedule:2/paragraph:1"
     assert [schedule.label for schedule in statute.supplements] == ["1"]
+
+
+def test_executor_classifies_missing_heading_carrier_for_text_patch() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_missing_heading_carrier_text_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "13"),), special=FacetKind.HEADING),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Uniform", occurrence=0),
+                replacement="Uniform and publication of images",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_heading_facet_target_gap"
+    assert adjudications[0].detail["target"] == "section:13/heading"
+    assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "source_shape"
 
 
 def test_executor_records_unsupported_action() -> None:
