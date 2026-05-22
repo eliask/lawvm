@@ -5760,6 +5760,14 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="max_phase_regressions",
         help="enable phase timing regression guard with this max allowed slowed row/phase cell count",
     )
+    brg_p.add_argument(
+        "--phase",
+        action="append",
+        default=[],
+        dest="phase_names",
+        metavar="NAME",
+        help="phase name to guard when phase regression guard is enabled; repeatable, default guards all phases",
+    )
 
     # --- sync-finlex ---
     sync_p = sub.add_parser(
