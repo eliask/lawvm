@@ -1086,8 +1086,12 @@ Current tooling-consistency invariant:
     normalizer for every child visited by duplicate/order diagnostics; this is
     score-equivalent and measured 53.20s wall time with `replay=21.55s` on the
     `1988/1` witness, and 6.37s wall time with `replay=0.38s` on the `1990/42`
-    witness. A local improvement in one family should not be treated as global
-    UK replay progress without saved-run guard evidence.
+    witness. Recursive kind/label target matching now skips recursion into leaf
+    children after checking the leaf itself; this is score-equivalent and
+    measured 52.52s wall time with `replay=20.84s` on `1988/1`, and 6.39s wall
+    time with `replay=0.37s` on `1990/42`. A local improvement in one family
+    should not be treated as global UK replay progress without saved-run guard
+    evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence

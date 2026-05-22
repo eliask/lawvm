@@ -189,6 +189,8 @@ def uk_recursive_kind_match(
     for i, child in enumerate(node.children):
         if match_kind_label(child, kind, label):
             return child, node, i
+        if not child.children:
+            continue
         res_n, res_p, res_i = uk_recursive_kind_match(
             child,
             kind=kind,
