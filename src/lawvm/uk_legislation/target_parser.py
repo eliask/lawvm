@@ -343,7 +343,7 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
             expanded_parts.append(p)
             continue
         p_for_space_list = re.sub(r"\s+and\s+cross[-\s]?headings?\b.*$", "", p, flags=re.I).strip()
-        m = re.match(r"^(s\.|ss\.|para\.|art\.)\s+([0-9A-Z]+)(\s+[0-9A-Z]+)+$", p_for_space_list, re.I)
+        m = re.match(r"^(s\.|ss\.|para\.|art\.|ch\.)\s+([0-9A-Z]+)(\s+[0-9A-Z]+)+$", p_for_space_list, re.I)
         if m:
             kind_abbr = m.group(1)
             nums = re.findall(r"[0-9A-Z]+", p_for_space_list[len(kind_abbr) :], re.I)
@@ -354,7 +354,7 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 expanded_parts.append(f"{kind_abbr} {n}")
             continue
         m = re.match(
-            r"^(.*?\b(?:para\.|paragraph|s\.|ss\.|section|art\.|article)\s+)([0-9A-Z]+)(\s+[0-9A-Z]+)+$",
+            r"^(.*?\b(?:para\.|paragraph|s\.|ss\.|section|art\.|article|ch\.|chapter)\s+)([0-9A-Z]+)(\s+[0-9A-Z]+)+$",
             p_for_space_list,
             re.I,
         )
