@@ -8154,6 +8154,75 @@ def test_compile_repeal_table_structural_provision_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_structural_provision_header_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Provision</th>
+                  <th>Extent of repeal or revocation</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Terrorist Offenders (Restriction of Early Release) Act 2020 (c. 3)</td>
+                  <td>Section 7(1).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_provision_header",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-12",
+        affected_uri="/id/ukpga/2020/3/section/7/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="3",
+        affected_provisions="s. 7(1)",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 28",
+        affecting_title="Sentencing Act 2020",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+        affected_title="Terrorist Offenders (Restriction of Early Release) Act 2020",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "7"), ("subsection", "1"))
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["target"] == "section:7/subsection:1"
+        and record["extent_cell"] == "Section 7(1)."
+        and record["enactment_match_basis"] == "explicit_short_citation"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
     source_root = ET.fromstring(
         """
