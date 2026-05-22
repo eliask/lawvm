@@ -2579,6 +2579,12 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk] print measured per-row phase timings for replay performance triage",
     )
     bench_p.add_argument(
+        "--no-text-scores",
+        action="store_true",
+        dest="no_text_scores",
+        help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+    )
+    bench_p.add_argument(
         "--min-year",
         type=int,
         metavar="YEAR",

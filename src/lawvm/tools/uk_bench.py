@@ -31,6 +31,7 @@ import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, cast
 
@@ -71,6 +72,7 @@ _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _BENCH_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
 _HISTORY_CSV = _REPO_ROOT / "data" / "uk_benchmark_history.csv"
 _CORPUS_CSV = _REPO_ROOT / "data" / "uk" / "bench_corpus.csv"
+_TEXT_RATIO_CACHE_MAX_CHARS = 4096
 _CURATE_PRESET_SIZES = {
     "canary": 40,
     "tight": 200,
@@ -144,6 +146,7 @@ _WORKER_ALLOW_ORACLE_ALIGNMENT: bool = True
 _WORKER_APPLICABILITY_MODE: str = "effective_date_plus_feed_applied"
 _WORKER_AUTHORITY_MODE: str = "current_mixed"
 _WORKER_ALLOW_METADATA_ONLY_EFFECTS: bool = True
+_WORKER_SCORE_TEXT: bool = True
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 
@@ -515,6 +518,19 @@ def _extract_eid_texts(ir: "IRStatute", eids: Set[str]) -> Dict[str, str]:
     return texts
 
 
+@lru_cache(maxsize=65536)
+def _cached_short_text_ratio(source_text: str, oracle_text: str) -> float:
+    return Levenshtein.ratio(source_text, oracle_text)
+
+
+def _bench_text_ratio(source_text: str, oracle_text: str) -> float:
+    if source_text == oracle_text:
+        return 1.0
+    if len(source_text) + len(oracle_text) <= _TEXT_RATIO_CACHE_MAX_CHARS:
+        return _cached_short_text_ratio(source_text, oracle_text)
+    return Levenshtein.ratio(source_text, oracle_text)
+
+
 def _text_similarity_score(
     source_texts: Dict[str, str],
     oracle_texts: Dict[str, str],
@@ -532,7 +548,7 @@ def _text_similarity_score(
         oracle_text = oracle_texts[eid]
         if not source_text or not oracle_text:
             continue
-        total += 1.0 if source_text == oracle_text else Levenshtein.ratio(source_text, oracle_text)
+        total += _bench_text_ratio(source_text, oracle_text)
         compared += 1
     if not compared:
         return -1.0, 0
@@ -854,6 +870,7 @@ def _score_statute(
     applicability_mode: str = "effective_date_plus_feed_applied",
     authority_mode: str = "current_mixed",
     allow_metadata_only_effects: bool = True,
+    score_text: bool = True,
 ) -> _BenchResult:
     sid = entry["statute_id"]
     act_type = entry["type"]
@@ -1103,8 +1120,12 @@ def _score_statute(
 
         # ── Text similarity: enacted vs oracle ─────────────────────────
         oracle_text_map: Dict[str, str] = oracle_eid_data.get("text_map", {})
-        enacted_texts = _extract_eid_texts(enacted_ir, common)
-        text_score, n_text_compared = _text_similarity_score(enacted_texts, oracle_text_map)
+        if score_text:
+            enacted_texts = _extract_eid_texts(enacted_ir, common)
+            text_score, n_text_compared = _text_similarity_score(enacted_texts, oracle_text_map)
+        else:
+            text_score = -1.0
+            n_text_compared = 0
         _mark_phase("text_score_enacted")
 
         # ── Optional replay ────────────────────────────────────────────
@@ -1387,8 +1408,9 @@ def _score_statute(
                         right_eids=oracle_compare_eids,
                     )
                 )
-                replayed_texts = _extract_eid_texts(replayed_ir, replayed_eids & oracle_eids)
-                replay_text_score, _ = _text_similarity_score(replayed_texts, oracle_text_map)
+                if score_text:
+                    replayed_texts = _extract_eid_texts(replayed_ir, replayed_eids & oracle_eids)
+                    replay_text_score, _ = _text_similarity_score(replayed_texts, oracle_text_map)
                 _mark_phase("text_score_replay")
             except Exception as replay_exc:
                 # Replay failure is non-fatal — record it but keep enacted score.
@@ -1789,6 +1811,7 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
             applicability_mode=_WORKER_APPLICABILITY_MODE,
             authority_mode=_WORKER_AUTHORITY_MODE,
             allow_metadata_only_effects=_WORKER_ALLOW_METADATA_ONLY_EFFECTS,
+            score_text=_WORKER_SCORE_TEXT,
         )
     except Exception as exc:
         result = _bench_exception_result(
@@ -1818,6 +1841,7 @@ def _run_bench(
     applicability_mode: str = "effective_date_plus_feed_applied",
     authority_mode: str = "current_mixed",
     allow_metadata_only_effects: bool = True,
+    score_text: bool = True,
 ) -> list[_BenchResult]:
     total = len(corpus)
     t0 = time.time()
@@ -1828,7 +1852,7 @@ def _run_bench(
         # Communicate config to worker processes via module globals.
         global _WORKER_DB_PATH, _WORKER_DO_REPLAY, _WORKER_REPO_ROOT, _WORKER_DO_COMMENCEMENT
         global _WORKER_ALLOW_METADATA_BACKFILL, _WORKER_ALLOW_ORACLE_ALIGNMENT
-        global _WORKER_ALLOW_METADATA_ONLY_EFFECTS
+        global _WORKER_ALLOW_METADATA_ONLY_EFFECTS, _WORKER_SCORE_TEXT
         global _WORKER_APPLICABILITY_MODE, _WORKER_AUTHORITY_MODE
         _WORKER_DB_PATH = str(archive._db_path)
         _WORKER_DO_REPLAY = do_replay
@@ -1839,6 +1863,7 @@ def _run_bench(
         _WORKER_APPLICABILITY_MODE = applicability_mode
         _WORKER_AUTHORITY_MODE = authority_mode
         _WORKER_ALLOW_METADATA_ONLY_EFFECTS = allow_metadata_only_effects
+        _WORKER_SCORE_TEXT = score_text
 
         results: list[Optional[_BenchResult]] = [None] * total
         with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -1911,6 +1936,7 @@ def _run_bench(
                 applicability_mode=applicability_mode,
                 authority_mode=authority_mode,
                 allow_metadata_only_effects=allow_metadata_only_effects,
+                score_text=score_text,
             )
         except Exception as exc:
             r = _bench_exception_result(
@@ -5506,6 +5532,9 @@ def main(args) -> None:  # noqa: ANN001
     do_commencement = not getattr(args, "no_commencement", False)
     if do_commencement:
         print("Commencement mode: filtering EID scores to commenced provisions (use --no-commencement to disable)")
+    score_text = not getattr(args, "no_text_scores", False)
+    if not score_text:
+        print("Text similarity scoring disabled (--no-text-scores); EID scores and replay diagnostics still run.")
 
     # Parallelism: None means --parallel was not passed → default to cpu_count.
     # Pass --parallel 1 explicitly to force sequential (useful for debugging).
@@ -5523,6 +5552,7 @@ def main(args) -> None:  # noqa: ANN001
         applicability_mode=replay_regime.applicability_mode,
         authority_mode=replay_regime.authority_mode,
         allow_metadata_only_effects=replay_regime.allow_metadata_only_effects,
+        score_text=score_text,
     )
     archive.close()
 
