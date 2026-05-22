@@ -85,6 +85,11 @@ tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `bench-regression-guard -j uk` with optional `duration_s` regression limits,
 and replay diagnostics.
 
+Regression guards must fail on structurally incomparable inputs. In particular,
+a saved-run comparison with zero common scored rows is not a successful
+zero-regression run, and an enabled duration guard with zero common `duration_s`
+rows is invalid timing evidence.
+
 ## 4. CLI Shape
 
 Prefer jurisdiction-parameterized common commands when the artifact kind is
