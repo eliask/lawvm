@@ -763,6 +763,91 @@ def test_summarize_uk_effect_preserves_lowering_rejections(monkeypatch) -> None:
     )
 
 
+def test_summarize_uk_effect_reuses_affecting_source_context_cache(monkeypatch) -> None:
+    from lawvm.uk_legislation.source_context import UKAffectingSourceContext
+
+    effect = UKEffectRecord(
+        effect_id="eff-cache-1",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/1/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="/id/ukpga/2025/1/section/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+    build_calls: list[str] = []
+    enacted_cache_ids: list[int] = []
+
+    def fake_build_affecting_source_context(**kwargs):  # noqa: ANN001
+        build_calls.append(kwargs["locator"])
+        return (
+            UKAffectingSourceContext(
+                xml_bytes=kwargs["xml_bytes"],
+                root=None,
+                parent_map=None,
+                exact_id_map={},
+                sequence_map={},
+                source_status="available",
+                source_size=len(kwargs["xml_bytes"] or b""),
+                locator=kwargs["locator"],
+                authority_layer=kwargs["authority_layer"],
+            ),
+            None,
+        )
+
+    def fake_select_enacted_source_for_current_shell(**kwargs):  # noqa: ANN001
+        enacted_cache = kwargs["enacted_context_cache"]
+        enacted_cache_ids.append(id(enacted_cache))
+        enacted_cache.setdefault("sentinel", kwargs["current_context"])
+        return kwargs["current_context"], kwargs["current_el"], ()
+
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
+        lambda _affecting_act_id, _archive: b"<Legislation>" + (b"x" * 128) + b"</Legislation>",
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._build_affecting_source_context",
+        fake_build_affecting_source_context,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._select_enacted_source_for_current_shell",
+        fake_select_enacted_source_for_current_shell,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.compile_effect_to_ir_ops",
+        lambda *_args, **_kwargs: [],
+    )
+
+    summarize_uk_effect(effect, archive=object(), context=context)
+    summarize_uk_effect(effect, archive=object(), context=context)
+
+    assert build_calls == ["https://www.legislation.gov.uk/ukpga/2025/1/data.xml"]
+    assert len(set(enacted_cache_ids)) == 1
+    assert "sentinel" in context.affecting_enacted_context_cache
+
+
 def test_summarize_uk_effect_uses_observed_source_extraction(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="eff-observed-extract",

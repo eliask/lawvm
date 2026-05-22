@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
@@ -55,6 +55,11 @@ class _EffectSummaryContext:
     enacted_source_parse_failed: bool = False
     oracle_source_parse_failed: bool = False
     source_parse_observations: tuple[dict[str, Any], ...] = ()
+    affecting_source_context_cache: dict[
+        tuple[str, str],
+        tuple[Any, BaseException | None],
+    ] = field(default_factory=dict)
+    affecting_enacted_context_cache: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -280,21 +285,32 @@ def summarize_uk_effect(
         applicability_mode=applicability_mode,
     )
     affecting_xml = None
+    affecting_act_id = str(effect.affecting_act_id or "")
     if source_required_for_replay:
-        affecting_xml = context.affecting_xml_cache.get(effect.affecting_act_id)
-        if effect.affecting_act_id not in context.affecting_xml_cache:
-            affecting_xml = get_affecting_act_xml_from_archive(effect.affecting_act_id, archive)
-            context.affecting_xml_cache[effect.affecting_act_id] = affecting_xml
+        affecting_xml = context.affecting_xml_cache.get(affecting_act_id)
+        if affecting_act_id not in context.affecting_xml_cache:
+            affecting_xml = get_affecting_act_xml_from_archive(affecting_act_id, archive)
+            context.affecting_xml_cache[affecting_act_id] = affecting_xml
     current_locator = (
-        f"https://www.legislation.gov.uk/{effect.affecting_act_id}/data.xml"
-        if effect.affecting_act_id
+        f"https://www.legislation.gov.uk/{affecting_act_id}/data.xml"
+        if affecting_act_id
         else ""
     )
-    source_context, parse_error = _build_affecting_source_context(
-        xml_bytes=affecting_xml,
-        locator=current_locator,
-        authority_layer="AFFECTING_ACT_TEXT" if source_required_for_replay else "EFFECT_FEED_INDEX",
-    )
+    authority_layer = "AFFECTING_ACT_TEXT" if source_required_for_replay else "EFFECT_FEED_INDEX"
+    source_context_cache_key = (affecting_act_id, authority_layer)
+    cached_source_context = context.affecting_source_context_cache.get(source_context_cache_key)
+    if cached_source_context is None:
+        source_context, parse_error = _build_affecting_source_context(
+            xml_bytes=affecting_xml,
+            locator=current_locator,
+            authority_layer=authority_layer,
+        )
+        context.affecting_source_context_cache[source_context_cache_key] = (
+            source_context,
+            parse_error,
+        )
+    else:
+        source_context, parse_error = cached_source_context
     affecting_source_status = source_context.source_status
     affecting_source_size = source_context.source_size
     affecting_source_sha256 = (
@@ -326,7 +342,7 @@ def summarize_uk_effect(
         archive=archive,
         current_context=source_context,
         current_el=extracted,
-        enacted_context_cache={},
+        enacted_context_cache=context.affecting_enacted_context_cache,
     )
     source_acquisition_rejections = (
         *source_acquisition_rejections,
