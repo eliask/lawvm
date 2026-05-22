@@ -184,7 +184,10 @@ def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
         if extent_idx is None and "extent of repeal" in text:
             extent_idx = idx
         if enactment_idx is None and (
-            "enactment" in text or "short title and chapter" in text or "title and chapter" in text
+            "enactment" in text
+            or "provision" in text
+            or "short title and chapter" in text
+            or "title and chapter" in text
         ):
             enactment_idx = idx
     if enactment_idx is None or extent_idx is None or enactment_idx == extent_idx:

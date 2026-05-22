@@ -2150,8 +2150,9 @@ Current block-substitution context invariant:
   `uk_manual_frontier_appropriate_place_definition_entry_candidate` rows until
   a validated claim supplies exact placement.
 - repeal schedules, table parts, or grouped repeal source fragments that expose
-  an `Enactment / Extent of repeal` surface but do not yet identify the specific
-  target row/cell for the affected provision are classified as
+  an `Enactment / Extent of repeal`, `Provision / Extent of repeal`, or
+  `Provision / Extent of repeal or revocation` surface but do not yet identify
+  the specific target row/cell for the affected provision are classified as
   `repeal_schedule_table_source_unsupported` and
   `uk_manual_frontier_repeal_table_candidate`. This keeps the table witness
   visible without smuggling the whole repeal schedule into a single target.
@@ -2177,10 +2178,10 @@ Current block-substitution context invariant:
   unique affected-Act row and an extent clause that explicitly names the exact
   affected part, chapter, section, schedule, paragraph, subsection, or
   subparagraph. It then lowers only the feed-named target to a typed `REPEAL`.
-  The enactment column normally corroborates the affected Act by short citation
-  such as `(asp 3)` or `(c. 9)`. If the source row omits that citation, the
-  compiler may instead use an exact normalized `AffectedTitle`+year match from
-  the effect feed; the lowering observation records
+  The enactment/provision column normally corroborates the affected Act by short
+  citation such as `(asp 3)` or `(c. 9)`. If the source row omits that citation,
+  the compiler may instead use an exact normalized `AffectedTitle`+year match
+  from the effect feed; the lowering observation records
   `enactment_match_basis=exact_affected_title_year` so this source-lane
   recovery is visible.
   Clauses mentioning
