@@ -28,11 +28,16 @@ class UKReplayStateMixin:
         tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
         tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
     ]
+    _recursive_match_cache: dict[
+        tuple[int, str, str],
+        tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+    ]
 
     def _note_structure_mutation(self) -> None:
         self._structure_mutation_serial += 1
         self._eid_search_cache.clear()
         self._target_lookup_cache.clear()
+        self._recursive_match_cache.clear()
 
     def _node_eid_values(self, node: UKMutableNode) -> tuple[str, ...]:
         values: list[str] = []
@@ -174,6 +179,59 @@ class UKReplayStateMixin:
     ) -> None:
         node, parent, idx = result
         self._target_lookup_cache[key] = (
+            self._structure_mutation_serial,
+            node,
+            parent,
+            idx,
+        )
+
+    def _recursive_match_cache_key(
+        self,
+        node: UKMutableNode,
+        *,
+        kind: str,
+        label: str,
+    ) -> tuple[int, str, str]:
+        return (id(node), str(kind), str(label))
+
+    def _cached_recursive_match(
+        self,
+        key: tuple[int, str, str],
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
+        cached = self._recursive_match_cache.get(key)
+        if cached is None:
+            return None
+        serial, node, parent, idx = cached
+        if serial != self._structure_mutation_serial:
+            self._recursive_match_cache.pop(key, None)
+            return None
+        if node is None:
+            return None, None, None
+        if parent is None:
+            self._recursive_match_cache.pop(key, None)
+            return None
+        if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
+            return node, parent, idx
+        try:
+            current_idx = parent.children.index(node)
+        except ValueError:
+            self._recursive_match_cache.pop(key, None)
+            return None
+        self._recursive_match_cache[key] = (
+            self._structure_mutation_serial,
+            node,
+            parent,
+            current_idx,
+        )
+        return node, parent, current_idx
+
+    def _store_recursive_match_cache(
+        self,
+        key: tuple[int, str, str],
+        result: tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+    ) -> None:
+        node, parent, idx = result
+        self._recursive_match_cache[key] = (
             self._structure_mutation_serial,
             node,
             parent,
