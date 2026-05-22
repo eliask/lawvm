@@ -95,6 +95,15 @@ Current UK-specific invariants:
     repealed by `ukpga/2021/11 s. 22(3)(a)(i)`, where the coarse derived EID
     `section-265-1-b` must not delete paragraph `(b)` when the source targeted
     subparagraph `(i)`.
+- strict top-scoped EID searches may not escape their root after a miss
+  - if an EID such as `section-1-p1` has a live top root `section-1`, replay
+    may search inside that root with sequence matching, but a miss must remain
+    a miss
+  - replay must not then scan the whole body and accept a suffix/sequence match
+    like `chapter-3-section-1-p1`; that would be target hijacking across an
+    explicit source identity boundary
+  - if the top root itself is absent, separate source-pathology or recovery
+    evidence is required before rebinding to another branch
 - broad schedule/part text patches require a replay-visible text-bearing shape
   - if a broad schedule or schedule part target has no table nodes and no
     provision descendants carrying the preimage, replay should classify the row
