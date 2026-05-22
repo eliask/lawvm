@@ -2204,6 +2204,7 @@ def _print_phase_timing_rows(
 ) -> None:
     timed = [result for result in results if result.phase_timings]
     if not timed:
+        print("\nNo measured phase timings available in this run.")
         return
     slowest = sorted(
         timed,

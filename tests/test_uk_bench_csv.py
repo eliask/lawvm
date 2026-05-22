@@ -216,6 +216,24 @@ def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
     assert "ukpga/2000/1" not in output
 
 
+def test_uk_bench_phase_timing_report_explains_missing_timings(capsys) -> None:
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=10,
+        score=1.0,
+        status="OK",
+    )
+
+    uk_bench._print_phase_timing_rows([result], limit=1)
+
+    assert "No measured phase timings available in this run." in capsys.readouterr().out
+
+
 def test_uk_bench_text_similarity_skips_levenshtein_for_exact_matches(monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
 

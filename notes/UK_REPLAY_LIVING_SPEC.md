@@ -977,9 +977,10 @@ Current tooling-consistency invariant:
     columns (`phase_total_s` and `phase_<name>_s`). These timings are operational
     evidence, not legal evidence: they explain benchmark/runtime regressions
     without changing score semantics. `uk-bench --show <label> --phase-timings`
-    must read saved timing columns back and print the slowest phase rows, and
-    `uk-bench --compare` should report aggregate phase-time drift when both
-    saved runs contain timings for common statutes.
+    must read saved timing columns back and print the slowest phase rows, or
+    explicitly say that the saved run has no measured phase timings. `uk-bench
+    --compare` should report aggregate phase-time drift when both saved runs
+    contain timings for common statutes.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
