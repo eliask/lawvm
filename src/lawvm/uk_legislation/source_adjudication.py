@@ -28,6 +28,7 @@ from typing import Any, Iterable
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.replay_adjudication import SourceAdjudication
+from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family_for_effect_type
 
 
 UK_CORE_COMPARISON_CLASSES = frozenset({"commensurable", "unapplied_oracle_expansion"})
@@ -1485,6 +1486,21 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         compiled_op_count > 0
         and not blocking_rules
         and "uk_effect_added_type_source_structuralized" in all_rules
+    ):
+        return {
+            "status": "deterministic_frontend_supported",
+            "rule_id": "uk_manual_frontier_deterministic_supported",
+            "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
+        }
+
+    nonstructural_replay_family = uk_nonstructural_replay_candidate_family_for_effect_type(
+        effect_type_norm
+    )
+    if (
+        compiled_op_count > 0
+        and replay_applicable
+        and not blocking_rules
+        and nonstructural_replay_family
     ):
         return {
             "status": "deterministic_frontend_supported",

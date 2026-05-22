@@ -1894,6 +1894,22 @@ def test_classify_uk_manual_compile_frontier_accepts_source_structuralized_added
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
+def test_classify_uk_manual_compile_frontier_accepts_ceases_replay_repeal() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="ceases to have effect",
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text="Paragraph 6(1)(b) ceases to have effect.",
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+
+    assert result["status"] == "deterministic_frontend_supported"
+    assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
+
+
 def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="word substituted",

@@ -53,15 +53,9 @@ def _is_uk_repealed_by_effect_type(effect_type: str) -> bool:
     return str(effect_type or "").strip().lower().startswith("repealed by ")
 
 
-def uk_nonstructural_replay_candidate_family(
-    effect: "UKEffectRecord",
-    *,
-    applicability_mode: str = "effective_date_plus_feed_applied",
-) -> str:
-    """Return the nonstructural effect row family that may still replay."""
-    if not effect.is_applicable_for_replay(applicability_mode=applicability_mode):
-        return ""
-    effect_type = (effect.effect_type or "").strip().lower()
+def uk_nonstructural_replay_candidate_family_for_effect_type(effect_type: str) -> str:
+    """Return the nonstructural replay family implied by an effects-feed type."""
+    effect_type = " ".join(str(effect_type or "").strip().lower().split())
     if effect_type.startswith("substituted for"):
         if effect_type in {"substituted for word", "substituted for words"}:
             return ""
@@ -73,6 +67,17 @@ def uk_nonstructural_replay_candidate_family(
     if effect_type == "added":
         return "added_source_structural_insert"
     return ""
+
+
+def uk_nonstructural_replay_candidate_family(
+    effect: "UKEffectRecord",
+    *,
+    applicability_mode: str = "effective_date_plus_feed_applied",
+) -> str:
+    """Return the nonstructural effect row family that may still replay."""
+    if not effect.is_applicable_for_replay(applicability_mode=applicability_mode):
+        return ""
+    return uk_nonstructural_replay_candidate_family_for_effect_type(effect.effect_type)
 
 
 def uk_effect_requires_affecting_source_for_replay(
