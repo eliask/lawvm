@@ -514,6 +514,82 @@ def test_uk_bench_curated_sample_keeps_only_source_complete_rows() -> None:
     assert [row["statute_id"] for row in selected] == ["asp/2000/1", "ukpga/1990/42"]
 
 
+def test_uk_bench_hard_curated_sample_keeps_source_complete_effectful_heavy_rows() -> None:
+    rows = [
+        {
+            "statute_id": "ukpga/2000/1",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 10,
+            "n_effect_feed_pages": 4,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+            "enacted_source_size": 100,
+            "oracle_source_size": 100,
+        },
+        {
+            "statute_id": "ukpga/2000/2",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 50,
+            "n_effect_feed_pages": 4,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+            "enacted_source_size": 100,
+            "oracle_source_size": 100,
+        },
+        {
+            "statute_id": "ukpga/2000/3",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 0,
+            "n_effect_feed_pages": 0,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+        },
+        {
+            "statute_id": "ukpga/2000/4",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 100,
+            "n_effect_feed_pages": 4,
+            "enacted_source_status": "missing",
+            "oracle_source_status": "available",
+        },
+    ]
+
+    selected = uk_bench._stratified_source_complete_sample(rows, size=10, hard=True)
+
+    assert [row["statute_id"] for row in selected] == ["ukpga/2000/2", "ukpga/2000/1"]
+
+
+def test_uk_bench_hard_curated_sample_orders_strata_by_heaviest_available_row() -> None:
+    rows = [
+        {
+            "statute_id": "asc/2020/1",
+            "type": "asc",
+            "year": 2020,
+            "n_effects": 1,
+            "n_effect_feed_pages": 1,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+        },
+        {
+            "statute_id": "ukpga/1990/42",
+            "type": "ukpga",
+            "year": 1990,
+            "n_effects": 1173,
+            "n_effect_feed_pages": 24,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+        },
+    ]
+
+    selected = uk_bench._stratified_source_complete_sample(rows, size=1, hard=True)
+
+    assert [row["statute_id"] for row in selected] == ["ukpga/1990/42"]
+
+
 def test_uk_bench_write_curated_corpus_uses_full_corpus_schema(tmp_path) -> None:
     output = tmp_path / "tight.csv"
     rows = [
@@ -566,6 +642,18 @@ def test_uk_bench_modern_curated_preset_uses_modern_path_and_size(monkeypatch, t
     assert output == tmp_path / "bench_corpus_modern_tight.csv"
     assert size == 200
     assert preset == "modern-tight"
+
+
+def test_uk_bench_hard_curated_preset_uses_hard_path_and_size(monkeypatch, tmp_path) -> None:
+    corpus_csv = tmp_path / "bench_corpus.csv"
+    monkeypatch.setattr(uk_bench, "_CORPUS_CSV", corpus_csv)
+    args = Namespace(curate_preset="hard-tight", curate_size=None, curate_corpus=None)
+
+    output, size, preset = uk_bench._curated_corpus_request(args)
+
+    assert output == tmp_path / "bench_corpus_hard_tight.csv"
+    assert size == 200
+    assert preset == "hard-tight"
 
 
 def test_uk_bench_curated_preset_allows_explicit_output_and_size(tmp_path) -> None:
