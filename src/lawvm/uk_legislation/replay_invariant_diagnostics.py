@@ -47,6 +47,11 @@ _ORDERED_INVARIANT_KINDS = frozenset(
 )
 
 
+def _invariant_kind_str(kind: object) -> str:
+    value = getattr(kind, "value", None)
+    return value if isinstance(value, str) else str(kind)
+
+
 def _invariant_detail(
     op: LegalOperation,
     scoped_violation: str,
@@ -79,18 +84,17 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
             seen: dict[tuple[str, str], int] = {}
             by_kind: dict[str, list[str]] = {}
             for child in children:
-                child_kind = _kind_str(child.kind)
+                child_kind = _invariant_kind_str(child.kind)
                 if child.label:
                     label = str(child.label)
                     key = (child_kind, label)
                     seen[key] = seen.get(key, 0) + 1
-                    by_kind.setdefault(child_kind, []).append(label)
+                    if child_kind in _ORDERED_INVARIANT_KINDS:
+                        by_kind.setdefault(child_kind, []).append(label)
             for (kind, label), count in seen.items():
                 if count > 1:
                     violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
             for kind, labels in by_kind.items():
-                if kind not in _ORDERED_INVARIANT_KINDS:
-                    continue
                 keys = [tree_ops._default_sort_key(label) for label in labels]
                 for index in range(len(keys) - 1):
                     if keys[index] > keys[index + 1]:

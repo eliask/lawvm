@@ -1040,8 +1040,12 @@ Current tooling-consistency invariant:
     the first component is ambiguous; the serial witness measured 6.48s wall
     time with `compile_ops=4.30s` after this change, versus a prior 55.8s
     profile with `compile_ops` around 45.9s. Replay-side `1988/1` remains a
-    separate indexing/cache family. A local improvement in one family should not
-    be treated as global UK replay progress without saved-run guard evidence.
+    separate indexing/cache family; a minor invariant-scan hot-path cleanup kept
+    the fast duplicate/order scan equivalent to the generic invariant subset and
+    measured 60.81s wall time with `replay=27.73s` on that witness, so it did not
+    remove the need for deeper replay-side indexing. A local improvement in one
+    family should not be treated as global UK replay progress without saved-run
+    guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
