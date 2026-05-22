@@ -186,15 +186,17 @@ def uk_recursive_kind_match(
     label: str,
     match_kind_label,
 ) -> tuple[Optional[IRNode], Optional[IRNode], Optional[int]]:
-    stack: list[tuple[IRNode, int, IRNode]] = []
-    for child_idx in range(len(node.children) - 1, -1, -1):
-        stack.append((node, child_idx, node.children[child_idx]))
-    while stack:
-        parent, child_idx, child = stack.pop()
+    for i, child in enumerate(node.children):
         if match_kind_label(child, kind, label):
-            return child, parent, child_idx
-        for grandchild_idx in range(len(child.children) - 1, -1, -1):
-            stack.append((child, grandchild_idx, child.children[grandchild_idx]))
+            return child, node, i
+        res_n, res_p, res_i = uk_recursive_kind_match(
+            child,
+            kind=kind,
+            label=label,
+            match_kind_label=match_kind_label,
+        )
+        if res_n is not None:
+            return res_n, res_p, res_i
     return None, None, None
 
 
