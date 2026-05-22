@@ -409,6 +409,41 @@ def manual_compile_suggested_claim_template(
             }
         )
         return template
+    if summary.manual_compile_rule_id == "uk_manual_frontier_cross_container_renumber_candidate":
+        detail = _first_lowering_rejection_detail(
+            row=row,
+            rule_id="uk_effect_metadata_cross_container_renumber_rejected",
+        )
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="cross_container_renumber_migration",
+            placement_family="explicit_effect_metadata_destination_required",
+            required_ownership=[
+                "source_provision_identity",
+                "destination_provision_identity",
+                "descendant_wrapping_or_relabel_semantics",
+                "lineage_or_migration_events",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "effect_metadata_names_source_and_destination_containers",
+                "claim_identifies_exact_source_provision_before_migration",
+                "claim_identifies_exact_destination_parent_and_label",
+                "claim_preserves_unclaimed_source_and_destination_siblings",
+                "claim_emits_lineage_or_migration_events_for_moved_identity",
+                "changed_paths_are_within_declared_source_destination_or_migration_paths",
+            ],
+        )
+        template.update(
+            {
+                "source_target_address": detail.get("source_target", ""),
+                "destination_address": detail.get("destination", ""),
+                "effect_type_normalized": detail.get("effect_type_normalized", ""),
+                "reason_code": detail.get("reason_code", ""),
+            }
+        )
+        return template
     if summary.manual_compile_rule_id == "uk_manual_frontier_repeal_table_candidate":
         return _bounded_mutation_claim_template(
             statute_id=statute_id,

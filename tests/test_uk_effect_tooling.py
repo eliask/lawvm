@@ -66,6 +66,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
+        "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_heading_facet_candidate",
@@ -2214,6 +2215,98 @@ def test_uk_manual_compile_evidence_jsonl_templates_definition_child_and_tail_su
     assert "integrated care board" in template["replacement_preview"]
     assert "post_child_tail_connector_boundary" in template["required_ownership"]
     assert "claim_splits_or_lowers_into_bounded_child_and_tail_mutations" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_cross_container_renumber() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-cross-container-renumber",
+        effect_type="Sch. 22 para. 87 renumbered as Sch. 2 para. 87(1)",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/2020/17/schedule/22/paragraph/87/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 87(1)",
+        affecting_uri="/id/uksi/2020/1520",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2020",
+        affecting_number="1520",
+        affecting_provisions="reg. 5(3)(a)",
+        affecting_title="Test Regulations 2020",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_metadata_cross_container_renumber_rejected",
+                    "blocking": True,
+                    "source_target": "schedule:22/paragraph:87",
+                    "destination": "schedule:2/paragraph:87/subparagraph:1",
+                    "effect_type_normalized": (
+                        "sch. 22 para. 87 renumbered as sch. 2 para. 87(1)"
+                    ),
+                    "reason_code": "explicit_effect_metadata_cross_container_renumber",
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview="a the existing provision becomes sub-paragraph (1);",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_cross_container_renumber_candidate",
+            manual_compile_reason="Cross-container migration needs an explicit lineage claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_metadata_cross_container_renumber_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_metadata_cross_container_renumber_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2020/17",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2020/17",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "cross_container_renumber_migration"
+    assert template["placement_family"] == (
+        "explicit_effect_metadata_destination_required"
+    )
+    assert template["source_target_address"] == "schedule:22/paragraph:87"
+    assert template["destination_address"] == "schedule:2/paragraph:87/subparagraph:1"
+    assert "lineage_or_migration_events" in template["required_ownership"]
+    assert "claim_emits_lineage_or_migration_events_for_moved_identity" in (
         template["required_validator_checks"]
     )
     assert template["executable"] is False
