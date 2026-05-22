@@ -697,7 +697,7 @@ class UKReplayInsertApplyMixin:
             if c_eid:
                 if c_eid == eid:
                     return child, node, i
-                if c_eid.endswith(suffix_eids[0]) or c_eid.endswith(suffix_eids[1]):
+                if c_eid.endswith(suffix_eids):
                     return child, node, i
                 if allow_sequence_match and _get_id_sequence(c_eid) == target_seq:
                     return child, node, i

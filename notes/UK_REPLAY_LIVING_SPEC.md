@@ -4555,3 +4555,17 @@ Current bench replay-regime invariant:
   a stable `uk-residual-claim-*` ID. `validator_status` starts as
   `not_validated`; downstream human/LLM review may classify the item, but the
   saved evidence row remains separate from replay execution.
+
+## UK EID Lookup Scope Discipline
+
+- Cached suffix EID lookup is a target-resolution accelerator only. A
+  top-scoped target such as `section-2-9` may not be satisfied by an indexed
+  suffix alias carried by a node outside the exact `section-2` subtree, even if
+  an unrelated source EID happens to end in the same suffix.
+- The suffix cache therefore verifies top-scoped hits against the exact
+  top-scope node before returning them. If the indexed hit is outside the
+  target's top scope, lookup falls back to the scoped recursive search or to a
+  visible miss; it must not escape into another section/chapter/schedule branch.
+- Regression witnesses:
+  `test_executor_eid_search_does_not_escape_strict_top_scope_after_miss` and
+  `test_executor_eid_search_does_not_escape_strict_top_scope_with_sequence_match`.
