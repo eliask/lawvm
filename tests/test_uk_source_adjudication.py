@@ -934,6 +934,48 @@ def test_classify_uk_effect_source_pathology_marks_definition_child_and_tail_sub
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_structured_tail_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "4 In paragraph 2, in sub-paragraph (3), for the words from "
+            "“, any of the following provisions of the ANO 2016” to the end, "
+            "substitute “— a any of the following provisions of the ANO 2016— "
+            "i article 265E(1)(a); ii article 265E(1)(b); b any of the "
+            "following provisions of Regulation (EU) 2019/947— i Article 12; "
+            "ii Article 13; iii Article 14”"
+        ),
+        op_actions=["text_replace"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:9/paragraph:2/subparagraph:3"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "source_carried_structured_tail_substitution_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_source_pathology_keeps_flat_tail_substitution_core() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "4 In paragraph 2, in sub-paragraph (3), for the words from "
+            "“the old expression” to the end substitute “the new expression”"
+        ),
+        op_actions=["text_replace"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:9/paragraph:2/subparagraph:3"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+    assert is_core_uk_effect_source_candidate(pathology) is True
+
+
 def test_classify_uk_effect_source_pathology_marks_application_payload_out_of_scope() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="BlockAmendment",
@@ -1203,6 +1245,30 @@ def test_classify_uk_manual_compile_frontier_marks_source_carried_child_tail_tex
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_structured_tail_substitution() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="source_carried_structured_tail_substitution_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "4 In paragraph 2, in sub-paragraph (3), for the words from "
+            "“, any of the following provisions of the ANO 2016” to the end, "
+            "substitute “— a any of the following provisions of the ANO 2016— "
+            "i article 265E(1)(a); ii article 265E(1)(b)”"
+        ),
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
     )
 
 

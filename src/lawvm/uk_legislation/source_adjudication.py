@@ -41,6 +41,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "payload_fragment_without_action_formula",
         "source_carried_multi_subunit_text_rewrite_unsupported",
         "source_carried_child_tail_text_rewrite_unsupported",
+        "source_carried_structured_tail_substitution_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
         "appropriate_place_definition_entry_insert_unsupported",
@@ -175,6 +176,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "deterministic_frontend_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "The source targets the text tail following a named child; compile must own a bounded child-tail selector rather than delete from the whole parent text.",
+    ),
+    "source_carried_structured_tail_substitution_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
+        "The source substitutes a tail range with visibly structured child material; compile must preserve the carried child structure instead of flattening it into host text.",
     ),
     "structural_sibling_insert_unsupported": (
         "deterministic_frontend_candidate",
@@ -1142,6 +1148,19 @@ def _looks_like_definition_child_and_tail_substitution(text: str) -> bool:
     )
 
 
+def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    if not re.search(r"\bfor\s+the\s+words\s+from\b.+\bto\s+the\s+end\b", norm):
+        return False
+    if not re.search(r"\bsubstitute\b", norm):
+        return False
+    if "—" in text or "--" in text or " - " in text:
+        return bool(re.search(r"(?:—|--|\s-\s)\s*(?:\(?[a-z0-9]+\)?|[ivxlcdm]+)\s+\w", norm))
+    return bool(re.search(r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.+\b(?:[ivxlcdm]+)\s+\w", norm))
+
+
 def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
@@ -1320,6 +1339,8 @@ def classify_uk_effect_source_pathology(
         return "broad_source_reused_as_payload"
 
     if norm_text and targets:
+        if "text_replace" in actions and _looks_like_source_carried_structured_tail_substitution(extracted_text):
+            return "source_carried_structured_tail_substitution_unsupported"
         if "uk_effect_source_carried_definition_child_text_omission_text_patch" in lowering_rules:
             return ""
         if (
@@ -1554,19 +1575,19 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The blocking row is dominated by source-shape pathology rather than an unambiguous manual compilation opportunity.",
         }
 
-    if compiled_op_count > 0 and not blocking_rules:
-        return {
-            "status": "deterministic_frontend_supported",
-            "rule_id": "uk_manual_frontier_deterministic_supported",
-            "reason": "The row already lowers to replay operations without blocking lowering rejections.",
-        }
-
     main_source_pathology_result = _uk_manual_frontier_classification(
         _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
         source_pathology_norm,
     )
     if main_source_pathology_result is not None:
         return main_source_pathology_result
+
+    if compiled_op_count > 0 and not blocking_rules:
+        return {
+            "status": "deterministic_frontend_supported",
+            "rule_id": "uk_manual_frontier_deterministic_supported",
+            "reason": "The row already lowers to replay operations without blocking lowering rejections.",
+        }
 
     if source_pathology_norm == "table_entry_target_unsupported":
         entry_shapes = {
