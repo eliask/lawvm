@@ -256,8 +256,10 @@ def _phase_regression_diffs(
     current_phase_timings: dict[str, dict[str, float]],
     *,
     threshold_s: float,
+    phase_filter: tuple[str, ...] = (),
 ) -> tuple[int, list[tuple[str, str, float, float, float]]]:
     common = sorted(set(baseline_phase_timings) & set(current_phase_timings))
+    wanted_phases = set(phase_filter)
     regressions: list[tuple[str, str, float, float, float]] = []
     comparable_cells = 0
     for sid in common:
@@ -265,6 +267,8 @@ def _phase_regression_diffs(
             set(baseline_phase_timings[sid])
             | set(current_phase_timings[sid])
         ) - {"total"}
+        if wanted_phases:
+            phase_names &= wanted_phases
         for phase_name in sorted(phase_names):
             old = baseline_phase_timings[sid].get(phase_name, 0.0)
             new = current_phase_timings[sid].get(phase_name, 0.0)
@@ -286,6 +290,7 @@ def run_guard(
     max_duration_regressions: int | None = None,
     phase_threshold_s: float = 1.0,
     max_phase_regressions: int | None = None,
+    phase_names: tuple[str, ...] = (),
 ) -> int:
     """Run the regression guard and print a summary. Returns process-style exit code."""
     if threshold < 0.0:
@@ -505,13 +510,22 @@ def run_guard(
             baseline_phase_timings,
             current_phase_timings,
             threshold_s=phase_threshold_s,
+            phase_filter=phase_names,
         )
         if comparable_cells == 0:
-            print("ERROR: baseline and current have no comparable non-total phase timing cells")
+            if phase_names:
+                selected = ", ".join(phase_names)
+                print(
+                    "ERROR: baseline and current have no comparable timing cells "
+                    f"for selected phase(s): {selected}"
+                )
+            else:
+                print("ERROR: baseline and current have no comparable non-total phase timing cells")
             return 1
         if phase_regressions:
+            phase_scope = f" for phase(s) {', '.join(phase_names)}" if phase_names else ""
             print(
-                f"Phase regressions > {phase_threshold_s:.3f}s : "
+                f"Phase regressions{phase_scope} > {phase_threshold_s:.3f}s : "
                 f"{len(phase_regressions)} row/phase cell(s)  "
                 f"(max allowed: {max_phase_regressions})"
             )
@@ -521,7 +535,8 @@ def run_guard(
                 print(f"  {sid:<20} {phase_name:<16} {old:>9.3f}s {new:>9.3f}s {delta:>+9.3f}s")
             print()
         else:
-            print(f"Phase regressions > {phase_threshold_s:.3f}s : 0  (none)")
+            phase_scope = f" for phase(s) {', '.join(phase_names)}" if phase_names else ""
+            print(f"Phase regressions{phase_scope} > {phase_threshold_s:.3f}s : 0  (none)")
             print()
 
     agg_hard_limit = 0.005
@@ -567,6 +582,7 @@ def main(args: "argparse.Namespace") -> None:
             max_duration_regressions=args.max_duration_regressions,
             phase_threshold_s=args.phase_threshold_s,
             max_phase_regressions=args.max_phase_regressions,
+            phase_names=tuple(args.phase_names or ()),
         )
     )
 

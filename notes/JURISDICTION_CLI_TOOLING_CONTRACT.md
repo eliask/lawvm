@@ -92,7 +92,9 @@ a saved-run comparison with zero common scored rows is not a successful
 zero-regression run, and an enabled duration guard with zero common `duration_s`
 rows is invalid timing evidence.
 An enabled phase guard with zero common phase timing rows, or zero comparable
-non-total phase cells, is also invalid timing evidence.
+non-total phase cells, is also invalid timing evidence. If `--phase NAME` is
+provided, only the selected phase names are guarded; selected names with no
+comparable timing cells must fail rather than silently pass.
 Thresholds and allowed-regression counts must be nonnegative command inputs.
 
 ## 4. CLI Shape
