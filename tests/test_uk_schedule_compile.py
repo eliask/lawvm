@@ -30,6 +30,8 @@ from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
 from lawvm.uk_legislation.source_context import (
+    UKAffectingSourceContext,
+    _extract_from_affecting_source_context,
     _implicit_first_subparagraph_context_normalized_ref,
     _source_ancestor_chain,
 )
@@ -28970,6 +28972,76 @@ def test_uk_source_ancestor_chain_caches_repeated_source_walks() -> None:
 
     assert first == second
     assert _source_ancestor_chain.cache_info().hits == 1
+
+
+def test_uk_source_context_caches_repeated_provision_extraction() -> None:
+    root = ET.fromstring(
+        """
+        <Legislation>
+          <Body>
+            <P1group id="section-1">
+              <P1 id="section-1-1">Text</P1>
+            </P1group>
+          </Body>
+        </Legislation>
+        """
+    )
+    target = root.find(".//*[@id='section-1-1']")
+    assert target is not None
+    calls: list[str] = []
+
+    def extractor(_xml_bytes: bytes, provision_ref: str, **_kwargs: Any) -> ET.Element | None:
+        calls.append(provision_ref)
+        return target
+
+    context = UKAffectingSourceContext(
+        xml_bytes=b"<Legislation />",
+        root=root,
+        parent_map={},
+        exact_id_map={},
+        sequence_map={},
+        source_status="available",
+        source_size=15,
+        locator="memory://source",
+        authority_layer="AFFECTING_ACT_TEXT",
+        provision_extractor=extractor,
+    )
+
+    first = _extract_from_affecting_source_context(context, "s. 1")
+    second = _extract_from_affecting_source_context(context, "s. 1")
+
+    assert first is target
+    assert second is target
+    assert calls == ["s. 1"]
+
+
+def test_uk_source_context_caches_missing_provision_extraction() -> None:
+    root = ET.fromstring("<Legislation><Body /></Legislation>")
+    calls: list[str] = []
+
+    def extractor(_xml_bytes: bytes, provision_ref: str, **_kwargs: Any) -> ET.Element | None:
+        calls.append(provision_ref)
+        return None
+
+    context = UKAffectingSourceContext(
+        xml_bytes=b"<Legislation />",
+        root=root,
+        parent_map={},
+        exact_id_map={},
+        sequence_map={},
+        source_status="available",
+        source_size=15,
+        locator="memory://source",
+        authority_layer="AFFECTING_ACT_TEXT",
+        provision_extractor=extractor,
+    )
+
+    first = _extract_from_affecting_source_context(context, "Sch. 1")
+    second = _extract_from_affecting_source_context(context, "Sch. 1")
+
+    assert first is None
+    assert second is None
+    assert calls == ["Sch. 1"]
 
 
 def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:
