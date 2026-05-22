@@ -11460,6 +11460,46 @@ def test_executor_eid_search_does_not_scan_when_strict_top_scope_is_absent() -> 
     assert (node, parent, idx) == (None, None, None)
 
 
+def test_executor_eid_search_does_not_sequence_scan_when_strict_top_scope_is_absent() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    attrs={"eId": "chapter-3"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="99",
+                            text="wrong branch",
+                            attrs={"eId": "chapter-3-section-99-p1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+
+    def fail_find(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("absent strict top-scope sequence lookup should not scan the tree")
+
+    executor._find_node_and_parent = fail_find
+    node, parent, idx = executor._find_node_and_parent_statute(
+        "section-99-p1",
+        allow_sequence_match=True,
+    )
+
+    assert (node, parent, idx) == (None, None, None)
+
+
 def test_executor_range_to_end_text_patch_records_node_local_leaf_rewrite() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

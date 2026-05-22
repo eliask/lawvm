@@ -625,7 +625,7 @@ class UKReplayInsertApplyMixin:
                     result=result,
                 )
                 return result
-        elif not allow_sequence_match and self._eid_has_strict_top_scope(eid):
+        elif self._eid_has_strict_top_scope(eid):
             result = (None, None, None)
             self._store_eid_search_cache(
                 eid,
