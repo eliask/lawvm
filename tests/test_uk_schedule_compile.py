@@ -4034,6 +4034,109 @@ def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None
     assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
 
 
+def test_compile_prefix_subsection_paragraph_word_omission() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-334-1-e-i">
+          <Pnumber>i</Pnumber>
+          <Text>i in subsection (1)(a), the words \u201csection 18 of the Gaming Act 1845, section 1 of the Gaming Act 1892 or\u201d, and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-438e0261da307b15537d77d42ebddc3d",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/8/section/412/subsection/1/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 412(1)(a)",
+        affecting_uri="/id/ukpga/2005/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="19",
+        affecting_provisions="s. 334(1)(e)(i) Sch. 17",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2007-09-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "412"),
+        ("subsection", "1"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == (
+        "section 18 of the Gaming Act 1845, section 1 of the Gaming Act 1892 or"
+    )
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["source_parent_kind"] == "subsection"
+    assert lowering_records[-1]["source_parent_label"] == "1"
+    assert lowering_records[-1]["source_child_kind"] == "paragraph"
+    assert lowering_records[-1]["source_child_label"] == "a"
+
+
+def test_compile_prefix_subsection_paragraph_word_omission_rejects_target_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-334-1-e-i">
+          <Pnumber>i</Pnumber>
+          <Text>i in subsection (1)(a), the words \u201csection 18 of the Gaming Act 1845\u201d, and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_prefix_subsection_paragraph_word_omission_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/8/section/412/subsection/1/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 412(1)(b)",
+        affecting_uri="/id/ukpga/2005/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="19",
+        affecting_provisions="s. 334(1)(e)(i) Sch. 17",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2007-09-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+
+
 def test_compile_child_qualified_final_word_omission() -> None:
     extracted_el = ET.fromstring(
         f"""
