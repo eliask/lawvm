@@ -76,6 +76,11 @@ _CURATE_PRESET_SIZES = {
     "tight": 200,
     "stress": 400,
 }
+_CURATE_PRESET_FILENAMES = {
+    "canary": "bench_corpus_smoke.csv",
+    "tight": "bench_corpus_tight.csv",
+    "stress": "bench_corpus_stress.csv",
+}
 _CORPUS_FIELDNAMES = [
     "statute_id",
     "type",
@@ -5244,7 +5249,7 @@ def _curated_corpus_request(args: Any) -> tuple[Path | None, int, str]:
     if raw_output:
         output = Path(raw_output)
     elif preset:
-        output = _CORPUS_CSV.parent / f"bench_corpus_{preset}.csv"
+        output = _CORPUS_CSV.parent / _CURATE_PRESET_FILENAMES[preset]
     else:
         output = None
     return output, size, preset

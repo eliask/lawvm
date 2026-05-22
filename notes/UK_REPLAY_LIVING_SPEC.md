@@ -2992,9 +2992,11 @@ Current bench replay-regime invariant:
 - `lawvm bench -j uk --curate-preset canary|tight|stress` writes a
   source-complete curated corpus without requiring the caller to remember
   standard row budgets or output paths. Preset defaults are canary=40,
-  tight=200, and stress=400, written as
-  `data/uk/bench_corpus_<preset>.csv` unless `--curate-corpus` overrides the
-  path. `--curate-size` may still override the preset size.
+  tight=200, and stress=400. Without `--curate-corpus`, canary writes
+  `data/uk/bench_corpus_smoke.csv`, tight writes
+  `data/uk/bench_corpus_tight.csv`, and stress writes
+  `data/uk/bench_corpus_stress.csv`. `--curate-size` may still override the
+  preset size.
 - `lawvm bench-regression-guard -j uk --baseline <old> --current <new>` reads
   saved UK bench runs from `data/uk_bench_runs/<label>.csv` and uses the saved
   primary `score` column. UK saved-run labels are direct filenames, not the
