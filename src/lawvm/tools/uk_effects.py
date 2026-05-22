@@ -91,6 +91,7 @@ class _EffectSummary:
     manual_compile_reason: str = ""
     manual_compile_lowering_rule_ids: tuple[str, ...] = ()
     manual_compile_blocking_lowering_rule_ids: tuple[str, ...] = ()
+    text_patch_evidence: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -372,6 +373,7 @@ def summarize_uk_effect(
             ),
             applicability_mode=applicability_mode,
         )
+    text_patch_evidence = _compiled_text_patch_evidence(ops)
     mark_nonreplay_lowering_rejections_nonblocking(
         effect,
         structural_for_replay=structural_for_replay,
@@ -578,6 +580,7 @@ def summarize_uk_effect(
                 }
             )
         ),
+        text_patch_evidence=text_patch_evidence,
     )
 
 
@@ -970,6 +973,7 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
             "source_sha256": summary.affecting_source_sha256,
         },
         "compare_shape": summary.compare_shape or "",
+        "text_patch_evidence": _text_patch_evidence_jsonable(summary),
         "manual_compile_frontier": {
             "status": summary.manual_compile_status or "",
             "rule_id": summary.manual_compile_rule_id or "",
@@ -1038,6 +1042,41 @@ def _manual_compile_source_jsonable(source: Mapping[str, Any]) -> dict[str, Any]
         hashlib.sha256(preview.encode("utf-8")).hexdigest() if preview else ""
     )
     return payload
+
+
+def _format_legal_address_path(address: Any) -> str:
+    return "/".join(f"{kind}:{label}" for kind, label in address.path)
+
+
+def _compiled_text_patch_evidence(ops: object) -> tuple[dict[str, Any], ...]:
+    evidence: list[dict[str, Any]] = []
+    for op in ops:
+        patch = op.text_patch
+        if patch is None:
+            continue
+        row = {
+            "op_id": str(op.op_id),
+            "action": str(op.action.value),
+            "target": _format_legal_address_path(op.target),
+            "patch_kind": str(patch.kind.value),
+            "match_text": str(patch.selector.match_text),
+            "replacement": str(patch.replacement or ""),
+            "occurrence": int(patch.selector.occurrence),
+            "end_occurrence": int(patch.selector.end_occurrence),
+        }
+        if op.payload is not None:
+            row["payload_kind"] = str(op.payload.kind)
+        evidence.append(row)
+    return tuple(evidence)
+
+
+def _text_patch_evidence_jsonable(summary: _EffectSummary) -> dict[str, Any]:
+    samples = tuple(dict(item) for item in summary.text_patch_evidence)
+    return {
+        "schema": "lawvm.uk_text_patch_compile_evidence.v1",
+        "sample_count": len(samples),
+        "samples": list(samples),
+    }
 
 
 def _uk_replay_regime_jsonable(regime: Any) -> dict[str, Any]:
@@ -1119,6 +1158,7 @@ def _manual_compile_evidence_row_jsonable(
             "compare_shape": effect_payload["compare_shape"],
         },
         "compiled_op_count": summary.n_ops,
+        "text_patch_evidence": _text_patch_evidence_jsonable(summary),
         "replay_applicable": summary.replay_applicable,
         "structural_for_replay": summary.structural_for_replay,
         "lowering_observation_rule_counts": effect_payload["lowering_observation_rule_counts"],

@@ -7,9 +7,14 @@ from argparse import Namespace
 
 import pytest
 
-from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
+from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, TextPatchSpec, TextSelector
 from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
+from lawvm.core.semantic_types import (
+    FacetKind,
+    IRNodeKind,
+    StructuralAction,
+    TextPatchKindEnum,
+)
 from lawvm.tools import uk_effects
 from lawvm.tools import uk_effect
 from lawvm.tools import uk_replay
@@ -1967,6 +1972,110 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         context=context,
     )
     assert changed_rule_payload["work_item_id"] != payload["work_item_id"]
+
+
+def test_summarized_manual_compile_evidence_carries_text_patch_preimage(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-text-patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/1/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act",
+    )
+    compiled = [
+        LegalOperation(
+            op_id="eff-text-patch-op",
+            sequence=0,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old words", occurrence=2),
+                replacement="new words",
+            ),
+        )
+    ]
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={
+            "ukpga/2025/1": b"<Legislation><Body>x</Body></Legislation>"
+        },
+    )
+
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.compile_effect_to_ir_ops",
+        lambda _effect, _extracted, **_kwargs: compiled,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._build_affecting_source_context",
+        lambda **_kwargs: (
+            type(
+                "FakeSourceContext",
+                (),
+                {
+                    "source_status": "available",
+                    "source_size": 128,
+                    "xml_bytes": b"<Legislation><Body>x</Body></Legislation>",
+                    "root": None,
+                    "authority_layer": "AFFECTING_ACT_TEXT",
+                },
+            )(),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._select_enacted_source_for_current_shell",
+        lambda effect, archive, current_context, current_el, enacted_context_cache: (
+            current_context,
+            current_el,
+            (),
+        ),
+    )
+
+    summary = summarize_uk_effect(effect, archive=object(), context=context)
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=_EffectReportRow(effect=effect, summary=summary),
+        context=context,
+    )
+
+    assert payload["text_patch_evidence"] == {
+        "schema": "lawvm.uk_text_patch_compile_evidence.v1",
+        "sample_count": 1,
+        "samples": [
+            {
+                "op_id": "eff-text-patch-op",
+                "action": "text_replace",
+                "target": "section:1",
+                "patch_kind": "replace",
+                "match_text": "old words",
+                "replacement": "new words",
+                "occurrence": 2,
+                "end_occurrence": 0,
+            }
+        ],
+    }
 
 
 def test_uk_manual_compile_evidence_jsonl_marks_missing_claim_template() -> None:
