@@ -28974,6 +28974,26 @@ def test_uk_source_ancestor_chain_caches_repeated_source_walks() -> None:
     assert _source_ancestor_chain.cache_info().hits == 1
 
 
+def test_uk_source_ancestor_chain_preserves_same_id_fallback() -> None:
+    _source_ancestor_chain.cache_clear()
+    root = ET.fromstring(
+        """
+        <Legislation>
+          <Body>
+            <P1group id="section-1">
+              <P1 id="section-1-1">Text</P1>
+            </P1group>
+          </Body>
+        </Legislation>
+        """
+    )
+    detached_same_id = ET.Element("P1", {"id": "section-1-1"})
+
+    ancestors = _source_ancestor_chain(root, detached_same_id)
+
+    assert [a.tag for a in ancestors] == ["P1group", "Body", "Legislation"]
+
+
 def test_uk_source_context_caches_repeated_provision_extraction() -> None:
     root = ET.fromstring(
         """
