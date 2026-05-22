@@ -83,14 +83,16 @@ tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`,
 `bench -j uk --curate-preset
 canary|tight|stress|modern-canary|modern-tight|hard-canary|hard-tight|hard-stress`,
-`bench-regression-guard -j uk` with optional `duration_s` regression limits,
-saved-run phase timing delta summaries when both UK runs were produced with
-`--phase-timings`, and replay diagnostics.
+`bench-regression-guard -j uk` with optional `duration_s` and per-phase
+regression limits, saved-run phase timing delta summaries when both UK runs
+were produced with `--phase-timings`, and replay diagnostics.
 
 Regression guards must fail on structurally incomparable inputs. In particular,
 a saved-run comparison with zero common scored rows is not a successful
 zero-regression run, and an enabled duration guard with zero common `duration_s`
 rows is invalid timing evidence.
+An enabled phase guard with zero common phase timing rows, or zero comparable
+non-total phase cells, is also invalid timing evidence.
 Thresholds and allowed-regression counts must be nonnegative command inputs.
 
 ## 4. CLI Shape

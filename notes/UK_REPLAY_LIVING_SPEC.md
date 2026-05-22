@@ -3180,7 +3180,10 @@ Current bench replay-regime invariant:
   but when enabled missing `duration_s` columns are treated as invalid benchmark
   evidence. A comparison with zero common scored rows, or an enabled duration
   guard with zero common `duration_s` rows, must fail rather than report a green
-  empty aggregate.
+  empty aggregate. `--max-phase-regressions N` enables the same opt-in guard for
+  saved `phase_*_s` timing cells, excluding `phase_total_s`; it fails if there
+  are no common phase rows or no comparable non-total phase cells, and reports
+  the slowest row/phase regressions separately from score regressions.
 - `lawvm bench -j uk --statute <ID>` must filter the UK bench corpus to exactly
   the requested statute before applying diagnostic limits. If the statute is not
   present in the corpus, the command fails visibly rather than saving an empty

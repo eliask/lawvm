@@ -1448,6 +1448,65 @@ def test_bench_regression_guard_prints_phase_timing_deltas(
     assert "RESULT: PASS" in out
 
 
+def test_bench_regression_guard_can_fail_on_phase_regressions(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = [
+        "statute_id",
+        "score",
+        "phase_total_s",
+        "phase_compile_ops_s",
+        "phase_replay_s",
+    ]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "4.0",
+                "phase_compile_ops_s": "2.0",
+                "phase_replay_s": "2.0",
+            }
+        )
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "7.0",
+                "phase_compile_ops_s": "2.2",
+                "phase_replay_s": "4.5",
+            }
+        )
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        phase_threshold_s=1.0,
+        max_phase_regressions=0,
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Phase regressions > 1.000s : 1 row/phase cell(s)" in out
+    assert "ukpga/2000/1" in out
+    assert "replay" in out
+    assert "RESULT: FAIL" in out
+
+
 def test_bench_regression_guard_requires_duration_column_when_enabled(
     tmp_path,
     monkeypatch,

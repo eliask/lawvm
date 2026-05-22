@@ -5747,6 +5747,19 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="max_duration_regressions",
         help="enable duration_s regression guard with this max allowed slowed statute count",
     )
+    brg_p.add_argument(
+        "--phase-threshold-s",
+        type=float,
+        default=1.0,
+        help="per-statute per-phase slowdown threshold when phase guard is enabled (default: 1.0)",
+    )
+    brg_p.add_argument(
+        "--max-phase-regressions",
+        type=int,
+        default=None,
+        dest="max_phase_regressions",
+        help="enable phase timing regression guard with this max allowed slowed row/phase cell count",
+    )
 
     # --- sync-finlex ---
     sync_p = sub.add_parser(
