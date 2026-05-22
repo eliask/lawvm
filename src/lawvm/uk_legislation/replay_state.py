@@ -20,9 +20,14 @@ class UKReplayStateMixin:
         dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]
     ]
     _eid_lookup_ambiguous: set[str]
+    _target_lookup_cache: dict[
+        tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
+        tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+    ]
 
     def _note_structure_mutation(self) -> None:
         self._structure_mutation_serial += 1
+        self._target_lookup_cache.clear()
 
     def _node_eid_values(self, node: UKMutableNode) -> tuple[str, ...]:
         values: list[str] = []
@@ -35,6 +40,77 @@ class UKReplayStateMixin:
     def _clear_eid_lookup_index(self) -> None:
         self._eid_lookup_index = None
         self._eid_lookup_ambiguous = set()
+
+    def _target_lookup_cache_key(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool,
+        allow_recursive_match: bool,
+    ) -> tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]:
+        return (
+            tuple((str(kind), label) for kind, label in target.path),
+            bool(allow_compound_subsection_alias),
+            bool(allow_recursive_match),
+        )
+
+    def _cached_target_lookup(
+        self,
+        key: tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
+        cached = self._target_lookup_cache.get(key)
+        if cached is None:
+            return None
+        serial, node, parent, idx = cached
+        if serial != self._structure_mutation_serial:
+            self._target_lookup_cache.pop(key, None)
+            return None
+        if node is None:
+            return None, None, None
+        if parent is not None:
+            if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
+                return node, parent, idx
+            try:
+                current_idx = parent.children.index(node)
+            except ValueError:
+                self._target_lookup_cache.pop(key, None)
+                return None
+            self._target_lookup_cache[key] = (
+                self._structure_mutation_serial,
+                node,
+                parent,
+                current_idx,
+            )
+            return node, parent, current_idx
+        if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
+            return node, None, idx
+        if self.statute.body is node:
+            return node, None, None
+        try:
+            current_idx = self.statute.supplements.index(node)
+        except ValueError:
+            self._target_lookup_cache.pop(key, None)
+            return None
+        self._target_lookup_cache[key] = (
+            self._structure_mutation_serial,
+            node,
+            None,
+            current_idx,
+        )
+        return node, None, current_idx
+
+    def _store_target_lookup_cache(
+        self,
+        key: tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
+        result: tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+    ) -> None:
+        node, parent, idx = result
+        self._target_lookup_cache[key] = (
+            self._structure_mutation_serial,
+            node,
+            parent,
+            idx,
+        )
 
     def _index_eid_subtree(
         self,
