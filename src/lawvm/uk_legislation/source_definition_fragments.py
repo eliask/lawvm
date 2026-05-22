@@ -32,10 +32,31 @@ _SOURCE_CARRIED_FRAGMENT_ACTION_RE = re.compile(
     r"\b(?:omit|repeal|substitute|insert)\b",
     flags=re.I,
 )
-_SOURCE_FOLLOWING_WORDS_REPEALED_RE = re.compile(
-    r"\b(?:the\s+)?following\s+words?\s+(?:are\s+)?(?:repealed|omitted)\b",
-    flags=re.I,
-)
+
+
+def _has_following_words_repeal_instruction(normalized_text: str) -> bool:
+    """Match the fixed parent instruction without scanning large text by regex."""
+    lowered = normalized_text.lower()
+    start = 0
+    while True:
+        index = lowered.find("following word", start)
+        if index < 0:
+            return False
+        if index > 0 and lowered[index - 1].isalnum():
+            start = index + 1
+            continue
+        rest = lowered[index + len("following word") :]
+        if rest.startswith("s"):
+            rest = rest[1:]
+        if not rest.startswith(" "):
+            start = index + 1
+            continue
+        rest = rest.lstrip()
+        if rest.startswith("are "):
+            rest = rest[4:].lstrip()
+        if rest.startswith("repealed") or rest.startswith("omitted"):
+            return True
+        start = index + 1
 
 
 @dataclass(frozen=True)
@@ -872,7 +893,7 @@ def _fragment_substitution_source_carried_following_words_repeal(
             or ("repealed" not in candidate_lower and "omitted" not in candidate_lower)
         ):
             continue
-        if _SOURCE_FOLLOWING_WORDS_REPEALED_RE.search(candidate_text) is None:
+        if not _has_following_words_repeal_instruction(candidate_text):
             continue
         source_parent_id = str(ancestor.get("id") or "")
         if not source_parent_id:
