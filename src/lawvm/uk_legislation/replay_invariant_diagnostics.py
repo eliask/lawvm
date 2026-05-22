@@ -123,6 +123,9 @@ class UKReplayInvariantDiagnosticsMixin:
         return {("body", "")}
 
     def _node_invariant_path(self, root: UKMutableNode, node: UKMutableNode, root_path: str) -> str:
+        for child in root.children:
+            if child is node:
+                return f"{root_path}/{_kind_str(child.kind)}:{child.label or '?'}"
         path = self._find_path_to_node(root, node)
         if path is None:
             return root_path
