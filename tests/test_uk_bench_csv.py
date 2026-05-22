@@ -3386,6 +3386,90 @@ def test_uk_bench_parallel_future_failure_becomes_typed_row(monkeypatch) -> None
     assert result.uk_metadata_only_effects_enabled is False
 
 
+def test_uk_bench_parallel_submits_predicted_heavy_rows_first(monkeypatch) -> None:
+    submitted: list[str] = []
+
+    class FakeFuture:
+        def __init__(self, entry: dict[str, object]) -> None:
+            self.entry = entry
+
+        def result(self) -> _BenchResult:
+            statute_id = str(self.entry["statute_id"])
+            return _BenchResult(
+                statute_id=statute_id,
+                act_type=str(self.entry["type"]),
+                year=int(self.entry["year"]),
+                n_effects=int(self.entry["n_effects"]),
+                n_enacted_eids=1,
+                n_oracle_eids=1,
+                n_common=1,
+                score=1.0,
+                status="OK",
+            )
+
+    class FakePool:
+        def __init__(self, max_workers: int):
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "FakePool":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def submit(self, fn, entry):  # noqa: ANN001
+            submitted.append(str(entry["statute_id"]))
+            return FakeFuture(entry)
+
+    def fake_as_completed(futures):  # noqa: ANN001
+        return list(futures)
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(concurrent.futures, "as_completed", fake_as_completed)
+
+    class FakeArchive:
+        _db_path = "uk.farchive"
+
+    corpus = [
+        {
+            "statute_id": "ukpga/2000/1",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 0,
+            "n_effect_feed_pages": 0,
+            "enacted_source_size": 100,
+            "oracle_source_size": 100,
+        },
+        {
+            "statute_id": "ukpga/2010/4",
+            "type": "ukpga",
+            "year": 2010,
+            "n_effects": 1900,
+            "n_effect_feed_pages": 2131,
+            "enacted_source_size": 9_000_000,
+            "oracle_source_size": 10_000_000,
+        },
+        {
+            "statute_id": "ukpga/2020/17",
+            "type": "ukpga",
+            "year": 2020,
+            "n_effects": 621,
+            "n_effect_feed_pages": 700,
+            "enacted_source_size": 4_000_000,
+            "oracle_source_size": 5_000_000,
+        },
+    ]
+
+    results = uk_bench._run_bench(corpus, cast(Farchive, FakeArchive()), workers=2)
+
+    assert submitted == ["ukpga/2010/4", "ukpga/2020/17", "ukpga/2000/1"]
+    assert [result.statute_id for result in results] == [
+        "ukpga/2000/1",
+        "ukpga/2010/4",
+        "ukpga/2020/17",
+    ]
+
+
 def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None:
     class FakePool:
         def __init__(self, max_workers: int):

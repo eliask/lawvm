@@ -163,6 +163,30 @@ _HISTORY_HEADERS = (
 )
 
 
+def _uk_bench_row_int(entry: dict[str, object], key: str) -> int:
+    value = entry.get(key)
+    if value is None or value == "":
+        return 0
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return 0
+
+
+def _uk_bench_parallel_submission_cost(entry: dict[str, object]) -> tuple[int, int, int, int]:
+    """Estimate row cost for parallel scheduling, without changing result order."""
+    source_size = _uk_bench_row_int(entry, "enacted_source_size") + _uk_bench_row_int(
+        entry,
+        "oracle_source_size",
+    )
+    return (
+        _uk_bench_row_int(entry, "n_effects"),
+        _uk_bench_row_int(entry, "n_effect_feed_pages"),
+        source_size,
+        _uk_bench_row_int(entry, "year"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # EID helpers
 # ---------------------------------------------------------------------------
@@ -1734,7 +1758,12 @@ def _run_bench(
         with ProcessPoolExecutor(max_workers=workers) as pool:
             future_to_idx = {}
             done = 0
-            for idx, entry in enumerate(corpus):
+            submission_order = sorted(
+                enumerate(corpus),
+                key=lambda item: (_uk_bench_parallel_submission_cost(item[1]), -item[0]),
+                reverse=True,
+            )
+            for idx, entry in submission_order:
                 try:
                     future_to_idx[pool.submit(_score_statute_worker, entry)] = idx
                 except Exception as exc:
