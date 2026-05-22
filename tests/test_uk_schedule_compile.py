@@ -210,6 +210,34 @@ def test_parse_effects_from_bytes_keeps_existing_api_without_rejection_sink() ->
     assert parse_effects_from_bytes([b"<feed><entry></feed>"]) == []
 
 
+def test_parse_effects_from_bytes_records_affected_title() -> None:
+    feed = b"""
+    <feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+      <entry>
+        <ukm:Effect EffectId="key-title" Type="repealed"
+                    Applied="true" RequiresApplied="true"
+                    AffectedClass="ScottishAct" AffectedYear="2002"
+                    AffectedNumber="3" AffectedProvisions="Sch. 7 para. 16"
+                    AffectedURI="http://www.legislation.gov.uk/id/asp/2002/3"
+                    AffectingClass="ScottishAct" AffectingYear="2016"
+                    AffectingNumber="21"
+                    AffectingURI="http://www.legislation.gov.uk/id/asp/2016/21"
+                    AffectingProvisions="Sch. 9 Pt. 1">
+          <ukm:AffectedTitle>Water Industry (Scotland) Act 2002</ukm:AffectedTitle>
+          <ukm:AffectingTitle>Bankruptcy (Scotland) Act 2016</ukm:AffectingTitle>
+        </ukm:Effect>
+      </entry>
+    </feed>
+    """
+
+    records = parse_effects_from_bytes([feed])
+
+    assert len(records) == 1
+    assert records[0].affected_title == "Water Industry (Scotland) Act 2002"
+    assert records[0].to_dict()["affected_title"] == "Water Industry (Scotland) Act 2002"
+
+
 def test_parse_effects_from_feeds_records_malformed_local_feed_page(tmp_path: Path) -> None:
     feed_path = tmp_path / "data.feed"
     feed_path.write_text("<feed><entry></feed>", encoding="utf-8")
@@ -8096,6 +8124,132 @@ def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
         and record["target"] == "section:27"
         and record["extent_cell"] == "Sections 26 to 31."
         and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_structural_title_year_member_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Part>
+              <Table>
+                <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>Water Industry (Scotland) Act 2002</td>
+                    <td>In schedule 7, paragraph 16.</td>
+                  </tr>
+                </tbody>
+              </Table>
+            </Part>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Part")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_title_year_member",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2016-11-24",
+        affected_uri="/id/asp/2002/3/schedule/7/paragraph/16",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="Sch. 7 para. 16",
+        affecting_uri="/id/asp/2016/21",
+        affecting_class="ScottishAct",
+        affecting_year="2016",
+        affecting_number="21",
+        affecting_provisions="sch. 9 pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2016-11-30", "prospective": "false"}],
+        affected_title="Water Industry (Scotland) Act 2002",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("schedule", "7"), ("paragraph", "16"))
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["target"] == "schedule:7/paragraph:16"
+        and record["extent_cell"] == "In schedule 7, paragraph 16."
+        and record["enactment_match_basis"] == "exact_affected_title_year"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_structural_title_year_mismatch_stays_unresolved() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Other Water Act 2002</td>
+                  <td>In schedule 7, paragraph 16.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_title_year_mismatch",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2016-11-24",
+        affected_uri="/id/asp/2002/3/schedule/7/paragraph/16",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="Sch. 7 para. 16",
+        affecting_uri="/id/asp/2016/21",
+        affecting_class="ScottishAct",
+        affecting_year="2016",
+        affecting_number="21",
+        affecting_provisions="sch. 9 pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2016-11-30", "prospective": "false"}],
+        affected_title="Water Industry (Scotland) Act 2002",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+        and record["target"] == "schedule:7/paragraph:16"
+        and record["match_count"] == 0
+        and record["blocking"] is True
         for record in lowering_records
     )
 

@@ -117,6 +117,7 @@ class UKEffectRecord:
     in_force_dates: list[dict[str, Any]] = field(default_factory=list)
     metadata_only: bool = False  # True if this effect was only found in XML metadata, not the Atom feed.
     comments: str = ""
+    affected_title: str = ""
 
     @property
     def affecting_act_id(self) -> str:
@@ -203,6 +204,7 @@ class UKEffectRecord:
             "structural": self.is_structural,
             "structural_for_replay": self.is_structural_for_replay(),
             "affected_provisions": self.affected_provisions,
+            "affected_title": self.affected_title,
             "affecting_act_id": self.affecting_act_id,
             "affecting_provisions": self.affecting_provisions,
             "affecting_title": self.affecting_title,
@@ -284,6 +286,7 @@ def parse_effects_from_feeds(
                     affecting_provisions=effect.get("AffectingProvisions", ""),
                     affecting_title=effect.findtext("ukm:AffectingTitle", default="", namespaces=ns),
                     in_force_dates=in_force_dates,
+                    affected_title=effect.findtext("ukm:AffectedTitle", default="", namespaces=ns),
                 )
             )
     return records
@@ -370,6 +373,7 @@ def parse_effects_from_bytes(
                     affecting_provisions=effect.get("AffectingProvisions", ""),
                     affecting_title=effect.findtext("ukm:AffectingTitle", default="", namespaces=ns),
                     in_force_dates=in_force_dates,
+                    affected_title=effect.findtext("ukm:AffectedTitle", default="", namespaces=ns),
                 )
             )
     return records
@@ -520,6 +524,7 @@ def parse_effects_from_metadata(
                 in_force_dates=in_force_dates,
                 metadata_only=True,
                 comments=effect.get("Comments", ""),
+                affected_title=effect.findtext("{*}AffectedTitle") or "",
             )
         )
     return records

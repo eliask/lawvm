@@ -465,6 +465,7 @@ def try_lower_repeal_table_effect(
                 "row_text": repeal_table_structural_repeal.row_text,
                 "enactment_cell": repeal_table_structural_repeal.enactment_cell,
                 "extent_cell": repeal_table_structural_repeal.extent_cell,
+                "enactment_match_basis": repeal_table_structural_repeal.enactment_match_basis,
             },
         )
         return UKTableBatchLoweringResult(
@@ -503,6 +504,7 @@ def try_lower_repeal_table_effect(
                 "row_text": repeal_table_structural_repeal.row_text,
                 "enactment_cell": repeal_table_structural_repeal.enactment_cell,
                 "extent_cell": repeal_table_structural_repeal.extent_cell,
+                "enactment_match_basis": repeal_table_structural_repeal.enactment_match_basis,
             },
         )
         return UKTableBatchLoweringResult(handled=True)
@@ -552,6 +554,7 @@ def try_lower_repeal_table_effect(
                 "row_text": repeal_table_text_repeal.row_text,
                 "enactment_cell": repeal_table_text_repeal.enactment_cell,
                 "extent_cell": repeal_table_text_repeal.extent_cell,
+                "enactment_match_basis": repeal_table_text_repeal.enactment_match_basis,
                 "original": repeal_table_text_repeal.original,
                 "originals": repeal_table_originals,
                 "occurrence": repeal_table_text_repeal.occurrence,
