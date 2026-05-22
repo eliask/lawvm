@@ -695,6 +695,8 @@ class UKReplayInsertApplyMixin:
                     return child, node, i
                 if allow_sequence_match and _get_id_sequence(c_eid) == target_seq:
                     return child, node, i
+            if not child.children:
+                continue
             res_node, res_parent, res_idx = self._find_node_and_parent(
                 child,
                 eid,
