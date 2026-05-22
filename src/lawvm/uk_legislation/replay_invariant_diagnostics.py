@@ -139,6 +139,62 @@ class UKReplayInvariantDiagnosticsMixin:
             parts.append(f"{_kind_str(current.kind)}:{current.label or '?'}")
         return "/".join(parts)
 
+    def _find_invariant_scope_node(
+        self,
+        address: LegalAddress,
+    ) -> tuple[UKMutableNode | None, UKMutableNode | None]:
+        node = None
+        target_eid = self._derive_target_eid(address)
+        if target_eid:
+            node, _parent, _idx = self._find_node_and_parent_statute(
+                target_eid,
+                allow_sequence_match=False,
+            )
+            if node is not None and not self._eid_candidate_matches_target_leaf(
+                node,
+                address,
+            ):
+                node = None
+        if node is None:
+            node, _parent, _idx = self._find_node_by_target(
+                address,
+                allow_recursive_match=False,
+            )
+        if node is None:
+            node, _parent, _idx = self._find_node_by_target(
+                address,
+                allow_recursive_match=True,
+            )
+        schedule_root = None
+        if address.path and address.path[0][0] == "schedule":
+            schedule_label = _clean_num(str(address.path[0][1] or ""))
+            for schedule in self.statute.supplements:
+                if _clean_num(str(schedule.label or "")) == schedule_label:
+                    schedule_root = schedule
+                    break
+        return node, schedule_root
+
+    def _invariant_parent_target_roots_for_op(
+        self,
+        op: LegalOperation,
+    ) -> list[tuple[str, UKMutableNode, str, str]]:
+        if len(op.target.path) <= 1:
+            return []
+        parent_address = LegalAddress(path=op.target.path[:-1], special=None)
+        node, schedule_root = self._find_invariant_scope_node(parent_address)
+        if node is None:
+            return []
+        if schedule_root is not None:
+            root_name = f"schedule:{schedule_root.label or '?'}"
+            initial_path = self._node_invariant_path(
+                schedule_root,
+                node,
+                _kind_str(schedule_root.kind),
+            )
+            return [(root_name, node, initial_path, f"{root_name}:{initial_path}")]
+        initial_path = self._node_invariant_path(self.statute.body, node, "body")
+        return [("body", node, initial_path, f"body:{initial_path}")]
+
     def _invariant_target_roots(
         self,
         root_filter: set[tuple[str, str]] | None = None,
@@ -163,6 +219,9 @@ class UKReplayInvariantDiagnosticsMixin:
             return self._invariant_target_roots(root_filter)
         if len(op.target.path) <= 1:
             return self._invariant_target_roots(root_filter)
+        parent_roots = self._invariant_parent_target_roots_for_op(op)
+        if parent_roots:
+            return parent_roots
         top_kind, top_label = op.target.path[0]
         top_address = LegalAddress(path=((top_kind, top_label),), special=None)
         top_node = None
