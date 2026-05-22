@@ -11359,6 +11359,67 @@ def test_executor_eid_search_does_not_escape_strict_top_scope_after_miss() -> No
     assert searched_roots == ["2"]
 
 
+def test_executor_eid_search_does_not_escape_strict_top_scope_with_sequence_match() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    attrs={"eId": "chapter-3"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="1",
+                            text="wrong branch",
+                            attrs={"eId": "chapter-3-section-1-p1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    original_find = executor._find_node_and_parent
+    searched_roots: list[str] = []
+
+    def recording_find(
+        node: Any,
+        eid: str,
+        *,
+        allow_sequence_match: bool = True,
+        target_seq: tuple[str, ...] | None = None,
+    ) -> tuple[Any, Any, Any]:
+        searched_roots.append(str(node.label or node.kind))
+        return original_find(
+            node,
+            eid,
+            allow_sequence_match=allow_sequence_match,
+            target_seq=target_seq,
+        )
+
+    executor._find_node_and_parent = recording_find
+    node, parent, idx = executor._find_node_and_parent_statute(
+        "section-1-p1",
+        allow_sequence_match=True,
+    )
+
+    assert (node, parent, idx) == (None, None, None)
+    assert searched_roots == ["1"]
+
+
 def test_executor_eid_search_does_not_scan_when_strict_top_scope_is_absent() -> None:
     statute = IRStatute(
         statute_id="ukpga/2001/1",
