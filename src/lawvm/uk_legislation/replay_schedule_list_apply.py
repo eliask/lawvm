@@ -261,6 +261,8 @@ class UKReplayScheduleListApplyMixin:
             children = list(table.children)
             children[insert_index:insert_index] = payload_rows
             uk_replace_children(table, children)
+            self._clear_eid_lookup_index()
+            self._note_structure_mutation()
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=resolved_rule_id,
@@ -338,6 +340,8 @@ class UKReplayScheduleListApplyMixin:
         children = list(table.children)
         children[insert_index:insert_index] = payload_rows
         uk_replace_children(table, children)
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=resolved_rule_id,
@@ -494,6 +498,8 @@ class UKReplayScheduleListApplyMixin:
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
             uk_replace_children(carrier_node, children)
+            self._clear_eid_lookup_index()
+            self._note_structure_mutation()
             return True
 
         matches = [
@@ -617,6 +623,8 @@ class UKReplayScheduleListApplyMixin:
                 group_children = list(group_node.children)
                 group_children.insert(insert_index, new_node)
                 group_node.children = group_children
+                self._clear_eid_lookup_index()
+                self._note_structure_mutation()
                 return True
             matches = [(idx, child) for idx, child in enumerate(grouped_matches)]
         if len(matches) != 1:
@@ -705,6 +713,8 @@ class UKReplayScheduleListApplyMixin:
         children = list(carrier_node.children)
         children.insert(insert_index, new_node)
         uk_replace_children(carrier_node, children)
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
         return True
 
     def _repeal_schedule_list_entries(
@@ -910,6 +920,8 @@ class UKReplayScheduleListApplyMixin:
             for idx in sorted(indices, reverse=True):
                 children.pop(idx)
             uk_replace_children(parent, children)
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_RESOLVED_RULE_ID,
@@ -1080,6 +1092,8 @@ class UKReplayScheduleListApplyMixin:
         children = list(schedule_node.children)
         children[replace_idx] = new_node
         uk_replace_children(schedule_node, children)
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID,

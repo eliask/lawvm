@@ -327,13 +327,17 @@ class UKReplayInsertApplyMixin:
             children = list(parent_node.children)
             children.insert(insert_idx, new_node)
             uk_replace_children(parent_node, children)
+            self._record_child_inserted(parent_node, new_node)
             return True
         if parent_node:
             new_node = _inherit_parent_local_eid(parent_node, new_node)
             self._log(
                 f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {parent_node.kind} {parent_node.label}"
             )
-            return uk_insert_child_sorted(parent_node, new_node)
+            inserted = uk_insert_child_sorted(parent_node, new_node)
+            if inserted:
+                self._record_child_inserted(parent_node, new_node)
+            return inserted
 
         # Build parent address by dropping the last path segment.
         # Single-segment paths (e.g. section:2a) get parent = body/schedules directly,
@@ -347,7 +351,10 @@ class UKReplayInsertApplyMixin:
             if p_node:
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {p_node.kind} {p_node.label}")
-                return uk_insert_child_sorted(p_node, new_node)
+                inserted = uk_insert_child_sorted(p_node, new_node)
+                if inserted:
+                    self._record_child_inserted(p_node, new_node)
+                return inserted
         elif container == "schedule":
             # Single-segment schedule target: the target IS the schedule — insert payload into it,
             # but only when the payload is a part, chapter, or section (structural containers
@@ -374,7 +381,10 @@ class UKReplayInsertApplyMixin:
                     sch_node = cast(UKMutableNode, sch_node)
                     new_node = _inherit_parent_local_eid(sch_node, new_node)
                     self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into schedule {sch_node.label}")
-                    return uk_insert_child_sorted(sch_node, new_node)
+                    inserted = uk_insert_child_sorted(sch_node, new_node)
+                    if inserted:
+                        self._record_child_inserted(sch_node, new_node)
+                    return inserted
                 return False
         else:
             # Single-segment non-schedule target: prefer inserting after the
@@ -393,6 +403,7 @@ class UKReplayInsertApplyMixin:
                 children: list[UKMutableNode] = list(pred_parent.children)
                 children.insert(pred_idx + 1, new_node)
                 uk_replace_children(pred_parent, children)
+                self._record_child_inserted(pred_parent, new_node)
                 return True
 
             # No suitable predecessor exists in the body tree: fall back to a
@@ -405,6 +416,7 @@ class UKReplayInsertApplyMixin:
                 label_sort_key=_label_sort_key,
             )
             self.statute.body.children = body_children
+            self._record_child_inserted(self.statute.body, new_node)
             return True
 
         if "-" in target_eid:
@@ -413,7 +425,11 @@ class UKReplayInsertApplyMixin:
             if p_node:
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
-                return uk_insert_child_sorted(cast(UKMutableNode, p_node), new_node)
+                parent_node = cast(UKMutableNode, p_node)
+                inserted = uk_insert_child_sorted(parent_node, new_node)
+                if inserted:
+                    self._record_child_inserted(parent_node, new_node)
+                return inserted
 
         if container == "schedule" and len(target.path) > 1:
             self._log(
@@ -473,6 +489,7 @@ class UKReplayInsertApplyMixin:
                 label_sort_key=_label_sort_key,
             )
             self.statute.body.children = body_children
+            self._record_child_inserted(self.statute.body, new_node)
             return True
 
     def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool:
@@ -555,6 +572,9 @@ class UKReplayInsertApplyMixin:
         *,
         allow_sequence_match: bool = True,
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+        cached_node, cached_parent, cached_idx = self._cached_exact_eid_lookup(eid)
+        if cached_node is not None:
+            return cached_node, cached_parent, cached_idx
         node, parent, idx = self._find_node_and_parent(
             self.statute.body,
             eid,

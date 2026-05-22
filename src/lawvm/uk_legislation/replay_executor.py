@@ -68,6 +68,8 @@ class UKReplayExecutor(
         self.oracle_alignment_events: list[dict[str, Any]] = []
         self._structure_mutation_serial = 0
         self._last_invariant_structure_serial = 0
+        self._eid_lookup_index = None
+        self._eid_lookup_ambiguous: set[str] = set()
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -83,6 +85,8 @@ class UKReplayExecutor(
                 self._log("  EXECUTOR: repealing WHOLE ACT")
                 self.statute.body.children = []
                 self.statute.supplements = []
+                self._clear_eid_lookup_index()
+                self._note_structure_mutation()
                 self._record_invariant_violations(op)
             else:
                 self._log(

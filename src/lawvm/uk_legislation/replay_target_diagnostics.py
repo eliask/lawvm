@@ -689,6 +689,7 @@ class UKReplayTargetDiagnosticsMixin:
         if not str(new_node.attrs.get("eId") or new_node.attrs.get("id") or ""):
             new_node.attrs["eId"] = self._derive_target_eid(target)
         uk_insert_child_sorted(parent_node, new_node)
+        self._record_child_inserted(parent_node, new_node)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind="uk_replay_source_carried_structured_tail_substitution_recovered",
