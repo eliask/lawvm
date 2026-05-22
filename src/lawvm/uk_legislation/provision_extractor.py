@@ -12,6 +12,8 @@ from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 
 _INSTRUCTION_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
+_PROV_REF_TOKEN_RE = re.compile(r"[0-9a-zA-Z]")
+_NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
 
 
 def _instruction_text_before_amendment_container(el: ET.Element) -> str:
@@ -46,7 +48,7 @@ def _instruction_text_before_amendment_container(el: ET.Element) -> str:
 
 def _norm_prov_ref(ref: str) -> str:
     """Normalise a provision reference for comparison."""
-    return "".join(re.findall(r"[0-9a-zA-Z]", ref)).lower()
+    return "".join(_PROV_REF_TOKEN_RE.findall(ref)).lower()
 
 
 _NUM_ALPHA_RE = re.compile(r"(\d+)([a-z]+)", flags=re.I)
@@ -54,46 +56,54 @@ _DIGITS_RE = re.compile(r"^\d+$")
 _ALPHA_RE = re.compile(r"^[a-z]+$")
 _REF_SPLIT_RE = re.compile(r"[\s.()]+")
 _EID_SPLIT_RE = re.compile(r"[-_]")
+_SEQUENCE_KIND_TOKENS = {
+    "schedule",
+    "part",
+    "chapter",
+    "section",
+    "paragraph",
+    "subparagraph",
+    "p1",
+    "p2",
+    "p3",
+    "pblock",
+    "wrapper",
+    "article",
+    "rule",
+    "regulation",
+}
+_ROMAN_NUMERAL_LABELS = {
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+}
+_PROVISION_KIND_SYNONYMS = {
+    "schedule": ("schedule", "sched", "schedules"),
+    "paragraph": ("p3", "p2", "p1", "paragraph", "para", "p", "listitem"),
+    "section": ("section", "p1", "p1group"),
+    "regulation": ("regulation", "p1", "p1group"),
+    "part": ("part",),
+    "chapter": ("pblock", "chapter"),
+}
 
 
 @lru_cache(maxsize=131072)
 def _sequence_tokens_cached(parts: tuple[str, ...]) -> tuple[str, ...]:
     """Normalize ID/reference parts while preserving token boundaries."""
-    kinds = {
-        "schedule",
-        "part",
-        "chapter",
-        "section",
-        "paragraph",
-        "subparagraph",
-        "p1",
-        "p2",
-        "p3",
-        "pblock",
-        "wrapper",
-        "article",
-        "rule",
-        "regulation",
-    }
-    roman_map = {
-        "i": "1",
-        "ii": "2",
-        "iii": "3",
-        "iv": "4",
-        "v": "5",
-        "vi": "6",
-        "vii": "7",
-        "viii": "8",
-        "ix": "9",
-        "x": "10",
-    }
     seq_parts: list[str] = []
     for p in parts:
         p_low = p.lower()
-        if p_low in kinds:
+        if p_low in _SEQUENCE_KIND_TOKENS:
             seq_parts.append(p_low)
-        elif p_low in roman_map:
-            seq_parts.append(roman_map[p_low])
+        elif p_low in _ROMAN_NUMERAL_LABELS:
+            seq_parts.append(_ROMAN_NUMERAL_LABELS[p_low])
         elif match := _NUM_ALPHA_RE.fullmatch(p_low):
             seq_parts.extend([match.group(1), match.group(2)])
         elif _DIGITS_RE.match(p_low):
@@ -227,14 +237,7 @@ def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
     """Check if an element matches a provision kind and/or number."""
     tag = _tag(el).lower()
     if kind:
-        synonyms = {
-            "schedule": ("schedule", "sched", "schedules"),
-            "paragraph": ("p3", "p2", "p1", "paragraph", "para", "p", "listitem"),
-            "section": ("section", "p1", "p1group"),
-            "regulation": ("regulation", "p1", "p1group"),
-            "part": ("part",),
-            "chapter": ("pblock", "chapter"),
-        }.get(kind, (kind,))
+        synonyms = _PROVISION_KIND_SYNONYMS.get(kind, (kind,))
         if tag not in synonyms:
             return False
 
@@ -256,26 +259,14 @@ def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
             elif child.text is not None:
                 found_raw_nums.append(child.text)
 
-    target_num = re.sub(r"[^0-9a-zA-Z]", "", num).lower()
-    roman_map = {
-        "i": "1",
-        "ii": "2",
-        "iii": "3",
-        "iv": "4",
-        "v": "5",
-        "vi": "6",
-        "vii": "7",
-        "viii": "8",
-        "ix": "9",
-        "x": "10",
-    }
-    if target_num in roman_map:
-        target_num = roman_map[target_num]
+    target_num = _NON_ALNUM_RE.sub("", num).lower()
+    if target_num in _ROMAN_NUMERAL_LABELS:
+        target_num = _ROMAN_NUMERAL_LABELS[target_num]
 
     for raw in found_raw_nums:
-        norm_raw = re.sub(r"[^0-9a-zA-Z]", "", raw).lower()
-        if norm_raw in roman_map:
-            norm_raw = roman_map[norm_raw]
+        norm_raw = _NON_ALNUM_RE.sub("", raw).lower()
+        if norm_raw in _ROMAN_NUMERAL_LABELS:
+            norm_raw = _ROMAN_NUMERAL_LABELS[norm_raw]
         if norm_raw == target_num:
             return True
     return False
