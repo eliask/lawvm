@@ -413,6 +413,8 @@ class UKReplayStateMixin:
             for child_idx, child in enumerate(parent.children):
                 if child is target_node:
                     return parent, child_idx
+                if not child.children:
+                    continue
                 found_parent, found_idx = _walk(child)
                 if found_parent is not None:
                     return found_parent, found_idx
