@@ -4180,9 +4180,16 @@ Current bench replay-regime invariant:
   the destination is absent. Replay relabels the source node to the destination
   label, derives the destination eId, and reorders it under the same parent; it
   does not insert, replace, or repeal by text coincidence.
-- Broader renumbers, moves, or destination collisions remain unsupported replay
-  actions until LawVM owns their lineage semantics explicitly. They must not be
-  coerced into inserts, replaces, or parent rewrites.
+- Cross-container metadata renumbers such as `Sch. 22 para. 88 renumbered as
+  Sch. 2 para. 88(1)` are not same-provision descendant wraps. They imply
+  migration across top-level schedule containers plus descendant wrapping, and
+  currently emit `uk_effect_metadata_cross_container_renumber_rejected` with
+  source and destination targets. Manual-frontier triage classifies these as
+  `uk_manual_frontier_cross_container_renumber_candidate`. They must remain
+  blocking until LawVM owns cross-container lineage semantics.
+- Other broader renumbers, moves, or destination collisions remain unsupported
+  replay actions until LawVM owns their lineage semantics explicitly. They must
+  not be coerced into inserts, replaces, or parent rewrites.
 
 ## UK Nested Target Splitting and Insert Anchors
 

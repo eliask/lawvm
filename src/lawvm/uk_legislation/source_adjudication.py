@@ -1610,6 +1610,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source lane exposes a naked payload fragment without a supported action verb or effect type.",
         }
 
+    if "uk_effect_metadata_cross_container_renumber_rejected" in all_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_cross_container_renumber_candidate",
+            "reason": "The effect metadata proves a cross-container renumber/migration; a claim or future migration compiler must own source identity, destination identity, and descendant wrapping before replay can apply it.",
+        }
+
     if "uk_effect_lowering_no_supported_action_rejected" in all_rules:
         return {
             "status": "non_textual_or_out_of_scope",
