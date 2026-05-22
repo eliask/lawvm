@@ -11120,6 +11120,49 @@ def test_executor_recursive_match_cache_tracks_structural_mutations(monkeypatch:
     assert executor._recursive_match_cache == {}
 
 
+def test_executor_recursive_match_cache_preserves_negative_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            label=None,
+                            attrs={"eId": "section-1-wrapper"},
+                            children=(),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    root = executor.statute.body.children[0]
+
+    node, parent, idx = executor._find_recursive_match(root, "subsection", "9")
+    assert (node, parent, idx) == (None, None, None)
+
+    def fail_recursive_match(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("negative recursive lookup should use the structure-serial cache")
+
+    monkeypatch.setattr(replay_target_lookup_mod, "uk_recursive_kind_match", fail_recursive_match)
+    assert executor._find_recursive_match(root, "subsection", "9") == (None, None, None)
+
+    root.children.append(UKMutableNode(kind=IRNodeKind.SUBSECTION, label="9", text="new subsection"))
+    executor._note_structure_mutation()
+    assert executor._recursive_match_cache == {}
+
+
 def test_executor_eid_search_cache_tracks_structural_mutations() -> None:
     statute = IRStatute(
         statute_id="ukpga/2001/1",

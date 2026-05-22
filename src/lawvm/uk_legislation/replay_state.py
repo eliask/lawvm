@@ -198,9 +198,9 @@ class UKReplayStateMixin:
         self,
         key: tuple[int, str, str],
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
-        cached = self._recursive_match_cache.get(key)
-        if cached is None:
+        if key not in self._recursive_match_cache:
             return None
+        cached = self._recursive_match_cache[key]
         serial, node, parent, idx = cached
         if serial != self._structure_mutation_serial:
             self._recursive_match_cache.pop(key, None)
