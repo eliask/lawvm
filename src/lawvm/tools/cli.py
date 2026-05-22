@@ -5718,6 +5718,13 @@ def _build_parser() -> argparse.ArgumentParser:
     brg_p.add_argument("--baseline", required=True, help="baseline bench run label")
     brg_p.add_argument("--current", required=True, help="current bench run label")
     brg_p.add_argument(
+        "-j",
+        "--jurisdiction",
+        default="fi",
+        choices=["fi", "ee", "uk"],
+        help="bench run jurisdiction (default: fi)",
+    )
+    brg_p.add_argument(
         "--threshold", type=float, default=0.005, help="per-statute regression threshold (default: 0.005)"
     )
     brg_p.add_argument(

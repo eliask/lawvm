@@ -86,9 +86,10 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.workers == 2
 
     args = parser.parse_args(
-        ["bench-regression-guard", "--baseline", "old", "--current", "new"]
+        ["bench-regression-guard", "-j", "uk", "--baseline", "old", "--current", "new"]
     )
     assert args.command == "bench-regression-guard"
+    assert args.jurisdiction == "uk"
     assert args.baseline == "old"
     assert args.current == "new"
 
@@ -1098,3 +1099,44 @@ def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, c
     out = capsys.readouterr().out
     assert rc == 1
     assert "RESULT: FAIL" in out
+
+
+def test_bench_regression_guard_supports_uk_saved_run_shape(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "score", "replay_score"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "replay_score": "0.95"})
+        writer.writerow({"statute_id": "ukpga/2000/2", "score": "0.80", "replay_score": "0.85"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "score", "replay_score"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.91", "replay_score": "0.95"})
+        writer.writerow({"statute_id": "ukpga/2000/2", "score": "0.79", "replay_score": "0.85"})
+
+    assert bench_regression_guard.find_csv_by_label("old", jurisdiction="uk") == baseline
+    assert bench_regression_guard.load_scores(baseline) == {
+        "ukpga/2000/1": 0.90,
+        "ukpga/2000/2": 0.80,
+    }
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Baseline : old.csv" in out
+    assert "Current  : new.csv" in out
+    assert "RESULT: PASS" in out

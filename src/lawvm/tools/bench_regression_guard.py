@@ -13,11 +13,20 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 BENCH_RUNS_DIR = _REPO_ROOT / "data" / "bench_runs"
 EE_BENCH_RUNS_DIR = _REPO_ROOT / "data" / "ee_bench_runs"
+UK_BENCH_RUNS_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
 
 
 def find_csv_by_label(label: str, jurisdiction: str = "fi") -> Path:
     """Find the most recent run CSV whose filename ends with _{label}.csv."""
-    bench_dir = EE_BENCH_RUNS_DIR if jurisdiction == "ee" else BENCH_RUNS_DIR
+    if jurisdiction == "uk":
+        direct_path = UK_BENCH_RUNS_DIR / f"{label}.csv"
+        if direct_path.exists():
+            return direct_path
+        bench_dir = UK_BENCH_RUNS_DIR
+    elif jurisdiction == "ee":
+        bench_dir = EE_BENCH_RUNS_DIR
+    else:
+        bench_dir = BENCH_RUNS_DIR
     matches = sorted(bench_dir.glob(f"*_{label}.csv"))
     if not matches:
         raise FileNotFoundError(f"No bench run CSV found for label '{label}' in {bench_dir}")
@@ -31,14 +40,18 @@ def load_scores(path: Path) -> dict[str, float]:
         reader = csv.DictReader(f)
         if reader.fieldnames is None:
             raise ValueError(f"Empty or header-less CSV: {path}")
-        required = {"statute_id", "similarity"}
-        missing = required - set(reader.fieldnames)
-        if missing:
-            raise ValueError(f"CSV {path} missing expected columns: {missing}. Found: {reader.fieldnames}")
+        if "statute_id" not in reader.fieldnames:
+            raise ValueError(f"CSV {path} missing expected column: statute_id. Found: {reader.fieldnames}")
+        score_column = "similarity" if "similarity" in reader.fieldnames else "score"
+        if score_column not in reader.fieldnames:
+            raise ValueError(
+                f"CSV {path} missing expected score column 'similarity' or 'score'. "
+                f"Found: {reader.fieldnames}"
+            )
         for row in reader:
             sid = row["statute_id"].strip()
             try:
-                score = float(row["similarity"])
+                score = float(row[score_column])
             except ValueError:
                 continue
             scores[sid] = score
@@ -169,4 +182,12 @@ def main(args: "argparse.Namespace") -> None:
     )
 
 
-__all__ = ["BENCH_RUNS_DIR", "EE_BENCH_RUNS_DIR", "find_csv_by_label", "load_scores", "main", "run_guard"]
+__all__ = [
+    "BENCH_RUNS_DIR",
+    "EE_BENCH_RUNS_DIR",
+    "UK_BENCH_RUNS_DIR",
+    "find_csv_by_label",
+    "load_scores",
+    "main",
+    "run_guard",
+]
