@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import xml.etree.ElementTree as ET
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
-from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.effect_payload_rejections import (
@@ -16,7 +15,7 @@ from lawvm.uk_legislation.effect_payload_rejections import (
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.metadata_rewrites import _select_whole_schedule_element
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_ir_node_kind
 from lawvm.uk_legislation.payload_conversion import _to_mutable_node
 from lawvm.uk_legislation.payload_identity import (
     _synthesize_payload_descendant_eids,
@@ -67,6 +66,14 @@ class UKStructuralPayloadExtraction:
 class UKPayloadNodePreparation:
     payload_node: Optional[IRNode]
     skip_effect: bool = False
+
+
+def _uk_core_kind_alias_value(kind: str) -> str:
+    """Return the core IR kind value for UK-local aliases used in addresses."""
+    kind_value = str(kind or "").lower()
+    if kind_value == "point":
+        return "item"
+    return kind_value
 
 
 def lower_flat_p1para_schedule_paragraph_insert_payload(
@@ -284,28 +291,30 @@ def prepare_uk_operation_payload_node(
         payload_node_mut is not None
         and target_replacement_leaf_override
         and target_replacement_leaf_kind
-        and str(payload_node_mut.kind).lower() == target_replacement_leaf_kind
+        and payload_node_mut.kind.value == _uk_core_kind_alias_value(target_replacement_leaf_kind)
     ):
         payload_node_mut.label = target_replacement_leaf_override
 
     if payload_node_mut is not None and curr_action == "insert":
         leaf_kind = _addr_leaf_kind(target) or ""
         leaf_label = _addr_leaf_label(target) or ""
+        payload_kind = payload_node_mut.kind.value
+        leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
+        canonical_leaf_kind = _uk_core_kind_alias_value(leaf_kind)
         if (
             leaf_kind
             and leaf_label
-            and payload_node_mut.kind == leaf_kind
+            and payload_kind == canonical_leaf_kind
             and not _clean_num(payload_node_mut.label or "")
         ):
             payload_node_mut.label = leaf_label
-        leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
         if (
             leaf_kind in leafish_kinds
-            and payload_node_mut.kind in leafish_kinds
-            and payload_node_mut.kind != leaf_kind
+            and payload_kind in leafish_kinds
+            and payload_kind != canonical_leaf_kind
             and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
         ):
-            payload_node_mut.kind = cast(IRNodeKind, leaf_kind)
+            payload_node_mut.kind = uk_ir_node_kind(leaf_kind)
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
         payload_identity_target = payload_match_target if curr_action == "replace" else target

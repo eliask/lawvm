@@ -788,8 +788,9 @@ class UKReplayTargetDiagnosticsMixin:
             )
         parent_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
         children: list[UKMutableNode] = []
+        canonical_child_kind = uk_ir_node_kind(child_kind).value
         for label, child_text in parts:
-            child_target = LegalAddress(path=(*tuple(target.path), (child_kind, label)), special=None)
+            child_target = LegalAddress(path=(*tuple(target.path), (canonical_child_kind, label)), special=None)
             child_eid = self._derive_target_eid(child_target)
             attrs = {"source_rule_id": _UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID}
             if child_eid:
@@ -798,7 +799,7 @@ class UKReplayTargetDiagnosticsMixin:
                 attrs["eId"] = f"{parent_eid}-{label}"
             children.append(
                 UKMutableNode(
-                    kind=uk_ir_node_kind(child_kind),
+                    kind=uk_ir_node_kind(canonical_child_kind),
                     label=label,
                     text=child_text,
                     attrs=attrs,
@@ -822,7 +823,8 @@ class UKReplayTargetDiagnosticsMixin:
                 family="source_carried_labeled_child_text_substitution",
                 text_match=match_text,
                 replacement_text=replacement,
-                child_kind=child_kind,
+                child_kind=canonical_child_kind,
+                source_child_kind=child_kind,
                 child_labels=tuple(label for label, _ in parts),
                 source_parent_prefix=child_shape.parent_prefix,
                 source_shape="flat_replacement_payload_with_visible_child_labels",
