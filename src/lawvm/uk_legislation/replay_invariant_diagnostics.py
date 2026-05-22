@@ -259,6 +259,9 @@ class UKReplayInvariantDiagnosticsMixin:
     def _record_invariant_violations(self, op: LegalOperation) -> None:
         if self._structure_mutation_serial == self._last_invariant_structure_serial:
             return
+        if self._invariant_removal_only_op(op) and not self._seen_invariant_violations:
+            self._last_invariant_structure_serial = self._structure_mutation_serial
+            return
         target_roots = self._invariant_target_roots_for_op(op)
         scoped_prefixes: set[str] = set()
         for _root_name, _node, _initial_path, scope_prefix in target_roots:
