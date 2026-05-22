@@ -1483,6 +1483,19 @@ Current block-substitution context invariant:
 - the parser may lower `for "X" to the end substitute- <block text>` to a
   `TEXT_FROM_X_TO_END` patch using the named rule
   `uk_effect_quoted_anchor_to_end_block_substitution_text_patch`
+- parser-owned post-child local text tails are preserved as source-shape
+  evidence, not inferred at replay time. When UK XML stores paragraph children
+  between an introductory `Text` node and a trailing local `Text` node, the
+  grafter records `uk_post_child_text_tail` on the affected IR node and emits
+  `uk_post_child_text_tail_preserved`. A range-to-end substitution whose start
+  anchor is found inside that marked tail may be replayed node-locally under
+  `uk_replay_node_local_range_to_end_text_rewrite_applied`, preserving the
+  existing child paragraphs. Unmarked `TEXT_FROM_X_TO_END` over a node with
+  descendants remains the explicit subtree-flattening lane
+  `uk_replay_subtree_range_to_end_text_rewrite_flattened`; replay must not
+  guess that arbitrary parent text after children is legally local tail text.
+  Current witness: `ukpga/2020/15` affected `s. 1(6)` and `s. 1A(5)` by
+  `ukpga/2025/8 s. 52(2)`.
 - manual-frontier classification treats explicit inflected amendment verbs
   (`substituted`, `inserted`, `omitted`, `repealed`) as deterministic
   parser/extraction work for `uk_effect_overlap_substitution_unlowered`, not as

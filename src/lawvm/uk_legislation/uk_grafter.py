@@ -95,6 +95,60 @@ def _local_structural_text(el: ET.Element) -> str:
     return " ".join(" ".join(_collect(el)).split())
 
 
+def _post_child_local_text_tail(el: ET.Element) -> str:
+    """Return local text that appears after a structural child in source order."""
+    structural = {
+        "part",
+        "chapter",
+        "euchapter",
+        "p1group",
+        "p2group",
+        "p3group",
+        "p4group",
+        "section",
+        "p1",
+        "article",
+        "eusection",
+        "conventionrights",
+        "pblock",
+        "p2",
+        "p3",
+        "p4",
+        "subsection",
+        "paragraph",
+        "schedule",
+        "table",
+    }
+    transparent_skip = {"pnumber", "number", "title", "commentaryref"}
+    transparent_containers = {"p1para", "p2para", "p3para", "p4para"}
+    structural_text_skip = {tag.lower() for tag in _EDITORIAL_TAGS - _VISIBLE_INLINE_TEXT_TAGS}
+
+    def _collect(node: ET.Element) -> list[str]:
+        seen_structural = False
+        parts: list[str] = []
+        for child in node:
+            tag = _tag(child).lower()
+            if tag in structural:
+                seen_structural = True
+                continue
+            if tag in transparent_containers:
+                nested = _collect(child)
+                if nested:
+                    parts.extend(nested)
+                continue
+            if not seen_structural:
+                continue
+            if tag in transparent_skip or tag in structural_text_skip:
+                continue
+            text = _text_content(child)
+            if text:
+                parts.append(text)
+        return parts
+
+    parts = _collect(el)
+    return " ".join(" ".join(parts).split())
+
+
 def _extract_num(el: Optional[ET.Element]) -> str:
     if el is None:
         return ""
@@ -861,6 +915,9 @@ def _parse_section(el, context, force_active=False, pit_date=None, is_eur=False)
         node.text = _text_content(el)
     else:
         node.text = _local_structural_text(el)
+        post_child_tail = _post_child_local_text_tail(el)
+        if post_child_tail:
+            node.attrs["uk_post_child_text_tail"] = post_child_tail
     return node
 
 
@@ -876,6 +933,9 @@ def _parse_p2(el, context, force_active=False, pit_date=None, is_eur=False):
         node.text = _text_content(el)
     else:
         node.text = _local_structural_text(el)
+        post_child_tail = _post_child_local_text_tail(el)
+        if post_child_tail:
+            node.attrs["uk_post_child_text_tail"] = post_child_tail
     return node
 
 
@@ -891,6 +951,9 @@ def _parse_p3(el, context, force_active=False, pit_date=None, is_eur=False):
         node.text = _text_content(el)
     else:
         node.text = _local_structural_text(el)
+        post_child_tail = _post_child_local_text_tail(el)
+        if post_child_tail:
+            node.attrs["uk_post_child_text_tail"] = post_child_tail
     return node
 
 
@@ -906,6 +969,9 @@ def _parse_p4(el, context, force_active=False, pit_date=None, is_eur=False):
         node.text = _text_content(el)
     else:
         node.text = _local_structural_text(el)
+        post_child_tail = _post_child_local_text_tail(el)
+        if post_child_tail:
+            node.attrs["uk_post_child_text_tail"] = post_child_tail
     return node
 
 
@@ -1048,6 +1114,19 @@ def _source_parse_observations(
                         }
                     )
                 bucket.append(sample)
+        post_child_tail = str(node.attrs.get("uk_post_child_text_tail") or "")
+        if post_child_tail:
+            tail_rule_id = "uk_post_child_text_tail_preserved"
+            counts[tail_rule_id] = counts.get(tail_rule_id, 0) + 1
+            bucket = samples.setdefault(tail_rule_id, [])
+            if len(bucket) < 5:
+                bucket.append(
+                    {
+                        "kind": node.kind.value,
+                        "label": str(node.label or ""),
+                        "tail_text": " ".join(post_child_tail.split())[:160],
+                    }
+                )
         for child in node.children:
             _walk(child)
 

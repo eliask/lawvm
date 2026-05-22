@@ -1079,6 +1079,46 @@ class UKReplayTextApplyMixin:
                 return rebuilt, True
         return node, False
 
+    def _apply_text_replace_on_marked_post_child_tail(
+        self,
+        node: UKMutableNode,
+        match: str,
+        replacement: str,
+        occurrence: int,
+        *,
+        allow_punctuation_spacing: bool = False,
+        allow_word_punctuation_elision: bool = False,
+        recovery_rule_ids_out: Optional[list[str]] = None,
+    ) -> tuple[UKMutableNode, bool]:
+        """Apply a range-to-end rewrite to parser-marked post-child local text."""
+        text = node.text or ""
+        post_child_tail = str(node.attrs.get("uk_post_child_text_tail") or "")
+        if not text or not post_child_tail or not match.startswith("TEXT_FROM_") or not match.endswith("_TO_END"):
+            return node, False
+        start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+        if not start_text:
+            return node, False
+        tail_start_idx, tail_recovery_rule_ids = _find_text_range_start_index(
+            post_child_tail,
+            start_text,
+            occurrence=occurrence,
+            allow_punctuation_spacing=allow_punctuation_spacing,
+            allow_word_punctuation_elision=allow_word_punctuation_elision,
+        )
+        if tail_start_idx == -1:
+            return node, False
+        tail_offset = text.rfind(post_child_tail)
+        if tail_offset == -1:
+            return node, False
+        if recovery_rule_ids_out is not None and tail_recovery_rule_ids:
+            recovery_rule_ids_out.extend(tail_recovery_rule_ids)
+        rewrite_start = tail_offset + tail_start_idx
+        rebuilt = dc_replace(node, text=f"{text[:rewrite_start]}{replacement}".strip())
+        self._replace_node_in_statute(node, rebuilt)
+        if recovery_rule_ids_out is not None:
+            recovery_rule_ids_out.append("uk_replay_node_local_range_to_end_text_rewrite_applied")
+        return rebuilt, True
+
     def _apply_text_append_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -2096,6 +2136,19 @@ class UKReplayTextApplyMixin:
                     replacement,
                     occurrence,
                     end_occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    recovery_rule_ids_out=recovery_rule_ids_out,
+                )
+                if applied:
+                    return rebuilt, True
+
+            if node.text and node.children and match.endswith("_TO_END"):
+                rebuilt, applied = self._apply_text_replace_on_marked_post_child_tail(
+                    node,
+                    match,
+                    replacement,
+                    occurrence,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
                     recovery_rule_ids_out=recovery_rule_ids_out,
