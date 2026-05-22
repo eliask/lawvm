@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
+from weakref import WeakKeyDictionary
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -37,6 +38,7 @@ _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
 )
 
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
+_SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 
 
 def append_source_fragment_context_observations(
@@ -155,6 +157,9 @@ def _fragment_substitution_after_words_inserted_by_sibling(
 
 
 def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
+    cached = _SOURCE_LEAD_TEXT_CACHE.get(el)
+    if cached is not None:
+        return cached
     parts: list[str] = []
     if el.text:
         parts.append(el.text)
@@ -164,7 +169,9 @@ def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
         parts.append(_text_content(child))
         if child.tail:
             parts.append(child.tail)
-    return " ".join(" ".join(parts).split())
+    text = " ".join(" ".join(parts).split())
+    _SOURCE_LEAD_TEXT_CACHE[el] = text
+    return text
 
 
 def _source_has_subordinate_row_scope(el: ET.Element) -> bool:
