@@ -10,6 +10,10 @@ from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.ordering import _label_sort_key
 
+_UK_TOP_SCOPED_EID_PREFIXES = frozenset(
+    {"annex", "article", "chapter", "division", "part", "schedule", "section"}
+)
+
 
 class UKReplayStateMixin:
     statute: UKMutableStatute
@@ -20,6 +24,10 @@ class UKReplayStateMixin:
         dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]
     ]
     _eid_lookup_ambiguous: set[str]
+    _eid_suffix_lookup_index: Optional[
+        dict[tuple[str, str], tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]
+    ]
+    _eid_suffix_lookup_ambiguous: set[tuple[str, str]]
     _eid_search_cache: dict[
         tuple[str, bool],
         tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
@@ -47,9 +55,42 @@ class UKReplayStateMixin:
                 values.append(value)
         return tuple(values)
 
+    def _eid_top_scope_key(self, eid: str) -> str:
+        parts = str(eid or "").split("-")
+        if len(parts) >= 3 and parts[0] in _UK_TOP_SCOPED_EID_PREFIXES and parts[1]:
+            return f"{parts[0]}-{parts[1]}"
+        return ""
+
+    def _eid_suffix_alias_keys(self, eid: str) -> tuple[tuple[str, str], ...]:
+        raw = str(eid or "").strip()
+        if not raw:
+            return ()
+        aliases: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for separator in ("-", "_"):
+            parts = raw.split(separator)
+            if len(parts) < 2:
+                continue
+            for start in range(1, len(parts)):
+                suffix = separator.join(parts[start:]).strip()
+                if not suffix:
+                    continue
+                key = (self._eid_top_scope_key(suffix), suffix)
+                if key not in seen:
+                    seen.add(key)
+                    aliases.append(key)
+                if key[0]:
+                    global_key = ("", suffix)
+                    if global_key not in seen:
+                        seen.add(global_key)
+                        aliases.append(global_key)
+        return tuple(aliases)
+
     def _clear_eid_lookup_index(self) -> None:
         self._eid_lookup_index = None
         self._eid_lookup_ambiguous = set()
+        self._eid_suffix_lookup_index = None
+        self._eid_suffix_lookup_ambiguous = set()
         self._eid_search_cache.clear()
 
     def _cached_eid_search_lookup(
@@ -245,6 +286,8 @@ class UKReplayStateMixin:
         idx: Optional[int],
         index: dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]],
         ambiguous: set[str],
+        suffix_index: dict[tuple[str, str], tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]],
+        suffix_ambiguous: set[tuple[str, str]],
     ) -> None:
         for eid in self._node_eid_values(node):
             if eid in ambiguous:
@@ -254,8 +297,24 @@ class UKReplayStateMixin:
                 ambiguous.add(eid)
                 continue
             index[eid] = (node, parent, idx)
+            for suffix_key in self._eid_suffix_alias_keys(eid):
+                if suffix_key in suffix_ambiguous:
+                    continue
+                if suffix_key in suffix_index and suffix_index[suffix_key][0] is not node:
+                    suffix_index.pop(suffix_key, None)
+                    suffix_ambiguous.add(suffix_key)
+                    continue
+                suffix_index[suffix_key] = (node, parent, idx)
         for child_idx, child in enumerate(node.children):
-            self._index_eid_subtree(child, node, child_idx, index, ambiguous)
+            self._index_eid_subtree(
+                child,
+                node,
+                child_idx,
+                index,
+                ambiguous,
+                suffix_index,
+                suffix_ambiguous,
+            )
 
     def _ensure_eid_lookup_index(
         self,
@@ -264,12 +323,32 @@ class UKReplayStateMixin:
             return self._eid_lookup_index
         index: dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]] = {}
         ambiguous: set[str] = set()
+        suffix_index: dict[tuple[str, str], tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]] = {}
+        suffix_ambiguous: set[tuple[str, str]] = set()
         for child_idx, child in enumerate(self.statute.body.children):
-            self._index_eid_subtree(child, self.statute.body, child_idx, index, ambiguous)
+            self._index_eid_subtree(
+                child,
+                self.statute.body,
+                child_idx,
+                index,
+                ambiguous,
+                suffix_index,
+                suffix_ambiguous,
+            )
         for supplement_idx, supplement in enumerate(self.statute.supplements):
-            self._index_eid_subtree(supplement, None, supplement_idx, index, ambiguous)
+            self._index_eid_subtree(
+                supplement,
+                None,
+                supplement_idx,
+                index,
+                ambiguous,
+                suffix_index,
+                suffix_ambiguous,
+            )
         self._eid_lookup_index = index
         self._eid_lookup_ambiguous = ambiguous
+        self._eid_suffix_lookup_index = suffix_index
+        self._eid_suffix_lookup_ambiguous = suffix_ambiguous
         return index
 
     def _cached_exact_eid_lookup(
@@ -302,6 +381,47 @@ class UKReplayStateMixin:
         self._ensure_eid_lookup_index()[eid] = (node, None, current_idx)
         return node, None, current_idx
 
+    def _cached_suffix_eid_lookup(
+        self,
+        eid: str,
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+        if not eid:
+            return None, None, None
+        self._ensure_eid_lookup_index()
+        if self._eid_suffix_lookup_index is None:
+            return None, None, None
+        top_scope = self._eid_top_scope_key(eid)
+        lookup_keys = ((top_scope, eid),) if top_scope else (("", eid),)
+        for lookup_key in lookup_keys:
+            if lookup_key in self._eid_suffix_lookup_ambiguous:
+                continue
+            entry = self._eid_suffix_lookup_index.get(lookup_key)
+            if entry is None:
+                continue
+            node, parent, idx = entry
+            if parent is not None:
+                if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
+                    return node, parent, idx
+                try:
+                    current_idx = parent.children.index(node)
+                except ValueError:
+                    self._eid_suffix_lookup_index.pop(lookup_key, None)
+                    continue
+                self._eid_suffix_lookup_index[lookup_key] = (node, parent, current_idx)
+                return node, parent, current_idx
+            if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
+                return node, None, idx
+            if self.statute.body is node:
+                return node, None, None
+            try:
+                current_idx = self.statute.supplements.index(node)
+            except ValueError:
+                self._eid_suffix_lookup_index.pop(lookup_key, None)
+                continue
+            self._eid_suffix_lookup_index[lookup_key] = (node, None, current_idx)
+            return node, None, current_idx
+        return None, None, None
+
     def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None:
         if self._eid_lookup_index is None:
             return
@@ -312,6 +432,11 @@ class UKReplayStateMixin:
                 entry = self._eid_lookup_index.get(eid)
                 if entry is not None and entry[0] is current:
                     self._eid_lookup_index.pop(eid, None)
+                if self._eid_suffix_lookup_index is not None:
+                    for suffix_key in self._eid_suffix_alias_keys(eid):
+                        suffix_entry = self._eid_suffix_lookup_index.get(suffix_key)
+                        if suffix_entry is not None and suffix_entry[0] is current:
+                            self._eid_suffix_lookup_index.pop(suffix_key, None)
             stack.extend(current.children)
 
     def _add_eid_lookup_subtree(
@@ -322,12 +447,16 @@ class UKReplayStateMixin:
     ) -> None:
         if self._eid_lookup_index is None:
             return
+        if self._eid_suffix_lookup_index is None:
+            self._eid_suffix_lookup_index = {}
         self._index_eid_subtree(
             node,
             parent,
             idx,
             self._eid_lookup_index,
             self._eid_lookup_ambiguous,
+            self._eid_suffix_lookup_index,
+            self._eid_suffix_lookup_ambiguous,
         )
 
     def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None:

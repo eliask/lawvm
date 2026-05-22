@@ -1074,7 +1074,14 @@ Current tooling-consistency invariant:
     measured 54.11s wall time with `replay=22.47s`. Caching the UK kind-value
     normalizer removes another profiled enum/string normalization hot helper
     used by target matching; the same witness measured 54.04s wall time with
-    `replay=22.29s`. A local improvement in one family should not be treated as
+    `replay=22.29s`. Scoped unique `eId` suffix aliases are now indexed only
+    when unambiguous within their top-level `section-N`/schedule-like scope,
+    avoiding recursive fallback for payload/source IDs that carry a harmless
+    prefix while preserving ambiguous cases as ordinary slow-path lookups. The
+    `1990/42` witness remained score-equivalent at 92.9% replay and measured
+    6.59s wall time with `replay=0.40s`; the `1988/1` witness remained
+    score-equivalent at 99.6% replay and measured 55.45s wall time with
+    `replay=23.08s`. A local improvement in one family should not be treated as
     global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
