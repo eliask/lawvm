@@ -3079,6 +3079,50 @@ def test_uk_bench_show_run_reports_persisted_evidence_lanes(monkeypatch, tmp_pat
     assert "show.diagnostics.jsonl rows=1" in out
 
 
+def test_uk_bench_show_run_can_print_persisted_phase_timings(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    bench_dir = tmp_path / "runs"
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    result = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,
+        score=0.9,
+        status="OK",
+        n_ops=1900,
+        replay_score=0.8,
+        duration_s=42.25,
+        comparison_class="commensurable",
+        phase_timings={
+            "compile_ops": 12.50,
+            "replay": 39.75,
+            "oracle_align": 3.00,
+        },
+    )
+
+    uk_bench._save_results([result], "show-phases")
+    capsys.readouterr()
+
+    uk_bench._show_run("show-phases", phase_timings=True)
+
+    out = capsys.readouterr().out
+    assert "Slowest 1 rows by measured phase time:" in out
+    assert "ukpga/2010/4" in out
+    assert "measured=  55.25s" in out
+    assert "row=  42.25s" in out
+    assert "replay=39.75s" in out
+    assert "compile_ops=12.50s" in out
+
+
 def test_uk_bench_show_run_prints_persisted_replay_adjudication_samples(
     monkeypatch,
     tmp_path,
