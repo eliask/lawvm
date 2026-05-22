@@ -70,6 +70,8 @@ class UKReplayExecutor(
         self._last_invariant_structure_serial = 0
         self._eid_lookup_index = None
         self._eid_lookup_ambiguous: set[str] = set()
+        self._eid_suffix_lookup_index = None
+        self._eid_suffix_lookup_ambiguous: set[tuple[str, str]] = set()
         self._eid_search_cache = {}
         self._target_lookup_cache = {}
         self._recursive_match_cache = {}

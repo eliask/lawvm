@@ -10970,6 +10970,95 @@ def test_executor_exact_eid_lookup_index_tracks_structural_mutations() -> None:
     assert "section-1-1" not in executor._eid_lookup_index
 
 
+def test_executor_eid_suffix_lookup_uses_scoped_unique_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="target",
+                            attrs={"eId": "prefix-section-1-2"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+
+    def fail_recursive_search(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("unique suffix alias should resolve from the eId index")
+
+    monkeypatch.setattr(executor, "_find_node_and_parent", fail_recursive_search)
+    node, parent, idx = executor._find_node_and_parent_statute("section-1-2")
+
+    assert node is not None
+    assert node.text == "target"
+    assert parent is executor.statute.body.children[0]
+    assert idx == 0
+
+
+def test_executor_eid_suffix_lookup_preserves_top_scope() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="section one target",
+                            attrs={"eId": "prefix-section-1-2"},
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    attrs={"eId": "section-2"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="section two target",
+                            attrs={"eId": "prefix-section-2-2"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+
+    node, parent, idx = executor._find_node_and_parent_statute("section-2-2")
+
+    assert node is not None
+    assert node.text == "section two target"
+    assert parent is executor.statute.body.children[1]
+    assert idx == 0
+
+
 def test_executor_replace_reuses_eid_lookup_parent_without_path_walk(monkeypatch: pytest.MonkeyPatch) -> None:
     statute = IRStatute(
         statute_id="ukpga/2001/1",

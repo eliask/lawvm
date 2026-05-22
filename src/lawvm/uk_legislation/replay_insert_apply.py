@@ -596,6 +596,9 @@ class UKReplayInsertApplyMixin:
         cached_node, cached_parent, cached_idx = self._cached_exact_eid_lookup(eid)
         if cached_node is not None:
             return cached_node, cached_parent, cached_idx
+        suffix_node, suffix_parent, suffix_idx = self._cached_suffix_eid_lookup(eid)
+        if suffix_node is not None:
+            return suffix_node, suffix_parent, suffix_idx
         cached_search = self._cached_eid_search_lookup(
             eid,
             allow_sequence_match=allow_sequence_match,
