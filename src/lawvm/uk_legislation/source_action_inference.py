@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
+from lawvm.uk_legislation.metadata_rewrites import _uk_unsupported_metadata_renumber_rejection
 from lawvm.uk_legislation.source_context import _preview_source_text
 from lawvm.uk_legislation.source_parent_payloads import (
     _source_parent_at_end_added_payload,
@@ -37,6 +38,24 @@ def append_no_supported_action_rejection(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     """Record the terminal missing-action lane after source inference fails."""
+    unsupported_renumber = _uk_unsupported_metadata_renumber_rejection(effect)
+    if unsupported_renumber is not None:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=unsupported_renumber.rule_id,
+            family="lineage_normalization",
+            reason_code=unsupported_renumber.reason_code,
+            reason=unsupported_renumber.reason,
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "source_target": str(unsupported_renumber.source_target),
+                "destination": str(unsupported_renumber.destination),
+            },
+        )
+        return
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id="uk_effect_lowering_no_supported_action_rejected",

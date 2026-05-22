@@ -35,6 +35,15 @@ class UKMetadataRenumberTargets:
     metadata_destination: Optional[LegalAddress] = None
 
 
+@dataclass(frozen=True)
+class UKUnsupportedMetadataRenumber:
+    source_target: LegalAddress
+    destination: LegalAddress
+    rule_id: str
+    reason_code: str
+    reason: str
+
+
 def _renumbered_descendant_text(
     text: str,
     *,
@@ -101,6 +110,49 @@ def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadata
             ),
         )
     return None
+
+
+def _uk_unsupported_metadata_renumber_rejection(
+    effect: UKEffectRecord,
+) -> Optional[UKUnsupportedMetadataRenumber]:
+    """Return a specific blocker for explicit metadata renumber rows outside replay support."""
+    if _uk_metadata_renumber_targets(effect) is not None:
+        return None
+    effect_type = " ".join(str(effect.effect_type or "").replace("\u00a0", " ").split())
+    match = re.fullmatch(r"(?P<source>.+?)\s+renumbered\s+as\s+(?P<dest>.+)", effect_type, flags=re.I)
+    if match is None:
+        return None
+    source_ref = " ".join(match.group("source").split())
+    words_in_match = re.fullmatch(r"words?\s+in\s+(?P<target>.+)", source_ref, flags=re.I)
+    if words_in_match is not None:
+        source_ref = words_in_match.group("target")
+    source_target = canonicalize_uk_address(_parse_affected_target(source_ref))
+    destination = canonicalize_uk_address(_parse_affected_target(match.group("dest")))
+    if source_target.path[:1] != destination.path[:1]:
+        return UKUnsupportedMetadataRenumber(
+            source_target=source_target,
+            destination=destination,
+            rule_id="uk_effect_metadata_cross_container_renumber_rejected",
+            reason_code="explicit_effect_metadata_cross_container_renumber",
+            reason=(
+                "UK effect metadata explicitly renumbers a provision into a "
+                "different top-level container. This is a lineage/migration "
+                "operation, not a same-parent relabel or same-provision "
+                "descendant wrap, so replay blocks it until cross-container "
+                "migration semantics are owned."
+            ),
+        )
+    return UKUnsupportedMetadataRenumber(
+        source_target=source_target,
+        destination=destination,
+        rule_id="uk_effect_metadata_unsupported_renumber_rejected",
+        reason_code="explicit_effect_metadata_unsupported_renumber_shape",
+        reason=(
+            "UK effect metadata explicitly renumbers a provision, but the shape "
+            "is outside the currently owned same-provision descendant and "
+            "same-parent sibling replay semantics."
+        ),
+    )
 
 
 def _uk_source_text_corrected_renumber_targets(

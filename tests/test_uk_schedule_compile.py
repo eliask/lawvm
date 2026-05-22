@@ -20,7 +20,10 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
+from lawvm.uk_legislation.source_adjudication import (
+    classify_uk_effect_source_pathology,
+    classify_uk_manual_compile_frontier,
+)
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.source_context import (
@@ -18813,6 +18816,53 @@ def test_compile_metadata_sibling_renumber_lowers_typed_destination_op() -> None
     assert lowering_records[0]["reason_code"] == "explicit_effect_metadata_same_parent_sibling_renumber"
     assert lowering_records[0]["blocking"] is False
     assert lowering_records[0]["strict_disposition"] == "record"
+
+
+def test_compile_metadata_cross_container_renumber_records_migration_blocker() -> None:
+    effect = UKEffectRecord(
+        effect_id="key-test-cross-container-renumber",
+        effect_type="Sch. 22 para. 88 renumbered as Sch. 2 para. 88(1)",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17/schedule/22/paragraph/88/subparagraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 88(1)",
+        affecting_uri="/id/uksi/2020/1520",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2020",
+        affecting_number="1520",
+        affecting_provisions="reg. 5(5)(a)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2020-12-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+    extracted_el = ET.fromstring("<P3>a the existing provision becomes sub-paragraph (1);</P3>")
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert lowering_records[0]["rule_id"] == "uk_effect_metadata_cross_container_renumber_rejected"
+    assert lowering_records[0]["family"] == "lineage_normalization"
+    assert lowering_records[0]["reason_code"] == "explicit_effect_metadata_cross_container_renumber"
+    assert lowering_records[0]["source_target"] == "schedule:22/paragraph:88"
+    assert lowering_records[0]["destination"] == "schedule:2/paragraph:88/subparagraph:1"
+    assert lowering_records[0]["blocking"] is True
+    assert lowering_records[0]["strict_disposition"] == "block"
+    manual_frontier = classify_uk_manual_compile_frontier(
+        effect_type=effect.effect_type,
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="a the existing provision becomes sub-paragraph (1);",
+        lowering_rejections=lowering_records,
+        compiled_op_count=len(ops),
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["rule_id"] == "uk_manual_frontier_cross_container_renumber_candidate"
 
 
 def test_compile_metadata_words_in_renumber_strips_scope_phrase_from_source_target() -> None:
