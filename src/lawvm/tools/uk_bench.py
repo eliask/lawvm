@@ -1236,6 +1236,7 @@ def _score_statute(
                 if (
                     current_projection_shape
                     and uk_residual_claim_comparison_class == "commensurable"
+                    and replay_score < 1.0
                 ):
                     uk_residual_claim_comparison_class = current_projection_shape
                 uk_residual_claim_core_comparison = is_core_uk_comparison(
@@ -1411,7 +1412,7 @@ def _score_statute(
             enacted_eids=enacted_eids,
             oracle_eids=oracle_eids,
         )
-        if current_projection_shape and comparison_class == "commensurable":
+        if current_projection_shape and comparison_class == "commensurable" and score < 1.0:
             comparison_class = current_projection_shape
         commencement_projection_shape = classify_uk_commencement_current_projection(
             replay_compare_eids=replay_compare_eids,

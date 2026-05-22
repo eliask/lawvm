@@ -298,6 +298,18 @@ def test_classify_uk_unapplied_expansion_as_core() -> None:
     assert is_core_uk_comparison(comparison) is True
 
 
+def test_classify_uk_perfect_replay_score_overrides_oracle_expansion_shape() -> None:
+    comparison = classify_uk_bench_comparison(
+        n_enacted_eids=13,
+        n_oracle_eids=30,
+        n_effects=9,
+        raw_score=1.0,
+    )
+
+    assert comparison == "commensurable"
+    assert is_core_uk_comparison(comparison) is True
+
+
 def test_classify_uk_nonstructural_current_projection_as_non_core() -> None:
     comparison = classify_uk_bench_comparison(
         n_enacted_eids=22,

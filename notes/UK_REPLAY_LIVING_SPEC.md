@@ -2830,6 +2830,11 @@ Current bench replay-regime invariant:
   `comparison_class` when the explicit column is absent. Treating every legacy
   classed row as core hides source/oracle pathology rows in compare and
   candidate-triage summaries.
+- UK comparison classification treats exact replay-vs-oracle structural
+  equality as `commensurable` before applying enacted-vs-oracle expansion
+  labels. An oracle may legitimately be larger than the enacted source because
+  effects were applied; once replay reaches the same EID set, calling the row
+  `unapplied_oracle_expansion` is stale triage evidence.
 - `uk-bench --compare` must also print replay-regime distributions,
   source-parse observation/rejection totals/rules, effect-feed rejection
   totals/rules, authority/lowering rejection deltas, replay adjudication deltas,
