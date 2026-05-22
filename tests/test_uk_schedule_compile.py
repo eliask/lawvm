@@ -5349,6 +5349,78 @@ def test_compile_source_carried_definition_entry_insert_from_parent_context() ->
     assert observations[0]["blocking"] is False
 
 
+def test_compile_source_carried_definition_entry_insert_normalizes_double_comma_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-6-paragraph-9">
+              <Pnumber>9</Pnumber>
+              <P1para>
+                <P2 id="schedule-6-paragraph-9-14">
+                  <Pnumber>14</Pnumber>
+                  <P2para>
+                    <Text>
+                      In section 31(1), after the definition of “police force”
+                      there is inserted—
+                    </Text>
+                    <BlockAmendment>
+                      <P3para>
+                        <Text>“police member” means a person appointed as such, ,</Text>
+                      </P3para>
+                    </BlockAmendment>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-definition-entry-double-comma",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-04-01",
+        affected_uri="/id/asp/2000/11",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="s. 31(1)",
+        affecting_uri="/id/asp/2006/10",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="10",
+        affecting_provisions="sch. 6 para. 9(14)",
+        affecting_title="Police, Public Order and Criminal Justice (Scotland) Act 2006",
+        in_force_dates=[{"date": "2013-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.replacement == (
+        "“police member” means a person appointed as such,"
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_definition_entry_insert_text_patch"
+    ]
+    assert observations[0]["payload_normalization_rule_ids"] == (
+        "uk_effect_source_carried_definition_entry_payload_punctuation_normalized",
+    )
+
+
 def test_compile_appropriate_place_definition_entry_insert_rejects_without_anchor_claim() -> None:
     source_root = ET.fromstring(
         f"""

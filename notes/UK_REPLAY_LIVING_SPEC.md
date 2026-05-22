@@ -1023,6 +1023,13 @@ Current tooling-consistency invariant:
     EID-sequence lookup index did not materially improve this witness and should
     not be retried without hit-rate evidence showing sequence-alias lookup misses
     dominate a different corpus slice.
+  - A 2026-05-23 serial profile for `ukpga/2021/26` showed a different
+    `compile_ops` hotspot: a source-payload trailing double-comma cleanup regex
+    consumed roughly 109s of a 114s run through repeated `re.Pattern.search`
+    calls. That cleanup is now a linear string suffix normalizer; the same
+    witness measured 3.42s wall time with `compile_ops=0.43s`. Future perf work
+    should treat anchored regexes with leading `\s*` over large XML payload text
+    as suspect until profiled.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence

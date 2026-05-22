@@ -418,6 +418,17 @@ def _looks_like_definition_entry_payload(text: str, *, include_includes: bool = 
     return False
 
 
+def _normalize_trailing_double_comma(text: str) -> str:
+    """Normalize source payloads ending in a duplicated comma without regex backtracking."""
+    stripped = text.rstrip()
+    if not stripped.endswith(","):
+        return text
+    before_last = stripped[:-1].rstrip()
+    if not before_last.endswith(","):
+        return text
+    return f"{before_last[:-1].rstrip()},"
+
+
 def _source_after_definition_insert_term(text: str) -> str:
     """Extract the anchor term from a bounded definition-entry insert formula."""
     normalized = " ".join((text or "").split())
@@ -836,7 +847,7 @@ def _fragment_substitution_source_carried_definition_entry_insert(
             "uk_effect_source_carried_definition_entry_payload_instruction_stripped"
         )
         appropriate_place_without_anchor = True
-    normalized_inserted = re.sub(r"\s*,\s*,\s*$", ",", inserted).strip()
+    normalized_inserted = _normalize_trailing_double_comma(inserted).strip()
     if normalized_inserted != inserted:
         inserted = normalized_inserted
         payload_rule_ids.append(
