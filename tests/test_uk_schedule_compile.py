@@ -5055,6 +5055,25 @@ def test_source_after_definition_insert_term_is_bounded_on_quote_heavy_text() ->
     )
 
 
+def test_appropriate_place_definition_entry_instruction_strip_is_bounded() -> None:
+    from lawvm.uk_legislation.source_definition_fragments import (
+        _strip_appropriate_place_definition_entry_instruction,
+    )
+
+    assert _strip_appropriate_place_definition_entry_instruction(
+        "iii at the appropriate place insert— “operational service standard” "
+        "is to be construed in accordance with section 3C(1)(b), ,"
+    ) == (
+        "“operational service standard” is to be construed in accordance with section 3C(1)(b), ,"
+    )
+    assert _strip_appropriate_place_definition_entry_instruction(
+        "2 b at the appropriate place inserted- “scheme” means the test scheme;"
+    ) == "“scheme” means the test scheme;"
+    assert _strip_appropriate_place_definition_entry_instruction(
+        "after the definition of “scheme” insert— “operator” means an operator;"
+    ) is None
+
+
 def test_compile_source_carried_following_words_repeal_from_block_payload() -> None:
     source_root = ET.fromstring(
         f"""

@@ -321,6 +321,44 @@ _SOURCE_DEFINITION_ENTRY_PREDICATES = (
 )
 
 
+def _is_appropriate_place_instruction_prefix_token(token: str) -> bool:
+    return bool(
+        re.fullmatch(r"(?:[ivxlcdm]+|[a-z]{1,3}|\d+[A-Za-z]?)", token, flags=re.I)
+    )
+
+
+def _strip_appropriate_place_definition_entry_instruction(text: str) -> Optional[str]:
+    """Return body when a child payload embeds an unsupported appropriate-place instruction."""
+    normalized = " ".join((text or "").split()).strip()
+    if not normalized:
+        return None
+    tokens = normalized.split()
+    for prefix_len in range(1, min(3, len(tokens) - 4) + 1):
+        if not all(
+            _is_appropriate_place_instruction_prefix_token(token)
+            for token in tokens[:prefix_len]
+        ):
+            continue
+        rest = " ".join(tokens[prefix_len:]).strip()
+        lower = rest.lower()
+        matched_phrase = ""
+        for phrase in ("at the appropriate place inserted", "at the appropriate place insert"):
+            if lower.startswith(phrase):
+                matched_phrase = phrase
+                break
+        if not matched_phrase:
+            continue
+        body_start = len(matched_phrase)
+        while body_start < len(rest) and rest[body_start].isspace():
+            body_start += 1
+        if body_start >= len(rest) or rest[body_start] not in {"-", "—"}:
+            continue
+        body = rest[body_start + 1 :].strip()
+        if body:
+            return body
+    return None
+
+
 def _looks_like_definition_entry_payload(text: str, *, include_includes: bool = False) -> bool:
     """Return whether text contains a bounded quoted definition entry payload."""
     normalized = " ".join((text or "").split())
@@ -718,20 +756,9 @@ def _fragment_substitution_source_carried_definition_entry_insert(
     inserted = " ".join((extracted_text or "").split()).strip()
     payload_rule_ids: list[str] = []
     appropriate_place_without_anchor = False
-    instruction_match = re.match(
-        r"""
-        ^
-        (?P<prefix>(?:(?:[ivxlcdm]+|[a-z]{1,3}|\d+[A-Za-z]?)\s+){1,3})
-        at\s+the\s+appropriate\s+place\s+insert(?:ed)?
-        \s*[—-]\s*
-        (?P<body>.+)
-        $
-        """,
-        inserted,
-        flags=re.I | re.S | re.X,
-    )
-    if instruction_match is not None:
-        inserted = " ".join(str(instruction_match.group("body") or "").split()).strip()
+    instruction_body = _strip_appropriate_place_definition_entry_instruction(inserted)
+    if instruction_body is not None:
+        inserted = instruction_body
         payload_rule_ids.append(
             "uk_effect_source_carried_definition_entry_payload_instruction_stripped"
         )
