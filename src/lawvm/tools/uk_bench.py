@@ -4714,12 +4714,50 @@ def _compare_runs(label_a: str, label_b: str) -> None:
             return f"n={count} avg=n/a"
         return f"n={count} avg={average:.1%}"
 
+    def _format_seconds_delta(before: float, after: float) -> str:
+        return f"{before:.2f}s -> {after:.2f}s ({after - before:+.2f}s)"
+
+    def _phase_timing_summary(
+        results: list[_BenchResult],
+        statute_ids: set[str],
+    ) -> tuple[int, float, float, dict[str, float]]:
+        phase_totals: Counter[str] = Counter()
+        measured_total = 0.0
+        row_total = 0.0
+        count = 0
+        for result in results:
+            if result.statute_id not in statute_ids or not result.phase_timings:
+                continue
+            count += 1
+            measured_total += sum(result.phase_timings.values())
+            row_total += result.duration_s
+            phase_totals.update(result.phase_timings)
+        return count, measured_total, row_total, dict(phase_totals)
+
+    def _format_phase_delta_summary(
+        phases_a: Mapping[str, float],
+        phases_b: Mapping[str, float],
+    ) -> str:
+        keys = set(phases_a) | set(phases_b)
+        if not keys:
+            return ""
+        ranked_keys = sorted(
+            keys,
+            key=lambda key: (abs(phases_b.get(key, 0.0) - phases_a.get(key, 0.0)), key),
+            reverse=True,
+        )
+        return " ".join(
+            f"{key}={phases_b.get(key, 0.0) - phases_a.get(key, 0.0):+.2f}s"
+            for key in ranked_keys[:8]
+        )
+
     results_a = _load_run(label_a)
     results_b = _load_run(label_b)
     score_witness_path_a = _score_witness_path(label_a)
     score_witness_path_b = _score_witness_path(label_b)
     score_witness_count_a = _count_csv_data_rows(score_witness_path_a)
     score_witness_count_b = _count_csv_data_rows(score_witness_path_b)
+    results_by_id_a = {result.statute_id: result for result in results_a}
     results_by_id_b = {result.statute_id: result for result in results_b}
     a = _primary_scores(results_a)
     b = _primary_scores(results_b)
@@ -4893,6 +4931,30 @@ def _compare_runs(label_a: str, label_b: str) -> None:
         f"{_format_score_summary(_average_common_field(results_a, 'replay_text_score', common))} -> "
         f"{_format_score_summary(_average_common_field(results_b, 'replay_text_score', common))}"
     )
+    timed_common = {
+        statute_id
+        for statute_id in common
+        if results_by_id_a[statute_id].phase_timings
+        and results_by_id_b[statute_id].phase_timings
+    }
+    phase_count_a, measured_a, row_time_a, phases_a = _phase_timing_summary(
+        results_a,
+        timed_common,
+    )
+    phase_count_b, measured_b, row_time_b, phases_b = _phase_timing_summary(
+        results_b,
+        timed_common,
+    )
+    if phase_count_a and phase_count_b:
+        print(
+            "Phase timings: "
+            f"common_rows={min(phase_count_a, phase_count_b)} "
+            f"measured={_format_seconds_delta(measured_a, measured_b)} "
+            f"row={_format_seconds_delta(row_time_a, row_time_b)}"
+        )
+        phase_delta_summary = _format_phase_delta_summary(phases_a, phases_b)
+        if phase_delta_summary:
+            print(f"Phase timing deltas: {phase_delta_summary}")
     print(f"Average: {avg_a:.1%} -> {avg_b:.1%} ({avg_b - avg_a:+.1%})")
     print(f"Improved: {len(improved)}, Regressed: {len(regressed)}")
 

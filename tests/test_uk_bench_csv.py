@@ -1908,6 +1908,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         comparison_class="commensurable",
         text_score=0.4,
         replay_text_score=0.5,
+        phase_timings={"compile_ops": 2.0, "replay": 3.0},
     )
     commencement = _BenchResult(
         statute_id="ukpga/2000/1",
@@ -1955,6 +1956,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         n_commenced_eids=4,
         text_score=0.45,
         replay_text_score=0.65,
+        phase_timings={"compile_ops": 1.5, "replay": 6.0, "oracle_align": 1.0},
     )
     raw_only = _BenchResult(
         statute_id="ukpga/2001/2",
@@ -2090,6 +2092,11 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
     ) in out
     assert "Text scores: n=1 avg=40.0% -> n=1 avg=45.0%" in out
     assert "Replay text scores: n=1 avg=50.0% -> n=1 avg=65.0%" in out
+    assert (
+        "Phase timings: common_rows=1 measured=5.00s -> 8.50s (+3.50s) "
+        "row=0.00s -> 0.00s (+0.00s)"
+    ) in out
+    assert "Phase timing deltas: replay=+3.00s oracle_align=+1.00s compile_ops=-0.50s" in out
     assert "Average: 50.0% -> 70.0%" in out
     assert (
         "ukpga/2000/1: 50.0% -> 70.0% (+20.0%) "
