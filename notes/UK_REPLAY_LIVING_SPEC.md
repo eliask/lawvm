@@ -1081,8 +1081,13 @@ Current tooling-consistency invariant:
     `1990/42` witness remained score-equivalent at 92.9% replay and measured
     6.59s wall time with `replay=0.40s`; the `1988/1` witness remained
     score-equivalent at 99.6% replay and measured 55.45s wall time with
-    `replay=23.08s`. A local improvement in one family should not be treated as
-    global UK replay progress without saved-run guard evidence.
+    `replay=23.08s`. The invariant scan now relies on the UK mutable tree's
+    typed `IRNodeKind.value` directly instead of calling the generic kind
+    normalizer for every child visited by duplicate/order diagnostics; this is
+    score-equivalent and measured 53.20s wall time with `replay=21.55s` on the
+    `1988/1` witness, and 6.37s wall time with `replay=0.38s` on the `1990/42`
+    witness. A local improvement in one family should not be treated as global
+    UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
