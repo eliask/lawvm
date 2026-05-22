@@ -379,6 +379,18 @@ def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
             and _is_single_alpha_order_label(raw_left)
             and _is_single_alpha_order_label(raw_right)
         )
+        or (
+            in_schedule
+            and _is_single_alpha_order_label(raw_leaf_text)
+            and _is_single_alpha_order_label(raw_left)
+            and _is_alpha_suffix_order_label(raw_right)
+        )
+        or (
+            in_schedule
+            and _is_single_alpha_order_label(raw_leaf_text)
+            and _is_alpha_suffix_order_label(raw_left)
+            and _is_single_alpha_order_label(raw_right)
+        )
     )
 
 

@@ -31,6 +31,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _rewrite_flat_definition_child_inner_text,
     _rewrite_flat_definition_child_ordinal_text,
 )
+from lawvm.uk_legislation.replay_target_gaps import uk_item_order_shape_gap
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKReplayExecutor,
@@ -783,6 +784,114 @@ def test_executor_records_body_root_fallback_insert_recovery() -> None:
     assert adjudications[0].detail["target"] == "chapter:1/section:2"
     assert adjudications[0].detail["payload_kind"] == "section"
     assert adjudications[0].detail["derived_target_eid"]
+
+
+def test_executor_blocks_schedule_descendant_body_root_fallback() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = _base_statute()
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_descendant_body_root_fallback_blocked",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("schedule", "5A"), ("part", "1"))),
+            payload=IRNode(kind=IRNodeKind.PART, label="Part 1", text="Inserted schedule part."),
+            source=_source(),
+        )
+    )
+
+    assert [child.label for child in executor.statute.body.children] == ["1"]
+    assert executor.statute.supplements == []
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_missing_schedule_branch_gap"
+    assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "source_shape"
+    assert adjudications[0].detail["target"] == "schedule:5A/part:1"
+    assert adjudications[0].detail["payload_kind"] == "part"
+    assert adjudications[0].detail["payload_label"] == "Part 1"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_schedule_single_letter_item_before_alpha_suffix_is_order_shape_gap() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_item_alpha_suffix_order_gap",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(
+            path=(
+                ("schedule", "3A"),
+                ("paragraph", "1"),
+                ("subparagraph", "1"),
+                ("item", "v"),
+            )
+        ),
+        payload=IRNode(kind=IRNodeKind.ITEM, label="v", text="Inserted item."),
+        source=_source(),
+    )
+
+    assert uk_item_order_shape_gap(
+        op,
+        "schedule:SCHEDULE 3A:schedule/part:PART 1/crossheading:?/paragraph:1/"
+        "subparagraph:1: item out of order: v > ja",
+    )
+
+
+def test_executor_classifies_absent_child_repeal_under_present_parent() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/11",
+        title="Absent Child Repeal Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="3A",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="4",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="2",
+                                text="The Secretary of State is also a supervisory authority.",
+                                children=(IRNode(kind=IRNodeKind.ITEM, label="da", text="Existing item."),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_absent_child_repeal_target_gap",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(
+                path=(
+                    ("schedule", "3A"),
+                    ("paragraph", "4"),
+                    ("subparagraph", "2"),
+                    ("item", "f"),
+                )
+            ),
+            source=_source(),
+        )
+    )
+
+    parent = executor.statute.supplements[0].children[0].children[0]
+    assert [(child.kind, child.label) for child in parent.children] == [(IRNodeKind.ITEM, "da")]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_absent_child_repeal_target_gap"
+    assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "source_shape"
+    assert adjudications[0].detail["target"] == "schedule:3A/paragraph:4/subparagraph:2/item:f"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
 
 
 def test_executor_resolves_source_parent_range_schedule_paragraph_target_to_unique_item() -> None:

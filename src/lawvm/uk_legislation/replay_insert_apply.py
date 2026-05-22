@@ -415,6 +415,13 @@ class UKReplayInsertApplyMixin:
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
                 return uk_insert_child_sorted(cast(UKMutableNode, p_node), new_node)
 
+        if container == "schedule" and len(target.path) > 1:
+            self._log(
+                "  EXECUTOR: refusing body-root fallback for schedule descendant "
+                f"{new_node.kind} {new_node.label} target {target}"
+            )
+            return False
+
         body_root_kinds = {
             "part",
             "chapter",

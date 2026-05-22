@@ -15,6 +15,24 @@ from lawvm.uk_legislation.replay_target_gaps import uk_missing_source_target_gap
 
 
 class UKReplayRepealApplyMixin:
+    def _present_parent_absent_leaf_repeal_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) < 2:
+            return False
+        leaf_kind = str(path[-1][0] or "").lower()
+        leaf_label = str(path[-1][1] or "").strip()
+        if leaf_kind not in {"paragraph", "subparagraph", "item", "point"} or not leaf_label:
+            return False
+        parent_target = LegalAddress(path=path[:-1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None:
+            return False
+        for child in getattr(parent_node, "children", ()) or ():
+            child_kind = str(getattr(child, "kind", "") or "").lower()
+            child_label = str(getattr(child, "label", "") or "").strip().lower()
+            if child_kind == leaf_kind and child_label == leaf_label.lower():
+                return False
+        return bool((getattr(parent_node, "text", "") or "").strip() or getattr(parent_node, "children", ()))
 
     def _apply_repeal_op(
         self,
@@ -100,6 +118,14 @@ class UKReplayRepealApplyMixin:
                     self.adjudications_out,
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped repeal: target falls inside an absent sibling range under the parent path.",
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(op, target),
+                )
+            elif self._present_parent_absent_leaf_repeal_gap(target):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_absent_child_repeal_target_gap",
+                    message="UK replay skipped repeal: parent target exists but the repealed child is already absent.",
                     op=op,
                     detail=uk_replay_blocking_action_target_detail(op, target),
                 )
