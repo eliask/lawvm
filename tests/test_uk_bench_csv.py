@@ -399,7 +399,8 @@ def test_uk_bench_score_statute_can_skip_text_similarity(monkeypatch) -> None:
     assert result.score == 1.0
     assert result.text_score == -1.0
     assert result.n_text_compared == 0
-    assert result.phase_timings["text_score_enacted"] >= 0.0
+    assert "score_enacted_eids" in result.phase_timings
+    assert "text_score_enacted" not in result.phase_timings
 
 
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:

@@ -122,12 +122,14 @@ _PHASE_TIMING_KEYS = (
     "parse_enacted",
     "parse_oracle",
     "collect_enacted_eids",
+    "score_enacted_eids",
     "text_score_enacted",
     "compile_ops",
     "replay",
     "oracle_align",
     "collect_replay_eids",
     "score_replay_eids",
+    "replay_residuals",
     "text_score_replay",
     "replay_exception",
     "commencement",
@@ -1117,16 +1119,17 @@ def _score_statute(
                 right_eids=oracle_eids,
             )
         )
+        _mark_phase("score_enacted_eids")
 
         # ── Text similarity: enacted vs oracle ─────────────────────────
         oracle_text_map: Dict[str, str] = oracle_eid_data.get("text_map", {})
         if score_text:
             enacted_texts = _extract_eid_texts(enacted_ir, common)
             text_score, n_text_compared = _text_similarity_score(enacted_texts, oracle_text_map)
+            _mark_phase("text_score_enacted")
         else:
             text_score = -1.0
             n_text_compared = 0
-        _mark_phase("text_score_enacted")
 
         # ── Optional replay ────────────────────────────────────────────
         n_ops = 0
@@ -1408,10 +1411,11 @@ def _score_statute(
                         right_eids=oracle_compare_eids,
                     )
                 )
+                _mark_phase("replay_residuals")
                 if score_text:
                     replayed_texts = _extract_eid_texts(replayed_ir, replayed_eids & oracle_eids)
                     replay_text_score, _ = _text_similarity_score(replayed_texts, oracle_text_map)
-                _mark_phase("text_score_replay")
+                    _mark_phase("text_score_replay")
             except Exception as replay_exc:
                 # Replay failure is non-fatal — record it but keep enacted score.
                 # Log the error so it is visible in bench output (not silently swallowed).
