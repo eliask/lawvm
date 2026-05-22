@@ -29,6 +29,10 @@ from lawvm.uk_legislation.replay_applicability import should_replay_nonstructura
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
+from lawvm.uk_legislation.provision_extractor import (
+    _find_provision_from_search_root,
+    _find_provision_greedy,
+)
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
     _extract_from_affecting_source_context,
@@ -2838,6 +2842,61 @@ def test_extract_provision_bytes_keeps_descendant_block_insert_instruction_conte
     extracted_text = "".join(extracted.itertext())
     assert 'after the definition of "2013 Act" insert-' in extracted_text
     assert "corporate joint committee" in extracted_text
+
+
+def test_find_provision_from_search_root_matches_greedy_for_unique_first_component() -> None:
+    root = ET.fromstring(
+        f"""
+        <Body xmlns="{_LEG_NS}">
+          <P1 id="section-1">
+            <Pnumber>1</Pnumber>
+            <P2 id="section-1-1">
+              <Pnumber>1</Pnumber>
+              <P3 id="section-1-a"><Pnumber>a</Pnumber></P3>
+            </P2>
+          </P1>
+          <P1 id="section-2"><Pnumber>2</Pnumber></P1>
+        </Body>
+        """
+    )
+    path = list(_parse_ref("s. 1(1)(a)"))
+
+    indexed_node, indexed_depth = _find_provision_from_search_root(root, path)
+    greedy_node, greedy_depth = _find_provision_greedy(root, path)
+
+    assert indexed_node is greedy_node
+    assert indexed_depth == greedy_depth
+
+
+def test_find_provision_from_search_root_matches_greedy_for_missing_first_component() -> None:
+    root = ET.fromstring(
+        f"""
+        <Body xmlns="{_LEG_NS}">
+          <P1 id="section-1"><Pnumber>1</Pnumber></P1>
+        </Body>
+        """
+    )
+    path = list(_parse_ref("s. 99(1)"))
+
+    assert _find_provision_from_search_root(root, path) == _find_provision_greedy(root, path)
+
+
+def test_find_provision_from_search_root_matches_greedy_for_ambiguous_first_component() -> None:
+    root = ET.fromstring(
+        f"""
+        <Body xmlns="{_LEG_NS}">
+          <P1 id="section-1-a"><Pnumber>1</Pnumber></P1>
+          <P1 id="section-1-b"><Pnumber>1</Pnumber></P1>
+        </Body>
+        """
+    )
+    path = list(_parse_ref("s. 1"))
+
+    indexed_node, indexed_depth = _find_provision_from_search_root(root, path)
+    greedy_node, greedy_depth = _find_provision_greedy(root, path)
+
+    assert indexed_node is greedy_node
+    assert indexed_depth == greedy_depth
 
 
 def test_compile_words_inserted_after_fragment_to_text_replace() -> None:

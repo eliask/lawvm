@@ -295,6 +295,35 @@ def _find_provision_greedy(
     return best_node, best_depth
 
 
+@lru_cache(maxsize=32768)
+def _first_component_matches(
+    search_root: ET.Element,
+    target_kind: str,
+    target_num: str,
+) -> tuple[ET.Element, ...]:
+    """Return source nodes matching the first parsed provision component."""
+    return tuple(
+        el
+        for el in search_root.iter()
+        if el is not search_root and _match_node(el, target_kind, target_num)
+    )
+
+
+def _find_provision_from_search_root(
+    search_root: ET.Element,
+    path: list[tuple[Optional[str], str]],
+) -> tuple[Optional[ET.Element], int]:
+    if path:
+        target_kind, target_num = path[0]
+        if target_kind and target_num:
+            matches = _first_component_matches(search_root, target_kind, target_num)
+            if not matches:
+                return None, 0
+            if len(matches) == 1:
+                return _find_provision_greedy(matches[0], path, 1)
+    return _find_provision_greedy(search_root, path)
+
+
 def _select_extracted_match(
     el: ET.Element,
     parent_map: Optional[dict[ET.Element, ET.Element]] = None,
@@ -414,7 +443,7 @@ def _extract_provision_element_from_root(
             body = el
             break
     search_root = body if body is not None else root
-    target_node, depth_reached = _find_provision_greedy(search_root, list(path))
+    target_node, depth_reached = _find_provision_from_search_root(search_root, list(path))
     if target_node is not None:
         rem_tokens = [tn for _tk, tn in path[depth_reached:] if tn]
         for child in target_node.iter():
