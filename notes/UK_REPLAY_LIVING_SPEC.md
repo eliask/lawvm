@@ -467,6 +467,11 @@ rejection fields (`source_target_address`, `source_subparagraph_label`,
 fields define the minimum auditable claim surface for compiling a mutation into
 the payload of a prior amendment instruction. They are evidence, not replay
 authority.
+`table_surface_mutation` templates carry `source_target_surface`,
+`source_target_address`, and `table_entry_shape` when lowering has identified
+a table-entry or column instruction but blocked replay for lack of a cell, row,
+column, or ordering claim. In particular, `appropriate_place_table_entry`
+requires an external ordering/anchor claim before it can become executable.
 `uk-effects` summary output also aggregates
 `suggested_claim_template_status_counts` for actionable frontier rows
 (`manual_compile_candidate` and `deterministic_frontend_candidate`) so review

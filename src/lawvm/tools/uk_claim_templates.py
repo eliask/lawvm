@@ -62,6 +62,19 @@ def _first_lowering_rejection_detail(
     return {}
 
 
+def _first_table_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
+    """Return the first table-surface rejection with target-shape evidence."""
+    for rule_id in (
+        "uk_effect_table_entry_instruction_rejected",
+        "uk_effect_table_entry_target_rejected",
+        "uk_effect_table_entry_row_insert",
+    ):
+        detail = _first_lowering_rejection_detail(row=row, rule_id=rule_id)
+        if detail:
+            return detail
+    return {}
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -216,7 +229,8 @@ def manual_compile_suggested_claim_template(
             "uk_manual_frontier_table_column_insert_candidate": "table_column_boundary_required",
             "uk_manual_frontier_table_appropriate_place_candidate": "appropriate_place_table_entry_requires_ordering_claim",
         }
-        return _bounded_mutation_claim_template(
+        detail = _first_table_lowering_rejection_detail(row=row)
+        template = _bounded_mutation_claim_template(
             statute_id=statute_id,
             row=row,
             action_family="table_surface_mutation",
@@ -235,6 +249,17 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_claimed_table_surface",
             ],
         )
+        template.update(
+            {
+                "source_target_surface": detail.get(
+                    "target_ref",
+                    effect.affected_provisions,
+                ),
+                "source_target_address": detail.get("target", ""),
+                "table_entry_shape": detail.get("entry_shape", ""),
+            }
+        )
+        return template
     if summary.manual_compile_rule_id == "uk_manual_frontier_appropriate_place_candidate":
         return _bounded_mutation_claim_template(
             statute_id=statute_id,
