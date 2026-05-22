@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -86,6 +87,36 @@ def load_durations(path: Path) -> dict[str, float]:
     return _load_float_column(path, "duration_s")
 
 
+def load_phase_timings(path: Path) -> dict[str, dict[str, float]]:
+    """Load persisted per-row phase timings when a bench CSV contains them."""
+    rows: dict[str, dict[str, float]] = {}
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Empty or header-less CSV: {path}")
+        if "statute_id" not in reader.fieldnames:
+            raise ValueError(f"CSV {path} missing expected column: statute_id. Found: {reader.fieldnames}")
+        phase_columns = tuple(
+            field
+            for field in reader.fieldnames
+            if field.startswith("phase_") and field.endswith("_s")
+        )
+        if not phase_columns:
+            return rows
+        for row in reader:
+            sid = row["statute_id"].strip()
+            phases: dict[str, float] = {}
+            for column in phase_columns:
+                value = _parse_float_cell(row, column)
+                if value is None or value <= 0.0:
+                    continue
+                phase_name = column.removeprefix("phase_").removesuffix("_s")
+                phases[phase_name] = value
+            if phases:
+                rows[sid] = phases
+    return rows
+
+
 def _parse_float_cell(row: dict[str, str], column: str) -> float | None:
     raw = row.get(column, "")
     if raw == "":
@@ -133,6 +164,57 @@ def _load_scores_for_jurisdiction(path: Path, jurisdiction: str) -> tuple[str, d
 
 def mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _phase_row_total(phases: dict[str, float]) -> float:
+    total = phases.get("total")
+    if total is not None:
+        return total
+    return sum(value for name, value in phases.items() if name != "total")
+
+
+def _print_phase_timing_delta_summary(
+    baseline_phase_timings: dict[str, dict[str, float]],
+    current_phase_timings: dict[str, dict[str, float]],
+) -> None:
+    common = sorted(set(baseline_phase_timings) & set(current_phase_timings))
+    if not common:
+        return
+    baseline_total = sum(_phase_row_total(baseline_phase_timings[sid]) for sid in common)
+    current_total = sum(_phase_row_total(current_phase_timings[sid]) for sid in common)
+    phase_totals_old: Counter[str] = Counter()
+    phase_totals_new: Counter[str] = Counter()
+    for sid in common:
+        for name, value in baseline_phase_timings[sid].items():
+            if name != "total":
+                phase_totals_old[name] += value
+        for name, value in current_phase_timings[sid].items():
+            if name != "total":
+                phase_totals_new[name] += value
+
+    delta = current_total - baseline_total
+    sign = "+" if delta >= 0 else ""
+    print("Aggregate phase timings (common rows):")
+    print(f"  Rows          : {len(common)}")
+    print(f"  Baseline total: {baseline_total:.3f}s")
+    print(f"  Current total : {current_total:.3f}s")
+    print(f"  Delta         : {sign}{delta:.3f}s")
+    phase_names = set(phase_totals_old) | set(phase_totals_new)
+    if phase_names:
+        ranked = sorted(
+            phase_names,
+            key=lambda name: (
+                abs(phase_totals_new.get(name, 0.0) - phase_totals_old.get(name, 0.0)),
+                name,
+            ),
+            reverse=True,
+        )
+        phase_text = " ".join(
+            f"{name}={phase_totals_new.get(name, 0.0) - phase_totals_old.get(name, 0.0):+.3f}s"
+            for name in ranked[:8]
+        )
+        print(f"  Phase deltas  : {phase_text}")
+    print()
 
 
 def run_guard(
@@ -253,6 +335,15 @@ def run_guard(
         print(f"Improvements > {threshold:.4f} : 0  (none)")
         print()
 
+    try:
+        _print_phase_timing_delta_summary(
+            load_phase_timings(baseline_path),
+            load_phase_timings(current_path),
+        )
+    except (ValueError, OSError) as exc:
+        print(f"WARNING: could not load optional phase timing CSV data: {exc}")
+        print()
+
     fail = False
     fail_reasons: list[str] = []
     duration_regressions: list[tuple[str, float, float, float]] = []
@@ -346,6 +437,7 @@ __all__ = [
     "UK_BENCH_RUNS_DIR",
     "find_csv_by_label",
     "load_durations",
+    "load_phase_timings",
     "load_scores",
     "main",
     "run_guard",

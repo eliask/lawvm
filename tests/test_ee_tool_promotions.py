@@ -1318,6 +1318,85 @@ def test_bench_regression_guard_can_fail_on_duration_regressions(
     assert "RESULT: FAIL" in out
 
 
+def test_bench_regression_guard_prints_phase_timing_deltas(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = [
+        "statute_id",
+        "score",
+        "phase_total_s",
+        "phase_compile_ops_s",
+        "phase_replay_s",
+    ]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "3.0",
+                "phase_compile_ops_s": "2.0",
+                "phase_replay_s": "1.0",
+            }
+        )
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/2",
+                "score": "0.80",
+                "phase_total_s": "7.0",
+                "phase_compile_ops_s": "5.0",
+                "phase_replay_s": "2.0",
+            }
+        )
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "4.0",
+                "phase_compile_ops_s": "2.5",
+                "phase_replay_s": "1.5",
+            }
+        )
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/2",
+                "score": "0.80",
+                "phase_total_s": "9.5",
+                "phase_compile_ops_s": "6.0",
+                "phase_replay_s": "3.5",
+            }
+        )
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Aggregate phase timings (common rows):" in out
+    assert "Rows          : 2" in out
+    assert "Baseline total: 10.000s" in out
+    assert "Current total : 13.500s" in out
+    assert "Delta         : +3.500s" in out
+    assert "replay=+2.000s" in out
+    assert "compile_ops=+1.500s" in out
+    assert "RESULT: PASS" in out
+
+
 def test_bench_regression_guard_requires_duration_column_when_enabled(
     tmp_path,
     monkeypatch,
