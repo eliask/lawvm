@@ -913,6 +913,27 @@ def test_classify_uk_effect_source_pathology_marks_conditional_temporal_repeal_o
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_definition_child_and_tail_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "239 In section 15, in subsection (7), for paragraph (d) of the "
+            "definition of “NHS body in England” and the “or” at the end of "
+            "that paragraph substitute— an integrated care board established "
+            "under section 14Z25 of that Act; ."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_overlap_substitution_unlowered"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "definition_child_and_tail_substitution_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_marks_application_payload_out_of_scope() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="BlockAmendment",
@@ -1716,6 +1737,34 @@ def test_classify_uk_manual_compile_frontier_marks_conditional_temporal_repeal_o
     assert result["status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == (
         "uk_manual_frontier_conditional_temporal_repeal_out_of_scope"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_definition_child_and_tail_substitution_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="definition_child_and_tail_substitution_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "239 In section 15, in subsection (7), for paragraph (d) of the "
+            "definition of “NHS body in England” and the “or” at the end of "
+            "that paragraph substitute— an integrated care board established "
+            "under section 14Z25 of that Act; ."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == (
+        "uk_manual_frontier_definition_child_and_tail_substitution_candidate"
     )
 
 

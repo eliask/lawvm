@@ -51,6 +51,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "broad_schedule_flat_payload_unsupported",
         "amendment_text_target_unsupported",
         "conditional_temporal_repeal_unsupported",
+        "definition_child_and_tail_substitution_unsupported",
         "table_entry_target_unsupported",
         "schedule_list_entry_target_unsupported",
         "structural_sibling_insert_unsupported",
@@ -153,6 +154,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "non_textual_or_out_of_scope",
         "uk_manual_frontier_conditional_temporal_repeal_out_of_scope",
         "The source conditionally repeals material based on future commencement state; replay must not treat it as an unconditional current-text repeal without explicit temporal applicability evidence.",
+    ),
+    "definition_child_and_tail_substitution_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
+        "The source substitutes a definition child together with that child's trailing connective; a claim or future multi-patch compiler must own both the child text and the post-child tail boundary.",
     ),
     "application_modification_payload_out_of_scope": (
         "non_textual_or_out_of_scope",
@@ -1121,6 +1127,20 @@ def _looks_like_conditional_temporal_repeal_source(text: str) -> bool:
     )
 
 
+def _looks_like_definition_child_and_tail_substitution(text: str) -> bool:
+    norm = " ".join((text or "").split()).strip().lower()
+    if not norm:
+        return False
+    return bool(
+        re.search(
+            r"\bfor\s+paragraph\s+\([0-9a-z]+\)\s+of\s+the\s+definition\s+of\b",
+            norm,
+        )
+        and re.search(r"\band\s+the\s+[“\"'‘]?(?:or|and)[”\"'’]?\s+at\s+the\s+end\s+of\s+that\s+paragraph\b", norm)
+        and re.search(r"\bsubstitute\b", norm)
+    )
+
+
 def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
@@ -1206,6 +1226,8 @@ def classify_uk_effect_source_pathology(
             return "commencement_effect_out_of_scope"
         if _looks_like_conditional_temporal_repeal_source(norm_text):
             return "conditional_temporal_repeal_unsupported"
+        if _looks_like_definition_child_and_tail_substitution(norm_text):
+            return "definition_child_and_tail_substitution_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:
             return "application_modification_payload_out_of_scope"
         if "uk_effect_schedule_note_target_rejected" in lowering_rules:
