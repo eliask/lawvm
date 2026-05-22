@@ -1102,8 +1102,15 @@ Current tooling-consistency invariant:
     normalization. The witnesses remained score-equivalent: `1988/1` measured
     52.76s wall time with `compile_ops=26.99s` and `replay=21.41s`, and
     `1990/42` measured 6.24s wall time with `compile_ops=3.93s` and
-    `replay=0.36s`. A local improvement in one family should not be treated as
-    global UK replay progress without saved-run guard evidence.
+    `replay=0.36s`. Recursive `eId` fallback search now computes the `-eid`
+    and `_eid` suffix strings once per lookup and carries them through
+    recursion instead of rebuilding them for every child candidate; this keeps
+    the exact suffix-match semantics and only removes repeated string work.
+    The witnesses remained score-equivalent: `1988/1` measured 51.82s wall
+    time with `compile_ops=26.76s` and `replay=20.76s`, and `1990/42` measured
+    6.30s wall time with `compile_ops=3.94s` and `replay=0.38s`. A local
+    improvement in one family should not be treated as global UK replay
+    progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
