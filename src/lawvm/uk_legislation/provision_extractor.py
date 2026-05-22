@@ -141,19 +141,24 @@ def _get_ref_sequence(path: list[tuple[Optional[str], str]] | tuple[tuple[Option
 def _build_extraction_context(
     root: ET.Element,
 ) -> tuple[dict[ET.Element, ET.Element], dict[str, ET.Element], dict[tuple[str, ...], ET.Element]]:
-    parent_map = {child: parent for parent in root.iter() for child in parent}
+    parent_map: dict[ET.Element, ET.Element] = {}
     exact_id_map: dict[str, ET.Element] = {}
     sequence_map: dict[tuple[str, ...], ET.Element] = {}
-    for el in root.iter():
+    stack = [root]
+    while stack:
+        el = stack.pop()
         el_id = el.get("id") or el.get("Id")
-        if not el_id:
-            continue
-        norm_el_id = _norm_prov_ref(el_id)
-        if norm_el_id and norm_el_id not in exact_id_map:
-            exact_id_map[norm_el_id] = el
-        seq = _get_id_sequence(el_id)
-        if seq and seq not in sequence_map:
-            sequence_map[seq] = el
+        if el_id:
+            norm_el_id = _norm_prov_ref(el_id)
+            if norm_el_id and norm_el_id not in exact_id_map:
+                exact_id_map[norm_el_id] = el
+            seq = _get_id_sequence(el_id)
+            if seq and seq not in sequence_map:
+                sequence_map[seq] = el
+        children = list(el)
+        for child in reversed(children):
+            parent_map[child] = el
+            stack.append(child)
     return parent_map, exact_id_map, sequence_map
 
 
