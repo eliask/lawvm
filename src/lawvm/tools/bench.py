@@ -2504,6 +2504,18 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk] build/refresh data/uk/bench_corpus.csv from archive and exit",
     )
     bench_p.add_argument(
+        "--curate-corpus",
+        metavar="CSV_PATH",
+        help="[-j uk] write a source-complete curated corpus CSV and exit",
+    )
+    bench_p.add_argument(
+        "--curate-size",
+        type=int,
+        default=200,
+        metavar="N",
+        help="[-j uk --curate-corpus] maximum curated rows to write (default: 200)",
+    )
+    bench_p.add_argument(
         "--limit",
         type=int,
         metavar="N",

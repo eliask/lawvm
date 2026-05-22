@@ -71,6 +71,23 @@ _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _BENCH_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
 _HISTORY_CSV = _REPO_ROOT / "data" / "uk_benchmark_history.csv"
 _CORPUS_CSV = _REPO_ROOT / "data" / "uk" / "bench_corpus.csv"
+_CORPUS_FIELDNAMES = [
+    "statute_id",
+    "type",
+    "year",
+    "has_enacted",
+    "has_consolidated",
+    "n_effects",
+    "n_effect_feed_pages",
+    "enacted_url",
+    "current_url",
+    "enacted_source_status",
+    "oracle_source_status",
+    "enacted_source_size",
+    "oracle_source_size",
+    "enacted_source_sha256",
+    "oracle_source_sha256",
+]
 
 # Module-level state for worker processes (set before spawning ProcessPoolExecutor).
 _WORKER_DB_PATH: str = ""
@@ -4712,26 +4729,7 @@ def _build_corpus_csv(archive: Farchive, types: Optional[frozenset[str]] = None)
 
     _CORPUS_CSV.parent.mkdir(parents=True, exist_ok=True)
     with open(_CORPUS_CSV, "w", newline="") as f:
-        w = csv.DictWriter(
-            f,
-            fieldnames=[
-                "statute_id",
-                "type",
-                "year",
-                "has_enacted",
-                "has_consolidated",
-                "n_effects",
-                "n_effect_feed_pages",
-                "enacted_url",
-                "current_url",
-                "enacted_source_status",
-                "oracle_source_status",
-                "enacted_source_size",
-                "oracle_source_size",
-                "enacted_source_sha256",
-                "oracle_source_sha256",
-            ],
-        )
+        w = csv.DictWriter(f, fieldnames=_CORPUS_FIELDNAMES)
         w.writeheader()
         for e in entries:
             w.writerow(
@@ -4821,6 +4819,15 @@ def _load_default_corpus_index() -> dict[str, dict[str, object]]:
     return entries
 
 
+def _default_corpus_has_source_status_fields() -> bool:
+    if not _CORPUS_CSV.exists():
+        return False
+    with open(_CORPUS_CSV, newline="") as f:
+        reader = csv.DictReader(f)
+        fields = set(reader.fieldnames or ())
+    return {"enacted_source_status", "oracle_source_status"}.issubset(fields)
+
+
 def _load_corpus_csv(
     types: Optional[frozenset[str]] = None,
     archive: Optional[Farchive] = None,
@@ -4869,6 +4876,97 @@ def _load_corpus_csv(
     return entries
 
 
+def _effect_bucket(entry: dict[str, object]) -> str:
+    n_effects = _int_cell(entry.get("n_effect_feed_pages"), default=_int_cell(entry.get("n_effects"), default=0))
+    if n_effects == 0:
+        return "0"
+    if n_effects <= 5:
+        return "1-5"
+    if n_effects <= 25:
+        return "6-25"
+    return "26+"
+
+
+def _entry_decade(entry: dict[str, object]) -> str:
+    year = _int_cell(entry.get("year"), default=0)
+    return f"{(year // 10) * 10}s" if year else "unknown"
+
+
+def _is_source_complete_entry(entry: dict[str, object]) -> bool:
+    return (
+        str(entry.get("enacted_source_status") or "unknown") == "available"
+        and str(entry.get("oracle_source_status") or "unknown") == "available"
+    )
+
+
+def _print_corpus_stats(entries: Sequence[dict[str, object]]) -> None:
+    by_type = Counter(str(entry.get("type") or "unknown") for entry in entries)
+    by_decade = Counter(_entry_decade(entry) for entry in entries)
+    by_effect_bucket = Counter(_effect_bucket(entry) for entry in entries)
+    enacted_status = Counter(str(entry.get("enacted_source_status") or "unknown") for entry in entries)
+    oracle_status = Counter(str(entry.get("oracle_source_status") or "unknown") for entry in entries)
+    source_complete = sum(1 for entry in entries if _is_source_complete_entry(entry))
+    effectful = sum(1 for entry in entries if _effect_bucket(entry) != "0")
+    source_complete_effectful = sum(
+        1 for entry in entries if _is_source_complete_entry(entry) and _effect_bucket(entry) != "0"
+    )
+    print("\n=== UK Corpus Stats ===")
+    print(f"Total rows: {len(entries)}")
+    print(f"Source-complete rows: {source_complete}")
+    print(f"Effectful rows: {effectful}")
+    print(f"Source-complete effectful rows: {source_complete_effectful}")
+    print(f"By type: {dict(sorted(by_type.items()))}")
+    print(f"By decade: {dict(sorted(by_decade.items()))}")
+    print(f"By effect pages: {dict(sorted(by_effect_bucket.items()))}")
+    print(f"Enacted source status: {dict(sorted(enacted_status.items()))}")
+    print(f"Oracle source status: {dict(sorted(oracle_status.items()))}")
+
+
+def _stratified_source_complete_sample(
+    entries: Sequence[dict[str, object]],
+    *,
+    size: int,
+) -> list[dict[str, object]]:
+    if size < 1:
+        raise ValueError("--curate-size must be a positive integer")
+    groups: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    for entry in entries:
+        if not _is_source_complete_entry(entry):
+            continue
+        key = (
+            str(entry.get("type") or "unknown"),
+            _entry_decade(entry),
+            _effect_bucket(entry),
+        )
+        groups.setdefault(key, []).append(entry)
+    for group in groups.values():
+        group.sort(key=lambda entry: str(entry.get("statute_id") or ""))
+
+    selected: list[dict[str, object]] = []
+    group_keys = sorted(groups)
+    while len(selected) < size and group_keys:
+        next_keys: list[tuple[str, str, str]] = []
+        for key in group_keys:
+            group = groups[key]
+            if group and len(selected) < size:
+                selected.append(group.pop(0))
+            if group:
+                next_keys.append(key)
+        group_keys = next_keys
+    return selected
+
+
+def _write_curated_corpus(entries: Sequence[dict[str, object]], *, output: Path, size: int) -> list[dict[str, object]]:
+    selected = _stratified_source_complete_sample(entries, size=size)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=_CORPUS_FIELDNAMES)
+        writer.writeheader()
+        for entry in selected:
+            writer.writerow({field: entry.get(field, "") for field in _CORPUS_FIELDNAMES})
+    return selected
+
+
 # ---------------------------------------------------------------------------
 # CLI entry
 # ---------------------------------------------------------------------------
@@ -4911,6 +5009,10 @@ def main(args) -> None:  # noqa: ANN001
     if limit is not None and limit < 0:
         print("error: --limit must be zero or a positive integer", file=sys.stderr)
         sys.exit(2)
+    curate_size = int(getattr(args, "curate_size", 200) or 0)
+    if getattr(args, "curate_corpus", None) and curate_size < 1:
+        print("error: --curate-size must be a positive integer", file=sys.stderr)
+        sys.exit(2)
     _par = getattr(args, "parallel", None)
     if _par is not None and _par < 1:
         print("error: --parallel must be a positive integer", file=sys.stderr)
@@ -4939,6 +5041,11 @@ def main(args) -> None:  # noqa: ANN001
         archive.close()
         return
 
+    if getattr(args, "curate_corpus", None) and not getattr(args, "corpus", None):
+        if not _default_corpus_has_source_status_fields():
+            print("Default UK corpus lacks source-status fields; rebuilding before curation...")
+            _build_corpus_csv(archive, types=types_filter)
+
     label = getattr(args, "label", None) or time.strftime("uk_%Y%m%d_%H%M")
 
     # Load corpus (build default CSV if needed).  A custom --corpus path is a
@@ -4965,6 +5072,22 @@ def main(args) -> None:  # noqa: ANN001
         corpus = [e for e in corpus if e["year"] <= max_year]
     if min_year or max_year:
         print(f"  Year filter: {min_year or '...'}-{max_year or '...'} → {len(corpus)} statutes")
+
+    if getattr(args, "corpus_stats", False):
+        _print_corpus_stats(corpus)
+        archive.close()
+        return
+
+    curate_corpus = getattr(args, "curate_corpus", None)
+    if curate_corpus:
+        output = Path(curate_corpus)
+        selected = _write_curated_corpus(corpus, output=output, size=curate_size)
+        print(f"  Curated source-complete corpus: {output}")
+        print(f"  Requested rows: {curate_size}")
+        print(f"  Written rows: {len(selected)}")
+        _print_corpus_stats(selected)
+        archive.close()
+        return
 
     statute_filter = (getattr(args, "statute", None) or "").strip()
     if statute_filter:

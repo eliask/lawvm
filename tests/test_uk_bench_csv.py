@@ -342,6 +342,69 @@ def test_uk_bench_loads_custom_generated_corpus_csv(tmp_path) -> None:
     assert rows[0]["oracle_source_size"] == 3294293
 
 
+def test_uk_bench_curated_sample_keeps_only_source_complete_rows() -> None:
+    rows = [
+        {
+            "statute_id": "ukpga/1990/42",
+            "type": "ukpga",
+            "year": 1990,
+            "n_effect_feed_pages": 24,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+        },
+        {
+            "statute_id": "ukpga/1991/1",
+            "type": "ukpga",
+            "year": 1991,
+            "n_effect_feed_pages": 1,
+            "enacted_source_status": "missing",
+            "oracle_source_status": "available",
+        },
+        {
+            "statute_id": "asp/2000/1",
+            "type": "asp",
+            "year": 2000,
+            "n_effect_feed_pages": 0,
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+        },
+    ]
+
+    selected = uk_bench._stratified_source_complete_sample(rows, size=10)
+
+    assert [row["statute_id"] for row in selected] == ["asp/2000/1", "ukpga/1990/42"]
+
+
+def test_uk_bench_write_curated_corpus_uses_full_corpus_schema(tmp_path) -> None:
+    output = tmp_path / "tight.csv"
+    rows = [
+        {
+            "statute_id": "ukpga/1990/42",
+            "type": "ukpga",
+            "year": 1990,
+            "has_enacted": True,
+            "has_consolidated": True,
+            "n_effects": 24,
+            "n_effect_feed_pages": 24,
+            "enacted_url": "https://www.legislation.gov.uk/ukpga/1990/42/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/ukpga/1990/42/data.xml",
+            "enacted_source_status": "available",
+            "oracle_source_status": "available",
+            "enacted_source_size": 1,
+            "oracle_source_size": 2,
+            "enacted_source_sha256": "a",
+            "oracle_source_sha256": "b",
+        }
+    ]
+
+    selected = uk_bench._write_curated_corpus(rows, output=output, size=1)
+
+    assert selected == rows
+    text = output.read_text(encoding="utf-8")
+    assert text.startswith("statute_id,type,year,has_enacted,has_consolidated")
+    assert "ukpga/1990/42" in text
+
+
 def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_path, capsys) -> None:
     bench_dir = tmp_path / "runs"
     history_csv = tmp_path / "history.csv"

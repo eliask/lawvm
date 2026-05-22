@@ -79,8 +79,9 @@ Existing examples are uneven but instructive: Finland has `bench`, `frontier`,
 `step-attribution`, `failures`, `oracle-check`, `ops`, `bisect`,
 `diagnose-phase`, and `structural-review`; Estonia has pair/corpus consistency
 tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
-`ee-chain-quality`; UK has `uk-effect`, `uk-effects`, `uk-candidates`, and
-`bench -j uk` replay diagnostics.
+`ee-chain-quality`; UK has `uk-effect`, `uk-effects`, `uk-candidates`,
+`bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`, and replay
+diagnostics.
 
 ## 4. CLI Shape
 
@@ -132,4 +133,3 @@ into an explicit blocked/source-pathology finding.
 it produces scan-friendly, non-interactive evidence. Interactive-first output is
 not enough for agent workflows. New frontends should expose a compact
 non-interactive structural reporter before large replay-quality work begins.
-
