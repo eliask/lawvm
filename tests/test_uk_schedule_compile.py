@@ -10499,6 +10499,74 @@ def test_executor_exact_eid_lookup_index_tracks_structural_mutations() -> None:
     assert "section-1-1" not in executor._eid_lookup_index
 
 
+def test_executor_target_lookup_cache_tracks_structural_mutations() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="old one",
+                            attrs={"eId": "section-1-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    target = LegalAddress(path=(("section", "1"), ("subsection", "1")))
+
+    node, parent, idx = executor._find_node_by_target(target)
+    assert node is not None
+    assert parent is executor.statute.body.children[0]
+    assert idx == 0
+    assert len(executor._target_lookup_cache) == 1
+    cached_node, cached_parent, cached_idx = executor._find_node_by_target(target)
+    assert cached_node is node
+    assert cached_parent is parent
+    assert cached_idx == idx
+
+    insert_op = LegalOperation(
+        op_id="uk_test_target_cache_insert_invalidation",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
+        payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="new two"),
+    )
+    executor.apply_op(insert_op)
+
+    assert executor._target_lookup_cache == {}
+    inserted, inserted_parent, inserted_idx = executor._find_node_by_target(
+        LegalAddress(path=(("section", "1"), ("subsection", "2")))
+    )
+    assert inserted is not None
+    assert inserted_parent is executor.statute.body.children[0]
+    assert inserted_idx == 1
+
+    repeal_op = LegalOperation(
+        op_id="uk_test_target_cache_repeal_invalidation",
+        sequence=2,
+        action=StructuralAction.REPEAL,
+        target=target,
+    )
+    executor.apply_op(repeal_op)
+
+    removed, _, _ = executor._find_node_by_target(target)
+    assert removed is None
+
+
 def test_executor_range_to_end_text_patch_records_node_local_leaf_rewrite() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

@@ -104,6 +104,17 @@ class UKReplayTargetLookupMixin:
         target_resolution_op: LegalOperation | None = None,
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
         """Find a node and its parent by LegalAddress path."""
+        cache_key = None
+        if target_resolution_op is None:
+            cache_key = self._target_lookup_cache_key(
+                target,
+                allow_compound_subsection_alias=allow_compound_subsection_alias,
+                allow_recursive_match=allow_recursive_match,
+            )
+            cached = self._cached_target_lookup(cache_key)
+            if cached is not None:
+                return cached
+
         def _find(address: LegalAddress) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
             path = list(address.path)
             container = _addr_container(address)
@@ -201,8 +212,13 @@ class UKReplayTargetLookupMixin:
         if uk_is_explicit_direct_section_paragraph_target(target):
             raw_node = _find(target)
             if raw_node[0] is not None:
+                if cache_key is not None:
+                    self._store_target_lookup_cache(cache_key, raw_node)
                 return raw_node
-        return _find(canonicalize_uk_address(target))
+        result = _find(canonicalize_uk_address(target))
+        if cache_key is not None:
+            self._store_target_lookup_cache(cache_key, result)
+        return result
 
     def _find_unique_schedule_item_for_source_parent_substitution_range_target(
         self,
