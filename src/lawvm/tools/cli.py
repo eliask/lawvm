@@ -5734,6 +5734,19 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="max_regressions",
         help="max allowed statutes regressing beyond threshold (default: 3)",
     )
+    brg_p.add_argument(
+        "--duration-threshold-s",
+        type=float,
+        default=1.0,
+        help="per-statute duration_s slowdown threshold when duration guard is enabled (default: 1.0)",
+    )
+    brg_p.add_argument(
+        "--max-duration-regressions",
+        type=int,
+        default=None,
+        dest="max_duration_regressions",
+        help="enable duration_s regression guard with this max allowed slowed statute count",
+    )
 
     # --- sync-finlex ---
     sync_p = sub.add_parser(

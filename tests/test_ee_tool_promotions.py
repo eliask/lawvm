@@ -86,12 +86,26 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.workers == 2
 
     args = parser.parse_args(
-        ["bench-regression-guard", "-j", "uk", "--baseline", "old", "--current", "new"]
+        [
+            "bench-regression-guard",
+            "-j",
+            "uk",
+            "--baseline",
+            "old",
+            "--current",
+            "new",
+            "--duration-threshold-s",
+            "2.5",
+            "--max-duration-regressions",
+            "1",
+        ]
     )
     assert args.command == "bench-regression-guard"
     assert args.jurisdiction == "uk"
     assert args.baseline == "old"
     assert args.current == "new"
+    assert args.duration_threshold_s == 2.5
+    assert args.max_duration_regressions == 1
 
 
 def test_ee_bench_defaults_to_current_replayable_corpus() -> None:
@@ -1140,3 +1154,74 @@ def test_bench_regression_guard_supports_uk_saved_run_shape(
     assert "Baseline : old.csv" in out
     assert "Current  : new.csv" in out
     assert "RESULT: PASS" in out
+
+
+def test_bench_regression_guard_can_fail_on_duration_regressions(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "duration_s"]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "duration_s": "1.0"})
+        writer.writerow({"statute_id": "ukpga/2000/2", "score": "0.80", "duration_s": "2.0"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "duration_s": "1.4"})
+        writer.writerow({"statute_id": "ukpga/2000/2", "score": "0.80", "duration_s": "4.5"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        duration_threshold_s=1.0,
+        max_duration_regressions=0,
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Duration regressions > 1.000s : 1 statute(s)" in out
+    assert "ukpga/2000/2" in out
+    assert "RESULT: FAIL" in out
+
+
+def test_bench_regression_guard_requires_duration_column_when_enabled(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "score"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "score"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        max_duration_regressions=0,
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR loading duration CSV data" in out
+    assert "missing expected column 'duration_s'" in out
