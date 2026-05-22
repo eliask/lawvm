@@ -63,6 +63,8 @@ def uk_nonstructural_replay_candidate_family(
         return ""
     effect_type = (effect.effect_type or "").strip().lower()
     if effect_type.startswith("substituted for"):
+        if effect_type in {"substituted for word", "substituted for words"}:
+            return ""
         return "substituted_for_series"
     if effect_type.startswith("revoked"):
         return "revoked_repeal"

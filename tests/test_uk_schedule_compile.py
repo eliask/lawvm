@@ -25,6 +25,7 @@ from lawvm.uk_legislation.source_adjudication import (
     classify_uk_manual_compile_frontier,
 )
 from lawvm.uk_legislation.nlp_parser import US
+from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
@@ -18633,6 +18634,42 @@ def test_pipeline_replays_nonstructural_multi_sibling_substituted_for_ops() -> N
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert should_replay_nonstructural_ops(effect, ops)
+
+
+def test_pipeline_does_not_replay_word_level_substituted_for_as_structural_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <BlockAmendment xmlns="{_LEG_NS}">
+          <P3><Pnumber>ab</Pnumber><Text>Paragraph ab.</Text></P3>
+          <P3><Pnumber>ac</Pnumber><Text>Paragraph ac.</Text></P3>
+        </BlockAmendment>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_pipeline_word_level_substituted_for_not_structural",
+        effect_type="substituted for word",
+        applied=True,
+        requires_applied=False,
+        modified="2018-01-25",
+        affected_uri="/id/ukpga/2000/11",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="Sch. 8 para. 18(2)(ab)(ac)",
+        affecting_uri="/id/asp/2016/1",
+        affecting_class="ActOfScottishParliament",
+        affecting_year="2016",
+        affecting_number="1",
+        affecting_provisions="sch. 2 para. 37(a)(i)",
+        affecting_title="Criminal Justice (Scotland) Act 2016",
+        in_force_dates=[{"date": "2018-01-25", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert [op.action.value for op in ops] == ["replace", "replace"]
+    assert uk_nonstructural_replay_candidate_family(effect) == ""
+    assert should_replay_nonstructural_ops(effect, ops) is False
 
 
 def test_pipeline_replays_nonstructural_substituted_series_replace_plus_tail_repeal() -> None:

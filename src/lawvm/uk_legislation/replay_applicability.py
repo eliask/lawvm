@@ -20,6 +20,8 @@ def should_replay_nonstructural_ops(
         return False
     effect_type = (effect.effect_type or "").strip().lower()
     if effect_type.startswith("substituted for"):
+        if effect_type in {"substituted for word", "substituted for words"}:
+            return False
         if not compiled_ops:
             return False
         head, *tail = compiled_ops
