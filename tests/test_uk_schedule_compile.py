@@ -10680,6 +10680,77 @@ def test_executor_eid_search_cache_tracks_structural_mutations() -> None:
     assert inserted_idx == 1
 
 
+def test_executor_eid_search_scopes_full_eid_suffix_search_to_top_node() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="wrong branch",
+                            attrs={"eId": "custom-section-1-1"},
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    attrs={"eId": "section-2"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="right branch",
+                            attrs={"eId": "custom-section-2-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    original_find = executor._find_node_and_parent
+    searched_roots: list[str] = []
+
+    def recording_find(
+        node: Any,
+        eid: str,
+        *,
+        allow_sequence_match: bool = True,
+        target_seq: tuple[str, ...] | None = None,
+    ) -> tuple[Any, Any, Any]:
+        searched_roots.append(str(node.label or node.kind))
+        return original_find(
+            node,
+            eid,
+            allow_sequence_match=allow_sequence_match,
+            target_seq=target_seq,
+        )
+
+    executor._find_node_and_parent = recording_find
+    node, parent, idx = executor._find_node_and_parent_statute(
+        "section-2-1",
+        allow_sequence_match=False,
+    )
+
+    assert node is not None
+    assert node.text == "right branch"
+    assert parent is executor.statute.body.children[1]
+    assert idx == 0
+    assert searched_roots == ["2"]
+
+
 def test_executor_range_to_end_text_patch_records_node_local_leaf_rewrite() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
