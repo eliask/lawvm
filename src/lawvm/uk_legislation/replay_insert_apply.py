@@ -575,24 +575,54 @@ class UKReplayInsertApplyMixin:
         cached_node, cached_parent, cached_idx = self._cached_exact_eid_lookup(eid)
         if cached_node is not None:
             return cached_node, cached_parent, cached_idx
+        cached_search = self._cached_eid_search_lookup(
+            eid,
+            allow_sequence_match=allow_sequence_match,
+        )
+        if cached_search is not None:
+            return cached_search
         node, parent, idx = self._find_node_and_parent(
             self.statute.body,
             eid,
             allow_sequence_match=allow_sequence_match,
         )
         if node:
-            return node, parent, idx
+            result = (node, parent, idx)
+            self._store_eid_search_cache(
+                eid,
+                allow_sequence_match=allow_sequence_match,
+                result=result,
+            )
+            return result
         for sched_idx, sched in enumerate(self.statute.supplements):
             if sched.attrs.get("eId") == eid:
-                return sched, None, sched_idx
+                result = (sched, None, sched_idx)
+                self._store_eid_search_cache(
+                    eid,
+                    allow_sequence_match=allow_sequence_match,
+                    result=result,
+                )
+                return result
             node, parent, idx = self._find_node_and_parent(
                 sched,
                 eid,
                 allow_sequence_match=allow_sequence_match,
             )
             if node:
-                return node, parent, idx
-        return None, None, None
+                result = (node, parent, idx)
+                self._store_eid_search_cache(
+                    eid,
+                    allow_sequence_match=allow_sequence_match,
+                    result=result,
+                )
+                return result
+        result = (None, None, None)
+        self._store_eid_search_cache(
+            eid,
+            allow_sequence_match=allow_sequence_match,
+            result=result,
+        )
+        return result
 
     def _find_node_and_parent(
         self,

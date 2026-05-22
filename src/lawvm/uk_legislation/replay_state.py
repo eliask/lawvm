@@ -20,6 +20,10 @@ class UKReplayStateMixin:
         dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]
     ]
     _eid_lookup_ambiguous: set[str]
+    _eid_search_cache: dict[
+        tuple[str, bool],
+        tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+    ]
     _target_lookup_cache: dict[
         tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
         tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
@@ -27,6 +31,7 @@ class UKReplayStateMixin:
 
     def _note_structure_mutation(self) -> None:
         self._structure_mutation_serial += 1
+        self._eid_search_cache.clear()
         self._target_lookup_cache.clear()
 
     def _node_eid_values(self, node: UKMutableNode) -> tuple[str, ...]:
@@ -40,6 +45,69 @@ class UKReplayStateMixin:
     def _clear_eid_lookup_index(self) -> None:
         self._eid_lookup_index = None
         self._eid_lookup_ambiguous = set()
+        self._eid_search_cache.clear()
+
+    def _cached_eid_search_lookup(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool,
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
+        cached = self._eid_search_cache.get((eid, bool(allow_sequence_match)))
+        if cached is None:
+            return None
+        serial, node, parent, idx = cached
+        if serial != self._structure_mutation_serial:
+            self._eid_search_cache.pop((eid, bool(allow_sequence_match)), None)
+            return None
+        if node is None:
+            return None, None, None
+        if parent is not None:
+            if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
+                return node, parent, idx
+            try:
+                current_idx = parent.children.index(node)
+            except ValueError:
+                self._eid_search_cache.pop((eid, bool(allow_sequence_match)), None)
+                return None
+            self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
+                self._structure_mutation_serial,
+                node,
+                parent,
+                current_idx,
+            )
+            return node, parent, current_idx
+        if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
+            return node, None, idx
+        if self.statute.body is node:
+            return node, None, None
+        try:
+            current_idx = self.statute.supplements.index(node)
+        except ValueError:
+            self._eid_search_cache.pop((eid, bool(allow_sequence_match)), None)
+            return None
+        self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
+            self._structure_mutation_serial,
+            node,
+            None,
+            current_idx,
+        )
+        return node, None, current_idx
+
+    def _store_eid_search_cache(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool,
+        result: tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+    ) -> None:
+        node, parent, idx = result
+        self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
+            self._structure_mutation_serial,
+            node,
+            parent,
+            idx,
+        )
 
     def _target_lookup_cache_key(
         self,

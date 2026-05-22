@@ -70,6 +70,7 @@ class UKReplayExecutor(
         self._last_invariant_structure_serial = 0
         self._eid_lookup_index = None
         self._eid_lookup_ambiguous: set[str] = set()
+        self._eid_search_cache = {}
         self._target_lookup_cache = {}
 
     def _log(self, message: str) -> None:
