@@ -2825,6 +2825,60 @@ def test_executor_classifies_missing_source_for_supported_descendant_renumber() 
     assert classify_uk_replay_adjudication_bucket(adjudication.kind) == "source_shape"
 
 
+def test_executor_classifies_existing_destination_for_supported_sibling_renumber() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2010/15",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="26",
+                attrs={"eId": "schedule-26"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="5",
+                        text="5 Source paragraph.",
+                        attrs={"eId": "schedule-26-paragraph-5"},
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="15",
+                        text="15 Destination already present.",
+                        attrs={"eId": "schedule-26-paragraph-15"},
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_renumber_destination_exists",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("schedule", "26"), ("paragraph", "5"))),
+            destination=LegalAddress(path=(("schedule", "26"), ("paragraph", "15"))),
+            source=_source(),
+            witness_rule_id="uk_effect_metadata_sibling_renumber_lowered",
+        )
+    )
+
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "uk_replay_existing_target_conflict_gap"
+    assert adjudication.detail["action"] == "renumber"
+    assert adjudication.detail["target"] == "schedule:26/paragraph:5"
+    assert adjudication.detail["destination"] == "schedule:26/paragraph:15"
+    assert adjudication.detail["reason_code"] == "renumber_destination_target_present"
+    assert adjudication.detail["family"] == "source_shape_gap"
+    assert classify_uk_replay_adjudication_bucket(adjudication.kind) == "source_shape"
+    assert [child.label for child in executor.statute.supplements[0].children] == ["5", "15"]
+
+
 def test_executor_applies_same_provision_descendant_renumber_then_text_patch() -> None:
     statute = IRStatute(
         statute_id="ukpga/2024/3",
