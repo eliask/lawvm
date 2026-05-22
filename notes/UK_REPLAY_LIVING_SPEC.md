@@ -3186,7 +3186,7 @@ Current bench replay-regime invariant:
   the slowest row/phase regressions separately from score regressions. Repeated
   `--phase NAME` arguments restrict the phase guard to named phases such as
   `compile_ops` and `replay`; a selected phase with no comparable timing cells
-  is invalid guard evidence.
+  in both saved runs is invalid guard evidence.
 - `lawvm bench -j uk --statute <ID>` must filter the UK bench corpus to exactly
   the requested statute before applying diagnostic limits. If the statute is not
   present in the corpus, the command fails visibly rather than saving an empty

@@ -94,7 +94,7 @@ rows is invalid timing evidence.
 An enabled phase guard with zero common phase timing rows, or zero comparable
 non-total phase cells, is also invalid timing evidence. If `--phase NAME` is
 provided, only the selected phase names are guarded; selected names with no
-comparable timing cells must fail rather than silently pass.
+comparable timing cells in both saved runs must fail rather than silently pass.
 Thresholds and allowed-regression counts must be nonnegative command inputs.
 
 ## 4. CLI Shape
