@@ -1086,10 +1086,11 @@ Current tooling-consistency invariant:
   - `uk-bench` effect-feed parse/acquisition rows without an explicit
     `blocking` key are legacy blocking rejections. Only explicit
     `blocking=false` feed rows are nonblocking observations.
-  - saved UK bench history rows must also preserve authority rejection rules,
-    lowering rejection rules, blocking-lowering rejection rules, and replay
-    adjudication kinds. `uk-bench --history` should render those lanes in a
-    compact human-readable form while retaining legacy history compatibility.
+  - saved UK bench history rows must also preserve effect-feed rejection rules,
+    authority rejection rules, lowering rejection rules, blocking-lowering
+    rejection rules, and replay adjudication kinds. `uk-bench --history` should
+    render those lanes in a compact human-readable form while retaining legacy
+    history compatibility.
   - saved UK bench history rows must preserve row-status and enacted/oracle
     source-status histograms across all rows, not only OK/core score rows.
     `n_total` without these distributions hides whether a run was replay-poor

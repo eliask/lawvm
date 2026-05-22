@@ -1471,6 +1471,7 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
         n_effect_feed_pages=2,
         n_effect_rows=7,
         effect_feed_rejection_count=1,
+        effect_feed_rejection_rule_counts={"uk_effect_feed_xml_parse_rejected": 1},
         effect_feed_observation_count=3,
         effect_feed_observation_rule_counts={"uk_effect_feed_pages_absent_recorded": 3},
         source_acquisition_observation_count=2,
@@ -1548,6 +1549,7 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
         source_parse_observation_count=1,
         source_parse_observation_rule_counts={"uk_enacted_xml_parse_rejected": 1},
         effect_feed_rejection_count=2,
+        effect_feed_rejection_rule_counts={"uk_effect_feed_count_error": 2},
         effect_feed_observation_count=2,
         effect_feed_observation_rule_counts={"uk_effect_feed_count_error": 2},
         uk_authority_rejection_count=1,
@@ -1608,6 +1610,10 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
                 '"uk_effect_feed_pages_absent_recorded": 3}'
             ),
             "effect_feed_rejections": "3",
+            "effect_feed_rejection_rules": (
+                '{"uk_effect_feed_count_error": 2, '
+                '"uk_effect_feed_xml_parse_rejected": 1}'
+            ),
             "authority_observations": "0",
             "authority_observation_rules": "{}",
             "authority_rejections": "3",
@@ -1749,6 +1755,7 @@ def test_uk_bench_show_history_formats_legacy_and_current_segments(monkeypatch, 
             "3",
             '{"uk_effect_feed_pages_absent_recorded": 3}',
             "1",
+            '{"uk_effect_feed_xml_parse_rejected": 1}',
             "0",
             "{}",
             "2",
@@ -1793,6 +1800,7 @@ def test_uk_bench_show_history_formats_legacy_and_current_segments(monkeypatch, 
         'enacted={"absent": 1, "available": 1} oracle={"available": 2}'
     ) in out
     assert 'feed_observation_rules: {"uk_effect_feed_pages_absent_recorded": 3}' in out
+    assert 'feed_rejection_rules: {"uk_effect_feed_xml_parse_rejected": 1}' in out
     assert 'source_parse_observation_rules: {"uk_oracle_xml_parse_rejected": 1}' in out
     assert 'source_parse_rejection_rules: {"uk_oracle_xml_parse_rejected": 1}' in out
     assert 'effect_source_pathology_counts: {"missing_extracted_source": 2}' in out
@@ -1887,6 +1895,7 @@ def test_uk_bench_history_reads_previous_current_header_without_adjudication_buc
         if field
         not in {
             "replay_adjudication_buckets",
+            "effect_feed_rejection_rules",
             "uk_residual_claim_tiers",
             "uk_residual_claim_kinds",
             "uk_residual_section_claims",
@@ -1952,6 +1961,7 @@ def test_uk_bench_history_reads_previous_current_header_without_adjudication_buc
 
     assert rows[0][0] == "current"
     assert rows[0][1]["label"] == "previous-current"
+    assert rows[0][1].get("effect_feed_rejection_rules", "") == ""
     assert rows[0][1].get("replay_adjudication_buckets", "") == ""
 
 
