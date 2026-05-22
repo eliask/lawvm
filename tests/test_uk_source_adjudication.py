@@ -1273,6 +1273,108 @@ def test_classify_uk_manual_compile_frontier_accepts_dash_punctuated_instruction
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_feed_action_object_fragment() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words repealed",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P4",
+        extracted_text=(
+            "i in subsection (1)(a), the words "
+            "“section 18 of the Gaming Act 1845, section 1 of the Gaming Act 1892 or”, and"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_marks_feed_definition_fragment() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "f the definition of “documents” in section 417(1) of the "
+            "Financial Services and Markets Act 2000 (c. 8)."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_keeps_action_fragment_with_parser_work() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text='In subsection (1), after "old" insert "new".',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_empty_type_whole_act_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "Notwithstanding any amendment, repeal or revocation made by this "
+            "Order, the unpaid sum is payable after commencement."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_empty_type_whole_act_action_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_empty_type_whole_act_action_out_of_scope"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_appropriate_place_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

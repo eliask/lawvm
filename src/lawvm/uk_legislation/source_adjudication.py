@@ -1327,6 +1327,41 @@ def _looks_like_source_carried_structured_text_patch_payload(text: str) -> bool:
     )
 
 
+def _looks_like_effect_metadata_carried_text_patch_fragment(
+    *,
+    effect_type: str,
+    text: str,
+) -> bool:
+    """Return True when feed metadata carries action but source text is an object fragment.
+
+    This is a frontier classifier only. It identifies rows where deterministic
+    UK lowering could combine official effect metadata with a source-carried
+    quoted/object fragment, without authorizing replay from the fragment alone.
+    """
+    norm_effect_type = _normalize_effect_text(effect_type)
+    if not norm_effect_type.startswith(("word ", "words ")):
+        return False
+    if not re.search(
+        r"\b(?:insert|insertion|omit|omitted|repeal|repealed|substitut)",
+        norm_effect_type,
+    ):
+        return False
+
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    if re.search(
+        r"\b(?:insert|inserted|substitute|substituted|omit|omitted|repeal|repealed)\b",
+        norm,
+    ):
+        return False
+    return bool(
+        re.search(r"[\"“][^\"”]{1,240}[\"”]", norm)
+        or re.search(r"\bthe\s+words?\b", norm)
+        or re.search(r"\bthe\s+definition\s+of\b", norm)
+    )
+
+
 def _uk_manual_frontier_classification(
     table: dict[str, _ManualFrontierClassification],
     source_pathology: str,
@@ -1602,6 +1637,25 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source still contains explicit instruction text; prefer deterministic parser or extraction work before manual claims.",
         }
 
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
+        and _looks_like_effect_metadata_carried_text_patch_fragment(
+            effect_type=effect_type_norm,
+            text=extracted_text_norm,
+        )
+    ):
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
+            "reason": (
+                "The official effect feed supplies a word-level action and target, "
+                "while the extracted source carries only the quoted/object fragment; "
+                "deterministic lowering must combine those source surfaces explicitly "
+                "instead of treating the fragment as a standalone instruction."
+            ),
+        }
+
     if "uk_effect_missing_structural_payload_rejected" in blocking_rules:
         return {
             "status": "source_insufficient",
@@ -1632,6 +1686,17 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_cross_container_renumber_candidate",
             "reason": "The effect metadata proves a cross-container renumber/migration; a claim or future migration compiler must own source identity, destination identity, and descendant wrapping before replay can apply it.",
+        }
+
+    if "uk_effect_empty_type_whole_act_action_rejected" in blocking_rules:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_empty_type_whole_act_action_out_of_scope",
+            "reason": (
+                "The effect row names the whole Act but has no effect type; replay "
+                "must not infer a destructive whole-Act text/tree action from "
+                "incidental source wording."
+            ),
         }
 
     if "uk_effect_lowering_no_supported_action_rejected" in all_rules:
