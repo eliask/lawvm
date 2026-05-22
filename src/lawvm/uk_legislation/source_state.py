@@ -15,6 +15,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_current_shell_enacted_source_selected",
         "uk_affecting_act_missing_current_enacted_source_selected",
         "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
+        "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
     }
@@ -257,6 +258,39 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
             "ancestor container in source XML rather than in descendant paragraph IDs; "
             "the normalized paragraph reference was accepted only because the extracted "
             "node has a matching Part ancestor."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_implicit_first_subparagraph_context_ignored(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    normalized_affecting_provisions: str,
+    extracted_element_id: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_implicit_first_subparagraph_context_ignored",
+        "family": "target_resolution_recovery",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "normalized_affecting_provisions": normalized_affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "extracted_element_id": extracted_element_id,
+        "reason": (
+            "UK effects metadata included an inserted first subparagraph context in a "
+            "schedule paragraph source reference, but the affecting XML exposes the "
+            "lettered child directly under the source paragraph; LawVM accepted the "
+            "normalized reference only after the exact source reference missed."
         ),
         "blocking": False,
         "strict_disposition": "record",

@@ -2690,6 +2690,15 @@ Current bench replay-regime invariant:
   endpoints are addressable in the affecting XML, extraction may return a
   synthetic bounded source wrapper containing only the named children and must
   emit `uk_affecting_act_parenthesized_range_source_extracted`.
+- Affecting-provision refs may contain an inserted first-subparagraph context
+  that is not present in the affecting source XML. Example: effects metadata
+  may cite `Sch. 22 para. 88(1)(a)` after paragraph 88 was made into
+  sub-paragraph `(1)`, while the source XML still exposes the lettered child as
+  `schedule-22-paragraph-88-a`. Exact source lookup must be attempted first.
+  Only after it misses may extraction normalize this schedule source ref to
+  `Sch. 22 para. 88(a)` under
+  `uk_affecting_act_implicit_first_subparagraph_context_ignored`, recording the
+  original ref, normalized ref, authority layer, and extracted element id.
 - UK bench rows must also persist replay lowering rejection totals, including
   the blocking subset. A replay score without its unsupported/no-op lowering
   surface is not a coverage metric; it hides which source effects were parsed
