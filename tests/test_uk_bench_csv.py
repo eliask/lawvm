@@ -272,6 +272,76 @@ def test_uk_bench_source_parse_rejections_are_blocking_subset() -> None:
     assert uk_bench._blocking_source_parse_rows(rows) == (rows[0],)
 
 
+def test_uk_bench_loads_custom_statute_id_corpus(monkeypatch, tmp_path) -> None:
+    corpus = tmp_path / "uk_curated.txt"
+    corpus.write_text(
+        "# source-complete smoke slice\n"
+        "ukpga/1990/42\n"
+        "asp/2000/1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(uk_bench, "_CORPUS_CSV", tmp_path / "missing_default.csv")
+
+    rows = uk_bench._load_corpus_csv(corpus_csv=corpus, types=frozenset({"ukpga"}))
+
+    assert rows == [
+        {
+            "statute_id": "ukpga/1990/42",
+            "type": "ukpga",
+            "year": 1990,
+            "has_enacted": True,
+            "has_consolidated": True,
+            "n_effects": 0,
+            "n_effect_feed_pages": 0,
+            "enacted_url": "https://www.legislation.gov.uk/ukpga/1990/42/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/ukpga/1990/42/data.xml",
+            "enacted_source_status": "unknown",
+            "oracle_source_status": "unknown",
+            "enacted_source_size": 0,
+            "oracle_source_size": 0,
+            "enacted_source_sha256": "",
+            "oracle_source_sha256": "",
+        }
+    ]
+
+
+def test_uk_bench_hydrates_custom_statute_id_corpus_from_default(monkeypatch, tmp_path) -> None:
+    default_corpus = tmp_path / "bench_corpus.csv"
+    default_corpus.write_text(
+        "statute_id,type,year,has_enacted,has_consolidated,n_effects,n_effect_feed_pages,"
+        "enacted_source_status,oracle_source_status\n"
+        "ukpga/1990/42,ukpga,1990,True,True,1173,24,available,available\n",
+        encoding="utf-8",
+    )
+    curated = tmp_path / "curated.txt"
+    curated.write_text("ukpga/1990/42\n", encoding="utf-8")
+    monkeypatch.setattr(uk_bench, "_CORPUS_CSV", default_corpus)
+
+    rows = uk_bench._load_corpus_csv(corpus_csv=curated)
+
+    assert rows[0]["n_effects"] == 1173
+    assert rows[0]["n_effect_feed_pages"] == 24
+    assert rows[0]["enacted_source_status"] == "available"
+
+
+def test_uk_bench_loads_custom_generated_corpus_csv(tmp_path) -> None:
+    corpus = tmp_path / "uk_generated.csv"
+    corpus.write_text(
+        "statute_id,type,year,has_enacted,has_consolidated,n_effects,n_effect_feed_pages,"
+        "enacted_source_status,oracle_source_status,enacted_source_size,oracle_source_size\n"
+        "ukpga/1990/42,ukpga,1990,True,True,1173,24,available,available,2285611,3294293\n",
+        encoding="utf-8",
+    )
+
+    rows = uk_bench._load_corpus_csv(corpus_csv=corpus)
+
+    assert rows[0]["statute_id"] == "ukpga/1990/42"
+    assert rows[0]["n_effects"] == 1173
+    assert rows[0]["n_effect_feed_pages"] == 24
+    assert rows[0]["enacted_source_status"] == "available"
+    assert rows[0]["oracle_source_size"] == 3294293
+
+
 def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_path, capsys) -> None:
     bench_dir = tmp_path / "runs"
     history_csv = tmp_path / "history.csv"

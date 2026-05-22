@@ -17,6 +17,7 @@ This starter is downstream of:
 - `notes/CROSS_JURISDICTION_ARCHITECTURE.md`
 - `notes/SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC.md`
 - `notes/CORPUS_REPLAY_EVIDENCE_CONTRACT.md`
+- `notes/JURISDICTION_CLI_TOOLING_CONTRACT.md`
 
 Those documents govern this starter. If this starter conflicts with them, the
 current LawVM constitution and cross-jurisdiction contracts win.
@@ -60,6 +61,11 @@ The starter is considered ready when a reviewer can answer all of the following 
 - If acquisition depends on an API, feed, or source graph, how does the
   frontend resume, respect rate limits, and preserve acquisition-frontier
   state?
+- What is the source-complete tight-loop corpus, and which rows are excluded
+  into pending/source-sparse/notruth partitions?
+- Which CLI tools expose inventory, corpus curation, bench history, per-row
+  source dumps, operation/effect inspection, phase diagnosis, bisect/blame,
+  frontier ranking, evidence export, and structural review?
 
 ---
 
@@ -116,6 +122,30 @@ Required starter commitments:
 
 Example surfaces live under `examples/` and should be copied or narrowed for the
 jurisdiction rather than weakened.
+
+## CLI and tight-loop benchmark floor
+
+Every jurisdiction starter must declare the developer/debug tooling needed to
+iterate without guessing. Follow `notes/JURISDICTION_CLI_TOOLING_CONTRACT.md`.
+
+Required starter commitments:
+
+- The full corpus is an outer regression guard, not the primary optimization
+  target.
+- A source-complete tight-loop corpus is defined before serious replay-quality
+  work. The usual target size is 100-400 rows, plus a smaller smoke/canary set.
+- Source-complete means the local replay substrate has the base/enacted source,
+  amendment/effect source or equivalent semantic source, oracle/verifier source,
+  and source-status/hash/locator evidence needed for the jurisdiction's claim.
+- Rows missing required truth surfaces are preserved in explicit
+  `pending`, `source_sparse`, `notruth`, or equivalent partitions. They are not
+  silently mixed into the tight-loop replay score.
+- The frontend must expose or plan commands for inventory, corpus curation,
+  bench history/compare/regression, source dump, operation/effect inspection,
+  phase diagnosis, bisect/blame, frontier ranking, evidence export, and compact
+  non-interactive structural review.
+- Shared flags keep shared meanings. In particular, `--corpus` must select the
+  curated corpus input for that jurisdiction rather than being ignored.
 
 ---
 

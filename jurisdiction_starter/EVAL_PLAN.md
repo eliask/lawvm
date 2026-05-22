@@ -163,6 +163,32 @@ The benchmark set must include:
 
 A benchmark set that contains only successes is not useful.
 
+Define three concrete benchmark layers:
+
+- Smoke/canary corpus: a very small source-complete set for pre-commit checks.
+- Tight-loop corpus: a source-complete, stratified set, usually 100-400 rows,
+  used for family-level replay iteration.
+- Full corpus: the broad regression and coverage guard, not the primary local
+  optimization target.
+
+For the tight-loop corpus, state the source-completeness rule. At minimum,
+record whether the local substrate has base/enacted source, amendment/effect
+semantic source, oracle/verifier source, locators, statuses, and hashes. Rows
+missing a required truth surface must be partitioned out as pending,
+source-sparse, notruth, or an equivalent non-claim bucket.
+
+Also state which CLI commands provide:
+
+- corpus stats and curation,
+- labeled bench runs, saved-run display, comparison, and regression guard,
+- per-row source dump,
+- operation/effect inspection,
+- phase diagnosis,
+- bisect/blame,
+- frontier ranking,
+- evidence export,
+- compact non-interactive structural review.
+
 ---
 
 ## 8. Reporting outputs
