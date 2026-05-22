@@ -214,6 +214,9 @@ def extract_uk_structural_payload_ir(
         flat_p1para_schedule_insert_lowered = True
 
     actual_el = _select_whole_schedule_element(extracted_el, target)
+    if actual_el is None and action == "insert" and _addr_container(target) == "schedule" and len(target.path) > 1:
+        schedule_root_target = LegalAddress(path=target.path[:1], special=None)
+        actual_el = _select_whole_schedule_element(extracted_el, schedule_root_target)
     if content_ir is None and actual_el is None:
         actual_el = _find_matching_structural_payload_element(
             extracted_el=extracted_el,

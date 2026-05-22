@@ -24,6 +24,9 @@ UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID = (
 UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID = (
     "uk_effect_source_parent_at_end_added_payload_lowered"
 )
+UK_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RULE_ID = (
+    "uk_effect_source_parent_whole_schedule_insert_inferred"
+)
 UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID = (
     "uk_effect_after_paragraph_insert_labelled_series_lowered"
 )
@@ -43,6 +46,10 @@ _SOURCE_PARENT_SUBSTITUTION_RANGE_RE = re.compile(
 )
 _SOURCE_PARENT_AT_END_ADDED_RE = re.compile(
     r"\bat\s+the\s+end\b\s+(?:there\s+(?:is|are)\s+)?(?:added|inserted|insert)\b",
+    flags=re.I,
+)
+_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RE = re.compile(
+    r"\b(?:following\s+)?Schedule\s+is\s+inserted\s+after\s+Schedule\b",
     flags=re.I,
 )
 
@@ -277,6 +284,64 @@ def _source_parent_at_end_added_payload(
             "payload_label": payload_label,
             "payload_kind": payload_kind,
             "payload_tag": _tag(payload_el),
+        }
+    return None
+
+
+def _source_parent_whole_schedule_insert_payload(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    target_refs: Sequence[str],
+) -> Optional[dict[str, Any]]:
+    """Prove an empty-type whole Schedule insert from its parent formula."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or len(target_refs) != 1:
+        return None
+    if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return None
+    schedule_children = [child for child in list(extracted_el) if _tag(child) == "Schedule"]
+    if len(schedule_children) != 1:
+        return None
+    payload_el = schedule_children[0]
+    payload_label = _source_parent_range_label(_direct_structural_num(payload_el))
+    if not payload_label:
+        return None
+    target_ref = target_refs[0]
+    try:
+        target = canonicalize_uk_address(_parse_affected_target(target_ref))
+    except ValueError:
+        return None
+    if (_addr_leaf_kind(target) or "") != "schedule":
+        return None
+    target_label = _source_parent_range_label(_addr_leaf_label(target) or "")
+    if payload_label != target_label:
+        return None
+
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        if _SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RE.search(instruction_text) is None:
+            continue
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "rule_id": UK_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RULE_ID,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+            "target_ref": target_ref,
+            "target": str(target),
+            "payload_label": payload_label,
+            "payload_kind": "schedule",
+            "payload_tag": "Schedule",
         }
     return None
 
