@@ -2891,6 +2891,7 @@ def main(args: "argparse.Namespace") -> None:
                 matched_frontier_count=len(matching_frontier),
                 replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                 summary_only=summary_only,
+                compact_rows=compact_json,
             )
             if manual_compile_evidence_jsonl_path is not None:
                 report["manual_compile_evidence_jsonl"] = {
@@ -3329,6 +3330,7 @@ def main(args: "argparse.Namespace") -> None:
                         matched_frontier_count=len(matching_frontier),
                         replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                         summary_only=summary_only,
+                        compact_rows=compact_json,
                     )
                 _attach_replay_adjudication_evidence_report(
                     report,
@@ -3575,6 +3577,7 @@ def main(args: "argparse.Namespace") -> None:
                     matched_frontier_count=len(matching_frontier),
                     replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                     summary_only=summary_only,
+                    compact_rows=compact_json,
                 )
             _attach_replay_adjudication_evidence_report(
                 report,
