@@ -349,6 +349,40 @@ class UKReplayStateMixin:
     def _child_shape(self, node: UKMutableNode) -> tuple[tuple[object, Optional[str]], ...]:
         return tuple((child.kind, child.label) for child in node.children)
 
+    def _eid_lookup_parent_entry(
+        self,
+        node: UKMutableNode,
+    ) -> tuple[Optional[UKMutableNode], Optional[int]] | None:
+        if self._eid_lookup_index is None:
+            return None
+        for eid in self._node_eid_values(node):
+            entry = self._eid_lookup_index.get(eid)
+            if entry is None or entry[0] is not node:
+                continue
+            _, parent, idx = entry
+            if parent is not None:
+                if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
+                    return parent, idx
+                try:
+                    current_idx = parent.children.index(node)
+                except ValueError:
+                    self._eid_lookup_index.pop(eid, None)
+                    continue
+                self._eid_lookup_index[eid] = (node, parent, current_idx)
+                return parent, current_idx
+            if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
+                return None, idx
+            if self.statute.body is node:
+                return None, None
+            try:
+                current_idx = self.statute.supplements.index(node)
+            except ValueError:
+                self._eid_lookup_index.pop(eid, None)
+                continue
+            self._eid_lookup_index[eid] = (node, None, current_idx)
+            return None, current_idx
+        return None
+
     def _replace_statute(
         self,
         *,
@@ -421,6 +455,23 @@ class UKReplayStateMixin:
             if structure_changed:
                 self._note_structure_mutation()
             return True
+        parent_entry = self._eid_lookup_parent_entry(old_node)
+        if parent_entry is not None:
+            parent, idx = parent_entry
+            if parent is not None and idx is not None:
+                self._remove_eid_lookup_subtree(old_node)
+                parent.children[idx] = new_node
+                self._add_eid_lookup_subtree(new_node, parent, idx)
+                if structure_changed:
+                    self._note_structure_mutation()
+                return True
+            if idx is not None:
+                self._remove_eid_lookup_subtree(old_node)
+                self.statute.supplements[idx] = new_node
+                self._add_eid_lookup_subtree(new_node, None, idx)
+                if structure_changed:
+                    self._note_structure_mutation()
+                return True
         body_path = self._find_path_to_node(self.statute.body, old_node)
         if body_path is not None:
             parent, idx = self._parent_tuple_for_path(self.statute.body, body_path)

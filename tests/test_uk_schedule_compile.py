@@ -10970,6 +10970,66 @@ def test_executor_exact_eid_lookup_index_tracks_structural_mutations() -> None:
     assert "section-1-1" not in executor._eid_lookup_index
 
 
+def test_executor_replace_reuses_eid_lookup_parent_without_path_walk(monkeypatch: pytest.MonkeyPatch) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="old text",
+                            attrs={"eId": "section-1-1"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="old child",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    old_node, parent, idx = executor._find_node_and_parent_statute("section-1-1")
+    assert old_node is not None
+    assert parent is executor.statute.body.children[0]
+    assert idx == 0
+    assert executor._eid_lookup_index is not None
+
+    def fail_path_lookup(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("eId parent entry should avoid replay-wide path search")
+
+    replacement = UKMutableNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="new text",
+        attrs={"eId": "section-1-1"},
+        children=[UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a", text="new child")],
+    )
+    monkeypatch.setattr(executor, "_find_path_to_node", fail_path_lookup)
+
+    assert executor._replace_node_in_statute(old_node, replacement)
+    assert executor.statute.body.children[0].children[0] is replacement
+    assert executor._eid_lookup_index is not None
+    assert executor._eid_lookup_index["section-1-1"][0] is replacement
+    assert executor._eid_lookup_index["section-1-1"][1] is executor.statute.body.children[0]
+    assert executor._eid_lookup_index["section-1-1"][2] == 0
+
+
 def test_executor_target_lookup_cache_tracks_structural_mutations() -> None:
     statute = IRStatute(
         statute_id="ukpga/2001/1",

@@ -1054,14 +1054,19 @@ Current tooling-consistency invariant:
     a per-source-root normalized-number index and then filters kind synonyms in
     document order; this keeps the same extraction semantics while avoiding a
     repeated full-tree scan for every distinct first component. The same
-    `1990/42` witness measured `compile_ops=4.18s` after the index. Replay-side
-    `1988/1` remains a
-    separate indexing/cache family; a minor invariant-scan hot-path cleanup kept
-    the fast duplicate/order scan equivalent to the generic invariant subset and
-    measured 60.81s wall time with `replay=27.73s` on that witness, so it did not
-    remove the need for deeper replay-side indexing. A local improvement in one
-    family should not be treated as global UK replay progress without saved-run
-    guard evidence.
+    `1990/42` witness measured `compile_ops=4.18s` after the index, and later
+    `compile_ops=4.09s` with replay score unchanged at 92.9%. Replay-side
+    `1988/1` remains a separate indexing/cache family; a minor invariant-scan
+    hot-path cleanup kept the fast duplicate/order scan equivalent to the
+    generic invariant subset and measured 60.81s wall time with `replay=27.73s`
+    on that witness, so it did not remove the need for deeper replay-side
+    indexing. A rejected global parent-lookup index was score-equivalent but
+    slower because structural replacements rebuilt the index too often. The
+    accepted replacement hot path reuses the existing exact `eId` lookup index
+    only when it already records the node's parent tuple, avoiding new whole-tree
+    indexing; the `1988/1` witness stayed at 99.6% replay and measured 55.86s
+    wall time with `replay=23.66s`. A local improvement in one family should not
+    be treated as global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
