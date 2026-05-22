@@ -4615,6 +4615,7 @@ def _load_run(label: str) -> list[_BenchResult]:
 def _show_run(
     label: str,
     *,
+    phase_timings: bool = False,
     replay_adjudication_sample_kinds: Sequence[str] = (),
     replay_adjudication_sample_limit: int = 5,
 ) -> None:
@@ -4625,6 +4626,8 @@ def _show_run(
         replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
         replay_adjudication_sample_limit=replay_adjudication_sample_limit,
     )
+    if phase_timings:
+        _print_phase_timing_rows(results)
     score_witness_path = _score_witness_path(label)
     score_witness_count = _count_csv_data_rows(score_witness_path)
     if score_witness_count:
@@ -5192,6 +5195,7 @@ def main(args) -> None:  # noqa: ANN001
     if args.show:
         _show_run(
             args.show,
+            phase_timings=getattr(args, "phase_timings", False),
             replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
             replay_adjudication_sample_limit=replay_adjudication_sample_limit,
         )
