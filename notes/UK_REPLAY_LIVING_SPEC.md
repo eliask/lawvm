@@ -1071,9 +1071,11 @@ Current tooling-consistency invariant:
     `replay=23.01s` on the same witness. Reusing the cached core kind-string
     helper inside the duplicate/order scan removed a profiled enum/getattr hot
     helper while preserving the emitted invariant subset; the same witness
-    measured 54.11s wall time with `replay=22.47s`. A local improvement in one
-    family should not be treated as global UK replay progress without saved-run
-    guard evidence.
+    measured 54.11s wall time with `replay=22.47s`. Caching the UK kind-value
+    normalizer removes another profiled enum/string normalization hot helper
+    used by target matching; the same witness measured 54.04s wall time with
+    `replay=22.29s`. A local improvement in one family should not be treated as
+    global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
