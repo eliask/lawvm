@@ -84,7 +84,8 @@ tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `bench -j uk --curate-preset
 canary|tight|stress|modern-canary|modern-tight|hard-canary|hard-tight|hard-stress`,
 `bench-regression-guard -j uk` with optional `duration_s` regression limits,
-and replay diagnostics.
+saved-run phase timing delta summaries when both UK runs were produced with
+`--phase-timings`, and replay diagnostics.
 
 Regression guards must fail on structurally incomparable inputs. In particular,
 a saved-run comparison with zero common scored rows is not a successful
