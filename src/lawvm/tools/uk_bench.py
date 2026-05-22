@@ -2243,6 +2243,25 @@ def _print_phase_timing_rows(
     if not timed:
         print("\nNo measured phase timings available in this run.")
         return
+    phase_totals: Counter[str] = Counter()
+    measured_total = 0.0
+    row_total = 0.0
+    for result in timed:
+        measured_total += sum(result.phase_timings.values())
+        row_total += result.duration_s
+        phase_totals.update(result.phase_timings)
+    top_phase_text = " ".join(
+        f"{name}={seconds:.2f}s"
+        for name, seconds in phase_totals.most_common(8)
+        if seconds > 0.001
+    )
+    print("\nPhase timing totals:")
+    print(
+        f"  rows={len(timed)} measured={measured_total:.2f}s "
+        f"row={row_total:.2f}s"
+    )
+    if top_phase_text:
+        print(f"  phases: {top_phase_text}")
     slowest = sorted(
         timed,
         key=lambda result: sum(result.phase_timings.values()),
