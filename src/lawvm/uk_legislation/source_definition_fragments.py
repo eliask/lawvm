@@ -300,7 +300,7 @@ _SOURCE_AFTER_QUOTED_ANCHOR_INLINE_INSERT_RE = re.compile(
     flags=re.I | re.S,
 )
 _SOURCE_FOR_QUOTED_TEXT_SUBSTITUTE_RE = re.compile(
-    r"\bfor\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
+    r"\bfor\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
     r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
     flags=re.I | re.S,
 )

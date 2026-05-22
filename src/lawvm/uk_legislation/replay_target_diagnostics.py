@@ -24,7 +24,9 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_malformed_target_sectionlike_label_gap,
 )
 from lawvm.uk_legislation.replay_text import _node_text_contains_text, _subtree_text_match_count
-from lawvm.uk_legislation.source_labeled_child_parts import _source_carried_labeled_child_replacement_parts
+from lawvm.uk_legislation.source_labeled_child_parts import (
+    _source_carried_labeled_child_replacement_shape,
+)
 from lawvm.uk_legislation.source_text_reclassifications import source_following_anchor_structured_substitution_anchor
 from lawvm.uk_legislation.text_matching import _text_match_has_word_punctuation_elision_candidate, _text_patch_pattern
 from lawvm.uk_legislation.text_rewrite_fragments import _text_rewrite_rule_ids_for_op
@@ -730,10 +732,12 @@ class UKReplayTargetDiagnosticsMixin:
         if target.special is not None:
             return False
         parent_kind = _addr_leaf_kind(target) or ""
-        child_kind, parts = _source_carried_labeled_child_replacement_parts(
+        child_shape = _source_carried_labeled_child_replacement_shape(
             replacement,
             parent_kind=parent_kind,
         )
+        child_kind = child_shape.child_kind
+        parts = child_shape.parts
         if not child_kind or not parts:
             return False
         if getattr(node, "children", None):
@@ -777,6 +781,10 @@ class UKReplayTargetDiagnosticsMixin:
         if after and not re.fullmatch(r"[\.,;:]+", after):
             return False
         rebuilt_text = before.rstrip(" ,;:")
+        if child_shape.parent_prefix:
+            rebuilt_text = " ".join(
+                part for part in (rebuilt_text, child_shape.parent_prefix) if part
+            )
         parent_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
         children: list[UKMutableNode] = []
         for label, child_text in parts:
@@ -815,6 +823,7 @@ class UKReplayTargetDiagnosticsMixin:
                 replacement_text=replacement,
                 child_kind=child_kind,
                 child_labels=tuple(label for label, _ in parts),
+                source_parent_prefix=child_shape.parent_prefix,
                 source_shape="flat_replacement_payload_with_visible_child_labels",
             ),
         )

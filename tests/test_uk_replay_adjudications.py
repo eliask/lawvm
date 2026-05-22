@@ -3952,6 +3952,97 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution() 
     assert adjudications[0].detail["quirks_disposition"] == "apply"
 
 
+def test_executor_materializes_source_carried_labeled_child_text_substitution_prefix() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="5",
+                    attrs={"eId": "section-5"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            attrs={"eId": "section-5-2"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    attrs={"eId": "section-5-2-a"},
+                                    text=(
+                                        "Scottish Water must have regard to such "
+                                        "representations, reports and recommendations "
+                                        "as are mentioned in section 2(5)"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_labeled_child_text_substitution_prefix",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(
+                path=(("section", "5"), ("subsection", "2"), ("paragraph", "a"))
+            ),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "to such representations, reports and recommendations "
+                        "as are mentioned in section 2(5)"
+                    ),
+                    occurrence=0,
+                ),
+                replacement=(
+                    "to— i any representations made to it by a Customer Panel, and "
+                    "ii any recommendations made to it under section 2(4)"
+                ),
+            ),
+            source=_source(),
+            provenance_tags=(
+                "text_rewrite_rule:uk_effect_source_carried_quoted_text_substitution_text_patch",
+            ),
+        )
+    )
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "Scottish Water must have regard to"
+    assert [(child.kind, child.label, child.text, child.attrs.get("eId")) for child in paragraph.children] == [
+        (
+            IRNodeKind.SUBPARAGRAPH,
+            "i",
+            "any representations made to it by a Customer Panel, and",
+            "section-5-2-a-i",
+        ),
+        (
+            IRNodeKind.SUBPARAGRAPH,
+            "ii",
+            "any recommendations made to it under section 2(4)",
+            "section-5-2-a-ii",
+        ),
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
+    assert adjudications[0].detail["source_parent_prefix"] == "to"
+    assert adjudications[0].detail["blocking"] is False
+
+
 def test_executor_does_not_materialize_labeled_child_text_without_source_rule() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

@@ -2288,13 +2288,21 @@ Current block-substitution context invariant:
 - Payload-only `BlockAmendment` fragments whose parent source instruction
   supplies the anchor but whose payload visibly introduces child structure are
   triaged as
-  `uk_manual_frontier_source_carried_structured_text_patch_candidate`. These
-  rows are not safe flat text rewrites: a compiler or manual claim must combine
-  the parent formula with the structured payload and preserve the child
-  boundary. Current witnesses:
-  - `asp/2000/11` affected `s. 11(4)(b)` by `asp/2006/10` Sch. 6 para.
-    9(4)(c)(ii): parent says `in paragraph (b), for "a police force," there is
-    substituted--`; payload contains child `i`/`ii` alternatives.
+  `uk_manual_frontier_source_carried_structured_text_patch_candidate` until the
+  source-carried structure is owned. These rows are not safe flat text rewrites:
+  a compiler or manual claim must combine the parent formula with the structured
+  payload and preserve the child boundary.
+  - A source-carried quoted substitution is now owned when the parent formula
+    says `for [the word(s)] "X" there is substituted` and the `BlockAmendment`
+    payload carries a consecutive roman child run under an optional dash-ended
+    parent prefix such as `to— i ... ii ...`. Lowering emits
+    `uk_effect_source_carried_quoted_text_substitution_text_patch` using the
+    parent preimage and source payload; replay may materialize the visible child
+    labels with `uk_replay_source_carried_labeled_child_text_substitution_recovered`
+    and records the carried parent prefix. Current witnesses: `asp/2000/11`
+    affected `s. 11(4)(b)` by `asp/2006/10` Sch. 6 para. 9(4)(c)(ii), and
+    `asp/2002/3` affected `s. 5(2)(a)` by `asp/2005/3` Sch. 5 para. 7(3)(a).
+  Remaining manual witnesses:
   - `asp/2001/10` affected Sch. 6 para. 2 by `asp/2004/8` Sch. 4 para. 6(3):
     parent gives the substituted preimage; payload contains an `a`/`b` list.
   - `asp/2001/2` affected `s. 82(1)` by `asp/2005/12` s. 51(8)(c): parent says
