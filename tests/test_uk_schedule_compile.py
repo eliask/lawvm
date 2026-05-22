@@ -31,8 +31,10 @@ from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
 from lawvm.uk_legislation.provision_extractor import (
+    _INSTRUCTION_TEXT_CACHE,
     _find_provision_from_search_root,
     _find_provision_greedy,
+    _instruction_text_before_amendment_container,
 )
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
@@ -78,6 +80,23 @@ from lawvm.uk_legislation.uk_amendment_replay import (
 )
 
 _AVAILABLE_XML_BYTES = b"<Legislation>" + (b"x" * 128) + b"</Legislation>"
+
+
+def test_instruction_text_before_amendment_container_is_cached_by_source_element() -> None:
+    element = ET.fromstring(
+        """
+        <P1>
+          <Text>In section 1, after subsection (1) insert-</Text>
+          <BlockAmendment><P2><Text>payload</Text></P2></BlockAmendment>
+          <Text>tail ignored</Text>
+        </P1>
+        """
+    )
+
+    _INSTRUCTION_TEXT_CACHE.pop(element, None)
+    assert _instruction_text_before_amendment_container(element) == "In section 1, after subsection (1) insert-"
+    assert _INSTRUCTION_TEXT_CACHE[element] == "In section 1, after subsection (1) insert-"
+    assert _instruction_text_before_amendment_container(element) == "In section 1, after subsection (1) insert-"
 
 
 def replay_uk_ops(base, ops, **kwargs):

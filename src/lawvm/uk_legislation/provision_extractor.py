@@ -6,12 +6,19 @@ import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+from weakref import WeakKeyDictionary
 
 from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 
+_INSTRUCTION_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
+
+
 def _instruction_text_before_amendment_container(el: ET.Element) -> str:
     """Collect lead-in text before the first amendment payload container."""
+    cached = _INSTRUCTION_TEXT_CACHE.get(el)
+    if cached is not None:
+        return cached
     parts: list[str] = []
     stopped = False
 
@@ -32,7 +39,9 @@ def _instruction_text_before_amendment_container(el: ET.Element) -> str:
                 parts.append(child.tail)
 
     _walk(el)
-    return " ".join(" ".join(parts).split())
+    text = " ".join(" ".join(parts).split())
+    _INSTRUCTION_TEXT_CACHE[el] = text
+    return text
 
 
 def _norm_prov_ref(ref: str) -> str:
