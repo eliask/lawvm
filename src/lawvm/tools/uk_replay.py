@@ -923,17 +923,26 @@ def main(args: "argparse.Namespace") -> None:
                 current_eids = set(eid_map.values())
                 if verbose:
                     print(f"Oracle EID map entries: {len(eid_map)}", file=sys.stderr)
+                enacted_oracle_score = len(base_eids & current_eids) / max(
+                    len(base_eids),
+                    len(current_eids),
+                    1,
+                )
                 comparison_class = classify_uk_bench_comparison(
                     n_enacted_eids=len(base_eids),
                     n_oracle_eids=len(current_eids),
                     n_effects=n_effects,
-                    raw_score=(len(base_eids & current_eids) / max(len(base_eids), len(current_eids), 1)),
+                    raw_score=enacted_oracle_score,
                 )
                 current_projection_shape = classify_uk_current_projection_eid_shape(
                     enacted_eids=base_eids,
                     oracle_eids=current_eids,
                 )
-                if current_projection_shape and comparison_class == "commensurable":
+                if (
+                    current_projection_shape
+                    and comparison_class == "commensurable"
+                    and enacted_oracle_score < 1.0
+                ):
                     comparison_class = current_projection_shape
                 core_benchmark = is_core_uk_comparison(comparison_class)
 
@@ -1032,6 +1041,31 @@ def main(args: "argparse.Namespace") -> None:
             if only_in_oracle:
                 only_in_oracle_sample = sorted(only_in_oracle)[:10]
                 _out(f"Only in oracle ({only_in_oracle_count}): {only_in_oracle_sample}")
+            effect_source_pathology_counts = dict(
+                Counter(
+                    str(row.get("source_pathology") or "__none__")
+                    for row in effect_source_pathology_observations
+                    if row.get("rule_id") == "uk_effect_source_pathology_classified"
+                )
+            )
+            comparison_class = classify_uk_bench_comparison(
+                n_enacted_eids=len(base_eids),
+                n_oracle_eids=len(current_eids),
+                n_effects=n_effects,
+                raw_score=similarity,
+                effect_source_pathology_counts=effect_source_pathology_counts,
+            )
+            current_projection_shape = classify_uk_current_projection_eid_shape(
+                enacted_eids=base_eids,
+                oracle_eids=current_eids,
+            )
+            if (
+                current_projection_shape
+                and comparison_class == "commensurable"
+                and similarity < 1.0
+            ):
+                comparison_class = current_projection_shape
+            core_benchmark = is_core_uk_comparison(comparison_class)
         else:
             _out(f"Note: no oracle XML in archive for {oracle_url}.")
 

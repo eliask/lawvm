@@ -592,6 +592,8 @@ def classify_uk_bench_comparison(
         return "no_oracle_eids"
     if n_enacted_eids <= 0:
         return "no_enacted_eids"
+    if raw_score >= 1.0:
+        return "commensurable"
     if (
         n_effects > 0
         and effect_source_pathology_counts
