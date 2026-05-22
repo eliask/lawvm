@@ -364,6 +364,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     )
     if reject_external_or_partial_whole_act_scope(
         effect=effect,
+        action=action,
         effect_type=effect_type,
         t_str=t_str,
         target=target,

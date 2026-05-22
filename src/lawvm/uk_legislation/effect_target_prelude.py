@@ -330,6 +330,7 @@ def reject_schedule_entry_missing_source(
 def reject_external_or_partial_whole_act_scope(
     *,
     effect: UKEffectRecord,
+    action: str,
     effect_type: str,
     t_str: str,
     target: LegalAddress,
@@ -361,6 +362,37 @@ def reject_external_or_partial_whole_act_scope(
             },
         )
         return True
+
+    if str(target.special or "") == "whole_act" and not effect_type:
+        text = " ".join((extracted_text or "").split())
+        explicit_whole_act_repeal = bool(
+            re.search(
+                r"\b(?:the\s+)?whole\s+Act\b.{0,80}\b(?:is\s+)?repealed\b",
+                text,
+                flags=re.I,
+            )
+        )
+        if not explicit_whole_act_repeal:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_empty_type_whole_act_action_rejected",
+                family="unsupported_target_scope",
+                reason_code="empty_effect_type_whole_act_action_unsafe",
+                reason=(
+                    "UK effect metadata points at the whole Act but has no "
+                    "effect type; lowering must not infer a destructive "
+                    "whole-Act action from incidental source text."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "inferred_action": action,
+                },
+            )
+            return True
 
     whole_act_partial_repeal_exceptions = (
         _partial_whole_act_repeal_exceptions(extracted_text)
