@@ -15617,6 +15617,10 @@ def test_replay_table_entry_row_insert_blocks_ambiguous_table() -> None:
     assert unresolved.detail["target"] == "section:159/subsection:5"
     assert unresolved.detail["blocking"] is True
     assert unresolved.detail["strict_disposition"] == "block"
+    assert not any(
+        adjudication.kind == "uk_replay_payload_mismatch"
+        for adjudication in adjudications
+    )
 
 
 def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:

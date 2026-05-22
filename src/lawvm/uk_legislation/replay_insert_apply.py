@@ -136,7 +136,13 @@ class UKReplayInsertApplyMixin:
             else:
                 if _schedule_list_entry_table_rows_selector(op) is not None:
                     return
+                if _schedule_table_end_rows_selector(op) is not None:
+                    return
                 if _schedule_list_entry_selector(op) is not None:
+                    return
+                if _table_column_insert_selector(op) is not None:
+                    return
+                if _table_row_insert_selector(op) is not None:
                     return
                 if self._malformed_target_gap(target):
                     _append_uk_replay_adjudication(
