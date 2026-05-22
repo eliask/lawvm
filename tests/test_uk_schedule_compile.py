@@ -11806,6 +11806,152 @@ def test_compile_word_range_to_end_substitution_collapses_target_subtree() -> No
     assert adjudications[0].detail["source_shape"] == "subtree_range_to_end_selector"
 
 
+def test_replay_range_to_end_substitution_preserves_children_when_source_marks_post_child_tail() -> None:
+    op = LegalOperation(
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress((("section", "1"), ("subsection", "6"))),
+        sequence=0,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_FROM_that the modifications_TO_END"),
+            replacement="the reason given by subsection (6A)",
+        ),
+        op_id="uk_test_post_child_tail_range_to_end",
+        source=OperationSource(statute_id="ukpga/2025/8", raw_text="s. 52(2)(a)"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/15",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "In a case where- section 44(8) of that Act is not "
+                                "to apply if the sole reason is that the modifications "
+                                "made by this section have no effect."
+                            ),
+                            attrs={
+                                "eId": "section-1-6",
+                                "uk_post_child_text_tail": (
+                                    "section 44(8) of that Act is not to apply if the "
+                                    "sole reason is that the modifications made by this "
+                                    "section have no effect."
+                                ),
+                            },
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="condition A is met, and",
+                                    attrs={"eId": "section-1-6-a"},
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text="condition B is met,",
+                                    attrs={"eId": "section-1-6-b"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == (
+        "In a case where- section 44(8) of that Act is not to apply if the sole "
+        "reason is the reason given by subsection (6A)"
+    )
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_node_local_range_to_end_text_rewrite_applied"
+    ]
+
+
+def test_replay_post_child_tail_range_to_end_ignores_same_anchor_in_intro() -> None:
+    op = LegalOperation(
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress((("section", "1"), ("subsection", "6"))),
+        sequence=0,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_FROM_that the modifications_TO_END"),
+            replacement="the reason given by subsection (6A)",
+        ),
+        op_id="uk_test_post_child_tail_duplicate_intro_anchor",
+        source=OperationSource(statute_id="ukpga/2025/8", raw_text="s. 52(2)(a)"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/15",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "In a case where that the modifications are already referenced- "
+                                "section 44(8) of that Act is not to apply if the sole reason "
+                                "is that the modifications made by this section have no effect."
+                            ),
+                            attrs={
+                                "eId": "section-1-6",
+                                "uk_post_child_text_tail": (
+                                    "section 44(8) of that Act is not to apply if the sole reason "
+                                    "is that the modifications made by this section have no effect."
+                                ),
+                            },
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="condition A is met, and",
+                                    attrs={"eId": "section-1-6-a"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == (
+        "In a case where that the modifications are already referenced- "
+        "section 44(8) of that Act is not to apply if the sole reason "
+        "is the reason given by subsection (6A)"
+    )
+    assert [child.label for child in subsection.children] == ["a"]
+
+
 def test_compile_word_range_to_end_there_is_substituted() -> None:
     extracted_el = ET.fromstring(
         f"""

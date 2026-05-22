@@ -350,6 +350,57 @@ def test_parse_uk_statute_ir_bytes_preserves_local_text_before_child_paragraphs(
     assert [child.label for child in subsection.children] == ["a", "b"]
 
 
+def test_parse_uk_statute_ir_bytes_marks_local_text_after_child_paragraphs() -> None:
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <Metadata>
+    <dc:title>Tail Text Test Act</dc:title>
+  </Metadata>
+  <Body>
+    <P1 eId="section-1">
+      <Pnumber>1</Pnumber>
+      <P1para>
+        <P2 eId="section-1-6">
+          <Pnumber>6</Pnumber>
+          <P2para>
+            <Text>In a case where-</Text>
+            <P3 eId="section-1-6-a">
+              <Pnumber>a</Pnumber>
+              <P3para><Text>condition A is met, and</Text></P3para>
+            </P3>
+            <P3 eId="section-1-6-b">
+              <Pnumber>b</Pnumber>
+              <P3para><Text>condition B is met,</Text></P3para>
+            </P3>
+            <Text>the old tail applies.</Text>
+          </P2para>
+        </P2>
+      </P1para>
+    </P1>
+  </Body>
+</Legislation>
+"""
+
+    ir = parse_uk_statute_ir_bytes(
+        xml,
+        statute_id="ukpga/2000/1",
+        version_label="enacted",
+        source_path="https://www.legislation.gov.uk/ukpga/2000/1/enacted/data.xml",
+    )
+
+    subsection = ir.body.children[0].children[0]
+    assert subsection.text == "In a case where- the old tail applies."
+    assert subsection.attrs["uk_post_child_text_tail"] == "the old tail applies."
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    observations = ir.metadata["source_parse_observations"]
+    tail_observation = next(
+        row for row in observations if row["rule_id"] == "uk_post_child_text_tail_preserved"
+    )
+    assert tail_observation["count"] == 1
+    assert tail_observation["samples"][0]["tail_text"] == "the old tail applies."
+
+
 def test_parse_uk_statute_ir_bytes_preserves_subordinate_pgroup_heading_carrier() -> None:
     xml = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
