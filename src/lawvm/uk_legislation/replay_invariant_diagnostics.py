@@ -11,7 +11,6 @@ from lawvm.core import tree_ops
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.replay_records import (
@@ -196,10 +195,7 @@ class UKReplayInvariantDiagnosticsMixin:
         return violations
 
     def _record_invariant_violations(self, op: LegalOperation) -> None:
-        if (
-            _action_name(op.action) in {"text_replace", "text_repeal"}
-            and self._structure_mutation_serial == self._last_invariant_structure_serial
-        ):
+        if self._structure_mutation_serial == self._last_invariant_structure_serial:
             return
         target_roots = self._invariant_target_roots_for_op(op)
         current_violations: set[str] = set()
