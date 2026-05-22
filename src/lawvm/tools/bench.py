@@ -2510,9 +2510,10 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
     )
     bench_p.add_argument(
         "--curate-preset",
-        choices=["canary", "tight", "stress"],
+        choices=["canary", "tight", "stress", "modern-canary", "modern-tight"],
         help=(
-            "[-j uk] curated corpus preset: canary=40, tight=200, stress=400. "
+            "[-j uk] curated corpus preset: canary=40, tight=200, stress=400, "
+            "modern-canary=40, modern-tight=200. "
             "If --curate-corpus is omitted, writes the standard data/uk preset CSV"
         ),
     )
