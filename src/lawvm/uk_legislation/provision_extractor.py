@@ -54,7 +54,6 @@ _NUM_ALPHA_RE = re.compile(r"(\d+)([a-z]+)", flags=re.I)
 _DIGITS_RE = re.compile(r"^\d+$")
 _ALPHA_RE = re.compile(r"^[a-z]+$")
 _REF_SPLIT_RE = re.compile(r"[\s.()]+")
-_EID_SPLIT_RE = re.compile(r"[-_]")
 _SEQUENCE_KIND_TOKENS = {
     "schedule",
     "part",
@@ -119,7 +118,7 @@ def _sequence_tokens(parts: list[str] | tuple[str, ...]) -> tuple[str, ...]:
 @lru_cache(maxsize=131072)
 def _get_id_sequence(eid: str) -> tuple[str, ...]:
     """Extract semantic components with boundary preservation."""
-    return _sequence_tokens_cached(tuple(_EID_SPLIT_RE.split(eid)))
+    return _sequence_tokens_cached(tuple(eid.replace("_", "-").split("-")))
 
 
 @lru_cache(maxsize=131072)

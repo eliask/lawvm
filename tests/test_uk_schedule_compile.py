@@ -38,6 +38,7 @@ from lawvm.uk_legislation.provision_extractor import (
     _first_component_matches,
     _find_provision_from_search_root,
     _find_provision_greedy,
+    _get_id_sequence,
     _instruction_text_before_amendment_container,
     _match_node,
 )
@@ -102,6 +103,24 @@ def test_instruction_text_before_amendment_container_is_cached_by_source_element
     assert _instruction_text_before_amendment_container(element) == "In section 1, after subsection (1) insert-"
     assert _INSTRUCTION_TEXT_CACHE[element] == "In section 1, after subsection (1) insert-"
     assert _instruction_text_before_amendment_container(element) == "In section 1, after subsection (1) insert-"
+
+
+def test_get_id_sequence_preserves_hyphen_underscore_boundaries() -> None:
+    assert _get_id_sequence("ukpga-1988_1-section_12A") == (
+        "ukpga",
+        "1988",
+        "1",
+        "section",
+        "12",
+        "a",
+    )
+    assert _get_id_sequence("part__iv--paragraph_3b") == (
+        "part",
+        "4",
+        "paragraph",
+        "3",
+        "b",
+    )
 
 
 def test_first_component_matches_preserves_document_order_with_number_index() -> None:
