@@ -24,12 +24,24 @@ def _source_after_insertion_anchor(
     lead = " ".join(str(text or "").split())
     if not lead:
         return None, None
-    match = re.search(
-        r"\bafter\s+(?P<kind>sub-?paragraph|paragraph|subsection|section|ss\.|s\.)\s*"
-        r"\(?(?P<label>[0-9a-zA-Z]+)\)?\b",
-        lead,
-        flags=re.I,
+    after_target = (
+        r"after\s+(?P<kind>sub-?paragraph|paragraph|subsection|section|ss\.|s\.)\s*"
+        r"\(?(?P<label>[0-9a-zA-Z]+)\)?\b"
     )
+    after_target_start = r"\bafter\s+(?:sub-?paragraph|paragraph|subsection|section|ss\.|s\.)\s*\(?[0-9a-zA-Z]+\)?\b"
+    scoped_matches = tuple(
+        re.finditer(
+            rf"\b{after_target}(?:(?!{after_target_start}).)*?\binsert(?:ed)?\b",
+            lead,
+            flags=re.I,
+        )
+    )
+    if scoped_matches:
+        match = scoped_matches[-1]
+        anchor_source = "extracted_source_insert_scoped_after_clause"
+    else:
+        match = re.search(rf"\b{after_target}", lead, flags=re.I)
+        anchor_source = "extracted_source_after_clause"
     if match is None:
         return None, None
     kind = str(match.group("kind") or "").lower()
@@ -41,9 +53,9 @@ def _source_after_insertion_anchor(
         sibling_kind = _addr_leaf_kind(target)
         if parent is not None and sibling_kind:
             sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
-            return _fallback_target_eid(sibling), "extracted_source_after_clause"
+            return _fallback_target_eid(sibling), anchor_source
     prefix = "p1" if kind == "paragraph" else "section"
-    return f"{prefix}-{label}", "extracted_source_after_clause"
+    return f"{prefix}-{label}", anchor_source
 
 
 def _fallback_target_eid(addr: LegalAddress) -> str:

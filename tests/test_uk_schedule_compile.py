@@ -1506,6 +1506,96 @@ def test_same_effect_nested_sibling_insertions_chain_prior_insert_anchor() -> No
     }
 
 
+def test_insert_anchor_prefers_after_clause_governing_insert_over_prior_omit_clause() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In subsection (1), omit the “and” after paragraph (b), and after paragraph (c) insert—</Text>
+            <BlockAmendment>
+              <P3><Pnumber>d</Pnumber><P3para><Text>inserted d,</Text></P3para></P3>
+              <P3><Pnumber>e</Pnumber><P3para><Text>inserted e, and</Text></P3para></P3>
+              <P3><Pnumber>f</Pnumber><P3para><Text>inserted f.</Text></P3para></P3>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_insert_anchor_ignores_prior_omit_after_clause",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-12-21",
+        affected_uri="/id/ukpga/2010/4/section/356/subsection/1/paragraph/d",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2010",
+        affected_number="4",
+        affected_provisions="s. 356(1)(d)-(f)",
+        affecting_uri="/id/uksi/2012/3153",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2012",
+        affecting_number="3153",
+        affecting_provisions="art. 6(2)",
+        affecting_title="The Qualifying Oil Fields Order 2012",
+        comments="",
+        in_force_dates=[{"date": "2012-12-21", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert [_NOTE_PRECEDING_EID + "section-356-1-c" in op.provenance_tags for op in ops] == [
+        True,
+        False,
+        False,
+    ]
+    first_anchor_witness = ops[0].payload.attrs["rewrite_witness"]["insertion_anchor_witness"]
+    assert first_anchor_witness == {
+        "preceding_eid": "section-356-1-c",
+        "following_eid": None,
+        "anchor_source": "extracted_source_insert_scoped_after_clause",
+    }
+
+    base = IRStatute(
+        statute_id="ukpga/2010/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="356",
+                    attrs={"eId": "section-356"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            attrs={"eId": "section-356-1"},
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", attrs={"eId": "section-356-1-a"}),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", attrs={"eId": "section-356-1-b"}),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="c", attrs={"eId": "section-356-1-c"}),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.label for child in subsection.children] == ["a", "b", "c", "d", "e", "f"]
+    assert "uk_replay_tree_invariant_violation" not in {
+        adjudication.kind for adjudication in adjudications
+    }
+
+
 def test_split_metadata_schedule_space_separated_sibling_paragraphs() -> None:
     assert _split_metadata_provisions("sch. 5 para. 11 12") == [
         "sch. 5 para. 11",
