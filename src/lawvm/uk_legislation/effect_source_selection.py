@@ -95,6 +95,12 @@ def select_source_for_effect(
         current_xml_loader=current_xml_loader,
         provision_extractor=provision_extractor,
     )
+    if not source_required_for_replay:
+        return EffectSourceSelection(
+            source_context=source_context,
+            extracted_el=None,
+            source_required_for_replay=source_required_for_replay,
+        )
     extracted_el, source_extraction_observations = (
         _extract_from_affecting_source_context_with_observations(
             source_context,
