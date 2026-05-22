@@ -4394,10 +4394,11 @@ def test_prepare_uk_operation_payload_node_canonicalizes_point_leaf_kind() -> No
         path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("point", "i"))
     )
 
+    lowering_rejections: list[dict[str, object]] = []
     prepared = prepare_uk_operation_payload_node(
         effect=effect,
         curr_action="insert",
-        content_ir={"kind": "subparagraph", "label": "i", "text": "real payload text", "children": []},
+        content_ir={"kind": "subparagraph", "label": "i", "text": "payload", "children": []},
         target_ref="s. 1(1)(a)(i)",
         target=target,
         payload_match_target=target,
@@ -4407,12 +4408,13 @@ def test_prepare_uk_operation_payload_node_canonicalizes_point_leaf_kind() -> No
         extracted_el=None,
         extracted_text=None,
         allow_payload_identity_synthesis=False,
-        lowering_rejections_out=[],
+        lowering_rejections_out=lowering_rejections,
     )
 
     assert prepared.skip_effect is False
     assert prepared.payload_node is not None
     assert prepared.payload_node.kind == IRNodeKind.ITEM
+    assert lowering_rejections == []
 
 
 def test_executor_does_not_materialize_labeled_child_text_without_source_rule() -> None:
