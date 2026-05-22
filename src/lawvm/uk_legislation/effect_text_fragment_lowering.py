@@ -283,7 +283,11 @@ def lower_uk_text_fragment_rewrite(
                 fragment_subs=quote_only_omission_lowering.fragment_subs,
                 op_text_match=quote_only_omission_lowering.op_text_match,
                 op_text_replacement=quote_only_omission_lowering.op_text_replacement,
-                op_text_occurrence=op_text_occurrence,
+                op_text_occurrence=(
+                    quote_only_omission_lowering.op_text_occurrence
+                    if quote_only_omission_lowering.op_text_occurrence is not None
+                    else op_text_occurrence
+                ),
                 op_text_end_occurrence=op_text_end_occurrence,
             )
         return UKTextFragmentLowering(

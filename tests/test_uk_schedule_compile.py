@@ -4034,6 +4034,115 @@ def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None
     assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
 
 
+def test_compile_child_qualified_final_word_omission() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-4-paragraph-4-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a the \u201cand\u201d at the end of paragraph (a);</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-59d375fa227e5670ac5092d6da5dffb1",
+        effect_type="word omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-02-02",
+        affected_uri="/id/ukpga/2000/8/section/60/subsection/2A/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 60(2A)(a)",
+        affecting_uri="/id/ukpga/2016/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="14",
+        affecting_provisions="Sch. 4 para. 4(2)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2018-09-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "60"),
+        ("subsection", "2a"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "and"
+    assert ops[0].text_patch.selector.occurrence == -1
+    assert ops[0].text_patch.replacement is None
+    assert _fragment_substitution(ops[0]) == [
+        {
+            "original": "and",
+            "replacement": "",
+            "occurrence": "-1",
+        }
+    ]
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_final_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_final_word_omission_text_patch"
+    assert lowering_records[-1]["blocking"] is False
+    assert lowering_records[-1]["source_child_kind"] == "paragraph"
+    assert lowering_records[-1]["source_child_label"] == "a"
+    assert lowering_records[-1]["occurrence"] == -1
+
+
+def test_compile_child_qualified_final_word_omission_rejects_target_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-4-paragraph-4-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a the \u201cand\u201d at the end of paragraph (a);</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_final_word_omission_mismatch",
+        effect_type="word omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-02-02",
+        affected_uri="/id/ukpga/2000/8/section/60/subsection/2A/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="8",
+        affected_provisions="s. 60(2A)(b)",
+        affecting_uri="/id/ukpga/2016/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="14",
+        affecting_provisions="Sch. 4 para. 4(2)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2018-09-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+
+
 def test_compile_at_end_definition_insert() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -18763,8 +18872,12 @@ def test_compile_metadata_only_body_trailing_roman_sibling_subparagraphs_expand_
     ]
     payloads = [payload for op in ops if (payload := op.payload) is not None]
     assert [payload.kind for payload in payloads] == [
-        IRNodeKind.PARAGRAPH,
-        IRNodeKind.PARAGRAPH,
+        IRNodeKind.SUBPARAGRAPH,
+        IRNodeKind.SUBPARAGRAPH,
+    ]
+    assert [payload.label for payload in payloads] == [
+        "vi",
+        "vii",
     ]
 
 
