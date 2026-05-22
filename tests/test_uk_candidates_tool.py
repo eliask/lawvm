@@ -19,6 +19,7 @@ from lawvm.tools.uk_candidates import (
     _eid_branch_root,
     _effect_overlaps_residual,
     _budget_aware_frontier_status,
+    _compact_uk_candidate_row_jsonable,
     _residual_candidate_inventory,
     _filtered_frontier,
     _frontier_status,
@@ -1546,6 +1547,67 @@ def test_candidates_report_jsonable_can_omit_rows_for_summary_only() -> None:
     assert report["summary"]["saved_effect_row_count"] == 7
     assert report["summary"]["saved_effect_feed_page_count"] == 3
     assert "rows" not in report
+
+
+def test_candidates_report_jsonable_can_emit_compact_rows() -> None:
+    row = {
+        "statute_id": "ukpga/2000/1",
+        "status": "real residual frontier",
+        "effect_count": 10,
+        "effect_row_count": 7,
+        "effect_feed_page_count": 3,
+        "inspected_effect_count": 2,
+        "available_replay_applicable_effect_count": 2,
+        "available_applied_effect_count": 2,
+        "effect_inspection_truncated": False,
+        "residual_analysis_skipped": False,
+        "residual_analysis_unavailable": False,
+        "candidate_effect_count": 1,
+        "candidate_op_count": 1,
+        "residual_candidate_effect_count": 1,
+        "residual_candidate_op_count": 1,
+        "residual_candidate_samples": [{"effect_id": "effect-1"}],
+        "saved_bench_diagnostic_count": 2,
+        "saved_bench_diagnostic_rule_counts": {"rule-a": 2},
+        "saved_bench_diagnostics": [{"record": {"large": "payload"}}],
+        "residual_compile_observation_count": 1,
+        "residual_compile_observation_rule_counts": {"rule-b": 1},
+        "residual_compile_observations": {"lowering": [{"large": "payload"}]},
+        "residual_compile_rejection_count": 1,
+        "residual_compile_rejection_rule_counts": {"rule-b": 1},
+        "residual_compile_rejections": {"lowering": [{"large": "payload"}]},
+        "effect_feed_parse_rejections": [{"large": "payload"}],
+        "effect_feed_observations": [{"large": "payload"}],
+        "effect_selection_observations": [{"large": "payload"}],
+        "effect_selection_rejections": [{"large": "payload"}],
+        "bench_exception_observations": [{"large": "payload"}],
+    }
+
+    report = _uk_candidates_report_jsonable(
+        label="uk_frontier",
+        rows=[row],
+        filters={},
+        inspected_count=1,
+        compact_rows=True,
+    )
+
+    compact = report["rows"][0]
+    assert compact["statute_id"] == "ukpga/2000/1"
+    assert compact["residual_candidate_samples"] == [{"effect_id": "effect-1"}]
+    assert compact["saved_bench_diagnostic_count"] == 2
+    assert compact["residual_compile_observation_rule_counts"] == {"rule-b": 1}
+    assert "saved_bench_diagnostics" not in compact
+    assert "residual_compile_observations" not in compact
+    assert "residual_compile_rejections" not in compact
+    assert "effect_feed_parse_rejections" not in compact
+    assert "effect_feed_observations" not in compact
+    assert "effect_selection_observations" not in compact
+    assert "effect_selection_rejections" not in compact
+    assert "bench_exception_observations" not in compact
+    assert report["summary"]["saved_bench_diagnostic_count"] == 2
+    assert report["summary"]["residual_compile_observation_count"] == 1
+    assert report["summary"]["residual_compile_rejection_count"] == 1
+    assert _compact_uk_candidate_row_jsonable(row)["statute_id"] == "ukpga/2000/1"
 
 
 def test_candidates_report_jsonable_records_frontier_truncation() -> None:

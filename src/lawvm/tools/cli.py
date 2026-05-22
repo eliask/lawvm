@@ -4025,6 +4025,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="with --json, omit per-statute candidate rows and emit only aggregate triage counts",
     )
     uk_candidates_p.add_argument(
+        "--compact-json",
+        action="store_true",
+        help=(
+            "with --json, omit bulky per-row diagnostic arrays while preserving "
+            "counts and bounded candidate samples"
+        ),
+    )
+    uk_candidates_p.add_argument(
         "--manual-compile-evidence-jsonl",
         metavar="PATH",
         help=(

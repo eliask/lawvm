@@ -989,6 +989,7 @@ def _uk_candidates_filters_jsonable(
     replay_adjudication_sample_limit: int = 5,
     manual_compile_evidence_statuses: set[str] | None = None,
     claim_template_status: str = "",
+    compact_json: bool = False,
 ) -> dict[str, Any]:
     return {
         "top": top,
@@ -1010,6 +1011,7 @@ def _uk_candidates_filters_jsonable(
             else list(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
         ),
         "claim_template_status": claim_template_status,
+        "compact_json": compact_json,
     }
 
 
@@ -1026,6 +1028,29 @@ def _manual_compile_evidence_statuses_from_args(value: object) -> set[str]:
     if not statuses:
         return set(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
     return statuses
+
+
+_COMPACT_ROW_OMIT_KEYS = frozenset(
+    {
+        "bench_exception_observations",
+        "saved_bench_diagnostics",
+        "effect_feed_parse_rejections",
+        "effect_feed_observations",
+        "effect_selection_observations",
+        "effect_selection_rejections",
+        "residual_compile_observations",
+        "residual_compile_rejections",
+    }
+)
+
+
+def _compact_uk_candidate_row_jsonable(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Drop bulky diagnostic arrays while preserving row-level counts and samples."""
+    return {
+        str(key): value
+        for key, value in row.items()
+        if str(key) not in _COMPACT_ROW_OMIT_KEYS
+    }
 
 
 def _uk_candidate_row_jsonable(  # noqa: PLR0913
@@ -1349,6 +1374,7 @@ def _uk_candidates_report_jsonable(
     matched_frontier_count: int | None = None,
     replay_adjudication_prefilter_count: int | None = None,
     summary_only: bool = False,
+    compact_rows: bool = False,
 ) -> dict[str, Any]:
     matched_count = inspected_count if matched_frontier_count is None else matched_frontier_count
     replay_prefilter_count = (
@@ -1844,7 +1870,11 @@ def _uk_candidates_report_jsonable(
         },
     }
     if not summary_only:
-        payload["rows"] = rows
+        payload["rows"] = (
+            [_compact_uk_candidate_row_jsonable(row) for row in rows]
+            if compact_rows
+            else rows
+        )
     return payload
 
 
@@ -2648,6 +2678,7 @@ def main(args: "argparse.Namespace") -> None:
     residual_only: bool = bool(getattr(args, "residual_only", False))
     json_output: bool = bool(getattr(args, "json", False))
     summary_only: bool = bool(getattr(args, "summary_only", False))
+    compact_json: bool = bool(getattr(args, "compact_json", False))
     claim_template_status: str = str(getattr(args, "claim_template_status", "") or "")
     min_year: int | None = getattr(args, "min_year", None)
     max_year: int | None = getattr(args, "max_year", None)
@@ -2692,6 +2723,9 @@ def main(args: "argparse.Namespace") -> None:
 
     if summary_only and not json_output:
         print("error: --summary-only requires --json for uk-candidates", file=sys.stderr)
+        sys.exit(2)
+    if compact_json and not json_output:
+        print("error: --compact-json requires --json for uk-candidates", file=sys.stderr)
         sys.exit(2)
     if top < 0:
         print("error: --top must be zero or a positive integer", file=sys.stderr)
@@ -2811,6 +2845,7 @@ def main(args: "argparse.Namespace") -> None:
             else None
         ),
         claim_template_status=claim_template_status,
+        compact_json=compact_json,
     )
 
     if not json_output:
@@ -3959,6 +3994,7 @@ def main(args: "argparse.Namespace") -> None:
             matched_frontier_count=len(matching_frontier),
             replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
             summary_only=summary_only,
+            compact_rows=compact_json,
         )
         if manual_compile_evidence_jsonl_path is not None:
             report["manual_compile_evidence_jsonl"] = {
