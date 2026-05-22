@@ -380,6 +380,7 @@ UK_REPLAY_BUG_PROOF_KIND_PRIORITY = (
 
 _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
     ("uk_replay_absent_sibling_range_gap", "uk_absent_sibling_range_gap"),
+    ("uk_replay_absent_child_repeal_target_gap", "uk_absent_child_repeal_target_gap"),
     ("uk_replay_empty_descendant_shape_gap", "uk_empty_descendant_shape_gap"),
     ("uk_replay_annex_schedule_reference_gap", "uk_annex_schedule_reference_gap"),
     ("uk_replay_existing_target_conflict_gap", "uk_existing_target_conflict_gap"),

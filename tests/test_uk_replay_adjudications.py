@@ -10,6 +10,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
+from lawvm.uk_legislation.effect_payload_normalization import prepare_uk_operation_payload_node
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_ir_node_kind
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
@@ -4294,6 +4295,124 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution_pr
 def test_uk_mutable_ir_maps_source_point_alias_to_item_kind() -> None:
     assert uk_ir_node_kind("point") == IRNodeKind.ITEM
     assert UKMutableNode(kind="point", label="i").kind == IRNodeKind.ITEM
+
+
+def test_executor_canonicalizes_source_point_alias_in_labeled_child_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            attrs={"eId": "section-1-1"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    attrs={"eId": "section-1-1-a"},
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ITEM,
+                                            label="i",
+                                            attrs={"eId": "section-1-1-a-i"},
+                                            text="Parent has old words.",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_point_alias_child_text_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(
+                path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("item", "i"))
+            ),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old words", occurrence=0),
+                replacement="i first child; or ii second child",
+            ),
+            source=_source(),
+            provenance_tags=(
+                "text_rewrite_rule:uk_effect_source_carried_quoted_text_substitution_text_patch",
+            ),
+        )
+    )
+
+    item = executor.statute.body.children[0].children[0].children[0].children[0]
+    assert item.text == "Parent has"
+    assert [(child.kind, child.label, child.text) for child in item.children] == [
+        (IRNodeKind.ITEM, "i", "first child; or"),
+        (IRNodeKind.ITEM, "ii", "second child"),
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["child_kind"] == "item"
+    assert adjudications[0].detail["source_child_kind"] == "point"
+
+
+def test_prepare_uk_operation_payload_node_canonicalizes_point_leaf_kind() -> None:
+    effect = UKEffectRecord(
+        effect_id="test-effect",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2026-01-01",
+        affected_uri="",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="1",
+        affecting_provisions="s. 1",
+        affecting_title="Amending Act",
+    )
+    target = LegalAddress(
+        path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("point", "i"))
+    )
+
+    prepared = prepare_uk_operation_payload_node(
+        effect=effect,
+        curr_action="insert",
+        content_ir={"kind": "subparagraph", "label": "i", "text": "real payload text", "children": []},
+        target_ref="s. 1(1)(a)(i)",
+        target=target,
+        payload_match_target=target,
+        target_replacement_leaf_override=None,
+        target_replacement_leaf_kind=None,
+        actual_el=None,
+        extracted_el=None,
+        extracted_text=None,
+        allow_payload_identity_synthesis=False,
+        lowering_rejections_out=[],
+    )
+
+    assert prepared.skip_effect is False
+    assert prepared.payload_node is not None
+    assert prepared.payload_node.kind == IRNodeKind.ITEM
 
 
 def test_executor_does_not_materialize_labeled_child_text_without_source_rule() -> None:
