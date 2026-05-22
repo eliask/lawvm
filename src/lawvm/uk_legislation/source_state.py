@@ -18,6 +18,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
+        "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
     }
 )
 
@@ -371,6 +372,44 @@ def uk_affecting_act_enacted_schedule_table_row_source_extracted(
         ),
         "blocking": False,
         "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    extracted_tag: str,
+    extracted_label: str,
+    extracted_text_preview: str,
+    amendment_container_tag: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
+        "family": "source_pathology",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "extracted_tag": extracted_tag,
+        "extracted_label": extracted_label,
+        "extracted_text_preview": extracted_text_preview,
+        "amendment_container_tag": amendment_container_tag,
+        "reason": (
+            "UK effects metadata named an affecting source provision, but greedy "
+            "source extraction resolved the reference to an anonymous descendant "
+            "inside a BlockAmendment/InlineAmendment payload. That payload child is "
+            "amended text, not the cited source instruction, so LawVM rejects it "
+            "instead of treating it as source context."
+        ),
+        "blocking": True,
+        "strict_disposition": "block",
         "quirks_disposition": "record",
     }
 

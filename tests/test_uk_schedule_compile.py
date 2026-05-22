@@ -26062,6 +26062,283 @@ def test_pipeline_compile_ops_extracts_implicit_first_subparagraph_source_contex
     )
 
 
+def test_pipeline_compile_ops_rejects_anonymous_block_amendment_payload_descendant_source_ref(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_payload_descendant_source_ref",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 343(2)",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="s. 175(2)(b)",
+        affecting_title="Payload Descendant Source Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-175">
+          <Pnumber>175</Pnumber>
+          <P1para>
+            <P2 id="section-175-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>In section 343 (sexual harm prevention order)—</Text>
+                <P3 id="section-175-2-a">
+                  <Pnumber>a</Pnumber>
+                  <P3para>
+                    <Text>for subsection (1) substitute—</Text>
+                    <BlockAmendment>
+                      <P2>
+                        <Pnumber>1A</Pnumber>
+                        <P2para>
+                          <P3>
+                            <Pnumber>a</Pnumber>
+                            <P3para><Text>prohibit the offender from doing anything described in the order,</Text></P3para>
+                          </P3>
+                          <P3>
+                            <Pnumber>b</Pnumber>
+                            <P3para><Text>require the offender to do anything described in the order.</Text></P3para>
+                          </P3>
+                        </P2para>
+                      </P2>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[str] = []
+
+    def fake_compile(_effect, extracted_el, sequence=0, **_kwargs):
+        compile_calls.append(uk_replay_mod._tag(extracted_el) if extracted_el is not None else "")
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    lowering_rejections: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert compiled == []
+    assert compile_calls == [""]
+    source_rows = [
+        row
+        for row in diagnostics
+        if row.get("rule_id") == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
+    ]
+    assert len(source_rows) == 1
+    assert source_rows[0]["rule_id"] == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
+    assert source_rows[0]["family"] == "source_pathology"
+    assert source_rows[0]["phase"] == "extraction"
+    assert source_rows[0]["effect_id"] == "uk_test_payload_descendant_source_ref"
+    assert source_rows[0]["affecting_act_id"] == "ukpga/2022/32"
+    assert source_rows[0]["affecting_provisions"] == "s. 175(2)(b)"
+    assert source_rows[0]["locator"] == "https://www.legislation.gov.uk/ukpga/2022/32/data.xml"
+    assert source_rows[0]["authority_layer"] == "AFFECTING_ACT_TEXT"
+    assert source_rows[0]["extracted_tag"] == "P3"
+    assert source_rows[0]["extracted_label"] == "b"
+    assert source_rows[0]["extracted_text_preview"] == "b require the offender to do anything described in the order."
+    assert source_rows[0]["amendment_container_tag"] == "BlockAmendment"
+    assert source_rows[0]["blocking"] is True
+    assert source_rows[0]["strict_disposition"] == "block"
+    assert source_rows[0]["quirks_disposition"] == "record"
+    assert any(
+        row.get("rule_id") == "uk_effect_lowering_no_ops_rejected"
+        and row.get("blocking") is True
+        for row in lowering_rejections
+    )
+
+
+def test_enacted_source_fallback_rejects_anonymous_block_amendment_payload_descendant() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_enacted_payload_descendant_source_ref",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 343(2)",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="s. 175(2)(b)",
+        affecting_title="Payload Descendant Source Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_context, _parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=None,
+        locator="https://www.legislation.gov.uk/ukpga/2022/32/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+    )
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-175">
+          <Pnumber>175</Pnumber>
+          <P1para>
+            <P2 id="section-175-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>In section 343 (sexual harm prevention order)—</Text>
+                <P3 id="section-175-2-a">
+                  <Pnumber>a</Pnumber>
+                  <P3para>
+                    <Text>for subsection (1) substitute—</Text>
+                    <BlockAmendment>
+                      <P2>
+                        <Pnumber>1A</Pnumber>
+                        <P2para>
+                          <P3>
+                            <Pnumber>b</Pnumber>
+                            <P3para><Text>require the offender to do anything described in the order.</Text></P3para>
+                          </P3>
+                        </P2para>
+                      </P2>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+
+    selected_context, selected_el, observations = uk_replay_mod._select_enacted_source_for_current_shell(
+        effect=effect,
+        archive=object(),
+        current_context=current_context,
+        current_el=None,
+        enacted_context_cache={},
+        enacted_xml_loader=lambda _act_id, _archive: enacted_xml,
+    )
+
+    assert selected_context is current_context
+    assert selected_el is None
+    assert len(observations) == 1
+    assert observations[0]["rule_id"] == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
+    assert observations[0]["locator"] == "https://www.legislation.gov.uk/ukpga/2022/32/enacted/data.xml"
+    assert observations[0]["authority_layer"] == "AFFECTING_ACT_ENACTED_TEXT"
+    assert observations[0]["blocking"] is True
+    assert observations[0]["strict_disposition"] == "block"
+
+
+def test_pipeline_compile_ops_keeps_direct_anonymous_source_child_outside_block_amendment(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_anonymous_source_ref",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57(2)",
+        affecting_uri="/id/ukpga/2024/13",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="13",
+        affecting_provisions="s. 1(2)(b)",
+        affecting_title="Direct Anonymous Source Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-1">
+          <Pnumber>1</Pnumber>
+          <P1para>
+            <P2 id="section-1-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <P3>
+                  <Pnumber>b</Pnumber>
+                  <P3para><Text>in subsection (2), after "old" insert "new".</Text></P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(_effect, extracted_el, sequence=0, **_kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "text": " ".join(uk_replay_mod._text_content(extracted_el).split())
+                if extracted_el is not None
+                else "",
+            }
+        )
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert compile_calls == [{"tag": "P3", "text": 'b in subsection (2), after "old" insert "new".'}]
+    assert not any(
+        row.get("rule_id") == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_extracts_enacted_schedule_table_row_when_current_missing(
     monkeypatch,
 ) -> None:

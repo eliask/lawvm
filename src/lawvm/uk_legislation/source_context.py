@@ -25,6 +25,7 @@ from lawvm.uk_legislation.provision_extractor import (
 )
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_state import (
+    uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
     uk_affecting_act_implicit_first_subparagraph_context_ignored,
@@ -227,6 +228,13 @@ def _source_parent_range_label(label: str | None) -> str:
     return _clean_num(raw)
 
 
+def _source_preview(text: str, *, limit: int = 160) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
+
+
 def _build_affecting_source_context(
     *,
     xml_bytes: Optional[bytes],
@@ -314,6 +322,42 @@ def _extract_from_affecting_source_context(
         parent_map=context.parent_map,
         exact_id_map=context.exact_id_map,
         sequence_map=context.sequence_map,
+    )
+
+
+def _block_amendment_payload_descendant_source_rejection(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    el: Optional[ET.Element],
+) -> dict[str, Any] | None:
+    if el is None or context.parent_map is None:
+        return None
+    if _tag(el) in {"BlockAmendment", "InlineAmendment"}:
+        return None
+    if el.get("id") or el.get("Id"):
+        return None
+
+    amendment_container_tag = ""
+    parent = context.parent_map.get(el)
+    while parent is not None:
+        parent_tag = _tag(parent)
+        if parent_tag in {"BlockAmendment", "InlineAmendment"}:
+            amendment_container_tag = parent_tag
+            break
+        parent = context.parent_map.get(parent)
+    if not amendment_container_tag:
+        return None
+
+    return uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        extracted_tag=_tag(el),
+        extracted_label=_clean_num(_direct_structural_num(el)),
+        extracted_text_preview=_source_preview(_text_content(el)),
+        amendment_container_tag=amendment_container_tag,
     )
 
 
@@ -607,6 +651,13 @@ def _extract_from_affecting_source_context_with_observations(
     provision_ref = str(effect.affecting_provisions or "")
     el = _extract_from_affecting_source_context(context, provision_ref)
     if el is not None:
+        payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
+            context,
+            effect,
+            el,
+        )
+        if payload_descendant_rejection is not None:
+            return None, (payload_descendant_rejection,)
         return el, ()
 
     range_el, range_observations = _extract_parenthesized_range_source(context, effect)
@@ -661,10 +712,7 @@ def _extracted_element_text(el: Optional[ET.Element]) -> str:
 
 
 def _preview_source_text(text: str, *, limit: int = 160) -> str:
-    normalized = " ".join((text or "").split())
-    if len(normalized) <= limit:
-        return normalized
-    return normalized[: limit - 3] + "..."
+    return _source_preview(text, limit=limit)
 
 
 def _looks_like_non_substantive_shell_text(text: str) -> bool:
@@ -723,6 +771,13 @@ def _select_enacted_source_for_current_shell(
         return current_context, current_el, ()
 
     enacted_el = _extract_from_affecting_source_context(enacted_context, effect.affecting_provisions)
+    enacted_payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
+        enacted_context,
+        effect,
+        enacted_el,
+    )
+    if enacted_payload_descendant_rejection is not None:
+        return current_context, current_el, (enacted_payload_descendant_rejection,)
     enacted_text = _extracted_element_text(enacted_el)
     if enacted_el is None or _looks_like_non_substantive_shell_text(enacted_text):
         return current_context, current_el, ()

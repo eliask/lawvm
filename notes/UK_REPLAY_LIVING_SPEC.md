@@ -1480,6 +1480,28 @@ Current block-substitution context invariant:
 - secondary legislation references like `reg.` / `regs.` must preserve
   `regulation` identity during affecting-source extraction; normalizing them to
   `section` is a target-kind mutation, not a harmless parser shortcut
+
+Current payload-descendant source-ref invariant:
+
+- effects metadata may cite a source instruction that is absent from the
+  affecting XML while a same-labelled amended-text payload child exists inside
+  a descendant `BlockAmendment`
+  - current example: `ukpga/2020/17` affected `s. 343(2)` via
+    `ukpga/2022/32 s. 175(2)(b)`
+  - the XML exposes `section-175-2` and `section-175-2-a`; there is no direct
+    source instruction `section-175-2-b`
+  - greedy extraction previously selected an anonymous payload `P3(b)` inside
+    the replacement `BlockAmendment`
+- this is target/source hijacking: the payload child is amended text, not the
+  cited source instruction
+- LawVM rejects that extraction with
+  `uk_affecting_act_block_amendment_payload_descendant_ref_rejected`
+  - family: `source_pathology`
+  - phase: `extraction`
+  - strict disposition: `block`
+  - quirks disposition: `record`
+- the rule is narrow: direct anonymous instruction children outside
+  `BlockAmendment` / `InlineAmendment` remain extractable
 - the parser may lower `for "X" to the end substitute- <block text>` to a
   `TEXT_FROM_X_TO_END` patch using the named rule
   `uk_effect_quoted_anchor_to_end_block_substitution_text_patch`
