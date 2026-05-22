@@ -1589,11 +1589,79 @@ def test_bench_regression_guard_fails_when_selected_phase_has_no_cells(
     with baseline.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "phase_total_s": "2.0", "phase_replay_s": "2.0"})
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "2.0",
+                "phase_replay_s": "2.0",
+            }
+        )
     with current.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "phase_total_s": "2.5", "phase_replay_s": "2.5"})
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "2.5",
+                "phase_replay_s": "2.5",
+            }
+        )
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        phase_threshold_s=1.0,
+        max_phase_regressions=0,
+        phase_names=("compile_ops",),
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "no comparable timing cells for selected phase(s): compile_ops" in out
+
+
+def test_bench_regression_guard_requires_selected_phase_on_both_runs(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["statute_id", "score", "phase_total_s", "phase_compile_ops_s"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "2.0",
+                "phase_compile_ops_s": "2.0",
+            }
+        )
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["statute_id", "score", "phase_total_s", "phase_replay_s"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.90",
+                "phase_total_s": "2.5",
+                "phase_replay_s": "2.5",
+            }
+        )
 
     rc = bench_regression_guard.run_guard(
         "old",

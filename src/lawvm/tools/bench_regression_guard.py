@@ -257,27 +257,27 @@ def _phase_regression_diffs(
     *,
     threshold_s: float,
     phase_filter: tuple[str, ...] = (),
-) -> tuple[int, list[tuple[str, str, float, float, float]]]:
+) -> tuple[dict[str, int], list[tuple[str, str, float, float, float]]]:
     common = sorted(set(baseline_phase_timings) & set(current_phase_timings))
     wanted_phases = set(phase_filter)
     regressions: list[tuple[str, str, float, float, float]] = []
-    comparable_cells = 0
+    comparable_cells_by_phase: Counter[str] = Counter()
     for sid in common:
         phase_names = (
             set(baseline_phase_timings[sid])
-            | set(current_phase_timings[sid])
+            & set(current_phase_timings[sid])
         ) - {"total"}
         if wanted_phases:
             phase_names &= wanted_phases
         for phase_name in sorted(phase_names):
             old = baseline_phase_timings[sid].get(phase_name, 0.0)
             new = current_phase_timings[sid].get(phase_name, 0.0)
-            comparable_cells += 1
+            comparable_cells_by_phase[phase_name] += 1
             delta = new - old
             if delta > threshold_s:
                 regressions.append((sid, phase_name, old, new, delta))
     regressions.sort(key=lambda item: item[4], reverse=True)
-    return comparable_cells, regressions
+    return dict(comparable_cells_by_phase), regressions
 
 
 def run_guard(
@@ -506,21 +506,26 @@ def run_guard(
         if not phase_common:
             print("ERROR: baseline and current have no common phase timing rows")
             return 1
-        comparable_cells, phase_regressions = _phase_regression_diffs(
+        comparable_cells_by_phase, phase_regressions = _phase_regression_diffs(
             baseline_phase_timings,
             current_phase_timings,
             threshold_s=phase_threshold_s,
             phase_filter=phase_names,
         )
-        if comparable_cells == 0:
-            if phase_names:
-                selected = ", ".join(phase_names)
-                print(
-                    "ERROR: baseline and current have no comparable timing cells "
-                    f"for selected phase(s): {selected}"
-                )
-            else:
-                print("ERROR: baseline and current have no comparable non-total phase timing cells")
+        missing_selected_phases = tuple(
+            phase_name
+            for phase_name in phase_names
+            if comparable_cells_by_phase.get(phase_name, 0) == 0
+        )
+        if missing_selected_phases:
+            selected = ", ".join(missing_selected_phases)
+            print(
+                "ERROR: baseline and current have no comparable timing cells "
+                f"for selected phase(s): {selected}"
+            )
+            return 1
+        if not comparable_cells_by_phase:
+            print("ERROR: baseline and current have no comparable non-total phase timing cells")
             return 1
         if phase_regressions:
             phase_scope = f" for phase(s) {', '.join(phase_names)}" if phase_names else ""
