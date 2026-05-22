@@ -1362,6 +1362,22 @@ def _looks_like_effect_metadata_carried_text_patch_fragment(
     )
 
 
+def _looks_like_definition_target_without_inserted_payload(
+    *,
+    effect_type: str,
+    text: str,
+) -> bool:
+    norm_effect_type = _normalize_effect_text(effect_type)
+    if "insert" not in norm_effect_type:
+        return False
+    norm = _normalize_effect_text(text)
+    if not re.search(r"\bthe\s+definition\s+of\s+[\"“][^\"”]{1,160}[\"”]", norm):
+        return False
+    if re.search(r"\b(?:means|has\s+the\s+meaning|includes)\b", norm):
+        return False
+    return bool(re.search(r"\bin\s+section\s*\(?[0-9A-Za-z]+", norm))
+
+
 def _uk_manual_frontier_classification(
     table: dict[str, _ManualFrontierClassification],
     source_pathology: str,
@@ -1539,6 +1555,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
         }
 
+    if "uk_effect_appropriate_place_definition_entry_insert_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+            "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
+        }
+
     if "uk_effect_external_act_target_rejected" in blocking_rules:
         return {
             "status": "non_textual_or_out_of_scope",
@@ -1635,6 +1658,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "deterministic_frontend_candidate",
             "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
             "reason": "The source still contains explicit instruction text; prefer deterministic parser or extraction work before manual claims.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
+        and _looks_like_definition_target_without_inserted_payload(
+            effect_type=effect_type_norm,
+            text=extracted_text_norm,
+        )
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_definition_target_fragment_source_insufficient",
+            "reason": "The source fragment identifies a definition target but does not carry the inserted words or a placement instruction; replay requires the missing parent instruction or payload evidence.",
         }
 
     if (

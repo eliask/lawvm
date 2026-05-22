@@ -24,6 +24,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
 )
 from lawvm.uk_legislation.source_definition_fragments import (
     _looks_like_appropriate_place_definition_entry_insert_text,
+    _source_parent_appropriate_place_definition_entry_insert_context,
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
     _extract_crossheading_payload_from_extracted,
@@ -128,9 +129,18 @@ def append_unlowered_overlap_substitution_rejection(
     target_candidate_count: int,
     unlowered_overlap_substitution_targets: list[str],
     unlowered_overlap_substitution_reason: str,
+    source_root: Optional[ET.Element] = None,
 ) -> None:
-    appropriate_place_definition_entry = _looks_like_appropriate_place_definition_entry_insert_text(
-        extracted_text or ""
+    source_parent_appropriate_place_definition_entry = (
+        _source_parent_appropriate_place_definition_entry_insert_context(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+    )
+    appropriate_place_definition_entry = (
+        _looks_like_appropriate_place_definition_entry_insert_text(extracted_text or "")
+        or source_parent_appropriate_place_definition_entry is not None
     )
     lowering_rule_id = (
         "uk_effect_appropriate_place_definition_entry_insert_rejected"
@@ -171,6 +181,18 @@ def append_unlowered_overlap_substitution_rejection(
             "placement_family": (
                 "appropriate_place_definition_entry_requires_anchor_claim"
                 if appropriate_place_definition_entry
+                else ""
+            ),
+            "source_parent_id": (
+                source_parent_appropriate_place_definition_entry.get("source_parent_id", "")
+                if source_parent_appropriate_place_definition_entry is not None
+                else ""
+            ),
+            "source_parent_context_preview": (
+                source_parent_appropriate_place_definition_entry.get(
+                    "source_parent_context_preview", ""
+                )
+                if source_parent_appropriate_place_definition_entry is not None
                 else ""
             ),
         },

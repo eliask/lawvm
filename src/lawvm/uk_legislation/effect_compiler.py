@@ -357,6 +357,7 @@ def compile_effect_to_ir_ops(
             target_candidate_count=len(targets_str),
             unlowered_overlap_substitution_targets=unlowered_overlap_substitution_targets,
             unlowered_overlap_substitution_reason=unlowered_overlap_substitution_reason,
+            source_root=source_root,
         )
     if action == "replace" and trailing_repeal_refs:
         ops.extend(
