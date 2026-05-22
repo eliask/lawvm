@@ -11,6 +11,7 @@ Scoring formula: |enacted_eids ∩ oracle_eids| / max(|enacted|, |oracle|)
 Usage (from LawVM/):
     lawvm bench -j uk --label v1
     lawvm bench -j uk --label v2 --types ukpga asp
+    lawvm bench -j uk --corpus data/uk/bench_corpus_smoke.csv --replay --no-save
     lawvm bench -j uk --statute ukpga/2000/1 --no-save
     lawvm bench -j uk --limit 1 --parallel 1 --no-save
     lawvm bench -j uk --show v1
@@ -4759,46 +4760,112 @@ def _build_corpus_csv(archive: Farchive, types: Optional[frozenset[str]] = None)
         print(f"    {t}: {n}")
 
 
+def _parse_uk_statute_id(statute_id: str) -> tuple[str, int]:
+    parts = statute_id.split("/")
+    if len(parts) < 3 or not parts[1].isdigit():
+        raise ValueError(f"invalid UK statute id in corpus CSV: {statute_id!r}")
+    return parts[0], int(parts[1])
+
+
+def _bool_cell(value: object, *, default: bool) -> bool:
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _int_cell(value: object, *, default: int = 0) -> int:
+    if value is None or value == "":
+        return default
+    return int(str(value).strip())
+
+
+def _uk_corpus_entry_from_row(row: dict[str, object]) -> dict[str, object]:
+    statute_id = str(row.get("statute_id") or row.get("id") or "").strip()
+    if not statute_id:
+        raise ValueError("UK corpus CSV row is missing statute_id")
+    act_type, year = _parse_uk_statute_id(statute_id)
+    act_type = str(row.get("type") or act_type)
+    year = _int_cell(row.get("year"), default=year)
+    n_effects = _int_cell(row.get("n_effects"), default=0)
+    n_effect_feed_pages = _int_cell(row.get("n_effect_feed_pages"), default=n_effects)
+    return {
+        "statute_id": statute_id,
+        "type": act_type,
+        "year": year,
+        "has_enacted": _bool_cell(row.get("has_enacted"), default=True),
+        "has_consolidated": _bool_cell(row.get("has_consolidated"), default=True),
+        "n_effects": n_effects,
+        "n_effect_feed_pages": n_effect_feed_pages,
+        "enacted_url": row.get("enacted_url") or f"{_LEG_BASE}/{statute_id}/enacted/data.xml",
+        "current_url": row.get("current_url") or f"{_LEG_BASE}/{statute_id}/data.xml",
+        "enacted_source_status": row.get("enacted_source_status") or "unknown",
+        "oracle_source_status": row.get("oracle_source_status") or "unknown",
+        "enacted_source_size": _int_cell(row.get("enacted_source_size"), default=0),
+        "oracle_source_size": _int_cell(row.get("oracle_source_size"), default=0),
+        "enacted_source_sha256": row.get("enacted_source_sha256") or "",
+        "oracle_source_sha256": row.get("oracle_source_sha256") or "",
+    }
+
+
+def _load_default_corpus_index() -> dict[str, dict[str, object]]:
+    if not _CORPUS_CSV.exists():
+        return {}
+    entries: dict[str, dict[str, object]] = {}
+    with open(_CORPUS_CSV, newline="") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames or "statute_id" not in reader.fieldnames:
+            return {}
+        for row in reader:
+            entry = _uk_corpus_entry_from_row(dict(row))
+            entries[str(entry["statute_id"])] = entry
+    return entries
+
+
 def _load_corpus_csv(
     types: Optional[frozenset[str]] = None,
     archive: Optional[Farchive] = None,
+    corpus_csv: Optional[Path] = None,
 ) -> list[dict]:
-    """Load bench corpus from CSV (or build it if missing)."""
-    if not _CORPUS_CSV.exists():
-        if archive is None:
-            raise FileNotFoundError(f"Corpus CSV not found: {_CORPUS_CSV}\nRun: lawvm bench -j uk --corpus-csv")
-        _build_corpus_csv(archive, types=types)
+    """Load bench corpus from CSV.
+
+    The default UK corpus can be built from the archive. A custom corpus is an
+    explicit curated benchmark input and must already exist. It may be either a
+    full generated UK corpus CSV or a simple one-column ``statute_id`` list.
+    """
+    corpus_path = corpus_csv or _CORPUS_CSV
+    if not corpus_path.exists():
+        if corpus_csv is None and archive is not None:
+            _build_corpus_csv(archive, types=types)
+        else:
+            hint = "\nRun: lawvm bench -j uk --corpus-csv" if corpus_csv is None else ""
+            raise FileNotFoundError(f"Corpus CSV not found: {corpus_path}{hint}")
 
     entries = []
-    with open(_CORPUS_CSV) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            act_type = row["type"]
-            if types and act_type not in types:
-                continue
-            enacted_url = row.get("enacted_url") or f"{_LEG_BASE}/{row['statute_id']}/enacted/data.xml"
-            current_url = row.get("current_url") or f"{_LEG_BASE}/{row['statute_id']}/data.xml"
-            n_effects = int(row["n_effects"])
-            n_effect_feed_pages = int(row.get("n_effect_feed_pages", n_effects) or n_effects)
-            entries.append(
-                {
-                    "statute_id": row["statute_id"],
-                    "type": act_type,
-                    "year": int(row["year"]),
-                    "has_enacted": row["has_enacted"] == "True",
-                    "has_consolidated": row["has_consolidated"] == "True",
-                    "n_effects": n_effects,
-                    "n_effect_feed_pages": n_effect_feed_pages,
-                    "enacted_url": enacted_url,
-                    "current_url": current_url,
-                    "enacted_source_status": row.get("enacted_source_status") or "unknown",
-                    "oracle_source_status": row.get("oracle_source_status") or "unknown",
-                    "enacted_source_size": int(row.get("enacted_source_size", "0") or 0),
-                    "oracle_source_size": int(row.get("oracle_source_size", "0") or 0),
-                    "enacted_source_sha256": row.get("enacted_source_sha256") or "",
-                    "oracle_source_sha256": row.get("oracle_source_sha256") or "",
-                }
-            )
+    with open(corpus_path, newline="") as f:
+        first_line = f.readline()
+        f.seek(0)
+        first_cells = [cell.strip() for cell in next(csv.reader([first_line]), [])]
+        has_header = "statute_id" in first_cells or "id" in first_cells
+        if has_header:
+            reader = csv.DictReader(f)
+            for row in reader:
+                entry = _uk_corpus_entry_from_row(dict(row))
+                if types and entry["type"] not in types:
+                    continue
+                entries.append(entry)
+        else:
+            default_index = _load_default_corpus_index()
+            reader = csv.reader(f)
+            for row in reader:
+                if not row:
+                    continue
+                statute_id = row[0].strip()
+                if not statute_id or statute_id.startswith("#"):
+                    continue
+                entry = dict(default_index.get(statute_id) or _uk_corpus_entry_from_row({"statute_id": statute_id}))
+                if types and entry["type"] not in types:
+                    continue
+                entries.append(entry)
     return entries
 
 
@@ -4874,9 +4941,16 @@ def main(args) -> None:  # noqa: ANN001
 
     label = getattr(args, "label", None) or time.strftime("uk_%Y%m%d_%H%M")
 
-    # Load corpus (build CSV if needed)
+    # Load corpus (build default CSV if needed).  A custom --corpus path is a
+    # curated benchmark input, not an acquisition target.
+    corpus_arg = getattr(args, "corpus", None)
+    corpus_csv = Path(corpus_arg) if corpus_arg else None
     print(f"Loading UK bench corpus (types: {sorted(types_filter or [])})...")
-    corpus = _load_corpus_csv(types=types_filter, archive=archive)
+    if corpus_csv is not None:
+        print(f"  Corpus path: {corpus_csv}")
+        corpus = _load_corpus_csv(types=types_filter, archive=archive, corpus_csv=corpus_csv)
+    else:
+        corpus = _load_corpus_csv(types=types_filter, archive=archive)
     print(f"  Corpus: {len(corpus)} statutes")
 
     if not corpus:
