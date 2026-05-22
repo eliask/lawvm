@@ -71,6 +71,11 @@ _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _BENCH_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
 _HISTORY_CSV = _REPO_ROOT / "data" / "uk_benchmark_history.csv"
 _CORPUS_CSV = _REPO_ROOT / "data" / "uk" / "bench_corpus.csv"
+_CURATE_PRESET_SIZES = {
+    "canary": 40,
+    "tight": 200,
+    "stress": 400,
+}
 _CORPUS_FIELDNAMES = [
     "statute_id",
     "type",
@@ -5229,6 +5234,22 @@ def _write_curated_corpus(entries: Sequence[dict[str, object]], *, output: Path,
     return selected
 
 
+def _curated_corpus_request(args: Any) -> tuple[Path | None, int, str]:
+    preset = str(getattr(args, "curate_preset", "") or "")
+    if preset and preset not in _CURATE_PRESET_SIZES:
+        raise ValueError(f"unknown UK curate preset: {preset}")
+    raw_size = getattr(args, "curate_size", None)
+    size = int(raw_size) if raw_size is not None else _CURATE_PRESET_SIZES.get(preset, 200)
+    raw_output = getattr(args, "curate_corpus", None)
+    if raw_output:
+        output = Path(raw_output)
+    elif preset:
+        output = _CORPUS_CSV.parent / f"bench_corpus_{preset}.csv"
+    else:
+        output = None
+    return output, size, preset
+
+
 # ---------------------------------------------------------------------------
 # CLI entry
 # ---------------------------------------------------------------------------
@@ -5272,8 +5293,8 @@ def main(args) -> None:  # noqa: ANN001
     if limit is not None and limit < 0:
         print("error: --limit must be zero or a positive integer", file=sys.stderr)
         sys.exit(2)
-    curate_size = int(getattr(args, "curate_size", 200) or 0)
-    if getattr(args, "curate_corpus", None) and curate_size < 1:
+    curate_output, curate_size, curate_preset = _curated_corpus_request(args)
+    if curate_output is not None and curate_size < 1:
         print("error: --curate-size must be a positive integer", file=sys.stderr)
         sys.exit(2)
     _par = getattr(args, "parallel", None)
@@ -5304,7 +5325,7 @@ def main(args) -> None:  # noqa: ANN001
         archive.close()
         return
 
-    if getattr(args, "curate_corpus", None) and not getattr(args, "corpus", None):
+    if curate_output is not None and not getattr(args, "corpus", None):
         if not _default_corpus_has_source_status_fields():
             print("Default UK corpus lacks source-status fields; rebuilding before curation...")
             _build_corpus_csv(archive, types=types_filter)
@@ -5341,11 +5362,11 @@ def main(args) -> None:  # noqa: ANN001
         archive.close()
         return
 
-    curate_corpus = getattr(args, "curate_corpus", None)
-    if curate_corpus:
-        output = Path(curate_corpus)
-        selected = _write_curated_corpus(corpus, output=output, size=curate_size)
-        print(f"  Curated source-complete corpus: {output}")
+    if curate_output is not None:
+        selected = _write_curated_corpus(corpus, output=curate_output, size=curate_size)
+        if curate_preset:
+            print(f"  Curated preset: {curate_preset}")
+        print(f"  Curated source-complete corpus: {curate_output}")
         print(f"  Requested rows: {curate_size}")
         print(f"  Written rows: {len(selected)}")
         _print_corpus_stats(selected)
