@@ -6,6 +6,7 @@ from lawvm.uk_legislation.source_state import (
     classify_uk_source_blob_legacy,
     is_uk_affecting_act_xml_source_diagnostic,
     is_uk_affecting_act_xml_source_observation,
+    uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
     uk_affecting_act_xml_too_small_rejection,
     uk_source_state_wire_tuple,
 )
@@ -67,3 +68,25 @@ def test_affecting_act_xml_source_observation_includes_nonblocking_records() -> 
 
     assert is_uk_affecting_act_xml_source_observation(observation) is True
     assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
+
+
+def test_block_amendment_payload_descendant_rejection_is_typed_source_diagnostic() -> None:
+    rejection = uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
+        effect_id="eff-1",
+        affecting_act_id="ukpga/2022/32",
+        affecting_provisions="s. 175(2)(b)",
+        locator="https://www.legislation.gov.uk/ukpga/2022/32/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+        extracted_tag="P3",
+        extracted_label="b",
+        extracted_text_preview="b require the offender to do anything described in the order.",
+        amendment_container_tag="BlockAmendment",
+    )
+
+    assert rejection["rule_id"] == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
+    assert rejection["family"] == "source_pathology"
+    assert rejection["phase"] == "extraction"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert is_uk_affecting_act_xml_source_observation(rejection) is True
+    assert is_uk_affecting_act_xml_source_diagnostic(rejection) is True
