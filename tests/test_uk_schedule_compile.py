@@ -31418,6 +31418,11 @@ def test_executor_skips_repeal_invariant_scan_without_existing_scoped_violation(
         "_collect_duplicate_order_invariants",
         fail_collect,
     )
+
+    def fail_target_roots(*_args: object, **_kwargs: object) -> list[object]:
+        raise AssertionError("clean removal-only replay should not resolve invariant target roots")
+
+    executor._invariant_target_roots_for_op = fail_target_roots
     executor.apply_op(
         LegalOperation(
             op_id="uk_test_clean_repeal_no_invariant_scan",
