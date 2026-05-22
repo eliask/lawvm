@@ -238,6 +238,7 @@ def test_uk_bench_phase_timing_report_explains_missing_timings(capsys) -> None:
 
 
 def test_uk_bench_text_similarity_skips_levenshtein_for_exact_matches(monkeypatch) -> None:
+    uk_bench._cached_short_text_ratio.cache_clear()
     calls: list[tuple[str, str]] = []
 
     def fake_ratio(left: str, right: str) -> float:
@@ -262,6 +263,56 @@ def test_uk_bench_text_similarity_skips_levenshtein_for_exact_matches(monkeypatc
     assert n_compared == 2
     assert score == 0.75
     assert calls == [("left text", "right text")]
+
+
+def test_uk_bench_text_similarity_caches_repeated_short_pairs(monkeypatch) -> None:
+    uk_bench._cached_short_text_ratio.cache_clear()
+    calls: list[tuple[str, str]] = []
+
+    def fake_ratio(left: str, right: str) -> float:
+        calls.append((left, right))
+        return 0.25
+
+    monkeypatch.setattr(uk_bench.Levenshtein, "ratio", fake_ratio)
+
+    score, n_compared = uk_bench._text_similarity_score(
+        {
+            "section-1": "same normalized source",
+            "section-2": "same normalized source",
+        },
+        {
+            "section-1": "same normalized oracle",
+            "section-2": "same normalized oracle",
+        },
+    )
+
+    assert n_compared == 2
+    assert score == 0.25
+    assert calls == [("same normalized source", "same normalized oracle")]
+    assert uk_bench._cached_short_text_ratio.cache_info().hits == 1
+
+
+def test_uk_bench_text_similarity_does_not_cache_long_pairs(monkeypatch) -> None:
+    uk_bench._cached_short_text_ratio.cache_clear()
+    calls: list[tuple[int, int]] = []
+    long_source = "a" * (uk_bench._TEXT_RATIO_CACHE_MAX_CHARS + 1)
+    long_oracle = ("a" * uk_bench._TEXT_RATIO_CACHE_MAX_CHARS) + "b"
+
+    def fake_ratio(left: str, right: str) -> float:
+        calls.append((len(left), len(right)))
+        return 0.75
+
+    monkeypatch.setattr(uk_bench.Levenshtein, "ratio", fake_ratio)
+
+    score, n_compared = uk_bench._text_similarity_score(
+        {"section-1": long_source},
+        {"section-1": long_oracle},
+    )
+
+    assert n_compared == 1
+    assert score == 0.75
+    assert calls == [(len(long_source), len(long_oracle))]
+    assert uk_bench._cached_short_text_ratio.cache_info().currsize == 0
 
 
 def test_uk_bench_extract_eid_texts_collects_descendant_text_once() -> None:
@@ -296,6 +347,59 @@ def test_uk_bench_extract_eid_texts_collects_descendant_text_once() -> None:
         "section-1": "lead child text",
         "section-1-1": "child text",
     }
+
+
+def test_uk_bench_score_statute_can_skip_text_similarity(monkeypatch) -> None:
+    class FakeArchive:
+        def get(self, _url: str) -> bytes:
+            return b"<xml>" + (b"x" * 200)
+
+    statute = IRStatute(
+        statute_id="ukpga/test/1",
+        title="Demo",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    text="Source text",
+                    attrs={"eId": "section-1"},
+                ),
+            ),
+        ),
+    )
+
+    def fail_text_score(*_args, **_kwargs):
+        raise AssertionError("text similarity should be skipped")
+
+    monkeypatch.setattr(uk_bench, "parse_uk_statute_ir_bytes", lambda *args, **kwargs: statute)
+    monkeypatch.setattr(
+        uk_bench,
+        "extract_eid_map_bytes",
+        lambda _data: {"eid_map": {"section-1": "section-1"}, "text_map": {"section-1": "oracle"}},
+    )
+    monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (0, 0, {}, 0, {}, ()))
+    monkeypatch.setattr(uk_bench, "_text_similarity_score", fail_text_score)
+
+    result = uk_bench._score_statute(
+        {
+            "statute_id": "ukpga/test/1",
+            "type": "ukpga",
+            "year": 2025,
+            "n_effects": 0,
+            "n_effect_feed_pages": 0,
+            "enacted_url": "https://www.legislation.gov.uk/ukpga/test/1/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/ukpga/test/1/data.xml",
+        },
+        cast(Farchive, FakeArchive()),
+        score_text=False,
+    )
+
+    assert result.status == "OK"
+    assert result.score == 1.0
+    assert result.text_score == -1.0
+    assert result.n_text_compared == 0
+    assert result.phase_timings["text_score_enacted"] >= 0.0
 
 
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:

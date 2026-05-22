@@ -4581,3 +4581,20 @@ Current bench replay-regime invariant:
 - Regression witnesses:
   `test_executor_eid_search_does_not_escape_strict_top_scope_after_miss` and
   `test_executor_eid_search_does_not_escape_strict_top_scope_with_sequence_match`.
+
+## UK Bench Text-Score Performance Lane
+
+- UK bench EID score and replay diagnostics are the primary corpus-sweep
+  measurements. Levenshtein text similarity is a diagnostic lane over common
+  EIDs and can dominate wall time for very large Acts.
+- `lawvm bench -j uk --no-text-scores` disables only the diagnostic text
+  similarity lane. It leaves source loading, parsing, EID scoring, replay,
+  commencement filtering, adjudications, residual claims, and phase timings
+  active.
+- Default behavior still computes text similarity. Short normalized text-pair
+  ratios are cached in-process, bounded by combined text length, to avoid
+  retaining large legal text blobs.
+- Performance witness on `ukpga/2010/4` with `--replay --phase-timings
+  --parallel 1`: default text scoring kept replay score at `96.9%` and wall
+  time around `24.5s`; `--no-text-scores` kept replay score at `96.9%` and
+  reduced wall time to about `16.9s`.
