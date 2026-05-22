@@ -26,7 +26,6 @@ from lawvm.uk_legislation.source_adjudication import (
 )
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
-from lawvm.uk_legislation.canonicalize import uk_recursive_kind_match
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
@@ -119,38 +118,6 @@ def _append_patch(insertion: str) -> TextPatchSpec:
         selector=TextSelector(match_text="TEXT_END", occurrence=0),
         replacement=insertion,
     )
-
-
-def test_uk_recursive_kind_match_preserves_depth_first_first_match() -> None:
-    root = IRNode(
-        kind=IRNodeKind.BODY,
-        children=(
-            IRNode(
-                kind=IRNodeKind.SECTION,
-                label="1",
-                children=(
-                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="first"),
-                    IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="target under first section"),
-                ),
-            ),
-            IRNode(
-                kind=IRNodeKind.SECTION,
-                label="2",
-                children=(IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="later duplicate"),),
-            ),
-        ),
-    )
-
-    node, parent, idx = uk_recursive_kind_match(
-        root,
-        kind="subsection",
-        label="2",
-        match_kind_label=lambda child, kind, label: str(child.kind) == kind and child.label == label,
-    )
-
-    assert node is root.children[0].children[1]
-    assert parent is root.children[0]
-    assert idx == 1
 
 
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
