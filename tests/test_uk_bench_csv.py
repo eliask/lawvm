@@ -206,6 +206,9 @@ def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
     uk_bench._print_phase_timing_rows([fast, slow], limit=1)
 
     output = capsys.readouterr().out
+    assert "Phase timing totals:" in output
+    assert "rows=2 measured=55.60s row=42.75s" in output
+    assert "phases: replay=39.85s compile_ops=12.50s oracle_align=3.00s parse_oracle=0.25s" in output
     assert "Slowest 1 rows by measured phase time:" in output
     assert "ukpga/2010/4" in output
     assert "measured=  55.25s" in output
@@ -3301,6 +3304,9 @@ def test_uk_bench_show_run_can_print_persisted_phase_timings(
     uk_bench._show_run("show-phases", phase_timings=True)
 
     out = capsys.readouterr().out
+    assert "Phase timing totals:" in out
+    assert "rows=1 measured=55.25s row=42.25s" in out
+    assert "phases: replay=39.75s compile_ops=12.50s oracle_align=3.00s" in out
     assert "Slowest 1 rows by measured phase time:" in out
     assert "ukpga/2010/4" in out
     assert "measured=  55.25s" in out
