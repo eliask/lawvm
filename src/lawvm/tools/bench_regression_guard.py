@@ -54,24 +54,81 @@ def _load_float_column(path: Path, column: str) -> dict[str, float]:
     return values
 
 
-def load_scores(path: Path) -> dict[str, float]:
-    """Load {statute_id -> similarity} from one bench run CSV."""
+def _load_first_float_column(
+    path: Path,
+    columns: tuple[str, ...],
+) -> tuple[str, dict[str, float]]:
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames is None:
             raise ValueError(f"Empty or header-less CSV: {path}")
-        score_column = "similarity" if "similarity" in reader.fieldnames else "score"
-        if score_column not in reader.fieldnames:
-            raise ValueError(
-                f"CSV {path} missing expected score column 'similarity' or 'score'. "
-                f"Found: {reader.fieldnames}"
-            )
-    return _load_float_column(path, score_column)
+        fieldnames = set(reader.fieldnames)
+    for column in columns:
+        if column not in fieldnames:
+            continue
+        values = _load_float_column(path, column)
+        if values:
+            return column, values
+    raise ValueError(
+        f"CSV {path} missing expected non-empty score column from {columns}. "
+        f"Found: {sorted(fieldnames)}"
+    )
+
+
+def load_scores(path: Path) -> dict[str, float]:
+    """Load {statute_id -> similarity} from one bench run CSV."""
+    _score_column, scores = _load_first_float_column(path, ("similarity", "score"))
+    return scores
 
 
 def load_durations(path: Path) -> dict[str, float]:
     """Load {statute_id -> duration_s} from one bench run CSV."""
     return _load_float_column(path, "duration_s")
+
+
+def _parse_float_cell(row: dict[str, str], column: str) -> float | None:
+    raw = row.get(column, "")
+    if raw == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _load_uk_scores(path: Path) -> tuple[str, dict[str, float]]:
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Empty or header-less CSV: {path}")
+        fieldnames = set(reader.fieldnames)
+        if "statute_id" not in fieldnames:
+            raise ValueError(f"CSV {path} missing expected column: statute_id. Found: {reader.fieldnames}")
+        has_replay_lane = "replay_commencement_score" in fieldnames or "replay_score" in fieldnames
+        if not has_replay_lane:
+            return _load_first_float_column(path, ("similarity", "score"))
+
+        scores: dict[str, float] = {}
+        for row in reader:
+            sid = row["statute_id"].strip()
+            score = _parse_float_cell(row, "replay_commencement_score")
+            if score is None:
+                score = _parse_float_cell(row, "replay_score")
+            if score is None:
+                continue
+            scores[sid] = score
+    if not scores:
+        raise ValueError(
+            f"CSV {path} has replay score columns but no parseable replay score values. "
+            f"Found: {sorted(fieldnames)}"
+        )
+    return "uk_replay_primary", scores
+
+
+def _load_scores_for_jurisdiction(path: Path, jurisdiction: str) -> tuple[str, dict[str, float]]:
+    if jurisdiction == "uk":
+        return _load_uk_scores(path)
+    return _load_first_float_column(path, ("similarity", "score"))
 
 
 def mean(values: list[float]) -> float:
@@ -100,10 +157,22 @@ def run_guard(
     print()
 
     try:
-        baseline_scores = load_scores(baseline_path)
-        current_scores = load_scores(current_path)
+        baseline_score_column, baseline_scores = _load_scores_for_jurisdiction(
+            baseline_path,
+            jurisdiction,
+        )
+        current_score_column, current_scores = _load_scores_for_jurisdiction(
+            current_path,
+            jurisdiction,
+        )
     except (ValueError, OSError) as exc:
         print(f"ERROR loading CSV: {exc}")
+        return 1
+    if baseline_score_column != current_score_column:
+        print(
+            "ERROR loading CSV: baseline and current use different score columns "
+            f"({baseline_score_column!r} vs {current_score_column!r})"
+        )
         return 1
 
     common = sorted(set(baseline_scores) & set(current_scores))
@@ -123,6 +192,7 @@ def run_guard(
     print(f"Statutes in baseline : {len(baseline_scores)}")
     print(f"Statutes in current  : {len(current_scores)}")
     print(f"Common statutes      : {len(common)}")
+    print(f"Score column         : {baseline_score_column}")
     if baseline_only:
         print(f"Baseline-only        : {len(baseline_only)}  (not in current run)")
     if current_only:

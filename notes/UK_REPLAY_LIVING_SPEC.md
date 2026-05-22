@@ -3002,12 +3002,16 @@ Current bench replay-regime invariant:
   `data/uk/bench_corpus_stress.csv`. `--curate-size` may still override the
   preset size.
 - `lawvm bench-regression-guard -j uk --baseline <old> --current <new>` reads
-  saved UK bench runs from `data/uk_bench_runs/<label>.csv` and uses the saved
-  primary `score` column. UK saved-run labels are direct filenames, not the
-  timestamp-suffixed Finland convention. `--max-duration-regressions N` enables
-  an explicit `duration_s` guard for saved runs; this is opt-in because timing
-  evidence is environment-sensitive, but when enabled missing `duration_s`
-  columns are treated as invalid benchmark evidence.
+  saved UK bench runs from `data/uk_bench_runs/<label>.csv`. It compares the
+  row-wise replay-primary score when replay columns are present
+  (`replay_commencement_score`, then `replay_score`) and falls back to `score`
+  only for non-replay saved runs; it must fail rather than compare different
+  score lanes. UK saved-run labels are direct filenames, not the
+  timestamp-suffixed Finland convention.
+  `--max-duration-regressions N` enables an explicit `duration_s` guard for
+  saved runs; this is opt-in because timing evidence is environment-sensitive,
+  but when enabled missing `duration_s` columns are treated as invalid benchmark
+  evidence.
 - `lawvm bench -j uk --statute <ID>` must filter the UK bench corpus to exactly
   the requested statute before applying diagnostic limits. If the statute is not
   present in the corpus, the command fails visibly rather than saving an empty
