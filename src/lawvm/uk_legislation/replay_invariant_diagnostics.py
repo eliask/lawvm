@@ -75,28 +75,30 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
     stack: list[tuple[UKMutableNode, str]] = [(root, initial_path or _kind_str(root.kind))]
     while stack:
         node, path = stack.pop()
-        seen: dict[tuple[str, str], int] = {}
-        by_kind: dict[str, list[str]] = {}
-        for child in node.children:
-            child_kind = _kind_str(child.kind)
-            if child.label:
-                label = str(child.label)
-                key = (child_kind, label)
-                seen[key] = seen.get(key, 0) + 1
-                by_kind.setdefault(child_kind, []).append(label)
-        for (kind, label), count in seen.items():
-            if count > 1:
-                violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
-        for kind, labels in by_kind.items():
-            if kind not in _ORDERED_INVARIANT_KINDS:
-                continue
-            keys = [tree_ops._default_sort_key(label) for label in labels]
-            for index in range(len(keys) - 1):
-                if keys[index] > keys[index + 1]:
-                    violations.append(
-                        f"{path}: {kind} out of order: {labels[index]} > {labels[index + 1]}"
-                    )
-        for child in reversed(node.children):
+        children = node.children
+        if len(children) >= 2:
+            seen: dict[tuple[str, str], int] = {}
+            by_kind: dict[str, list[str]] = {}
+            for child in children:
+                child_kind = _kind_str(child.kind)
+                if child.label:
+                    label = str(child.label)
+                    key = (child_kind, label)
+                    seen[key] = seen.get(key, 0) + 1
+                    by_kind.setdefault(child_kind, []).append(label)
+            for (kind, label), count in seen.items():
+                if count > 1:
+                    violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
+            for kind, labels in by_kind.items():
+                if kind not in _ORDERED_INVARIANT_KINDS:
+                    continue
+                keys = [tree_ops._default_sort_key(label) for label in labels]
+                for index in range(len(keys) - 1):
+                    if keys[index] > keys[index + 1]:
+                        violations.append(
+                            f"{path}: {kind} out of order: {labels[index]} > {labels[index + 1]}"
+                        )
+        for child in reversed(children):
             child_path = f"{path}/{_kind_str(child.kind)}:{child.label or '?'}"
             stack.append((child, child_path))
     return violations
