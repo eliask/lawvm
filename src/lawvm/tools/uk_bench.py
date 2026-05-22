@@ -477,7 +477,7 @@ def _text_similarity_score(
     pairs = [(source_texts[e], oracle_texts[e]) for e in common if source_texts[e] and oracle_texts[e]]
     if not pairs:
         return -1.0, 0
-    total = sum(Levenshtein.ratio(s, o) for s, o in pairs)
+    total = sum(1.0 if s == o else Levenshtein.ratio(s, o) for s, o in pairs)
     return total / len(pairs), len(pairs)
 
 
