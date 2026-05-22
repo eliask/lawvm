@@ -89,6 +89,7 @@ Regression guards must fail on structurally incomparable inputs. In particular,
 a saved-run comparison with zero common scored rows is not a successful
 zero-regression run, and an enabled duration guard with zero common `duration_s`
 rows is invalid timing evidence.
+Thresholds and allowed-regression counts must be nonnegative command inputs.
 
 ## 4. CLI Shape
 
