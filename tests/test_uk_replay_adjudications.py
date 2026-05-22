@@ -2740,6 +2740,33 @@ def test_executor_records_unsupported_action() -> None:
     assert adjudications[0].op_id == "uk_test_renumber_unsupported"
 
 
+def test_executor_classifies_missing_source_for_supported_descendant_renumber() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_renumber_missing_source",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "676af"),)),
+            destination=LegalAddress(path=(("section", "676af"), ("subsection", "1"))),
+            source=_source(),
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        )
+    )
+
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "uk_replay_missing_source_target_gap"
+    assert adjudication.detail["action"] == "renumber"
+    assert adjudication.detail["target"] == "section:676af"
+    assert adjudication.detail["destination"] == "section:676af/subsection:1"
+    assert adjudication.detail["reason_code"] == "renumber_source_target_absent"
+    assert adjudication.detail["family"] == "source_shape_gap"
+    assert classify_uk_replay_adjudication_bucket(adjudication.kind) == "source_shape"
+
+
 def test_executor_applies_same_provision_descendant_renumber_then_text_patch() -> None:
     statute = IRStatute(
         statute_id="ukpga/2024/3",

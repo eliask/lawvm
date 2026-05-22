@@ -27,6 +27,25 @@ class UKReplayRenumberApplyMixin:
             self._record_invariant_violations(op)
             self._emit_top_section_snapshot(op)
             return
+        source_target = canonicalize_uk_address(op.target)
+        destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
+        if destination is not None and self._renumber_shape_supported(source_target, destination):
+            source_node, _source_parent, _source_idx = self._find_node_by_target(source_target)
+            if source_node is None:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_missing_source_target_gap",
+                    message="UK replay skipped renumber: source target is absent from replay state.",
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(
+                        op,
+                        target,
+                        destination=str(destination),
+                        family="source_shape_gap",
+                        reason_code="renumber_source_target_absent",
+                    ),
+                )
+                return
         self._log(f"  EXECUTOR: unsupported renumber shape — skipping {op.op_id}")
         _append_uk_replay_adjudication(
             self.adjudications_out,
@@ -38,6 +57,19 @@ class UKReplayRenumberApplyMixin:
                 target,
                 destination=str(op.destination) if op.destination is not None else "",
             ),
+        )
+
+    def _renumber_shape_supported(
+        self,
+        source_target: LegalAddress,
+        destination: LegalAddress,
+    ) -> bool:
+        if len(destination.path) == len(source_target.path) + 1 and destination.path[:-1] == source_target.path:
+            return True
+        return (
+            len(destination.path) == len(source_target.path)
+            and destination.path[:-1] == source_target.path[:-1]
+            and _addr_leaf_kind(destination) == _addr_leaf_kind(source_target)
         )
 
     def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
