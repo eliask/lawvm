@@ -1782,3 +1782,22 @@ def test_bench_regression_guard_rejects_negative_limits(capsys) -> None:
     out = capsys.readouterr().out
     assert rc == 1
     assert "ERROR: --max-duration-regressions must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        phase_threshold_s=-0.1,
+        max_phase_regressions=0,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --phase-threshold-s must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        max_phase_regressions=-1,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --max-phase-regressions must be nonnegative" in out
