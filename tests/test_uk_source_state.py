@@ -6,6 +6,7 @@ from lawvm.uk_legislation.source_state import (
     classify_uk_source_blob_legacy,
     is_uk_affecting_act_xml_source_diagnostic,
     is_uk_affecting_act_xml_source_observation,
+    uk_affecting_act_article_schedule_payload_source_extracted,
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
     uk_affecting_act_xml_too_small_rejection,
     uk_source_state_wire_tuple,
@@ -90,3 +91,25 @@ def test_block_amendment_payload_descendant_rejection_is_typed_source_diagnostic
     assert rejection["strict_disposition"] == "block"
     assert is_uk_affecting_act_xml_source_observation(rejection) is True
     assert is_uk_affecting_act_xml_source_diagnostic(rejection) is True
+
+
+def test_article_schedule_payload_source_observation_is_typed_source_diagnostic() -> None:
+    observation = uk_affecting_act_article_schedule_payload_source_extracted(
+        effect_id="eff-1",
+        affecting_act_id="uksi/2003/3076",
+        affecting_provisions="art. 2 Sch.",
+        locator="https://www.legislation.gov.uk/uksi/2003/3076/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+        article_ref="art. 2",
+        article_element_id="article-2",
+        schedule_element_id="schedule",
+        article_text_preview="For Part 1 of Schedule 3A, substitute the text set out in the Schedule.",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_article_schedule_payload_source_extracted"
+    assert observation["family"] == "source_lane_selection"
+    assert observation["phase"] == "extraction"
+    assert observation["blocking"] is False
+    assert observation["strict_disposition"] == "record"
+    assert is_uk_affecting_act_xml_source_observation(observation) is True
+    assert is_uk_affecting_act_xml_source_diagnostic(observation) is True

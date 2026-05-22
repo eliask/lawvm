@@ -27432,6 +27432,112 @@ def test_pipeline_compile_ops_records_nonaddressable_schedule_part_context(
     )
 
 
+def test_pipeline_compile_ops_extracts_article_schedule_payload_source(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_article_schedule_payload",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/11/schedule/3A/part/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="Sch. 3A Pt. 1",
+        affecting_uri="/id/uksi/2003/3076",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="3076",
+        affecting_provisions="art. 2 Sch.",
+        affecting_title="Article Schedule Source Instrument",
+        in_force_dates=[{"date": "2004-03-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <Text>For Part 1 of Schedule 3A, substitute the text set out in the Schedule to this Order.</Text>
+          </P1para>
+        </P1>
+        <Schedules>
+          <Schedule id="schedule">
+            <Title>SCHEDULE</Title>
+            <ScheduleBody>
+              <Part id="schedule-part-1">
+                <Number>PART 1</Number>
+                <P1 id="schedule-paragraph-1">
+                  <Pnumber>1</Pnumber>
+                  <P1para><Text>replacement paragraph</Text></P1para>
+                </P1>
+              </Part>
+            </ScheduleBody>
+          </Schedule>
+        </Schedules>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "id": extracted_el.get("id") if extracted_el is not None else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("schedule", "3a"), ("part", "1"))),
+                payload=IRNode(kind=IRNodeKind.PART, label="1"),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/11",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "tag": "Schedule",
+            "id": "schedule",
+            "authority": "AFFECTING_ACT_TEXT",
+        }
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_article_schedule_payload_source_extracted"
+        and row.get("affecting_provisions") == "art. 2 Sch."
+        and row.get("article_ref") == "art. 2"
+        and row.get("article_element_id") == "article-2"
+        and row.get("schedule_element_id") == "schedule"
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_extracts_parenthesized_source_range(
     monkeypatch,
 ) -> None:
