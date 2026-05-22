@@ -14341,6 +14341,58 @@ def test_compile_direct_table_after_that_entry_instruction_rejects_without_sourc
     assert rejection["blocking"] is True
 
 
+def test_compile_metadata_table_entry_omission_rejects_without_row_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>the entry relating to section 436A(1) of ICTA,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_table_entry_omission",
+        effect_type="entry omitted",
+        applied=True,
+        requires_applied=False,
+        modified="2012-04-01",
+        affected_uri="/id/ukpga/2010/4/section/1173",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2010",
+        affected_number="4",
+        affected_provisions="s. 1173(2) Table",
+        affecting_uri="/id/ukpga/2012/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="14",
+        affecting_provisions="Sch. 16 para. 231(a)",
+        affecting_title="Finance Act 2012",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
+    assert rejection["target_ref"] == "s. 1173(2) Table"
+    assert rejection["target"] == "section:1173/subsection:2/paragraph:table"
+    assert rejection["entry_shape"] == "relating_entry"
+    assert rejection["source_action"] == "effect_type:entry omitted"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_direct_table_after_that_entry_insert_uses_previous_source_sibling() -> None:
     source_root = ET.fromstring(
         f"""

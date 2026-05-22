@@ -463,6 +463,7 @@ def _uk_broad_table_entry_instruction(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    effect_type: str = "",
 ) -> dict[str, Any] | None:
     """Detect table-entry instructions that are unsafe as broad host mutations."""
     text = " ".join((extracted_text or "").split())
@@ -501,16 +502,25 @@ def _uk_broad_table_entry_instruction(
     )
     if not has_entry_text and not has_column_instruction:
         return None
-    if not re.search(
+    effect_type_norm = str(effect_type or "").strip().lower()
+    source_supplies_action = re.search(
         r"\b(?:insert|inserted|substitute|substituted|omit|omitted|repeal|repealed|amend|amended|add|added)\b",
         norm,
-    ):
+    ) is not None
+    effect_supplies_entry_action = effect_type_norm in {
+        "entry inserted",
+        "entry repealed",
+        "entry omitted",
+    }
+    if not source_supplies_action and not effect_supplies_entry_action:
         return None
     if re.search(r"\bafter\s+that\s+entry\b", norm):
         entry_shape = "deictic_table_entry"
     elif re.search(r"\b(?:after|before)\s+entry\s+[0-9A-Za-z]+\b", norm):
         entry_shape = "numbered_entry"
     elif re.search(r"\bafter\s+the\s+entry\s+in\s+the\s+table\s+relating\s+to\b", norm):
+        entry_shape = "relating_entry"
+    elif target_names_table and re.search(r"\b(?:the\s+)?(?:entry|entries)\s+relating\s+to\b", norm):
         entry_shape = "relating_entry"
     elif target_names_table and re.search(r"\bat\s+the\s+appropriate\s+place\b", norm):
         entry_shape = "appropriate_place_table_entry"
@@ -530,6 +540,11 @@ def _uk_broad_table_entry_instruction(
         "target_ref": target_ref,
         "target": str(target),
         "entry_shape": entry_shape,
+        "source_action": (
+            "source_text"
+            if source_supplies_action
+            else f"effect_type:{effect_type_norm}"
+        ),
     }
 
 
