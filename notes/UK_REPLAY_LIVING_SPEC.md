@@ -1095,8 +1095,15 @@ Current tooling-consistency invariant:
     preserves exact-id normalization semantics while reducing source-index build
     overhead. The witnesses remained score-equivalent: `1988/1` measured 52.36s
     wall time with `compile_ops=27.07s`, and `1990/42` measured 6.29s wall time
-    with `compile_ops=3.91s`. A local improvement in one family should not be
-    treated as global UK replay progress without saved-run guard evidence.
+    with `compile_ops=3.91s`. UK `eId` sequence tokenization now replaces `_`
+    with `-` and uses direct string splitting instead of the equivalent
+    `[-_]` regex split; the boundary semantics are unchanged, including empty
+    components, and a regression pins hyphen/underscore and roman-label
+    normalization. The witnesses remained score-equivalent: `1988/1` measured
+    52.76s wall time with `compile_ops=26.99s` and `replay=21.41s`, and
+    `1990/42` measured 6.24s wall time with `compile_ops=3.93s` and
+    `replay=0.36s`. A local improvement in one family should not be treated as
+    global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
