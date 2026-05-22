@@ -9,6 +9,7 @@ from lawvm.uk_legislation.addressing import (
     _addr_container,
     _addr_field,
     _addr_leaf_kind,
+    _uk_kind_value,
     _canonicalize_eid_tail_label,
     _canonicalize_schedule_paragraph_eid_label,
     _schedule_target_levels,
@@ -185,7 +186,7 @@ def _uk_match_kind_label_cached(
 def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
     """Return whether a UK IR-like node matches a target kind/label pair."""
     return _uk_match_kind_label_cached(
-        str(node.kind),
+        _uk_kind_value(node.kind),
         str(node.label or ""),
         str(kind or ""),
         str(label or ""),
