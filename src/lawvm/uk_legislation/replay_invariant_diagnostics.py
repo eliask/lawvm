@@ -48,8 +48,9 @@ _ORDERED_INVARIANT_KINDS = frozenset(
 
 
 def _invariant_kind_str(kind: object) -> str:
-    value = getattr(kind, "value", None)
-    return value if isinstance(value, str) else str(kind)
+    if isinstance(kind, str):
+        return kind
+    return _kind_str(kind)
 
 
 def _invariant_detail(
