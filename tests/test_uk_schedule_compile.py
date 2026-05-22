@@ -31222,6 +31222,55 @@ def test_executor_skips_invariant_rescan_when_structure_serial_unchanged(
     assert executor.adjudications_out == []
 
 
+def test_executor_skips_payload_invariant_check_without_new_tree_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.uk_legislation.replay_invariant_diagnostics as invariant_mod
+
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Existing section.",
+                    attrs={"eId": "section-1"},
+                    children=(),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+
+    def fail_payload_check(*_args: object, **_kwargs: object) -> list[str]:
+        raise AssertionError("payload invariant check is only needed for new tree violations")
+
+    monkeypatch.setattr(
+        invariant_mod,
+        "uk_payload_shape_invariant_violations",
+        fail_payload_check,
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_no_payload_invariant_check_without_new_tree_violation",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="New section."),
+            source=OperationSource(statute_id="uk_test", title="Test Source"),
+        )
+    )
+
+    assert executor.adjudications_out == []
+    assert [child.label for child in executor.statute.body.children] == ["1", "2"]
+
+
 def test_executor_sequence_match_does_not_alias_section_1_1_to_section_11() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/22",
