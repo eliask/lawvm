@@ -1116,8 +1116,20 @@ Current tooling-consistency invariant:
     can be cleared. The witnesses remained score-equivalent: `1988/1` measured
     51.77s wall time with `compile_ops=26.80s` and `replay=20.66s`, and
     `1990/42` measured 6.13s wall time with `compile_ops=3.82s` and
-    `replay=0.35s`. A local improvement in one family should not be treated as
-    global UK replay progress without saved-run guard evidence.
+    `replay=0.35s`. The duplicate/order scan now streams adjacent child-order
+    checks while it walks siblings instead of first materializing per-kind label
+    and sort-key arrays; this preserves the emitted generic-invariant subset
+    and measured `1988/1` at 51.21s wall time with `replay=19.84s`, and
+    `1990/42` at 6.23s wall time with `replay=0.35s`. Cached suffix `eId`
+    lookup is now also verified against the exact top-scope subtree before a
+    top-scoped target is accepted; this fixes a target-hijacking risk where a
+    source `eId` ending in the same suffix but living under another section
+    could satisfy a strict target. The same witnesses stayed score-equivalent:
+    `1988/1` measured 50.39s wall time with `compile_ops=26.55s` and
+    `replay=19.61s`, and `1990/42` measured 6.17s wall time with
+    `compile_ops=3.83s` and `replay=0.35s`. A local improvement in one family
+    should not be treated as global UK replay progress without saved-run guard
+    evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
