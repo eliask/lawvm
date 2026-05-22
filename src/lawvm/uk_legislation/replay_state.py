@@ -319,7 +319,12 @@ class UKReplayStateMixin:
         if root is target_node:
             return path
         for i, child in enumerate(root.children):
-            found = self._find_path_to_node(child, target_node, path + (i,))
+            child_path = path + (i,)
+            if child is target_node:
+                return child_path
+            if not child.children:
+                continue
+            found = self._find_path_to_node(child, target_node, child_path)
             if found is not None:
                 return found
         return None
