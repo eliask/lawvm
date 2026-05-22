@@ -6511,6 +6511,104 @@ def test_compile_definition_child_substitution_uses_bounded_definition_child_sel
     )
 
 
+def test_compile_postpositive_definition_child_repeal_uses_bounded_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-36-4">
+          <Pnumber>4</Pnumber>
+          <Text>
+            In section 15 of the Domestic Abuse Act 2021, in subsection (7),
+            omit paragraph (e) of the definition of “NHS body in England”.
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-cf42e21c2ec5f0091ad0e5d2e911b727",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-07-01",
+        affected_uri="/id/ukpga/2021/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2021",
+        affected_number="17",
+        affected_provisions="s. 15(7)",
+        affecting_uri="/id/ukpga/2022/31",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="31",
+        affecting_provisions="s. 36(4)",
+        affecting_title="Health and Care Act 2022",
+        in_force_dates=[{"date": "2022-07-01", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "15"), ("subsection", "7"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_DEFINITION_CHILD_PARAGRAPH_NHS body in England\x1fe"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_definition_child_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
+def test_compile_postpositive_definition_child_substitution_uses_bounded_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-38">
+          <Pnumber>38</Pnumber>
+          <Text>
+            In section 15 of the Domestic Abuse Act 2021, in subsection (7),
+            for paragraph (c) of the definition of “NHS body in England”
+            substitute— NHS England, or .
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-018fb731cb2887228bad9b2b4b842227",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-07-01",
+        affected_uri="/id/ukpga/2021/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2021",
+        affected_number="17",
+        affected_provisions="s. 15(7)",
+        affecting_uri="/id/ukpga/2022/31",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="31",
+        affecting_provisions="Sch. 1 para. 38",
+        affecting_title="Health and Care Act 2022",
+        in_force_dates=[{"date": "2022-07-01", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "15"), ("subsection", "7"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_DEFINITION_CHILD_PARAGRAPH_NHS body in England\x1fc"
+    )
+    assert ops[0].text_patch.replacement == "NHS England, or"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_definition_child_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_definition_range_to_end_substitution_uses_bounded_selector() -> None:
     extracted_el = ET.fromstring(
         f"""

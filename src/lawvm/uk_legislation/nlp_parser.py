@@ -1211,6 +1211,46 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
             }
         )
 
+    matches_definition_child_repeal_postpositive = re.finditer(
+        r"omit\s+(paragraph)\s+\(([0-9A-Za-z]+)\)\s+"
+        r"of\s+the\s+definition\s+of\s+[“\"'‘](.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_definition_child_repeal_postpositive:
+        subs.append(
+            {
+                "original": (
+                    f"TEXT_DEFINITION_CHILD_{m.group(1).strip().upper()}_"
+                    f"{m.group(3).strip()}{US}{m.group(2).strip()}"
+                ),
+                "replacement": "",
+                "rule_id": "uk_effect_definition_child_repeal_text_patch",
+            }
+        )
+
+    matches_definition_child_substituted_postpositive = re.finditer(
+        r"for\s+(paragraph)\s+\(([0-9A-Za-z]+)\)\s+"
+        r"of\s+the\s+definition\s+of\s+[“\"'‘](.*?)[”\"'’]\s+"
+        r"substitute\s*[—-]?\s+(.+?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_definition_child_substituted_postpositive:
+        replacement = _strip_optional_child_label(m.group(4), m.group(2))
+        replacement = re.sub(r"\s+\.$", "", replacement).strip()
+        if replacement:
+            subs.append(
+                {
+                    "original": (
+                        f"TEXT_DEFINITION_CHILD_{m.group(1).strip().upper()}_"
+                        f"{m.group(3).strip()}{US}{m.group(2).strip()}"
+                    ),
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_definition_child_substitution_text_patch",
+                }
+            )
+
     matches_in_definition_after_all_occurrences_insert = re.finditer(
         r"in the definition of [“\"'‘](?P<term>.*?)[”\"'’],?\s+"
         r"after\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
