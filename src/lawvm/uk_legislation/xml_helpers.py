@@ -2,15 +2,20 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from typing import Sequence
 
 from lawvm.core.ir import IRNode
 from lawvm.uk_legislation.uk_grafter import _LEG_NS
 
 
+@lru_cache(maxsize=4096)
+def _local_tag_name(tag: str) -> str:
+    return tag.split("}", 1)[1] if "}" in tag else tag
+
+
 def _tag(el: ET.Element) -> str:
-    t = el.tag
-    return t.split("}", 1)[1] if "}" in t else t
+    return _local_tag_name(el.tag)
 
 
 def _text_content(el: ET.Element) -> str:
