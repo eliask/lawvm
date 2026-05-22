@@ -12,6 +12,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.tools import uk_effects
 from lawvm.tools import uk_effect
+from lawvm.tools import uk_replay
 from lawvm.tools.uk_effect import (
     _collect_target_shape,
     _fmt_target,
@@ -52,6 +53,12 @@ from lawvm.uk_legislation.manual_claim_templates import (
     uk_manual_claim_template_status,
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+from lawvm.uk_legislation import witness_builders
+
+
+def test_uk_replay_timeline_uses_witness_temporal_event_builder() -> None:
+    """Regression: timeline mode must not call a stale uk_amendment_replay attr."""
+    assert uk_replay._uk_temporal_events_from_ops is witness_builders._uk_temporal_events_from_ops
 
 
 def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
