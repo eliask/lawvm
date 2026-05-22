@@ -756,6 +756,91 @@ def test_summarize_uk_effect_preserves_lowering_rejections(monkeypatch) -> None:
     )
 
 
+def test_summarize_uk_effect_uses_observed_source_extraction(monkeypatch) -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-observed-extract",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/1/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="Sch. 22 para. 88(1)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    extracted = ET.fromstring("<P3 id='schedule-22-paragraph-88-a'>source payload</P3>")
+    observation = {
+        "rule_id": "uk_affecting_act_implicit_first_subparagraph_context_ignored",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+    seen_extracted: list[ET.Element | None] = []
+
+    def fake_extract_with_observations(_context, effect_arg):  # noqa: ANN001
+        assert effect_arg is effect
+        return extracted, (observation,)
+
+    def fake_compile_effect_to_ir_ops(_effect, extracted_arg, **_kwargs):  # noqa: ANN001
+        seen_extracted.append(extracted_arg)
+        return [
+            LegalOperation(
+                op_id="eff-observed-extract",
+                sequence=0,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("section", "1"),)),
+                payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="payload"),
+            )
+        ]
+
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
+        lambda _affecting_act_id, _archive: (
+            b"<Legislation><Body><P1 id='x'>"
+            + (b"x" * 128)
+            + b"</P1></Body></Legislation>"
+        ),
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._extract_from_affecting_source_context_with_observations",
+        fake_extract_with_observations,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.compile_effect_to_ir_ops",
+        fake_compile_effect_to_ir_ops,
+    )
+
+    summary = summarize_uk_effect(
+        effect,
+        archive=object(),
+        context=_EffectSummaryContext(
+            statute_id="ukpga/2000/1",
+            enacted_ir=None,
+            oracle_ir=None,
+            base_eids=set(),
+            oracle_eids=set(),
+            base_text_map={},
+            oracle_eid_map={},
+            oracle_text_map={},
+            resolver=None,
+            affecting_xml_cache={},
+        ),
+    )
+
+    assert seen_extracted == [extracted]
+    assert summary.source_extracted is True
+    assert summary.source_extracted_tag == "P3"
+    assert summary.source_acquisition_rejections == (observation,)
+
+
 def test_summarize_uk_effect_source_pathology_uses_replay_applicability_mode(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="eff-unapplied",

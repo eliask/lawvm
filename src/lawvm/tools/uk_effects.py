@@ -256,7 +256,7 @@ def summarize_uk_effect(
     )
     from lawvm.uk_legislation.uk_amendment_replay import (
         _build_affecting_source_context,
-        _extract_from_affecting_source_context,
+        _extract_from_affecting_source_context_with_observations,
         _select_enacted_source_for_current_shell,
         append_source_pathology_filter_lowering_rejections,
         append_no_ops_lowering_rejections,
@@ -315,10 +315,11 @@ def summarize_uk_effect(
             source_acquisition_rejections = (affecting_act_xml_parse_rejection(effect, parse_error),)
 
     extracted = None
+    source_extraction_observations: tuple[dict[str, Any], ...] = ()
     if source_context.xml_bytes and source_context.root is not None:
-        extracted = _extract_from_affecting_source_context(
+        extracted, source_extraction_observations = _extract_from_affecting_source_context_with_observations(
             source_context,
-            effect.affecting_provisions,
+            effect,
         )
     source_context, extracted, source_lane_observations = _select_enacted_source_for_current_shell(
         effect=effect,
@@ -327,8 +328,11 @@ def summarize_uk_effect(
         current_el=extracted,
         enacted_context_cache={},
     )
-    if source_lane_observations:
-        source_acquisition_rejections = (*source_acquisition_rejections, *source_lane_observations)
+    source_acquisition_rejections = (
+        *source_acquisition_rejections,
+        *source_extraction_observations,
+        *source_lane_observations,
+    )
     affecting_root = source_context.root
     lowering_rejections: list[dict[str, Any]] = []
     lowering_rejection_count_before = len(lowering_rejections)
