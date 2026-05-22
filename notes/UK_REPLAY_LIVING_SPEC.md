@@ -1065,8 +1065,12 @@ Current tooling-consistency invariant:
     accepted replacement hot path reuses the existing exact `eId` lookup index
     only when it already records the node's parent tuple, avoiding new whole-tree
     indexing; the `1988/1` witness stayed at 99.6% replay and measured 55.86s
-    wall time with `replay=23.66s`. A local improvement in one family should not
-    be treated as global UK replay progress without saved-run guard evidence.
+    wall time with `replay=23.66s`. A follow-up invariant-diagnostics gate skips
+    payload-shape invariant checks when the scoped tree scan found no new
+    violation; it is score-equivalent and measured 55.71s wall time with
+    `replay=23.01s` on the same witness. A local improvement in one family
+    should not be treated as global UK replay progress without saved-run guard
+    evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
