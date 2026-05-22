@@ -6,12 +6,17 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from lawvm.uk_legislation.effects import UKEffectRecord
-from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
+from lawvm.uk_legislation.lowering_records import (
+    _append_uk_effect_lowering_observation,
+    _append_uk_effect_lowering_rejection,
+)
 from lawvm.uk_legislation.metadata_rewrites import _uk_unsupported_metadata_renumber_rejection
 from lawvm.uk_legislation.source_context import _preview_source_text
 from lawvm.uk_legislation.source_parent_payloads import (
+    UK_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RULE_ID,
     _source_parent_at_end_added_payload,
     _source_parent_substitution_range_payload,
+    _source_parent_whole_schedule_insert_payload,
 )
 from lawvm.uk_legislation.source_text_reclassifications import (
     _empty_effect_type_as_if_words_omitted,
@@ -164,6 +169,30 @@ def infer_uk_effect_action_from_source(  # noqa: PLR0913
         return UKActionInference(action="insert")
     if re.search(r"\bfrom\b.*\bto\b", text_lower, re.I | re.S):
         return UKActionInference(action="replace")
+
+    source_parent_whole_schedule_insert = _source_parent_whole_schedule_insert_payload(
+        extracted_el=extracted_el,
+        source_root=source_root,
+        extracted_text=extracted_text,
+        target_refs=_split_metadata_provisions(effect.affected_provisions),
+    )
+    if source_parent_whole_schedule_insert is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RULE_ID,
+            family="source_action_inference",
+            reason_code="empty_effect_type_source_parent_whole_schedule_insert",
+            reason=(
+                "UK effect has no explicit effect type, but the source parent "
+                "formula explicitly inserts a whole Schedule payload; lowering "
+                "infers only the source-witnessed insert action."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail=source_parent_whole_schedule_insert,
+        )
+        return UKActionInference(action="insert")
 
     source_parent_substitution_range_payload = _source_parent_substitution_range_payload(
         extracted_el=extracted_el,

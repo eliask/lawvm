@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol, Sequence
 
-from lawvm.core.ir import LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     append_crossheading_group_repeal_observation,
@@ -52,6 +52,7 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _is_heading_only_ref,
 )
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     reject_amendment_program_inserted_parent_structural_insert,
 )
@@ -392,6 +393,36 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     source_structural_payload_matches_target = (
         structural_payload.source_structural_payload_matches_target
     )
+    if (
+        action == "insert"
+        and content_ir is not None
+        and str(content_ir.get("kind") or "").lower() in {"schedule", "irnodekind.schedule"}
+        and len(target.path) > 1
+        and str(target.path[0][0] or "").lower() == "schedule"
+    ):
+        original_target = target
+        target = LegalAddress(path=target.path[:1], special=None)
+        payload_match_target = target
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_schedule_parent_payload_retargeted",
+            family="payload_normalization",
+            reason_code="inserted_schedule_parent_payload_claims_feed_descendant",
+            reason=(
+                "UK source payload contains an explicit Schedule wrapper while "
+                "the effect-feed target points at a descendant; lowering targets "
+                "the source-claimed schedule shell instead of replaying the "
+                "descendant at an unsafe fallback location."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "original_target": str(original_target),
+                "target": str(target),
+            },
+        )
 
     if reject_mixed_heading_structural_insert_missing_payload(
         effect=effect,

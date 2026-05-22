@@ -564,6 +564,217 @@ def test_compile_whole_schedule_target_prefers_schedule_payload() -> None:
     }
 
 
+def test_compile_inserted_schedule_wrapper_retargets_descendant_part_target_to_schedule() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <BlockAmendment>
+            <Schedule eId="schedule-5a">
+              <Number>SCHEDULE 5A</Number>
+              <Title>Terrorist financing investigations: disclosure orders</Title>
+              <ScheduleBody>
+                <Part eId="schedule-5a-part-1">
+                  <Number>Part 1</Number>
+                  <Title>England and Wales and Northern Ireland</Title>
+                  <P1 eId="schedule-5a-paragraph-1">
+                    <Pnumber>1</Pnumber>
+                    <Text>This paragraph applies for the purposes of this Part of this Schedule.</Text>
+                  </P1>
+                </Part>
+              </ScheduleBody>
+            </Schedule>
+          </BlockAmendment>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_insert_schedule_wrapper_for_part_target",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2017-04-27",
+        affected_uri="/id/ukpga/2000/11",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="Sch. 5A Pt. 1",
+        affecting_uri="/id/ukpga/2017/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="22",
+        affecting_provisions="Sch. 2 para. 3",
+        affecting_title="Criminal Finances Act 2017",
+        in_force_dates=[{"date": "2017-04-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert str(ops[0].target) == "schedule:5a"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind == IRNodeKind.SCHEDULE
+    assert ops[0].payload.label == "SCHEDULE 5A"
+    assert [child.kind for child in ops[0].payload.children] == [IRNodeKind.PART]
+    retarget = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_schedule_parent_payload_retargeted"
+    ]
+    assert len(retarget) == 1
+    assert retarget[0]["original_target"] == "schedule:5a/part:1"
+    assert retarget[0]["target"] == "schedule:5a"
+    assert retarget[0]["strict_disposition"] == "record"
+
+
+def test_compile_empty_type_whole_schedule_insert_from_source_parent_formula() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-1-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>The following Schedule is inserted after Schedule 6—</Text>
+            <BlockAmendment>
+              <Schedule eId="schedule-6a">
+                <Number>SCHEDULE 6A</Number>
+                <Title>Account monitoring orders</Title>
+                <ScheduleBody>
+                  <Pblock>
+                    <Title>Introduction</Title>
+                    <P1 eId="schedule-6a-paragraph-1">
+                      <Pnumber>1</Pnumber>
+                      <P1para>
+                        <P2 eId="schedule-6a-paragraph-1-1">
+                          <Pnumber>1</Pnumber>
+                          <Text>This paragraph applies for the purposes of this Schedule.</Text>
+                        </P2>
+                      </P1para>
+                    </P1>
+                  </Pblock>
+                </ScheduleBody>
+              </Schedule>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_whole_schedule_insert",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-12-14",
+        affected_uri="/id/ukpga/2000/11",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="Sch. 6A",
+        affecting_uri="/id/ukpga/2001/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="24",
+        affecting_provisions="Sch. 2 Pt. 1 para. 1(3)",
+        affecting_title="Anti-terrorism, Crime and Security Act 2001",
+        in_force_dates=[{"date": "2001-12-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.INSERT
+    assert str(ops[0].target) == "schedule:6a"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind == IRNodeKind.SCHEDULE
+    assert ops[0].payload.label == "SCHEDULE 6A"
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_parent_whole_schedule_insert_inferred"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source_parent_id"] == "schedule-2-paragraph-1-3"
+    assert observations[0]["target"] == "schedule:6a"
+    assert observations[0]["strict_disposition"] == "record"
+
+
+def test_compile_empty_type_whole_schedule_payload_without_insert_formula_stays_unsupported() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-1-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>The following Schedule has effect after Schedule 6—</Text>
+            <BlockAmendment>
+              <Schedule eId="schedule-6a">
+                <Number>SCHEDULE 6A</Number>
+                <Title>Account monitoring orders</Title>
+                <ScheduleBody>
+                  <P1 eId="schedule-6a-paragraph-1">
+                    <Pnumber>1</Pnumber>
+                    <Text>This paragraph applies for the purposes of this Schedule.</Text>
+                  </P1>
+                </ScheduleBody>
+              </Schedule>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_whole_schedule_no_insert_formula",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-12-14",
+        affected_uri="/id/ukpga/2000/11",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="Sch. 6A",
+        affecting_uri="/id/ukpga/2001/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="24",
+        affecting_provisions="Sch. 2 Pt. 1 para. 1(3)",
+        affecting_title="Anti-terrorism, Crime and Security Act 2001",
+        in_force_dates=[{"date": "2001-12-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert "uk_effect_source_parent_whole_schedule_insert_inferred" not in {
+        record["rule_id"] for record in lowering_records
+    }
+    assert any(
+        record["rule_id"] == "uk_effect_lowering_no_supported_action_rejected"
+        for record in lowering_records
+    )
+
+
 def test_compile_rejects_flat_text_as_whole_schedule_replacement_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
