@@ -1050,7 +1050,12 @@ Current tooling-consistency invariant:
     candidate subtree instead of falling back to a full-source greedy walk when
     the first component is ambiguous; the serial witness measured 6.48s wall
     time with `compile_ops=4.30s` after this change, versus a prior 55.8s
-    profile with `compile_ops` around 45.9s. Replay-side `1988/1` remains a
+    profile with `compile_ops` around 45.9s. First-component lookup now builds
+    a per-source-root normalized-number index and then filters kind synonyms in
+    document order; this keeps the same extraction semantics while avoiding a
+    repeated full-tree scan for every distinct first component. The same
+    `1990/42` witness measured `compile_ops=4.18s` after the index. Replay-side
+    `1988/1` remains a
     separate indexing/cache family; a minor invariant-scan hot-path cleanup kept
     the fast duplicate/order scan equivalent to the generic invariant subset and
     measured 60.81s wall time with `replay=27.73s` on that witness, so it did not

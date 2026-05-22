@@ -320,6 +320,23 @@ def _find_provision_greedy(
     return best_node, best_depth
 
 
+@lru_cache(maxsize=1024)
+def _first_component_number_index(search_root: ET.Element) -> dict[str, tuple[ET.Element, ...]]:
+    """Index provision-like elements by normalized visible number in document order."""
+    by_num: dict[str, list[ET.Element]] = {}
+    for el in search_root.iter():
+        if el is search_root:
+            continue
+        seen_nums: set[str] = set()
+        for raw in _node_raw_number_values(el):
+            normalized = _normalized_provision_num(raw)
+            if not normalized or normalized in seen_nums:
+                continue
+            seen_nums.add(normalized)
+            by_num.setdefault(normalized, []).append(el)
+    return {num: tuple(elements) for num, elements in by_num.items()}
+
+
 @lru_cache(maxsize=32768)
 def _first_component_matches(
     search_root: ET.Element,
@@ -331,9 +348,8 @@ def _first_component_matches(
     normalized_target_num = _normalized_provision_num(target_num)
     return tuple(
         el
-        for el in search_root.iter()
-        if el is not search_root
-        and _match_node_prepared(
+        for el in _first_component_number_index(search_root).get(normalized_target_num, ())
+        if _match_node_prepared(
             el,
             kind_synonyms=kind_synonyms,
             target_num=normalized_target_num,

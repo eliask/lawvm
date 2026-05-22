@@ -104,6 +104,28 @@ def test_instruction_text_before_amendment_container_is_cached_by_source_element
     assert _instruction_text_before_amendment_container(element) == "In section 1, after subsection (1) insert-"
 
 
+def test_first_component_matches_preserves_document_order_with_number_index() -> None:
+    root = ET.fromstring(
+        """
+        <Body>
+          <P1><Pnumber>7</Pnumber><Text>first section-like node</Text></P1>
+          <P2><Pnumber>7</Pnumber><Text>wrong kind</Text></P2>
+          <Section><Number>7</Number><Text>second section-like node</Text></Section>
+          <P1group><Pnumber>7</Pnumber><Text>third section-like node</Text></P1group>
+        </Body>
+        """
+    )
+
+    matches = _first_component_matches(root, "section", "7")
+
+    assert [element.tag for element in matches] == ["P1", "Section", "P1group"]
+    assert [" ".join(element.itertext()).strip() for element in matches] == [
+        "7 first section-like node",
+        "7 second section-like node",
+        "7 third section-like node",
+    ]
+
+
 def replay_uk_ops(base, ops, **kwargs):
     return UKReplayPipeline(Path(".")).apply_ops(base, ops, **kwargs)
 
