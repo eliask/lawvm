@@ -219,12 +219,13 @@ def _print_phase_timing_delta_summary(
     phase_totals_old: Counter[str] = Counter()
     phase_totals_new: Counter[str] = Counter()
     for sid in common:
-        for name, value in baseline_phase_timings[sid].items():
-            if name != "total":
-                phase_totals_old[name] += value
-        for name, value in current_phase_timings[sid].items():
-            if name != "total":
-                phase_totals_new[name] += value
+        comparable_phases = (
+            set(baseline_phase_timings[sid])
+            & set(current_phase_timings[sid])
+        ) - {"total"}
+        for name in comparable_phases:
+            phase_totals_old[name] += baseline_phase_timings[sid][name]
+            phase_totals_new[name] += current_phase_timings[sid][name]
 
     delta = current_total - baseline_total
     sign = "+" if delta >= 0 else ""
