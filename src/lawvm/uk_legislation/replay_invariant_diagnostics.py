@@ -99,6 +99,8 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
                             f"{path}: {kind} out of order: {labels[index]} > {labels[index + 1]}"
                         )
         for child in reversed(children):
+            if not child.children:
+                continue
             child_path = f"{path}/{_kind_str(child.kind)}:{child.label or '?'}"
             stack.append((child, child_path))
     return violations
