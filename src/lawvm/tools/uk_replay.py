@@ -34,6 +34,7 @@ from lawvm.uk_legislation.source_state import (
     uk_source_xml_parse_rejection,
     uk_source_state_wire_tuple as _source_state,
 )
+from lawvm.uk_legislation.witness_builders import _uk_temporal_events_from_ops
 from lawvm.core.compile_records import is_blocking_compile_record
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
@@ -1141,7 +1142,7 @@ def main(args: "argparse.Namespace") -> None:
 
     if use_timeline and lo_ops_out is not None and not enacted_only:
         # Ops-first path: compile_timelines from section snapshots
-        temporal_events = uk_replay_module._uk_temporal_events_from_ops(  # type: ignore[attr-defined]
+        temporal_events = _uk_temporal_events_from_ops(
             lo_ops_out,
             target_statute=statute_id,
         )
