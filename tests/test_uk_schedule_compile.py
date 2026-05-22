@@ -5419,6 +5419,25 @@ def test_appropriate_place_definition_entry_instruction_strip_is_bounded() -> No
     ) is None
 
 
+def test_source_carried_following_words_repeal_instruction_scan() -> None:
+    from lawvm.uk_legislation.source_definition_fragments import (
+        _has_following_words_repeal_instruction,
+    )
+
+    assert _has_following_words_repeal_instruction(
+        "in subsection (2), the following words are repealed—"
+    )
+    assert _has_following_words_repeal_instruction(
+        "in subsection (2), following word omitted—"
+    )
+    assert not _has_following_words_repeal_instruction(
+        "in subsection (2), after the following words insert—"
+    )
+    assert not _has_following_words_repeal_instruction(
+        "in subsection (2), the following wording is omitted—"
+    )
+
+
 def test_compile_source_carried_following_words_repeal_from_block_payload() -> None:
     source_root = ET.fromstring(
         f"""
