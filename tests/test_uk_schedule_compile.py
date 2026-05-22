@@ -6117,6 +6117,98 @@ def test_compile_rejects_partial_whole_act_repeal_scope() -> None:
     assert lowering_rejections[0]["strict_disposition"] == "block"
 
 
+def test_compile_rejects_empty_type_whole_act_action_inferred_from_incidental_source_words() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-4">
+          <Pnumber>4</Pnumber>
+          <Text>
+            In Schedule 4 to the 1993 Order (Enactments Modified) for paragraph 3
+            substitute— Terrorism Act 2000 3 In the Terrorism Act 2000 —
+            a in Schedule 7 omit paragraph 12.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_whole_act_incidental_omit",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-02-04",
+        affected_uri="/id/ukpga/2000/11",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="Act",
+        affecting_uri="/id/uksi/2001/178",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="178",
+        affecting_provisions="art. 4",
+        affecting_title="The Channel Tunnel (International Arrangements) (Amendment) Order 2001",
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    assert lowering_rejections[0]["rule_id"] == "uk_effect_empty_type_whole_act_action_rejected"
+    assert lowering_rejections[0]["reason_code"] == "empty_effect_type_whole_act_action_unsafe"
+    assert lowering_rejections[0]["target_ref"] == "Act"
+    assert lowering_rejections[0]["target"] == "/whole_act"
+    assert lowering_rejections[0]["inferred_action"] == "repeal"
+    assert lowering_rejections[0]["blocking"] is True
+    assert lowering_rejections[0]["strict_disposition"] == "block"
+
+
+def test_compile_preserves_explicit_whole_act_repeal_effect_type() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-1">
+          <Pnumber>1</Pnumber>
+          <Text>The whole Act is repealed.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_explicit_whole_act_repeal",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2020-01-01",
+        affected_uri="/id/ukpga/1999/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1999",
+        affected_number="1",
+        affected_provisions="Act",
+        affecting_uri="/id/ukpga/2020/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="1",
+        affecting_provisions="Sch. 1 para. 1",
+        affecting_title="Test Repeals Act 2020",
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert str(ops[0].target) == "/whole_act"
+    assert lowering_rejections == []
+
+
 def test_compile_words_inserted_after_definition_child_with_block_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
