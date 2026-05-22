@@ -104,6 +104,8 @@ Current UK-specific invariants:
     explicit source identity boundary
   - if the top root itself is absent, separate source-pathology or recovery
     evidence is required before rebinding to another branch
+  - this boundary applies to both exact and sequence-match lookup lanes; a
+    sequence alias cannot justify crossing an absent or failed strict top root
 - broad schedule/part text patches require a replay-visible text-bearing shape
   - if a broad schedule or schedule part target has no table nodes and no
     provision descendants carrying the preimage, replay should classify the row
