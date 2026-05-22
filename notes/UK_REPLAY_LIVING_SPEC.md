@@ -460,6 +460,13 @@ families,
 `uk_manual_frontier_range_to_container_candidate`. They list required
 validator checks; replay must ignore them until a separate validated claim
 ledger emits canonical operations and provenance.
+`amendment_program_target_mutation` templates also carry the parsed lowering
+rejection fields (`source_target_address`, `source_subparagraph_label`,
+`source_item_label`, `inserted_parent_label`, `insert_direction`,
+`anchor_label`, `inserted_label`, and `inserted_text_preview`) because those
+fields define the minimum auditable claim surface for compiling a mutation into
+the payload of a prior amendment instruction. They are evidence, not replay
+authority.
 `uk-effects` summary output also aggregates
 `suggested_claim_template_status_counts` for actionable frontier rows
 (`manual_compile_candidate` and `deterministic_frontend_candidate`) so review
