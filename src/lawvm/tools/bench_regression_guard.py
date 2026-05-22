@@ -179,16 +179,6 @@ def run_guard(
     baseline_only = sorted(set(baseline_scores) - set(current_scores))
     current_only = sorted(set(current_scores) - set(baseline_scores))
 
-    diffs: list[tuple[str, float, float, float]] = []
-    for sid in common:
-        old = baseline_scores[sid]
-        new = current_scores[sid]
-        diffs.append((sid, old, new, new - old))
-
-    old_mean = mean([diff[1] for diff in diffs])
-    new_mean = mean([diff[2] for diff in diffs])
-    agg_delta = new_mean - old_mean
-
     print(f"Statutes in baseline : {len(baseline_scores)}")
     print(f"Statutes in current  : {len(current_scores)}")
     print(f"Common statutes      : {len(common)}")
@@ -198,6 +188,19 @@ def run_guard(
     if current_only:
         print(f"Current-only         : {len(current_only)}  (new in current run)")
     print()
+    if not common:
+        print("ERROR: baseline and current have no common scored statutes")
+        return 1
+
+    diffs: list[tuple[str, float, float, float]] = []
+    for sid in common:
+        old = baseline_scores[sid]
+        new = current_scores[sid]
+        diffs.append((sid, old, new, new - old))
+
+    old_mean = mean([diff[1] for diff in diffs])
+    new_mean = mean([diff[2] for diff in diffs])
+    agg_delta = new_mean - old_mean
 
     sign = "+" if agg_delta >= 0 else ""
     print("Aggregate score (common statutes):")
@@ -248,6 +251,9 @@ def run_guard(
             print(f"ERROR loading duration CSV data: {exc}")
             return 1
         duration_common = sorted(set(baseline_durations) & set(current_durations))
+        if not duration_common:
+            print("ERROR: baseline and current have no common duration_s rows")
+            return 1
         duration_diffs: list[tuple[str, float, float, float]] = []
         for sid in duration_common:
             old = baseline_durations[sid]

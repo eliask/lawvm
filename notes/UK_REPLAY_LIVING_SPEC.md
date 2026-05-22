@@ -3011,7 +3011,9 @@ Current bench replay-regime invariant:
   `--max-duration-regressions N` enables an explicit `duration_s` guard for
   saved runs; this is opt-in because timing evidence is environment-sensitive,
   but when enabled missing `duration_s` columns are treated as invalid benchmark
-  evidence.
+  evidence. A comparison with zero common scored rows, or an enabled duration
+  guard with zero common `duration_s` rows, must fail rather than report a green
+  empty aggregate.
 - `lawvm bench -j uk --statute <ID>` must filter the UK bench corpus to exactly
   the requested statute before applying diagnostic limits. If the statute is not
   present in the corpus, the command fails visibly rather than saving an empty

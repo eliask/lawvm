@@ -1115,6 +1115,32 @@ def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, c
     assert "RESULT: FAIL" in out
 
 
+def test_bench_regression_guard_fails_without_common_scored_statutes(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "20260329_old.csv"
+    current = tmp_path / "20260329_new.csv"
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "similarity"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "s1", "similarity": "0.90"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "similarity"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "s2", "similarity": "0.95"})
+
+    rc = bench_regression_guard.run_guard("old", "new", threshold=0.02, max_regressions=0)
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Common statutes      : 0" in out
+    assert "ERROR: baseline and current have no common scored statutes" in out
+
+
 def test_bench_regression_guard_supports_uk_saved_run_shape(
     tmp_path,
     monkeypatch,
@@ -1323,3 +1349,36 @@ def test_bench_regression_guard_requires_duration_column_when_enabled(
     assert rc == 1
     assert "ERROR loading duration CSV data" in out
     assert "missing expected column 'duration_s'" in out
+
+
+def test_bench_regression_guard_fails_without_common_duration_rows(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "duration_s"]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "duration_s": "1.0"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "duration_s": ""})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        max_duration_regressions=0,
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: baseline and current have no common duration_s rows" in out
