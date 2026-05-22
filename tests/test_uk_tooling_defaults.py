@@ -155,6 +155,14 @@ def test_uk_bench_parser_accepts_curated_corpus_preset() -> None:
     assert args.curate_size is None
 
 
+def test_uk_bench_parser_accepts_hard_curated_corpus_preset() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["bench", "-j", "uk", "--curate-preset", "hard-tight"])
+
+    assert args.curate_preset == "hard-tight"
+
+
 def test_uk_bench_statute_filter_runs_single_corpus_row(monkeypatch, tmp_path, capsys) -> None:
     class DummyArchive:
         def __init__(self, path: Path):

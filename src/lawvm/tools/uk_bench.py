@@ -77,6 +77,9 @@ _CURATE_PRESET_SIZES = {
     "stress": 400,
     "modern-canary": 40,
     "modern-tight": 200,
+    "hard-canary": 40,
+    "hard-tight": 200,
+    "hard-stress": 400,
 }
 _CURATE_PRESET_FILENAMES = {
     "canary": "bench_corpus_smoke.csv",
@@ -84,11 +87,15 @@ _CURATE_PRESET_FILENAMES = {
     "stress": "bench_corpus_stress.csv",
     "modern-canary": "bench_corpus_modern_smoke.csv",
     "modern-tight": "bench_corpus_modern_tight.csv",
+    "hard-canary": "bench_corpus_hard_smoke.csv",
+    "hard-tight": "bench_corpus_hard_tight.csv",
+    "hard-stress": "bench_corpus_hard_stress.csv",
 }
 _CURATE_PRESET_MIN_YEARS = {
     "modern-canary": 1990,
     "modern-tight": 1990,
 }
+_CURATE_HARD_PRESETS = frozenset({"hard-canary", "hard-tight", "hard-stress"})
 _CORPUS_FIELDNAMES = [
     "statute_id",
     "type",
@@ -5213,12 +5220,15 @@ def _stratified_source_complete_sample(
     entries: Sequence[dict[str, object]],
     *,
     size: int,
+    hard: bool = False,
 ) -> list[dict[str, object]]:
     if size < 1:
         raise ValueError("--curate-size must be a positive integer")
     groups: dict[tuple[str, str, str], list[dict[str, object]]] = {}
     for entry in entries:
         if not _is_source_complete_entry(entry):
+            continue
+        if hard and _effect_bucket(entry) == "0":
             continue
         key = (
             str(entry.get("type") or "unknown"),
@@ -5227,10 +5237,25 @@ def _stratified_source_complete_sample(
         )
         groups.setdefault(key, []).append(entry)
     for group in groups.values():
-        group.sort(key=lambda entry: str(entry.get("statute_id") or ""))
+        if hard:
+            group.sort(
+                key=lambda entry: (
+                    *(-value for value in _uk_bench_parallel_submission_cost(dict(entry))),
+                    str(entry.get("statute_id") or ""),
+                )
+            )
+        else:
+            group.sort(key=lambda entry: str(entry.get("statute_id") or ""))
+
+    def hard_group_key(key: tuple[str, str, str]) -> tuple[int, int, int, int, tuple[str, str, str]]:
+        head = groups[key][0]
+        return (
+            *(-value for value in _uk_bench_parallel_submission_cost(dict(head))),
+            key,
+        )
 
     selected: list[dict[str, object]] = []
-    group_keys = sorted(groups)
+    group_keys = sorted(groups, key=hard_group_key) if hard else sorted(groups)
     while len(selected) < size and group_keys:
         next_keys: list[tuple[str, str, str]] = []
         for key in group_keys:
@@ -5239,12 +5264,18 @@ def _stratified_source_complete_sample(
                 selected.append(group.pop(0))
             if group:
                 next_keys.append(key)
-        group_keys = next_keys
+        group_keys = sorted(next_keys, key=hard_group_key) if hard else next_keys
     return selected
 
 
-def _write_curated_corpus(entries: Sequence[dict[str, object]], *, output: Path, size: int) -> list[dict[str, object]]:
-    selected = _stratified_source_complete_sample(entries, size=size)
+def _write_curated_corpus(
+    entries: Sequence[dict[str, object]],
+    *,
+    output: Path,
+    size: int,
+    hard: bool = False,
+) -> list[dict[str, object]]:
+    selected = _stratified_source_complete_sample(entries, size=size, hard=hard)
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=_CORPUS_FIELDNAMES)
@@ -5385,10 +5416,19 @@ def main(args) -> None:  # noqa: ANN001
         return
 
     if curate_output is not None:
-        selected = _write_curated_corpus(corpus, output=curate_output, size=curate_size)
+        hard_curate = curate_preset in _CURATE_HARD_PRESETS
+        selected = _write_curated_corpus(
+            corpus,
+            output=curate_output,
+            size=curate_size,
+            hard=hard_curate,
+        )
         if curate_preset:
             print(f"  Curated preset: {curate_preset}")
-        print(f"  Curated source-complete corpus: {curate_output}")
+        if hard_curate:
+            print(f"  Curated source-complete hard corpus: {curate_output}")
+        else:
+            print(f"  Curated source-complete corpus: {curate_output}")
         print(f"  Requested rows: {curate_size}")
         print(f"  Written rows: {len(selected)}")
         _print_corpus_stats(selected)

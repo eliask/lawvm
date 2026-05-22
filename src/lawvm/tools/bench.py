@@ -2510,10 +2510,21 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
     )
     bench_p.add_argument(
         "--curate-preset",
-        choices=["canary", "tight", "stress", "modern-canary", "modern-tight"],
+        choices=[
+            "canary",
+            "tight",
+            "stress",
+            "modern-canary",
+            "modern-tight",
+            "hard-canary",
+            "hard-tight",
+            "hard-stress",
+        ],
         help=(
             "[-j uk] curated corpus preset: canary=40, tight=200, stress=400, "
-            "modern-canary=40, modern-tight=200. "
+            "modern-canary=40, modern-tight=200, hard-canary=40, hard-tight=200, "
+            "hard-stress=400. Hard presets require source-complete effectful rows "
+            "and prefer heavier replay rows within each stratum. "
             "If --curate-corpus is omitted, writes the standard data/uk preset CSV"
         ),
     )
