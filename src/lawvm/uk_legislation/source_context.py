@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, Optional, Sequence
 
@@ -54,6 +54,11 @@ class UKAffectingSourceContext:
     locator: str
     authority_layer: str
     provision_extractor: Callable[..., Optional[ET.Element]] = extract_provision_element_from_bytes
+    provision_element_cache: dict[str, Optional[ET.Element]] = field(
+        default_factory=dict,
+        compare=False,
+        repr=False,
+    )
 
 
 def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]:
@@ -317,7 +322,10 @@ def _extract_from_affecting_source_context(
 ) -> Optional[ET.Element]:
     if context.xml_bytes is None or context.root is None:
         return None
-    return context.provision_extractor(
+    cached = context.provision_element_cache.get(provision_ref)
+    if cached is not None or provision_ref in context.provision_element_cache:
+        return cached
+    extracted = context.provision_extractor(
         context.xml_bytes,
         provision_ref,
         root=context.root,
@@ -325,6 +333,8 @@ def _extract_from_affecting_source_context(
         exact_id_map=context.exact_id_map,
         sequence_map=context.sequence_map,
     )
+    context.provision_element_cache[provision_ref] = extracted
+    return extracted
 
 
 def _block_amendment_payload_descendant_source_rejection(
