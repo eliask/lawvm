@@ -75,6 +75,32 @@ def _first_table_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
     return {}
 
 
+def _definition_child_and_tail_parts(source_preview: str) -> dict[str, str]:
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bfor\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+        r"of\s+the\s+definition\s+of\s+[\"“](?P<term>[^\"”]{1,240})[\"”]\s+"
+        r"and\s+the\s+[\"“]?(?P<tail_connector>or|and)[\"”]?\s+"
+        r"at\s+the\s+end\s+of\s+that\s+paragraph\s+substitute\s*[—–-]\s*"
+        r"(?P<replacement>.+?)\s*\.?\s*$",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {
+            "definition_term": "",
+            "definition_child_label": "",
+            "tail_connector": "",
+            "replacement_preview": source_norm[:500],
+        }
+    return {
+        "definition_term": " ".join(match.group("term").split()),
+        "definition_child_label": " ".join(match.group("label").split()),
+        "tail_connector": " ".join(match.group("tail_connector").split()).lower(),
+        "replacement_preview": " ".join(match.group("replacement").split())[:500],
+    }
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -182,6 +208,47 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_crossheading_target",
             ],
         )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_definition_child_and_tail_substitution_candidate"
+    ):
+        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+        parts = _definition_child_and_tail_parts(source_preview)
+        return {
+            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+            "claim_kind": "semantic_compile",
+            "claim_status": "template_only_not_validated",
+            "action_family": "definition_child_and_tail_substitution",
+            "placement_family": "definition_child_plus_post_child_tail_boundary_required",
+            "jurisdiction": "uk",
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_act_id": effect.affecting_act_id,
+            "affecting_provisions": effect.affecting_provisions,
+            "source_pathology": summary.source_pathology or "",
+            "candidate_target_surface": effect.affected_provisions,
+            "candidate_source_preview": source_preview[:500],
+            "definition_term": parts["definition_term"],
+            "definition_child_label": parts["definition_child_label"],
+            "tail_connector": parts["tail_connector"],
+            "replacement_preview": parts["replacement_preview"],
+            "required_ownership": [
+                "definition_child_text_boundary",
+                "post_child_tail_connector_boundary",
+                "replacement_payload",
+                "mutation_boundary",
+            ],
+            "required_validator_checks": [
+                "source_witness_names_definition_term_and_child_label",
+                "claim_identifies_exact_definition_child_node",
+                "claim_identifies_post_child_tail_connector_surface",
+                "claim_preserves_unclaimed_definition_children",
+                "claim_splits_or_lowers_into_bounded_child_and_tail_mutations",
+                "changed_paths_are_within_declared_definition_child_and_tail_boundary",
+            ],
+            "executable": False,
+        }
     if summary.manual_compile_rule_id == "uk_manual_frontier_schedule_note_candidate":
         return _surface_text_rewrite_claim_template(
             statute_id=statute_id,
