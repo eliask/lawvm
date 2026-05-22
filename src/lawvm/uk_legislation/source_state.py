@@ -18,6 +18,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
+        "uk_affecting_act_article_schedule_payload_source_extracted",
         "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
     }
 )
@@ -259,6 +260,42 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
             "ancestor container in source XML rather than in descendant paragraph IDs; "
             "the normalized paragraph reference was accepted only because the extracted "
             "node has a matching Part ancestor."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_article_schedule_payload_source_extracted(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    article_ref: str,
+    article_element_id: str,
+    schedule_element_id: str,
+    article_text_preview: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_article_schedule_payload_source_extracted",
+        "family": "source_lane_selection",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "article_ref": article_ref,
+        "article_element_id": article_element_id,
+        "schedule_element_id": schedule_element_id,
+        "article_text_preview": article_text_preview,
+        "reason": (
+            "UK effects metadata cited an article plus an attached Schedule payload; "
+            "the article text explicitly points to text set out in the Schedule, so "
+            "the unnumbered source Schedule is used as the amendment payload."
         ),
         "blocking": False,
         "strict_disposition": "record",

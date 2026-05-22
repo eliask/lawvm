@@ -26,6 +26,7 @@ from lawvm.uk_legislation.provision_extractor import (
 )
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_state import (
+    uk_affecting_act_article_schedule_payload_source_extracted,
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
@@ -423,6 +424,68 @@ def _implicit_first_subparagraph_context_normalized_ref(provision_ref: str) -> s
     return f"{match.group('prefix').strip()}({match.group('label').strip()})"
 
 
+def _article_schedule_payload_ref(provision_ref: str) -> str | None:
+    normalized = " ".join((provision_ref or "").split()).strip()
+    match = re.fullmatch(
+        r"(?P<kind>art(?:icle)?|reg(?:ulation)?|rule)\.?\s+"
+        r"(?P<label>[0-9A-Za-z]+)\s+Sch(?:edule)?\.?",
+        normalized,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    kind = match.group("kind").lower()
+    label = match.group("label")
+    if kind.startswith("art"):
+        return f"art. {label}"
+    if kind.startswith("reg"):
+        return f"reg. {label}"
+    return f"rule {label}"
+
+
+def _unique_root_schedule_payload(context: UKAffectingSourceContext) -> Optional[ET.Element]:
+    if context.root is None:
+        return None
+    schedules = [el for el in context.root.iter() if _tag(el) == "Schedule"]
+    if len(schedules) != 1:
+        return None
+    return schedules[0]
+
+
+def _extract_article_schedule_payload_source(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    article_ref = _article_schedule_payload_ref(str(effect.affecting_provisions or ""))
+    if article_ref is None:
+        return None, ()
+
+    article_el = _extract_from_affecting_source_context(context, article_ref)
+    if article_el is None:
+        return None, ()
+
+    article_text = _text_content(article_el)
+    if not re.search(r"\bset\s+out\s+in\s+the\s+Schedule\b", article_text, flags=re.I):
+        return None, ()
+
+    schedule_el = _unique_root_schedule_payload(context)
+    if schedule_el is None:
+        return None, ()
+
+    observation = uk_affecting_act_article_schedule_payload_source_extracted(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        article_ref=article_ref,
+        article_element_id=str(article_el.get("id") or article_el.get("Id") or ""),
+        schedule_element_id=str(schedule_el.get("id") or schedule_el.get("Id") or ""),
+        article_text_preview=_source_preview(article_text),
+    )
+    return schedule_el, (observation,)
+
+
 def _has_matching_part_ancestor(
     context: UKAffectingSourceContext,
     el: ET.Element,
@@ -696,6 +759,10 @@ def _extract_from_affecting_source_context_with_observations(
     range_el, range_observations = _extract_parenthesized_range_source(context, effect)
     if range_el is not None:
         return range_el, range_observations
+
+    article_schedule_el, article_schedule_observations = _extract_article_schedule_payload_source(context, effect)
+    if article_schedule_el is not None:
+        return article_schedule_el, article_schedule_observations
 
     implicit_first_ref = _implicit_first_subparagraph_context_normalized_ref(provision_ref)
     if implicit_first_ref is not None:
