@@ -46,6 +46,22 @@ class UKReplayRenumberApplyMixin:
                     ),
                 )
                 return
+            destination_node, _destination_parent, _destination_idx = self._find_node_by_target(destination)
+            if destination_node is not None:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_existing_target_conflict_gap",
+                    message="UK replay skipped renumber: destination target already exists.",
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(
+                        op,
+                        target,
+                        destination=str(destination),
+                        family="source_shape_gap",
+                        reason_code="renumber_destination_target_present",
+                    ),
+                )
+                return
         self._log(f"  EXECUTOR: unsupported renumber shape — skipping {op.op_id}")
         _append_uk_replay_adjudication(
             self.adjudications_out,
