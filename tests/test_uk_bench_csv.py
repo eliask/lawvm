@@ -261,6 +261,40 @@ def test_uk_bench_text_similarity_skips_levenshtein_for_exact_matches(monkeypatc
     assert calls == [("left text", "right text")]
 
 
+def test_uk_bench_extract_eid_texts_collects_descendant_text_once() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Lead",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="Child text",
+                            attrs={"eId": "section-1-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert uk_bench._extract_eid_texts(
+        statute,
+        {"section-1", "section-1-1"},
+    ) == {
+        "section-1": "lead child text",
+        "section-1-1": "child text",
+    }
+
+
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:
     from lawvm.uk_legislation import effects as effects_mod
     from lawvm.uk_legislation.effects import UKEffectRecord
