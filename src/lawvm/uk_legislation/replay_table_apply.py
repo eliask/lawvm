@@ -281,6 +281,8 @@ class UKReplayTableApplyMixin:
         children = list(table.children)
         children[insert_index:insert_index] = inserted_rows
         uk_replace_children(table, children)
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,

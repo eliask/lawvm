@@ -164,6 +164,8 @@ class UKReplayRenumberApplyMixin:
             ),
             attrs={**dict(source_node.attrs), "eId": self._derive_target_eid(destination)},
         )
+        self._remove_eid_lookup_subtree(source_node)
         source_parent.children.pop(source_idx)
         uk_insert_child_sorted(source_parent, moved)
+        self._record_child_inserted(source_parent, moved)
         return True
