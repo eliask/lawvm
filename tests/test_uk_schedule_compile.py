@@ -10770,6 +10770,107 @@ def test_executor_eid_search_scopes_full_eid_suffix_search_to_top_node() -> None
     assert searched_roots == ["2"]
 
 
+def test_executor_eid_search_does_not_escape_strict_top_scope_after_miss() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="9",
+                            text="wrong branch",
+                            attrs={"eId": "custom-section-2-9"},
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    attrs={"eId": "section-2"},
+                    children=(),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    original_find = executor._find_node_and_parent
+    searched_roots: list[str] = []
+
+    def recording_find(
+        node: Any,
+        eid: str,
+        *,
+        allow_sequence_match: bool = True,
+        target_seq: tuple[str, ...] | None = None,
+    ) -> tuple[Any, Any, Any]:
+        searched_roots.append(str(node.label or node.kind))
+        return original_find(
+            node,
+            eid,
+            allow_sequence_match=allow_sequence_match,
+            target_seq=target_seq,
+        )
+
+    executor._find_node_and_parent = recording_find
+    node, parent, idx = executor._find_node_and_parent_statute(
+        "section-2-9",
+        allow_sequence_match=False,
+    )
+
+    assert (node, parent, idx) == (None, None, None)
+    assert searched_roots == ["2"]
+
+
+def test_executor_eid_search_does_not_scan_when_strict_top_scope_is_absent() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="existing branch",
+                            attrs={"eId": "section-1-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+
+    def fail_find(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("strict missing top-scope EID lookup should not scan the tree")
+
+    executor._find_node_and_parent = fail_find
+    node, parent, idx = executor._find_node_and_parent_statute(
+        "section-99-1",
+        allow_sequence_match=False,
+    )
+
+    assert (node, parent, idx) == (None, None, None)
+
+
 def test_executor_range_to_end_text_patch_records_node_local_leaf_rewrite() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

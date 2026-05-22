@@ -41,6 +41,10 @@ from lawvm.uk_legislation.replay_target_gaps import (
 from lawvm.uk_legislation.target_anchors import _body_target_eid_suffixes, uk_match_kind_label
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
+_TOP_SCOPED_EID_PREFIXES = frozenset(
+    {"annex", "article", "chapter", "division", "part", "schedule", "section"}
+)
+
 
 class UKReplayInsertApplyMixin:
     statute: UKMutableStatute
@@ -574,10 +578,14 @@ class UKReplayInsertApplyMixin:
         if len(parts) < 3:
             return None, None, None
         prefix = parts[0]
-        if prefix not in {"annex", "article", "chapter", "division", "part", "schedule", "section"}:
+        if prefix not in _TOP_SCOPED_EID_PREFIXES:
             return None, None, None
         top_eid = f"{prefix}-{parts[1]}"
         return self._cached_exact_eid_lookup(top_eid)
+
+    def _eid_has_strict_top_scope(self, eid: str) -> bool:
+        parts = str(eid or "").split("-")
+        return len(parts) >= 3 and parts[0] in _TOP_SCOPED_EID_PREFIXES and bool(parts[1])
 
     def _find_node_and_parent_statute(
         self,
@@ -609,6 +617,22 @@ class UKReplayInsertApplyMixin:
                     result=result,
                 )
                 return result
+            if not allow_sequence_match and self._eid_has_strict_top_scope(eid):
+                result = (None, None, None)
+                self._store_eid_search_cache(
+                    eid,
+                    allow_sequence_match=allow_sequence_match,
+                    result=result,
+                )
+                return result
+        elif not allow_sequence_match and self._eid_has_strict_top_scope(eid):
+            result = (None, None, None)
+            self._store_eid_search_cache(
+                eid,
+                allow_sequence_match=allow_sequence_match,
+                result=result,
+            )
+            return result
         node, parent, idx = self._find_node_and_parent(
             self.statute.body,
             eid,
