@@ -278,11 +278,6 @@ _SOURCE_CARRIED_AT_END_DEFINITION_CHILD_INSERT_RE = re.compile(
     r"\((?P<label>[0-9A-Za-z]+)\),?\s+insert\s*[—-]\s*(?P<inserted>.+?)\s*$",
     flags=re.I | re.S,
 )
-_SOURCE_AFTER_DEFINITION_INSERT_RE = re.compile(
-    r"\bafter\s+the\s+definition\s+of\s+(?:the\s+)?[“\"'‘](?P<term>.*?)[”\"'’],?\s+"
-    r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)",
-    flags=re.I | re.S,
-)
 _SOURCE_FOR_DEFINITION_SUBSTITUTE_RE = re.compile(
     r"\bfor\s+the\s+definition\s+of\s+(?:the\s+)?[“\"'‘](?P<term>.*?)[”\"'’],?\s+"
     r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
@@ -304,6 +299,95 @@ _SOURCE_FOR_QUOTED_TEXT_SUBSTITUTE_RE = re.compile(
     r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
     flags=re.I | re.S,
 )
+
+_SOURCE_DEFINITION_QUOTE_CLOSE = {
+    "“": "”",
+    '"': '"',
+    "'": "'",
+    "‘": "’",
+}
+_SOURCE_DEFINITION_INSERT_PHRASES = (
+    "there is inserted",
+    "there are inserted",
+    "there shall be inserted",
+    "insert",
+)
+_SOURCE_DEFINITION_ENTRY_PREDICATES = (
+    "means",
+    "has the same meaning",
+    "has the meaning",
+    "is to be construed",
+    "shall be construed",
+)
+
+
+def _looks_like_definition_entry_payload(text: str, *, include_includes: bool = False) -> bool:
+    """Return whether text contains a bounded quoted definition entry payload."""
+    normalized = " ".join((text or "").split())
+    if not normalized:
+        return False
+    lower = normalized.lower()
+    predicates = _SOURCE_DEFINITION_ENTRY_PREDICATES
+    if include_includes:
+        predicates = (*predicates, "includes")
+    for pos, char in enumerate(normalized):
+        close_quote = _SOURCE_DEFINITION_QUOTE_CLOSE.get(char)
+        if close_quote is None:
+            continue
+        close = normalized.find(close_quote, pos + 1)
+        if close < 0:
+            return False
+        if close - pos > 240:
+            continue
+        semicolon = normalized.find(";", close + 1)
+        tail_end = close + 320
+        if semicolon >= 0:
+            tail_end = min(tail_end, semicolon)
+        tail = lower[close + 1 : tail_end]
+        if any(predicate in tail for predicate in predicates):
+            return True
+    return False
+
+
+def _source_after_definition_insert_term(text: str) -> str:
+    """Extract the anchor term from a bounded definition-entry insert formula."""
+    normalized = " ".join((text or "").split())
+    if not normalized:
+        return ""
+    lower = normalized.lower()
+    needle = "after the definition of"
+    start = 0
+    while True:
+        idx = lower.find(needle, start)
+        if idx < 0:
+            return ""
+        pos = idx + len(needle)
+        while pos < len(normalized) and normalized[pos].isspace():
+            pos += 1
+        if lower.startswith("the ", pos):
+            pos += len("the ")
+            while pos < len(normalized) and normalized[pos].isspace():
+                pos += 1
+        if pos >= len(normalized):
+            return ""
+        close_quote = _SOURCE_DEFINITION_QUOTE_CLOSE.get(normalized[pos])
+        if close_quote is None:
+            start = idx + 1
+            continue
+        close = normalized.find(close_quote, pos + 1)
+        if close < 0:
+            return ""
+        if close - pos > 240:
+            start = pos + 1
+            continue
+        next_formula = lower.find(needle, close + 1)
+        tail_end = close + 220
+        if next_formula >= 0:
+            tail_end = min(tail_end, next_formula)
+        tail = lower[close + 1 : tail_end]
+        if any(phrase in tail for phrase in _SOURCE_DEFINITION_INSERT_PHRASES):
+            return normalized[pos + 1 : close].strip()
+        start = close + 1
 
 
 def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> bool:
@@ -658,13 +742,7 @@ def _fragment_substitution_source_carried_definition_entry_insert(
         payload_rule_ids.append(
             "uk_effect_source_carried_definition_entry_payload_punctuation_normalized"
         )
-    if not inserted or not re.search(
-        r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
-        r"\b(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
-        r"is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
-        inserted,
-        re.I | re.S,
-    ):
+    if not inserted or not _looks_like_definition_entry_payload(inserted):
         return None
     if appropriate_place_without_anchor:
         return None
@@ -673,12 +751,9 @@ def _fragment_substitution_source_carried_definition_entry_insert(
         ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
         candidate_text = _source_local_instruction_text_for_carried_payload(ancestor)
-        match = _SOURCE_AFTER_DEFINITION_INSERT_RE.search(candidate_text)
-        if match is None:
-            continue
-        anchor_term = " ".join(match.group("term").split()).strip()
+        anchor_term = _source_after_definition_insert_term(candidate_text)
         if not anchor_term:
-            return None
+            continue
         source_parent_id = str(ancestor.get("id") or "")
         if not source_parent_id:
             source_parent_id = next(
@@ -706,12 +781,9 @@ def _fragment_substitution_source_carried_definition_entry_substitution(
     replacement = " ".join((extracted_text or "").split()).strip()
     if _looks_like_appropriate_place_definition_entry_insert_text(replacement):
         return None
-    if not replacement or not re.search(
-        r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
-        r"\b(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
-        r"is\s+to\s+be\s+construed|shall\s+be\s+construed|includes)\b",
+    if not replacement or not _looks_like_definition_entry_payload(
         replacement,
-        re.I | re.S,
+        include_includes=True,
     ):
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
