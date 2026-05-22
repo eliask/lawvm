@@ -98,6 +98,10 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
             "2.5",
             "--max-duration-regressions",
             "1",
+            "--phase-threshold-s",
+            "3.5",
+            "--max-phase-regressions",
+            "2",
         ]
     )
     assert args.command == "bench-regression-guard"
@@ -106,6 +110,8 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.current == "new"
     assert args.duration_threshold_s == 2.5
     assert args.max_duration_regressions == 1
+    assert args.phase_threshold_s == 3.5
+    assert args.max_phase_regressions == 2
 
 
 def test_ee_bench_defaults_to_current_replayable_corpus() -> None:
