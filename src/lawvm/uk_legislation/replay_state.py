@@ -15,6 +15,13 @@ class UKReplayStateMixin:
     statute: UKMutableStatute
     lo_ops_out: Optional[list[LegalOperation]]
     _repealed_target_prefixes: set[str]
+    _structure_mutation_serial: int
+
+    def _note_structure_mutation(self) -> None:
+        self._structure_mutation_serial += 1
+
+    def _child_shape(self, node: UKMutableNode) -> tuple[tuple[object, Optional[str]], ...]:
+        return tuple((child.kind, child.label) for child in node.children)
 
     def _replace_statute(
         self,
@@ -26,8 +33,10 @@ class UKReplayStateMixin:
         """Replace the UK-local mutable runtime state."""
         if body is not None:
             self.statute.body = body
+            self._note_structure_mutation()
         if supplements is not None:
             self.statute.supplements = list(supplements)
+            self._note_structure_mutation()
         if metadata is not None:
             self.statute.metadata = dict(metadata)
 
@@ -58,30 +67,41 @@ class UKReplayStateMixin:
         return root
 
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
+        structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
         if self.statute.body is old_node:
             self.statute.body = new_node
+            if structure_changed:
+                self._note_structure_mutation()
             return True
         body_path = self._find_path_to_node(self.statute.body, old_node)
         if body_path is not None:
             self._replace_descendant_at_path(self.statute.body, body_path, new_node)
+            if structure_changed:
+                self._note_structure_mutation()
             return True
         for idx, root in enumerate(self.statute.supplements):
             if root is old_node:
                 self.statute.supplements[idx] = new_node
+                if structure_changed:
+                    self._note_structure_mutation()
                 return True
             sub_path = self._find_path_to_node(root, old_node)
             if sub_path is not None:
                 self._replace_descendant_at_path(root, sub_path, new_node)
+                if structure_changed:
+                    self._note_structure_mutation()
                 return True
         return False
 
     def _remove_node(self, node: UKMutableNode, parent: Optional[UKMutableNode], idx: Optional[int]) -> bool:
         if parent is not None and idx is not None:
             parent.children.pop(idx)
+            self._note_structure_mutation()
             return True
         for s_idx, root in enumerate(self.statute.supplements):
             if root is node:
                 self.statute.supplements.pop(s_idx)
+                self._note_structure_mutation()
                 return True
         return False
 
@@ -119,6 +139,7 @@ class UKReplayStateMixin:
             cast(IRNode, new_node),
             label_sort_key=_label_sort_key,
         )
+        self._note_structure_mutation()
         return True
 
     def _record_repealed_target(self, target: LegalAddress) -> None:
@@ -199,4 +220,3 @@ class UKReplayStateMixin:
                     group_id=op.group_id,
                 )
             )
-

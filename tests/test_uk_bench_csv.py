@@ -170,6 +170,52 @@ def test_uk_bench_report_surfaces_slowest_rows(capsys) -> None:
     assert "ukpga/2000/1" not in output
 
 
+def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
+    fast = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=10,
+        score=1.0,
+        status="OK",
+        duration_s=0.5,
+        phase_timings={"parse_oracle": 0.25, "replay": 0.10},
+    )
+    slow = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,
+        score=0.9,
+        status="OK",
+        n_ops=1900,
+        duration_s=42.25,
+        phase_timings={
+            "compile_ops": 12.50,
+            "replay": 39.75,
+            "oracle_align": 3.00,
+        },
+    )
+
+    uk_bench._print_phase_timing_rows([fast, slow], limit=1)
+
+    output = capsys.readouterr().out
+    assert "Slowest 1 rows by measured phase time:" in output
+    assert "ukpga/2010/4" in output
+    assert "measured=  55.25s" in output
+    assert "row=  42.25s" in output
+    assert "ops= 1900" in output
+    assert "replay=39.75s" in output
+    assert "compile_ops=12.50s" in output
+    assert "ukpga/2000/1" not in output
+
+
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:
     from lawvm.uk_legislation import effects as effects_mod
     from lawvm.uk_legislation.effects import UKEffectRecord
@@ -2013,6 +2059,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         "regime=metadata_backfill=0;oracle_alignment=0;"
         "metadata_only_effects=1;"
         "applicability=effective_date_only;authority=source_text_only "
+        "duration_s=0.000 "
         "source_purity=unknown source_clean=0 source_first=0 "
         "source_first_reasons=none "
         "ops=0 source_parse_observations=0 source_parse_rejections=0 "

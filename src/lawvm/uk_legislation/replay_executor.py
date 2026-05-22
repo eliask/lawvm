@@ -66,6 +66,8 @@ class UKReplayExecutor(
         self._repealed_target_prefixes: set[str] = set()
         self._applied_text_patch_targets: dict[str, list[str]] = {}
         self.oracle_alignment_events: list[dict[str, Any]] = []
+        self._structure_mutation_serial = 0
+        self._last_invariant_structure_serial = 0
 
     def _log(self, message: str) -> None:
         if self.verbose:
