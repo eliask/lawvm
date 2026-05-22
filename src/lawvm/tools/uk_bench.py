@@ -186,6 +186,7 @@ _HISTORY_HEADERS = (
     "effect_feed_observations",
     "effect_feed_observation_rules",
     "effect_feed_rejections",
+    "effect_feed_rejection_rules",
     "authority_observations",
     "authority_observation_rules",
     "authority_rejections",
@@ -3462,6 +3463,7 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
         for r in results
     )
     observation_rule_counts: Counter[str] = Counter()
+    effect_feed_rejection_rule_counts: Counter[str] = Counter()
     source_parse_observation_rule_counts: Counter[str] = Counter()
     source_parse_rejection_rule_counts: Counter[str] = Counter()
     effect_source_pathology_counts: Counter[str] = Counter()
@@ -3481,6 +3483,7 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
     residual_claim_kind_counts: Counter[str] = Counter()
     for r in results:
         observation_rule_counts.update(r.effect_feed_observation_rule_counts)
+        effect_feed_rejection_rule_counts.update(r.effect_feed_rejection_rule_counts)
         source_parse_observation_rule_counts.update(r.source_parse_observation_rule_counts)
         source_parse_rejection_rule_counts.update(r.source_parse_rejection_rule_counts)
         effect_source_pathology_counts.update(r.effect_source_pathology_counts)
@@ -3582,6 +3585,10 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
                     sort_keys=True,
                 ),
                 "effect_feed_rejections": sum(r.effect_feed_rejection_count for r in results),
+                "effect_feed_rejection_rules": json.dumps(
+                    dict(sorted(effect_feed_rejection_rule_counts.items())),
+                    sort_keys=True,
+                ),
                 "authority_observations": sum(
                     r.uk_authority_observation_count for r in results
                 ),
@@ -3651,32 +3658,34 @@ def _history_rows() -> list[tuple[str, dict[str, str]]]:
     rows: list[tuple[str, dict[str, str]]] = []
     header: list[str] = []
     schema = "unknown"
+    residual_fields = {
+        "uk_residual_claim_tiers",
+        "uk_residual_claim_kinds",
+        "uk_residual_section_claims",
+    }
+    historical_current_headers = {
+        _HISTORY_HEADERS,
+        tuple(field for field in _HISTORY_HEADERS if field != "effect_feed_rejection_rules"),
+        tuple(field for field in _HISTORY_HEADERS if field not in residual_fields),
+        tuple(
+            field
+            for field in _HISTORY_HEADERS
+            if field not in residual_fields | {"effect_feed_rejection_rules"}
+        ),
+        tuple(
+            field
+            for field in _HISTORY_HEADERS
+            if field
+            not in residual_fields | {"effect_feed_rejection_rules", "replay_adjudication_buckets"}
+        ),
+    }
     with open(_HISTORY_CSV, newline="") as handle:
         for raw_row in csv.reader(handle):
             if not raw_row:
                 continue
             if raw_row[0] == "label":
                 header = raw_row
-                previous_current_header = [
-                    field
-                    for field in _HISTORY_HEADERS
-                    if field
-                    not in {
-                        "uk_residual_claim_tiers",
-                        "uk_residual_claim_kinds",
-                        "uk_residual_section_claims",
-                    }
-                ]
-                previous_bucket_header = [
-                    field
-                    for field in previous_current_header
-                    if field != "replay_adjudication_buckets"
-                ]
-                if (
-                    tuple(raw_row) == _HISTORY_HEADERS
-                    or raw_row == previous_current_header
-                    or raw_row == previous_bucket_header
-                ):
+                if tuple(raw_row) in historical_current_headers:
                     schema = "current"
                 elif raw_row[:6] == ["label", "n_total", "n_ok", "avg_score", "n_perfect", "timestamp"]:
                     schema = "legacy"
@@ -3780,6 +3789,9 @@ def _show_history() -> None:
                 print(f"  bench_exception_rules: {bench_exception_rules}")
             if observation_rules and observation_rules != "{}":
                 print(f"  feed_observation_rules: {observation_rules}")
+            feed_rejection_rules = row.get("effect_feed_rejection_rules", "")
+            if feed_rejection_rules and feed_rejection_rules != "{}":
+                print(f"  feed_rejection_rules: {feed_rejection_rules}")
             authority_observation_rules = row.get("authority_observation_rules", "")
             if authority_observation_rules and authority_observation_rules != "{}":
                 print(f"  authority_observation_rules: {authority_observation_rules}")
