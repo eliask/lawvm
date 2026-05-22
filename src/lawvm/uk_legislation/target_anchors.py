@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -137,12 +138,17 @@ def _target_anchor_eid(target: LegalAddress) -> Optional[str]:
     return None
 
 
-def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
-    """Return whether a UK IR-like node matches a target kind/label pair."""
-    nk = str(node.kind)
-    tk = kind.lower()
-    node_label = _clean_num(node.label or "")
-    want_label = _clean_num(label or "") if label else ""
+@lru_cache(maxsize=131072)
+def _uk_match_kind_label_cached(
+    node_kind_raw: str,
+    node_label_raw: str,
+    target_kind_raw: str,
+    target_label_raw: str,
+) -> bool:
+    nk = str(node_kind_raw)
+    tk = target_kind_raw.lower()
+    node_label = _clean_num(node_label_raw)
+    want_label = _clean_num(target_label_raw) if target_label_raw else ""
 
     if not uk_kind_matches(
         node_kind=nk,
@@ -152,7 +158,7 @@ def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
     ):
         return False
 
-    if not label:
+    if not target_label_raw:
         return True
     if tk == "schedule" and want_label:
         schedule_labels = {want_label}
@@ -162,3 +168,13 @@ def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
             schedule_labels.add(f"schedule {want_label}")
         return node_label in schedule_labels
     return node_label == want_label
+
+
+def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
+    """Return whether a UK IR-like node matches a target kind/label pair."""
+    return _uk_match_kind_label_cached(
+        str(node.kind),
+        str(node.label or ""),
+        str(kind or ""),
+        str(label or ""),
+    )
