@@ -687,6 +687,7 @@ class _BenchResult:
     commencement_error: str = ""
     comparison_class: str = ""
     core_benchmark: bool = True
+    duration_s: float = 0.0
 
 
 def _bench_primary_score(result: _BenchResult, *, has_commencement: bool) -> float:
@@ -1651,10 +1652,11 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
     Opens its own Farchive per worker process using module-level globals
     set before the ProcessPoolExecutor is spawned.
     """
+    row_t0 = time.perf_counter()
     try:
         archive = Farchive(_WORKER_DB_PATH)
     except Exception as exc:
-        return _bench_exception_result(
+        result = _bench_exception_result(
             entry,
             exc,
             allow_metadata_backfill=_WORKER_ALLOW_METADATA_BACKFILL,
@@ -1663,8 +1665,10 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
             authority_mode=_WORKER_AUTHORITY_MODE,
             allow_metadata_only_effects=_WORKER_ALLOW_METADATA_ONLY_EFFECTS,
         )
+        result.duration_s = time.perf_counter() - row_t0
+        return result
     try:
-        return _score_statute(
+        result = _score_statute(
             entry,
             archive,
             do_replay=_WORKER_DO_REPLAY,
@@ -1676,8 +1680,20 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
             authority_mode=_WORKER_AUTHORITY_MODE,
             allow_metadata_only_effects=_WORKER_ALLOW_METADATA_ONLY_EFFECTS,
         )
+    except Exception as exc:
+        result = _bench_exception_result(
+            entry,
+            exc,
+            allow_metadata_backfill=_WORKER_ALLOW_METADATA_BACKFILL,
+            allow_oracle_alignment=_WORKER_ALLOW_ORACLE_ALIGNMENT,
+            applicability_mode=_WORKER_APPLICABILITY_MODE,
+            authority_mode=_WORKER_AUTHORITY_MODE,
+            allow_metadata_only_effects=_WORKER_ALLOW_METADATA_ONLY_EFFECTS,
+        )
     finally:
         archive.close()
+    result.duration_s = time.perf_counter() - row_t0
+    return result
 
 
 def _run_bench(
@@ -1767,6 +1783,7 @@ def _run_bench(
     # Sequential fallback.
     results_seq = []
     for i, entry in enumerate(corpus):
+        row_t0 = time.perf_counter()
         try:
             r = _score_statute(
                 entry,
@@ -1790,6 +1807,7 @@ def _run_bench(
                 authority_mode=authority_mode,
                 allow_metadata_only_effects=allow_metadata_only_effects,
             )
+        r.duration_s = time.perf_counter() - row_t0
         results_seq.append(r)
 
         if (i + 1) % 100 == 0:
@@ -1980,6 +1998,7 @@ def _bench_row_evidence_context(result: _BenchResult) -> str:
         f"/oracle:{result.oracle_source_url or '(none)'} "
         f"{source_hashes}"
         f"regime={regime} "
+        f"duration_s={result.duration_s:.3f} "
         f"source_purity={result.uk_source_purity_lane or 'unknown'} "
         f"source_clean={int(result.uk_source_semantics_clean)} "
         f"source_first={int(result.uk_source_first_candidate)} "
@@ -2070,6 +2089,35 @@ def _print_replay_adjudication_samples(
             if source_shape:
                 parts.append(f"source_shape={source_shape}")
             print("      " + " ".join(parts))
+
+
+def _print_slowest_rows(
+    results: Sequence[_BenchResult],
+    *,
+    has_commencement: bool,
+    limit: int = 10,
+) -> None:
+    timed = [result for result in results if result.duration_s > 0.0]
+    if not timed:
+        return
+    slowest = sorted(timed, key=lambda result: result.duration_s, reverse=True)[:limit]
+    print(f"\nSlowest {len(slowest)} rows by wall time:")
+    for result in slowest:
+        score = _bench_primary_score(result, has_commencement=has_commencement)
+        replay_score = _bench_primary_replay_score(result, has_commencement=has_commencement)
+        replay_fragment = ""
+        if replay_score >= 0.0:
+            replay_fragment = f" replay={replay_score:.1%}"
+        print(
+            f"  {result.statute_id:<30} {result.duration_s:7.2f}s "
+            f"score={score:.1%}{replay_fragment} "
+            f"ops={result.n_ops:5d} "
+            f"effect_rows={result.n_effect_rows:5d} "
+            f"effect_pages={(result.n_effect_feed_pages or result.n_effects):5d} "
+            f"source_mb={(result.enacted_source_size + result.oracle_source_size) / 1_000_000:.1f} "
+            f"class={result.comparison_class or 'unknown'} "
+            f"status={result.status}"
+        )
 
 
 def _print_report(
@@ -2932,6 +2980,8 @@ def _print_report(
             )
             print(_source_line(r))
 
+    _print_slowest_rows(results, has_commencement=has_commencement)
+
 
 def _score_witness_path(label: str) -> Path:
     return _BENCH_DIR / f"{label}.score_witnesses.csv"
@@ -3645,6 +3695,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "error",
                 "comparison_class",
                 "core_benchmark",
+                "duration_s",
             ]
         else:
             headers = [
@@ -3689,6 +3740,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "error",
                 "comparison_class",
                 "core_benchmark",
+                "duration_s",
             ]
         if has_replay:
             if has_commencement:
@@ -3835,6 +3887,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.error,
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
+                    f"{r.duration_s:.3f}",
                 ]
             else:
                 row = [
@@ -3879,6 +3932,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.error,
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
+                    f"{r.duration_s:.3f}",
                 ]
             if has_replay:
                 if has_commencement:
@@ -4309,6 +4363,7 @@ def _load_run(label: str) -> list[_BenchResult]:
                 core_benchmark = is_core_uk_comparison(comparison_class)
             else:
                 core_benchmark = True
+            duration_s = float(row.get("duration_s", "0") or 0.0)
             results.append(
                 _BenchResult(
                     statute_id=statute_id,
@@ -4411,6 +4466,7 @@ def _load_run(label: str) -> list[_BenchResult]:
                     commencement_error=row.get("commencement_error", ""),
                     comparison_class=comparison_class,
                     core_benchmark=core_benchmark,
+                    duration_s=duration_s,
                 )
             )
     return results

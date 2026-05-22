@@ -122,6 +122,54 @@ def test_uk_bench_primary_score_prefers_commencement_when_active() -> None:
     assert round(average, 6) == 0.85
 
 
+def test_uk_bench_report_surfaces_slowest_rows(capsys) -> None:
+    fast = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_effect_feed_pages=1,
+        n_effect_rows=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=10,
+        score=1.0,
+        status="OK",
+        comparison_class="commensurable",
+        duration_s=0.5,
+    )
+    slow = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_effect_feed_pages=12,
+        n_effect_rows=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,
+        score=0.9,
+        status="OK",
+        replay_score=0.8,
+        n_ops=1900,
+        enacted_source_size=2_000_000,
+        oracle_source_size=3_000_000,
+        comparison_class="commensurable",
+        duration_s=42.25,
+    )
+
+    uk_bench._print_slowest_rows([fast, slow], has_commencement=False, limit=1)
+
+    output = capsys.readouterr().out
+    assert "Slowest 1 rows by wall time:" in output
+    assert "ukpga/2010/4" in output
+    assert "42.25s" in output
+    assert "replay=80.0%" in output
+    assert "ops= 1900" in output
+    assert "source_mb=5.0" in output
+    assert "ukpga/2000/1" not in output
+
+
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:
     from lawvm.uk_legislation import effects as effects_mod
     from lawvm.uk_legislation.effects import UKEffectRecord
@@ -579,6 +627,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
         replay_commencement_score=0.9,
         comparison_class="commensurable",
         core_benchmark=False,
+        duration_s=12.345,
         score_witness_rows=(
             _BenchScoreWitnessRow(
                 comparison_scope="raw",
@@ -702,6 +751,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert rows[0]["uk_residual_section_claim_count"] == "1"
     assert rows[0]["uk_residual_section_claim_emitted"] == "1"
     assert rows[0]["replay_commencement_score"] == "0.9000"
+    assert rows[0]["duration_s"] == "12.345"
     assert json.loads(rows[0]["manual_compile_status_counts"]) == {
         "unclassified_frontier": 1,
     }
@@ -1047,6 +1097,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert loaded_result.n_commenced_eids == 5
     assert loaded_result.comparison_class == "commensurable"
     assert loaded_result.core_benchmark is False
+    assert loaded_result.duration_s == 12.345
 
 
 def test_uk_bench_load_legacy_replay_csv_marks_residual_claim_unknown(
