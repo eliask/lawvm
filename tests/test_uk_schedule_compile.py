@@ -1821,6 +1821,85 @@ def test_split_metadata_schedule_space_separated_alnum_sibling_paragraphs() -> N
     ]
 
 
+def test_split_metadata_carries_part_context_for_space_separated_chapters() -> None:
+    parts = _split_metadata_provisions("Pt. 8A Ch. 2A 2B")
+
+    assert parts == [
+        "Pt. 8A Ch. 2A",
+        "Pt. 8A Ch. 2B",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("part", "8a"), ("chapter", "2a")),
+        (("part", "8a"), ("chapter", "2b")),
+    ]
+
+
+def test_compile_space_separated_chapter_targets_do_not_fall_back_to_body_root() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>After section 357BE insert—</Text>
+            <BlockAmendment>
+              <Chapter eId="part-8a-chapter-2a">
+                <Number>CHAPTER 2A</Number>
+                <Title>Relevant IP profits: first case</Title>
+                <P1 eId="section-357bf">
+                  <Pnumber>357BF</Pnumber>
+                  <Text>Chapter 2A section text.</Text>
+                </P1>
+              </Chapter>
+              <Chapter eId="part-8a-chapter-2b">
+                <Number>CHAPTER 2B</Number>
+                <Title>Relevant IP profits: second case</Title>
+                <P1 eId="section-357bja">
+                  <Pnumber>357BJA</Pnumber>
+                  <Text>Chapter 2B section text.</Text>
+                </P1>
+              </Chapter>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_space_separated_chapter_targets",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-09-15",
+        affected_uri="/id/ukpga/2010/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2010",
+        affected_number="4",
+        affected_provisions="Pt. 8A Ch. 2A 2B",
+        affecting_uri="/id/ukpga/2016/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="24",
+        affecting_provisions="s. 64(3)",
+        affecting_title="Finance Act 2016",
+        in_force_dates=[{"date": "2016-09-15", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 2
+    assert [str(op.target) for op in ops] == [
+        "part:8a/chapter:2a",
+        "part:8a/chapter:2b",
+    ]
+    assert [op.payload.kind for op in ops if op.payload is not None] == [
+        IRNodeKind.CHAPTER,
+        IRNodeKind.CHAPTER,
+    ]
+    assert [op.payload.label for op in ops if op.payload is not None] == [
+        "CHAPTER 2A",
+        "CHAPTER 2B",
+    ]
+
+
 def test_split_metadata_schedule_range_with_plural_cross_headings_suffix() -> None:
     assert _split_metadata_provisions("Sch. 6 para. 45-48 and cross-headings") == [
         "Sch. 6 para. 45",
