@@ -37,6 +37,9 @@ UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
 UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
 UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
+UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID = (
+    "uk_effect_embedded_table_payload_structural_substitution_preserved"
+)
 UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 
 
@@ -527,6 +530,41 @@ def _uk_broad_table_entry_instruction(
         "target_ref": target_ref,
         "target": str(target),
         "entry_shape": entry_shape,
+    }
+
+
+def _uk_embedded_table_payload_structural_substitution(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Detect paragraph-level substitution sources whose payload embeds a table.
+
+    This is not a table-entry instruction even though the flattened source text
+    contains "table", "entry", and "column" words. The executable source action
+    is the structural substitution before the amendment payload.
+    """
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" in target_surface:
+        return None
+    if _addr_leaf_kind(target) != "paragraph":
+        return None
+    norm = text.lower()
+    if not re.search(r"\b(?:table|column|columns|entry|entries)\b", norm):
+        return None
+    if not re.search(
+        r"\bfor\s+paragraph\s+\(?[0-9A-Za-z]+\)?\s+(?:there\s+is\s+)?substitut(?:e|ed)\b",
+        norm,
+    ):
+        return None
+    return {
+        "target_ref": target_ref,
+        "target": str(target),
+        "source_action": "paragraph_substitution",
     }
 
 

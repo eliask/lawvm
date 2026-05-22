@@ -12,6 +12,7 @@ from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_obs
 from lawvm.uk_legislation.source_payload_elaboration import (
     _source_payload_matches_target_leaf,
     _substituted_series_new_sibling_insert_detail,
+    _substituted_series_pre_anchor_sibling_insert_detail,
 )
 
 
@@ -58,6 +59,34 @@ def lower_substituted_payload_insert_normalization(
             extracted_el=extracted_el,
             extracted_text=extracted_text,
             detail=substituted_series_insert_detail,
+        )
+        return UKSubstitutedPayloadInsertNormalization(curr_action="insert")
+
+    substituted_series_pre_anchor_insert_detail = _substituted_series_pre_anchor_sibling_insert_detail(
+        effect_type=effect.effect_type,
+        original_target_refs=original_target_refs,
+        target_index=target_index,
+        target_ref=target_ref,
+        target=target,
+        content_ir=content_ir,
+    )
+    if substituted_series_pre_anchor_insert_detail is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_substituted_series_pre_anchor_sibling_insert_lowered",
+            family="lowering_normalization",
+            reason_code="substituted_for_single_old_target_with_pre_anchor_sibling_payload",
+            reason=(
+                "UK substituted-for row names one replaced target but the "
+                "source-backed replacement series contains an additional "
+                "sibling payload before that anchor; lowering preserves the "
+                "named anchor as replace and lowers earlier source-owned "
+                "siblings as inserts."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail=substituted_series_pre_anchor_insert_detail,
         )
         return UKSubstitutedPayloadInsertNormalization(curr_action="insert")
 

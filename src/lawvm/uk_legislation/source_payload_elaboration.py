@@ -249,6 +249,62 @@ def _substituted_series_new_sibling_insert_detail(
     }
 
 
+def _substituted_series_pre_anchor_sibling_insert_detail(
+    *,
+    effect_type: str,
+    original_target_refs: list[str],
+    target_index: int,
+    target_ref: str,
+    target: LegalAddress,
+    content_ir: Optional[dict[str, Any]],
+) -> Optional[dict[str, str]]:
+    """Return observation detail for new sibling payloads before the replaced anchor."""
+    raw = (effect_type or "").strip()
+    if not raw.lower().startswith("substituted for ") or raw.lower() == "substituted for words":
+        return None
+    if target_index < 0 or target_index >= len(original_target_refs):
+        return None
+    anchor_refs = _split_metadata_provisions(raw[len("substituted for ") :].strip())
+    if len(anchor_refs) != 1:
+        return None
+    try:
+        anchor_target = _parse_affected_target(anchor_refs[0])
+    except ValueError:
+        return None
+    anchor_index = -1
+    for idx, original_ref in enumerate(original_target_refs):
+        try:
+            candidate = _parse_affected_target(original_ref)
+        except ValueError:
+            continue
+        if tuple(candidate.path) == tuple(anchor_target.path):
+            anchor_index = idx
+            break
+    if anchor_index <= 0 or target_index >= anchor_index:
+        return None
+    if tuple(anchor_target.path[:-1]) != tuple(target.path[:-1]):
+        return None
+    anchor_leaf_kind = _addr_leaf_kind(anchor_target)
+    target_leaf_kind = _addr_leaf_kind(target)
+    if not anchor_leaf_kind or anchor_leaf_kind != target_leaf_kind:
+        return None
+    anchor_leaf = re.sub(r"[^0-9a-z]+", "", str(_addr_leaf_label(anchor_target) or "").lower())
+    target_leaf = re.sub(r"[^0-9a-z]+", "", str(_addr_leaf_label(target) or "").lower())
+    if not anchor_leaf or not target_leaf or anchor_leaf == target_leaf:
+        return None
+    if not _source_payload_matches_target_leaf(content_ir, target):
+        return None
+    return {
+        "original_target_ref": anchor_refs[0],
+        "target_ref": target_ref,
+        "target": str(target),
+        "anchor_index": str(anchor_index),
+        "target_index": str(target_index),
+        "source_payload_kind": str(content_ir.get("kind") or "") if content_ir else "",
+        "source_payload_label": str(content_ir.get("label") or "") if content_ir else "",
+    }
+
+
 def _extract_crossheading_payload_from_extracted(
     affected_provisions: str,
     extracted_el: Optional[ET.Element],

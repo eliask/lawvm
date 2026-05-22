@@ -23,11 +23,13 @@ from lawvm.uk_legislation.source_table_entry_paragraph import (
     _source_carried_table_entry_paragraph_substitution,
 )
 from lawvm.uk_legislation.table_selectors import (
+    UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID as _UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID,
     UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
     UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
     UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID as _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
     _uk_broad_table_entry_instruction,
+    _uk_embedded_table_payload_structural_substitution,
     _uk_parent_target_before_table_marker,
     _uk_schedule_list_entry_table_payload,
     _uk_single_logical_table_entry_group_payload,
@@ -639,6 +641,29 @@ def prepare_table_cell_text_patch_context(
             source_carried_table_entry_paragraph_substitution["table_cell_selector"]
         )
     if table_cell_selector is None:
+        embedded_table_structural_substitution = _uk_embedded_table_payload_structural_substitution(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if embedded_table_structural_substitution is not None:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID,
+                family="source_table_elaboration",
+                reason_code="embedded_table_belongs_to_structural_substitution_payload",
+                reason=(
+                    "UK source text contains table words inside a paragraph-level "
+                    "substitution payload; lowering preserves the structural "
+                    "paragraph substitution path instead of treating the embedded "
+                    "payload table as a standalone table-entry instruction."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=embedded_table_structural_substitution,
+            )
+            return UKTableCellContext(handled=False, target=target)
         table_entry_instruction = _uk_broad_table_entry_instruction(
             target_ref=t_str,
             target=target,
