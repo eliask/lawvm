@@ -5303,6 +5303,94 @@ def test_compile_source_carried_quoted_substitution_from_parent_context() -> Non
     assert observations[0]["blocking"] is False
 
 
+def test_compile_source_carried_words_quoted_substitution_with_structured_prefix() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-5-paragraph-7">
+              <Pnumber>7</Pnumber>
+              <P1para>
+                <P2 id="schedule-5-paragraph-7-3">
+                  <Pnumber>3</Pnumber>
+                  <P2para>
+                    <Text>In section 5, in subsection (2)—</Text>
+                    <P3 id="schedule-5-paragraph-7-3-a">
+                      <Pnumber>a</Pnumber>
+                      <P3para>
+                        <Text>
+                          in paragraph (a), for the words “to such representations,
+                          reports and recommendations as are mentioned in section 2(5)”
+                          there is substituted
+                        </Text>
+                        <BlockAmendment>
+                          <Text>to—</Text>
+                          <P4><Pnumber>i</Pnumber><P4para>any representations made to it by a Customer Panel, and</P4para></P4>
+                          <P4><Pnumber>ii</Pnumber><P4para>any recommendations made to it under section 2(4)</P4para></P4>
+                        </BlockAmendment>
+                      </P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-words-quoted-substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-04-01",
+        affected_uri="/id/asp/2002/3/section/5/subsection/2/paragraph/a",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="s. 5(2)(a)",
+        affecting_uri="/id/asp/2005/3",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="3",
+        affecting_provisions="sch. 5 para. 7(3)(a)",
+        affecting_title="Water Services etc. (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "5"),
+        ("subsection", "2"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "to such representations, reports and recommendations as are mentioned in section 2(5)"
+    )
+    assert ops[0].text_patch.replacement == (
+        "to— i any representations made to it by a Customer Panel, and "
+        "ii any recommendations made to it under section 2(4)"
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_quoted_text_substitution_text_patch"
+    ]
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_multiple_definition_entry_repeals_preserves_each_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
