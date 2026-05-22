@@ -2268,6 +2268,89 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
     }
 
 
+def test_uk_candidates_fast_compact_json_omits_saved_diagnostic_arrays(
+    monkeypatch,
+    capsys,
+) -> None:
+    rows = [
+        SimpleNamespace(
+            statute_id="ukpga/2000/1",
+            status="OK",
+            year=2000,
+            act_type="ukpga",
+            replay_commencement_score=-1.0,
+            replay_score=0.8,
+            commencement_score=-1.0,
+            score=0.8,
+            n_commenced_eids=0,
+            comparison_class="commensurable",
+            n_enacted_eids=10,
+            n_oracle_eids=12,
+            n_effects=2,
+            source_parse_observations=(
+                {"rule_id": "uk_source_parse_note", "phase": "source_parse"},
+            ),
+            effect_feed_observations=(
+                {"rule_id": "uk_effect_feed_note", "phase": "effect_feed"},
+            ),
+            effect_diagnostics=(
+                {
+                    "rule_id": "uk_manual_compile_frontier_classified",
+                    "manual_compile_rule_id": "uk_manual_frontier_unclassified",
+                },
+            ),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_payload_missing",
+                    "phase": "lowering",
+                    "blocking": True,
+                },
+            ),
+            bench_exception_observations=(
+                {"rule_id": "uk_bench_exception", "phase": "benchmark"},
+            ),
+        )
+    ]
+    monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda label: rows)
+
+    uk_candidates.main(
+        Namespace(
+            label="demo",
+            top=1,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            score_mode="auto",
+            residual_only=False,
+            json=True,
+            summary_only=False,
+            compact_json=True,
+            min_year=None,
+            max_year=None,
+            types=None,
+            db=None,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    row = payload["rows"][0]
+    assert payload["filters"]["compact_json"] is True
+    assert row["saved_bench_diagnostic_count"] == 5
+    assert row["saved_bench_diagnostic_rule_counts"] == {
+        "uk_bench_exception": 1,
+        "uk_effect_feed_note": 1,
+        "uk_effect_payload_missing": 1,
+        "uk_manual_compile_frontier_classified": 1,
+        "uk_source_parse_note": 1,
+    }
+    assert "saved_bench_diagnostics" not in row
+    assert "bench_exception_observations" not in row
+    assert "effect_feed_parse_rejections" not in row
+    assert "effect_feed_observations" not in row
+    assert "residual_compile_rejections" not in row
+    assert payload["summary"]["saved_bench_diagnostic_count"] == 5
+
+
 def test_uk_candidates_fast_text_reports_saved_rejection_rules(monkeypatch, capsys) -> None:
     rows = [
         SimpleNamespace(
