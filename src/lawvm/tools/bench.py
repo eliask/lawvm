@@ -2513,7 +2513,7 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         choices=["canary", "tight", "stress"],
         help=(
             "[-j uk] curated corpus preset: canary=40, tight=200, stress=400. "
-            "If --curate-corpus is omitted, writes data/uk/bench_corpus_<preset>.csv"
+            "If --curate-corpus is omitted, writes the standard data/uk preset CSV"
         ),
     )
     bench_p.add_argument(

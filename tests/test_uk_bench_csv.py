@@ -551,7 +551,7 @@ def test_uk_bench_curated_preset_uses_default_path_and_size(monkeypatch, tmp_pat
 
     output, size, preset = uk_bench._curated_corpus_request(args)
 
-    assert output == tmp_path / "bench_corpus_canary.csv"
+    assert output == tmp_path / "bench_corpus_smoke.csv"
     assert size == 40
     assert preset == "canary"
 
