@@ -4880,6 +4880,26 @@ def test_compile_source_carried_definition_entry_insert_rejects_non_definition_p
     ]
 
 
+def test_source_after_definition_insert_term_is_bounded_on_quote_heavy_text() -> None:
+    from lawvm.uk_legislation.source_definition_fragments import (
+        _looks_like_definition_entry_payload,
+        _source_after_definition_insert_term,
+    )
+
+    hostile = (
+        " ".join(
+            f"after the definition of “term {index}” " + ("x " * 80)
+            for index in range(300)
+        )
+        + " after the definition of “final term”, there is inserted—"
+    )
+
+    assert _source_after_definition_insert_term(hostile) == "final term"
+    assert _looks_like_definition_entry_payload(
+        hostile + " “bounded definition” means a bounded test definition;"
+    )
+
+
 def test_compile_source_carried_following_words_repeal_from_block_payload() -> None:
     source_root = ET.fromstring(
         f"""
