@@ -1153,7 +1153,105 @@ def test_bench_regression_guard_supports_uk_saved_run_shape(
     assert rc == 0
     assert "Baseline : old.csv" in out
     assert "Current  : new.csv" in out
+    assert "Score column         : uk_replay_primary" in out
     assert "RESULT: PASS" in out
+
+
+def test_bench_regression_guard_prefers_uk_replay_score_when_present(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "replay_score"]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.70", "replay_score": "0.95"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.70", "replay_score": "0.70"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Score column         : uk_replay_primary" in out
+    assert "ukpga/2000/1" in out
+    assert "RESULT: FAIL" in out
+
+
+def test_bench_regression_guard_uses_rowwise_uk_replay_primary_score(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "replay_score", "replay_commencement_score"]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.70",
+                "replay_score": "0.90",
+                "replay_commencement_score": "",
+            }
+        )
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/2",
+                "score": "0.70",
+                "replay_score": "0.80",
+                "replay_commencement_score": "0.95",
+            }
+        )
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/1",
+                "score": "0.70",
+                "replay_score": "0.90",
+                "replay_commencement_score": "",
+            }
+        )
+        writer.writerow(
+            {
+                "statute_id": "ukpga/2000/2",
+                "score": "0.70",
+                "replay_score": "0.80",
+                "replay_commencement_score": "0.95",
+            }
+        )
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Statutes in baseline : 2" in out
+    assert "Score column         : uk_replay_primary" in out
 
 
 def test_bench_regression_guard_can_fail_on_duration_regressions(
