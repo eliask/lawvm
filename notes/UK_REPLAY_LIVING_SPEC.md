@@ -206,6 +206,32 @@ The main non-replay residue classes now include:
 
 UK work should continue to add typed classes only when a deterministic archive-backed pattern repeats.
 
+Manual frontier claim templates:
+
+- `lawvm uk-candidates --manual-compile-evidence-jsonl` may attach
+  `lawvm.uk_semantic_compile_claim_template.v1` rows for known manual or
+  deterministic-frontier families
+- these templates are non-executable review scaffolds; they do not authorize
+  replay and must remain marked `template_only_not_validated` /
+  `executable=false`
+- a claim template should state the action family, placement family, source
+  witness, required ownership, required validator checks, and mutation-boundary
+  checks before any future manual/LLM/human compiled claim can become executable
+- current template-covered UK hard families include heading/crossheading/note
+  facets, appropriate-place structural inserts, table surface mutations,
+  definition-child plus tail substitutions, source-carried child/tail text
+  rewrites, source-carried structured payloads, range-to-container
+  substitutions, amendment-program targets, and cross-container renumber /
+  migration rows
+- cross-container renumber rows are lineage work, not same-parent relabels:
+  a future executable claim must own source identity, destination identity,
+  descendant wrapping or relabel semantics, lineage/migration events, and both
+  source/destination mutation boundaries
+- source-carried structured-tail substitutions are not ordinary text patches:
+  the source substitutes a tail range with visibly structured child material,
+  so a future executable claim must materialize child payload units rather than
+  flattening replacement text into the parent host
+
 Replay adjudication ownership:
 
 - every `uk_replay_*` adjudication emitted by the UK replay executor must belong
