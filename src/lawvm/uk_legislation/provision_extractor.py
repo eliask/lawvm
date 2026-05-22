@@ -238,17 +238,12 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     return tuple(res)
 
 
-def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
-    """Check if an element matches a provision kind and/or number."""
-    tag = _tag(el).lower()
-    if kind:
-        synonyms = _PROVISION_KIND_SYNONYMS.get(kind, (kind,))
-        if tag not in synonyms:
-            return False
+def _normalized_provision_num(num: str) -> str:
+    target_num = _NON_ALNUM_RE.sub("", num).lower()
+    return _ROMAN_NUMERAL_LABELS.get(target_num, target_num)
 
-    if not num:
-        return True
 
+def _node_raw_number_values(el: ET.Element) -> list[str]:
     found_raw_nums = []
     if el.get("Number"):
         found_raw_nums.append(el.get("Number"))
@@ -263,16 +258,41 @@ def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
                 found_raw_nums.append(raw_text.strip())
             elif child.text is not None:
                 found_raw_nums.append(child.text)
+    return found_raw_nums
 
-    target_num = _NON_ALNUM_RE.sub("", num).lower()
-    if target_num in _ROMAN_NUMERAL_LABELS:
-        target_num = _ROMAN_NUMERAL_LABELS[target_num]
 
-    for raw in found_raw_nums:
-        norm_raw = _NON_ALNUM_RE.sub("", raw).lower()
-        if norm_raw in _ROMAN_NUMERAL_LABELS:
-            norm_raw = _ROMAN_NUMERAL_LABELS[norm_raw]
-        if norm_raw == target_num:
+def _match_node_prepared(
+    el: ET.Element,
+    *,
+    kind_synonyms: Optional[tuple[str, ...]],
+    target_num: str,
+) -> bool:
+    if kind_synonyms is not None and _tag(el).lower() not in kind_synonyms:
+        return False
+
+    if not target_num:
+        return True
+
+    for raw in _node_raw_number_values(el):
+        if _normalized_provision_num(raw) == target_num:
+            return True
+    return False
+
+
+def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
+    """Check if an element matches a provision kind and/or number."""
+    tag = _tag(el).lower()
+    if kind:
+        synonyms = _PROVISION_KIND_SYNONYMS.get(kind, (kind,))
+        if tag not in synonyms:
+            return False
+
+    if not num:
+        return True
+
+    target_num = _normalized_provision_num(num)
+    for raw in _node_raw_number_values(el):
+        if _normalized_provision_num(raw) == target_num:
             return True
     return False
 
@@ -307,10 +327,17 @@ def _first_component_matches(
     target_num: str,
 ) -> tuple[ET.Element, ...]:
     """Return source nodes matching the first parsed provision component."""
+    kind_synonyms = _PROVISION_KIND_SYNONYMS.get(target_kind, (target_kind,))
+    normalized_target_num = _normalized_provision_num(target_num)
     return tuple(
         el
         for el in search_root.iter()
-        if el is not search_root and _match_node(el, target_kind, target_num)
+        if el is not search_root
+        and _match_node_prepared(
+            el,
+            kind_synonyms=kind_synonyms,
+            target_num=normalized_target_num,
+        )
     )
 
 

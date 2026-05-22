@@ -33,9 +33,11 @@ from lawvm.uk_legislation.replay_invariant_diagnostics import (
 from lawvm.uk_legislation.replay_grounding import _grounding_length_window_text_candidates
 from lawvm.uk_legislation.provision_extractor import (
     _INSTRUCTION_TEXT_CACHE,
+    _first_component_matches,
     _find_provision_from_search_root,
     _find_provision_greedy,
     _instruction_text_before_amendment_container,
+    _match_node,
 )
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
@@ -30318,6 +30320,28 @@ def test_uk_source_context_caches_missing_provision_extraction() -> None:
     assert first is None
     assert second is None
     assert calls == ["Sch. 1"]
+
+
+def test_uk_first_component_matches_preserves_match_node_semantics() -> None:
+    root = ET.fromstring(
+        """
+        <Body>
+          <P1><Pnumber>1</Pnumber><Text>Section one.</Text></P1>
+          <P1group><P1><Pnumber>II</Pnumber><Text>Section two.</Text></P1></P1group>
+          <P2><Pnumber>1</Pnumber><Text>Paragraph one.</Text></P2>
+        </Body>
+        """
+    )
+
+    optimized = _first_component_matches(root, "section", "2")
+    generic = tuple(
+        el
+        for el in root.iter()
+        if el is not root and _match_node(el, "section", "2")
+    )
+
+    assert optimized == generic
+    assert len(optimized) == 1
 
 
 def test_uk_source_selection_skips_xml_loaders_for_non_source_required_effect() -> None:
