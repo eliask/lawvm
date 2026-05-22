@@ -60,6 +60,7 @@ class _UKRepealTableQuotedWordsTextRepeal:
     row_text: str = ""
     enactment_cell: str = ""
     extent_cell: str = ""
+    enactment_match_basis: str = ""
     occurrence: int = 0
     end_occurrence: int = 0
 
@@ -73,6 +74,7 @@ class _UKRepealTableStructuralRepeal:
     row_text: str = ""
     enactment_cell: str = ""
     extent_cell: str = ""
+    enactment_match_basis: str = ""
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -104,24 +106,72 @@ def _uk_effect_act_slug(effect: UKEffectRecord) -> str:
     return cls_map.get(effect.affected_class, effect.affected_class.lower())
 
 
-def _uk_repeal_table_enactment_matches_effect(cell_text: str, effect: UKEffectRecord) -> bool:
+def _normalize_uk_enactment_title(text: str) -> str:
+    normalized = " ".join(str(text or "").split()).strip().lower()
+    if normalized.startswith("the "):
+        normalized = normalized[4:]
+    normalized = re.sub(
+        r"\s*\((?:asp|c\.?|s\.?\s*i\.?|si|uksi)\s*[^)]*\)\s*$",
+        "",
+        normalized,
+        flags=re.I,
+    )
+    return normalized.rstrip(".")
+
+
+def _uk_repeal_table_enactment_match_basis(cell_text: str, effect: UKEffectRecord) -> str:
     """Conservatively match a repeal-table enactment cell to the affected Act."""
     text = " ".join(cell_text.split()).lower()
     if not text:
-        return False
+        return ""
     year = str(effect.affected_year or "").strip()
     number = str(effect.affected_number or "").strip()
     slug = _uk_effect_act_slug(effect)
     if not year or not number or year not in text:
-        return False
+        return ""
     num_pat = re.escape(number.lower())
     if slug == "asp":
-        return re.search(rf"\basp\s*{num_pat}\b", text) is not None
+        if re.search(r"\basp\s*\d+\b", text):
+            return (
+                "explicit_short_citation"
+                if re.search(rf"\basp\s*{num_pat}\b", text) is not None
+                else ""
+            )
     if slug == "ukpga":
-        return re.search(rf"\bc\.?\s*{num_pat}\b", text) is not None
+        if re.search(r"\bc\.?\s*\d+\b", text):
+            return (
+                "explicit_short_citation"
+                if re.search(rf"\bc\.?\s*{num_pat}\b", text) is not None
+                else ""
+            )
     if slug == "uksi":
-        return re.search(rf"\b(?:s\.?\s*i\.?|si|uksi)\s*{re.escape(year)}\s*/\s*{num_pat}\b", text) is not None
-    return re.search(rf"\b{re.escape(slug)}\s*{num_pat}\b", text) is not None
+        if re.search(r"\b(?:s\.?\s*i\.?|si|uksi)\s*\d{4}\s*/\s*\d+\b", text):
+            return (
+                "explicit_short_citation"
+                if re.search(
+                    rf"\b(?:s\.?\s*i\.?|si|uksi)\s*{re.escape(year)}\s*/\s*{num_pat}\b",
+                    text,
+                )
+                is not None
+                else ""
+            )
+    else:
+        if re.search(rf"\b{re.escape(slug)}\s*\d+\b", text):
+            return (
+                "explicit_short_citation"
+                if re.search(rf"\b{re.escape(slug)}\s*{num_pat}\b", text) is not None
+                else ""
+            )
+
+    affected_title = _normalize_uk_enactment_title(effect.affected_title)
+    cell_title = _normalize_uk_enactment_title(cell_text)
+    if affected_title and cell_title == affected_title:
+        return "exact_affected_title_year"
+    return ""
+
+
+def _uk_repeal_table_enactment_matches_effect(cell_text: str, effect: UKEffectRecord) -> bool:
+    return bool(_uk_repeal_table_enactment_match_basis(cell_text, effect))
 
 
 def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
@@ -332,7 +382,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
-    matches: list[tuple[int, str, tuple[str, ...], int, int, str, str, str, str]] = []
+    matches: list[tuple[int, str, tuple[str, ...], int, int, str, str, str, str, str]] = []
     tables = []
     seen_table_ids: set[int] = set()
     for root in search_roots:
@@ -350,7 +400,11 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 continue
             enactment_cell = row[enactment_idx]
             extent_cell = row[extent_idx]
-            if not _uk_repeal_table_enactment_matches_effect(enactment_cell, effect):
+            enactment_match_basis = _uk_repeal_table_enactment_match_basis(
+                enactment_cell,
+                effect,
+            )
+            if not enactment_match_basis:
                 continue
             for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
                 if not _uk_table_cell_mentions_target(
@@ -382,6 +436,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         " | ".join((enactment_cell, extent_clause)),
                         enactment_cell,
                         extent_clause,
+                        enactment_match_basis,
                     )
                 )
 
@@ -392,7 +447,18 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             match_count=len(matches),
         )
 
-    table_index, original, additional_originals, occurrence, end_occurrence, rule_id, row_text, enactment_cell, extent_cell = matches[0]
+    (
+        table_index,
+        original,
+        additional_originals,
+        occurrence,
+        end_occurrence,
+        rule_id,
+        row_text,
+        enactment_cell,
+        extent_cell,
+        enactment_match_basis,
+    ) = matches[0]
     return _UKRepealTableQuotedWordsTextRepeal(
         recognized=True,
         original=original,
@@ -404,6 +470,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         row_text=row_text,
         enactment_cell=enactment_cell,
         extent_cell=extent_cell,
+        enactment_match_basis=enactment_match_basis,
         occurrence=occurrence,
         end_occurrence=end_occurrence,
     )
@@ -447,8 +514,8 @@ def _uk_table_driven_repeal_table_structural_repeal(
     if not search_roots:
         return _UKRepealTableStructuralRepeal(recognized=False)
 
-    matches: list[tuple[int, str, str, str]] = []
-    mixed_structural_word_matches: list[tuple[int, str, str, str]] = []
+    matches: list[tuple[int, str, str, str, str]] = []
+    mixed_structural_word_matches: list[tuple[int, str, str, str, str]] = []
     tables = []
     seen_table_ids: set[int] = set()
     for root in search_roots:
@@ -466,7 +533,11 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 continue
             enactment_cell = row[enactment_idx]
             extent_cell = row[extent_idx]
-            if not _uk_repeal_table_enactment_matches_effect(enactment_cell, effect):
+            enactment_match_basis = _uk_repeal_table_enactment_match_basis(
+                enactment_cell,
+                effect,
+            )
+            if not enactment_match_basis:
                 continue
             for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
                 if not _uk_table_cell_mentions_target(
@@ -488,6 +559,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
                                 " | ".join((enactment_cell, extent_clause)),
                                 enactment_cell,
                                 extent_clause,
+                                enactment_match_basis,
                             )
                         )
                     continue
@@ -497,12 +569,19 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         " | ".join((enactment_cell, extent_clause)),
                         enactment_cell,
                         extent_clause,
+                        enactment_match_basis,
                     )
                 )
 
     if len(matches) != 1:
         if not matches and len(mixed_structural_word_matches) == 1:
-            table_index, row_text, enactment_cell, extent_cell = mixed_structural_word_matches[0]
+            (
+                table_index,
+                row_text,
+                enactment_cell,
+                extent_cell,
+                enactment_match_basis,
+            ) = mixed_structural_word_matches[0]
             return _UKRepealTableStructuralRepeal(
                 recognized=True,
                 reason_code="mixed_structural_and_word_repeal_requires_split",
@@ -511,6 +590,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 row_text=row_text,
                 enactment_cell=enactment_cell,
                 extent_cell=extent_cell,
+                enactment_match_basis=enactment_match_basis,
             )
         return _UKRepealTableStructuralRepeal(
             recognized=True,
@@ -518,7 +598,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
             match_count=len(matches),
         )
 
-    table_index, row_text, enactment_cell, extent_cell = matches[0]
+    table_index, row_text, enactment_cell, extent_cell, enactment_match_basis = matches[0]
     return _UKRepealTableStructuralRepeal(
         recognized=True,
         reason_code="",
@@ -527,6 +607,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
         row_text=row_text,
         enactment_cell=enactment_cell,
         extent_cell=extent_cell,
+        enactment_match_basis=enactment_match_basis,
     )
 
 
