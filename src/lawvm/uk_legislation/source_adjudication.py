@@ -50,6 +50,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "application_modification_payload_out_of_scope",
         "broad_schedule_flat_payload_unsupported",
         "amendment_text_target_unsupported",
+        "conditional_temporal_repeal_unsupported",
         "table_entry_target_unsupported",
         "schedule_list_entry_target_unsupported",
         "structural_sibling_insert_unsupported",
@@ -147,6 +148,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "non_textual_or_out_of_scope",
         "uk_manual_frontier_commencement_effect_out_of_scope",
         "The source is a commencement/applicability instrument; it may matter to temporal selection, but it is not a direct text/tree mutation under the current UK replay model.",
+    ),
+    "conditional_temporal_repeal_unsupported": (
+        "non_textual_or_out_of_scope",
+        "uk_manual_frontier_conditional_temporal_repeal_out_of_scope",
+        "The source conditionally repeals material based on future commencement state; replay must not treat it as an unconditional current-text repeal without explicit temporal applicability evidence.",
     ),
     "application_modification_payload_out_of_scope": (
         "non_textual_or_out_of_scope",
@@ -1104,6 +1110,17 @@ def _looks_like_commencement_effect_source(text: str) -> bool:
     return bool(re.search(r"\bshall\s+come\s+into\s+force\b|\bcomes?\s+into\s+force\b", norm))
 
 
+def _looks_like_conditional_temporal_repeal_source(text: str) -> bool:
+    norm = " ".join((text or "").split()).strip().lower()
+    if not norm:
+        return False
+    return bool(
+        re.search(r"\b(?:is|are|be)\s+repealed\b", norm)
+        and re.search(r"\b(?:at|before|after)\s+the\s+end\s+of\s+\d{4}\b", norm)
+        and re.search(r"\bif\b.+\bnot\s+been\s+brought\s+into\s+force\b", norm)
+    )
+
+
 def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
@@ -1187,6 +1204,8 @@ def classify_uk_effect_source_pathology(
             return "temporary_as_if_word_omission_unsupported"
         if "uk_effect_commencement_source_rejected" in lowering_rules:
             return "commencement_effect_out_of_scope"
+        if _looks_like_conditional_temporal_repeal_source(norm_text):
+            return "conditional_temporal_repeal_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:
             return "application_modification_payload_out_of_scope"
         if "uk_effect_schedule_note_target_rejected" in lowering_rules:

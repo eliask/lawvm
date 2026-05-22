@@ -893,6 +893,26 @@ def test_classify_uk_effect_source_pathology_marks_commencement_out_of_scope() -
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_conditional_temporal_repeal_out_of_scope() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "5 Paragraph 4 is repealed at the end of 2021 if, or to the "
+            "extent that, it has not been brought into force before the end "
+            "of that year."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_overlap_substitution_unlowered"],
+        effect_type="words repealed",
+        is_structural=True,
+    )
+
+    assert pathology == "conditional_temporal_repeal_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_marks_application_payload_out_of_scope() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="BlockAmendment",
@@ -1670,6 +1690,33 @@ def test_classify_uk_manual_compile_frontier_marks_commencement_out_of_scope() -
 
     assert result["status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_commencement_effect_out_of_scope"
+
+
+def test_classify_uk_manual_compile_frontier_marks_conditional_temporal_repeal_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words repealed",
+        source_pathology="conditional_temporal_repeal_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "5 Paragraph 4 is repealed at the end of 2021 if, or to the "
+            "extent that, it has not been brought into force before the end "
+            "of that year."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == (
+        "uk_manual_frontier_conditional_temporal_repeal_out_of_scope"
+    )
 
 
 def test_classify_uk_manual_compile_frontier_marks_application_payload_out_of_scope() -> None:
