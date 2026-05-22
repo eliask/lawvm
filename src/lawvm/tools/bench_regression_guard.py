@@ -15,6 +15,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 BENCH_RUNS_DIR = _REPO_ROOT / "data" / "bench_runs"
 EE_BENCH_RUNS_DIR = _REPO_ROOT / "data" / "ee_bench_runs"
 UK_BENCH_RUNS_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
+_UK_REPLAY_REGIME_COLUMNS = (
+    "uk_metadata_backfill_enabled",
+    "uk_oracle_alignment_enabled",
+    "uk_metadata_only_effects_enabled",
+    "uk_applicability_mode",
+    "uk_authority_mode",
+)
 
 
 def find_csv_by_label(label: str, jurisdiction: str = "fi") -> Path:
@@ -162,6 +169,33 @@ def _load_scores_for_jurisdiction(path: Path, jurisdiction: str) -> tuple[str, d
     return _load_first_float_column(path, ("similarity", "score"))
 
 
+def _load_uk_replay_regimes(path: Path) -> dict[str, str]:
+    """Load per-row UK replay regimes when saved-run columns are present."""
+    regimes: dict[str, str] = {}
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Empty or header-less CSV: {path}")
+        fieldnames = set(reader.fieldnames)
+        if "statute_id" not in fieldnames:
+            raise ValueError(f"CSV {path} missing expected column: statute_id. Found: {reader.fieldnames}")
+        if not set(_UK_REPLAY_REGIME_COLUMNS).issubset(fieldnames):
+            return regimes
+        for row in reader:
+            sid = row["statute_id"].strip()
+            values = {column: row.get(column, "").strip() for column in _UK_REPLAY_REGIME_COLUMNS}
+            if not sid or any(value == "" for value in values.values()):
+                continue
+            regimes[sid] = (
+                f"metadata_backfill={values['uk_metadata_backfill_enabled']};"
+                f"oracle_alignment={values['uk_oracle_alignment_enabled']};"
+                f"metadata_only_effects={values['uk_metadata_only_effects_enabled']};"
+                f"applicability={values['uk_applicability_mode']};"
+                f"authority={values['uk_authority_mode']}"
+            )
+    return regimes
+
+
 def mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
@@ -286,6 +320,37 @@ def run_guard(
     if not common:
         print("ERROR: baseline and current have no common scored statutes")
         return 1
+
+    if jurisdiction == "uk":
+        try:
+            baseline_regimes = _load_uk_replay_regimes(baseline_path)
+            current_regimes = _load_uk_replay_regimes(current_path)
+        except (ValueError, OSError) as exc:
+            print(f"ERROR loading UK replay regime CSV data: {exc}")
+            return 1
+        regime_common = sorted(set(baseline_regimes) & set(current_regimes) & set(common))
+        if regime_common:
+            old_regime_counts = Counter(baseline_regimes[sid] for sid in regime_common)
+            new_regime_counts = Counter(current_regimes[sid] for sid in regime_common)
+            print("UK replay regimes (common scored rows with regime evidence):")
+            print(f"  Baseline: {dict(sorted(old_regime_counts.items()))}")
+            print(f"  Current : {dict(sorted(new_regime_counts.items()))}")
+            mismatched = [
+                (sid, baseline_regimes[sid], current_regimes[sid])
+                for sid in regime_common
+                if baseline_regimes[sid] != current_regimes[sid]
+            ]
+            if mismatched:
+                print(f"ERROR: UK replay regime mismatch on {len(mismatched)} common scored row(s)")
+                for sid, old, new in mismatched[:10]:
+                    print(f"  {sid}: {old} -> {new}")
+                if len(mismatched) > 10:
+                    print(f"  ... {len(mismatched) - 10} more")
+                return 1
+            print()
+        elif baseline_regimes or current_regimes:
+            print("WARNING: no common UK replay regime evidence rows; comparing score lane only")
+            print()
 
     diffs: list[tuple[str, float, float, float]] = []
     for sid in common:
