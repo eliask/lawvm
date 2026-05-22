@@ -49,6 +49,27 @@ def _grounding_node_full_text(node: UKMutableNode) -> str:
     return _normalize_text_for_grounding(" ".join(parts))
 
 
+def _grounding_length_window_text_candidates(
+    candidates_by_len: dict[int, list[tuple[int, str, str]]],
+    text_len: int,
+) -> list[tuple[str, str]]:
+    """Return oracle texts passing the historical fuzzy length guard.
+
+    The result preserves original ``text_map`` order so equal-score fuzzy ties
+    continue to resolve exactly as they did when scanning the full mapping.
+    """
+    max_delta = 0.1 * text_len
+    min_len = max(0, int(text_len - max_delta) - 1)
+    max_len = int(text_len + max_delta) + 1
+    ordered: list[tuple[int, str, str]] = []
+    for candidate_len in range(min_len, max_len + 1):
+        if abs(candidate_len - text_len) > max_delta:
+            continue
+        ordered.extend(candidates_by_len.get(candidate_len, ()))
+    ordered.sort(key=lambda item: item[0])
+    return [(candidate_id, text) for _order, candidate_id, text in ordered]
+
+
 class UKReplayGroundingMixin:
     statute: UKMutableStatute
     eid_map: dict[str, str]
@@ -122,6 +143,10 @@ class UKReplayGroundingMixin:
             _ensure_local_eid(self.statute.body)
         for sch in self.statute.supplements:
             _ensure_local_eid(sch)
+
+        text_candidates_by_len: dict[int, list[tuple[int, str, str]]] = {}
+        for order, (candidate_id, oracle_text) in enumerate(self.text_map.items()):
+            text_candidates_by_len.setdefault(len(oracle_text), []).append((order, candidate_id, oracle_text))
 
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
             nonlocal seen_oracle_ids
@@ -247,10 +272,11 @@ class UKReplayGroundingMixin:
                 if len(node_norm) > 30:
                     best_score = 0
                     best_id = None
-                    for oid, otext in self.text_map.items():
+                    for oid, otext in _grounding_length_window_text_candidates(
+                        text_candidates_by_len,
+                        len(node_norm),
+                    ):
                         if oid in seen_oracle_ids:
-                            continue
-                        if abs(len(otext) - len(node_norm)) > 0.1 * len(node_norm):
                             continue
                         score = Levenshtein.ratio(node_norm, otext)
                         if score > 0.92 and score > best_score:

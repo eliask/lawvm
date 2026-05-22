@@ -31,6 +31,7 @@ from lawvm.uk_legislation.replay_applicability import should_replay_nonstructura
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
+from lawvm.uk_legislation.replay_grounding import _grounding_length_window_text_candidates
 from lawvm.uk_legislation.provision_extractor import (
     _INSTRUCTION_TEXT_CACHE,
     _find_provision_from_search_root,
@@ -150,6 +151,21 @@ def test_uk_recursive_kind_match_preserves_depth_first_first_match() -> None:
     assert node is root.children[0].children[1]
     assert parent is root.children[0]
     assert idx == 1
+
+
+def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
+    candidates_by_len = {
+        90: [(2, "too-short", "x" * 90)],
+        95: [(1, "second", "x" * 95)],
+        100: [(0, "first", "x" * 100)],
+        111: [(3, "too-long", "x" * 111)],
+    }
+
+    assert _grounding_length_window_text_candidates(candidates_by_len, 100) == [
+        ("first", "x" * 100),
+        ("second", "x" * 95),
+        ("too-short", "x" * 90),
+    ]
 
 
 def _minimal_uk_effect(
