@@ -30361,6 +30361,54 @@ def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:
     assert executor.adjudications_out == []
 
 
+def test_executor_skips_invariant_rescan_when_structure_serial_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.uk_legislation.replay_invariant_diagnostics as invariant_mod
+
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Existing section.",
+                    attrs={"eId": "section-1"},
+                    children=(),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+
+    def fail_collect(*_args: object, **_kwargs: object) -> list[str]:
+        raise AssertionError("unchanged structure should not rescan invariants")
+
+    monkeypatch.setattr(
+        invariant_mod,
+        "_collect_duplicate_order_invariants",
+        fail_collect,
+    )
+    executor._record_invariant_violations(
+        LegalOperation(
+            op_id="uk_test_structural_noop_no_invariant_rescan",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="New section."),
+            source=OperationSource(statute_id="uk_test", title="Test Source"),
+        )
+    )
+
+    assert executor.adjudications_out == []
+
+
 def test_executor_sequence_match_does_not_alias_section_1_1_to_section_11() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/22",
