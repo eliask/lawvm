@@ -31,6 +31,7 @@ from lawvm.uk_legislation.replay_invariant_diagnostics import (
 )
 from lawvm.uk_legislation.source_context import (
     _implicit_first_subparagraph_context_normalized_ref,
+    _source_ancestor_chain,
 )
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
@@ -28946,6 +28947,29 @@ def test_uk_replay_fast_invariant_scan_matches_persisted_generic_subset() -> Non
     ]
 
     assert _collect_duplicate_order_invariants(UKMutableNode.from_irnode(root)) == generic_subset
+
+
+def test_uk_source_ancestor_chain_caches_repeated_source_walks() -> None:
+    _source_ancestor_chain.cache_clear()
+    root = ET.fromstring(
+        """
+        <Legislation>
+          <Body>
+            <P1group id="section-1">
+              <P1 id="section-1-1">Text</P1>
+            </P1group>
+          </Body>
+        </Legislation>
+        """
+    )
+    target = root.find(".//*[@id='section-1-1']")
+    assert target is not None
+
+    first = _source_ancestor_chain(root, target)
+    second = _source_ancestor_chain(root, target)
+
+    assert first == second
+    assert _source_ancestor_chain.cache_info().hits == 1
 
 
 def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:

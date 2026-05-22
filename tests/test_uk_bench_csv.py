@@ -216,6 +216,33 @@ def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
     assert "ukpga/2000/1" not in output
 
 
+def test_uk_bench_text_similarity_skips_levenshtein_for_exact_matches(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_ratio(left: str, right: str) -> float:
+        calls.append((left, right))
+        return 0.5
+
+    monkeypatch.setattr(uk_bench.Levenshtein, "ratio", fake_ratio)
+
+    score, n_compared = uk_bench._text_similarity_score(
+        {
+            "section-1": "same text",
+            "section-2": "left text",
+            "section-3": "",
+        },
+        {
+            "section-1": "same text",
+            "section-2": "right text",
+            "section-3": "ignored",
+        },
+    )
+
+    assert n_compared == 2
+    assert score == 0.75
+    assert calls == [("left text", "right text")]
+
+
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:
     from lawvm.uk_legislation import effects as effects_mod
     from lawvm.uk_legislation.effects import UKEffectRecord

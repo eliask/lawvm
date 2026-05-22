@@ -5,6 +5,7 @@ import copy
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Callable, Optional, Sequence
 
 from lawvm.roman import (
@@ -66,6 +67,7 @@ def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]
     return None
 
 
+@lru_cache(maxsize=16384)
 def _source_ancestor_chain(
     source_root: Optional[ET.Element],
     el: Optional[ET.Element],
