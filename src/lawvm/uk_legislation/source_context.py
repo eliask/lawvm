@@ -72,6 +72,14 @@ def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]
     return None
 
 
+@lru_cache(maxsize=1024)
+def _source_parent_map(
+    source_root: ET.Element,
+) -> dict[ET.Element, ET.Element]:
+    """Return a cached parent map for source XML ancestor queries."""
+    return {child: parent for parent in source_root.iter() for child in parent}
+
+
 @lru_cache(maxsize=16384)
 def _source_ancestor_chain(
     source_root: Optional[ET.Element],
@@ -80,6 +88,19 @@ def _source_ancestor_chain(
     """Return closest-first source ancestors for an extracted source element."""
     if source_root is None or el is None:
         return ()
+    if el is source_root:
+        return ()
+    parent_map = _source_parent_map(source_root)
+    if el in parent_map:
+        ancestors: list[ET.Element] = []
+        parent = parent_map.get(el)
+        while parent is not None:
+            ancestors.append(parent)
+            if parent is source_root:
+                break
+            parent = parent_map.get(parent)
+        return tuple(ancestors)
+
     target_id = el.get("id")
     path: list[ET.Element] = []
 
