@@ -5,6 +5,10 @@ import xml.etree.ElementTree as ET
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.uk_legislation.target_anchors import (
+    _uk_match_kind_label_cached,
+    uk_match_kind_label,
+)
 from lawvm.uk_legislation.uk_grafter import (
     UKStatuteIR,
     _clean_num,
@@ -48,6 +52,30 @@ def test_clean_num_handles_fused_container_prefixes() -> None:
     assert _clean_num("PartII") == "2"
     assert _clean_num("Paragraph12B") == "12b"
     assert _clean_num("Particular") == "particular"
+
+
+def test_clean_num_cache_is_semantics_preserving() -> None:
+    _clean_num.cache_clear()
+
+    assert _clean_num("Schedule IV.") == "4"
+    assert _clean_num("Schedule IV.") == "4"
+
+    cache_info = _clean_num.cache_info()
+    assert cache_info.hits >= 1
+    assert cache_info.maxsize == 32768
+
+
+def test_uk_match_kind_label_cache_is_semantics_preserving() -> None:
+    _uk_match_kind_label_cached.cache_clear()
+    node = IRNode(kind=IRNodeKind.SCHEDULE, label="Schedule IV")
+
+    assert uk_match_kind_label(node, "schedule", "4") is True
+    assert uk_match_kind_label(node, "schedule", "4") is True
+    assert uk_match_kind_label(node, "section", "4") is False
+
+    cache_info = _uk_match_kind_label_cached.cache_info()
+    assert cache_info.hits >= 1
+    assert cache_info.maxsize == 131072
 
 
 def test_definition_ordered_list_term_prefers_source_language_quoted_term() -> None:

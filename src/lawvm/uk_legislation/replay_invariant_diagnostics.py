@@ -13,6 +13,7 @@ from lawvm.core import tree_ops
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
+from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -51,11 +52,38 @@ class UKReplayInvariantDiagnosticsMixin:
     adjudications_out: list[CompileAdjudication]
     _seen_invariant_violations: set[str]
 
-    def _collect_invariant_violations(self) -> set[str]:
+    def _invariant_root_filter_for_op(self, op: LegalOperation) -> set[tuple[str, str]] | None:
+        if str(op.target.special or "") == "whole_act":
+            return None
+        if not op.target.path:
+            return None
+        root_kind, root_label = op.target.path[0]
+        if root_kind == "schedule":
+            clean_label = _clean_num(str(root_label or ""))
+            if not clean_label:
+                return None
+            return {("schedule", clean_label)}
+        return {("body", "")}
+
+    def _invariant_target_roots(
+        self,
+        root_filter: set[tuple[str, str]] | None = None,
+    ) -> list[tuple[str, UKMutableNode]]:
+        targets: list[tuple[str, UKMutableNode]] = []
+        if root_filter is None or ("body", "") in root_filter:
+            targets.append(("body", self.statute.body))
+        for schedule in self.statute.supplements:
+            clean_label = _clean_num(str(schedule.label or ""))
+            if root_filter is None or ("schedule", clean_label) in root_filter:
+                targets.append((f"schedule:{schedule.label or '?'}", schedule))
+        return targets
+
+    def _collect_invariant_violations(
+        self,
+        root_filter: set[tuple[str, str]] | None = None,
+    ) -> set[str]:
         violations: set[str] = set()
-        targets: list[tuple[str, UKMutableNode]] = [("body", self.statute.body)]
-        targets.extend((f"schedule:{schedule.label or '?'}", schedule) for schedule in self.statute.supplements)
-        for root_name, node in targets:
+        for root_name, node in self._invariant_target_roots(root_filter):
             for violation in tree_ops.check_invariants(cast(IRNode, node)):
                 if "duplicate " not in violation and " out of order:" not in violation:
                     continue
@@ -63,9 +91,18 @@ class UKReplayInvariantDiagnosticsMixin:
         return violations
 
     def _record_invariant_violations(self, op: LegalOperation) -> None:
-        current_violations = self._collect_invariant_violations()
+        root_filter = self._invariant_root_filter_for_op(op)
+        current_violations = self._collect_invariant_violations(root_filter)
+        scoped_root_names = {
+            root_name for root_name, _node in self._invariant_target_roots(root_filter)
+        }
+        scoped_seen = {
+            violation
+            for violation in self._seen_invariant_violations
+            if any(violation.startswith(f"{root_name}:") for root_name in scoped_root_names)
+        }
         payload_shape_violations = uk_payload_shape_invariant_violations(op)
-        for scoped_violation in sorted(current_violations - self._seen_invariant_violations):
+        for scoped_violation in sorted(current_violations - scoped_seen):
             if payload_shape_violations and uk_repeated_form_label_payload_shape_gap(op, payload_shape_violations):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
@@ -172,4 +209,5 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-        self._seen_invariant_violations = current_violations
+        self._seen_invariant_violations.difference_update(scoped_seen)
+        self._seen_invariant_violations.update(current_violations)

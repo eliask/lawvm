@@ -23,6 +23,7 @@ Actionables
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any, Iterable
 
 from lawvm.core.compile_records import is_blocking_compile_record
@@ -639,6 +640,10 @@ def normalize_uk_replay_compare_eids(
       EIDs; table wording remains compared through ancestor text, but row/cell
       fallback identity is not yet a common benchmark surface
     """
+    def _proper_prefixes(eid: str) -> tuple[str, ...]:
+        parts = [part for part in str(eid or "").split("-") if part]
+        return tuple("-".join(parts[:idx]) for idx in range(1, len(parts)))
+
     alias_norm: dict[str, str] = {}
     for aliases in (oracle_physical_eid_aliases or {}, oracle_visible_number_eid_aliases or {}):
         for original, replacement in aliases.items():
@@ -667,27 +672,37 @@ def normalize_uk_replay_compare_eids(
     kept: set[str] = set()
     collapsed_roots: set[str] = set()
     oracle_has_table_eids = any(_uk_compare_eid_has_table_segment(eid) for eid in oracle_norm)
+    oracle_proper_prefixes: set[str] = set()
+    replay_proper_prefix_counts: Counter[str] = Counter()
+    replay_proper_prefixes_by_eid: dict[str, tuple[str, ...]] = {}
+    for eid in oracle_norm:
+        oracle_proper_prefixes.update(_proper_prefixes(eid))
+    for eid in replay_norm:
+        prefixes = _proper_prefixes(eid)
+        replay_proper_prefixes_by_eid[eid] = prefixes
+        replay_proper_prefix_counts.update(prefixes)
 
     for root in oracle_norm:
         if not root.startswith(("section-", "article-", "schedule-", "crossheading-")):
             continue
-        if any(other.startswith(root + "-") for other in oracle_norm):
+        if root in oracle_proper_prefixes:
             continue
-        replay_descendants = sum(1 for other in replay_norm if other.startswith(root + "-"))
-        if replay_descendants >= 2:
+        if replay_proper_prefix_counts.get(root, 0) >= 2:
             collapsed_roots.add(root)
 
     for eid in sorted(replay_norm, key=lambda s: len(s)):
         if any(eid == prefix or eid.startswith(prefix + "-") for prefix in dropped_prefixes):
             continue
-        if any(eid.startswith(root + "-") for root in collapsed_roots):
+        if collapsed_roots and any(
+            prefix in collapsed_roots for prefix in replay_proper_prefixes_by_eid.get(eid, ())
+        ):
             continue
         if not oracle_has_table_eids and _uk_compare_eid_has_table_segment(eid):
             continue
         if eid in oracle_norm:
             kept.add(eid)
             continue
-        if any(other.startswith(eid + "-") for other in oracle_norm):
+        if eid in oracle_proper_prefixes:
             continue
         match = re.match(r"(.+?)(?:_|-)paragraph-[0-9a-z]+$", eid)
         if match:

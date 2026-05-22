@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 import re
 import warnings
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Dict, Any, cast
 
@@ -174,8 +175,9 @@ def _roman_to_int(s: str) -> str:
     return s if value is None else str(value)
 
 
-def _clean_num(raw: str) -> str:
-    if not raw:
+@lru_cache(maxsize=32768)
+def _clean_num_cached(raw: str) -> str:
+    if raw == "":
         return ""
     s = str(raw).strip()
     s = re.sub(
@@ -189,6 +191,16 @@ def _clean_num(raw: str) -> str:
     if re.match(r"^[IVXLCDM]+$", s, re.IGNORECASE):
         s = _roman_to_int(s)
     return s.lower().strip(".")
+
+
+def _clean_num(raw: str) -> str:
+    if not raw:
+        return ""
+    return _clean_num_cached(str(raw))
+
+
+_clean_num.cache_clear = _clean_num_cached.cache_clear  # type: ignore[attr-defined]
+_clean_num.cache_info = _clean_num_cached.cache_info  # type: ignore[attr-defined]
 
 
 def _infer_container_number_from_source_uri(el: ET.Element, *, prefix: str) -> str:
