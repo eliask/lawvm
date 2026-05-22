@@ -351,8 +351,14 @@ def _find_provision_from_search_root(
             matches = _first_component_matches(search_root, target_kind, target_num)
             if not matches:
                 return None, 0
-            if len(matches) == 1:
-                return _find_provision_greedy(matches[0], path, 1)
+            best_node: Optional[ET.Element] = None
+            best_depth = 0
+            for match in matches:
+                candidate_node, candidate_depth = _find_provision_greedy(match, path, 1)
+                if candidate_depth > best_depth:
+                    best_node = candidate_node
+                    best_depth = candidate_depth
+            return best_node, best_depth
     return _find_provision_greedy(search_root, path)
 
 

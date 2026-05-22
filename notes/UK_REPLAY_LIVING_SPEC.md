@@ -1034,10 +1034,14 @@ Current tooling-consistency invariant:
     families. `ukpga/1988/1` is replay-side heavy: invariant scans, target
     lookup, insert/repeal apply, and recursive kind/label matching dominate.
     `ukpga/1990/42` is compile-side heavy: repeated affecting-source context
-    selection and provision extraction dominate before replay. These should be
-    fixed as separate indexing/cache families with corpus witnesses; a local
-    improvement in one family should not be treated as global UK replay progress
-    without saved-run guard evidence.
+    selection and provision extraction dominated before replay. The `1990/42`
+    source-extraction family now uses first-component matches to search each
+    candidate subtree instead of falling back to a full-source greedy walk when
+    the first component is ambiguous; the serial witness measured 6.48s wall
+    time with `compile_ops=4.30s` after this change, versus a prior 55.8s
+    profile with `compile_ops` around 45.9s. Replay-side `1988/1` remains a
+    separate indexing/cache family. A local improvement in one family should not
+    be treated as global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence

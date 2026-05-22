@@ -3324,12 +3324,21 @@ def test_find_provision_from_search_root_matches_greedy_for_ambiguous_first_comp
     root = ET.fromstring(
         f"""
         <Body xmlns="{_LEG_NS}">
-          <P1 id="section-1-a"><Pnumber>1</Pnumber></P1>
-          <P1 id="section-1-b"><Pnumber>1</Pnumber></P1>
+          <P1 id="section-1-a">
+            <Pnumber>1</Pnumber>
+            <P2 id="section-1-a-1"><Pnumber>1</Pnumber></P2>
+          </P1>
+          <P1 id="section-1-b">
+            <Pnumber>1</Pnumber>
+            <P2 id="section-1-b-1">
+              <Pnumber>1</Pnumber>
+              <P3 id="section-1-b-1-a"><Pnumber>a</Pnumber></P3>
+            </P2>
+          </P1>
         </Body>
         """
     )
-    path = list(_parse_ref("s. 1"))
+    path = list(_parse_ref("s. 1(1)(a)"))
 
     indexed_node, indexed_depth = _find_provision_from_search_root(root, path)
     greedy_node, greedy_depth = _find_provision_greedy(root, path)
