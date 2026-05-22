@@ -370,6 +370,14 @@ Deterministic substituted-series lowering:
   sibling payloads as inserts under
   `uk_effect_substituted_series_new_sibling_insert_lowered`
 - source rows shaped as `substituted for <old sibling>` with affected metadata
+  expanding to `<new sibling...>, <old sibling>` may lower earlier
+  source-owned sibling payloads as inserts under
+  `uk_effect_substituted_series_pre_anchor_sibling_insert_lowered`; the
+  source-named old sibling remains the replace anchor. Current witness:
+  `ukpga/2020/17` affected `Sch. 21 para. 5A 6` by `ukpga/2022/32 s. 127`,
+  where paragraph `5A` is a new source-owned sibling before the replaced
+  paragraph `6`.
+- source rows shaped as `substituted for <old sibling>` with affected metadata
   naming the new sibling label, or one-for-one old/new sibling series, may
   rebind the executable replace target to the source-named old sibling under
   `uk_effect_substituted_for_label_changing_target_rebound`; replay records
@@ -2266,6 +2274,13 @@ Current payload-descendant source-ref invariant:
 - table-entry source that says a named entry/column is `added` or `amended`
   remains in `table_entry_target_unsupported` until a table compiler owns the
   row/cell and any referenced amount schedule. It is not a generic parser miss.
+- Embedded tables inside a structural paragraph substitution payload are not
+  table-entry instructions. If the target is a paragraph, the source text says
+  `for paragraph X substitute`, and table/column words occur only inside the
+  replacement payload, lowering records
+  `uk_effect_embedded_table_payload_structural_substitution_preserved` and lets
+  normal structural payload extraction continue. Current witness:
+  `ukpga/2020/17` affected `Sch. 21 para. 5A 6` by `ukpga/2022/32 s. 127`.
 - Direct table targets whose source says `after that entry insert- ...`,
   `after entry 6A insert- ...`, `after the entry in the table relating to ...`,
   or `at the appropriate place insert- ...` inside a table are the same

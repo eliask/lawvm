@@ -14037,6 +14037,86 @@ def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     assert rejection["quirks_disposition"] == "record"
 
 
+def test_compile_embedded_table_structural_paragraph_substitution_is_not_table_entry_rejected() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-127">
+          <Pnumber>127</Pnumber>
+          <P1para>
+            <Text>In Schedule 21 to the Sentencing Code, for paragraph 6 substitute—</Text>
+            <BlockAmendment>
+              <P1>
+                <Pnumber>5A</Pnumber>
+                <P1para>
+                  <Text>This paragraph applies if—</Text>
+                  <P2><Pnumber>2</Pnumber><P2para><Text>The appropriate starting point is the period given in the entry in column 2, 3 or 4 of the following table.</Text></P2para></P2>
+                  <Tabular>
+                    <table>
+                      <tbody>
+                        <tr><td>17</td><td>27 years</td><td>23 years</td><td>14 years</td></tr>
+                      </tbody>
+                    </table>
+                  </Tabular>
+                </P1para>
+              </P1>
+              <P1>
+                <Pnumber>6</Pnumber>
+                <P1para><Text>The appropriate starting point is 12 years.</Text></P1para>
+              </P1>
+            </BlockAmendment>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_embedded_table_structural_paragraph_substitution",
+        effect_type="substituted for Sch. 21 para. 6",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/schedule/21/paragraph/5A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 21 para. 5A 6",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="s. 127",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT, StructuralAction.REPLACE]
+    assert [str(op.target) for op in ops] == ["schedule:21/paragraph:5a", "schedule:21/paragraph:6"]
+    assert [op.payload.label if op.payload is not None else "" for op in ops] == ["5A", "6"]
+    assert any(
+        row["rule_id"] == "uk_effect_embedded_table_payload_structural_substitution_preserved"
+        and row["target_ref"] == "Sch. 21 para. 5A"
+        and row["blocking"] is False
+        for row in lowering_rejections
+    )
+    assert any(
+        row["rule_id"] == "uk_effect_substituted_series_pre_anchor_sibling_insert_lowered"
+        and row["target_ref"] == "Sch. 21 para. 5A"
+        and row["blocking"] is False
+        for row in lowering_rejections
+    )
+    assert not any(
+        row["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for row in lowering_rejections
+    )
+
+
 def test_compile_direct_table_after_that_entry_instruction_rejects_without_source_context() -> None:
     extracted_el = ET.fromstring(
         f"""
