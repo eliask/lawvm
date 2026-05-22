@@ -511,12 +511,19 @@ def _text_similarity_score(
     Returns (score, n_compared).  score is -1.0 when no EIDs are comparable.
     """
     common = set(source_texts) & set(oracle_texts)
-    # Only compare EIDs where both sides have actual text
-    pairs = [(source_texts[e], oracle_texts[e]) for e in common if source_texts[e] and oracle_texts[e]]
-    if not pairs:
+    total = 0.0
+    compared = 0
+    # Only compare EIDs where both sides have actual text.
+    for eid in common:
+        source_text = source_texts[eid]
+        oracle_text = oracle_texts[eid]
+        if not source_text or not oracle_text:
+            continue
+        total += 1.0 if source_text == oracle_text else Levenshtein.ratio(source_text, oracle_text)
+        compared += 1
+    if not compared:
         return -1.0, 0
-    total = sum(1.0 if s == o else Levenshtein.ratio(s, o) for s, o in pairs)
-    return total / len(pairs), len(pairs)
+    return total / compared, compared
 
 
 # ---------------------------------------------------------------------------
