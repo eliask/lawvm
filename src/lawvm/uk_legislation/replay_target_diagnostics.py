@@ -870,6 +870,8 @@ class UKReplayTargetDiagnosticsMixin:
         return grandparent_node is not None
 
     def _missing_parent_shape_gap_kind(self, target: LegalAddress) -> str:
+        if self._missing_schedule_branch_gap(target):
+            return "uk_replay_missing_schedule_branch_gap"
         if self._missing_parent_grandparent_present_gap(target):
             return "uk_replay_missing_parent_grandparent_present_gap"
         path = tuple(getattr(target, "path", ()) or ())

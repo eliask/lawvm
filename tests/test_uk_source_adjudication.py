@@ -188,6 +188,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_text_match_article_phrase_surface_gap": "text_surface",
         "uk_replay_text_match_citation_connector_surface_gap": "text_surface",
         "uk_replay_repeated_form_label_payload_shape_gap": "source_shape",
+        "uk_replay_absent_child_repeal_target_gap": "source_shape",
         "uk_replay_schedule_entry_repeal_granularity_blocked": "source_shape",
         "uk_replay_schedule_list_entry_anchor_unresolved": "source_shape",
         "uk_replay_schedule_list_entry_replace_unresolved": "source_shape",

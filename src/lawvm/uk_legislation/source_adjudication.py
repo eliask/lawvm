@@ -202,6 +202,7 @@ UK_REPLAY_BUG_ADJUDICATION_KINDS = frozenset(
 UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
     {
         "uk_replay_absent_sibling_range_gap",
+        "uk_replay_absent_child_repeal_target_gap",
         "uk_replay_broad_schedule_part_table_shape_gap",
         "uk_replay_broad_schedule_table_shape_gap",
         "uk_replay_annex_schedule_reference_gap",
