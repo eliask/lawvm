@@ -11,7 +11,7 @@ from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_replace_text_and_children
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind, uk_replace_text_and_children
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
@@ -797,7 +797,7 @@ class UKReplayTargetDiagnosticsMixin:
                 attrs["eId"] = f"{parent_eid}-{label}"
             children.append(
                 UKMutableNode(
-                    kind=IRNodeKind(child_kind),
+                    kind=uk_ir_node_kind(child_kind),
                     label=label,
                     text=child_text,
                     attrs=attrs,
