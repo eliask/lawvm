@@ -462,6 +462,8 @@ families,
 `uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate`,
 `source_carried_structured_text_patch` for
 `uk_manual_frontier_source_carried_structured_text_patch_candidate`,
+`definition_child_and_tail_substitution` for
+`uk_manual_frontier_definition_child_and_tail_substitution_candidate`,
 `definition_entry_insert` for
 `uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
 `range_to_container_substitution` for
@@ -475,6 +477,12 @@ rejection fields (`source_target_address`, `source_subparagraph_label`,
 fields define the minimum auditable claim surface for compiling a mutation into
 the payload of a prior amendment instruction. They are evidence, not replay
 authority.
+`definition_child_and_tail_substitution` templates carry the parsed definition
+term, definition child label, trailing connective, and replacement preview for
+sources that substitute a definition child together with the `and`/`or` tail at
+the end of that child. They are intentionally non-executable until a claim or
+future compiler owns both the definition-child text boundary and the
+post-child-tail boundary.
 `table_surface_mutation` templates carry `source_target_surface`,
 `source_target_address`, and `table_entry_shape` when lowering has identified
 a table-entry or column instruction but blocked replay for lack of a cell, row,
@@ -1973,6 +1981,25 @@ Current payload-descendant source-ref invariant:
   inserted payload without applying the row to an unrelated live base-law parent.
   Current witnesses: `ukpga/2020/17` affected `Sch. 22 para. 21(2)(a)` and
   `Sch. 22 para. 21(3)(a)` by `ukpga/2022/32` `Sch. 14 para. 14(2)(a)-(b)`.
+- Conditional expiry/repeal formulas such as `Paragraph 4 is repealed at the
+  end of 2021 if, or to the extent that, it has not been brought into force`
+  are temporal/applicability instructions, not unconditional current-text
+  repeals. LawVM classifies them as
+  `conditional_temporal_repeal_unsupported` and manual-frontier rule
+  `uk_manual_frontier_conditional_temporal_repeal_out_of_scope`; the existing
+  lowering rejection remains blocking so strict mode does not silently delete
+  text. Current witness: `ukpga/2020/18` affected `Sch. para. 4` by
+  `ukpga/2020/18` `Sch. para. 5`.
+- Definition-child substitutions that also consume the child tail, for example
+  `for paragraph (d) of the definition of "NHS body in England" and the "or"
+  at the end of that paragraph substitute ...`, are a multi-boundary mutation.
+  A single `TEXT_DEFINITION_CHILD_*` patch would miss the tail, while a broad
+  subsection patch would violate mutation boundaries. LawVM classifies this as
+  `definition_child_and_tail_substitution_unsupported` with manual-frontier
+  rule `uk_manual_frontier_definition_child_and_tail_substitution_candidate`
+  until a claim or compiler owns both the child node and post-child tail.
+  Current witness: `ukpga/2021/17` affected `s. 15(7)` by `ukpga/2022/31`
+  `Sch. 4 para. 239`.
 - definition-scoped all-occurrence insertions such as `in the definition of
   "X" after "Y", in both places where it appears, insert "Z"` lower to
   `TEXT_IN_DEFINITION_X/AFTER_EACH/Y` using

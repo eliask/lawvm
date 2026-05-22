@@ -67,6 +67,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_crossheading_candidate",
+        "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_repeal_table_candidate",
@@ -2125,6 +2126,97 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     assert "claim_supplies_exact_definition_entry_anchor_or_insertion_index" in (
         template["required_validator_checks"]
     )
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_definition_child_and_tail_substitution() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-definition-child-tail",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-07-01",
+        affected_uri="/id/ukpga/2021/17/section/15/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2021",
+        affected_number="17",
+        affected_provisions="s. 15(7)",
+        affecting_uri="/id/ukpga/2022/31",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="31",
+        affecting_provisions="Sch. 4 para. 239",
+        affecting_title="Health and Care Act 2022",
+    )
+    source_preview = (
+        "239 In section 15, in subsection (7), for paragraph (d) of the "
+        "definition of “NHS body in England” and the “or” at the end of "
+        "that paragraph substitute— an integrated care board established "
+        "under section 14Z25 of that Act; ."
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="definition_child_and_tail_substitution_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=source_preview,
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_definition_child_and_tail_substitution_candidate"
+            ),
+            manual_compile_reason=(
+                "Definition child plus tail substitution needs a validated boundary."
+            ),
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2021/17",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2021/17",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "definition_child_and_tail_substitution"
+    assert template["placement_family"] == (
+        "definition_child_plus_post_child_tail_boundary_required"
+    )
+    assert template["definition_term"] == "NHS body in England"
+    assert template["definition_child_label"] == "d"
+    assert template["tail_connector"] == "or"
+    assert "integrated care board" in template["replacement_preview"]
+    assert "post_child_tail_connector_boundary" in template["required_ownership"]
+    assert "claim_splits_or_lowers_into_bounded_child_and_tail_mutations" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
 
 
 def test_uk_manual_compile_evidence_jsonl_definition_template_survives_unparsed_payload() -> None:
