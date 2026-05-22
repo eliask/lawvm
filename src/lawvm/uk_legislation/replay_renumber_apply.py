@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import replace as dc_replace
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.metadata_rewrites import _renumbered_descendant_text
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_blocking_action_target_detail,
@@ -68,7 +67,7 @@ class UKReplayRenumberApplyMixin:
             return False
 
         child = UKMutableNode(
-            kind=IRNodeKind(destination_kind),
+            kind=uk_ir_node_kind(destination_kind),
             label=destination_label,
             text=_renumbered_descendant_text(
                 source_node.text or "",

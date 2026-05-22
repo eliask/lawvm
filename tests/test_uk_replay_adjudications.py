@@ -10,7 +10,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_ir_node_kind
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
@@ -4041,6 +4041,11 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution_pr
     assert adjudications[0].kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
     assert adjudications[0].detail["source_parent_prefix"] == "to"
     assert adjudications[0].detail["blocking"] is False
+
+
+def test_uk_mutable_ir_maps_source_point_alias_to_item_kind() -> None:
+    assert uk_ir_node_kind("point") == IRNodeKind.ITEM
+    assert UKMutableNode(kind="point", label="i").kind == IRNodeKind.ITEM
 
 
 def test_executor_does_not_materialize_labeled_child_text_without_source_rule() -> None:

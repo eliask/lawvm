@@ -20,10 +20,13 @@ from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 
 
-def _coerce_kind(kind: Any) -> IRNodeKind:
+def uk_ir_node_kind(kind: Any) -> IRNodeKind:
+    """Coerce UK-local source/address kind aliases to core IR node kinds."""
     if isinstance(kind, IRNodeKind):
         return kind
     if isinstance(kind, str):
+        if kind == "point":
+            return IRNodeKind.ITEM
         return IRNodeKind(kind)
     raise TypeError(f"UKMutableNode.kind must be a string or IRNodeKind, got {type(kind).__name__}")
 
@@ -40,7 +43,7 @@ class UKMutableNode:
         return getattr(self, key, default)
 
     def __post_init__(self) -> None:
-        self.kind = _coerce_kind(self.kind)
+        self.kind = uk_ir_node_kind(self.kind)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -63,7 +66,7 @@ class UKMutableNode:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "UKMutableNode":
         return cls(
-            kind=_coerce_kind(data.get("kind", "")),
+            kind=uk_ir_node_kind(data.get("kind", "")),
             label=data.get("label"),
             text=data.get("text", ""),
             attrs=dict(data.get("attrs", {}) or {}),
