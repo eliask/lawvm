@@ -3076,7 +3076,9 @@ Current bench replay-regime invariant:
   row-wise replay-primary score when replay columns are present
   (`replay_commencement_score`, then `replay_score`) and falls back to `score`
   only for non-replay saved runs; it must fail rather than compare different
-  score lanes. UK saved-run labels are direct filenames, not the
+  score lanes. When both UK saved runs include replay-regime columns, it must
+  also fail rather than compare common scored rows produced under different
+  replay regimes. UK saved-run labels are direct filenames, not the
   timestamp-suffixed Finland convention.
   `--max-duration-regressions N` enables an explicit `duration_s` guard for
   saved runs; this is opt-in because timing evidence is environment-sensitive,

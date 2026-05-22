@@ -1183,6 +1183,57 @@ def test_bench_regression_guard_supports_uk_saved_run_shape(
     assert "RESULT: PASS" in out
 
 
+def test_bench_regression_guard_rejects_uk_replay_regime_mismatch(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = [
+        "statute_id",
+        "replay_score",
+        "uk_metadata_backfill_enabled",
+        "uk_oracle_alignment_enabled",
+        "uk_metadata_only_effects_enabled",
+        "uk_applicability_mode",
+        "uk_authority_mode",
+    ]
+    base_row = {
+        "statute_id": "ukpga/2000/1",
+        "replay_score": "0.95",
+        "uk_metadata_backfill_enabled": "1",
+        "uk_oracle_alignment_enabled": "1",
+        "uk_metadata_only_effects_enabled": "0",
+        "uk_applicability_mode": "effective_date_plus_feed_applied",
+        "uk_authority_mode": "source_text_only",
+    }
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(base_row)
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({**base_row, "uk_metadata_only_effects_enabled": "1"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "UK replay regimes (common scored rows with regime evidence):" in out
+    assert "ERROR: UK replay regime mismatch on 1 common scored row(s)" in out
+    assert "ukpga/2000/1" in out
+
+
 def test_bench_regression_guard_prefers_uk_replay_score_when_present(
     tmp_path,
     monkeypatch,
