@@ -148,9 +148,9 @@ def test_uk_bench_parser_accepts_curated_corpus_flags() -> None:
 def test_uk_bench_parser_accepts_curated_corpus_preset() -> None:
     parser = cli._build_parser()
 
-    args = parser.parse_args(["bench", "-j", "uk", "--curate-preset", "tight"])
+    args = parser.parse_args(["bench", "-j", "uk", "--curate-preset", "modern-tight"])
 
-    assert args.curate_preset == "tight"
+    assert args.curate_preset == "modern-tight"
     assert args.curate_corpus is None
     assert args.curate_size is None
 

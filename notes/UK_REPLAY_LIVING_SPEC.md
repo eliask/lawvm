@@ -2989,12 +2989,16 @@ Current bench replay-regime invariant:
 - `lawvm bench -j uk --no-save` is the clean smoke-test path for benchmark
   coverage checks. It may print the full report, but it must not write run CSV,
   score-witness sidecar, or benchmark-history artifacts.
-- `lawvm bench -j uk --curate-preset canary|tight|stress` writes a
+- `lawvm bench -j uk --curate-preset canary|tight|stress|modern-canary|modern-tight` writes a
   source-complete curated corpus without requiring the caller to remember
   standard row budgets or output paths. Preset defaults are canary=40,
-  tight=200, and stress=400. Without `--curate-corpus`, canary writes
+  tight=200, stress=400, modern-canary=40, and modern-tight=200. The modern
+  presets default to `--min-year 1990` unless an explicit year filter is
+  supplied. Without `--curate-corpus`, canary writes
   `data/uk/bench_corpus_smoke.csv`, tight writes
-  `data/uk/bench_corpus_tight.csv`, and stress writes
+  `data/uk/bench_corpus_tight.csv`, modern-canary writes
+  `data/uk/bench_corpus_modern_smoke.csv`, modern-tight writes
+  `data/uk/bench_corpus_modern_tight.csv`, and stress writes
   `data/uk/bench_corpus_stress.csv`. `--curate-size` may still override the
   preset size.
 - `lawvm bench-regression-guard -j uk --baseline <old> --current <new>` reads

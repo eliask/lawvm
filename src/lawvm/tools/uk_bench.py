@@ -75,11 +75,19 @@ _CURATE_PRESET_SIZES = {
     "canary": 40,
     "tight": 200,
     "stress": 400,
+    "modern-canary": 40,
+    "modern-tight": 200,
 }
 _CURATE_PRESET_FILENAMES = {
     "canary": "bench_corpus_smoke.csv",
     "tight": "bench_corpus_tight.csv",
     "stress": "bench_corpus_stress.csv",
+    "modern-canary": "bench_corpus_modern_smoke.csv",
+    "modern-tight": "bench_corpus_modern_tight.csv",
+}
+_CURATE_PRESET_MIN_YEARS = {
+    "modern-canary": 1990,
+    "modern-tight": 1990,
 }
 _CORPUS_FIELDNAMES = [
     "statute_id",
@@ -5308,6 +5316,8 @@ def main(args) -> None:  # noqa: ANN001
         sys.exit(2)
     min_year = getattr(args, "min_year", None)
     max_year = getattr(args, "max_year", None)
+    if min_year is None and curate_preset in _CURATE_PRESET_MIN_YEARS:
+        min_year = _CURATE_PRESET_MIN_YEARS[curate_preset]
     if min_year is not None and max_year is not None and min_year > max_year:
         print("error: --min-year must be less than or equal to --max-year", file=sys.stderr)
         sys.exit(2)
