@@ -2789,6 +2789,107 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_carried_frontier_clai
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_inserted_parent_detail() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-amendment-program-insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/schedule/22/paragraph/21/3/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 21(3)(a)",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 14 para. 14(2)(b)",
+        affecting_title="Test Act 2022",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="amendment_text_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+                    "blocking": True,
+                    "target_ref": "Sch. 22 para. 21(3)(a)",
+                    "target": "schedule:22/paragraph:21/subparagraph:3/item:a",
+                    "source_subparagraph_label": "3",
+                    "source_item_label": "a",
+                    "inserted_parent_label": "d",
+                    "direction": "before",
+                    "anchor_label": "i",
+                    "inserted_label": "ai",
+                    "inserted_text_preview": (
+                        "the community order does not qualify for special procedures"
+                    ),
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "b in sub-paragraph (3)(a), in the inserted paragraph (d), "
+                "before sub-paragraph (i) insert- ai the community order does "
+                "not qualify for special procedures."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id="uk_manual_frontier_amendment_program_target_candidate",
+            manual_compile_reason="Inserted parent needs explicit amendment-program context.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2020/17",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2020/17",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "amendment_program_target_mutation"
+    assert template["source_target_address"] == (
+        "schedule:22/paragraph:21/subparagraph:3/item:a"
+    )
+    assert template["source_subparagraph_label"] == "3"
+    assert template["source_item_label"] == "a"
+    assert template["inserted_parent_label"] == "d"
+    assert template["insert_direction"] == "before"
+    assert template["anchor_label"] == "i"
+    assert template["inserted_label"] == "ai"
+    assert "community order" in template["inserted_text_preview"]
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",
