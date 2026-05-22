@@ -272,8 +272,14 @@ class UKReplayInvariantDiagnosticsMixin:
             for violation in self._seen_invariant_violations
             if any(violation.startswith(scope_prefix) for scope_prefix in scoped_prefixes)
         }
+        new_violations = sorted(current_violations - scoped_seen)
+        if not new_violations:
+            self._seen_invariant_violations.difference_update(scoped_seen)
+            self._seen_invariant_violations.update(current_violations)
+            self._last_invariant_structure_serial = self._structure_mutation_serial
+            return
         payload_shape_violations = uk_payload_shape_invariant_violations(op)
-        for scoped_violation in sorted(current_violations - scoped_seen):
+        for scoped_violation in new_violations:
             if payload_shape_violations and uk_repeated_form_label_payload_shape_gap(op, payload_shape_violations):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
