@@ -493,14 +493,19 @@ def _extract_eid_texts(ir: "IRStatute", eids: Set[str]) -> Dict[str, str]:
     """
     texts: Dict[str, str] = {}
 
-    def _walk(node: IRNode) -> None:
-        eid = node.attrs.get("eId") or node.attrs.get("id")
-        if eid and eid in eids:
-            raw = _collect_text(node)
-            if raw:
-                texts[eid] = _normalize_text(raw)
+    def _walk(node: IRNode) -> str:
+        parts: list[str] = []
+        if node.text:
+            parts.append(node.text.strip())
         for child in node.children:
-            _walk(child)
+            child_text = _walk(child)
+            if child_text:
+                parts.append(child_text)
+        raw = " ".join(parts)
+        eid = node.attrs.get("eId") or node.attrs.get("id")
+        if eid and eid in eids and raw:
+            texts[eid] = _normalize_text(raw)
+        return raw
 
     for child in ir.body.children:
         _walk(child)
