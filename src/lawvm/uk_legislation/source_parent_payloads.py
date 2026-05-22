@@ -81,6 +81,16 @@ _UK_LABELLED_SERIES_ITEM_RE = re.compile(
 )
 
 
+def _could_match_source_parent_schedule_entry_insert(text: str) -> bool:
+    """Cheap necessary-condition guard for the broad schedule-entry regex."""
+    lowered = text.lower()
+    return (
+        "entry" in lowered
+        and "insert" in lowered
+        and ("before" in lowered or "after" in lowered)
+    )
+
+
 def _source_parent_instruction_with_payload(
     *,
     extracted_el: Optional[ET.Element],
@@ -95,6 +105,11 @@ def _source_parent_instruction_with_payload(
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
         instruction_text = _instruction_text_before_amendment_container(ancestor)
+        if (
+            instruction_pattern is SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE
+            and not _could_match_source_parent_schedule_entry_insert(instruction_text)
+        ):
+            continue
         instruction_text = " ".join(instruction_text.split()).strip()
         if not instruction_text or instruction_pattern.search(instruction_text) is None:
             continue

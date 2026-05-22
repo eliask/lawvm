@@ -28,6 +28,16 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
 
+_SOURCE_CARRIED_FRAGMENT_ACTION_RE = re.compile(
+    r"\b(?:omit|repeal|substitute|insert)\b",
+    flags=re.I,
+)
+_SOURCE_FOLLOWING_WORDS_REPEALED_RE = re.compile(
+    r"\b(?:the\s+)?following\s+words?\s+(?:are\s+)?(?:repealed|omitted)\b",
+    flags=re.I,
+)
+
+
 @dataclass(frozen=True)
 class UKDefinitionTextPatchLowering:
     target: LegalAddress
@@ -846,7 +856,7 @@ def _fragment_substitution_source_carried_following_words_repeal(
 ) -> Optional[dict[str, str]]:
     """Resolve block payloads whose parent says the following words are repealed."""
     original = " ".join((extracted_text or "").split()).strip()
-    if not original or re.search(r"\b(?:omit|repeal|substitute|insert)\b", original, flags=re.I):
+    if not original or _SOURCE_CARRIED_FRAGMENT_ACTION_RE.search(original):
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
@@ -855,11 +865,14 @@ def _fragment_substitution_source_carried_following_words_repeal(
             candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
             continue
-        if not re.search(
-            r"\b(?:the\s+)?following\s+words?\s+(?:are\s+)?(?:repealed|omitted)\b",
-            candidate_text,
-            flags=re.I,
+        candidate_lower = candidate_text.lower()
+        if (
+            "following" not in candidate_lower
+            or "word" not in candidate_lower
+            or ("repealed" not in candidate_lower and "omitted" not in candidate_lower)
         ):
+            continue
+        if _SOURCE_FOLLOWING_WORDS_REPEALED_RE.search(candidate_text) is None:
             continue
         source_parent_id = str(ancestor.get("id") or "")
         if not source_parent_id:
