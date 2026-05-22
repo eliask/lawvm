@@ -712,6 +712,7 @@ class _BenchResult:
     comparison_class: str = ""
     core_benchmark: bool = True
     duration_s: float = 0.0
+    phase_timings: dict[str, float] = field(default_factory=dict)
 
 
 def _bench_primary_score(result: _BenchResult, *, has_commencement: bool) -> float:
@@ -838,6 +839,14 @@ def _score_statute(
     source_acquisition_observation_rule_counts: dict[str, int] = {}
     source_acquisition_rejection_count = 0
     source_acquisition_rejection_rule_counts: dict[str, int] = {}
+    phase_timings: dict[str, float] = {}
+    phase_t0 = time.perf_counter()
+
+    def _mark_phase(name: str) -> None:
+        nonlocal phase_t0
+        now = time.perf_counter()
+        phase_timings[name] = phase_timings.get(name, 0.0) + (now - phase_t0)
+        phase_t0 = now
 
     try:
         try:
@@ -875,6 +884,7 @@ def _score_statute(
                 f"  EFFECT FEED COUNT ERROR {sid}: {effect_feed_count_error}",
                 file=sys.stderr,
             )
+        _mark_phase("effect_counts")
 
         enacted_bytes = archive.get(enacted_url)
         enacted_source_status, enacted_source_size = _source_state(enacted_bytes)
@@ -882,6 +892,7 @@ def _score_statute(
         oracle_bytes = archive.get(current_url)
         oracle_source_status, oracle_source_size = _source_state(oracle_bytes)
         oracle_source_sha256 = _source_sha256(oracle_bytes)
+        _mark_phase("source_load")
         if enacted_source_status != "available":
             return _BenchResult(
                 statute_id=sid,
@@ -927,6 +938,7 @@ def _score_statute(
                 error="enacted XML missing or empty",
                 comparison_class="no_enacted_eids",
                 core_benchmark=False,
+                phase_timings=dict(phase_timings),
             )
         assert enacted_bytes is not None
 
@@ -975,6 +987,7 @@ def _score_statute(
                 error="current XML missing or empty",
                 comparison_class="no_oracle_eids",
                 core_benchmark=False,
+                phase_timings=dict(phase_timings),
             )
         assert oracle_bytes is not None
 
@@ -996,6 +1009,7 @@ def _score_statute(
                 )
             )
             raise
+        _mark_phase("parse_enacted")
         try:
             oracle_eid_data = extract_eid_map_bytes(oracle_bytes)
         except Exception as oracle_parse_exc:
@@ -1008,6 +1022,7 @@ def _score_statute(
                 )
             )
             raise
+        _mark_phase("parse_oracle")
         oracle_eids: Set[str] = set(oracle_eid_data.get("eid_map", {}).values())
         oracle_physical_eid_aliases = oracle_eid_data.get("physical_eid_aliases", {})
         oracle_visible_number_eid_aliases = oracle_eid_data.get("visible_number_eid_aliases", {})
@@ -1015,6 +1030,7 @@ def _score_statute(
         enacted_eids = _collect_eids(enacted_ir.body.children)
         for s in enacted_ir.supplements:
             enacted_eids.update(_collect_eids([s]))
+        _mark_phase("collect_enacted_eids")
 
         common = enacted_eids & oracle_eids
         score = _score_eids(enacted_eids, oracle_eids)
@@ -1031,6 +1047,7 @@ def _score_statute(
         oracle_text_map: Dict[str, str] = oracle_eid_data.get("text_map", {})
         enacted_texts = _extract_eid_texts(enacted_ir, common)
         text_score, n_text_compared = _text_similarity_score(enacted_texts, oracle_text_map)
+        _mark_phase("text_score_enacted")
 
         # ── Optional replay ────────────────────────────────────────────
         n_ops = 0
@@ -1194,6 +1211,7 @@ def _score_statute(
                     lowering_rejections_out=lowering_rejections,
                     effect_diagnostics_out=effect_diagnostics,
                 )
+                _mark_phase("compile_ops")
                 _record_compile_diagnostics()
                 n_ops = len(ops)
                 uk_replay_regime_fields = _uk_bench_replay_regime_result_fields(
@@ -1215,6 +1233,7 @@ def _score_statute(
                     allow_oracle_alignment=allow_oracle_alignment,
                     adjudications_out=replay_adjudications,
                 )
+                _mark_phase("replay")
                 replay_adjudication_count = len(replay_adjudications)
                 replay_adjudication_records = tuple(
                     _replay_adjudication_record(adjudication)
@@ -1250,9 +1269,11 @@ def _score_statute(
                     oracle_alignment_match_method_counts = dict(
                         alignment_result.report.match_method_counts
                     )
+                    _mark_phase("oracle_align")
                 replayed_eids = _collect_eids(replayed_ir.body.children)
                 for s in replayed_ir.supplements:
                     replayed_eids.update(_collect_eids([s]))
+                _mark_phase("collect_replay_eids")
                 n_replayed_eids = len(replayed_eids)
                 replay_compare_eids, oracle_compare_eids = normalize_uk_replay_compare_eids(
                     replayed_eids,
@@ -1263,6 +1284,7 @@ def _score_statute(
                 replay_common = replay_compare_eids & oracle_compare_eids
                 n_replay_common = len(replay_common)
                 replay_score = _score_eids(replay_compare_eids, oracle_compare_eids)
+                _mark_phase("score_replay_eids")
                 only_in_replayed = replay_compare_eids - oracle_compare_eids
                 only_in_oracle = oracle_compare_eids - replay_compare_eids
                 uk_residual_claim_comparison_class = classify_uk_bench_comparison(
@@ -1309,6 +1331,7 @@ def _score_statute(
                 )
                 replayed_texts = _extract_eid_texts(replayed_ir, replayed_eids & oracle_eids)
                 replay_text_score, _ = _text_similarity_score(replayed_texts, oracle_text_map)
+                _mark_phase("text_score_replay")
             except Exception as replay_exc:
                 # Replay failure is non-fatal — record it but keep enacted score.
                 # Log the error so it is visible in bench output (not silently swallowed).
@@ -1351,6 +1374,7 @@ def _score_statute(
                 replay_score = -1.0
                 n_ops = -1  # signals error
                 replay_error = f"{type(replay_exc).__name__}: {replay_exc}"[:200]
+                _mark_phase("replay_exception")
 
         # ── Optional commencement filtering ─────────────────────────────
         commencement_score = -1.0
@@ -1416,12 +1440,14 @@ def _score_statute(
                             right_eids=commenced_oracle_for_replay,
                         )
                     )
+                _mark_phase("commencement")
             except Exception as comm_exc:
                 print(
                     f"  COMMENCEMENT ERROR {sid}: {type(comm_exc).__name__}: {comm_exc}",
                     file=sys.stderr,
                 )
                 commencement_error = f"{type(comm_exc).__name__}: {comm_exc}"[:200]
+                _mark_phase("commencement_exception")
             if commencement_feed_observations:
                 commencement_blocking_feed_observations = [
                     obs for obs in commencement_feed_observations if is_blocking_compile_record(obs)
@@ -1580,6 +1606,7 @@ def _score_statute(
             comparison_class=comparison_class,
             core_benchmark=is_core_uk_comparison(comparison_class),
             score_witness_rows=tuple(score_witness_rows),
+            phase_timings=dict(phase_timings),
         )
 
     except Exception as exc:
@@ -1662,6 +1689,7 @@ def _score_statute(
             error=f"{type(exc).__name__}: {exc}"[:200],
             comparison_class="exception",
             core_benchmark=False,
+            phase_timings=dict(phase_timings),
         )
 
 
@@ -2146,6 +2174,38 @@ def _print_slowest_rows(
             f"source_mb={(result.enacted_source_size + result.oracle_source_size) / 1_000_000:.1f} "
             f"class={result.comparison_class or 'unknown'} "
             f"status={result.status}"
+        )
+
+
+def _print_phase_timing_rows(
+    results: Sequence[_BenchResult],
+    *,
+    limit: int = 10,
+) -> None:
+    timed = [result for result in results if result.phase_timings]
+    if not timed:
+        return
+    slowest = sorted(
+        timed,
+        key=lambda result: sum(result.phase_timings.values()),
+        reverse=True,
+    )[:limit]
+    print(f"\nSlowest {len(slowest)} rows by measured phase time:")
+    for result in slowest:
+        total = sum(result.phase_timings.values())
+        phases = sorted(
+            result.phase_timings.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        phase_text = " ".join(
+            f"{name}={seconds:.2f}s"
+            for name, seconds in phases[:6]
+            if seconds > 0.001
+        )
+        print(
+            f"  {result.statute_id:<30} measured={total:7.2f}s "
+            f"row={result.duration_s:7.2f}s ops={result.n_ops:5d} {phase_text}"
         )
 
 
@@ -5238,6 +5298,8 @@ def main(args) -> None:  # noqa: ANN001
         )
     else:
         _print_report(results, label)
+    if getattr(args, "phase_timings", False):
+        _print_phase_timing_rows(results)
     if getattr(args, "no_save", False):
         print("Results not saved (--no-save).")
     else:

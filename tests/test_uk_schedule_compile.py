@@ -26,6 +26,9 @@ from lawvm.uk_legislation.source_adjudication import (
 )
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
+from lawvm.uk_legislation.replay_invariant_diagnostics import (
+    _collect_duplicate_order_invariants,
+)
 from lawvm.uk_legislation.source_context import (
     _implicit_first_subparagraph_context_normalized_ref,
 )
@@ -28909,6 +28912,81 @@ def test_executor_does_not_report_preexisting_invariant_as_replay_violation() ->
     )
 
     assert [adj.kind for adj in adjudications] == []
+
+
+def test_uk_replay_fast_invariant_scan_matches_persisted_generic_subset() -> None:
+    from lawvm.core import tree_ops
+    from lawvm.uk_legislation.mutable_ir import UKMutableNode
+
+    root = IRNode(
+        kind=IRNodeKind.BODY,
+        label=None,
+        text="",
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="2", text="", attrs={"eId": "section-2"}),
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={"eId": "section-1"}),
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="", attrs={"eId": "section-1-duplicate"}),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="3",
+                text="",
+                attrs={"eId": "section-3"},
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="b", text=""),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="a", text=""),
+                ),
+            ),
+        ),
+    )
+
+    generic_subset = [
+        violation
+        for violation in tree_ops.check_invariants(root)
+        if "duplicate " in violation or " out of order:" in violation
+    ]
+
+    assert _collect_duplicate_order_invariants(UKMutableNode.from_irnode(root)) == generic_subset
+
+
+def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="The old rule applies.",
+                    attrs={"eId": "section-1"},
+                    children=(),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+
+    def fail_collect(*_args: object, **_kwargs: object) -> set[str]:
+        raise AssertionError("text-only replay should not rescan structural invariants")
+
+    executor._collect_invariant_violations = fail_collect
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_only_no_invariant_rescan",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=_replace_patch("old", "new"),
+            source=OperationSource(statute_id="uk_test", title="Test Source"),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == "The new rule applies."
+    assert executor.adjudications_out == []
 
 
 def test_executor_sequence_match_does_not_alias_section_1_1_to_section_11() -> None:

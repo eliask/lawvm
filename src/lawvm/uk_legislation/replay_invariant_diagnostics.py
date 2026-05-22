@@ -7,11 +7,11 @@ tree.
 
 from __future__ import annotations
 
-from typing import cast
-
 from lawvm.core import tree_ops
-from lawvm.core.ir import IRNode, LegalOperation
+from lawvm.core.ir import LegalOperation
+from lawvm.core.ir_helpers import _kind_str
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.replay_records import (
@@ -32,6 +32,21 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_subparagraph_order_shape_gap,
 )
 
+_ORDERED_INVARIANT_KINDS = frozenset(
+    {
+        "section",
+        "chapter",
+        "part",
+        "division",
+        "schedule",
+        "appendix",
+        "paragraph",
+        "subparagraph",
+        "item",
+        "sentence",
+    }
+)
+
 
 def _invariant_detail(
     op: LegalOperation,
@@ -47,10 +62,52 @@ def _invariant_detail(
     )
 
 
+def _collect_duplicate_order_invariants(root: UKMutableNode) -> list[str]:
+    """Return the duplicate/order subset that UK replay diagnostics persist.
+
+    ``tree_ops.check_invariants`` also checks nesting and normalized-label
+    aliases, but this caller immediately filters those families out.  Replay
+    invokes this after many individual mutations, so scanning only the families
+    that can be emitted here keeps the diagnostic lane equivalent without
+    paying for discarded checks.
+    """
+    violations: list[str] = []
+    stack: list[tuple[UKMutableNode, str]] = [(root, _kind_str(root.kind))]
+    while stack:
+        node, path = stack.pop()
+        seen: dict[tuple[str, str], int] = {}
+        by_kind: dict[str, list[str]] = {}
+        for child in node.children:
+            child_kind = _kind_str(child.kind)
+            if child.label:
+                label = str(child.label)
+                key = (child_kind, label)
+                seen[key] = seen.get(key, 0) + 1
+                by_kind.setdefault(child_kind, []).append(label)
+        for (kind, label), count in seen.items():
+            if count > 1:
+                violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
+        for kind, labels in by_kind.items():
+            if kind not in _ORDERED_INVARIANT_KINDS:
+                continue
+            keys = [tree_ops._default_sort_key(label) for label in labels]
+            for index in range(len(keys) - 1):
+                if keys[index] > keys[index + 1]:
+                    violations.append(
+                        f"{path}: {kind} out of order: {labels[index]} > {labels[index + 1]}"
+                    )
+        for child in reversed(node.children):
+            child_path = f"{path}/{_kind_str(child.kind)}:{child.label or '?'}"
+            stack.append((child, child_path))
+    return violations
+
+
 class UKReplayInvariantDiagnosticsMixin:
     statute: UKMutableStatute
     adjudications_out: list[CompileAdjudication]
     _seen_invariant_violations: set[str]
+    _structure_mutation_serial: int
+    _last_invariant_structure_serial: int
 
     def _invariant_root_filter_for_op(self, op: LegalOperation) -> set[tuple[str, str]] | None:
         if str(op.target.special or "") == "whole_act":
@@ -84,13 +141,16 @@ class UKReplayInvariantDiagnosticsMixin:
     ) -> set[str]:
         violations: set[str] = set()
         for root_name, node in self._invariant_target_roots(root_filter):
-            for violation in tree_ops.check_invariants(cast(IRNode, node)):
-                if "duplicate " not in violation and " out of order:" not in violation:
-                    continue
+            for violation in _collect_duplicate_order_invariants(node):
                 violations.add(f"{root_name}:{violation}")
         return violations
 
     def _record_invariant_violations(self, op: LegalOperation) -> None:
+        if (
+            _action_name(op.action) in {"text_replace", "text_repeal"}
+            and self._structure_mutation_serial == self._last_invariant_structure_serial
+        ):
+            return
         root_filter = self._invariant_root_filter_for_op(op)
         current_violations = self._collect_invariant_violations(root_filter)
         scoped_root_names = {
@@ -211,3 +271,4 @@ class UKReplayInvariantDiagnosticsMixin:
                 )
         self._seen_invariant_violations.difference_update(scoped_seen)
         self._seen_invariant_violations.update(current_violations)
+        self._last_invariant_structure_serial = self._structure_mutation_serial

@@ -2553,6 +2553,12 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk] disable commencement filtering (on by default; use to compare raw EID scores)",
     )
     bench_p.add_argument(
+        "--phase-timings",
+        action="store_true",
+        dest="phase_timings",
+        help="[-j uk] print measured per-row phase timings for replay performance triage",
+    )
+    bench_p.add_argument(
         "--min-year",
         type=int,
         metavar="YEAR",
