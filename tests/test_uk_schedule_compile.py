@@ -10567,6 +10567,55 @@ def test_executor_target_lookup_cache_tracks_structural_mutations() -> None:
     assert removed is None
 
 
+def test_executor_target_lookup_uses_exact_eid_before_recursive_scan() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            label=None,
+                            attrs={"eId": "section-1-wrapper"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    text="wrapped subsection",
+                                    attrs={"eId": "section-1-1"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+
+    def fail_recursive_match(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("target lookup should resolve exact eId before recursive scan")
+
+    executor._find_recursive_match = fail_recursive_match
+    node, parent, idx = executor._find_node_by_target(
+        LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+    )
+
+    assert node is not None
+    assert node.text == "wrapped subsection"
+    assert parent is executor.statute.body.children[0].children[0]
+    assert idx == 0
+
+
 def test_executor_eid_search_cache_tracks_structural_mutations() -> None:
     statute = IRStatute(
         statute_id="ukpga/2001/1",
