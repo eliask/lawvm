@@ -13,6 +13,11 @@ from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_me
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num, _extract_num
 from lawvm.uk_legislation.xml_helpers import _clone_element, _direct_structural_num, _structural_children, _tag, _text_content
 
+_LEADING_STRUCTURAL_LABEL_RE = re.compile(
+    r"^\s*\(?(?:\d+[A-Z]?|[A-Za-z]|i{1,3}|iv|v|vi{0,3}|ix|x)\)?\.?\s+",
+    flags=re.I,
+)
+
 
 def _crossheading_and_structural_replacement_heading_text(
     *,
@@ -388,12 +393,12 @@ def _is_non_substantive_structural_payload(node: Optional[UKMutableNode]) -> boo
         return False
     text = (node.text or "").strip()
     if node.children:
-        if text and re.sub(r"[.\s]+", "", re.sub(r"^\s*[0-9A-Z]+\s*", "", text, flags=re.I)) != "":
+        if text and re.sub(r"[.\s]+", "", _LEADING_STRUCTURAL_LABEL_RE.sub("", text, count=1)) != "":
             return False
         return all(_is_non_substantive_structural_payload(child) for child in node.children)
     if not text:
         return True
-    stripped = re.sub(r"^\s*[0-9A-Z]+\s*", "", text, flags=re.I)
+    stripped = _LEADING_STRUCTURAL_LABEL_RE.sub("", text, count=1)
     stripped = re.sub(r"[.\s]+", "", stripped)
     return stripped == ""
 
