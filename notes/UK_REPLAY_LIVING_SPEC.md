@@ -2403,6 +2403,14 @@ Current block-substitution context invariant:
   by the generic `instruction_text_reused_as_payload` blocker. Current witness:
   `asp/2002/11` affected by `ssi/2017/36 art. 21(3)`, `Sch. 2 Pt. 1 para. 17B
   and cross-heading`.
+- Schedule paragraph insert metadata may name a compressed sibling range with
+  plural cross-heading text, e.g. `Sch. 6 para. 45-48 and cross-headings`.
+  The plural cross-heading suffix is not a body target; target splitting strips
+  it only to expand the proved structural paragraph range. The extracted
+  `BlockAmendment` must still carry one source-owned payload child per
+  structural target, and each `P1group/Title` remains an owned heading carrier
+  on its corresponding paragraph. Current witness: `ukpga/2020/17`, affected
+  by `ukpga/2022/32 Sch. 17 para. 12(13)`.
 - source text that says `for "X", wherever occurring, substitute "Y"` lowers
   under `uk_effect_wherever_occurring_substitution_text_patch`. This is a
   deterministic text-patch family, not manual compilation, because the source

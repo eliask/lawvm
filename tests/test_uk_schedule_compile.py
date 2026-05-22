@@ -1109,6 +1109,105 @@ def test_compile_inserted_schedule_paragraph_p1group_title_becomes_heading_carri
     )
 
 
+def test_compile_schedule_paragraph_range_with_plural_cross_headings_suffix_expands_payload_children() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-17-paragraph-12-13">
+          <Pnumber>13</Pnumber>
+          <P2para>
+            <Text>After paragraph 44 insert—</Text>
+            <BlockAmendment>
+              <P1group>
+                <Title>Electronic whereabouts monitoring requirement</Title>
+                <P1><Pnumber>45</Pnumber><P1para><Text>Paragraph 45 body.</Text></P1para></P1>
+              </P1group>
+              <P1group>
+                <Title>Person responsible for electronic monitoring: electronic whereabouts monitoring order</Title>
+                <P1>
+                  <Pnumber>46</Pnumber>
+                  <P1para>
+                    <P2><Pnumber>1</Pnumber><P2para><Text>Paragraph 46 subparagraph 1.</Text></P2para></P2>
+                  </P1para>
+                </P1>
+              </P1group>
+              <P1group>
+                <Title>Electronic whereabouts monitoring requirement: general</Title>
+                <P1>
+                  <Pnumber>47</Pnumber>
+                  <P1para>
+                    <Text>Paragraph 47 intro.</Text>
+                    <P3><Pnumber>a</Pnumber><P3para><Text>Paragraph 47 item a.</Text></P3para></P3>
+                  </P1para>
+                </P1>
+              </P1group>
+              <P1group>
+                <Title>Restrictions on imposing electronic whereabouts monitoring requirement</Title>
+                <P1><Pnumber>48</Pnumber><P1para><Text>Paragraph 48 body.</Text></P1para></P1>
+              </P1group>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_para_range_plural_cross_headings",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17/schedule/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 45-48 and cross-headings",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 12(13)",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        comments="",
+        in_force_dates=[{"date": "2022-04-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert [op.action for op in ops] == [
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+    ]
+    assert [op.target for op in ops] == [
+        LegalAddress((("schedule", "6"), ("paragraph", "45"))),
+        LegalAddress((("schedule", "6"), ("paragraph", "46"))),
+        LegalAddress((("schedule", "6"), ("paragraph", "47"))),
+        LegalAddress((("schedule", "6"), ("paragraph", "48"))),
+    ]
+    payloads = [op.payload for op in ops]
+    assert all(payload is not None for payload in payloads)
+    assert [payload.label for payload in payloads if payload is not None] == ["45", "46", "47", "48"]
+    assert [
+        payload.children[0].text
+        for payload in payloads
+        if payload is not None and payload.children
+    ] == [
+        "Electronic whereabouts monitoring requirement",
+        "Person responsible for electronic monitoring: electronic whereabouts monitoring order",
+        "Electronic whereabouts monitoring requirement: general",
+        "Restrictions on imposing electronic whereabouts monitoring requirement",
+    ]
+    assert any(
+        record["rule_id"] == "uk_effect_chained_insertion_anchor_lowered"
+        and record["target"] == "schedule:6/paragraph:46"
+        and record["preceding_eid"] == "schedule-6-paragraph-45"
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_instruction_text_payload_rejected" for record in lowering_records)
+    assert not any(record.get("blocking") is True for record in lowering_records)
+
+
 def test_compile_inserted_section_without_p1group_title_does_not_invent_heading_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -1402,6 +1501,15 @@ def test_split_metadata_schedule_space_separated_alnum_sibling_paragraphs() -> N
     assert _split_metadata_provisions("sch. 2A para. 9B 9C and cross-headings") == [
         "sch. 2A para. 9B",
         "sch. 2A para. 9C",
+    ]
+
+
+def test_split_metadata_schedule_range_with_plural_cross_headings_suffix() -> None:
+    assert _split_metadata_provisions("Sch. 6 para. 45-48 and cross-headings") == [
+        "Sch. 6 para. 45",
+        "Sch. 6 para. 46",
+        "Sch. 6 para. 47",
+        "Sch. 6 para. 48",
     ]
 
 

@@ -470,9 +470,10 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                         all_parts.append(f"{prefix}({group})")
                     continue
 
-        # Strip "and cross-heading" / "and cross heading" qualifier suffix so
-        # ranges like "s. 9-12 and cross-heading" expand correctly.
-        p_for_range = re.sub(r"\s+and\s+cross[-\s]?heading\b.*$", "", p, flags=re.I).strip()
+        # Strip "and cross-heading(s)" / "and cross heading(s)" qualifier
+        # suffix so ranges like "s. 9-12 and cross-heading" and
+        # "Sch. 6 para. 45-48 and cross-headings" expand correctly.
+        p_for_range = re.sub(r"\s+and\s+cross[-\s]?headings?\b.*$", "", p, flags=re.I).strip()
 
         # Parenthesized subsection range: "s. 18(7A)-(7D)" -> "s. 18(7A)", ...
         paren_range_m = re.match(r"^(.*?)\(([0-9A-Z]+)\)-\(([0-9A-Z]+)\)$", p_for_range, re.I)
