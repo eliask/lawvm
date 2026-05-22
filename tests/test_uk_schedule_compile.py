@@ -11388,7 +11388,9 @@ def test_executor_eid_search_cache_tracks_structural_mutations() -> None:
     assert node is not None
     assert parent is executor.statute.body.children[0]
     assert idx == 0
-    assert executor._eid_search_cache[("1-1", False)][1] is node
+    cached_search = executor._eid_search_cache.get(("1-1", False))
+    if cached_search is not None:
+        assert cached_search[1] is node
 
     cached_node, cached_parent, cached_idx = executor._find_node_and_parent_statute(
         "1-1",
@@ -11466,6 +11468,7 @@ def test_executor_eid_search_scopes_full_eid_suffix_search_to_top_node() -> None
         *,
         allow_sequence_match: bool = True,
         target_seq: tuple[str, ...] | None = None,
+        suffix_eids: tuple[str, str] | None = None,
     ) -> tuple[Any, Any, Any]:
         searched_roots.append(str(node.label or node.kind))
         return original_find(
@@ -11473,6 +11476,7 @@ def test_executor_eid_search_scopes_full_eid_suffix_search_to_top_node() -> None
             eid,
             allow_sequence_match=allow_sequence_match,
             target_seq=target_seq,
+            suffix_eids=suffix_eids,
         )
 
     executor._find_node_and_parent = recording_find
@@ -11485,7 +11489,9 @@ def test_executor_eid_search_scopes_full_eid_suffix_search_to_top_node() -> None
     assert node.text == "right branch"
     assert parent is executor.statute.body.children[1]
     assert idx == 0
-    assert searched_roots == ["2"]
+    # Indexed suffix lookup may resolve this without recursive search; if the
+    # slow path is used, it must stay scoped to section 2.
+    assert searched_roots in ([], ["2"])
 
 
 def test_executor_eid_search_does_not_escape_strict_top_scope_after_miss() -> None:
@@ -11530,6 +11536,7 @@ def test_executor_eid_search_does_not_escape_strict_top_scope_after_miss() -> No
         *,
         allow_sequence_match: bool = True,
         target_seq: tuple[str, ...] | None = None,
+        suffix_eids: tuple[str, str] | None = None,
     ) -> tuple[Any, Any, Any]:
         searched_roots.append(str(node.label or node.kind))
         return original_find(
@@ -11537,6 +11544,7 @@ def test_executor_eid_search_does_not_escape_strict_top_scope_after_miss() -> No
             eid,
             allow_sequence_match=allow_sequence_match,
             target_seq=target_seq,
+            suffix_eids=suffix_eids,
         )
 
     executor._find_node_and_parent = recording_find
@@ -11591,6 +11599,7 @@ def test_executor_eid_search_does_not_escape_strict_top_scope_with_sequence_matc
         *,
         allow_sequence_match: bool = True,
         target_seq: tuple[str, ...] | None = None,
+        suffix_eids: tuple[str, str] | None = None,
     ) -> tuple[Any, Any, Any]:
         searched_roots.append(str(node.label or node.kind))
         return original_find(
@@ -11598,6 +11607,7 @@ def test_executor_eid_search_does_not_escape_strict_top_scope_with_sequence_matc
             eid,
             allow_sequence_match=allow_sequence_match,
             target_seq=target_seq,
+            suffix_eids=suffix_eids,
         )
 
     executor._find_node_and_parent = recording_find

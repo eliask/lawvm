@@ -155,6 +155,17 @@ class UKReplayStateMixin:
             idx,
         )
 
+    def _node_contains_node(self, root: UKMutableNode, target: UKMutableNode) -> bool:
+        if root is target:
+            return True
+        stack = list(root.children)
+        while stack:
+            node = stack.pop()
+            if node is target:
+                return True
+            stack.extend(node.children)
+        return False
+
     def _target_lookup_cache_key(
         self,
         target: LegalAddress,
@@ -391,6 +402,11 @@ class UKReplayStateMixin:
         if self._eid_suffix_lookup_index is None:
             return None, None, None
         top_scope = self._eid_top_scope_key(eid)
+        top_scope_node = None
+        if top_scope:
+            top_scope_node, _top_parent, _top_idx = self._cached_exact_eid_lookup(top_scope)
+            if top_scope_node is None:
+                return None, None, None
         lookup_keys = ((top_scope, eid),) if top_scope else (("", eid),)
         for lookup_key in lookup_keys:
             if lookup_key in self._eid_suffix_lookup_ambiguous:
@@ -399,6 +415,8 @@ class UKReplayStateMixin:
             if entry is None:
                 continue
             node, parent, idx = entry
+            if top_scope_node is not None and not self._node_contains_node(top_scope_node, node):
+                continue
             if parent is not None:
                 if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
                     return node, parent, idx
