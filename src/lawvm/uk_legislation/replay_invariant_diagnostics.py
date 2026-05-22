@@ -77,7 +77,8 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
         children = node.children
         if len(children) >= 2:
             seen: dict[tuple[str, str], int] = {}
-            by_kind: dict[str, list[str]] = {}
+            order_state: dict[str, tuple[tuple[int, str, int], str]] = {}
+            order_violations: list[str] = []
             for child in children:
                 child_kind = child.kind.value
                 if child.label:
@@ -85,17 +86,17 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
                     key = (child_kind, label)
                     seen[key] = seen.get(key, 0) + 1
                     if child_kind in _ORDERED_INVARIANT_KINDS:
-                        by_kind.setdefault(child_kind, []).append(label)
+                        sort_key = tree_ops._default_sort_key(label)
+                        previous = order_state.get(child_kind)
+                        if previous is not None and previous[0] > sort_key:
+                            order_violations.append(
+                                f"{path}: {child_kind} out of order: {previous[1]} > {label}"
+                            )
+                        order_state[child_kind] = (sort_key, label)
             for (kind, label), count in seen.items():
                 if count > 1:
                     violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
-            for kind, labels in by_kind.items():
-                keys = [tree_ops._default_sort_key(label) for label in labels]
-                for index in range(len(keys) - 1):
-                    if keys[index] > keys[index + 1]:
-                        violations.append(
-                            f"{path}: {kind} out of order: {labels[index]} > {labels[index + 1]}"
-                        )
+            violations.extend(order_violations)
         for child in reversed(children):
             if not child.children:
                 continue
