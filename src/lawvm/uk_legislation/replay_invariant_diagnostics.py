@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from lawvm.core import tree_ops
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.core.ir_helpers import _kind_str
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -47,12 +46,6 @@ _ORDERED_INVARIANT_KINDS = frozenset(
 )
 
 
-def _invariant_kind_str(kind: object) -> str:
-    if isinstance(kind, str):
-        return kind
-    return _kind_str(kind)
-
-
 def _invariant_detail(
     op: LegalOperation,
     scoped_violation: str,
@@ -77,7 +70,7 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
     paying for discarded checks.
     """
     violations: list[str] = []
-    stack: list[tuple[UKMutableNode, str]] = [(root, initial_path or _kind_str(root.kind))]
+    stack: list[tuple[UKMutableNode, str]] = [(root, initial_path or root.kind.value)]
     while stack:
         node, path = stack.pop()
         children = node.children
@@ -85,7 +78,7 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
             seen: dict[tuple[str, str], int] = {}
             by_kind: dict[str, list[str]] = {}
             for child in children:
-                child_kind = _invariant_kind_str(child.kind)
+                child_kind = child.kind.value
                 if child.label:
                     label = str(child.label)
                     key = (child_kind, label)
@@ -105,7 +98,7 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
         for child in reversed(children):
             if not child.children:
                 continue
-            child_path = f"{path}/{_kind_str(child.kind)}:{child.label or '?'}"
+            child_path = f"{path}/{child.kind.value}:{child.label or '?'}"
             stack.append((child, child_path))
     return violations
 
@@ -133,7 +126,7 @@ class UKReplayInvariantDiagnosticsMixin:
     def _node_invariant_path(self, root: UKMutableNode, node: UKMutableNode, root_path: str) -> str:
         for child in root.children:
             if child is node:
-                return f"{root_path}/{_kind_str(child.kind)}:{child.label or '?'}"
+                return f"{root_path}/{child.kind.value}:{child.label or '?'}"
         path = self._find_path_to_node(root, node)
         if path is None:
             return root_path
@@ -141,7 +134,7 @@ class UKReplayInvariantDiagnosticsMixin:
         current = root
         for child_idx in path:
             current = current.children[child_idx]
-            parts.append(f"{_kind_str(current.kind)}:{current.label or '?'}")
+            parts.append(f"{current.kind.value}:{current.label or '?'}")
         return "/".join(parts)
 
     def _find_invariant_scope_node(
@@ -194,7 +187,7 @@ class UKReplayInvariantDiagnosticsMixin:
             initial_path = self._node_invariant_path(
                 schedule_root,
                 node,
-                _kind_str(schedule_root.kind),
+                schedule_root.kind.value,
             )
             return [(root_name, node, initial_path, f"{root_name}:{initial_path}")]
         initial_path = self._node_invariant_path(self.statute.body, node, "body")
@@ -211,7 +204,7 @@ class UKReplayInvariantDiagnosticsMixin:
             clean_label = _clean_num(str(schedule.label or ""))
             if root_filter is None or ("schedule", clean_label) in root_filter:
                 root_name = f"schedule:{schedule.label or '?'}"
-                initial_path = _kind_str(schedule.kind)
+                initial_path = schedule.kind.value
                 targets.append((root_name, schedule, initial_path, f"{root_name}:"))
         return targets
 
