@@ -5,6 +5,7 @@ compiler. They deliberately do not resolve targets against live state.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 from typing import Any, Optional
 
@@ -14,6 +15,7 @@ from lawvm.uk_legislation.canonicalize import uk_addr_container
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+@lru_cache(maxsize=128)
 def _uk_kind_value(kind: IRNodeKind | str) -> str:
     if isinstance(kind, IRNodeKind):
         return kind.value
