@@ -336,6 +336,15 @@ def _expand_sibling_targets_from_text(
             part_kind_base = part_kind_base[:-1]
         if part_kind_base != sibling_kind_base:
             return None
+    for part in sibling_parts:
+        candidate = re.sub(
+            r"^(?:sub-?paragraph|paragraph|subsection|item|point)s?\s+",
+            "",
+            part,
+            flags=re.I,
+        ).strip()
+        if re.fullmatch(r"(?:\([0-9A-Z]+\)\s*)+", candidate, flags=re.I) is None:
+            return None
     if sibling_kind.startswith("subsection") and any(
         re.match(r"^(?:sub-?paragraph|paragraph|item|point)\b", part, flags=re.I) for part in sibling_parts
     ):

@@ -39,6 +39,7 @@ from lawvm.uk_legislation.source_context import (
     _implicit_first_subparagraph_context_normalized_ref,
     _source_ancestor_chain,
 )
+from lawvm.uk_legislation.substitution_metadata import _expand_sibling_targets_from_text
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -1832,6 +1833,24 @@ def test_split_metadata_carries_part_context_for_space_separated_chapters() -> N
         (("part", "8a"), ("chapter", "2a")),
         (("part", "8a"), ("chapter", "2b")),
     ]
+
+
+def test_source_text_sibling_expansion_rejects_nested_context_clauses() -> None:
+    expanded = _expand_sibling_targets_from_text(
+        "s. 7(1)(a)",
+        '2 In subsection (1), in paragraph (a), after "company" insert "x".',
+    )
+
+    assert expanded is None
+
+
+def test_source_text_sibling_expansion_accepts_like_kind_sibling_refs() -> None:
+    expanded = _expand_sibling_targets_from_text(
+        "s. 7(1)(2)",
+        '2 In subsections (1) and (2), after "company" insert "x".',
+    )
+
+    assert expanded == ["s. 7(1)", "s. 7(2)"]
 
 
 def test_compile_space_separated_chapter_targets_do_not_fall_back_to_body_root() -> None:
