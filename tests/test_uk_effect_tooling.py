@@ -2350,6 +2350,95 @@ def test_uk_manual_compile_evidence_jsonl_templates_table_entry_claim() -> None:
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_table_appropriate_place_template_carries_entry_shape() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-appropriate-place",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-05-01",
+        affected_uri="/id/ukpga/2020/17/section/379/1/table",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 379(1) table",
+        affecting_uri="/id/ukpga/2023/41",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="41",
+        affecting_provisions="Sch. 13 para. 11",
+        affecting_title="Test Act 2023",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="table_entry_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_table_entry_instruction_rejected",
+                    "blocking": True,
+                    "target_ref": "s. 379(1) table",
+                    "target": "section:379/subsection:1/paragraph:table",
+                    "entry_shape": "appropriate_place_table_entry",
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                "In section 379, in the table in subsection (1), at the "
+                "appropriate place insert- Northern Ireland Troubles "
+                "(Legacy and Reconciliation) Act 2023."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_table_appropriate_place_candidate",
+            manual_compile_reason="Table appropriate-place insertion requires ordering claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_table_entry_instruction_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_table_entry_instruction_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2020/17",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2020/17",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_surface_mutation"
+    assert template["placement_family"] == (
+        "appropriate_place_table_entry_requires_ordering_claim"
+    )
+    assert template["source_target_surface"] == "s. 379(1) table"
+    assert template["source_target_address"] == "section:379/subsection:1/paragraph:table"
+    assert template["table_entry_shape"] == "appropriate_place_table_entry"
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-appropriate-place",
