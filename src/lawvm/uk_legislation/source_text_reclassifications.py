@@ -37,6 +37,7 @@ class UKQuoteOnlyOmissionLowering:
     fragment_subs: Optional[list[dict[str, str]]]
     op_text_match: Optional[str]
     op_text_replacement: Optional[str]
+    op_text_occurrence: Optional[int] = None
 
 
 def _word_level_structural_subsection_omission(
@@ -139,6 +140,14 @@ _CHILD_QUALIFIED_WORD_OMISSION_RE = re.compile(
     r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s*,?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_CHILD_QUALIFIED_FINAL_WORD_OMISSION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"(?:the\s+)?(?:word\s+)?[\"\u201c](?P<fragment>.*?)[\"\u201d]\s+"
+    r"at\s+the\s+end\s+of\s+"
+    r"(?P<child_kind>paragraph|sub-?paragraph|subsection|section)\s+"
+    r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 
 
 def _quote_only_omission_payload_match(extracted_text: str) -> Optional[str]:
@@ -173,6 +182,40 @@ def _child_qualified_word_omission_payload_match(
     if not normalized:
         return None
     match = _CHILD_QUALIFIED_WORD_OMISSION_RE.match(normalized)
+    if match is None:
+        return None
+    source_kind = match.group("child_kind").replace("-", "").lower()
+    source_kind = "subparagraph" if source_kind == "subparagraph" else source_kind
+    source_label = _source_child_label(match.group("child_label"))
+    target_kind = _addr_leaf_kind(target)
+    target_label = _source_child_label(_addr_leaf_label(target) or "")
+    if source_kind != target_kind or not source_label or source_label != target_label:
+        return None
+    fragment = " ".join(match.group("fragment").split()).strip()
+    if not fragment:
+        return None
+    return {
+        "fragment": fragment,
+        "source_child_kind": source_kind,
+        "source_child_label": source_label,
+        "matched_instruction": match.group(0),
+    }
+
+
+def _child_qualified_final_word_omission_payload_match(
+    *,
+    effect_type: str,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Return a final-occurrence deletion when source names the exact affected child."""
+    effect_type_norm = (effect_type or "").strip().lower()
+    if effect_type_norm not in {"words omitted", "word omitted", "words repealed", "word repealed"}:
+        return None
+    normalized = " ".join((extracted_text or "").split()).strip()
+    if not normalized:
+        return None
+    match = _CHILD_QUALIFIED_FINAL_WORD_OMISSION_RE.match(normalized)
     if match is None:
         return None
     source_kind = match.group("child_kind").replace("-", "").lower()
@@ -312,6 +355,50 @@ def lower_quote_only_word_omission(
             ],
             op_text_match=op_text_match,
             op_text_replacement="",
+        )
+
+    child_qualified_final_omission = _child_qualified_final_word_omission_payload_match(
+        effect_type=effect_type,
+        extracted_text=extracted_text,
+        target=target,
+    )
+    if child_qualified_final_omission is not None:
+        op_text_match = child_qualified_final_omission["fragment"]
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_child_qualified_final_word_omission_text_patch",
+            family="text_rewrite_lowering",
+            reason_code="word_omission_payload_names_exact_child_target_and_final_occurrence",
+            reason=(
+                "UK word-level omission source row quotes the deleted final word "
+                "and names the exact child already selected by the effect feed; "
+                "lowering uses a final-occurrence text patch without widening scope."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "occurrence": -1,
+                **child_qualified_final_omission,
+            },
+        )
+        return UKQuoteOnlyOmissionLowering(
+            applied=True,
+            curr_action="text_repeal",
+            content_ir=None,
+            fragment_subs=[
+                {
+                    "original": op_text_match,
+                    "replacement": "",
+                    "occurrence": "-1",
+                    "rule_id": "uk_effect_child_qualified_final_word_omission_text_patch",
+                }
+            ],
+            op_text_match=op_text_match,
+            op_text_replacement="",
+            op_text_occurrence=-1,
         )
 
     quote_only_definition_omission = _quote_only_definition_list_omission_payload_match(
