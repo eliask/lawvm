@@ -77,6 +77,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
+        "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
         "uk_manual_frontier_structural_sibling_insert_candidate",
         "uk_manual_frontier_table_appropriate_place_candidate",
         "uk_manual_frontier_table_column_insert_candidate",
@@ -3156,6 +3157,13 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_carried_structured_pa
             "source_named_child_tail_required",
             "source_named_child_anchor",
             "claim_targets_only_the_tail_text_following_that_child",
+        ),
+        (
+            "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
+            "source_carried_structured_tail_substitution",
+            "tail_range_with_structured_payload_required",
+            "source_carried_structured_payload_units",
+            "claim_materializes_replacement_payload_as_child_units_not_flat_text",
         ),
     ],
 )

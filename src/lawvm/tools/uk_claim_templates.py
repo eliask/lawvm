@@ -533,6 +533,30 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_claimed_child_target_boundaries",
             ],
         )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="source_carried_structured_tail_substitution",
+            placement_family="tail_range_with_structured_payload_required",
+            required_ownership=[
+                "source_tail_range_preimage",
+                "source_carried_structured_payload_units",
+                "child_target_boundaries",
+                "flattened_patch_replacement_boundary",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_tail_range_and_structured_replacement",
+                "claim_identifies_exact_tail_preimage_boundary",
+                "claim_materializes_replacement_payload_as_child_units_not_flat_text",
+                "claim_preserves_unclaimed_existing_child_units_and_parent_text",
+                "changed_paths_are_within_claimed_tail_and_child_payload_boundaries",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_range_to_container_candidate":
         blocking_rows = tuple(
             row
