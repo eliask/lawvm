@@ -32,7 +32,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Sequence, Set, cast
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, cast
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRStatute
@@ -88,6 +88,26 @@ _CORPUS_FIELDNAMES = [
     "enacted_source_sha256",
     "oracle_source_sha256",
 ]
+
+_PHASE_TIMING_KEYS = (
+    "effect_counts",
+    "source_load",
+    "parse_enacted",
+    "parse_oracle",
+    "collect_enacted_eids",
+    "text_score_enacted",
+    "compile_ops",
+    "replay",
+    "oracle_align",
+    "collect_replay_eids",
+    "score_replay_eids",
+    "text_score_replay",
+    "replay_exception",
+    "commencement",
+    "commencement_exception",
+)
+_PHASE_TIMING_TOTAL_HEADER = "phase_total_s"
+_PHASE_TIMING_HEADERS = tuple(f"phase_{name}_s" for name in _PHASE_TIMING_KEYS)
 
 # Module-level state for worker processes (set before spawning ProcessPoolExecutor).
 _WORKER_DB_PATH: str = ""
@@ -2209,6 +2229,29 @@ def _print_phase_timing_rows(
         )
 
 
+def _phase_timing_csv_values(result: _BenchResult) -> list[str]:
+    phase_timings = result.phase_timings
+    total = sum(phase_timings.values())
+    values = [f"{total:.3f}" if total > 0.0 else ""]
+    values.extend(
+        f"{phase_timings[key]:.3f}" if key in phase_timings else ""
+        for key in _PHASE_TIMING_KEYS
+    )
+    return values
+
+
+def _load_phase_timings(row: Mapping[str, str]) -> dict[str, float]:
+    phase_timings: dict[str, float] = {}
+    for key in _PHASE_TIMING_KEYS:
+        raw_value = row.get(f"phase_{key}_s", "")
+        if not raw_value:
+            continue
+        seconds = float(raw_value)
+        if seconds > 0.0:
+            phase_timings[key] = seconds
+    return phase_timings
+
+
 def _print_report(
     results: list[_BenchResult],
     label: str,
@@ -3785,6 +3828,8 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "comparison_class",
                 "core_benchmark",
                 "duration_s",
+                _PHASE_TIMING_TOTAL_HEADER,
+                *_PHASE_TIMING_HEADERS,
             ]
         else:
             headers = [
@@ -3830,6 +3875,8 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "comparison_class",
                 "core_benchmark",
                 "duration_s",
+                _PHASE_TIMING_TOTAL_HEADER,
+                *_PHASE_TIMING_HEADERS,
             ]
         if has_replay:
             if has_commencement:
@@ -3977,6 +4024,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
                     f"{r.duration_s:.3f}",
+                    *_phase_timing_csv_values(r),
                 ]
             else:
                 row = [
@@ -4022,6 +4070,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
                     f"{r.duration_s:.3f}",
+                    *_phase_timing_csv_values(r),
                 ]
             if has_replay:
                 if has_commencement:
@@ -4453,6 +4502,7 @@ def _load_run(label: str) -> list[_BenchResult]:
             else:
                 core_benchmark = True
             duration_s = float(row.get("duration_s", "0") or 0.0)
+            phase_timings = _load_phase_timings(row)
             results.append(
                 _BenchResult(
                     statute_id=statute_id,
@@ -4556,6 +4606,7 @@ def _load_run(label: str) -> list[_BenchResult]:
                     comparison_class=comparison_class,
                     core_benchmark=core_benchmark,
                     duration_s=duration_s,
+                    phase_timings=phase_timings,
                 )
             )
     return results

@@ -701,6 +701,11 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
         comparison_class="commensurable",
         core_benchmark=False,
         duration_s=12.345,
+        phase_timings={
+            "compile_ops": 1.25,
+            "replay": 2.5,
+            "oracle_align": 0.125,
+        },
         score_witness_rows=(
             _BenchScoreWitnessRow(
                 comparison_scope="raw",
@@ -825,6 +830,11 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert rows[0]["uk_residual_section_claim_emitted"] == "1"
     assert rows[0]["replay_commencement_score"] == "0.9000"
     assert rows[0]["duration_s"] == "12.345"
+    assert rows[0]["phase_total_s"] == "3.875"
+    assert rows[0]["phase_compile_ops_s"] == "1.250"
+    assert rows[0]["phase_replay_s"] == "2.500"
+    assert rows[0]["phase_oracle_align_s"] == "0.125"
+    assert rows[0]["phase_parse_oracle_s"] == ""
     assert json.loads(rows[0]["manual_compile_status_counts"]) == {
         "unclassified_frontier": 1,
     }
@@ -1171,6 +1181,11 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert loaded_result.comparison_class == "commensurable"
     assert loaded_result.core_benchmark is False
     assert loaded_result.duration_s == 12.345
+    assert loaded_result.phase_timings == {
+        "compile_ops": 1.25,
+        "replay": 2.5,
+        "oracle_align": 0.125,
+    }
 
 
 def test_uk_bench_load_legacy_replay_csv_marks_residual_claim_unknown(
