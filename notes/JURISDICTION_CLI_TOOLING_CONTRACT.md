@@ -80,8 +80,8 @@ Existing examples are uneven but instructive: Finland has `bench`, `frontier`,
 `diagnose-phase`, and `structural-review`; Estonia has pair/corpus consistency
 tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `ee-chain-quality`; UK has `uk-effect`, `uk-effects`, `uk-candidates`,
-`bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`, and replay
-diagnostics.
+`bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`,
+`bench -j uk --curate-preset canary|tight|stress`, and replay diagnostics.
 
 ## 4. CLI Shape
 

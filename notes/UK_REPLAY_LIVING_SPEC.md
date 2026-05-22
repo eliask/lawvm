@@ -2989,6 +2989,12 @@ Current bench replay-regime invariant:
 - `lawvm bench -j uk --no-save` is the clean smoke-test path for benchmark
   coverage checks. It may print the full report, but it must not write run CSV,
   score-witness sidecar, or benchmark-history artifacts.
+- `lawvm bench -j uk --curate-preset canary|tight|stress` writes a
+  source-complete curated corpus without requiring the caller to remember
+  standard row budgets or output paths. Preset defaults are canary=40,
+  tight=200, and stress=400, written as
+  `data/uk/bench_corpus_<preset>.csv` unless `--curate-corpus` overrides the
+  path. `--curate-size` may still override the preset size.
 - `lawvm bench -j uk --statute <ID>` must filter the UK bench corpus to exactly
   the requested statute before applying diagnostic limits. If the statute is not
   present in the corpus, the command fails visibly rather than saving an empty

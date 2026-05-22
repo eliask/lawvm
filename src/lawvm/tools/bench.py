@@ -2509,11 +2509,19 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk] write a source-complete curated corpus CSV and exit",
     )
     bench_p.add_argument(
+        "--curate-preset",
+        choices=["canary", "tight", "stress"],
+        help=(
+            "[-j uk] curated corpus preset: canary=40, tight=200, stress=400. "
+            "If --curate-corpus is omitted, writes data/uk/bench_corpus_<preset>.csv"
+        ),
+    )
+    bench_p.add_argument(
         "--curate-size",
         type=int,
-        default=200,
+        default=None,
         metavar="N",
-        help="[-j uk --curate-corpus] maximum curated rows to write (default: 200)",
+        help="[-j uk --curate-corpus] maximum curated rows to write (default: preset size or 200)",
     )
     bench_p.add_argument(
         "--limit",

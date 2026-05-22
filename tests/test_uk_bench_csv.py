@@ -544,6 +544,33 @@ def test_uk_bench_write_curated_corpus_uses_full_corpus_schema(tmp_path) -> None
     assert "ukpga/1990/42" in text
 
 
+def test_uk_bench_curated_preset_uses_default_path_and_size(monkeypatch, tmp_path) -> None:
+    corpus_csv = tmp_path / "bench_corpus.csv"
+    monkeypatch.setattr(uk_bench, "_CORPUS_CSV", corpus_csv)
+    args = Namespace(curate_preset="canary", curate_size=None, curate_corpus=None)
+
+    output, size, preset = uk_bench._curated_corpus_request(args)
+
+    assert output == tmp_path / "bench_corpus_canary.csv"
+    assert size == 40
+    assert preset == "canary"
+
+
+def test_uk_bench_curated_preset_allows_explicit_output_and_size(tmp_path) -> None:
+    explicit_output = tmp_path / "custom.csv"
+    args = Namespace(
+        curate_preset="stress",
+        curate_size=25,
+        curate_corpus=str(explicit_output),
+    )
+
+    output, size, preset = uk_bench._curated_corpus_request(args)
+
+    assert output == explicit_output
+    assert size == 25
+    assert preset == "stress"
+
+
 def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_path, capsys) -> None:
     bench_dir = tmp_path / "runs"
     history_csv = tmp_path / "history.csv"
