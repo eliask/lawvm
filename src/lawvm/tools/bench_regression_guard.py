@@ -33,29 +33,45 @@ def find_csv_by_label(label: str, jurisdiction: str = "fi") -> Path:
     return matches[-1]
 
 
-def load_scores(path: Path) -> dict[str, float]:
-    """Load {statute_id -> similarity} from one bench run CSV."""
-    scores: dict[str, float] = {}
+def _load_float_column(path: Path, column: str) -> dict[str, float]:
+    """Load {statute_id -> float(row[column])} from one bench run CSV."""
+    values: dict[str, float] = {}
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames is None:
             raise ValueError(f"Empty or header-less CSV: {path}")
         if "statute_id" not in reader.fieldnames:
             raise ValueError(f"CSV {path} missing expected column: statute_id. Found: {reader.fieldnames}")
+        if column not in reader.fieldnames:
+            raise ValueError(f"CSV {path} missing expected column '{column}'. Found: {reader.fieldnames}")
+        for row in reader:
+            sid = row["statute_id"].strip()
+            try:
+                value = float(row[column])
+            except ValueError:
+                continue
+            values[sid] = value
+    return values
+
+
+def load_scores(path: Path) -> dict[str, float]:
+    """Load {statute_id -> similarity} from one bench run CSV."""
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Empty or header-less CSV: {path}")
         score_column = "similarity" if "similarity" in reader.fieldnames else "score"
         if score_column not in reader.fieldnames:
             raise ValueError(
                 f"CSV {path} missing expected score column 'similarity' or 'score'. "
                 f"Found: {reader.fieldnames}"
             )
-        for row in reader:
-            sid = row["statute_id"].strip()
-            try:
-                score = float(row[score_column])
-            except ValueError:
-                continue
-            scores[sid] = score
-    return scores
+    return _load_float_column(path, score_column)
+
+
+def load_durations(path: Path) -> dict[str, float]:
+    """Load {statute_id -> duration_s} from one bench run CSV."""
+    return _load_float_column(path, "duration_s")
 
 
 def mean(values: list[float]) -> float:
@@ -68,6 +84,8 @@ def run_guard(
     threshold: float = 0.005,
     max_regressions: int = 3,
     jurisdiction: str = "fi",
+    duration_threshold_s: float = 1.0,
+    max_duration_regressions: int | None = None,
 ) -> int:
     """Run the regression guard and print a summary. Returns process-style exit code."""
     try:
@@ -151,6 +169,49 @@ def run_guard(
 
     fail = False
     fail_reasons: list[str] = []
+    duration_regressions: list[tuple[str, float, float, float]] = []
+    if max_duration_regressions is not None:
+        try:
+            baseline_durations = load_durations(baseline_path)
+            current_durations = load_durations(current_path)
+        except (ValueError, OSError) as exc:
+            print(f"ERROR loading duration CSV data: {exc}")
+            return 1
+        duration_common = sorted(set(baseline_durations) & set(current_durations))
+        duration_diffs: list[tuple[str, float, float, float]] = []
+        for sid in duration_common:
+            old = baseline_durations[sid]
+            new = current_durations[sid]
+            duration_diffs.append((sid, old, new, new - old))
+        duration_regressions = sorted(
+            [diff for diff in duration_diffs if diff[3] > duration_threshold_s],
+            key=lambda item: item[3],
+            reverse=True,
+        )
+        old_duration_mean = mean([diff[1] for diff in duration_diffs])
+        new_duration_mean = mean([diff[2] for diff in duration_diffs])
+        duration_delta = new_duration_mean - old_duration_mean
+        sign = "+" if duration_delta >= 0 else ""
+        print("Aggregate duration_s (common statutes):")
+        print(f"  Baseline mean : {old_duration_mean:.3f}s")
+        print(f"  Current mean  : {new_duration_mean:.3f}s")
+        print(f"  Delta         : {sign}{duration_delta:.3f}s")
+        print()
+        if duration_regressions:
+            print(
+                f"Duration regressions > {duration_threshold_s:.3f}s : "
+                f"{len(duration_regressions)} statute(s)  "
+                f"(max allowed: {max_duration_regressions})"
+            )
+            print(f"  {'Statute':<20} {'Baseline':>10} {'Current':>10} {'Delta':>10}")
+            print(f"  {'-' * 20} {'-' * 10} {'-' * 10} {'-' * 10}")
+            for sid, old, new, delta in duration_regressions:
+                print(f"  {sid:<20} {old:>9.3f}s {new:>9.3f}s {delta:>+9.3f}s")
+            print()
+        else:
+            print(f"Duration regressions > {duration_threshold_s:.3f}s : 0  (none)")
+            print()
+
     agg_hard_limit = 0.005
     if agg_delta < -agg_hard_limit:
         fail = True
@@ -158,6 +219,12 @@ def run_guard(
     if len(regressions) > max_regressions:
         fail = True
         fail_reasons.append(f"{len(regressions)} statutes regressed beyond threshold (max allowed: {max_regressions})")
+    if max_duration_regressions is not None and len(duration_regressions) > max_duration_regressions:
+        fail = True
+        fail_reasons.append(
+            f"{len(duration_regressions)} statutes slowed beyond duration threshold "
+            f"(max allowed: {max_duration_regressions})"
+        )
 
     if fail:
         print("RESULT: FAIL")
@@ -178,6 +245,8 @@ def main(args: "argparse.Namespace") -> None:
             threshold=args.threshold,
             max_regressions=args.max_regressions,
             jurisdiction=jurisdiction,
+            duration_threshold_s=args.duration_threshold_s,
+            max_duration_regressions=args.max_duration_regressions,
         )
     )
 
@@ -187,6 +256,7 @@ __all__ = [
     "EE_BENCH_RUNS_DIR",
     "UK_BENCH_RUNS_DIR",
     "find_csv_by_label",
+    "load_durations",
     "load_scores",
     "main",
     "run_guard",

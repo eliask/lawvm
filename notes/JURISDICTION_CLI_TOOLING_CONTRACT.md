@@ -82,7 +82,8 @@ tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `ee-chain-quality`; UK has `uk-effect`, `uk-effects`, `uk-candidates`,
 `bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`,
 `bench -j uk --curate-preset canary|tight|stress|modern-canary|modern-tight`,
-`bench-regression-guard -j uk`, and replay diagnostics.
+`bench-regression-guard -j uk` with optional `duration_s` regression limits,
+and replay diagnostics.
 
 ## 4. CLI Shape
 
