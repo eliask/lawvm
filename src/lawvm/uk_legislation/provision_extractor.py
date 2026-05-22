@@ -12,7 +12,6 @@ from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 
 _INSTRUCTION_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
-_PROV_REF_TOKEN_RE = re.compile(r"[0-9a-zA-Z]")
 _NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
 
 
@@ -48,7 +47,7 @@ def _instruction_text_before_amendment_container(el: ET.Element) -> str:
 
 def _norm_prov_ref(ref: str) -> str:
     """Normalise a provision reference for comparison."""
-    return "".join(_PROV_REF_TOKEN_RE.findall(ref)).lower()
+    return _NON_ALNUM_RE.sub("", ref).lower()
 
 
 _NUM_ALPHA_RE = re.compile(r"(\d+)([a-z]+)", flags=re.I)

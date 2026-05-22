@@ -1089,9 +1089,14 @@ Current tooling-consistency invariant:
     witness. Recursive kind/label target matching now skips recursion into leaf
     children after checking the leaf itself; this is score-equivalent and
     measured 52.52s wall time with `replay=20.84s` on `1988/1`, and 6.39s wall
-    time with `replay=0.37s` on `1990/42`. A local improvement in one family
-    should not be treated as global UK replay progress without saved-run guard
-    evidence.
+    time with `replay=0.37s` on `1990/42`. Provision-reference normalization
+    now strips non-alphanumeric characters with the existing non-alnum regex
+    instead of collecting every alphanumeric character with `findall`; this
+    preserves exact-id normalization semantics while reducing source-index build
+    overhead. The witnesses remained score-equivalent: `1988/1` measured 52.36s
+    wall time with `compile_ops=27.07s`, and `1990/42` measured 6.29s wall time
+    with `compile_ops=3.91s`. A local improvement in one family should not be
+    treated as global UK replay progress without saved-run guard evidence.
   - saved UK bench CSVs must persist replay and commencement error lanes
     (`replay_error`, `commencement_error`) even when every replay/commencement
     attempt fails; stderr-only errors are not sufficient evidence
