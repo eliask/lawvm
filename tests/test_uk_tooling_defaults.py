@@ -126,6 +126,25 @@ def test_uk_bench_parser_accepts_no_save_smoke_flag() -> None:
     assert args.limit == 1
 
 
+def test_uk_bench_parser_accepts_curated_corpus_flags() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "bench",
+            "-j",
+            "uk",
+            "--curate-corpus",
+            "data/uk/bench_corpus_tight.csv",
+            "--curate-size",
+            "150",
+        ]
+    )
+
+    assert args.curate_corpus == "data/uk/bench_corpus_tight.csv"
+    assert args.curate_size == 150
+
+
 def test_uk_bench_statute_filter_runs_single_corpus_row(monkeypatch, tmp_path, capsys) -> None:
     class DummyArchive:
         def __init__(self, path: Path):
