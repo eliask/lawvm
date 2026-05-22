@@ -48,6 +48,20 @@ def _range_to_container_replacement_sections(
     return tuple(sections)
 
 
+def _first_lowering_rejection_detail(
+    *,
+    row: Any,
+    rule_id: str,
+) -> dict[str, Any]:
+    """Return the first lowering rejection for a claim family."""
+    for rejection in row.summary.lowering_rejections:
+        if not isinstance(rejection, dict):
+            continue
+        if str(rejection.get("rule_id") or "") == rule_id:
+            return dict(rejection)
+    return {}
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -263,7 +277,11 @@ def manual_compile_suggested_claim_template(
             ],
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_amendment_program_target_candidate":
-        return _bounded_mutation_claim_template(
+        detail = _first_lowering_rejection_detail(
+            row=row,
+            rule_id="uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+        )
+        template = _bounded_mutation_claim_template(
             statute_id=statute_id,
             row=row,
             action_family="amendment_program_target_mutation",
@@ -282,6 +300,23 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_amendment_program_target",
             ],
         )
+        template.update(
+            {
+                "source_target_surface": detail.get(
+                    "target_ref",
+                    effect.affected_provisions,
+                ),
+                "source_target_address": detail.get("target", ""),
+                "source_subparagraph_label": detail.get("source_subparagraph_label", ""),
+                "source_item_label": detail.get("source_item_label", ""),
+                "inserted_parent_label": detail.get("inserted_parent_label", ""),
+                "insert_direction": detail.get("direction", ""),
+                "anchor_label": detail.get("anchor_label", ""),
+                "inserted_label": detail.get("inserted_label", ""),
+                "inserted_text_preview": detail.get("inserted_text_preview", ""),
+            }
+        )
+        return template
     if summary.manual_compile_rule_id == "uk_manual_frontier_repeal_table_candidate":
         return _bounded_mutation_claim_template(
             statute_id=statute_id,
