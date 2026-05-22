@@ -27,6 +27,7 @@ from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
+    uk_affecting_act_implicit_first_subparagraph_context_ignored,
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_parenthesized_range_source_extracted,
@@ -330,6 +331,21 @@ def _schedule_part_context_normalized_ref(provision_ref: str) -> tuple[str, str]
     return match.group(2), f"{match.group(1)} {suffix}"
 
 
+def _implicit_first_subparagraph_context_normalized_ref(provision_ref: str) -> str | None:
+    normalized = " ".join((provision_ref or "").split()).strip()
+    if not re.search(r"\bSch(?:edule)?\.?\b", normalized, flags=re.I):
+        return None
+    match = re.match(
+        r"^(?P<prefix>.+?\bpara(?:graph)?\.?\s+[0-9A-Za-z]+)\s*"
+        r"\(\s*1\s*\)\s*\(\s*(?P<label>[A-Za-z])\s*\)$",
+        normalized,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    return f"{match.group('prefix').strip()}({match.group('label').strip()})"
+
+
 def _has_matching_part_ancestor(
     context: UKAffectingSourceContext,
     el: ET.Element,
@@ -596,6 +612,23 @@ def _extract_from_affecting_source_context_with_observations(
     range_el, range_observations = _extract_parenthesized_range_source(context, effect)
     if range_el is not None:
         return range_el, range_observations
+
+    implicit_first_ref = _implicit_first_subparagraph_context_normalized_ref(provision_ref)
+    if implicit_first_ref is not None:
+        implicit_first_el = _extract_from_affecting_source_context(context, implicit_first_ref)
+        if implicit_first_el is not None:
+            observation = uk_affecting_act_implicit_first_subparagraph_context_ignored(
+                effect_id=str(effect.effect_id or ""),
+                affecting_act_id=str(effect.affecting_act_id or ""),
+                affecting_provisions=provision_ref,
+                locator=context.locator,
+                authority_layer=context.authority_layer,
+                normalized_affecting_provisions=implicit_first_ref,
+                extracted_element_id=str(
+                    implicit_first_el.get("id") or implicit_first_el.get("Id") or ""
+                ),
+            )
+            return implicit_first_el, (observation,)
 
     normalized = _schedule_part_context_normalized_ref(provision_ref)
     if normalized is None:

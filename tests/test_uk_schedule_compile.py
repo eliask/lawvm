@@ -23,6 +23,9 @@ from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
+from lawvm.uk_legislation.source_context import (
+    _implicit_first_subparagraph_context_normalized_ref,
+)
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -25888,6 +25891,123 @@ def test_pipeline_compile_ops_selects_enacted_source_when_current_extract_missin
         row.get("rule_id") == "uk_affecting_act_missing_current_enacted_source_selected"
         and row.get("affecting_provisions") == "Sch. 1 para. 219(2)"
         and "old" in str(row.get("enacted_text_preview", ""))
+        for row in diagnostics
+    )
+
+
+def test_implicit_first_subparagraph_context_normalization_is_schedule_only() -> None:
+    assert (
+        _implicit_first_subparagraph_context_normalized_ref("Sch. 22 para. 88(1)(a)")
+        == "Sch. 22 para. 88(a)"
+    )
+    assert (
+        _implicit_first_subparagraph_context_normalized_ref("Schedule 22 paragraph 88(1)(b)")
+        == "Schedule 22 paragraph 88(b)"
+    )
+    assert _implicit_first_subparagraph_context_normalized_ref("s. 88(1)(a)") is None
+    assert _implicit_first_subparagraph_context_normalized_ref("Sch. 22 para. 88(2)(a)") is None
+    assert _implicit_first_subparagraph_context_normalized_ref("Sch. 22 para. 88(a)") is None
+
+
+def test_pipeline_compile_ops_extracts_implicit_first_subparagraph_source_context(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_implicit_first_subparagraph_source",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 273(12)",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 22 para. 88(1)(a)",
+        affecting_title="Implicit First Subparagraph Source Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule-22">
+          <ScheduleBody>
+            <P1 id="schedule-22-paragraph-88">
+              <Pnumber>88</Pnumber>
+              <P1para>
+                <Text>In section 273, in subsection (12)-</Text>
+                <P3 id="schedule-22-paragraph-88-a">
+                  <Pnumber>a</Pnumber>
+                  <Text>for the words following "Scotland" substitute "or Northern Ireland";</Text>
+                </P3>
+              </P1para>
+            </P1>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "id": extracted_el.get("id") if extracted_el is not None else "",
+                "text": " ".join(" ".join(extracted_el.itertext()).split())
+                if extracted_el is not None
+                else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=LegalAddress(path=(("section", "273"), ("subsection", "12"))),
+                text_patch=_replace_patch("Scotland", "Scotland or Northern Ireland", 1),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "tag": "P3",
+            "id": "schedule-22-paragraph-88-a",
+            "text": 'a for the words following "Scotland" substitute "or Northern Ireland";',
+            "authority": "AFFECTING_ACT_TEXT",
+        }
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_implicit_first_subparagraph_context_ignored"
+        and row.get("affecting_provisions") == "Sch. 22 para. 88(1)(a)"
+        and row.get("normalized_affecting_provisions") == "Sch. 22 para. 88(a)"
+        and row.get("extracted_element_id") == "schedule-22-paragraph-88-a"
         for row in diagnostics
     )
 
