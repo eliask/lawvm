@@ -158,10 +158,21 @@ class UKReplayInvariantDiagnosticsMixin:
         if len(op.target.path) <= 1:
             return self._invariant_target_roots(root_filter)
         top_kind, top_label = op.target.path[0]
-        top_node, _top_parent, _top_idx = self._find_node_by_target(
-            LegalAddress(path=((top_kind, top_label),), special=None),
-            allow_recursive_match=True,
-        )
+        top_address = LegalAddress(path=((top_kind, top_label),), special=None)
+        top_node = None
+        top_eid = self._derive_target_eid(top_address)
+        if top_eid:
+            top_node, _top_parent, _top_idx = self._find_node_and_parent_statute(
+                top_eid,
+                allow_sequence_match=False,
+            )
+            if top_node is not None and not self._eid_candidate_matches_target_leaf(top_node, top_address):
+                top_node = None
+        if top_node is None:
+            top_node, _top_parent, _top_idx = self._find_node_by_target(
+                top_address,
+                allow_recursive_match=True,
+            )
         if top_node is None:
             return self._invariant_target_roots(root_filter)
         initial_path = self._node_invariant_path(self.statute.body, top_node, "body")
