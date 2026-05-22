@@ -912,6 +912,36 @@ class UKReplayTextActionApplyMixin:
                     op=op,
                     detail=uk_replay_blocking_action_target_detail(op, target),
                 )
+            elif target.special is FacetKind.HEADING:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_heading_facet_target_gap",
+                    message=(
+                        "UK replay skipped heading-facet text op: target "
+                        "has no unique replay heading carrier."
+                    ),
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(op, target),
+                )
+            elif self._missing_schedule_root_gap(target):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_missing_schedule_range_gap",
+                    message=(
+                        "UK replay skipped text-based op: schedule target falls "
+                        "inside an absent schedule range gap."
+                    ),
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(op, target),
+                )
+            elif self._missing_schedule_branch_gap(target):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_missing_schedule_branch_gap",
+                    message="UK replay skipped text-based op: schedule root branch is absent.",
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(op, target),
+                )
             elif prior_kind := self._prior_same_target_gap_kind(target):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
