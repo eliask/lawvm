@@ -145,6 +145,19 @@ def run_guard(
     max_duration_regressions: int | None = None,
 ) -> int:
     """Run the regression guard and print a summary. Returns process-style exit code."""
+    if threshold < 0.0:
+        print("ERROR: --threshold must be nonnegative")
+        return 1
+    if max_regressions < 0:
+        print("ERROR: --max-regressions must be nonnegative")
+        return 1
+    if duration_threshold_s < 0.0:
+        print("ERROR: --duration-threshold-s must be nonnegative")
+        return 1
+    if max_duration_regressions is not None and max_duration_regressions < 0:
+        print("ERROR: --max-duration-regressions must be nonnegative")
+        return 1
+
     try:
         baseline_path = find_csv_by_label(baseline_label, jurisdiction)
         current_path = find_csv_by_label(current_label, jurisdiction)

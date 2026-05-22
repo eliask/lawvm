@@ -1382,3 +1382,42 @@ def test_bench_regression_guard_fails_without_common_duration_rows(
     out = capsys.readouterr().out
     assert rc == 1
     assert "ERROR: baseline and current have no common duration_s rows" in out
+
+
+def test_bench_regression_guard_rejects_negative_limits(capsys) -> None:
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=-0.1,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --threshold must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        max_regressions=-1,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --max-regressions must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        duration_threshold_s=-0.1,
+        max_duration_regressions=0,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --duration-threshold-s must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        max_duration_regressions=-1,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --max-duration-regressions must be nonnegative" in out
