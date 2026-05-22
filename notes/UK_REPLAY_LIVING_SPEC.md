@@ -4598,3 +4598,7 @@ Current bench replay-regime invariant:
   --parallel 1`: default text scoring kept replay score at `96.9%` and wall
   time around `24.5s`; `--no-text-scores` kept replay score at `96.9%` and
   reduced wall time to about `16.9s`.
+- Phase timing names must describe measured work. Enacted EID scoring is
+  recorded separately from enacted text similarity, and replay residual
+  classification is recorded separately from replay text similarity. Runs with
+  `--no-text-scores` should not report `text_score_*` phases.
