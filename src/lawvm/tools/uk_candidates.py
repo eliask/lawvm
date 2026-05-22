@@ -220,13 +220,24 @@ def _uk_residual_claim_work_item_id(
     return f"uk-residual-claim-{digest}"
 
 
-def _uk_residual_claim_evidence_row_jsonable(
-    result,  # noqa: ANN001
+def _uk_residual_claim_evidence_row_from_candidate_row(
+    row: Mapping[str, Any],
     *,
     label: str,
-    score_mode: str,
-) -> dict[str, Any]:
-    claim = _uk_residual_claim_from_bench_row(result)
+) -> dict[str, Any] | None:
+    """Build a residual-claim review item from an analyzed candidate row.
+
+    Saved bench rows only persist residual counts. Archive-backed candidate
+    rows additionally know the concrete residual roots and candidate overlap,
+    so evidence exports must prefer this richer phase output when available.
+    """
+    claim_obj = row.get("uk_residual_claim")
+    if not isinstance(claim_obj, Mapping):
+        return None
+    claim = cast(Mapping[str, object], claim_obj)
+    if not _uk_residual_claim_has_reviewable_evidence(claim):
+        return None
+    statute_id = str(row.get("statute_id") or "")
     return {
         "schema": "lawvm.uk_residual_claim_frontier.v1",
         "rule_id": "uk_residual_claim_frontier_workqueue",
@@ -239,58 +250,97 @@ def _uk_residual_claim_evidence_row_jsonable(
         "validator_status": "not_validated",
         "work_item_id": _uk_residual_claim_work_item_id(
             label=label,
-            statute_id=str(result.statute_id),
+            statute_id=statute_id,
             claim=claim,
         ),
         "bench_label": label,
-        "statute_id": str(result.statute_id),
-        "score_mode": score_mode,
-        "frontier_score": _primary_frontier_score(result, score_mode=score_mode),
-        "raw_score": float(getattr(result, "score", -1.0)),
-        "replay_score": float(getattr(result, "replay_score", -1.0)),
-        "commencement_score": float(getattr(result, "commencement_score", -1.0)),
+        "statute_id": statute_id,
+        "score_mode": str(row.get("score_mode") or ""),
+        "frontier_score": float(row.get("frontier_score") or -1.0),
+        "raw_score": float(row.get("raw_score") or -1.0),
+        "replay_score": float(row.get("replay_score") or -1.0),
+        "commencement_score": float(row.get("commencement_score") or -1.0),
         "replay_commencement_score": float(
-            getattr(result, "replay_commencement_score", -1.0)
+            row.get("replay_commencement_score") or -1.0
         ),
-        "comparison_class": _effective_comparison_class(result),
-        "core_benchmark": _effective_core_benchmark(result),
-        "uk_replay_regime": _uk_replay_regime_kwargs_from_bench_row(result),
-        "uk_replay_regime_claim": _uk_replay_regime_claim_from_bench_row(result),
-        "uk_residual_claim": claim,
+        "comparison_class": str(row.get("comparison_class") or ""),
+        "core_benchmark": bool(row.get("core_benchmark")),
+        "uk_replay_regime": dict(
+            cast(Mapping[str, object], row.get("uk_replay_regime") or {})
+        ),
+        "uk_replay_regime_claim": dict(
+            cast(Mapping[str, object], row.get("uk_replay_regime_claim") or {})
+        ),
+        "uk_residual_claim": dict(claim),
+        "residual_evidence": {
+            "status": str(row.get("status") or ""),
+            "triage_rule_id": str(row.get("triage_rule_id") or ""),
+            "residual_roots": list(row.get("residual_roots") or ()),
+            "replayed_residual_roots": list(row.get("replayed_residual_roots") or ()),
+            "oracle_residual_roots": list(row.get("oracle_residual_roots") or ()),
+            "malformed_residual_roots": list(row.get("malformed_residual_roots") or ()),
+            "backed_residual_roots": list(row.get("backed_residual_roots") or ()),
+            "defeated_residual_roots": list(row.get("defeated_residual_roots") or ()),
+            "residual_candidate_effect_count": int(
+                row.get("residual_candidate_effect_count") or 0
+            ),
+            "residual_candidate_op_count": int(
+                row.get("residual_candidate_op_count") or 0
+            ),
+            "residual_candidate_samples": list(
+                row.get("residual_candidate_samples") or ()
+            ),
+            "residual_candidate_samples_omitted": int(
+                row.get("residual_candidate_samples_omitted") or 0
+            ),
+        },
         "enacted_source": {
-            "status": str(getattr(result, "enacted_source_status", "") or "unknown"),
-            "size": int(getattr(result, "enacted_source_size", 0) or 0),
-            "sha256": str(getattr(result, "enacted_source_sha256", "") or ""),
-            "url": str(getattr(result, "enacted_source_url", "") or ""),
+            "status": str(row.get("enacted_source_status") or "unknown"),
+            "size": int(row.get("enacted_source_size") or 0),
+            "sha256": str(row.get("enacted_source_sha256") or ""),
+            "url": str(row.get("enacted_source_url") or ""),
         },
         "oracle_source": {
-            "status": str(getattr(result, "oracle_source_status", "") or "unknown"),
-            "size": int(getattr(result, "oracle_source_size", 0) or 0),
-            "sha256": str(getattr(result, "oracle_source_sha256", "") or ""),
-            "url": str(getattr(result, "oracle_source_url", "") or ""),
+            "status": str(row.get("oracle_source_status") or "unknown"),
+            "size": int(row.get("oracle_source_size") or 0),
+            "sha256": str(row.get("oracle_source_sha256") or ""),
+            "url": str(row.get("oracle_source_url") or ""),
         },
     }
 
 
-def _uk_residual_claim_evidence_rows(
-    results: Sequence[object],
+def _uk_residual_claim_evidence_rows_from_candidate_rows(
+    rows: Sequence[Mapping[str, Any]],
     *,
     label: str,
-    score_mode: str,
 ) -> tuple[dict[str, Any], ...]:
-    rows: list[dict[str, Any]] = []
-    for result in results:
-        claim = _uk_residual_claim_from_bench_row(result)
-        if not _uk_residual_claim_has_reviewable_evidence(claim):
-            continue
-        rows.append(
-            _uk_residual_claim_evidence_row_jsonable(
-                result,
-                label=label,
-                score_mode=score_mode,
-            )
+    evidence_rows: list[dict[str, Any]] = []
+    for row in rows:
+        evidence_row = _uk_residual_claim_evidence_row_from_candidate_row(
+            row,
+            label=label,
         )
-    return tuple(rows)
+        if evidence_row is not None:
+            evidence_rows.append(evidence_row)
+    return tuple(evidence_rows)
+
+
+def _write_residual_claim_evidence_report_from_candidate_rows(
+    path: Path | None,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    label: str,
+) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    count = _write_jsonl_rows(
+        path,
+        _uk_residual_claim_evidence_rows_from_candidate_rows(rows, label=label),
+    )
+    return {
+        "path": str(path),
+        "rows": count,
+    }
 
 
 def _matches_filters(  # noqa: ANN001
@@ -2809,20 +2859,10 @@ def main(args: "argparse.Namespace") -> None:
         if replay_adjudication_evidence_jsonl_path is not None
         else None
     )
-    residual_claim_evidence_jsonl_count = 0
-    if residual_claim_evidence_jsonl_path is not None:
-        residual_claim_evidence_jsonl_count = _write_jsonl_rows(
-            residual_claim_evidence_jsonl_path,
-            _uk_residual_claim_evidence_rows(
-                frontier,
-                label=label,
-                score_mode=score_mode,
-            ),
-        )
     residual_claim_evidence_jsonl_report = (
         {
             "path": str(residual_claim_evidence_jsonl_path),
-            "rows": residual_claim_evidence_jsonl_count,
+            "rows": 0,
         }
         if residual_claim_evidence_jsonl_path is not None
         else None
@@ -2882,6 +2922,13 @@ def main(args: "argparse.Namespace") -> None:
                 manual_compile_evidence_jsonl_path,
                 [],
             )
+        residual_claim_evidence_jsonl_report = (
+            _write_residual_claim_evidence_report_from_candidate_rows(
+                residual_claim_evidence_jsonl_path,
+                [],
+                label=label,
+            )
+        )
         if json_output:
             report = _uk_candidates_report_jsonable(
                 label=label,
@@ -3321,6 +3368,13 @@ def main(args: "argparse.Namespace") -> None:
                         )
                     print(f"  status:   {status}")
                     print()
+            residual_claim_evidence_jsonl_report = (
+                _write_residual_claim_evidence_report_from_candidate_rows(
+                    residual_claim_evidence_jsonl_path,
+                    report_rows,
+                    label=label,
+                )
+            )
             if json_output:
                 report = _uk_candidates_report_jsonable(
                         label=label,
@@ -3568,6 +3622,13 @@ def main(args: "argparse.Namespace") -> None:
             _print_replay_adjudication_samples_for_row(report_rows[-1])
             print("  status:   frontier prefilter only")
             print()
+        residual_claim_evidence_jsonl_report = (
+            _write_residual_claim_evidence_report_from_candidate_rows(
+                residual_claim_evidence_jsonl_path,
+                report_rows,
+                label=label,
+            )
+        )
         if json_output:
             report = _uk_candidates_report_jsonable(
                     label=label,
@@ -3988,6 +4049,13 @@ def main(args: "argparse.Namespace") -> None:
             manual_compile_evidence_jsonl_path,
             manual_compile_evidence_rows,
         )
+    residual_claim_evidence_jsonl_report = (
+        _write_residual_claim_evidence_report_from_candidate_rows(
+            residual_claim_evidence_jsonl_path,
+            report_rows,
+            label=label,
+        )
+    )
     if json_output:
         report = _uk_candidates_report_jsonable(
             label=label,

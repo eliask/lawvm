@@ -39,6 +39,7 @@ from lawvm.tools.uk_candidates import (
     _uk_candidate_row_jsonable,
     _uk_candidates_report_jsonable,
     _uk_candidates_filters_jsonable,
+    _uk_residual_claim_evidence_rows_from_candidate_rows,
     _uk_replay_regime_kwargs_from_bench_row,
 )
 
@@ -4343,6 +4344,20 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     assert evidence_rows[0]["statute_id"] == "asc/2024/6"
     assert evidence_rows[0]["uk_residual_claim"]["only_in_replayed_count"] == 53
     assert evidence_rows[0]["uk_residual_claim"]["only_in_oracle_count"] == 1
+    assert evidence_rows[0]["residual_evidence"] == {
+        "backed_residual_roots": [],
+        "defeated_residual_roots": [],
+        "malformed_residual_roots": [],
+        "oracle_residual_roots": [],
+        "replayed_residual_roots": [],
+        "residual_candidate_effect_count": 0,
+        "residual_candidate_op_count": 0,
+        "residual_candidate_samples": [],
+        "residual_candidate_samples_omitted": 0,
+        "residual_roots": [],
+        "status": "frontier prefilter only",
+        "triage_rule_id": "uk_frontier_prefilter_only",
+    }
     assert evidence_rows[0]["uk_replay_regime"] == {
         "allow_metadata_backfill": False,
         "allow_metadata_only_effects": False,
@@ -4352,6 +4367,85 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     }
     assert evidence_rows[0]["enacted_source"]["sha256"] == "enacted-sha"
     assert evidence_rows[0]["oracle_source"]["sha256"] == "oracle-sha"
+
+
+def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> None:
+    rows = _uk_residual_claim_evidence_rows_from_candidate_rows(
+        [
+            {
+                "statute_id": "ukpga/2021/11",
+                "score_mode": "auto",
+                "frontier_score": 0.8927,
+                "raw_score": 0.9,
+                "replay_score": 0.8927,
+                "commencement_score": -1.0,
+                "replay_commencement_score": -1.0,
+                "comparison_class": "commensurable",
+                "core_benchmark": True,
+                "uk_replay_regime": {"authority_mode": "current_mixed"},
+                "uk_replay_regime_claim": {
+                    "source_purity_lane": "source_backed_with_oracle_adapter"
+                },
+                "uk_residual_claim": {
+                    "selected_tier": "UNRESOLVED",
+                    "selected_kind": "uk_mixed_residual_eids",
+                    "comparison_class": "commensurable",
+                    "core_comparison": True,
+                    "only_in_replayed_count": 2,
+                    "only_in_oracle_count": 1,
+                    "section_claim_count": 0,
+                    "section_claim_emitted": False,
+                },
+                "status": "real residual frontier",
+                "triage_rule_id": "uk_residual_claim_backed_by_candidate_overlap",
+                "residual_roots": ["part-1", "schedule-1"],
+                "replayed_residual_roots": ["part-1"],
+                "oracle_residual_roots": ["schedule-1"],
+                "malformed_residual_roots": [],
+                "backed_residual_roots": ["part-1"],
+                "defeated_residual_roots": ["schedule-1"],
+                "residual_candidate_effect_count": 1,
+                "residual_candidate_op_count": 2,
+                "residual_candidate_samples": [
+                    {
+                        "effect_id": "key-demo",
+                        "affected_provisions": "Sch. 1 para. 2",
+                    }
+                ],
+                "residual_candidate_samples_omitted": 3,
+                "enacted_source_status": "available",
+                "enacted_source_size": 123,
+                "enacted_source_sha256": "enacted-sha",
+                "enacted_source_url": "https://example.test/enacted.xml",
+                "oracle_source_status": "available",
+                "oracle_source_size": 456,
+                "oracle_source_sha256": "oracle-sha",
+                "oracle_source_url": "https://example.test/current.xml",
+            }
+        ],
+        label="demo",
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["residual_evidence"] == {
+        "backed_residual_roots": ["part-1"],
+        "defeated_residual_roots": ["schedule-1"],
+        "malformed_residual_roots": [],
+        "oracle_residual_roots": ["schedule-1"],
+        "replayed_residual_roots": ["part-1"],
+        "residual_candidate_effect_count": 1,
+        "residual_candidate_op_count": 2,
+        "residual_candidate_samples": [
+            {
+                "affected_provisions": "Sch. 1 para. 2",
+                "effect_id": "key-demo",
+            }
+        ],
+        "residual_candidate_samples_omitted": 3,
+        "residual_roots": ["part-1", "schedule-1"],
+        "status": "real residual frontier",
+        "triage_rule_id": "uk_residual_claim_backed_by_candidate_overlap",
+    }
 
 
 def test_uk_candidates_fast_json_infers_body_root_for_old_duplication_samples(
