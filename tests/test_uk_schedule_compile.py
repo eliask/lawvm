@@ -31244,6 +31244,19 @@ def test_uk_extraction_context_preserves_document_order_first_matches() -> None:
     assert parent_map[first_subsection] is first_section
 
 
+def test_uk_id_sequence_normalization_preserves_mixed_labels() -> None:
+    assert _get_id_sequence("ukpga-2000-1-section-10A-subsection-ii") == (
+        "ukpga",
+        "2000",
+        "1",
+        "section",
+        "10",
+        "a",
+        "subsection",
+        "2",
+    )
+
+
 def test_uk_source_selection_skips_xml_loaders_for_non_source_required_effect() -> None:
     from lawvm.uk_legislation.effect_source_selection import select_source_for_effect
 
