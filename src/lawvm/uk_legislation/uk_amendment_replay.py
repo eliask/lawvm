@@ -301,8 +301,12 @@ class UKReplayPipeline:
                 lowering_rejections_out=lowering_rejections_out,
                 source_root=root,
                 source_authority_layer=source_context.authority_layer,
+                lower_phase_timings_out=compile_phase_timings_out,
             )
-            _mark_compile_phase("compile_lower_effect")
+            if compile_phase_timings_out is None:
+                _mark_compile_phase("compile_lower_effect")
+            else:
+                phase_t0 = time.perf_counter()
             compile_recorded_lowering_rejection = (
                 lowering_rejections_out is not None
                 and len(lowering_rejections_out) > lowering_rejection_count_before

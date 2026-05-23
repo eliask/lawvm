@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -164,6 +165,7 @@ def compile_effect_to_ir_ops(
     allow_payload_identity_synthesis: bool = True,
     source_root: Optional[ET.Element] = None,
     source_authority_layer: str = "",
+    lower_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> list[LegalOperation]:
     """Compile a UKEffectRecord + XML element into LawVM LegalOperations.
 
@@ -171,10 +173,22 @@ def compile_effect_to_ir_ops(
     lower to canonical replace/repeal/insert operations only when source and
     target evidence support that action family.
     """
+    phase_t0 = time.perf_counter()
+
+    def _mark_lower_phase(name: str) -> None:
+        nonlocal phase_t0
+        now = time.perf_counter()
+        if lower_phase_timings_out is not None:
+            lower_phase_timings_out[name] = lower_phase_timings_out.get(name, 0.0) + (
+                now - phase_t0
+            )
+        phase_t0 = now
+
     effect_type = (effect.effect_type or "").strip().lower()
     metadata_renumber_targets = _uk_metadata_renumber_targets(effect)
 
     if effect_type in _COMMENCEMENT_EFFECT_TYPES:
+        _mark_lower_phase("compile_lower_prepare")
         return []
 
     is_word_level = _is_uk_word_level_effect_type(effect_type)
@@ -200,6 +214,7 @@ def compile_effect_to_ir_ops(
         lowering_rejections_out=lowering_rejections_out,
     )
     if action_inference.blocked:
+        _mark_lower_phase("compile_lower_prepare")
         return []
     action = action_inference.action
     source_parent_substitution_range_payload = (
@@ -215,6 +230,7 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             lowering_rejections_out=lowering_rejections_out,
         )
+        _mark_lower_phase("compile_lower_prepare")
         return []
 
     use_metadata_fallback = (
@@ -234,9 +250,10 @@ def compile_effect_to_ir_ops(
         effect,
         authority_layer=extraction_witness.authority_layer,
     )
+    _mark_lower_phase("compile_lower_prepare")
 
     if action == "renumber" and metadata_renumber_targets is not None:
-        return lower_uk_metadata_renumber_effect(
+        ops = lower_uk_metadata_renumber_effect(
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -246,6 +263,8 @@ def compile_effect_to_ir_ops(
             extraction_witness=extraction_witness,
             lowering_rejections_out=lowering_rejections_out,
         )
+        _mark_lower_phase("compile_lower_special")
+        return ops
 
     after_paragraph_series = _source_after_paragraph_insert_labelled_series(
         extracted_el=extracted_el,
@@ -253,7 +272,7 @@ def compile_effect_to_ir_ops(
         affected_provisions=effect.affected_provisions,
     )
     if action == "insert" and after_paragraph_series is not None:
-        return lower_uk_after_paragraph_insert_labelled_series(
+        ops = lower_uk_after_paragraph_insert_labelled_series(
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -263,6 +282,8 @@ def compile_effect_to_ir_ops(
             extraction_witness=extraction_witness,
             lowering_rejections_out=lowering_rejections_out,
         )
+        _mark_lower_phase("compile_lower_special")
+        return ops
 
     target_prelude = _prepare_effect_target_prelude(
         effect=effect,
@@ -274,6 +295,7 @@ def compile_effect_to_ir_ops(
         source_parent_substitution_range_payload=source_parent_substitution_range_payload,
         lowering_rejections_out=lowering_rejections_out,
     )
+    _mark_lower_phase("compile_lower_target_prelude")
     if target_prelude is None:
         return []
     targets_str = target_prelude.targets_str
@@ -306,6 +328,7 @@ def compile_effect_to_ir_ops(
         if action == "replace"
         else None
     )
+    _mark_lower_phase("compile_lower_target_setup")
     for target_index, t_str in enumerate(targets_str):
         target_result = _lower_effect_target(
             _EffectTargetLoweringInput(
@@ -346,6 +369,7 @@ def compile_effect_to_ir_ops(
             unlowered_overlap_substitution_reason = (
                 target_result.unlowered_overlap_reason
             )
+    _mark_lower_phase("compile_lower_targets")
     if not ops and unlowered_overlap_substitution_targets:
         append_unlowered_overlap_substitution_rejection(
             lowering_rejections_out,
@@ -371,4 +395,5 @@ def compile_effect_to_ir_ops(
                 source_parent_substitution_range_payload=source_parent_substitution_range_payload,
             )
         )
+    _mark_lower_phase("compile_lower_tail")
     return ops

@@ -225,8 +225,10 @@ def test_uk_bench_phase_timing_schema_includes_uk_compile_subphases() -> None:
     assert "compile_source_extract_current" in uk_bench._PHASE_TIMING_KEYS
     assert "compile_source_select_enacted" in uk_bench._PHASE_TIMING_KEYS
     assert "compile_lower_effect" in uk_bench._PHASE_TIMING_KEYS
+    assert "compile_lower_targets" in uk_bench._PHASE_TIMING_KEYS
     assert "compile_source_pathology" in uk_bench._PHASE_TIMING_KEYS
     assert "phase_compile_source_context_s" in uk_bench._PHASE_TIMING_HEADERS
+    assert "phase_compile_lower_targets_s" in uk_bench._PHASE_TIMING_HEADERS
     assert "phase_compile_lower_effect_s" in uk_bench._PHASE_TIMING_HEADERS
 
     result = _BenchResult(
@@ -244,6 +246,7 @@ def test_uk_bench_phase_timing_schema_includes_uk_compile_subphases() -> None:
             "compile_lower_effect": 3.25,
             "compile_source_context": 1.5,
             "compile_source_extract_current": 0.75,
+            "compile_lower_targets": 0.5,
         },
     )
 
@@ -254,8 +257,9 @@ def test_uk_bench_phase_timing_schema_includes_uk_compile_subphases() -> None:
         )
     )
 
-    assert values["phase_total_s"] == "5.500"
+    assert values["phase_total_s"] == "6.000"
     assert values["phase_compile_lower_effect_s"] == "3.250"
+    assert values["phase_compile_lower_targets_s"] == "0.500"
     assert values["phase_compile_source_context_s"] == "1.500"
     assert values["phase_compile_source_extract_current_s"] == "0.750"
     assert values["phase_compile_source_select_s"] == ""

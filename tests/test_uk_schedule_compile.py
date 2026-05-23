@@ -31257,6 +31257,36 @@ def test_uk_id_sequence_normalization_preserves_mixed_labels() -> None:
     )
 
 
+def test_uk_compile_effect_lower_phase_timings_record_early_returns() -> None:
+    phase_timings: dict[str, float] = {}
+    ops = compile_effect_to_ir_ops(
+        UKEffectRecord(
+            effect_id="uk_test_commencement",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2024-01-01",
+            affected_uri="",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions="s. 1",
+            affecting_uri="",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2001",
+            affecting_number="2",
+            affecting_provisions="s. 2",
+            affecting_title="Test Act",
+        ),
+        None,
+        lower_phase_timings_out=phase_timings,
+    )
+
+    assert ops == []
+    assert phase_timings["compile_lower_prepare"] >= 0
+    assert "compile_lower_targets" not in phase_timings
+
+
 def test_uk_source_selection_skips_xml_loaders_for_non_source_required_effect() -> None:
     from lawvm.uk_legislation.effect_source_selection import select_source_for_effect
 
