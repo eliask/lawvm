@@ -31469,6 +31469,82 @@ def test_executor_skips_payload_invariant_check_without_new_tree_violation(
     assert [child.label for child in executor.statute.body.children] == ["1", "2"]
 
 
+def test_executor_scopes_schedule_descendant_invariant_scan_to_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.uk_legislation.replay_invariant_diagnostics as invariant_mod
+
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                text="",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        text="",
+                        attrs={"eId": "schedule-1-paragraph-1"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="a",
+                                text="A.",
+                                attrs={"eId": "schedule-1-paragraph-1-a"},
+                            ),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        text="",
+                        attrs={"eId": "schedule-1-paragraph-2"},
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=[])
+    scanned_roots: list[tuple[str, str | None]] = []
+
+    def collect_scanned_root(root: UKMutableNode, **_kwargs: object) -> list[str]:
+        scanned_roots.append((root.kind.value, root.label))
+        return []
+
+    monkeypatch.setattr(
+        invariant_mod,
+        "_collect_duplicate_order_invariants",
+        collect_scanned_root,
+    )
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_descendant_parent_scoped_invariant_scan",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(
+                path=(("schedule", "1"), ("paragraph", "1"), ("subparagraph", "b"))
+            ),
+            payload=IRNode(
+                kind=IRNodeKind.SUBPARAGRAPH,
+                label="b",
+                text="B.",
+            ),
+            source=OperationSource(statute_id="uk_test", title="Test Source"),
+        )
+    )
+
+    assert scanned_roots == [("paragraph", "1")]
+    paragraph = executor.statute.supplements[0].children[0]
+    assert [child.label for child in paragraph.children] == ["a", "b"]
+    assert executor.adjudications_out == []
+
+
 def test_executor_skips_repeal_invariant_scan_without_existing_scoped_violation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
