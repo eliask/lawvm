@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, List, Optional
 
 from lawvm.core.ir import IRStatute, LegalOperation
@@ -220,6 +221,7 @@ def replay_uk_ops(
     verbose: bool = False,
     lo_ops_out: Optional[List[LegalOperation]] = None,
     adjudications_out: Optional[List[CompileAdjudication]] = None,
+    replay_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> IRStatute:
     """Apply compiled UK legal operations to enacted base, return amended statute.
 
@@ -244,6 +246,9 @@ def replay_uk_ops(
         adjudications_out: Optional list to collect replay skip/no-op adjudications.
                     Entries are `CompileAdjudication` with one of the `uk_replay_*`
                     kinds defined by this executor.
+        replay_phase_timings_out:
+                    Optional accumulator for replay preparation, per-action
+                    apply, and replay finalization timing diagnostics.
 
     Returns:
         A new IRStatute with all ops applied (deep copy — base is not mutated).
@@ -255,12 +260,25 @@ def replay_uk_ops(
     """
     if verbose:
         print(f"  replay_uk_ops: applying {len(ops)} ops to {base.statute_id}")
+    replay_phase_t0 = time.perf_counter()
+
+    def _mark_replay_phase(name: str) -> None:
+        nonlocal replay_phase_t0
+        if replay_phase_timings_out is None:
+            return
+        now = time.perf_counter()
+        replay_phase_timings_out[name] = replay_phase_timings_out.get(name, 0.0) + (
+            now - replay_phase_t0
+        )
+        replay_phase_t0 = now
+
     prepared_ops = _prepare_replay_uk_ops(
         ops,
         base_ir=base,
         verbose=verbose,
         adjudications_out=adjudications_out,
     )
+    _mark_replay_phase("replay_prepare")
 
     executor = UKReplayExecutor(
         base,
@@ -270,8 +288,20 @@ def replay_uk_ops(
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications_out,
     )
-    for op in prepared_ops.accepted_ops:
-        executor.apply_op(op)
+    _mark_replay_phase("replay_executor_init")
+    if replay_phase_timings_out is None:
+        for op in prepared_ops.accepted_ops:
+            executor.apply_op(op)
+    else:
+        for op in prepared_ops.accepted_ops:
+            op_t0 = time.perf_counter()
+            executor.apply_op(op)
+            action_name = _action_name(op.action)
+            key = f"replay_apply_{action_name}"
+            replay_phase_timings_out[key] = replay_phase_timings_out.get(key, 0.0) + (
+                time.perf_counter() - op_t0
+            )
+        replay_phase_t0 = time.perf_counter()
 
     if adjudications_out is not None:
         append_replay_fold_text_duplication_adjudications(
@@ -279,5 +309,8 @@ def replay_uk_ops(
             frozen_statute=executor.statute.to_irstatute(),
             source_statute=base.statute_id,
         )
+        _mark_replay_phase("replay_fold_text_duplication")
 
-    return executor.statute.to_irstatute()
+    replayed = executor.statute.to_irstatute()
+    _mark_replay_phase("replay_to_ir")
+    return replayed

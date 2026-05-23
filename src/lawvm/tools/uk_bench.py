@@ -143,6 +143,17 @@ _PHASE_TIMING_KEYS = (
     "compile_filter_effect",
     "compile_final_order",
     "replay",
+    "replay_prepare",
+    "replay_executor_init",
+    "replay_apply_insert",
+    "replay_apply_repeal",
+    "replay_apply_replace",
+    "replay_apply_text_replace",
+    "replay_apply_text_repeal",
+    "replay_apply_renumber",
+    "replay_apply_unknown",
+    "replay_fold_text_duplication",
+    "replay_to_ir",
     "oracle_align",
     "collect_replay_eids",
     "score_replay_eids",
@@ -166,6 +177,7 @@ _WORKER_APPLICABILITY_MODE: str = "effective_date_plus_feed_applied"
 _WORKER_AUTHORITY_MODE: str = "current_mixed"
 _WORKER_ALLOW_METADATA_ONLY_EFFECTS: bool = True
 _WORKER_SCORE_TEXT: bool = True
+_WORKER_RECORD_REPLAY_SUBPHASES: bool = False
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 
@@ -890,6 +902,7 @@ def _score_statute(
     authority_mode: str = "current_mixed",
     allow_metadata_only_effects: bool = True,
     score_text: bool = True,
+    record_replay_subphases: bool = False,
 ) -> _BenchResult:
     sid = entry["statute_id"]
     act_type = entry["type"]
@@ -1337,6 +1350,9 @@ def _score_statute(
                 )
                 eid_map = oracle_eid_data.get("eid_map", {})
                 text_map = oracle_eid_data.get("text_map", {})
+                replay_phase_timings: dict[str, float] | None = (
+                    {} if record_replay_subphases else None
+                )
                 replayed_ir = replay_uk_ops(
                     enacted_ir,
                     ops,
@@ -1344,8 +1360,12 @@ def _score_statute(
                     text_map=text_map,
                     allow_oracle_alignment=allow_oracle_alignment,
                     adjudications_out=replay_adjudications,
+                    replay_phase_timings_out=replay_phase_timings,
                 )
-                _mark_phase("replay")
+                if replay_phase_timings:
+                    _mark_external_phases(replay_phase_timings)
+                else:
+                    _mark_phase("replay")
                 replay_adjudication_count = len(replay_adjudications)
                 replay_adjudication_records = tuple(
                     _replay_adjudication_record(adjudication)
@@ -1846,6 +1866,7 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
             authority_mode=_WORKER_AUTHORITY_MODE,
             allow_metadata_only_effects=_WORKER_ALLOW_METADATA_ONLY_EFFECTS,
             score_text=_WORKER_SCORE_TEXT,
+            record_replay_subphases=_WORKER_RECORD_REPLAY_SUBPHASES,
         )
     except Exception as exc:
         result = _bench_exception_result(
@@ -1876,6 +1897,7 @@ def _run_bench(
     authority_mode: str = "current_mixed",
     allow_metadata_only_effects: bool = True,
     score_text: bool = True,
+    record_replay_subphases: bool = False,
 ) -> list[_BenchResult]:
     total = len(corpus)
     t0 = time.time()
@@ -1887,6 +1909,7 @@ def _run_bench(
         global _WORKER_DB_PATH, _WORKER_DO_REPLAY, _WORKER_REPO_ROOT, _WORKER_DO_COMMENCEMENT
         global _WORKER_ALLOW_METADATA_BACKFILL, _WORKER_ALLOW_ORACLE_ALIGNMENT
         global _WORKER_ALLOW_METADATA_ONLY_EFFECTS, _WORKER_SCORE_TEXT
+        global _WORKER_RECORD_REPLAY_SUBPHASES
         global _WORKER_APPLICABILITY_MODE, _WORKER_AUTHORITY_MODE
         _WORKER_DB_PATH = str(archive._db_path)
         _WORKER_DO_REPLAY = do_replay
@@ -1898,6 +1921,7 @@ def _run_bench(
         _WORKER_AUTHORITY_MODE = authority_mode
         _WORKER_ALLOW_METADATA_ONLY_EFFECTS = allow_metadata_only_effects
         _WORKER_SCORE_TEXT = score_text
+        _WORKER_RECORD_REPLAY_SUBPHASES = record_replay_subphases
 
         results: list[Optional[_BenchResult]] = [None] * total
         with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -1971,6 +1995,7 @@ def _run_bench(
                 authority_mode=authority_mode,
                 allow_metadata_only_effects=allow_metadata_only_effects,
                 score_text=score_text,
+                record_replay_subphases=record_replay_subphases,
             )
         except Exception as exc:
             r = _bench_exception_result(
@@ -5587,6 +5612,7 @@ def main(args) -> None:  # noqa: ANN001
         authority_mode=replay_regime.authority_mode,
         allow_metadata_only_effects=replay_regime.allow_metadata_only_effects,
         score_text=score_text,
+        record_replay_subphases=getattr(args, "phase_timings", False),
     )
     archive.close()
 

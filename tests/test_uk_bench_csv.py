@@ -4263,12 +4263,16 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
         text_map: dict[str, str],
         allow_oracle_alignment: bool,
         adjudications_out: list[object],
+        replay_phase_timings_out: dict[str, float] | None = None,
     ) -> IRStatute:
         replay_seen["ir"] = ir
         replay_seen["ops"] = ops
         replay_seen["eid_map"] = eid_map
         replay_seen["text_map"] = text_map
         replay_seen["allow_oracle_alignment"] = allow_oracle_alignment
+        replay_seen["replay_phase_timings_out"] = replay_phase_timings_out
+        if replay_phase_timings_out is not None:
+            replay_phase_timings_out["replay_apply_insert"] = 0.125
         adjudications_out.append(
             CompileAdjudication(
                 kind="uk_replay_target_not_found",
@@ -4313,6 +4317,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
         applicability_mode="effective_date_only",
         authority_mode="source_text_only",
         allow_metadata_only_effects=False,
+        record_replay_subphases=True,
     )
 
     assert compile_seen["repo_root"] == tmp_path
@@ -4323,6 +4328,9 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
     assert compile_seen["applicability_mode"] == "effective_date_only"
     assert compile_seen["authority_mode"] == "source_text_only"
     assert replay_seen["allow_oracle_alignment"] is False
+    assert replay_seen["replay_phase_timings_out"] == {"replay_apply_insert": 0.125}
+    assert result.phase_timings["replay_apply_insert"] == 0.125
+    assert "replay" not in result.phase_timings
     assert result.uk_metadata_backfill_enabled is False
     assert result.uk_oracle_alignment_enabled is False
     assert result.uk_metadata_only_effects_enabled is False
