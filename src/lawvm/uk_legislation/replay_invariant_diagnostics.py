@@ -215,13 +215,15 @@ class UKReplayInvariantDiagnosticsMixin:
         op: LegalOperation,
     ) -> list[tuple[str, UKMutableNode, str, str]]:
         root_filter = self._invariant_root_filter_for_op(op)
-        if root_filter is None or root_filter != {("body", "")}:
+        if root_filter is None:
             return self._invariant_target_roots(root_filter)
         if len(op.target.path) <= 1:
             return self._invariant_target_roots(root_filter)
         parent_roots = self._invariant_parent_target_roots_for_op(op)
         if parent_roots:
             return parent_roots
+        if root_filter != {("body", "")}:
+            return self._invariant_target_roots(root_filter)
         top_kind, top_label = op.target.path[0]
         top_address = LegalAddress(path=((top_kind, top_label),), special=None)
         top_node = None
