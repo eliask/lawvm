@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Dict
 
 # ASCII Unit Separator
@@ -109,6 +110,17 @@ class UKAmendmentIntent:
     targets: List[str] # literal strings or ranges like FROM_X_TO_Y
 
 def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
+    """Parse source-carried fragment substitutions.
+
+    The parser is pure but callers may mutate returned fragment dictionaries
+    while adding replay-specific context. Cache only immutable parse facts and
+    return fresh dictionaries on every public call.
+    """
+    return [dict(items) for items in _parse_fragment_substitution_cached(text)]
+
+
+@lru_cache(maxsize=8192)
+def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str], ...], ...]:
     """
     NLP-enhanced fragment extraction. Returns a list of substitution dicts.
     'for "the Lord Chancellor" substitute "the Secretary of State"'
@@ -1694,7 +1706,7 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
         if m:
             subs.append({"original": m.group(2).strip(), "replacement": m.group(1).strip()})
 
-    return _deduplicate_fragment_substitutions(subs)
+    return tuple(tuple(sub.items()) for sub in _deduplicate_fragment_substitutions(subs))
 
 def is_whole_node_replacement(text: str, effect_type: str) -> bool:
     """

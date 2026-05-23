@@ -3,6 +3,16 @@ from __future__ import annotations
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 
 
+def test_parse_fragment_substitution_returns_fresh_fragment_dicts() -> None:
+    text = 'for "old words" substitute "new words"'
+    first = parse_fragment_substitution(text)
+    first[0]["caller_added_context"] = "mutated"
+
+    second = parse_fragment_substitution(text)
+
+    assert second == [{"original": "old words", "replacement": "new words"}]
+
+
 def test_parse_fragment_substitution_handles_there_is_inserted() -> None:
     subs = parse_fragment_substitution(
         'c in subsection (6) after “Agency,” there is inserted '
