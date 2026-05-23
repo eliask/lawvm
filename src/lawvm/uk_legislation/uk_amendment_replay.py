@@ -24,6 +24,7 @@ Current status:
 from __future__ import annotations
 
 import json as json  # noqa: F401
+import time
 import xml.etree.ElementTree as ET  # noqa: F401
 from pathlib import Path
 from typing import Any, List, Optional
@@ -39,7 +40,7 @@ from lawvm.uk_legislation.effects import (
     get_affecting_act_enacted_xml_from_archive,
     get_affecting_act_xml_from_archive,
     load_effects_for_statute_from_archive,
-    uk_effect_requires_affecting_source_for_replay,
+    uk_effect_requires_affecting_source_for_replay,  # noqa: F401
 )
 from lawvm.uk_legislation.addressing import (
     _order_schedule_materialization_ops,
@@ -50,10 +51,10 @@ from lawvm.uk_legislation.authority_filter import (
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
-    EffectSourceSelection as _EffectSourceSelection,
+    EffectSourceSelection as _EffectSourceSelection,  # noqa: F401
     extracted_tag_and_text as _extracted_tag_and_text,
     select_source_for_effect as _select_source_for_effect,
-    source_context_for_effect as _source_context_for_effect,
+    source_context_for_effect as _source_context_for_effect,  # noqa: F401
 )
 from lawvm.uk_legislation.lowering_records import (
     append_manual_compile_frontier_diagnostic,
@@ -188,6 +189,7 @@ class UKReplayPipeline:
         lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
         effect_feed_parse_rejections_out: Optional[list[dict[str, Any]]] = None,
         effect_diagnostics_out: Optional[list[dict[str, Any]]] = None,
+        compile_phase_timings_out: Optional[dict[str, float]] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -201,6 +203,17 @@ class UKReplayPipeline:
                 "effects/XML; deprecated on-disk XML inputs have been removed"
             )
 
+        phase_t0 = time.perf_counter()
+
+        def _mark_compile_phase(name: str) -> None:
+            nonlocal phase_t0
+            now = time.perf_counter()
+            if compile_phase_timings_out is not None:
+                compile_phase_timings_out[name] = (
+                    compile_phase_timings_out.get(name, 0.0) + (now - phase_t0)
+                )
+            phase_t0 = now
+
         # ── Load effects ────────────────────────────────────────────────────
         if effect_feed_parse_rejections_out is None:
             effects = load_effects_for_statute_from_archive(affected_act_id, archive)
@@ -210,6 +223,7 @@ class UKReplayPipeline:
                 archive,
                 parse_rejections_out=effect_feed_parse_rejections_out,
             )
+        _mark_compile_phase("compile_load_effects")
 
         replayable = list(effects)
         if pit_date:
@@ -232,6 +246,7 @@ class UKReplayPipeline:
             diagnostics_out=effect_diagnostics_out,
             lowering_observations_out=lowering_rejections_out,
         )
+        _mark_compile_phase("compile_filter_order_effects")
 
         ops = []
         extraction_cache: dict[str, UKAffectingSourceContext] = {}
@@ -254,6 +269,7 @@ class UKReplayPipeline:
                 enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
                 provision_extractor=extract_provision_element_from_bytes,
             )
+            _mark_compile_phase("compile_source_select")
             source_required_for_replay = source_selection.source_required_for_replay
             source_context = source_selection.source_context
             el = source_selection.extracted_el
@@ -282,6 +298,7 @@ class UKReplayPipeline:
                 source_root=root,
                 source_authority_layer=source_context.authority_layer,
             )
+            _mark_compile_phase("compile_lower_effect")
             compile_recorded_lowering_rejection = (
                 lowering_rejections_out is not None
                 and len(lowering_rejections_out) > lowering_rejection_count_before
@@ -304,6 +321,7 @@ class UKReplayPipeline:
                 lowering_rejection_start_index=lowering_rejection_count_before,
                 structural_for_replay=structural_for_replay,
             )
+            _mark_compile_phase("compile_source_pathology")
             if lowering_rejections_out is not None:
                 mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
                     source_pathology=source_pathology,
@@ -339,6 +357,7 @@ class UKReplayPipeline:
                     replay_applicable=replay_applicable,
                     structural_for_replay=structural_for_replay,
                 )
+                _mark_compile_phase("compile_filter_effect")
                 continue
             source_pathology_filter_rejected = append_source_pathology_filter_lowering_rejections(
                 e,
@@ -360,6 +379,7 @@ class UKReplayPipeline:
                 structural_for_replay=structural_for_replay,
             )
             if source_pathology_filter_rejected:
+                _mark_compile_phase("compile_filter_effect")
                 continue
             should_replay_compiled = structural_for_replay or should_replay_nonstructural_ops(
                 e,
@@ -390,6 +410,7 @@ class UKReplayPipeline:
                             "non-source-text operations on a non-replay-applicable effect"
                         ),
                     )
+                _mark_compile_phase("compile_filter_effect")
                 continue
             if authority_mode == "source_text_only":
                 compiled = _apply_uk_authority_mode(
@@ -401,15 +422,19 @@ class UKReplayPipeline:
                     diagnostics_out=authority_rejections_out,
                 )
                 if not compiled:
+                    _mark_compile_phase("compile_filter_effect")
                     continue
             if should_replay_compiled:
                 ops.extend(compiled)
+            _mark_compile_phase("compile_filter_effect")
 
         ops = _order_schedule_materialization_ops(ops)
-        return _order_uk_text_patch_preimage_chains(
+        ordered_ops = _order_uk_text_patch_preimage_chains(
             ops,
             lowering_observations_out=lowering_rejections_out,
         )
+        _mark_compile_phase("compile_final_order")
+        return ordered_ops
 
     def apply_ops(
         self,

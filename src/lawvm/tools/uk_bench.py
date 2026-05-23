@@ -125,6 +125,13 @@ _PHASE_TIMING_KEYS = (
     "score_enacted_eids",
     "text_score_enacted",
     "compile_ops",
+    "compile_load_effects",
+    "compile_filter_order_effects",
+    "compile_source_select",
+    "compile_lower_effect",
+    "compile_source_pathology",
+    "compile_filter_effect",
+    "compile_final_order",
     "replay",
     "oracle_align",
     "collect_replay_eids",
@@ -925,6 +932,14 @@ def _score_statute(
         phase_timings[name] = phase_timings.get(name, 0.0) + (now - phase_t0)
         phase_t0 = now
 
+    def _mark_external_phases(timings: Mapping[str, float]) -> None:
+        nonlocal phase_t0
+        for name, seconds in timings.items():
+            if seconds <= 0:
+                continue
+            phase_timings[name] = phase_timings.get(name, 0.0) + seconds
+        phase_t0 = time.perf_counter()
+
     try:
         try:
             (
@@ -1282,6 +1297,7 @@ def _score_statute(
                 from lawvm.uk_legislation.oracle_align import align_uk_replay_to_oracle_with_report
 
                 pipeline = UKReplayPipeline(repo_root)
+                compile_phase_timings: dict[str, float] = {}
                 ops = pipeline.compile_ops_for_statute(
                     sid,
                     archive=archive,
@@ -1292,8 +1308,12 @@ def _score_statute(
                     authority_rejections_out=authority_rejections,
                     lowering_rejections_out=lowering_rejections,
                     effect_diagnostics_out=effect_diagnostics,
+                    compile_phase_timings_out=compile_phase_timings,
                 )
-                _mark_phase("compile_ops")
+                if compile_phase_timings:
+                    _mark_external_phases(compile_phase_timings)
+                else:
+                    _mark_phase("compile_ops")
                 _record_compile_diagnostics()
                 n_ops = len(ops)
                 uk_replay_regime_fields = _uk_bench_replay_regime_result_fields(

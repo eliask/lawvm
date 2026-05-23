@@ -219,6 +219,39 @@ def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
     assert "ukpga/2000/1" not in output
 
 
+def test_uk_bench_phase_timing_schema_includes_uk_compile_subphases() -> None:
+    assert "compile_source_select" in uk_bench._PHASE_TIMING_KEYS
+    assert "compile_lower_effect" in uk_bench._PHASE_TIMING_KEYS
+    assert "compile_source_pathology" in uk_bench._PHASE_TIMING_KEYS
+    assert "phase_compile_lower_effect_s" in uk_bench._PHASE_TIMING_HEADERS
+
+    result = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,
+        score=0.9,
+        status="OK",
+        duration_s=42.25,
+        phase_timings={"compile_lower_effect": 3.25, "compile_source_select": 1.5},
+    )
+
+    values = dict(
+        zip(
+            ("phase_total_s", *uk_bench._PHASE_TIMING_HEADERS),
+            uk_bench._phase_timing_csv_values(result),
+        )
+    )
+
+    assert values["phase_total_s"] == "4.750"
+    assert values["phase_compile_lower_effect_s"] == "3.250"
+    assert values["phase_compile_source_select_s"] == "1.500"
+    assert values["phase_compile_ops_s"] == ""
+
+
 def test_uk_bench_phase_timing_report_explains_missing_timings(capsys) -> None:
     result = _BenchResult(
         statute_id="ukpga/2000/1",
@@ -4167,6 +4200,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
             authority_rejections_out: list[dict[str, object]],
             lowering_rejections_out: list[dict[str, object]],
             effect_diagnostics_out: list[dict[str, object]] | None = None,
+            compile_phase_timings_out: dict[str, float] | None = None,
         ) -> list[object]:
             compile_seen["statute_id"] = statute_id
             compile_seen["archive"] = archive
@@ -4178,6 +4212,8 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
             lowering_rejections_out.append({"rule_id": "uk_effect_lowering_no_ops_rejected", "blocking": True})
             lowering_rejections_out.append({"rule_id": "uk_effect_legacy_unmarked_rejected"})
             lowering_rejections_out.append({"rule_id": "uk_effect_nonstructural_no_ops_rejected", "blocking": False})
+            if compile_phase_timings_out is not None:
+                compile_phase_timings_out["compile_lower_effect"] = 0.25
             if effect_diagnostics_out is not None:
                 effect_diagnostics_out.append(
                     {
@@ -4449,12 +4485,15 @@ def test_uk_bench_score_statute_preserves_compile_diagnostics_on_replay_exceptio
             authority_rejections_out: list[dict[str, object]],
             lowering_rejections_out: list[dict[str, object]],
             effect_diagnostics_out: list[dict[str, object]] | None = None,
+            compile_phase_timings_out: dict[str, float] | None = None,
         ) -> list[object]:
             assert archive is not None
             assert allow_metadata_backfill is True
             assert allow_metadata_only_effects is True
             assert applicability_mode == "effective_date_plus_feed_applied"
             assert authority_mode == "current_mixed"
+            if compile_phase_timings_out is not None:
+                compile_phase_timings_out["compile_source_select"] = 0.125
             authority_rejections_out.append(
                 {
                     "rule_id": "uk_authority_source_text_only_observed",
