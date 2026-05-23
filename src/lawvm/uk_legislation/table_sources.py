@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+import weakref
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
 
@@ -24,6 +25,10 @@ _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_definition_entry_text_repeal"
 )
 _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID = "uk_effect_repeal_table_structural_repeal"
+_REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
+    ET.Element,
+    tuple[tuple[ET.Element, tuple[int, int]], ...],
+] = weakref.WeakKeyDictionary()
 
 
 @dataclass(frozen=True)
@@ -366,6 +371,37 @@ def _uk_table_is_repeal_extent_source_table(table: ET.Element) -> tuple[int, int
     return None
 
 
+def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[tuple[ET.Element, tuple[int, int]], ...]:
+    cached = _REPEAL_EXTENT_TABLE_CACHE.get(root)
+    if cached is not None:
+        return cached
+    tables: list[tuple[ET.Element, tuple[int, int]]] = []
+    for el in root.iter():
+        if _tag(el).lower() != "table":
+            continue
+        columns = _uk_table_is_repeal_extent_source_table(el)
+        if columns is not None:
+            tables.append((el, columns))
+    result = tuple(tables)
+    _REPEAL_EXTENT_TABLE_CACHE[root] = result
+    return result
+
+
+def _uk_repeal_extent_source_tables_for_roots(
+    roots: Sequence[ET.Element],
+) -> tuple[tuple[ET.Element, tuple[int, int]], ...]:
+    tables: list[tuple[ET.Element, tuple[int, int]]] = []
+    seen_table_ids: set[int] = set()
+    for root in roots:
+        for table, columns in _uk_repeal_extent_source_tables(root):
+            table_id = id(table)
+            if table_id in seen_table_ids:
+                continue
+            seen_table_ids.add(table_id)
+            tables.append((table, columns))
+    return tuple(tables)
+
+
 def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     *,
     effect: UKEffectRecord,
@@ -386,16 +422,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
     matches: list[tuple[int, str, tuple[str, ...], int, int, str, str, str, str, str]] = []
-    tables = []
-    seen_table_ids: set[int] = set()
-    for root in search_roots:
-        for el in root.iter():
-            if _tag(el).lower() != "table" or id(el) in seen_table_ids:
-                continue
-            seen_table_ids.add(id(el))
-            columns = _uk_table_is_repeal_extent_source_table(el)
-            if columns is not None:
-                tables.append((el, columns))
+    tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         for row in rows[1:]:
@@ -519,16 +546,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
 
     matches: list[tuple[int, str, str, str, str]] = []
     mixed_structural_word_matches: list[tuple[int, str, str, str, str]] = []
-    tables = []
-    seen_table_ids: set[int] = set()
-    for root in search_roots:
-        for el in root.iter():
-            if _tag(el).lower() != "table" or id(el) in seen_table_ids:
-                continue
-            seen_table_ids.add(id(el))
-            columns = _uk_table_is_repeal_extent_source_table(el)
-            if columns is not None:
-                tables.append((el, columns))
+    tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         for row in rows[1:]:
