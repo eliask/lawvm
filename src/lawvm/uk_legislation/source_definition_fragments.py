@@ -34,9 +34,13 @@ _SOURCE_CARRIED_FRAGMENT_ACTION_RE = re.compile(
 )
 
 
-def _has_following_words_repeal_instruction(normalized_text: str) -> bool:
+def _has_following_words_repeal_instruction(
+    normalized_text: str,
+    *,
+    lowered_text: Optional[str] = None,
+) -> bool:
     """Match the fixed parent instruction without scanning large text by regex."""
-    lowered = normalized_text.lower()
+    lowered = normalized_text.lower() if lowered_text is None else lowered_text
     start = 0
     while True:
         index = lowered.find("following word", start)
@@ -939,14 +943,10 @@ def _fragment_substitution_source_carried_following_words_repeal(
             candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
             continue
-        candidate_lower = candidate_text.lower()
-        if (
-            "following" not in candidate_lower
-            or "word" not in candidate_lower
-            or ("repealed" not in candidate_lower and "omitted" not in candidate_lower)
+        if not _has_following_words_repeal_instruction(
+            candidate_text,
+            lowered_text=candidate_text.lower(),
         ):
-            continue
-        if not _has_following_words_repeal_instruction(candidate_text):
             continue
         source_parent_id = str(ancestor.get("id") or "")
         if not source_parent_id:
