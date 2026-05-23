@@ -35,6 +35,7 @@ from lawvm.uk_legislation.replay_invariant_diagnostics import (
 from lawvm.uk_legislation.replay_grounding import _grounding_length_window_text_candidates
 from lawvm.uk_legislation.provision_extractor import (
     _INSTRUCTION_TEXT_CACHE,
+    _build_extraction_context,
     _first_component_matches,
     _find_provision_from_search_root,
     _find_provision_greedy,
@@ -31212,12 +31213,44 @@ def test_uk_first_component_matches_preserves_match_node_semantics() -> None:
     assert len(optimized) == 1
 
 
+def test_uk_extraction_context_preserves_document_order_first_matches() -> None:
+    root = ET.fromstring(
+        """
+        <Body>
+          <P1 id="ukpga-2000-1-section-1">
+            <Pnumber>1</Pnumber>
+            <P2 id="ukpga-2000-1-section-1-subsection-1">
+              <Pnumber>1</Pnumber>
+              <Text>First subsection.</Text>
+            </P2>
+          </P1>
+          <P1 id="ukpga-2000-1-section-1">
+            <Pnumber>1</Pnumber>
+            <P2 id="ukpga-2000-1-section-1-subsection-2">
+              <Pnumber>2</Pnumber>
+              <Text>Second subsection.</Text>
+            </P2>
+          </P1>
+        </Body>
+        """
+    )
+
+    parent_map, exact_id_map, sequence_map = _build_extraction_context(root)
+    first_section = list(root)[0]
+    first_subsection = list(first_section)[1]
+
+    assert exact_id_map["ukpga20001section1"] is first_section
+    assert sequence_map[("ukpga", "2000", "1", "section", "1")] is first_section
+    assert parent_map[first_subsection] is first_section
+
+
 def test_uk_source_selection_skips_xml_loaders_for_non_source_required_effect() -> None:
     from lawvm.uk_legislation.effect_source_selection import select_source_for_effect
 
     def fail_loader(*_args: object, **_kwargs: object) -> bytes:
         raise AssertionError("non-source-required effects should not load XML")
 
+    phase_timings: dict[str, float] = {}
     selection = select_source_for_effect(
         effect=UKEffectRecord(
             effect_id="uk_test_modified",
@@ -31244,11 +31277,15 @@ def test_uk_source_selection_skips_xml_loaders_for_non_source_required_effect() 
         effect_diagnostics_out=[],
         current_xml_loader=fail_loader,
         enacted_xml_loader=fail_loader,
+        source_phase_timings_out=phase_timings,
     )
 
     assert selection.extracted_el is None
     assert selection.source_context.authority_layer == "EFFECT_FEED_INDEX"
     assert selection.source_required_for_replay is False
+    assert phase_timings["compile_source_required_check"] >= 0
+    assert phase_timings["compile_source_context"] >= 0
+    assert "compile_source_extract_current" not in phase_timings
 
 
 def test_executor_skips_invariant_rescan_for_text_only_rewrite() -> None:

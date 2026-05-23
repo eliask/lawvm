@@ -142,9 +142,7 @@ def _build_extraction_context(
     parent_map: dict[ET.Element, ET.Element] = {}
     exact_id_map: dict[str, ET.Element] = {}
     sequence_map: dict[tuple[str, ...], ET.Element] = {}
-    stack = [root]
-    while stack:
-        el = stack.pop()
+    for el in root.iter():
         el_id = el.get("id") or el.get("Id")
         if el_id:
             norm_el_id = _norm_prov_ref(el_id)
@@ -153,10 +151,8 @@ def _build_extraction_context(
             seq = _get_id_sequence(el_id)
             if seq and seq not in sequence_map:
                 sequence_map[seq] = el
-        children = list(el)
-        for child in reversed(children):
+        for child in el:
             parent_map[child] = el
-            stack.append(child)
     return parent_map, exact_id_map, sequence_map
 
 
