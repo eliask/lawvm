@@ -268,8 +268,12 @@ class UKReplayPipeline:
                 current_xml_loader=get_affecting_act_xml_from_archive,
                 enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
                 provision_extractor=extract_provision_element_from_bytes,
+                source_phase_timings_out=compile_phase_timings_out,
             )
-            _mark_compile_phase("compile_source_select")
+            if compile_phase_timings_out is None:
+                _mark_compile_phase("compile_source_select")
+            else:
+                phase_t0 = time.perf_counter()
             source_required_for_replay = source_selection.source_required_for_replay
             source_context = source_selection.source_context
             el = source_selection.extracted_el

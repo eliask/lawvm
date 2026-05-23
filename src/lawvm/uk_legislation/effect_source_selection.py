@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -81,11 +82,24 @@ def select_source_for_effect(
     current_xml_loader=get_affecting_act_xml_from_archive,
     enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
     provision_extractor=extract_provision_element_from_bytes,
+    source_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> EffectSourceSelection:
+    phase_t0 = time.perf_counter()
+
+    def _mark_source_phase(name: str) -> None:
+        nonlocal phase_t0
+        now = time.perf_counter()
+        if source_phase_timings_out is not None:
+            source_phase_timings_out[name] = source_phase_timings_out.get(name, 0.0) + (
+                now - phase_t0
+            )
+        phase_t0 = now
+
     source_required_for_replay = uk_effect_requires_affecting_source_for_replay(
         effect,
         applicability_mode=applicability_mode,
     )
+    _mark_source_phase("compile_source_required_check")
     source_context = source_context_for_effect(
         effect=effect,
         source_required_for_replay=source_required_for_replay,
@@ -95,6 +109,7 @@ def select_source_for_effect(
         current_xml_loader=current_xml_loader,
         provision_extractor=provision_extractor,
     )
+    _mark_source_phase("compile_source_context")
     if not source_required_for_replay:
         return EffectSourceSelection(
             source_context=source_context,
@@ -107,6 +122,7 @@ def select_source_for_effect(
             effect,
         )
     )
+    _mark_source_phase("compile_source_extract_current")
     source_context, extracted_el, source_lane_observations = (
         _select_enacted_source_for_current_shell(
             effect=effect,
@@ -117,6 +133,7 @@ def select_source_for_effect(
             enacted_xml_loader=enacted_xml_loader,
         )
     )
+    _mark_source_phase("compile_source_select_enacted")
     if effect_diagnostics_out is not None:
         effect_diagnostics_out.extend(source_extraction_observations)
         effect_diagnostics_out.extend(source_lane_observations)
