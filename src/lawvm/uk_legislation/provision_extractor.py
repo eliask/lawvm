@@ -51,8 +51,6 @@ def _norm_prov_ref(ref: str) -> str:
 
 
 _NUM_ALPHA_RE = re.compile(r"(\d+)([a-z]+)", flags=re.I)
-_DIGITS_RE = re.compile(r"^\d+$")
-_ALPHA_RE = re.compile(r"^[a-z]+$")
 _REF_SPLIT_RE = re.compile(r"[\s.()]+")
 _SEQUENCE_KIND_TOKENS = {
     "schedule",
@@ -102,12 +100,12 @@ def _sequence_tokens_cached(parts: tuple[str, ...]) -> tuple[str, ...]:
             seq_parts.append(p_low)
         elif p_low in _ROMAN_NUMERAL_LABELS:
             seq_parts.append(_ROMAN_NUMERAL_LABELS[p_low])
+        elif p_low.isascii() and p_low.isdigit():
+            seq_parts.append(p_low)
+        elif p_low.isascii() and p_low.isalpha():
+            seq_parts.append(p_low)
         elif match := _NUM_ALPHA_RE.fullmatch(p_low):
             seq_parts.extend([match.group(1), match.group(2)])
-        elif _DIGITS_RE.match(p_low):
-            seq_parts.append(p_low)
-        elif _ALPHA_RE.match(p_low):
-            seq_parts.append(p_low)
     return tuple(seq_parts)
 
 
