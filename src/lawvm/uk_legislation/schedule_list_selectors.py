@@ -212,7 +212,20 @@ def _uk_schedule_list_entry_repeal_selector(
     if (
         "table" in target_surface
         or _is_heading_only_ref(target_ref)
-        or _addr_leaf_kind(target) not in {"schedule", "part", "chapter", "division"}
+        or _addr_leaf_kind(target) not in {
+            "schedule",
+            "part",
+            "chapter",
+            "division",
+            "paragraph",
+            "subparagraph",
+        }
+    ):
+        return None
+    if _addr_leaf_kind(target) in {"paragraph", "subparagraph"} and not re.search(
+        r"\bentr(?:y|ies)\b",
+        text,
+        re.I,
     ):
         return None
 

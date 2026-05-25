@@ -26853,6 +26853,51 @@ def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> Non
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_repeal_allows_index_paragraph_carrier() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>b omit the entry for “relevant register”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_index_paragraph_entry_omit",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-04-01",
+        affected_uri="/id/ukpga/2000/17/schedule/22/paragraph/147",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 147",
+        affecting_uri="/id/ukpga/2022/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="3",
+        affecting_provisions="s. 25(10)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2022-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "22"), ("paragraph", "147")))
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["relevant register"]
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_numbered_schedule_entry_repeal_refines_partition_target() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -27156,6 +27201,51 @@ def test_replay_schedule_list_entry_repeal_deletes_only_matched_entry() -> None:
     assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
     assert adjudications[0].detail["deleted_count"] == 1
     assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_schedule_list_entry_repeal_deletes_index_paragraph_entry() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_index_paragraph_entry_repeal",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "22"), ("paragraph", "147"))),
+        provenance_tags=(
+            'schedule_list_entry_repeal_selector:{"rule_id":"uk_effect_schedule_list_entry_repeal",'
+            '"anchors":["relevant register"]}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2000/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 22",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="147",
+                        text="Index of defined expressions.",
+                        children=(
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="Member States' registers"),
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="relevant register"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    index_paragraph = replayed.supplements[0].children[0]
+    assert [child.text for child in index_paragraph.children] == ["Member States' registers"]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
+    assert adjudications[0].detail["deleted_count"] == 1
+    assert adjudications[0].detail["carrier_kind"] == "paragraph"
 
 
 def test_replay_source_label_changing_substitution_preserves_new_identity() -> None:

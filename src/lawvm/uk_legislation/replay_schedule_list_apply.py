@@ -806,7 +806,14 @@ class UKReplayScheduleListApplyMixin:
     ) -> bool:
         carrier_node, _, _ = self._find_node_by_target(target)
         carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
-        if carrier_node is None or carrier_kind not in {"schedule", "part", "chapter", "division"}:
+        if carrier_node is None or carrier_kind not in {
+            "schedule",
+            "part",
+            "chapter",
+            "division",
+            "paragraph",
+            "subparagraph",
+        }:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
@@ -843,7 +850,7 @@ class UKReplayScheduleListApplyMixin:
             )
             return False
         entry_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
-        if carrier_kind == "schedule":
+        if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
             entry_rows = [
                 (carrier_node, idx, child)
                 for idx, child in enumerate(carrier_node.children)
@@ -861,12 +868,12 @@ class UKReplayScheduleListApplyMixin:
             _collect_partition_entry_rows(carrier_node)
 
         def _entry_text_norm(child: UKMutableNode) -> str:
-            if carrier_kind == "schedule":
+            if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
                 return _compact_normalized_text(child.text)
             return _compact_numbered_schedule_entry_text(child.text)
 
         def _entry_text_article_norm(child: UKMutableNode) -> str:
-            if carrier_kind == "schedule":
+            if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
                 return _compact_schedule_entry_anchor_without_article(child.text)
             return _compact_numbered_schedule_entry_text_without_article(child.text)
 
