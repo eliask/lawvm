@@ -4589,8 +4589,24 @@ _DIAGNOSTIC_PREVIEW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"\bfor\s+the\s+entry\s+beginning\s+[“\"'‘]", re.I),
     ),
     (
+        "beginning_each_child_insertion",
+        re.compile(
+            r"\bat\s+the\s+beginning\s+of\s+each\s+of\s+"
+            r"(?:paragraphs|sub-paragraphs|subsections)\b",
+            re.I,
+        ),
+    ),
+    (
         "paragraph_substitution",
         re.compile(r"\bfor\s+paragraph\s+\([^)]+\)\s+substitute", re.I),
+    ),
+    (
+        "malformed_quoted_substitution",
+        re.compile(
+            r"\bfor\s+(?:the\s+)?words?\s+[“\"'‘].+?[”\"'’]\s+"
+            r"\bthere\s+(?:is|are|shall\s+be)\s+substituted\s+[“\"'‘][^”\"'’]*$",
+            re.I,
+        ),
     ),
     (
         "words_following_paragraphs_omission",
