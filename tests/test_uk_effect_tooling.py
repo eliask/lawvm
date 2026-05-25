@@ -1617,11 +1617,16 @@ def test_uk_effects_summary_counts_are_stable() -> None:
                 candidate=False,
                 resolver_eids=(),
                 lowering_rejections=(
-                    {"rule_id": "uk_effect_lowering_no_ops_rejected", "blocking": True},
+                    {
+                        "rule_id": "uk_effect_lowering_no_ops_rejected",
+                        "blocking": True,
+                        "reason_code": "no_lowerable_operations",
+                    },
                     {
                         "rule_id": "uk_effect_payload_missing",
                         "blocking": False,
                         "strict_disposition": "record",
+                        "reason_code": "payload_missing",
                     },
                 ),
                 source_acquisition_rejections=(
@@ -1680,6 +1685,10 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "uk_effect_lowering_no_ops_rejected": 1,
             "uk_effect_payload_missing": 1,
         },
+        "lowering_observation_reason_code_counts": {
+            "no_lowerable_operations": 1,
+            "payload_missing": 1,
+        },
         "rows_with_lowering_rejections": 1,
         "rows_with_blocking_lowering_rejections": 1,
         "rows_with_source_acquisition_observations": 1,
@@ -1694,8 +1703,14 @@ def test_uk_effects_summary_counts_are_stable() -> None:
         "lowering_rejection_rule_counts": {
             "uk_effect_lowering_no_ops_rejected": 1,
         },
+        "lowering_rejection_reason_code_counts": {
+            "no_lowerable_operations": 1,
+        },
         "blocking_lowering_rejection_rule_counts": {
             "uk_effect_lowering_no_ops_rejected": 1,
+        },
+        "blocking_lowering_rejection_reason_code_counts": {
+            "no_lowerable_operations": 1,
         },
     }
 

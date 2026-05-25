@@ -616,6 +616,9 @@ def uk_effects_summary_counts(
     lowering_rejection_rule_counts: dict[str, int] = {}
     lowering_observation_rule_counts: dict[str, int] = {}
     blocking_lowering_rejection_rule_counts: dict[str, int] = {}
+    lowering_observation_reason_code_counts: dict[str, int] = {}
+    lowering_rejection_reason_code_counts: dict[str, int] = {}
+    blocking_lowering_rejection_reason_code_counts: dict[str, int] = {}
     metadata_only_count = 0
     applied_count = 0
     requires_applied_count = 0
@@ -703,12 +706,25 @@ def uk_effects_summary_counts(
             lowering_observation_rule_counts[rule_id] = (
                 lowering_observation_rule_counts.get(rule_id, 0) + 1
             )
+            reason_code = str(observation.get("reason_code") or "")
+            if reason_code:
+                lowering_observation_reason_code_counts[reason_code] = (
+                    lowering_observation_reason_code_counts.get(reason_code, 0) + 1
+                )
         for rejection in lowering_rejections:
             rule_id = str(rejection.get("rule_id") or "unknown")
             lowering_rejection_rule_counts[rule_id] = lowering_rejection_rule_counts.get(rule_id, 0) + 1
             blocking_lowering_rejection_rule_counts[rule_id] = (
                 blocking_lowering_rejection_rule_counts.get(rule_id, 0) + 1
             )
+            reason_code = str(rejection.get("reason_code") or "")
+            if reason_code:
+                lowering_rejection_reason_code_counts[reason_code] = (
+                    lowering_rejection_reason_code_counts.get(reason_code, 0) + 1
+                )
+                blocking_lowering_rejection_reason_code_counts[reason_code] = (
+                    blocking_lowering_rejection_reason_code_counts.get(reason_code, 0) + 1
+                )
     return {
         "matched_effects": matched_effect_count,
         "matched_effect_count_before_limit": matched_effect_count,
@@ -734,6 +750,9 @@ def uk_effects_summary_counts(
         "lowering_observation_rule_counts": dict(
             sorted(lowering_observation_rule_counts.items())
         ),
+        "lowering_observation_reason_code_counts": dict(
+            sorted(lowering_observation_reason_code_counts.items())
+        ),
         "rows_with_lowering_rejections": rows_with_lowering_rejections,
         "rows_with_blocking_lowering_rejections": rows_with_blocking_lowering_rejections,
         "rows_with_source_acquisition_observations": (
@@ -747,8 +766,14 @@ def uk_effects_summary_counts(
             sorted(source_acquisition_rejection_rule_counts.items())
         ),
         "lowering_rejection_rule_counts": dict(sorted(lowering_rejection_rule_counts.items())),
+        "lowering_rejection_reason_code_counts": dict(
+            sorted(lowering_rejection_reason_code_counts.items())
+        ),
         "blocking_lowering_rejection_rule_counts": dict(
             sorted(blocking_lowering_rejection_rule_counts.items())
+        ),
+        "blocking_lowering_rejection_reason_code_counts": dict(
+            sorted(blocking_lowering_rejection_reason_code_counts.items())
         ),
     }
 
@@ -1334,10 +1359,22 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
         print("Lowering observation rules:")
         for rule_id, count in summary_counts["lowering_observation_rule_counts"].items():
             print(f"  {rule_id}: {count}")
+    if summary_counts.get("lowering_observation_reason_code_counts"):
+        print("Lowering observation reason codes:")
+        for reason_code, count in summary_counts[
+            "lowering_observation_reason_code_counts"
+        ].items():
+            print(f"  {reason_code}: {count}")
     if summary_counts["lowering_rejection_rule_counts"]:
         print("Lowering rejection rules:")
         for rule_id, count in summary_counts["lowering_rejection_rule_counts"].items():
             print(f"  {rule_id}: {count}")
+    if summary_counts.get("lowering_rejection_reason_code_counts"):
+        print("Lowering rejection reason codes:")
+        for reason_code, count in summary_counts[
+            "lowering_rejection_reason_code_counts"
+        ].items():
+            print(f"  {reason_code}: {count}")
     if summary_counts["blocking_lowering_rejection_rule_counts"]:
         print(
             "Rows with blocking lowering rejections: "
@@ -1346,6 +1383,12 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
         print("Blocking lowering rejection rules:")
         for rule_id, count in summary_counts["blocking_lowering_rejection_rule_counts"].items():
             print(f"  {rule_id}: {count}")
+    if summary_counts.get("blocking_lowering_rejection_reason_code_counts"):
+        print("Blocking lowering rejection reason codes:")
+        for reason_code, count in summary_counts[
+            "blocking_lowering_rejection_reason_code_counts"
+        ].items():
+            print(f"  {reason_code}: {count}")
 
 
 def main(args: "argparse.Namespace") -> None:
