@@ -7221,6 +7221,93 @@ def test_compile_source_carried_after_quoted_anchor_insert_without_definition_co
     assert observations[0]["source_definition_term"] == ""
 
 
+def test_compile_source_carried_after_word_anchor_insert_from_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-2-paragraph-2">
+              <Pnumber>2</Pnumber>
+              <P1para>
+                <P2 id="schedule-2-paragraph-2-6">
+                  <Pnumber>6</Pnumber>
+                  <P2para>
+                    <P3 id="schedule-2-paragraph-2-6-a">
+                      <Pnumber>a</Pnumber>
+                      <P3para>
+                        <Text>
+                          in subsection (2)(a), after the word “inclusion”
+                          there is inserted
+                        </Text>
+                        <BlockAmendment>
+                          <Text>
+                            — i in the case of a medical practitioner, in the Health Board list;
+                            and ii in any other case,
+                          </Text>
+                        </BlockAmendment>
+                      </P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_carried_after_word_anchor_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2004-03-04",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 29B(2)(a)",
+        affecting_uri="/id/asp/2002/5",
+        affecting_class="ScottishAct",
+        affecting_year="2002",
+        affecting_number="5",
+        affecting_provisions="Sch. 2 para. 2(6)(a)",
+        affecting_title="Community Care and Health (Scotland) Act 2002",
+        in_force_dates=[{"date": "2004-03-04", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "29b"),
+        ("subsection", "2"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "inclusion"
+    assert ops[0].text_patch.replacement.startswith(
+        "inclusion — i in the case of a medical practitioner"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+    ]
+    assert observations[0]["text_match"] == "inclusion"
+
+
 def test_compile_source_carried_quoted_substitution_from_parent_context() -> None:
     source_root = ET.fromstring(
         f"""
