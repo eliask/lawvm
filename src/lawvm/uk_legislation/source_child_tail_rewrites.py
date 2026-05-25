@@ -36,6 +36,12 @@ _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_TARGET_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"for\s+the\s+words\s+after\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 
 
 def _fragment_substitution_source_carried_child_tail_repeal(
@@ -105,11 +111,19 @@ def _fragment_substitution_source_carried_child_tail_substitution(
     if not text:
         return None
     match = _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE.match(text)
+    source_subsection = ""
     if match is None:
-        return None
-    source_subsection = _clean_num(match.group("subsection"))
+        match = _SOURCE_CARRIED_TARGET_CHILD_TAIL_SUBSTITUTION_RE.match(text)
+        if match is None:
+            return None
+        if _addr_leaf_kind(target) != "subsection":
+            return None
+    else:
+        source_subsection = _clean_num(match.group("subsection"))
     target_subsection = _clean_num(_addr_field(target, "subsection") or "")
-    if not source_subsection or source_subsection != target_subsection:
+    if not target_subsection:
+        return None
+    if source_subsection and source_subsection != target_subsection:
         return None
     anchor_label = _clean_num(match.group("label"))
     replacement = " ".join(match.group("replacement").split()).strip()
@@ -118,7 +132,7 @@ def _fragment_substitution_source_carried_child_tail_substitution(
     return {
         "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",
         "replacement": replacement,
-        "source_subsection_label": source_subsection,
+        "source_subsection_label": source_subsection or target_subsection,
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_child_tail_substitution_text_patch",
     }
