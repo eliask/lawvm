@@ -3494,6 +3494,93 @@ def test_uk_manual_compile_evidence_jsonl_templates_repeal_table_claim() -> None
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_repeal_table_mixed_split_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-repeal-mixed",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/schedule/4/paragraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="Sch. 4 para. 3",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="Sch. 2",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="repeal_schedule_table_source_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_repeal_table_structural_repeal_unresolved",
+                    "reason_code": "mixed_structural_and_word_repeal_requires_split",
+                    "target_ref": "Sch. 4 para. 3",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="Schedule",
+            source_extracted_text_preview=(
+                "Schedule 2 Repeals Title Extent of repeal Test Act 2000 "
+                "Paragraph 3. In paragraph 4, the words “or paragraph 3”."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_repeal_table_candidate",
+            manual_compile_reason="Mixed table repeal requires split ownership.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_repeal_table_structural_repeal_unresolved",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_repeal_table_structural_repeal_unresolved",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["lowering_rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+    assert template["lowering_reason_code"] == "mixed_structural_and_word_repeal_requires_split"
+    assert "structural_and_text_repeal_split_boundary" in template["required_ownership"]
+    assert (
+        "claim_splits_structural_repeal_from_word_omission_clauses"
+        in template["required_validator_checks"]
+    )
+    assert template["source_target_surface"] == "Sch. 4 para. 3"
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_source_carried_structured_patch_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-source-carried-structured",

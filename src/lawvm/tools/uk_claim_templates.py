@@ -583,25 +583,51 @@ def manual_compile_suggested_claim_template(
         )
         return template
     if summary.manual_compile_rule_id == "uk_manual_frontier_repeal_table_candidate":
-        return _bounded_mutation_claim_template(
+        detail = {}
+        for rule_id in (
+            "uk_effect_repeal_table_structural_repeal_unresolved",
+            "uk_effect_repeal_table_quoted_words_text_repeal_unresolved",
+        ):
+            detail = _first_lowering_rejection_detail(row=row, rule_id=rule_id)
+            if detail:
+                break
+        required_ownership = [
+            "source_named_table_or_row_surface",
+            "repealed_row_column_or_cell_boundary",
+            "unclaimed_table_surface_preservation",
+            "mutation_boundary",
+        ]
+        required_validator_checks = [
+            "source_witness_targets_table_repeal_or_omission",
+            "claim_identifies_exact_table_carrier",
+            "claim_identifies_every_repealed_row_column_or_cell",
+            "claim_preserves_unclaimed_table_rows_columns_and_cells",
+            "changed_paths_are_within_declared_table_repeal_boundary",
+        ]
+        if detail.get("reason_code") == "mixed_structural_and_word_repeal_requires_split":
+            required_ownership.append("structural_and_text_repeal_split_boundary")
+            required_validator_checks.append(
+                "claim_splits_structural_repeal_from_word_omission_clauses"
+            )
+        template = _bounded_mutation_claim_template(
             statute_id=statute_id,
             row=row,
             action_family="table_repeal_or_omission",
             placement_family="source_named_table_or_row_boundary_required",
-            required_ownership=[
-                "source_named_table_or_row_surface",
-                "repealed_row_column_or_cell_boundary",
-                "unclaimed_table_surface_preservation",
-                "mutation_boundary",
-            ],
-            required_validator_checks=[
-                "source_witness_targets_table_repeal_or_omission",
-                "claim_identifies_exact_table_carrier",
-                "claim_identifies_every_repealed_row_column_or_cell",
-                "claim_preserves_unclaimed_table_rows_columns_and_cells",
-                "changed_paths_are_within_declared_table_repeal_boundary",
-            ],
+            required_ownership=required_ownership,
+            required_validator_checks=required_validator_checks,
         )
+        template.update(
+            {
+                "lowering_rule_id": detail.get("rule_id", ""),
+                "lowering_reason_code": detail.get("reason_code", ""),
+                "source_target_surface": detail.get(
+                    "target_ref",
+                    effect.affected_provisions,
+                ),
+            }
+        )
+        return template
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
