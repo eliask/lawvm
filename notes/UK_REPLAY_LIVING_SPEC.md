@@ -5157,9 +5157,14 @@ Current bench replay-regime invariant:
   `source_scope_context=explicit_source_with_effect_target_context`; it must
   not consult live-tree uniqueness or infer a paragraph from sibling source
   rows silently.
+- The same effect-target context rule applies when the affecting provision is
+  a numbered source row such as `s. 17(8)`: the XML row label, the source-text
+  row label, and the final parenthesized affecting-provision label must all
+  match before the omitted schedule paragraph context may be admitted.
 - Schedule subparagraph lowering only splits contiguous top-level alpha labels
-  (`a`, `b`, ...). Nested roman lists inside an item remain payload text of
-  that item until a deeper structural claim owns them.
+  (`a`, `b`, ...), including an explicit `and`/`or` connector before the next
+  expected alpha label. Nested roman lists inside an item remain payload text
+  of that item until a deeper structural claim owns them.
 - Replay recovery remains visible through
   `uk_replay_source_carried_structured_tail_substitution_recovered`. For
   `from "X" to the end` forms it trims the parent with
