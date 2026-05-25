@@ -4158,6 +4158,24 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     uk_manual_frontier_validate_p.add_argument(
+        "--remaining-manual-rule",
+        action="append",
+        metavar="RULE_ID",
+        help=(
+            "when writing --remaining-jsonl, include only live rows whose current "
+            "manual-frontier rule matches RULE_ID; may be repeated"
+        ),
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--remaining-source-pathology",
+        action="append",
+        metavar="PATHOLOGY",
+        help=(
+            "when writing --remaining-jsonl, include only live rows whose current "
+            "source pathology matches PATHOLOGY; may be repeated"
+        ),
+    )
+    uk_manual_frontier_validate_p.add_argument(
         "--fail-on-stale",
         action="store_true",
         help="exit 1 when any input row is already resolved or no longer live manual-frontier work",

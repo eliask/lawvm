@@ -253,6 +253,8 @@ def test_uk_manual_frontier_validate_main_emits_json(
         "path": str(remaining_path),
         "rows": 1,
         "statuses": ["still_manual_frontier"],
+        "manual_rule_filters": [],
+        "source_pathology_filters": [],
     }
     assert payload["rows"][0]["effect_id"] == "eff-1"
     assert json.loads(validation_path.read_text(encoding="utf-8"))["effect_id"] == "eff-1"
@@ -307,6 +309,7 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
             "rule_id": "uk_manual_frontier_validator_still_manual_frontier",
             "current_manual_compile_status": "manual_compile_candidate",
             "current_manual_compile_rule_id": "uk_manual_frontier_table_appropriate_place_candidate",
+            "current_source_pathology": "table_entry_target_unsupported",
             "current_compiled_op_count": 0,
             "current_blocking_lowering_rule_ids": [
                 "uk_effect_table_entry_instruction_rejected"
@@ -336,6 +339,9 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     assert remaining[0]["validator_current_manual_compile_rule_id"] == (
         "uk_manual_frontier_table_appropriate_place_candidate"
     )
+    assert remaining[0]["validator_current_source_pathology"] == (
+        "table_entry_target_unsupported"
+    )
     assert remaining[0]["validator_current_blocking_lowering_rule_ids"] == [
         "uk_effect_table_entry_instruction_rejected"
     ]
@@ -345,6 +351,36 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
         "table_ordering_rule_or_anchor_claim",
     ]
     assert remaining[0]["validation"] == validation_rows[1]
+
+
+def test_remaining_workqueue_rows_filters_live_rows_by_current_family() -> None:
+    original_rows = (
+        {"line_number": 1, "statute_id": "ukpga/2020/1", "effect_id": "eff-table"},
+        {"line_number": 2, "statute_id": "ukpga/2020/1", "effect_id": "eff-heading"},
+    )
+    validation_rows = (
+        {
+            "validator_status": "still_manual_frontier",
+            "rule_id": "uk_manual_frontier_validator_still_manual_frontier",
+            "current_manual_compile_rule_id": "uk_manual_frontier_table_entry_candidate",
+            "current_source_pathology": "table_entry_target_unsupported",
+        },
+        {
+            "validator_status": "still_manual_frontier",
+            "rule_id": "uk_manual_frontier_validator_still_manual_frontier",
+            "current_manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "current_source_pathology": "heading_facet_target_unsupported",
+        },
+    )
+
+    remaining = uk_manual_frontier._remaining_workqueue_rows(
+        original_rows,
+        validation_rows,
+        manual_rule_ids=frozenset({"uk_manual_frontier_table_entry_candidate"}),
+        source_pathologies=frozenset({"table_entry_target_unsupported"}),
+    )
+
+    assert [row["effect_id"] for row in remaining] == ["eff-table"]
 
 
 def test_print_text_report_includes_export_paths(capsys) -> None:
@@ -379,6 +415,8 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
                 "path": ".tmp/remaining.jsonl",
                 "rows": 1,
                 "statuses": ["still_manual_frontier"],
+                "manual_rule_filters": ["uk_manual_frontier_table_entry_candidate"],
+                "source_pathology_filters": ["table_entry_target_unsupported"],
             },
             "rows": (),
         }
@@ -401,7 +439,9 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
     assert "Validation JSONL: .tmp/validation.jsonl rows=1" in out
     assert (
         "Remaining JSONL: .tmp/remaining.jsonl rows=1 "
-        "statuses=still_manual_frontier"
+        "statuses=still_manual_frontier "
+        "filters=manual_rules=uk_manual_frontier_table_entry_candidate;"
+        "source_pathologies=table_entry_target_unsupported"
     ) in out
 
 
