@@ -30,6 +30,7 @@ def _strip_schedule_entry_payload(raw: str) -> str:
         text,
         flags=re.I,
     )
+    text = re.sub(r"\s*,\s*(?:and|or)?\s*$", "", text, flags=re.I)
     text = re.sub(r"\s*;\s*(?:and)?\s*$", "", text, flags=re.I)
     return _strip_schedule_entry_phrase(text)
 
@@ -313,6 +314,14 @@ def _uk_schedule_list_entry_replace_selector(
         text,
         re.I,
     )
+    if match is None:
+        match = re.search(
+            r"\bfor\s+(?:the\s+)?entry\s+(?P<anchor>[“\"'‘].+?[”\"'’])"
+            r"(?:\s+in\s+each\s+schedule,?)?\s+"
+            r"substitute\s*[—–-]?\s*(?P<payload>.+)$",
+            text,
+            re.I,
+        )
     if match is None:
         return None
     anchor = _strip_schedule_entry_phrase(match.group("anchor"))
