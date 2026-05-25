@@ -90,6 +90,12 @@ source-closed curated loops,
 regression limits, saved-run phase timing delta summaries when both UK runs
 were produced with `--phase-timings`, and replay diagnostics.
 
+Tracked UK source-closed fixtures currently include
+`data/uk/bench_corpus_hard_smoke_source_closed.csv` and
+`data/uk/bench_corpus_hard_tight_source_closed.csv`. These are stricter than
+the hard smoke/tight presets: enacted and oracle XML are available, and every
+replay-required affecting-act current XML is either available or not required.
+
 Regression guards must fail on structurally incomparable inputs. In particular,
 a saved-run comparison with zero common scored rows is not a successful
 zero-regression run, and an enabled duration guard with zero common `duration_s`
