@@ -82,11 +82,18 @@ def test_block_amendment_payload_descendant_rejection_is_typed_source_diagnostic
         extracted_label="b",
         extracted_text_preview="b require the offender to do anything described in the order.",
         amendment_container_tag="BlockAmendment",
+        source_instruction_ancestor_tag="P3",
+        source_instruction_ancestor_id="section-175-2-a",
+        source_instruction_ancestor_label="a",
+        source_instruction_ancestor_text_preview="a for subsection (1) substitute...",
     )
 
     assert rejection["rule_id"] == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
     assert rejection["family"] == "source_pathology"
     assert rejection["phase"] == "extraction"
+    assert rejection["source_instruction_ancestor_tag"] == "P3"
+    assert rejection["source_instruction_ancestor_id"] == "section-175-2-a"
+    assert rejection["source_instruction_ancestor_label"] == "a"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
     assert is_uk_affecting_act_xml_source_observation(rejection) is True

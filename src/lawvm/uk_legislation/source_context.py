@@ -480,6 +480,40 @@ def _source_range_child_with_context(
     return el
 
 
+def _payload_source_instruction_ancestor(
+    context: UKAffectingSourceContext,
+    el: ET.Element,
+) -> Optional[ET.Element]:
+    if context.parent_map is None:
+        return None
+    passed_amendment_payload = False
+    parent = context.parent_map.get(el)
+    source_instruction_tags = {
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "Paragraph",
+        "Section",
+        "Subsection",
+        "Article",
+        "Rule",
+        "Regulation",
+        "Schedule",
+        "Part",
+    }
+    while parent is not None:
+        parent_tag = _tag(parent)
+        if parent_tag in {"BlockAmendment", "InlineAmendment"}:
+            passed_amendment_payload = True
+        elif passed_amendment_payload and parent_tag in source_instruction_tags:
+            return parent
+        parent = context.parent_map.get(parent)
+    return None
+
+
 def _block_amendment_payload_descendant_source_rejection(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
@@ -503,6 +537,7 @@ def _block_amendment_payload_descendant_source_rejection(
     if not amendment_container_tag:
         return None
 
+    source_instruction_ancestor = _payload_source_instruction_ancestor(context, el)
     return uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
         effect_id=str(effect.effect_id or ""),
         affecting_act_id=str(effect.affecting_act_id or ""),
@@ -513,6 +548,20 @@ def _block_amendment_payload_descendant_source_rejection(
         extracted_label=_clean_num(_direct_structural_num(el)),
         extracted_text_preview=_source_preview(_text_content(el)),
         amendment_container_tag=amendment_container_tag,
+        source_instruction_ancestor_tag=_tag(source_instruction_ancestor)
+        if source_instruction_ancestor is not None
+        else "",
+        source_instruction_ancestor_id=str(
+            source_instruction_ancestor.get("id") or source_instruction_ancestor.get("Id") or ""
+        )
+        if source_instruction_ancestor is not None
+        else "",
+        source_instruction_ancestor_label=_clean_num(_direct_structural_num(source_instruction_ancestor))
+        if source_instruction_ancestor is not None
+        else "",
+        source_instruction_ancestor_text_preview=_source_preview(_text_content(source_instruction_ancestor))
+        if source_instruction_ancestor is not None
+        else "",
     )
 
 
