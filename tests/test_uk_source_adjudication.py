@@ -2396,6 +2396,61 @@ def test_classify_uk_effect_compensation_determined_under_act_source_pathology()
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_compensation_determined_under_year_act_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "Any compensation payable shall be determined, in case of dispute, "
+            "under Part I of the 1961 Act."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_reference_act_shall_apply_as_if_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "In relation to the determination of any such question, sections 2 "
+            "and 4 of the 1961 Act shall apply as if references to the acquiring "
+            "authority were references to the appropriate person."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_reference_act_has_effect_as_if_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "The Land Compensation Act 1961 shall have effect, subject to "
+            "paragraphs (1) and (2), as if this Order were a local enactment."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_application_by_reference_does_not_hide_text_mutation() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",

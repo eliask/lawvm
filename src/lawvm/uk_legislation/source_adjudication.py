@@ -1189,13 +1189,23 @@ def _looks_like_application_by_reference_effect_source(text: str) -> bool:
         return False
     if re.search(r"\b(?:insert|substitute|omit|repeal|renumber)\b", norm):
         return False
+    referenced_act = r"(?:act\s+\d{4}|\d{4}\s+act)"
     if re.search(r"\bshall\b.{0,220}\bhave\s+effect\b.{0,220}\bfor\s+the\s+purpose\s+of\b", norm):
+        return True
+    if re.search(rf"\b{referenced_act}\b.{{0,220}}\bshall\s+have\s+effect\b", norm):
+        return True
+    if re.search(
+        rf"\b(?:part|sections?|section)\b.{{0,160}}\b{referenced_act}\b.{{0,220}}\bshall\s+apply\b",
+        norm,
+    ):
+        return True
+    if re.search(r"\bshall\s+apply\s+as\s+if\b", norm):
         return True
     return bool(
         re.search(r"\bcompensation\b", norm)
         and re.search(r"\bdetermined\b", norm)
         and re.search(r"\bunder\s+(?:part|section|sections?)\b", norm)
-        and re.search(r"\bact\s+\d{4}\b", norm)
+        and re.search(rf"\b{referenced_act}\b", norm)
     )
 
 
