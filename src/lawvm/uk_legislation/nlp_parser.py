@@ -410,7 +410,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     matches_all_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"(?:\(\s*)?in (?:each|both) places?"
-        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?"
+        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+        r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
         r"(?:\s*\))?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
         r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](.*?)[”\"'’]",
