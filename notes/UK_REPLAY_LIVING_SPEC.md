@@ -4743,10 +4743,13 @@ Current bench replay-regime invariant:
   `omit the final "X"` lowers with the final-occurrence selector
   `occurrence=-1`, not all-occurrences deletion, so earlier conjunctions or
   repeated words remain intact.
-  `for "X" (in the first and second places it appears) substitute "Y"` lowers
-  to two explicit occurrence-indexed text patches, applied in descending
+  `for "X" (in the first and second places it appears) substitute "Y"` and
+  `for "X", in the first two places where it occurs, substitute "Y"` lower to
+  two explicit occurrence-indexed text patches, applied in descending
   occurrence order, so a third occurrence is preserved and the source does not
-  silently become an all-occurrences substitution. A narrow parenthesized
+  silently become an all-occurrences substitution. Current first-two witness:
+  `ukpga/1978/29` affected `s. 15(1)` by `asp/2014/9` `s. 63(3)(a)(i)`. A
+  narrow parenthesized
   nested-quote source form such as
   `for "('X')" substitute "(a 'X')"` lowers as the exact punctuation/quote
   text patch named by the source. If the selected occurrence or quoted

@@ -428,8 +428,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_first_second_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
-        r"(?:\(\s*)?in the first and second places?"
-        r"(?:\s+(?:it|they|those words?)\s+(?:occurs?|appear)s?)?"
+        r"(?:\(\s*)?in the (?:first and second|first two) places?"
+        r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?"
         r"(?:\s*\))?,?\s+substitute\s+[“”\"'‘](.*?)[”\"'’]",
         text,
         re.I,

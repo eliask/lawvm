@@ -583,6 +583,28 @@ def test_parse_fragment_substitution_handles_first_and_second_occurrence_substit
     ]
 
 
+def test_parse_fragment_substitution_handles_first_two_places_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "i for \u201c, a Health Board or the Agency\u201d, in the first two places "
+        "where it occurs, substitute \u201c or a Health Board \u201d , and"
+    )
+
+    assert subs == [
+        {
+            "original": ", a Health Board or the Agency",
+            "replacement": " or a Health Board ",
+            "occurrence": "2",
+            "rule_id": "uk_effect_first_second_occurrence_substitution_text_patch",
+        },
+        {
+            "original": ", a Health Board or the Agency",
+            "replacement": " or a Health Board ",
+            "occurrence": "1",
+            "rule_id": "uk_effect_first_second_occurrence_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_ordinal_substitution() -> None:
     subs = parse_fragment_substitution(
         "8 In Schedule 16, in paragraph 11(4)(b), for first \u201cby\u201d substitute \u201cbe\u201d ."
