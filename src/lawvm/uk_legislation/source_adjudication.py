@@ -1131,6 +1131,41 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
     )
 
 
+def _looks_like_structural_child_range_substitution_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(
+            r"\bfor\s+(?:paragraphs|sub-?paragraphs|subsections)\s+"
+            r"\([0-9A-Za-z]+\)\s+and\s+\([0-9A-Za-z]+\)\s+"
+            r"there\s+(?:is|are|shall\s+be)\s+substituted\b",
+            norm,
+        )
+    )
+
+
+def _looks_like_deictic_text_substitution_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(
+            r"\bfor\s+those\s+words\s+in\s+the\s+"
+            r"(?:first|second|third|fourth|fifth)\s+place\s+where\s+they\s+"
+            r"(?:occur|appear)\s+substitute\b",
+            norm,
+        )
+    )
+
+
+def _looks_like_definition_child_structural_substitution_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(r"\bin\s+the\s+definition\s+of\s+[\"“][^\"”]+[\"”]", norm)
+        and re.search(
+            r"\bfor\s+paragraph\s+\([0-9A-Za-z]+\).{0,120}\bsubstitute\b",
+            norm,
+        )
+    )
+
+
 def _looks_like_amendment_program_inserted_parent_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -1837,6 +1872,36 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "deterministic_frontend_candidate",
             "rule_id": "uk_manual_frontier_structural_sibling_insert_candidate",
             "reason": "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_structural_child_range_substitution_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_structural_child_range_substitution_candidate",
+            "reason": "The source substitutes a structural child range such as paragraphs (a) and (b); a future compiler must own the removed children, replacement payload shape, and any connector/tail semantics instead of lowering it as a word-level text patch.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_deictic_text_substitution_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_deictic_text_patch_source_insufficient",
+            "reason": "The source uses a deictic preimage such as 'those words' without carrying the antecedent in the extracted row; replay requires source-local antecedent proof before a text patch can be lowered.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_definition_child_structural_substitution_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_definition_child_structural_substitution_candidate",
+            "reason": "The source substitutes a paragraph inside a definition and may carry connector/tail semantics; a claim or future compiler must identify the definition child, replacement structure, and tail ownership before replay.",
         }
 
     if (

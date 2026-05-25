@@ -2138,6 +2138,73 @@ def test_classify_uk_manual_compile_frontier_marks_instruction_header_source_ins
     assert result["rule_id"] == "uk_manual_frontier_instruction_header_source_insufficient"
 
 
+def test_classify_uk_manual_compile_frontier_marks_structural_child_range_substitution() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text='b for paragraphs (a) and (b) there shall be substituted "on a relevant frequency".',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_deictic_text_patch_source_insufficient() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text='b for those words in the second place where they occur substitute "Part 1".',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_deictic_text_patch_source_insufficient"
+
+
+def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_substitution() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "1 In section 177, in subsection (6), in the definition of "
+            '"foreign satellite service", for paragraph (a) (including the "or" at the end) '
+            "substitute- a a service which is broadcast by satellite."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_substitution_candidate"
+
+
 def test_classify_uk_effect_compare_shape_marks_table_cell_surface_gap() -> None:
     result = classify_uk_effect_compare_shape(
         effect_type="word substituted",

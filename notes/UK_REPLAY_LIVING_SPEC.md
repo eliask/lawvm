@@ -2505,6 +2505,19 @@ Current payload-descendant source-ref invariant:
   `uk_manual_frontier_instruction_header_source_insufficient` instead of a
   generic unclassified row. Current witness: `ukpga/1990/42` affected
   `s. 183A(4)` and `s. 183A(6)(b)` by `ukpga/2016/11 s. 54(1)(a)-(b)`.
+- structural child-range substitutions such as `for paragraphs (a) and (b)
+  there shall be substituted "..."` are classified as
+  `uk_manual_frontier_structural_child_range_substitution_candidate` while no
+  compiler owns the removed child identities and replacement payload shape.
+  Deictic text patches such as `for those words in the second place where they
+  occur substitute "..."` are classified as
+  `uk_manual_frontier_deictic_text_patch_source_insufficient` until the
+  antecedent is source-proven. Definition-child substitutions such as `in the
+  definition of "D", for paragraph (a) ... substitute- ...` are classified as
+  `uk_manual_frontier_definition_child_structural_substitution_candidate`
+  because the compiler must own the definition child and connector/tail
+  semantics. Current witnesses are the remaining `ukpga/1990/42`
+  `uk_manual_frontier_parser_or_extraction_candidate` rows.
 - Effect-feed target references may use the undotted abbreviation `para` as
   well as `para.`. UK target parsing treats both as `paragraph` under
   `uk_target_ref_undotted_para_abbreviation_normalized`; otherwise
