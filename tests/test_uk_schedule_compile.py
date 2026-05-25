@@ -30364,6 +30364,108 @@ def test_compile_schedule_list_entry_replace_lowers_to_selector() -> None:
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_replace_handles_bare_quoted_entry() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>a for the entry \u201cHer Majesty's Chief Inspector of Fire and Rescue
+          Authorities\u201d substitute\u2014 \u201c Her Majesty's Chief Inspector of the Scottish
+          Fire and Rescue Service \u201d , and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-7e2735bc66dce8d8a7d9e67a9ffdb131",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-04-01",
+        affected_uri="/id/asp/2010/8/schedule/8",
+        affected_class="ScottishAct",
+        affected_year="2010",
+        affected_number="8",
+        affected_provisions="sch. 8",
+        affecting_uri="/id/asp/2012/8",
+        affecting_class="ScottishAct",
+        affecting_year="2012",
+        affecting_number="8",
+        affecting_provisions="sch. 7 para. 72(3)(a)",
+        affecting_title="Police and Fire Reform (Scotland) Act 2012",
+        in_force_dates=[{"date": "2013-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target == LegalAddress(path=(("schedule", "8"),))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "Her Majesty's Chief Inspector of the Scottish Fire and Rescue Service"
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_replace"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_replace_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_replace_selector:"))
+    assert selector["anchor"] == "Her Majesty's Chief Inspector of Fire and Rescue Authorities"
+    assert selector["replacement_text"] == "Her Majesty's Chief Inspector of the Scottish Fire and Rescue Service"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_replace"
+    assert observations[0]["blocking"] is False
+
+
+def test_compile_schedule_list_entry_replace_handles_in_each_schedule_clause() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>a for the entry \u201cCommission for Ethical Standards in Public Life
+          in Scotland\u201d in each schedule, substitute \u201cCommissioner for Ethical
+          Standards in Public Life in Scotland\u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-63524efd22cc5df7ccbdef32c3c709ac",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-07-01",
+        affected_uri="/id/asp/2010/8/schedule/6",
+        affected_class="ScottishAct",
+        affected_year="2010",
+        affected_number="8",
+        affected_provisions="Sch. 6",
+        affecting_uri="/id/ssi/2013/197",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="197",
+        affecting_provisions="Sch. 2 para. 17(a)",
+        affecting_title="Public Services Reform (Scotland) Act 2010 Modifications Order 2013",
+        in_force_dates=[{"date": "2013-07-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target == LegalAddress(path=(("schedule", "6"),))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "Commissioner for Ethical Standards in Public Life in Scotland"
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_replace"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_replace_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_replace_selector:"))
+    assert selector["anchor"] == "Commission for Ethical Standards in Public Life in Scotland"
+    assert selector["replacement_text"] == "Commissioner for Ethical Standards in Public Life in Scotland"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_replace"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_repeal_handles_multiple_anchors() -> None:
     extracted_el = ET.fromstring(
         f"""

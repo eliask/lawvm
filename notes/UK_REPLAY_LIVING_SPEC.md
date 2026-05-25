@@ -2335,8 +2335,9 @@ Current payload-descendant source-ref invariant:
   `ukpga/2020/17` affected `Sch. A1` by `ukpga/2021/11 Sch. 1 Pt. 1`, where
   exact extraction finds the Schedule A1 `BlockAmendment` and must not be
   overridden by the main Act `Part 1`.
-- `for the entry relating to X substitute Y` is not a word-level text patch
-  over the schedule carrier. It lowers to
+- `for the entry relating to X substitute Y` and bare quoted-entry forms such
+  as `for the entry "X" substitute Y` are not word-level text patches over the
+  schedule carrier. They lower to
   `uk_effect_schedule_list_entry_replace`: the canonical action remains
   `REPLACE`, the target remains the schedule carrier, and provenance carries
   a source-owned entry anchor plus replacement entry text. Replay must resolve
@@ -2348,7 +2349,9 @@ Current payload-descendant source-ref invariant:
   `uk_replay_schedule_list_entry_replace_unresolved`, while successful entry
   replacement records `uk_replay_schedule_list_entry_replace_resolved`.
   Current witness: `asp/2000/7` affected `sch. 3` by `asp/2012/3 Sch. 2
-  para. 4`.
+  para. 4`. Bare quoted-entry witnesses: `asp/2010/8` affected `sch. 8` by
+  `asp/2012/8 sch. 7 para. 72(3)(a)` and affected `Sch. 6` by
+  `ssi/2013/197 Sch. 2 para. 17(a)`.
 - Some UK schedule-list carriers bucket entries under immediate schedule child
   groups such as `p1group` headings rather than as direct schedule children.
   When an explicit `before`/`after` entry-insert selector cannot resolve a
