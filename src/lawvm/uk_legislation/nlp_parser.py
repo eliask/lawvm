@@ -86,6 +86,9 @@ UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
 UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID = (
     "uk_effect_dangling_passive_substitution_quote_text_patch"
 )
+UK_DANGLING_ACTIVE_SUBSTITUTION_QUOTE_RULE_ID = (
+    "uk_effect_dangling_active_substitution_quote_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -1352,6 +1355,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": m.group("original").strip(),
                 "replacement": m.group("replacement").strip(),
                 "rule_id": UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID,
+            }
+        )
+
+    matches_dangling_active_substitution_quote = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]"
+        r"(?:\s*\([^)]*\))?\s+substitute\s+"
+        r"(?:(?:the )?words? )?[“\"'‘](?P<replacement>[^”\"'’]+?)\s*$",
+        text,
+        re.I,
+    )
+    for m in matches_dangling_active_substitution_quote:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_DANGLING_ACTIVE_SUBSTITUTION_QUOTE_RULE_ID,
             }
         )
 
