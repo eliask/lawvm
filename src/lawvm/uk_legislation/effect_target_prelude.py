@@ -210,7 +210,17 @@ def expand_single_target_prelude(
                     "source_container": _tag(expansion_source_el) if expansion_source_el is not None else "",
                 },
             )
-    elif mixed_heading_structural_ref and len(re.findall(r"\([0-9A-Z]+\)", mixed_heading_structural_ref, re.I)) == 1:
+    elif mixed_heading_structural_ref and (
+        len(re.findall(r"\([0-9A-Z]+\)", mixed_heading_structural_ref, re.I)) == 1
+        or (
+            "(" not in mixed_heading_structural_ref
+            and re.search(
+                r"\b(?:s\.?|section|para\.?|paragraph)\s+\d+[A-Z]?\b",
+                mixed_heading_structural_ref,
+                re.I,
+            )
+        )
+    ):
         targets = [mixed_heading_structural_ref]
         mixed_heading_source_ref_by_target = {
             mixed_heading_structural_ref: original_targets_str[0],
