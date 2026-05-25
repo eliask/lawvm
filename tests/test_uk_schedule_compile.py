@@ -1678,6 +1678,105 @@ def test_compile_schedule_paragraph_range_with_plural_cross_headings_suffix_expa
     assert not any(record.get("blocking") is True for record in lowering_records)
 
 
+def test_compile_inserted_same_stem_section_range_with_embedded_table_text() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-4-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>After section 12I insert—</Text>
+            <BlockAmendment>
+              <P1group>
+                <Title>Staffing Duty to ensure appropriate staffing</Title>
+                <P1 eId="section-12IA">
+                  <Pnumber>12IA</Pnumber>
+                  <P1para>
+                    <Text>The report must include the numbers shown in column 2 of the table.</Text>
+                  </P1para>
+                </P1>
+              </P1group>
+              <P1group>
+                <Title>Planning duty</Title>
+                <P1 eId="section-12IB">
+                  <Pnumber>12IB</Pnumber>
+                  <P1para><Text>The Health Board must prepare a staffing plan.</Text></P1para>
+                </P1>
+              </P1group>
+              <P1group>
+                <Title>Training duty</Title>
+                <P1 eId="section-12IC">
+                  <Pnumber>12IC</Pnumber>
+                  <P1para><Text>The Agency must provide training.</Text></P1para>
+                </P1>
+              </P1group>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_inserted_same_stem_section_range_embedded_table_text",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 12IA-12IC and cross-heading",
+        affecting_uri="/id/asp/2019/6",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="6",
+        affecting_provisions="s. 4(2)",
+        affecting_title="Health and Care (Staffing) (Scotland) Act 2019",
+        comments="",
+        in_force_dates=[{"date": "2023-05-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+    ]
+    assert [op.target for op in ops] == [
+        LegalAddress((("section", "12ia"),)),
+        LegalAddress((("section", "12ib"),)),
+        LegalAddress((("section", "12ic"),)),
+    ]
+    assert [op.payload.label if op.payload is not None else "" for op in ops] == [
+        "12IA",
+        "12IB",
+        "12IC",
+    ]
+    assert any(
+        record["rule_id"] == "uk_effect_embedded_table_payload_structural_insertion_preserved"
+        and record["target_ref"] == "s. 12IA"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_chained_insertion_anchor_lowered"
+        and record["target"] == "section:12ib"
+        and record["preceding_eid"] == "section-12ia"
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for record in lowering_records
+    )
+    assert not any(record.get("blocking") is True for record in lowering_records)
+
+
 def test_compile_inserted_section_without_p1group_title_does_not_invent_heading_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -2675,6 +2774,33 @@ def test_split_metadata_mixed_numeric_to_alphanumeric_range_keeps_middle_section
         "s. 60",
         "s. 61",
         "s. 61A",
+    ]
+
+
+def test_split_metadata_same_stem_two_letter_section_range() -> None:
+    assert _split_metadata_provisions("s. 12IA-12IO and cross-heading") == [
+        "s. 12IA",
+        "s. 12IB",
+        "s. 12IC",
+        "s. 12ID",
+        "s. 12IE",
+        "s. 12IF",
+        "s. 12IG",
+        "s. 12IH",
+        "s. 12II",
+        "s. 12IJ",
+        "s. 12IK",
+        "s. 12IL",
+        "s. 12IM",
+        "s. 12IN",
+        "s. 12IO",
+    ]
+
+
+def test_split_metadata_two_letter_section_range_requires_same_stem() -> None:
+    assert _split_metadata_provisions("s. 12IA-12JO") == [
+        "s. 12IA",
+        "s. 12JO",
     ]
 
 

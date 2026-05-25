@@ -40,6 +40,9 @@ UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction
 UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID = (
     "uk_effect_embedded_table_payload_structural_substitution_preserved"
 )
+UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID = (
+    "uk_effect_embedded_table_payload_structural_insertion_preserved"
+)
 UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 
 
@@ -632,6 +635,49 @@ def _uk_embedded_table_payload_structural_substitution(
         "target_ref": target_ref,
         "target": str(target),
         "source_action": "paragraph_substitution",
+    }
+
+
+def _uk_embedded_table_payload_structural_insertion(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Detect structural insertion sources whose payload embeds table vocabulary.
+
+    Large UK inserted blocks can contain the words "table", "entry", or
+    "column" inside the new provision body. That vocabulary is payload text, not
+    a table-entry amendment instruction, when the source action is an explicit
+    structural insertion and the affected target is one of the inserted
+    provisions.
+    """
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" in target_surface:
+        return None
+    target_kind = _addr_leaf_kind(target)
+    target_label = _addr_leaf_label(target)
+    if target_kind not in {"section", "paragraph", "article"} or not target_label:
+        return None
+    norm = text.lower()
+    if not re.search(r"\b(?:table|column|columns|entry|entries)\b", norm):
+        return None
+    if not re.search(
+        r"\b(?:after|before)\s+(?:section|s\.|paragraph|para\.|article|art\.)\s+"
+        r"[0-9a-z().]+\s+insert(?:ed)?\b",
+        norm,
+    ):
+        return None
+    if re.search(rf"\b{re.escape(target_label.lower())}\b", norm) is None:
+        return None
+    return {
+        "target_ref": target_ref,
+        "target": str(target),
+        "source_action": "structural_insertion",
+        "target_kind": target_kind,
     }
 
 

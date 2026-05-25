@@ -3069,6 +3069,16 @@ Current payload-descendant source-ref invariant:
   `uk_effect_embedded_table_payload_structural_substitution_preserved` and lets
   normal structural payload extraction continue. Current witness:
   `ukpga/2020/17` affected `Sch. 21 para. 5A 6` by `ukpga/2022/32 s. 127`.
+- Embedded table/column vocabulary inside a structural insertion payload is
+  likewise not a table-entry instruction. If the source text says `after
+  section/paragraph/article X insert`, the effect target is a non-table inserted
+  provision, and the flattened inserted body contains words such as `column`,
+  lowering records
+  `uk_effect_embedded_table_payload_structural_insertion_preserved` and
+  preserves the structural insertion path. Same-stem two-letter section ranges
+  such as `s. 12IA-12IO and cross-heading` expand to each sibling section
+  before lowering. Current witness: `ukpga/1978/29` affected
+  `s. 12IA-12IO and cross-heading` by `asp/2019/6 s. 4(2)`.
 - Direct table targets whose source says `after that entry insert- ...`,
   `after entry 6A insert- ...`, `after the entry in the table relating to ...`,
   or `at the appropriate place insert- ...` inside a table are the same
