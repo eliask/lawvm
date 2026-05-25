@@ -63,6 +63,9 @@ UK_RANGE_UNQUOTED_SUBSTITUTION_RULE_ID = "uk_effect_range_unquoted_substitution_
 UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID = (
     "uk_effect_range_where_ordinal_substitution_text_patch"
 )
+UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID = (
+    "uk_effect_anchor_to_end_block_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -937,8 +940,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     matches_anchor_to_end_block_substituted = re.finditer(
-        r"(?:for (?:the )?words?\s+)?(?:from\s+)?[“\"'‘](.*?)[”\"'’]\s+to\s+the\s+end"
-        r"(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?"
+        r"(?:for (?:the )?words?\s+)?(?:from\s+)?[“\"'‘](.*?)[”\"'’]"
+        r"(?:\s+to\s+the\s+end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|\s+onwards)"
         r",?\s+substitute\s*[—-]?\s+(.+?)(?:\s+[.;])?$",
         text,
         re.I,
@@ -950,7 +953,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 {
                     "original": f"TEXT_FROM_{m.group(1).strip()}_TO_END",
                     "replacement": replacement,
-                    "rule_id": "uk_effect_anchor_to_end_block_substitution_text_patch",
+                    "rule_id": UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
                 }
             )
 

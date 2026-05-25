@@ -17438,6 +17438,57 @@ def test_compile_passive_range_substitution_accepts_words_wrapper() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_anchor_onwards_block_substitution_to_range_end() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-3-4">
+          <Pnumber>4</Pnumber>
+          <Text>4 In subsection (4), for the words from \u201cwhether as being\u201d onwards substitute if he is\u2014 a a person against or in respect of whom the proceedings are taken, or b a person called, or proposed to be called, to give evidence in the proceedings.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-39ea9012813c2585f5deefae8dde8718",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1933/12",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1933",
+        affected_number="12",
+        affected_provisions="s. 49(4)",
+        affecting_uri="/id/ukpga/1999/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1999",
+        affecting_number="23",
+        affecting_provisions="Sch. 2 para. 3(4)",
+        affecting_title="Youth Justice and Criminal Evidence Act 1999",
+        in_force_dates=[{"date": "2000-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "49"), ("subsection", "4"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_whether as being_TO_END"
+    assert ops[0].text_patch.replacement.startswith("if he is\u2014")
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_anchor_to_end_block_substitution_text_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == (
+        "explicit_anchor_to_end_block_substitution_text_patch"
+    )
+
+
 def test_compile_unquoted_range_independent_end_occurrence_block() -> None:
     extracted_el = ET.fromstring(
         f"""

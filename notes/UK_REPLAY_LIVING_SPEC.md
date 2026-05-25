@@ -2207,6 +2207,10 @@ Current payload-descendant source-ref invariant:
   when present, the independent end occurrence rather than collapsing the range
   to first matches. Current witness: `ukpga/1985/66` affected `s. 2(7)` by
   `asp/2007/3` `Sch. 1 para. 3(6)`.
+- `from "X" onwards substitute Y` is treated as the same bounded range-to-end
+  block family as `from "X" to the end substitute Y`; the selector remains
+  `TEXT_FROM_X_TO_END`. Current witness: `ukpga/1933/12` affected `s. 49(4)`
+  by `ukpga/1999/23` `Sch. 2 para. 3(4)`.
 - grouped occurrence substitutions may carry the quoted anchor in a parent
   instruction and the ordinal/replacement in child rows, e.g. parent `for
   "X"-` and child `the first time it appears, substitute "Y"`. Lowering may
