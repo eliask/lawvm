@@ -2005,10 +2005,12 @@ Current payload-descendant source-ref invariant:
   insertions emit one patch per ordinal in descending occurrence order so replay
   mutates later occurrences before earlier ones. This rule requires an explicit
   quoted anchor, explicit ordinal place wording, and a quoted insertion payload;
-  it does not recover source-carried block fragments with missing parent
-  context. Current witnesses: `ukpga/1985/66` affected `s. 56C(1)` by
-  `asp/2014/11 s. 33(3)` and affected `s. 17(8)` by
-  `asp/2014/11 s. 26(3)(d)`.
+  older passive wording such as `there shall be inserted "Y"` is accepted in
+  the same family. The rule does not recover source-carried block fragments
+  with missing parent context. Current witnesses: `ukpga/1985/66` affected
+  `s. 56C(1)` by `asp/2014/11 s. 33(3)` and affected `s. 17(8)` by
+  `asp/2014/11 s. 26(3)(d)`, plus `ukpga/1970/9` affected `s. 37A` by
+  `ukpga/1994/9 Sch. 8 para. 13(a)`.
 - the parser may lower quoted-word substitutions with explicit multi-ordinal
   occurrence wording such as `for the word "X", where it first and third
   occurs, substitute "Y"` to one occurrence-qualified text patch per ordinal
@@ -2164,6 +2166,11 @@ Current payload-descendant source-ref invariant:
   `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`; the phrase
   `where they occur` is part of the all-occurrences signal and must not be
   missed merely because it follows `the words`.
+- The same all-occurrences family also accepts compressed wording `after "X",
+  in each place occurring, insert "Y"`. This is still an explicit
+  all-occurrences text rewrite over the effect-feed target, not a target search
+  expansion. Current witnesses: `ukpga/1962/46` affected `s. 27(6)` and
+  `s. 28(2)-(4)` by `uksi/2012/1659 Sch. 2 paras. 17(3), 18`.
 - `after each occurrence of "X" insert "Y"` also lowers through
   `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`. It is a
   quoted-anchor text rewrite over every target occurrence, not a structural

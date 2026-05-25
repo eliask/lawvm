@@ -15273,6 +15273,61 @@ def test_compile_after_anchor_both_places_where_it_appears_records_all_occurrenc
     ] == ["uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"]
 
 
+def test_compile_after_anchor_each_place_occurring_records_all_occurrences_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-17-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In subsection (6), after \u201cBoard\u201d, in each place occurring, insert \u201cor Canal &amp; River Trust\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_anchor_each_place_occurring_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-12",
+        affected_uri="/id/ukpga/1962/46",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 27(6)",
+        affecting_uri="/id/uksi/2012/1659",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2012",
+        affecting_number="1659",
+        affecting_provisions="Sch. 2 para. 17(3)",
+        affecting_title="British Waterways Board (Transfer of Functions) Order 2012",
+        in_force_dates=[{"date": "2012-07-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "27"), ("subsection", "6"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Board"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "Board or Canal & River Trust"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
+    ] == ["uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"]
+
+
 def test_compile_definition_scoped_all_occurrences_insert_and_replay() -> None:
     extracted_el = ET.fromstring(
         f"""
