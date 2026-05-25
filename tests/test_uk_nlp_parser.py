@@ -148,6 +148,21 @@ def test_parse_fragment_substitution_handles_after_anchor_in_both_places_where_i
     ]
 
 
+def test_parse_fragment_substitution_handles_after_words_in_each_place_where_they_occur_insert() -> None:
+    subs = parse_fragment_substitution(
+        "3 In subsections (2), (6) and (7)(b)(i), after the words “the OFT ”, "
+        "in each place where they occur, there shall be inserted “ and OFCOM ”."
+    )
+
+    assert subs == [
+        {
+            "original": "the OFT ",
+            "replacement": "the OFT  and OFCOM ",
+            "rule_id": "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_on_each_occasion_insert() -> None:
     subs = parse_fragment_substitution(
         "6 In section 218, after \u201ccourt\u201d, on each occasion where it appears, "

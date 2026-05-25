@@ -2103,6 +2103,11 @@ Current payload-descendant source-ref invariant:
   and records `explicit_all_occurrences_text_patch`; it must remain scoped to
   the effect-feed target. Current witnesses: `asp/2007/3` affected `s. 216(4)`
   by `ssi/2019/51` `reg. 6(4)(b)` and `s. 214(2)` by `reg. 6(2)(b)`.
+- Older passive drafting of the same family may say `after the words "X", in
+  each place where they occur, there shall be inserted "Y"`. This lowers under
+  `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`; the phrase
+  `where they occur` is part of the all-occurrences signal and must not be
+  missed merely because it follows `the words`.
 - `after each occurrence of "X" insert "Y"` also lowers through
   `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`. It is a
   quoted-anchor text rewrite over every target occurrence, not a structural
