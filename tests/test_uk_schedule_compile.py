@@ -30232,6 +30232,52 @@ def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> Non
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_repeal_handles_bare_entry_in_each_schedule() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>b omit the entry \u201cPublic Appointments Commissioner for Scotland\u201d
+          in each schedule; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-0f6fb1acaf8f16dd504b8ca4d377f1d7",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-07-01",
+        affected_uri="/id/asp/2010/8/schedule/5",
+        affected_class="ScottishAct",
+        affected_year="2010",
+        affected_number="8",
+        affected_provisions="Sch. 5",
+        affecting_uri="/id/ssi/2013/197",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="197",
+        affecting_provisions="Sch. 2 para. 17(b)",
+        affecting_title="Public Services Reform (Scotland) Act 2010 Modifications Order 2013",
+        in_force_dates=[{"date": "2013-07-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "5"),))
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["Public Appointments Commissioner for Scotland"]
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_repeal_allows_index_paragraph_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""

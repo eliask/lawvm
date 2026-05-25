@@ -2390,7 +2390,8 @@ Current payload-descendant source-ref invariant:
   `division`) when source text only claims entry-level omission/repeal and no
   owned entry/paragraph target was lowered.
   Explicit source forms such as `the entry relating to X is repealed`,
-  `omit the entry for X`, and `the entries for X, Y and Z are repealed` lower instead to
+  `omit the entry for X`, bare quoted-entry forms such as `omit the entry "X"
+  in each schedule`, and `the entries for X, Y and Z are repealed` lower instead to
   `uk_effect_schedule_list_entry_repeal`: the target remains the schedule
   carrier, but a provenance selector lists the claimed direct entry anchors.
   Heading-only targets are excluded from this selector: a source such as
