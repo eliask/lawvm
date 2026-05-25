@@ -38,6 +38,12 @@ UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
 UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
 UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 UK_AFTER_ANCHOR_TO_END_OMISSION_RULE_ID = "uk_effect_after_anchor_to_end_omission_text_patch"
+UK_QUOTED_WORDS_ANCHOR_TO_END_SUBSTITUTION_RULE_ID = (
+    "uk_effect_quoted_words_anchor_to_end_substitution_text_patch"
+)
+UK_MISSING_SPACE_THERE_IS_SUBSTITUTED_RULE_ID = (
+    "uk_effect_missing_space_there_is_substituted_text_patch"
+)
 UK_RANGE_INDEPENDENT_END_OCCURRENCE_REPEAL_RULE_ID = (
     "uk_effect_range_independent_end_occurrence_repeal_text_patch"
 )
@@ -314,6 +320,49 @@ def append_basic_text_rewrite_observations(
                 "UK source text explicitly omits the words after a quoted "
                 "anchor; lowering preserves that as a bounded TEXT_AFTER_*_TO_END "
                 "deletion scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    if UK_QUOTED_WORDS_ANCHOR_TO_END_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_QUOTED_WORDS_ANCHOR_TO_END_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_quoted_words_anchor_to_end_substitution",
+            reason=(
+                "UK source text explicitly substitutes the words from a quoted "
+                "anchor to the end; lowering preserves that as a bounded "
+                "TEXT_FROM_*_TO_END replacement scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    if UK_MISSING_SPACE_THERE_IS_SUBSTITUTED_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_MISSING_SPACE_THERE_IS_SUBSTITUTED_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_text_missing_space_before_passive_substitution",
+            reason=(
+                "UK source text carries a passive substitution with no whitespace "
+                "between the closing quote of the preimage and 'there'; lowering "
+                "treats this as source text spacing damage while preserving the "
+                "quoted preimage and replacement exactly."
             ),
             effect=effect,
             extracted_el=extracted_el,

@@ -1198,6 +1198,21 @@ def test_parse_fragment_substitution_handles_words_following_anchor_substitution
     ]
 
 
+def test_parse_fragment_substitution_handles_quoted_words_anchor_to_end_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "9 In section 65(5), for the words \u201cis a man\u201d to the end substitute "
+        "\u201cis a person who dies leaving a surviving spouse\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_is a man_TO_END",
+            "replacement": "is a person who dies leaving a surviving spouse",
+            "rule_id": "uk_effect_quoted_words_anchor_to_end_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_omit_words_after_anchor() -> None:
     subs = parse_fragment_substitution(
         "a in paragraph (b) omit the words after \u201csource\u201d, and"
@@ -1208,6 +1223,36 @@ def test_parse_fragment_substitution_handles_omit_words_after_anchor() -> None:
             "original": "TEXT_AFTER_source_TO_END",
             "replacement": "",
             "rule_id": "uk_effect_after_anchor_to_end_omission_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_missing_space_before_there_is_substituted() -> None:
+    subs = parse_fragment_substitution(
+        "4 In subsection (4), for the words \u201cneglecting or refusing to pay\u201d"
+        "there shall be substituted the words \u201cin default\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "neglecting or refusing to pay",
+            "replacement": "in default",
+            "rule_id": "uk_effect_missing_space_there_is_substituted_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_all_occurrences_passive_with_words_marker() -> None:
+    subs = parse_fragment_substitution(
+        "2 for the word \u201cassessment\u201d, in each place where it occurs, "
+        "there shall be substituted the words \u201c amendment or assessment \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "assessment",
+            "replacement": " amendment or assessment ",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
         }
     ]
 
