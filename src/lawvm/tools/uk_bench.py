@@ -4589,6 +4589,18 @@ _DIAGNOSTIC_PREVIEW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"\bfor\s+the\s+entry\s+beginning\s+[“\"'‘]", re.I),
     ),
     (
+        "entry_substitution",
+        re.compile(r"\bfor\s+the\s+entry\s+(?:relating\s+to\s+)?[“\"'‘]?", re.I),
+    ),
+    (
+        "entry_omission",
+        re.compile(r"\bomit\s+the\s+entry\s+[“\"'‘]", re.I),
+    ),
+    (
+        "after_entry_insertion",
+        re.compile(r"\bafter\s+(?:that\s+entry|(?:the\s+)?(?:first|second|third|final)\s+entry|the\s+entry\s+for)\b", re.I),
+    ),
+    (
         "beginning_each_child_insertion",
         re.compile(
             r"\bat\s+the\s+beginning\s+of\s+each\s+of\s+"
@@ -4599,6 +4611,22 @@ _DIAGNOSTIC_PREVIEW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "paragraph_substitution",
         re.compile(r"\bfor\s+paragraph\s+\([^)]+\)\s+substitute", re.I),
+    ),
+    (
+        "structural_subunit_substitution",
+        re.compile(r"\bfor\s+(?:sub-)?paragraphs?\s+\([^)]+\)\s+and\s+\([^)]+\)\s+substitute", re.I),
+    ),
+    (
+        "referential_pronoun_substitution",
+        re.compile(r"\bwhere\s+(?:it|they)\s+refers?\s+to\b", re.I),
+    ),
+    (
+        "after_child_insertion",
+        re.compile(r"\bafter\s+(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\),?\s+insert\b", re.I),
+    ),
+    (
+        "at_end_block_insertion",
+        re.compile(r"\bat\s+the\s+end\s+insert\s*[—-]", re.I),
     ),
     (
         "malformed_quoted_substitution",

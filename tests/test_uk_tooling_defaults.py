@@ -807,6 +807,48 @@ def test_uk_bench_diagnostic_preview_pattern_classifies_text_shapes() -> None:
         )
         == "malformed_quoted_substitution"
     )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "a for the entry \u201cOld body\u201d substitute\u2014 \u201cNew body\u201d."}
+        )
+        == "entry_substitution"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "b omit the entry \u201cPublic Appointments Commissioner for Scotland\u201d."}
+        )
+        == "entry_omission"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "4 After that entry insert\u2014 \u201c An offence.\u201d"}
+        )
+        == "after_entry_insertion"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "5 In subsection (3)(c), for sub-paragraphs (i) and (ii) substitute \u201cas the trustee\u201d."}
+        )
+        == "structural_subunit_substitution"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "a for \u201che\u201d and \u201chim\u201d, where they refer to the Rail Regulator, substitute \u201c it \u201d."}
+        )
+        == "referential_pronoun_substitution"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "ii after paragraph (a), insert \u201cand\u201d, and"}
+        )
+        == "after_child_insertion"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {"extracted_text_preview": "m at the end insert\u2014 sections 242 and 243(1) of ITA 2007;"}
+        )
+        == "at_end_block_insertion"
+    )
     assert uk_bench._diagnostic_preview_pattern({"extracted_text_preview": "..."}) == (
         "literal_ellipsis_source"
     )
