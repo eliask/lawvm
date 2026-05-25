@@ -781,12 +781,12 @@ _SOURCE_FOR_DEFINITION_SUBSTITUTE_RE = re.compile(
     flags=re.I | re.S,
 )
 _SOURCE_AFTER_QUOTED_ANCHOR_INSERT_RE = re.compile(
-    r"\bafter\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+    r"\bafter\s+(?:the\s+)?(?:word|words)?\s*[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
     r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)",
     flags=re.I | re.S,
 )
 _SOURCE_AFTER_QUOTED_ANCHOR_INLINE_INSERT_RE = re.compile(
-    r"\bafter\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+    r"\bafter\s+(?:the\s+)?(?:word|words)?\s*[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
     r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)"
     r"\s*(?:[—–-]\s*)?[“\"'‘](?P<inserted>.*?)[”\"'’]",
     flags=re.I | re.S,
