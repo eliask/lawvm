@@ -2637,6 +2637,38 @@ def test_classify_uk_effect_payload_fragment_without_action_formula_block_payloa
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_payload_fragment_without_action_formula_numbered_block_payload() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "1 A licence to provide additional services on a frequency which is a "
+            "relevant frequency for the purposes of section 48 was assigned under section 65."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "payload_fragment_without_action_formula"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_numbered_block_instruction_remains_instruction_text() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="BlockAmendment",
+        extracted_text='1 In section 5, for "old" substitute "new".',
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "unhandled_instruction_text"
+
+
 def test_classify_uk_effect_source_parent_substitution_range_payload_is_owned() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="BlockAmendment",

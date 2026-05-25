@@ -1391,6 +1391,14 @@ def classify_uk_effect_source_pathology(
                 norm_text.startswith(";")
                 or re.match(r"^(?:[a-z]+|\([a-z0-9]+\))\s+(?:or|and|in|to|then)\b", norm_text)
                 or (re.search(r"[—-]", norm_text) and re.search(r"\b[a-z]\s+(?:after|with|and|or|if)\b", norm_text))
+                or (
+                    re.match(r"^\(?[0-9]+[a-z]?\)?\s+\w", norm_text)
+                    and not re.match(
+                        r"^\(?[0-9]+[a-z]?\)?\s+"
+                        r"(?:in|for|after|before|at|omit|insert|substitute|repeal|renumber)\b",
+                        norm_text,
+                    )
+                )
             )
         ):
             return "payload_fragment_without_action_formula"
