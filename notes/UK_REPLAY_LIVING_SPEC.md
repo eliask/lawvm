@@ -1848,6 +1848,11 @@ Current payload-descendant source-ref invariant:
   sibling child; mismatched effect targets remain unresolved. Current witness:
   `ukpga/1992/8` affected `s. 103(4)(a)(ii)` by `uksi/2011/1484 Sch. 7
   para. 15(a)(i)`.
+- Passive end-position insertions of the form `the word "X" shall be inserted
+  at the end of paragraph (Y)` lower to the same target-local append selector
+  under `uk_effect_passive_insert_text_at_end_patch`, again only because the
+  effect-feed target supplies the receiving paragraph. Current witness:
+  `ukpga/1990/42` affected `s. 104B(1)(a)` by `ukpga/2003/21 s. 255(a)`.
 - definition-scoped after-anchor insertions under
   `uk_effect_in_definition_after_anchor_insert_text_patch` may carry nested
   quoted terms inside the inserted payload. The parser must bind the payload to

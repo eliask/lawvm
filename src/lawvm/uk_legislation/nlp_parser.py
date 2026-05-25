@@ -1782,6 +1782,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_passive_insert_text_at_end = re.finditer(
+        r"(?:the\s+)?words?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]\s+"
+        r"(?:is|are|shall\s+be)\s+inserted\s+"
+        r"at\s+the\s+end(?:\s+of\s+[^.;]+)?",
+        text,
+        re.I,
+    )
+    for m in matches_passive_insert_text_at_end:
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": "uk_effect_passive_insert_text_at_end_patch",
+            }
+        )
+
     matches_leave_out_and_insert = re.finditer(
         r"\bleave out\s+[“\"'‘](?P<original>.*?)[”\"'’]\s+"
         r"and insert\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",

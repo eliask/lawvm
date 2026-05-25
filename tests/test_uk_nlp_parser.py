@@ -1531,6 +1531,20 @@ def test_parse_fragment_substitution_handles_insert_text_at_end_reverse_order() 
     ]
 
 
+def test_parse_fragment_substitution_handles_passive_word_inserted_at_end() -> None:
+    subs = parse_fragment_substitution(
+        "a the word \u201cand\u201d shall be inserted at the end of paragraph (a); and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "and",
+            "rule_id": "uk_effect_passive_insert_text_at_end_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_direct_words_are_repealed() -> None:
     subs = parse_fragment_substitution(
         "b in paragraph 2(1), the words \u201cor section 66 of this Act\u201d are repealed."
