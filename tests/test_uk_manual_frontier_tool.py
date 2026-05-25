@@ -198,6 +198,12 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert payload["summary"]["remaining_manual_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1
     }
+    assert payload["summary"]["current_suggested_claim_template_status_counts"] == {
+        "available": 1
+    }
+    assert payload["summary"]["remaining_suggested_claim_template_status_counts"] == {
+        "available": 1
+    }
     assert payload["summary"]["remaining_blocking_lowering_rule_counts"] == {
         "uk_effect_heading_only_ref_rejected": 1
     }
@@ -315,6 +321,8 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
                 "remaining_manual_rule_counts": {
                     "uk_manual_frontier_table_appropriate_place_candidate": 1
                 },
+                "current_suggested_claim_template_status_counts": {"available": 1},
+                "remaining_suggested_claim_template_status_counts": {"available": 1},
                 "remaining_blocking_lowering_rule_counts": {
                     "uk_effect_table_entry_instruction_rejected": 1
                 },
@@ -335,6 +343,8 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
         "Remaining manual rules: "
         "uk_manual_frontier_table_appropriate_place_candidate=1"
     ) in out
+    assert "Current claim templates: available=1" in out
+    assert "Remaining claim templates: available=1" in out
     assert (
         "Remaining blocking lowering: "
         "uk_effect_table_entry_instruction_rejected=1"
@@ -518,6 +528,8 @@ def test_print_text_report_summary_only_omits_row_lines(capsys) -> None:
                     "uk_manual_frontier_validator_currently_deterministic_supported": 1
                 },
                 "remaining_manual_rule_counts": {},
+                "current_suggested_claim_template_status_counts": {},
+                "remaining_suggested_claim_template_status_counts": {},
                 "remaining_blocking_lowering_rule_counts": {},
                 "stale_original_manual_rule_counts": {
                     "uk_manual_frontier_definition_list_end_insert_candidate": 1
