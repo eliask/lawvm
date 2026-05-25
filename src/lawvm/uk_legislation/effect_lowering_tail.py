@@ -58,6 +58,20 @@ class UKInsertionAnchorContext:
     used_chained_insert_anchor: bool
 
 
+def _looks_like_appropriate_place_insert_text(text: str) -> bool:
+    normalized = " ".join((text or "").split())
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"(?:\bat\s+(?:an?|the)\s+appropriate\s+place\b.*\binsert(?:ed)?\b|"
+            r"\binsert(?:ed)?\s+at\s+(?:an?|the)\s+appropriate\s+place\b)",
+            normalized,
+            re.I,
+        )
+    )
+
+
 def resolve_uk_insertion_anchor_context(
     *,
     effect: UKEffectRecord,
@@ -142,26 +156,33 @@ def append_unlowered_overlap_substitution_rejection(
         _looks_like_appropriate_place_definition_entry_insert_text(extracted_text or "")
         or source_parent_appropriate_place_definition_entry is not None
     )
-    lowering_rule_id = (
-        "uk_effect_appropriate_place_definition_entry_insert_rejected"
-        if appropriate_place_definition_entry
-        else "uk_effect_overlap_substitution_unlowered"
+    appropriate_place_insert = (
+        not appropriate_place_definition_entry
+        and _looks_like_appropriate_place_insert_text(extracted_text or "")
     )
-    reason_code = (
-        "appropriate_place_definition_entry_requires_anchor_claim"
-        if appropriate_place_definition_entry
-        else unlowered_overlap_substitution_reason
-    )
-    reason = (
-        "UK source inserts a definition entry at an appropriate place without "
-        "naming an anchor; lowering requires a validated placement claim and "
-        "must not infer an insertion point from live text or oracle order."
-        if appropriate_place_definition_entry
-        else (
+    if appropriate_place_definition_entry:
+        lowering_rule_id = "uk_effect_appropriate_place_definition_entry_insert_rejected"
+        reason_code = "appropriate_place_definition_entry_requires_anchor_claim"
+        reason = (
+            "UK source inserts a definition entry at an appropriate place without "
+            "naming an anchor; lowering requires a validated placement claim and "
+            "must not infer an insertion point from live text or oracle order."
+        )
+    elif appropriate_place_insert:
+        lowering_rule_id = "uk_effect_appropriate_place_insert_rejected"
+        reason_code = "appropriate_place_insert_requires_anchor_claim"
+        reason = (
+            "UK source inserts material at an appropriate place without naming "
+            "an anchor or ordering rule; lowering requires a validated placement "
+            "claim and must not infer the insertion point from live text or oracle order."
+        )
+    else:
+        lowering_rule_id = "uk_effect_overlap_substitution_unlowered"
+        reason_code = unlowered_overlap_substitution_reason
+        reason = (
             "UK word-level overlap substitution lowered to no replay operations "
             "because the source instruction could not be parsed into a safe text patch"
         )
-    )
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id=lowering_rule_id,
@@ -181,6 +202,8 @@ def append_unlowered_overlap_substitution_rejection(
             "placement_family": (
                 "appropriate_place_definition_entry_requires_anchor_claim"
                 if appropriate_place_definition_entry
+                else "appropriate_place_insert_requires_anchor_claim"
+                if appropriate_place_insert
                 else ""
             ),
             "source_parent_id": (

@@ -1659,6 +1659,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
         }
 
+    if "uk_effect_appropriate_place_insert_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_candidate",
+            "reason": "The source inserts material at an appropriate place without naming an anchor or ordering rule; a claim or future placement compiler must supply and validate the exact insertion point instead of inferring it from live text.",
+        }
+
     if "uk_effect_external_act_target_rejected" in blocking_rules:
         return {
             "status": "non_textual_or_out_of_scope",
