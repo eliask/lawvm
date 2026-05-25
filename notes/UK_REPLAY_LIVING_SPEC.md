@@ -400,8 +400,9 @@ frontend cannot yet lower them safely:
   insertion just because their structural carrier is `Sch. N`.
 - cross-heading replacements lower only when the source gives an explicit
   `heading before paragraph/section/article X substitute ...` whole-heading
-  shape, or a quoted text patch against the cross-heading before a named
-  paragraph/section/article. The owned lanes are
+  shape, the same shape with a plural range anchor such as `heading before
+  sections 24A to 28`, or a quoted text patch against the cross-heading before
+  a named paragraph/section/article. The owned lanes are
   `uk_effect_crossheading_before_anchor_replacement_lowered` for whole-heading
   replacement and `uk_effect_crossheading_before_anchor_text_patch_lowered` for
   quoted text patches; both target `X/heading`, use named text rewrite rules,

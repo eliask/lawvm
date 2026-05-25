@@ -29287,6 +29287,61 @@ def test_compile_crossheading_before_paragraph_replace_lowers_to_heading_patch()
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_before_section_range_replace_lowers_to_heading_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>For the heading before sections 24A to 28 substitute—</Text>
+          <BlockAmendment>
+            <Text>“ Legal proceedings: general ”</Text>
+          </BlockAmendment>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_before_section_range_replace",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1949/88/section/24A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="s. 24A cross-heading",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 4(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("section", "24a"),),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
+    assert ops[0].text_patch.replacement == "Legal proceedings: general"
+    assert observations[0]["rule_id"] == (
+        "uk_effect_crossheading_before_anchor_replacement_lowered"
+    )
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_crossheading_target_replace_lowers_to_owned_heading_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
