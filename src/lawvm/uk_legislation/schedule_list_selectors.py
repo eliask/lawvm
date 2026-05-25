@@ -212,6 +212,24 @@ def _split_schedule_entry_repeal_anchors(raw: str) -> tuple[str, ...]:
     return tuple(anchors)
 
 
+def _quoted_schedule_entry_repeal_anchors(raw: str) -> tuple[str, ...]:
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(
+        r"(?:[\u201c\"](?P<double>.*?)[\u201d\"]|[\u2018'](?P<single>.*?)[\u2019'])",
+        str(raw or ""),
+    ):
+        anchor = _strip_schedule_entry_repeal_anchor(
+            match.group("double") if match.group("double") is not None else match.group("single")
+        )
+        key = _compact_normalized_text(anchor)
+        if not anchor or key in seen:
+            continue
+        seen.add(key)
+        anchors.append(anchor)
+    return tuple(anchors)
+
+
 def _uk_schedule_list_entry_repeal_selector(
     *,
     target_ref: str,
@@ -277,14 +295,28 @@ def _uk_schedule_list_entry_repeal_selector(
                 match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
             if match is not None:
                 anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
+    if not anchors and _addr_leaf_kind(target) == "schedule":
+        label = target.path[-1][1] if target.path else ""
+        label_pattern = re.escape(str(label or ""))
+        match = re.search(
+            rf"\bin\s+schedule\s+{label_pattern}\b[^.;]*?,\s+"
+            r"(?:the\s+)?entries\s+(?P<anchors>.+?)(?:\.|$)",
+            text,
+            re.I,
+        )
+        if match is not None:
+            anchors = _quoted_schedule_entry_repeal_anchors(match.group("anchors"))
     if not anchors:
         return None
-    return {
+    selector = {
         "rule_id": UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
         "anchors": list(anchors),
         "target_ref": target_ref,
         "target": str(target),
     }
+    if match is not None and "in schedule" in match.group(0).lower():
+        selector["source_anchor_form"] = "repeal_table_schedule_entries"
+    return selector
 
 
 def _uk_numbered_schedule_entry_repeal_target(

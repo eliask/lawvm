@@ -31792,6 +31792,64 @@ def test_compile_schedule_list_entry_repeal_lowers_to_selector() -> None:
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_repeal_table_extent_entries() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <Schedule xmlns="{_LEG_NS}">
+          <Text>SCHEDULE 2 REPEALS</Text>
+          <P1>
+            <Text>Public Services Reform (Scotland) Act 2010 (asp 8) In schedule 8, the entries “any Children’s Panel” and “any Children’s Panel Advisory Committee”.</Text>
+          </P1>
+        </Schedule>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_repeal_table_extent",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2013-06-24",
+        affected_uri="/id/asp/2010/8/schedule/8",
+        affected_class="ScottishAct",
+        affected_year="2010",
+        affected_number="8",
+        affected_provisions="sch. 8",
+        affecting_uri="/id/ssi/2013/211",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="211",
+        affecting_provisions="Sch. 2",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2013-06-24", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "8"),))
+    assert op.payload is None
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == [
+        "any Children’s Panel",
+        "any Children’s Panel Advisory Committee",
+    ]
+    assert selector["source_anchor_form"] == "repeal_table_schedule_entries"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> None:
     extracted_el = ET.fromstring(
         f"""
