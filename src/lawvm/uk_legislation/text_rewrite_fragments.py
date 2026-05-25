@@ -33,6 +33,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
     UK_ORDINAL_WORD_REPEAL_RULE_ID,
+    UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
@@ -787,6 +788,29 @@ def append_basic_text_rewrite_observations(
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
                 "end_occurrence": op_text_end_occurrence,
+            },
+        )
+    if UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_repeal_pre_predicate_comma",
+            reason=(
+                "UK source text repeals a quoted word range and carries a "
+                "comma before the passive predicate; lowering treats the comma "
+                "as source punctuation around the instruction while preserving "
+                "the bounded TEXT_FROM_*_TO_* selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
             },
         )
     if UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID in rule_ids:
