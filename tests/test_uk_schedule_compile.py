@@ -12181,6 +12181,137 @@ def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_structural_alphanumeric_range_endpoint_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Title>Repeals</Title>
+            <Table>
+              <thead><tr><th>Reference</th><th>Short title or title</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>10 &amp; 11 Eliz.2 c. 46.</td>
+                  <td>Transport Act 1962.</td>
+                  <td>Sections 3 to 4A.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_alphanumeric_range_endpoint",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2000-01-01",
+        affected_uri="/id/ukpga/1962/46/section/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 3 - 4A",
+        affecting_uri="/id/ukpga/2000/38",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="38",
+        affecting_provisions="Sch. 31 Pt. 4",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2000-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 2
+    assert {op.target.path for op in ops} == {
+        (("section", "3"),),
+        (("section", "4a"),),
+    }
+    assert all(op.action is StructuralAction.REPEAL for op in ops)
+    assert all(
+        op.witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["target"] == "section:3"
+        and record["extent_cell"] == "Sections 3 to 4A."
+        and record["reason_code"] == "source_repeal_schedule_structural_repeal"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_structural_alphanumeric_range_does_not_guess_interior() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Title>Repeals</Title>
+            <Table>
+              <thead><tr><th>Reference</th><th>Short title or title</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>10 &amp; 11 Eliz.2 c. 46.</td>
+                  <td>Transport Act 1962.</td>
+                  <td>Sections 3 to 4A.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_alphanumeric_range_interior",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2000-01-01",
+        affected_uri="/id/ukpga/1962/46/section/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 4",
+        affecting_uri="/id/ukpga/2000/38",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="38",
+        affecting_provisions="Sch. 31 Pt. 4",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2000-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["reason_code"] == "no_unique_matching_repeal_table_row"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_schedule_table_with_empty_feed_type_uses_source_action() -> None:
     source_root = ET.fromstring(
         """
@@ -13831,7 +13962,11 @@ def test_compile_repeal_table_carries_blank_enactment_cells_inside_source_table(
     assert ops[0].witness_rule_id == "uk_effect_repeal_table_definition_entry_text_repeal"
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_definition_entry_text_repeal"
-        and record["enactment_cell"] == "1992 c.8."
+        and record["enactment_cell"] == (
+            "1992 c.8. | Social Security Administration (Northern Ireland) Act 1992."
+        )
+        and record["enactment_match_basis"]
+        == "combined_identity_cells_explicit_short_citation"
         and record["extent_cell"] == "In section 167(1), the definition of “Joint Authority”."
         for record in lowering_records
     )

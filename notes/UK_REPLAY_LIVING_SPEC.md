@@ -2986,6 +2986,16 @@ Current payload-descendant source-ref invariant:
   root; those clauses continue through ordinary text-fragment lowering unless
   the extracted node itself contains the table or explicitly acts as a
   repeal-table gateway.
+- Simple repeal-table section ranges with alphanumeric endpoints, such as
+  `Sections 3 to 4A.`, may corroborate exact endpoint targets (`3` or `4A`).
+  They must not infer interior alphanumeric membership such as section `4`
+  without a separate grouped-feed or live-structure range expansion claim.
+- Three-column repeal tables with separate `Reference`, `Short title or title`,
+  and `Extent of repeal` columns may combine the non-extent identity cells for
+  affected-Act matching when the reference cell alone is an old-style citation
+  that lacks the calendar year. The lowering observation records the combined
+  identity-cell match basis instead of treating the title cell as unrelated
+  payload.
 - bounded repeal-table definition-entry rows are owned separately by
   `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
   affected-Act row and affected-provision clause matching, an extent clause of
