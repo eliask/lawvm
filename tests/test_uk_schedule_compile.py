@@ -17438,6 +17438,62 @@ def test_compile_passive_range_substitution_accepts_words_wrapper() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_unquoted_range_independent_end_occurrence_block() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-1-paragraph-3-6">
+          <Pnumber>6</Pnumber>
+          <Text>6 In subsection (7), for the words from \u201cthe\u201d, where it first occurs, to \u201ctrustee\u201d, where it second occurs, substitute\u2014 a a trustee is appointed in a sequestration where the petition was presented by a creditor or the trustee acting under a trust deed; or b an interim trustee is appointed in pursuance of subsection (5) above, he .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f8a9dc2ce13823eb42349b9cbe4d46db",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 2(7)",
+        affecting_uri="/id/asp/2007/3",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 3(6)",
+        affecting_title="Bankruptcy and Diligence etc. (Scotland) Act 2007",
+        in_force_dates=[{"date": "2008-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "2"), ("subsection", "7"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_the_TO_trustee"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.selector.end_occurrence == 2
+    assert ops[0].text_patch.replacement.startswith("a a trustee is appointed")
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_range_independent_end_occurrence_substitution_text_patch",
+        "uk_effect_range_independent_end_occurrence_text_patch",
+    ]
+    assert lowering_records[0]["reason_code"] == (
+        "explicit_range_independent_end_occurrence_substitution_text_patch"
+    )
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_compile_word_range_repeal_uses_parenthesized_ordinal_start_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -56,6 +56,13 @@ UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_labeled_end_range_substitution_text_patch"
 )
 UK_RANGE_SUBSTITUTION_RULE_ID = "uk_effect_range_substitution_text_patch"
+UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_range_independent_end_occurrence_substitution_text_patch"
+)
+UK_RANGE_UNQUOTED_SUBSTITUTION_RULE_ID = "uk_effect_range_unquoted_substitution_text_patch"
+UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID = (
+    "uk_effect_range_where_ordinal_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -762,8 +769,12 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_range_unquoted_substituted = re.finditer(
         r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
-        r"(?:,\s+where\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+occurring)?"
-        r"\s+to [“\"'‘](?P<end>.*?)[”\"'’],?\s+substitute\s*[—-]?\s+"
+        r"(?:,\s+where(?:\s+it)?\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|occurring),?)?"
+        r"\s+to [“\"'‘](?P<end>.*?)[”\"'’]"
+        r"(?:,\s+where(?:\s+it)?\s+(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|occurring),?)?"
+        r",?\s+substitute\s*[—-]?\s+"
         r"(?P<replacement>.+?)(?:\s+\.)?$",
         text,
         re.I,
@@ -775,11 +786,14 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         patch = {
             "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
             "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
-            "rule_id": "uk_effect_range_unquoted_substitution_text_patch",
+            "rule_id": UK_RANGE_UNQUOTED_SUBSTITUTION_RULE_ID,
         }
         if m.group("ordinal"):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
-            patch["rule_id"] = "uk_effect_range_where_ordinal_substitution_text_patch"
+            patch["rule_id"] = UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID
+        if m.group("end_ordinal"):
+            patch["end_occurrence"] = _ORDINAL_OCCURRENCES[m.group("end_ordinal").lower()]
+            patch["rule_id"] = UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID
         subs.append(patch)
 
     matches_bare_range_unquoted_substituted = re.finditer(
