@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import inspect
 import io
 import json
 import sys
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _RESIDUAL_CANDIDATE_SAMPLE_LIMIT = 5
+_RESIDUAL_CANDIDATE_ROOT_SAMPLE_LIMIT = 10
 _DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES = ("manual_compile_candidate",)
 
 
@@ -286,6 +288,67 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
             ),
             "residual_candidate_op_count": int(
                 row.get("residual_candidate_op_count") or 0
+            ),
+            "residual_candidate_root_hit_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_root_hit_counts") or {},
+                )
+            ),
+            "residual_candidate_root_side_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_root_side_counts") or {},
+                )
+            ),
+            "residual_candidate_source_pathology_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_source_pathology_counts") or {},
+                )
+            ),
+            "residual_candidate_compare_shape_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_compare_shape_counts") or {},
+                )
+            ),
+            "residual_candidate_structural_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_structural_counts") or {},
+                )
+            ),
+            "residual_candidate_action_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_action_counts") or {},
+                )
+            ),
+            "residual_candidate_target_presence_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_target_presence_counts") or {},
+                )
+            ),
+            "residual_candidate_target_presence_action_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_target_presence_action_counts")
+                    or {},
+                )
+            ),
+            "residual_candidate_manual_compile_rule_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("residual_candidate_manual_compile_rule_counts") or {},
+                )
+            ),
+            "residual_candidate_root_samples": list(
+                row.get("residual_candidate_root_samples") or ()
+            ),
+            "residual_candidate_root_samples_omitted": int(
+                row.get("residual_candidate_root_samples_omitted") or 0
             ),
             "residual_candidate_samples": list(
                 row.get("residual_candidate_samples") or ()
@@ -595,10 +658,86 @@ def _count_map_jsonable(counts: Mapping[str, int]) -> dict[str, int]:
     return {str(key): int(value) for key, value in sorted(counts.items())}
 
 
+def _limited_count_map_jsonable(
+    counts: Mapping[str, int],
+    *,
+    limit: int | None,
+) -> tuple[dict[str, int], int]:
+    if limit is None:
+        return _count_map_jsonable(counts), 0
+    items = sorted(
+        ((str(key), int(value)) for key, value in counts.items()),
+        key=lambda item: (-item[1], item[0]),
+    )
+    emitted = items[:limit]
+    return dict(emitted), max(0, len(items) - len(emitted))
+
+
+def _limit_summary_count_maps(
+    summary: dict[str, Any],
+    *,
+    limit: int | None,
+) -> dict[str, Any]:
+    if limit is None:
+        return summary
+    omissions: dict[str, int] = {}
+    limited = dict(summary)
+    for key, value in tuple(summary.items()):
+        if not key.endswith("_counts") or not isinstance(value, Mapping):
+            continue
+        limited_map, omitted = _limited_count_map_jsonable(value, limit=limit)
+        limited[key] = limited_map
+        if omitted:
+            omissions[key] = omitted
+    if omissions:
+        limited["summary_count_map_omissions"] = dict(sorted(omissions.items()))
+    return limited
+
+
+def _limit_row_count_maps(
+    row: Mapping[str, Any],
+    *,
+    limit: int | None,
+) -> dict[str, Any]:
+    if limit is None:
+        return dict(row)
+    omissions: dict[str, int] = {}
+    limited = dict(row)
+    for key, value in tuple(row.items()):
+        if not str(key).endswith("_counts") or not isinstance(value, Mapping):
+            continue
+        limited_map, omitted = _limited_count_map_jsonable(value, limit=limit)
+        limited[str(key)] = limited_map
+        if omitted:
+            omissions[str(key)] = omitted
+    if omissions:
+        limited["row_count_map_omissions"] = dict(sorted(omissions.items()))
+    return limited
+
+
 def _count_map_from_object(value: object) -> dict[str, int]:
     if not isinstance(value, Mapping):
         return {}
     return {str(key): count for key, count in sorted(value.items()) if isinstance(count, int)}
+
+
+def _load_saved_bench_run(
+    load_run: object,
+    label: str,
+    *,
+    include_diagnostics: bool,
+) -> list[Any]:
+    signature = inspect.signature(load_run)
+    supports_include_diagnostics = (
+        "include_diagnostics" in signature.parameters
+        or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+    )
+    if supports_include_diagnostics:
+        return cast(Any, load_run)(label, include_diagnostics=include_diagnostics)
+    return cast(Any, load_run)(label)
 
 
 def _short_replay_adjudication_sample_value(value: object, *, limit: int = 120) -> str:
@@ -1040,6 +1179,8 @@ def _uk_candidates_filters_jsonable(
     manual_compile_evidence_statuses: set[str] | None = None,
     claim_template_status: str = "",
     compact_json: bool = False,
+    summary_count_limit: int | None = None,
+    row_count_limit: int | None = None,
 ) -> dict[str, Any]:
     return {
         "top": top,
@@ -1062,6 +1203,8 @@ def _uk_candidates_filters_jsonable(
         ),
         "claim_template_status": claim_template_status,
         "compact_json": compact_json,
+        "summary_count_limit": summary_count_limit,
+        "row_count_limit": row_count_limit,
     }
 
 
@@ -1138,6 +1281,17 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
     oracle_residual_roots: set[str],
     malformed_residual_roots: set[str],
     residual_root_hits: set[str],
+    residual_root_hit_counts: Mapping[str, int] | None = None,
+    residual_root_side_counts: Mapping[str, int] | None = None,
+    residual_candidate_source_pathology_counts: Mapping[str, int] | None = None,
+    residual_candidate_compare_shape_counts: Mapping[str, int] | None = None,
+    residual_candidate_structural_counts: Mapping[str, int] | None = None,
+    residual_candidate_action_counts: Mapping[str, int] | None = None,
+    residual_candidate_target_presence_counts: Mapping[str, int] | None = None,
+    residual_candidate_target_presence_action_counts: Mapping[str, int] | None = None,
+    residual_candidate_manual_compile_rule_counts: Mapping[str, int] | None = None,
+    residual_candidate_root_samples: tuple[dict[str, Any], ...] = (),
+    residual_candidate_root_samples_omitted: int = 0,
     defeated_residual_roots: set[str],
     status: str,
     effect_feed_parse_rejections: tuple[dict[str, Any], ...] = (),
@@ -1376,6 +1530,39 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
         "candidate_op_count": candidate_ops,
         "residual_candidate_effect_count": residual_candidate_count,
         "residual_candidate_op_count": residual_candidate_ops,
+        "residual_candidate_root_hit_counts": _count_map_jsonable(
+            residual_root_hit_counts or {}
+        ),
+        "residual_candidate_root_side_counts": _count_map_jsonable(
+            residual_root_side_counts or {}
+        ),
+        "residual_candidate_source_pathology_counts": _count_map_jsonable(
+            residual_candidate_source_pathology_counts or {}
+        ),
+        "residual_candidate_compare_shape_counts": _count_map_jsonable(
+            residual_candidate_compare_shape_counts or {}
+        ),
+        "residual_candidate_structural_counts": _count_map_jsonable(
+            residual_candidate_structural_counts or {}
+        ),
+        "residual_candidate_action_counts": _count_map_jsonable(
+            residual_candidate_action_counts or {}
+        ),
+        "residual_candidate_target_presence_counts": _count_map_jsonable(
+            residual_candidate_target_presence_counts or {}
+        ),
+        "residual_candidate_target_presence_action_counts": _count_map_jsonable(
+            residual_candidate_target_presence_action_counts or {}
+        ),
+        "residual_candidate_manual_compile_rule_counts": _count_map_jsonable(
+            residual_candidate_manual_compile_rule_counts or {}
+        ),
+        "residual_candidate_root_samples": [
+            dict(item) for item in residual_candidate_root_samples
+        ],
+        "residual_candidate_root_samples_omitted": int(
+            residual_candidate_root_samples_omitted
+        ),
         "residual_candidate_samples": list(sample_rows),
         "residual_candidate_samples_omitted": residual_candidate_samples_omitted,
         "residual_roots": sorted(residual_roots),
@@ -1415,6 +1602,82 @@ def _triage_rule_id(status: str) -> str:
     return "uk_frontier_status_unclassified"
 
 
+def _saved_bench_prefilter_candidate_row_jsonable(
+    result: object,
+    *,
+    score_mode: str,
+    replay_adjudication_kinds: set[str] | None = None,
+    replay_adjudication_sample_limit: int = 5,
+) -> dict[str, Any]:
+    """Build a saved-run-only candidate row for summary aggregation."""
+    return _uk_candidate_row_jsonable(
+        result,
+        score_mode=score_mode,
+        source_counts={},
+        compare_counts={},
+        candidate_source_counts={},
+        candidate_compare_counts={},
+        non_candidate_source_counts={},
+        non_candidate_compare_counts={},
+        lowering_rejection_rule_counts=_count_map_from_object(
+            getattr(result, "lowering_rejection_rule_counts", {})
+        ),
+        blocking_lowering_rejection_rule_counts=_count_map_from_object(
+            getattr(result, "blocking_lowering_rejection_rule_counts", {})
+        ),
+        source_acquisition_observation_rule_counts=_count_map_from_object(
+            getattr(result, "source_acquisition_observation_rule_counts", {})
+        ),
+        rows_with_source_acquisition_observations=(
+            1 if int(getattr(result, "source_acquisition_observation_count", 0) or 0) else 0
+        ),
+        source_acquisition_rejection_rule_counts=_count_map_from_object(
+            getattr(result, "source_acquisition_rejection_rule_counts", {})
+        ),
+        rows_with_source_acquisition_rejections=(
+            1 if int(getattr(result, "source_acquisition_rejection_count", 0) or 0) else 0
+        ),
+        rows_with_blocking_lowering_rejections=(
+            1 if int(getattr(result, "blocking_lowering_rejection_count", 0) or 0) else 0
+        ),
+        inspected_effect_count=0,
+        available_replay_applicable_effect_count=0,
+        available_applied_effect_count=0,
+        effect_inspection_truncated=False,
+        residual_analysis_skipped=True,
+        candidate_count=0,
+        candidate_ops=0,
+        residual_candidate_count=0,
+        residual_candidate_ops=0,
+        residual_roots=set(),
+        replayed_residual_roots=set(),
+        oracle_residual_roots=set(),
+        malformed_residual_roots=set(),
+        residual_root_hits=set(),
+        defeated_residual_roots=set(),
+        status="frontier prefilter only",
+        manual_compile_status_counts=_count_map_from_object(
+            getattr(result, "manual_compile_status_counts", {})
+        ),
+        manual_compile_rule_counts=_count_map_from_object(
+            getattr(result, "manual_compile_rule_counts", {})
+        ),
+        suggested_claim_template_status_counts={},
+        lowering_observation_rule_counts=_count_map_from_object(
+            getattr(
+                result,
+                "lowering_observation_rule_counts",
+                getattr(result, "lowering_rejection_rule_counts", {}),
+            )
+        ),
+        rows_with_lowering_observations=(
+            1 if int(getattr(result, "lowering_observation_count", 0) or 0) else 0
+        ),
+        replay_adjudication_kinds=replay_adjudication_kinds,
+        replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+    )
+
+
 def _uk_candidates_report_jsonable(
     *,
     label: str,
@@ -1425,6 +1688,9 @@ def _uk_candidates_report_jsonable(
     replay_adjudication_prefilter_count: int | None = None,
     summary_only: bool = False,
     compact_rows: bool = False,
+    emitted_row_count: int | None = None,
+    summary_count_limit: int | None = None,
+    row_count_limit: int | None = None,
 ) -> dict[str, Any]:
     matched_count = inspected_count if matched_frontier_count is None else matched_frontier_count
     replay_prefilter_count = (
@@ -1470,6 +1736,13 @@ def _uk_candidates_report_jsonable(
     candidate_op_count = 0
     residual_candidate_effect_count = 0
     residual_candidate_op_count = 0
+    residual_candidate_source_pathology_counts: Counter[str] = Counter()
+    residual_candidate_compare_shape_counts: Counter[str] = Counter()
+    residual_candidate_structural_counts: Counter[str] = Counter()
+    residual_candidate_action_counts: Counter[str] = Counter()
+    residual_candidate_target_presence_counts: Counter[str] = Counter()
+    residual_candidate_target_presence_action_counts: Counter[str] = Counter()
+    residual_candidate_manual_compile_rule_counts: Counter[str] = Counter()
     residual_root_count = 0
     replayed_residual_root_count = 0
     oracle_residual_root_count = 0
@@ -1538,6 +1811,20 @@ def _uk_candidates_report_jsonable(
         candidate_op_count += int(row.get("candidate_op_count") or 0)
         residual_candidate_effect_count += int(row.get("residual_candidate_effect_count") or 0)
         residual_candidate_op_count += int(row.get("residual_candidate_op_count") or 0)
+        for key, count in dict(row.get("residual_candidate_source_pathology_counts") or {}).items():
+            residual_candidate_source_pathology_counts[str(key)] += int(count)
+        for key, count in dict(row.get("residual_candidate_compare_shape_counts") or {}).items():
+            residual_candidate_compare_shape_counts[str(key)] += int(count)
+        for key, count in dict(row.get("residual_candidate_structural_counts") or {}).items():
+            residual_candidate_structural_counts[str(key)] += int(count)
+        for key, count in dict(row.get("residual_candidate_action_counts") or {}).items():
+            residual_candidate_action_counts[str(key)] += int(count)
+        for key, count in dict(row.get("residual_candidate_target_presence_counts") or {}).items():
+            residual_candidate_target_presence_counts[str(key)] += int(count)
+        for key, count in dict(row.get("residual_candidate_target_presence_action_counts") or {}).items():
+            residual_candidate_target_presence_action_counts[str(key)] += int(count)
+        for key, count in dict(row.get("residual_candidate_manual_compile_rule_counts") or {}).items():
+            residual_candidate_manual_compile_rule_counts[str(key)] += int(count)
         residual_root_count += len(tuple(row.get("residual_roots") or ()))
         replayed_residual_root_count += len(tuple(row.get("replayed_residual_roots") or ()))
         oracle_residual_root_count += len(tuple(row.get("oracle_residual_roots") or ()))
@@ -1743,188 +2030,225 @@ def _uk_candidates_report_jsonable(
             lowering_rejection_rule_counts[str(rule_id)] += int(count)
         for rule_id, count in dict(row.get("blocking_lowering_rejection_rule_counts") or {}).items():
             blocking_lowering_rejection_rule_counts[str(rule_id)] += int(count)
+    summary_payload = {
+        "configured_top": filters.get("top"),
+        "configured_score_mode": filters.get("score_mode"),
+        "configured_effect_budget": filters.get("effect_budget"),
+        "configured_residual_budget": filters.get("residual_budget"),
+        "pre_replay_adjudication_filter_frontier_count": replay_prefilter_count,
+        "replay_adjudication_filter_excluded_count": max(
+            0,
+            replay_prefilter_count - matched_count,
+        ),
+        "matched_frontier_count": matched_count,
+        "inspected_frontier_count": inspected_count,
+        "frontier_truncated": inspected_count < matched_count,
+        "emitted_row_count": len(rows) if emitted_row_count is None else emitted_row_count,
+        "status_counts": _count_map_jsonable(status_counts),
+        "inspected_effect_count": inspected_effect_count,
+        "inspected_replay_applicable_effect_count": inspected_effect_count,
+        "candidate_effect_count": candidate_effect_count,
+        "candidate_op_count": candidate_op_count,
+        "residual_candidate_effect_count": residual_candidate_effect_count,
+        "residual_candidate_op_count": residual_candidate_op_count,
+        "residual_candidate_source_pathology_counts": _count_map_jsonable(
+            residual_candidate_source_pathology_counts
+        ),
+        "residual_candidate_compare_shape_counts": _count_map_jsonable(
+            residual_candidate_compare_shape_counts
+        ),
+        "residual_candidate_structural_counts": _count_map_jsonable(
+            residual_candidate_structural_counts
+        ),
+        "residual_candidate_action_counts": _count_map_jsonable(
+            residual_candidate_action_counts
+        ),
+        "residual_candidate_target_presence_counts": _count_map_jsonable(
+            residual_candidate_target_presence_counts
+        ),
+        "residual_candidate_target_presence_action_counts": _count_map_jsonable(
+            residual_candidate_target_presence_action_counts
+        ),
+        "residual_candidate_manual_compile_rule_counts": _count_map_jsonable(
+            residual_candidate_manual_compile_rule_counts
+        ),
+        "residual_root_count": residual_root_count,
+        "replayed_residual_root_count": replayed_residual_root_count,
+        "oracle_residual_root_count": oracle_residual_root_count,
+        "malformed_residual_root_count": malformed_residual_root_count,
+        "backed_residual_root_count": backed_residual_root_count,
+        "defeated_residual_root_count": defeated_residual_root_count,
+        "rows_with_source_acquisition_rejections": rows_with_source_acquisition_rejections,
+        "source_acquisition_rejection_rule_counts": _count_map_jsonable(
+            source_acquisition_rejection_rule_counts
+        ),
+        "rows_with_source_acquisition_observations": rows_with_source_acquisition_observations,
+        "source_acquisition_observation_rule_counts": _count_map_jsonable(
+            source_acquisition_observation_rule_counts
+        ),
+        "bench_authority_observation_count": bench_authority_observation_count,
+        "bench_authority_observation_rule_counts": _count_map_jsonable(
+            bench_authority_observation_rule_counts
+        ),
+        "bench_authority_rejection_count": bench_authority_rejection_count,
+        "bench_authority_rejection_rule_counts": _count_map_jsonable(
+            bench_authority_rejection_rule_counts
+        ),
+        "bench_effect_source_pathology_counts": _count_map_jsonable(
+            bench_effect_source_pathology_counts
+        ),
+        "bench_manual_compile_status_counts": _count_map_jsonable(
+            bench_manual_compile_status_counts
+        ),
+        "bench_manual_compile_rule_counts": _count_map_jsonable(
+            bench_manual_compile_rule_counts
+        ),
+        "bench_source_acquisition_rejection_count": (
+            bench_source_acquisition_rejection_count
+        ),
+        "rows_with_bench_source_acquisition_rejections": (
+            rows_with_bench_source_acquisition_rejections
+        ),
+        "bench_source_acquisition_rejection_rule_counts": _count_map_jsonable(
+            bench_source_acquisition_rejection_rule_counts
+        ),
+        "rows_with_lowering_observations": rows_with_lowering_observations,
+        "rows_with_blocking_lowering_rejections": rows_with_blocking_lowering_rejections,
+        "effect_feed_parse_rejection_count": effect_feed_parse_rejection_count,
+        "rows_with_effect_feed_parse_rejections": rows_with_effect_feed_parse_rejections,
+        "effect_feed_parse_rejection_rule_counts": _count_map_jsonable(
+            effect_feed_parse_rejection_rule_counts
+        ),
+        "rows_with_effect_feed_count_errors": rows_with_effect_feed_count_errors,
+        "effect_feed_observation_count": effect_feed_observation_count,
+        "rows_with_effect_feed_observations": rows_with_effect_feed_observations,
+        "effect_feed_observation_rule_counts": _count_map_jsonable(
+            effect_feed_observation_rule_counts
+        ),
+        "effect_selection_observation_count": effect_selection_observation_count,
+        "rows_with_effect_selection_observations": rows_with_effect_selection_observations,
+        "effect_selection_observation_rule_counts": _count_map_jsonable(
+            effect_selection_observation_rule_counts
+        ),
+        "effect_selection_rejection_count": effect_selection_rejection_count,
+        "rows_with_effect_selection_rejections": rows_with_effect_selection_rejections,
+        "effect_selection_rejection_rule_counts": _count_map_jsonable(
+            effect_selection_rejection_rule_counts
+        ),
+        "source_parse_rejection_count": source_parse_rejection_count,
+        "rows_with_source_parse_rejections": rows_with_source_parse_rejections,
+        "source_parse_rejection_rule_counts": _count_map_jsonable(
+            source_parse_rejection_rule_counts
+        ),
+        "source_parse_observation_count": source_parse_observation_count,
+        "rows_with_source_parse_observations": rows_with_source_parse_observations,
+        "source_parse_observation_rule_counts": _count_map_jsonable(
+            source_parse_observation_rule_counts
+        ),
+        "bench_exception_count": bench_exception_count,
+        "rows_with_bench_exceptions": rows_with_bench_exceptions,
+        "bench_exception_rule_counts": _count_map_jsonable(bench_exception_rule_counts),
+        "saved_bench_diagnostic_count": saved_bench_diagnostic_count,
+        "rows_with_saved_bench_diagnostics": rows_with_saved_bench_diagnostics,
+        "saved_bench_diagnostic_rule_counts": _count_map_jsonable(
+            saved_bench_diagnostic_rule_counts
+        ),
+        "saved_bench_diagnostic_lane_counts": _count_map_jsonable(
+            saved_bench_diagnostic_lane_counts
+        ),
+        "replay_adjudication_count": replay_adjudication_count,
+        "rows_with_replay_adjudications": rows_with_replay_adjudications,
+        "replay_adjudication_kind_counts": _count_map_jsonable(
+            replay_adjudication_kind_counts
+        ),
+        "replay_adjudication_bucket_counts": _count_map_jsonable(
+            replay_adjudication_bucket_counts
+        ),
+        "replay_adjudication_sample_count": replay_adjudication_sample_count,
+        "replay_adjudication_samples_omitted": replay_adjudication_samples_omitted,
+        "residual_compile_observation_count": residual_compile_observation_count,
+        "rows_with_residual_compile_observations": (
+            rows_with_residual_compile_observations
+        ),
+        "residual_compile_observation_rule_counts": _count_map_jsonable(
+            residual_compile_observation_rule_counts
+        ),
+        "residual_compile_rejection_count": residual_compile_rejection_count,
+        "rows_with_residual_compile_rejections": rows_with_residual_compile_rejections,
+        "residual_compile_rejection_rule_counts": _count_map_jsonable(
+            residual_compile_rejection_rule_counts
+        ),
+        "source_counts": _count_map_jsonable(source_counts),
+        "compare_counts": _count_map_jsonable(compare_counts),
+        "enacted_source_status_counts": _count_map_jsonable(enacted_source_status_counts),
+        "oracle_source_status_counts": _count_map_jsonable(oracle_source_status_counts),
+        "uk_replay_regime_counts": _count_map_jsonable(uk_replay_regime_counts),
+        "uk_source_purity_lane_counts": _count_map_jsonable(uk_source_purity_lane_counts),
+        "rows_with_source_semantics_clean": rows_with_source_semantics_clean,
+        "rows_with_source_first_candidate": rows_with_source_first_candidate,
+        "uk_source_first_candidate_reason_counts": _count_map_jsonable(
+            uk_source_first_candidate_reason_counts
+        ),
+        "uk_residual_claim_tier_counts": _count_map_jsonable(
+            uk_residual_claim_tier_counts
+        ),
+        "uk_residual_claim_kind_counts": _count_map_jsonable(
+            uk_residual_claim_kind_counts
+        ),
+        "rows_with_residual_section_claims": rows_with_residual_section_claims,
+        "residual_claim_only_in_replayed_count": residual_claim_only_in_replayed_count,
+        "residual_claim_only_in_oracle_count": residual_claim_only_in_oracle_count,
+        "comparison_class_counts": _count_map_jsonable(comparison_class_counts),
+        "core_benchmark_counts": _count_map_jsonable(core_benchmark_counts),
+        "candidate_source_counts": _count_map_jsonable(candidate_source_counts),
+        "candidate_compare_counts": _count_map_jsonable(candidate_compare_counts),
+        "non_candidate_source_counts": _count_map_jsonable(non_candidate_source_counts),
+        "non_candidate_compare_counts": _count_map_jsonable(non_candidate_compare_counts),
+        "manual_compile_status_counts": _count_map_jsonable(manual_compile_status_counts),
+        "manual_compile_rule_counts": _count_map_jsonable(manual_compile_rule_counts),
+        "suggested_claim_template_status_counts": _count_map_jsonable(
+            suggested_claim_template_status_counts
+        ),
+        "lowering_observation_rule_counts": _count_map_jsonable(
+            lowering_observation_rule_counts
+        ),
+        "lowering_rejection_rule_counts": _count_map_jsonable(
+            lowering_rejection_rule_counts
+        ),
+        "blocking_lowering_rejection_rule_counts": _count_map_jsonable(
+            blocking_lowering_rejection_rule_counts
+        ),
+        "saved_legacy_effect_count": saved_legacy_effect_count,
+        "saved_effect_row_count": saved_effect_row_count,
+        "saved_effect_feed_page_count": saved_effect_feed_page_count,
+        "available_replay_applicable_effect_count": (
+            available_replay_applicable_effect_count
+        ),
+        "available_applied_effect_count": available_applied_effect_count,
+        "rows_with_effect_inspection_truncated": rows_with_effect_inspection_truncated,
+        "rows_with_residual_analysis_skipped": rows_with_residual_analysis_skipped,
+        "rows_with_residual_analysis_unavailable": rows_with_residual_analysis_unavailable,
+        "rows_with_candidate_analysis_skipped": rows_with_candidate_analysis_skipped,
+    }
     payload: dict[str, Any] = {
         "report_kind": "uk_candidates_frontier_report",
         "label": label,
         "filters": filters,
-        "summary": {
-            "configured_top": filters.get("top"),
-            "configured_score_mode": filters.get("score_mode"),
-            "configured_effect_budget": filters.get("effect_budget"),
-            "configured_residual_budget": filters.get("residual_budget"),
-            "pre_replay_adjudication_filter_frontier_count": replay_prefilter_count,
-            "replay_adjudication_filter_excluded_count": max(
-                0,
-                replay_prefilter_count - matched_count,
-            ),
-            "matched_frontier_count": matched_count,
-            "inspected_frontier_count": inspected_count,
-            "frontier_truncated": inspected_count < matched_count,
-            "emitted_row_count": len(rows),
-            "status_counts": _count_map_jsonable(status_counts),
-            "inspected_effect_count": inspected_effect_count,
-            "inspected_replay_applicable_effect_count": inspected_effect_count,
-            "candidate_effect_count": candidate_effect_count,
-            "candidate_op_count": candidate_op_count,
-            "residual_candidate_effect_count": residual_candidate_effect_count,
-            "residual_candidate_op_count": residual_candidate_op_count,
-            "residual_root_count": residual_root_count,
-            "replayed_residual_root_count": replayed_residual_root_count,
-            "oracle_residual_root_count": oracle_residual_root_count,
-            "malformed_residual_root_count": malformed_residual_root_count,
-            "backed_residual_root_count": backed_residual_root_count,
-            "defeated_residual_root_count": defeated_residual_root_count,
-            "rows_with_source_acquisition_rejections": rows_with_source_acquisition_rejections,
-            "source_acquisition_rejection_rule_counts": _count_map_jsonable(
-                source_acquisition_rejection_rule_counts
-            ),
-            "rows_with_source_acquisition_observations": rows_with_source_acquisition_observations,
-            "source_acquisition_observation_rule_counts": _count_map_jsonable(
-                source_acquisition_observation_rule_counts
-            ),
-            "bench_authority_observation_count": bench_authority_observation_count,
-            "bench_authority_observation_rule_counts": _count_map_jsonable(
-                bench_authority_observation_rule_counts
-            ),
-            "bench_authority_rejection_count": bench_authority_rejection_count,
-            "bench_authority_rejection_rule_counts": _count_map_jsonable(
-                bench_authority_rejection_rule_counts
-            ),
-            "bench_effect_source_pathology_counts": _count_map_jsonable(
-                bench_effect_source_pathology_counts
-            ),
-            "bench_manual_compile_status_counts": _count_map_jsonable(
-                bench_manual_compile_status_counts
-            ),
-            "bench_manual_compile_rule_counts": _count_map_jsonable(
-                bench_manual_compile_rule_counts
-            ),
-            "bench_source_acquisition_rejection_count": bench_source_acquisition_rejection_count,
-            "rows_with_bench_source_acquisition_rejections": rows_with_bench_source_acquisition_rejections,
-            "bench_source_acquisition_rejection_rule_counts": _count_map_jsonable(
-                bench_source_acquisition_rejection_rule_counts
-            ),
-            "rows_with_lowering_observations": rows_with_lowering_observations,
-            "lowering_observation_rule_counts": _count_map_jsonable(
-                lowering_observation_rule_counts
-            ),
-            "rows_with_blocking_lowering_rejections": rows_with_blocking_lowering_rejections,
-            "effect_feed_parse_rejection_count": effect_feed_parse_rejection_count,
-            "rows_with_effect_feed_parse_rejections": rows_with_effect_feed_parse_rejections,
-            "effect_feed_parse_rejection_rule_counts": _count_map_jsonable(
-                effect_feed_parse_rejection_rule_counts
-            ),
-            "rows_with_effect_feed_count_errors": rows_with_effect_feed_count_errors,
-            "effect_feed_observation_count": effect_feed_observation_count,
-            "rows_with_effect_feed_observations": rows_with_effect_feed_observations,
-            "effect_feed_observation_rule_counts": _count_map_jsonable(
-                effect_feed_observation_rule_counts
-            ),
-            "effect_selection_observation_count": effect_selection_observation_count,
-            "rows_with_effect_selection_observations": rows_with_effect_selection_observations,
-            "effect_selection_observation_rule_counts": _count_map_jsonable(
-                effect_selection_observation_rule_counts
-            ),
-            "effect_selection_rejection_count": effect_selection_rejection_count,
-            "rows_with_effect_selection_rejections": rows_with_effect_selection_rejections,
-            "effect_selection_rejection_rule_counts": _count_map_jsonable(
-                effect_selection_rejection_rule_counts
-            ),
-            "source_parse_rejection_count": source_parse_rejection_count,
-            "rows_with_source_parse_rejections": rows_with_source_parse_rejections,
-            "source_parse_rejection_rule_counts": _count_map_jsonable(
-                source_parse_rejection_rule_counts
-            ),
-            "source_parse_observation_count": source_parse_observation_count,
-            "rows_with_source_parse_observations": rows_with_source_parse_observations,
-            "source_parse_observation_rule_counts": _count_map_jsonable(
-                source_parse_observation_rule_counts
-            ),
-            "bench_exception_count": bench_exception_count,
-            "rows_with_bench_exceptions": rows_with_bench_exceptions,
-            "bench_exception_rule_counts": _count_map_jsonable(bench_exception_rule_counts),
-            "saved_bench_diagnostic_count": saved_bench_diagnostic_count,
-            "rows_with_saved_bench_diagnostics": rows_with_saved_bench_diagnostics,
-            "saved_bench_diagnostic_rule_counts": _count_map_jsonable(
-                saved_bench_diagnostic_rule_counts
-            ),
-            "saved_bench_diagnostic_lane_counts": _count_map_jsonable(
-                saved_bench_diagnostic_lane_counts
-            ),
-            "replay_adjudication_count": replay_adjudication_count,
-            "rows_with_replay_adjudications": rows_with_replay_adjudications,
-            "replay_adjudication_kind_counts": _count_map_jsonable(
-                replay_adjudication_kind_counts
-            ),
-            "replay_adjudication_bucket_counts": _count_map_jsonable(
-                replay_adjudication_bucket_counts
-            ),
-            "replay_adjudication_sample_count": replay_adjudication_sample_count,
-            "replay_adjudication_samples_omitted": replay_adjudication_samples_omitted,
-            "uk_residual_claim_tier_counts": _count_map_jsonable(
-                uk_residual_claim_tier_counts
-            ),
-            "uk_residual_claim_kind_counts": _count_map_jsonable(
-                uk_residual_claim_kind_counts
-            ),
-            "rows_with_residual_section_claims": rows_with_residual_section_claims,
-            "residual_claim_only_in_replayed_count": residual_claim_only_in_replayed_count,
-            "residual_claim_only_in_oracle_count": residual_claim_only_in_oracle_count,
-            "residual_compile_observation_count": residual_compile_observation_count,
-            "rows_with_residual_compile_observations": rows_with_residual_compile_observations,
-            "residual_compile_observation_rule_counts": _count_map_jsonable(
-                residual_compile_observation_rule_counts
-            ),
-            "residual_compile_rejection_count": residual_compile_rejection_count,
-            "rows_with_residual_compile_rejections": rows_with_residual_compile_rejections,
-            "residual_compile_rejection_rule_counts": _count_map_jsonable(
-                residual_compile_rejection_rule_counts
-            ),
-            "saved_legacy_effect_count": saved_legacy_effect_count,
-            "saved_effect_row_count": saved_effect_row_count,
-            "saved_effect_feed_page_count": saved_effect_feed_page_count,
-            "available_replay_applicable_effect_count": available_replay_applicable_effect_count,
-            "available_applied_effect_count": available_applied_effect_count,
-            "rows_with_effect_inspection_truncated": rows_with_effect_inspection_truncated,
-            "rows_with_residual_analysis_skipped": rows_with_residual_analysis_skipped,
-            "rows_with_residual_analysis_unavailable": rows_with_residual_analysis_unavailable,
-            "rows_with_candidate_analysis_skipped": rows_with_candidate_analysis_skipped,
-            "source_counts": _count_map_jsonable(source_counts),
-            "compare_counts": _count_map_jsonable(compare_counts),
-            "enacted_source_status_counts": _count_map_jsonable(enacted_source_status_counts),
-            "oracle_source_status_counts": _count_map_jsonable(oracle_source_status_counts),
-            "uk_replay_regime_counts": _count_map_jsonable(uk_replay_regime_counts),
-            "uk_source_purity_lane_counts": _count_map_jsonable(
-                uk_source_purity_lane_counts
-            ),
-            "rows_with_source_semantics_clean": rows_with_source_semantics_clean,
-            "rows_with_source_first_candidate": rows_with_source_first_candidate,
-            "uk_source_first_candidate_reason_counts": _count_map_jsonable(
-                uk_source_first_candidate_reason_counts
-            ),
-            "comparison_class_counts": _count_map_jsonable(comparison_class_counts),
-            "core_benchmark_counts": _count_map_jsonable(core_benchmark_counts),
-            "candidate_source_counts": _count_map_jsonable(candidate_source_counts),
-            "candidate_compare_counts": _count_map_jsonable(candidate_compare_counts),
-            "non_candidate_source_counts": _count_map_jsonable(non_candidate_source_counts),
-            "non_candidate_compare_counts": _count_map_jsonable(non_candidate_compare_counts),
-            "manual_compile_status_counts": _count_map_jsonable(manual_compile_status_counts),
-            "manual_compile_rule_counts": _count_map_jsonable(manual_compile_rule_counts),
-            "suggested_claim_template_status_counts": _count_map_jsonable(
-                suggested_claim_template_status_counts
-            ),
-            "lowering_rejection_rule_counts": _count_map_jsonable(lowering_rejection_rule_counts),
-            "blocking_lowering_rejection_rule_counts": _count_map_jsonable(
-                blocking_lowering_rejection_rule_counts
-            ),
-        },
+        "summary": _limit_summary_count_maps(
+            summary_payload,
+            limit=summary_count_limit,
+        ),
     }
     if not summary_only:
-        payload["rows"] = (
+        emitted_rows = (
             [_compact_uk_candidate_row_jsonable(row) for row in rows]
             if compact_rows
             else rows
         )
+        payload["rows"] = [
+            _limit_row_count_maps(row, limit=row_count_limit)
+            for row in emitted_rows
+        ]
     return payload
 
 
@@ -2667,10 +2991,47 @@ def _residual_candidate_inventory(
     only_in_replayed: set[str],
     only_in_oracle: set[str],
 ) -> dict[str, Any]:
+    def _sample_priority(summary) -> tuple[int, int, int, int]:  # noqa: ANN001
+        return (
+            1 if bool(getattr(summary, "structural_for_replay", False)) else 0,
+            1 if bool(getattr(summary, "replay_applicable", False)) else 0,
+            1 if not str(getattr(summary, "source_pathology", "") or "") else 0,
+            int(getattr(summary, "n_ops", 0) or 0),
+        )
+
+    def _target_presence_bucket(summary) -> str:  # noqa: ANN001
+        resolver_count = len(tuple(getattr(summary, "resolver_eids", ())))
+        if resolver_count <= 0:
+            return "no_resolver_eids"
+        oracle_hit_count = sum(
+            1 for hit in tuple(getattr(summary, "oracle_target_hits", ())) if hit
+        )
+        if oracle_hit_count <= 0:
+            return "oracle_targets_absent"
+        if oracle_hit_count >= resolver_count:
+            return "oracle_targets_all_present"
+        return "oracle_targets_partly_present"
+
     residual_candidate_count = 0
     residual_candidate_ops = 0
     residual_root_hits: set[str] = set()
+    residual_root_hit_counts: Counter[str] = Counter()
+    residual_root_side_counts: Counter[str] = Counter()
+    residual_root_structural_counts: dict[str, Counter[str]] = {}
+    source_pathology_counts: Counter[str] = Counter()
+    compare_shape_counts: Counter[str] = Counter()
+    structural_counts: Counter[str] = Counter()
+    action_counts: Counter[str] = Counter()
+    target_presence_counts: Counter[str] = Counter()
+    target_presence_action_counts: Counter[str] = Counter()
+    manual_compile_rule_counts: Counter[str] = Counter()
     residual_candidate_samples: list[dict[str, Any]] = []
+    residual_candidate_root_samples_by_root: dict[str, dict[str, Any]] = {}
+    residual_candidate_root_sample_priorities: dict[str, tuple[int, int, int, int]] = {}
+    replayed_roots, oracle_roots = _collect_residual_root_sides(
+        only_in_replayed=only_in_replayed,
+        only_in_oracle=only_in_oracle,
+    )
     for summary in candidate_summaries:
         if _effect_overlaps_residual(
             summary.resolver_eids,
@@ -2685,29 +3046,139 @@ def _residual_candidate_inventory(
                 only_in_replayed=only_in_replayed,
                 only_in_oracle=only_in_oracle,
             )
+            residual_root_hit_counts.update(overlapping_roots)
+            for root in overlapping_roots:
+                if root in replayed_roots and root in oracle_roots:
+                    residual_root_side_counts["both"] += 1
+                elif root in replayed_roots:
+                    residual_root_side_counts["replayed_only"] += 1
+                elif root in oracle_roots:
+                    residual_root_side_counts["oracle_only"] += 1
+                else:
+                    residual_root_side_counts["unknown"] += 1
+            source_pathology_counts[
+                str(getattr(summary, "source_pathology", "") or "__none__")
+            ] += 1
+            compare_shape_counts[
+                str(getattr(summary, "compare_shape", "") or "__none__")
+            ] += 1
+            structural_counts[
+                "structural_for_replay"
+                if bool(getattr(summary, "structural_for_replay", False))
+                else "non_structural_for_replay"
+            ] += 1
+            op_actions = tuple(str(action) for action in getattr(summary, "op_actions", ()))
+            if op_actions:
+                action_family = "+".join(sorted(set(op_actions)))
+            else:
+                action_family = "__none__"
+            action_counts[action_family] += 1
+            target_presence_bucket = _target_presence_bucket(summary)
+            target_presence_counts[target_presence_bucket] += 1
+            target_presence_action_counts[f"{target_presence_bucket}:{action_family}"] += 1
+            structural_key = (
+                "structural_for_replay"
+                if bool(getattr(summary, "structural_for_replay", False))
+                else "non_structural_for_replay"
+            )
+            for root in overlapping_roots:
+                residual_root_structural_counts.setdefault(root, Counter())[structural_key] += 1
+            manual_rule_id = str(getattr(summary, "manual_compile_rule_id", "") or "")
+            if manual_rule_id:
+                manual_compile_rule_counts[manual_rule_id] += 1
+            sample = {
+                "effect_id": str(getattr(summary, "effect_id", "") or ""),
+                "effect_type": str(getattr(summary, "effect_type", "") or ""),
+                "affected_provisions": str(getattr(summary, "affected_provisions", "") or ""),
+                "affecting_act_id": str(getattr(summary, "affecting_act_id", "") or ""),
+                "affecting_provisions": str(getattr(summary, "affecting_provisions", "") or ""),
+                "effective_date": str(getattr(summary, "effective_date", "") or ""),
+                "resolver_eids": list(summary.resolver_eids),
+                "overlapping_residual_roots": sorted(overlapping_roots),
+                "source_pathology": str(getattr(summary, "source_pathology", "") or ""),
+                "compare_shape": str(getattr(summary, "compare_shape", "") or ""),
+                "compiled_op_count": int(getattr(summary, "n_ops", 0) or 0),
+                "op_actions": list(op_actions),
+                "replay_applicable": bool(getattr(summary, "replay_applicable", False)),
+                "structural_for_replay": bool(getattr(summary, "structural_for_replay", False)),
+                "manual_compile_status": str(
+                    getattr(summary, "manual_compile_status", "") or ""
+                ),
+                "manual_compile_rule_id": str(
+                    getattr(summary, "manual_compile_rule_id", "") or ""
+                ),
+                "target_presence": {
+                    "resolver_count": len(tuple(getattr(summary, "resolver_eids", ()))),
+                    "base_target_hit_count": sum(
+                        1 for hit in tuple(getattr(summary, "base_target_hits", ())) if hit
+                    ),
+                    "oracle_target_hit_count": sum(
+                        1 for hit in tuple(getattr(summary, "oracle_target_hits", ())) if hit
+                    ),
+                    "base_descendant_hit_count": sum(
+                        1
+                        for hit in tuple(getattr(summary, "base_descendant_hits", ()))
+                        if hit
+                    ),
+                    "oracle_descendant_hit_count": sum(
+                        1
+                        for hit in tuple(getattr(summary, "oracle_descendant_hits", ()))
+                        if hit
+                    ),
+                },
+            }
+            sample_priority = _sample_priority(summary)
+            for root in sorted(overlapping_roots):
+                existing_priority = residual_candidate_root_sample_priorities.get(root)
+                if existing_priority is None or sample_priority > existing_priority:
+                    residual_candidate_root_sample_priorities[root] = sample_priority
+                    residual_candidate_root_samples_by_root[root] = sample
             if len(residual_candidate_samples) < _RESIDUAL_CANDIDATE_SAMPLE_LIMIT:
-                residual_candidate_samples.append(
-                    {
-                        "effect_id": str(getattr(summary, "effect_id", "") or ""),
-                        "effect_type": str(getattr(summary, "effect_type", "") or ""),
-                        "affected_provisions": str(getattr(summary, "affected_provisions", "") or ""),
-                        "affecting_act_id": str(getattr(summary, "affecting_act_id", "") or ""),
-                        "affecting_provisions": str(getattr(summary, "affecting_provisions", "") or ""),
-                        "effective_date": str(getattr(summary, "effective_date", "") or ""),
-                        "resolver_eids": list(summary.resolver_eids),
-                        "overlapping_residual_roots": sorted(overlapping_roots),
-                        "source_pathology": str(getattr(summary, "source_pathology", "") or ""),
-                        "compare_shape": str(getattr(summary, "compare_shape", "") or ""),
-                        "compiled_op_count": int(getattr(summary, "n_ops", 0) or 0),
-                        "replay_applicable": bool(getattr(summary, "replay_applicable", False)),
-                        "structural_for_replay": bool(getattr(summary, "structural_for_replay", False)),
-                    }
-                )
+                residual_candidate_samples.append(sample)
             residual_root_hits.update(overlapping_roots)
+    root_sample_rows = [
+        {
+            "root": root,
+            "candidate_count": int(count),
+            "structural_counts": _count_map_jsonable(
+                residual_root_structural_counts.get(root, {})
+            ),
+            "sample": residual_candidate_root_samples_by_root[root],
+        }
+        for root, count in sorted(
+            residual_root_hit_counts.items(),
+            key=lambda item: (-int(item[1]), str(item[0])),
+        )[:_RESIDUAL_CANDIDATE_ROOT_SAMPLE_LIMIT]
+        if root in residual_candidate_root_samples_by_root
+    ]
     return {
         "residual_candidate_count": residual_candidate_count,
         "residual_candidate_ops": residual_candidate_ops,
         "residual_root_hits": residual_root_hits,
+        "residual_root_hit_counts": _count_map_jsonable(residual_root_hit_counts),
+        "residual_root_side_counts": _count_map_jsonable(residual_root_side_counts),
+        "residual_candidate_source_pathology_counts": _count_map_jsonable(
+            source_pathology_counts
+        ),
+        "residual_candidate_compare_shape_counts": _count_map_jsonable(
+            compare_shape_counts
+        ),
+        "residual_candidate_structural_counts": _count_map_jsonable(structural_counts),
+        "residual_candidate_action_counts": _count_map_jsonable(action_counts),
+        "residual_candidate_target_presence_counts": _count_map_jsonable(
+            target_presence_counts
+        ),
+        "residual_candidate_target_presence_action_counts": _count_map_jsonable(
+            target_presence_action_counts
+        ),
+        "residual_candidate_manual_compile_rule_counts": _count_map_jsonable(
+            manual_compile_rule_counts
+        ),
+        "residual_candidate_root_samples": root_sample_rows,
+        "residual_candidate_root_samples_omitted": max(
+            0,
+            len(residual_root_hit_counts) - len(root_sample_rows),
+        ),
         "residual_candidate_samples": residual_candidate_samples,
         "residual_candidate_samples_omitted": max(
             0,
@@ -2729,6 +3200,8 @@ def main(args: "argparse.Namespace") -> None:
     json_output: bool = bool(getattr(args, "json", False))
     summary_only: bool = bool(getattr(args, "summary_only", False))
     compact_json: bool = bool(getattr(args, "compact_json", False))
+    summary_count_limit: int | None = getattr(args, "summary_count_limit", None)
+    row_count_limit: int | None = getattr(args, "row_count_limit", None)
     claim_template_status: str = str(getattr(args, "claim_template_status", "") or "")
     min_year: int | None = getattr(args, "min_year", None)
     max_year: int | None = getattr(args, "max_year", None)
@@ -2777,6 +3250,18 @@ def main(args: "argparse.Namespace") -> None:
     if compact_json and not json_output:
         print("error: --compact-json requires --json for uk-candidates", file=sys.stderr)
         sys.exit(2)
+    if summary_count_limit is not None and not json_output:
+        print("error: --summary-count-limit requires --json for uk-candidates", file=sys.stderr)
+        sys.exit(2)
+    if summary_count_limit is not None and summary_count_limit < 1:
+        print("error: --summary-count-limit must be a positive integer", file=sys.stderr)
+        sys.exit(2)
+    if row_count_limit is not None and not json_output:
+        print("error: --row-count-limit requires --json for uk-candidates", file=sys.stderr)
+        sys.exit(2)
+    if row_count_limit is not None and row_count_limit < 1:
+        print("error: --row-count-limit must be a positive integer", file=sys.stderr)
+        sys.exit(2)
     if top < 0:
         print("error: --top must be zero or a positive integer", file=sys.stderr)
         sys.exit(2)
@@ -2820,7 +3305,11 @@ def main(args: "argparse.Namespace") -> None:
         )
         sys.exit(2)
 
-    results = _load_run(label)
+    results = _load_saved_bench_run(
+        _load_run,
+        label,
+        include_diagnostics=not summary_only,
+    )
     matching_frontier = _matching_frontier(
         results,
         score_mode=score_mode,
@@ -2886,6 +3375,8 @@ def main(args: "argparse.Namespace") -> None:
         ),
         claim_template_status=claim_template_status,
         compact_json=compact_json,
+        summary_count_limit=summary_count_limit,
+        row_count_limit=row_count_limit,
     )
 
     if not json_output:
@@ -2916,6 +3407,19 @@ def main(args: "argparse.Namespace") -> None:
     elif not json_output:
         print(f"Score mode: {score_mode}")
     if not frontier:
+        summary_rows = (
+            [
+                _saved_bench_prefilter_candidate_row_jsonable(
+                    result,
+                    score_mode=score_mode,
+                    replay_adjudication_kinds=replay_adjudication_kinds,
+                    replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+                )
+                for result in matching_frontier
+            ]
+            if summary_only
+            else []
+        )
         manual_compile_evidence_jsonl_count = 0
         if manual_compile_evidence_jsonl_path is not None:
             manual_compile_evidence_jsonl_count = _write_jsonl_rows(
@@ -2932,13 +3436,16 @@ def main(args: "argparse.Namespace") -> None:
         if json_output:
             report = _uk_candidates_report_jsonable(
                 label=label,
-                rows=[],
+                rows=summary_rows,
                 filters=filters_json,
                 inspected_count=0,
                 matched_frontier_count=len(matching_frontier),
                 replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                 summary_only=summary_only,
                 compact_rows=compact_json,
+                emitted_row_count=0,
+                summary_count_limit=summary_count_limit,
+                row_count_limit=row_count_limit,
             )
             if manual_compile_evidence_jsonl_path is not None:
                 report["manual_compile_evidence_jsonl"] = {
@@ -3255,6 +3762,39 @@ def main(args: "argparse.Namespace") -> None:
                         oracle_residual_roots=oracle_residual_roots,
                         malformed_residual_roots=malformed_residual_roots,
                         residual_root_hits=residual_root_hits,
+                        residual_root_hit_counts=residual_inventory[
+                            "residual_root_hit_counts"
+                        ],
+                        residual_root_side_counts=residual_inventory[
+                            "residual_root_side_counts"
+                        ],
+                        residual_candidate_source_pathology_counts=residual_inventory[
+                            "residual_candidate_source_pathology_counts"
+                        ],
+                        residual_candidate_compare_shape_counts=residual_inventory[
+                            "residual_candidate_compare_shape_counts"
+                        ],
+                        residual_candidate_structural_counts=residual_inventory[
+                            "residual_candidate_structural_counts"
+                        ],
+                        residual_candidate_action_counts=residual_inventory[
+                            "residual_candidate_action_counts"
+                        ],
+                        residual_candidate_target_presence_counts=residual_inventory[
+                            "residual_candidate_target_presence_counts"
+                        ],
+                        residual_candidate_target_presence_action_counts=residual_inventory[
+                            "residual_candidate_target_presence_action_counts"
+                        ],
+                        residual_candidate_manual_compile_rule_counts=residual_inventory[
+                            "residual_candidate_manual_compile_rule_counts"
+                        ],
+                        residual_candidate_root_samples=tuple(
+                            residual_inventory["residual_candidate_root_samples"]
+                        ),
+                        residual_candidate_root_samples_omitted=int(
+                            residual_inventory["residual_candidate_root_samples_omitted"]
+                        ),
                         defeated_residual_roots=defeated_residual_roots,
                         status=status,
                         effect_feed_parse_rejections=tuple(parse_rejections),
@@ -3385,6 +3925,8 @@ def main(args: "argparse.Namespace") -> None:
                         replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                         summary_only=summary_only,
                         compact_rows=compact_json,
+                        summary_count_limit=summary_count_limit,
+                        row_count_limit=row_count_limit,
                     )
                 _attach_replay_adjudication_evidence_report(
                     report,
@@ -3639,6 +4181,8 @@ def main(args: "argparse.Namespace") -> None:
                     replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                     summary_only=summary_only,
                     compact_rows=compact_json,
+                    summary_count_limit=summary_count_limit,
+                    row_count_limit=row_count_limit,
                 )
             _attach_replay_adjudication_evidence_report(
                 report,
@@ -3933,6 +4477,39 @@ def main(args: "argparse.Namespace") -> None:
                 oracle_residual_roots=oracle_residual_roots,
                 malformed_residual_roots=malformed_residual_roots,
                 residual_root_hits=residual_root_hits,
+                residual_root_hit_counts=residual_inventory[
+                    "residual_root_hit_counts"
+                ],
+                residual_root_side_counts=residual_inventory[
+                    "residual_root_side_counts"
+                ],
+                residual_candidate_source_pathology_counts=residual_inventory[
+                    "residual_candidate_source_pathology_counts"
+                ],
+                residual_candidate_compare_shape_counts=residual_inventory[
+                    "residual_candidate_compare_shape_counts"
+                ],
+                residual_candidate_structural_counts=residual_inventory[
+                    "residual_candidate_structural_counts"
+                ],
+                residual_candidate_action_counts=residual_inventory[
+                    "residual_candidate_action_counts"
+                ],
+                residual_candidate_target_presence_counts=residual_inventory[
+                    "residual_candidate_target_presence_counts"
+                ],
+                residual_candidate_target_presence_action_counts=residual_inventory[
+                    "residual_candidate_target_presence_action_counts"
+                ],
+                residual_candidate_manual_compile_rule_counts=residual_inventory[
+                    "residual_candidate_manual_compile_rule_counts"
+                ],
+                residual_candidate_root_samples=tuple(
+                    residual_inventory["residual_candidate_root_samples"]
+                ),
+                residual_candidate_root_samples_omitted=int(
+                    residual_inventory["residual_candidate_root_samples_omitted"]
+                ),
                 defeated_residual_roots=defeated_residual_roots,
                 status=status,
                 effect_feed_parse_rejections=tuple(parse_rejections),
@@ -4066,6 +4643,8 @@ def main(args: "argparse.Namespace") -> None:
             replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
             summary_only=summary_only,
             compact_rows=compact_json,
+            summary_count_limit=summary_count_limit,
+            row_count_limit=row_count_limit,
         )
         if manual_compile_evidence_jsonl_path is not None:
             report["manual_compile_evidence_jsonl"] = {
@@ -4112,5 +4691,7 @@ def main(args: "argparse.Namespace") -> None:
                 matched_frontier_count=len(matching_frontier),
                 replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                 summary_only=True,
+                summary_count_limit=summary_count_limit,
+                row_count_limit=row_count_limit,
             )
         )

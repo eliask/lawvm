@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import datetime as dt
+import hashlib
+import sys
+from types import SimpleNamespace
 from typing import Any, cast
 
 from scripts import acquire_uk_corpus
@@ -10,8 +14,25 @@ class _FakeArchive:
         self.store_calls: list[tuple[str, bytes, str]] = []
         self._data: dict[str, bytes] = {}
 
+    def get(self, locator: str) -> bytes | None:
+        return self._data.get(locator)
+
     def has(self, locator: str) -> bool:
         return locator in self._data
+
+    def history(self, locator: str) -> list[object]:
+        data = self._data.get(locator)
+        if data is None:
+            return []
+        return [
+            SimpleNamespace(
+                digest=hashlib.sha256(data).hexdigest(),
+                last_confirmed_at=dt.datetime.now(tz=dt.timezone.utc),
+            )
+        ]
+
+    def locators(self, _pattern: str) -> list[str]:
+        return sorted(self._data)
 
     def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:
         self.store_calls.append((locator, data, storage_class))
@@ -19,9 +40,19 @@ class _FakeArchive:
 
 
 class _FakeHTTP:
-    def __init__(self, status_by_url: dict[str, int]) -> None:
+    def __init__(
+        self,
+        status_by_url: dict[str, int],
+        *,
+        data_by_url: dict[str, bytes] | None = None,
+    ) -> None:
         self.calls: list[str] = []
         self._status_by_url = status_by_url
+        self._data_by_url = data_by_url or {}
+
+    def get(self, url: str) -> bytes | None:
+        data, _status = self.get_with_status(url)
+        return data
 
     def get_with_status(self, url: str) -> tuple[bytes | None, int | None]:
         self.calls.append(url)
@@ -29,6 +60,8 @@ class _FakeHTTP:
         if status in (404, 410):
             return None, status
         if status >= 200 and status < 300:
+            if url in self._data_by_url:
+                return self._data_by_url[url], status
             return b"<xml>" + b"y" * 64 + b"</xml>", status
         return None, status
 
@@ -179,3 +212,105 @@ def test_do_affecting_records_fetch_failure_diagnostic(monkeypatch) -> None:
             "quirks_disposition": "record",
         }
     ]
+
+
+def test_do_refresh_can_force_one_statute_current_and_effects() -> None:
+    sid = "ukpga/2020/17"
+    current_url = f"{acquire_uk_corpus._LEG_BASE}/{sid}/data.xml"
+    feed_url = (
+        f"{acquire_uk_corpus._LEG_BASE}/changes/affected/ukpga/2020/17/"
+        "data.feed?results-count=50&sort=modified"
+    )
+    feed_page_2_url = f"{feed_url}&page=2"
+    feed = (
+        b'<feed xmlns:ukm="http://www.legislation.gov.uk/namespaces/legislation">'
+        b"<ukm:totalPages>2</ukm:totalPages>"
+        b"</feed>"
+    )
+    archive = _FakeArchive()
+    archive.store(current_url, b"<xml>" + b"old" * 30 + b"</xml>")
+    http = _FakeHTTP(
+        {
+            current_url: 200,
+            feed_url: 200,
+            feed_page_2_url: 200,
+        },
+        data_by_url={
+            current_url: b"<xml>" + b"new" * 30 + b"</xml>",
+            feed_url: feed,
+            feed_page_2_url: b"<feed>page2</feed>",
+        },
+    )
+    archive.store_calls.clear()
+
+    result = acquire_uk_corpus.do_refresh(
+        cast(Any, archive),
+        cast(Any, http),
+        statute_ids={sid},
+        force=True,
+    )
+
+    assert result == {"current": 1, "effects": 1}
+    assert http.calls == [current_url, feed_url, feed_page_2_url]
+    assert archive.store_calls == [
+        (current_url, b"<xml>" + b"new" * 30 + b"</xml>", "xml"),
+        (feed_url, feed, "xml"),
+        (feed_page_2_url, b"<feed>page2</feed>", "xml"),
+    ]
+
+
+def test_main_targeted_refresh_skips_corpus_enumeration(monkeypatch, tmp_path, capsys) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeArchive:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def stats(self) -> object:
+            return SimpleNamespace(locator_count=3, total_stored_bytes=1234)
+
+        def close(self) -> None:
+            calls["closed"] = True
+
+    def fake_do_refresh(
+        _archive: object,
+        _http: object,
+        *,
+        statute_ids: set[str] | None,
+        force: bool,
+    ) -> dict[str, int]:
+        calls["statute_ids"] = statute_ids
+        calls["force"] = force
+        return {"current": 1, "effects": 1}
+
+    def fail_enumerate(*_args: object, **_kwargs: object) -> list[dict[str, str]]:
+        raise AssertionError("targeted refresh must not enumerate corpus CSV feeds")
+
+    monkeypatch.setattr(acquire_uk_corpus, "Farchive", FakeArchive)
+    monkeypatch.setattr(acquire_uk_corpus, "_HTTP", lambda delay: object())
+    monkeypatch.setattr(acquire_uk_corpus, "do_refresh", fake_do_refresh)
+    monkeypatch.setattr(acquire_uk_corpus, "_enumerate_type", fail_enumerate)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "acquire_uk_corpus.py",
+            "refresh",
+            "--archive",
+            str(tmp_path / "uk.farchive"),
+            "--statute",
+            "ukpga/2020/17",
+            "--force-refresh",
+        ],
+    )
+
+    acquire_uk_corpus.main()
+
+    assert calls == {
+        "statute_ids": {"ukpga/2020/17"},
+        "force": True,
+        "closed": True,
+    }
+    out = capsys.readouterr().out
+    assert "[refresh] mutable resources" in out
+    assert "current+1  effects+1" in out
