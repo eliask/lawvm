@@ -247,6 +247,7 @@ def _is_schedule_note_ref(ref: str) -> bool:
 
 
 _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
+_CROSSHEADING_TARGET_REPLACEMENT_RULE = "uk_effect_crossheading_target_replacement_text_patch"
 _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anchor_text_patch"
 _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE = (
     "uk_effect_crossheading_and_structural_replacement_split_lowered"
@@ -276,6 +277,26 @@ def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) 
         return None
     replacement = match.group(1).strip()
     replacement = re.sub(r"\s+\.$", "", replacement).strip()
+    return replacement or None
+
+
+def _crossheading_target_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
+    """Return explicit replacement text for a source-owned cross-heading target."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\bfor\s+(?:the\s+)?(?:italic\s+)?(?:heading|cross-heading|cross heading)"
+        r"\s+substitute\s*[—–-]?\s*(?P<replacement>.+?)\s*$",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return None
+    replacement = match.group("replacement").strip()
+    replacement = replacement.strip(" “”\"'‘’")
+    replacement = re.sub(r"^(?:\.\s*)+", "", replacement).strip(" “”\"'‘’")
+    replacement = re.sub(r"(?:\s*\.)+$", "", replacement).strip(" “”\"'‘’")
     return replacement or None
 
 

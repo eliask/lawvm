@@ -254,6 +254,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         extracted_text=extracted_text,
     )
     crossheading_replacement_text = crossheading_context.replacement_text
+    crossheading_replacement_rule_id = crossheading_context.replacement_rule_id
     crossheading_text_patch_fragment = crossheading_context.text_patch_fragment
     crossheading_compound_heading_text = crossheading_context.compound_heading_text
     crossheading_group_repeal_selector = crossheading_context.group_repeal_selector
@@ -407,6 +408,11 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         target=target,
         heading_facet_target=heading_facet_target,
         crossheading_replacement_text=crossheading_replacement_text,
+        crossheading_replacement_observation_rule_id=(
+            crossheading_context.replacement_observation_rule_id
+        ),
+        crossheading_replacement_reason_code=crossheading_context.replacement_reason_code,
+        crossheading_replacement_reason=crossheading_context.replacement_reason,
         crossheading_text_patch_fragment=crossheading_text_patch_fragment,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
@@ -531,7 +537,10 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             {
                 "original": "TEXT_ALL",
                 "replacement": crossheading_replacement_text,
-                "rule_id": _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
+                "rule_id": (
+                    crossheading_replacement_rule_id
+                    or _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE
+                ),
             }
         ]
     elif crossheading_text_patch_fragment is not None:

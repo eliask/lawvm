@@ -13,9 +13,11 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
     _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
+    _CROSSHEADING_TARGET_REPLACEMENT_RULE,
     _crossheading_and_structural_repeal_selector,
     _crossheading_before_anchor_replacement_text,
     _crossheading_before_anchor_text_patch_fragment,
+    _crossheading_target_replacement_text,
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
@@ -41,6 +43,10 @@ from lawvm.uk_legislation.witnesses import (
 @dataclass(frozen=True)
 class UKCrossheadingContext:
     replacement_text: Optional[str]
+    replacement_rule_id: Optional[str]
+    replacement_observation_rule_id: Optional[str]
+    replacement_reason_code: Optional[str]
+    replacement_reason: Optional[str]
     text_patch_fragment: Optional[dict[str, str]]
     compound_heading_text: Optional[str]
     group_repeal_selector: Optional[dict[str, Any]]
@@ -56,12 +62,45 @@ def build_crossheading_context(
     extracted_text: Optional[str],
 ) -> UKCrossheadingContext:
     is_crossheading = _is_crossheading_ref(t_str)
+    before_anchor_replacement_text = (
+        _crossheading_before_anchor_replacement_text(extracted_text)
+        if action == "replace" and is_crossheading
+        else None
+    )
+    target_replacement_text = (
+        _crossheading_target_replacement_text(extracted_text)
+        if action == "replace" and is_crossheading and before_anchor_replacement_text is None
+        else None
+    )
+    replacement_text = before_anchor_replacement_text or target_replacement_text
+    if before_anchor_replacement_text is not None:
+        replacement_rule_id = _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE
+        replacement_observation_rule_id = "uk_effect_crossheading_before_anchor_replacement_lowered"
+        replacement_reason_code = "explicit_crossheading_before_anchor_replacement"
+        replacement_reason = (
+            "UK cross-heading replacement lowered as a typed heading "
+            "facet text patch anchored by the named following provision"
+        )
+    elif target_replacement_text is not None:
+        replacement_rule_id = _CROSSHEADING_TARGET_REPLACEMENT_RULE
+        replacement_observation_rule_id = "uk_effect_crossheading_target_replacement_lowered"
+        replacement_reason_code = "explicit_crossheading_target_replacement"
+        replacement_reason = (
+            "UK effect metadata targets a cross-heading and the source "
+            "contains a full heading substitution; lowering preserves the "
+            "target as a typed heading facet text patch."
+        )
+    else:
+        replacement_rule_id = None
+        replacement_observation_rule_id = None
+        replacement_reason_code = None
+        replacement_reason = None
     return UKCrossheadingContext(
-        replacement_text=(
-            _crossheading_before_anchor_replacement_text(extracted_text)
-            if action == "replace" and is_crossheading
-            else None
-        ),
+        replacement_text=replacement_text,
+        replacement_rule_id=replacement_rule_id,
+        replacement_observation_rule_id=replacement_observation_rule_id,
+        replacement_reason_code=replacement_reason_code,
+        replacement_reason=replacement_reason,
         text_patch_fragment=(
             _crossheading_before_anchor_text_patch_fragment(extracted_text)
             if action == "replace" and is_crossheading
@@ -132,6 +171,9 @@ def refine_crossheading_or_heading_facet_target(
     target: LegalAddress,
     heading_facet_target: bool,
     crossheading_replacement_text: Optional[str],
+    crossheading_replacement_observation_rule_id: Optional[str],
+    crossheading_replacement_reason_code: Optional[str],
+    crossheading_replacement_reason: Optional[str],
     crossheading_text_patch_fragment: Optional[dict[str, str]],
     extracted_el: Optional[ET.Element],
     extracted_text: Optional[str],
@@ -143,12 +185,21 @@ def refine_crossheading_or_heading_facet_target(
         refined_target = LegalAddress(path=refined_target.path, special=FacetKind.HEADING)
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
-            rule_id="uk_effect_crossheading_before_anchor_replacement_lowered",
+            rule_id=(
+                crossheading_replacement_observation_rule_id
+                or "uk_effect_crossheading_before_anchor_replacement_lowered"
+            ),
             family="target_facet_lowering",
-            reason_code="explicit_crossheading_before_anchor_replacement",
+            reason_code=(
+                crossheading_replacement_reason_code
+                or "explicit_crossheading_before_anchor_replacement"
+            ),
             reason=(
-                "UK cross-heading replacement lowered as a typed heading "
-                "facet text patch anchored by the named following provision"
+                crossheading_replacement_reason
+                or (
+                    "UK cross-heading replacement lowered as a typed heading "
+                    "facet text patch anchored by the named following provision"
+                )
             ),
             effect=effect,
             extracted_el=extracted_el,

@@ -24629,6 +24629,55 @@ def test_compile_crossheading_before_paragraph_replace_lowers_to_heading_patch()
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_target_replace_lowers_to_owned_heading_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>121</Pnumber>
+          <Text>For the heading substitute "Appeals".</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_target_replace",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-06",
+        affected_uri="/id/ukpga/2000/17/schedule/6/paragraph/121",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 121 cross-heading",
+        affecting_uri="/id/uksi/2024/356",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="356",
+        affecting_provisions="reg. 4(121)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2024-04-06", "prospective": "false"}],
+    )
+
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("schedule", "6"), ("paragraph", "121")), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
+    assert ops[0].text_patch.replacement == "Appeals"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_crossheading_target_replacement_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_crossheading_target_replacement_lowered"
+    ]
+    assert observations[0]["reason_code"] == "explicit_crossheading_target_replacement"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_crossheading_and_paragraph_replace_splits_titled_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
