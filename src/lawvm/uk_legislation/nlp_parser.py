@@ -66,6 +66,7 @@ UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID = (
 UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID = (
     "uk_effect_anchor_to_end_block_substitution_text_patch"
 )
+UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_patch"
 
 
 def _normalize_quotes(text: str) -> str:
@@ -1730,7 +1731,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     matches_after_child_insert = re.finditer(
-        r"after\s+(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\)\s+insert\s+[“\"'‘](.*?)[”\"'’]",
+        r"after\s+(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\),?\s+"
+        r"insert\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -1740,7 +1742,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             {
                 "original": f"TEXT_AFTER_CHILD_{unit_kind}_{m.group(2).strip()}",
                 "replacement": m.group(3).strip(),
-                "rule_id": "uk_effect_after_child_text_insertion_patch",
+                "rule_id": UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
             }
         )
 
