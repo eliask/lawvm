@@ -45,6 +45,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
         "appropriate_place_definition_entry_insert_unsupported",
+        "appropriate_place_index_entry_insert_unsupported",
         "appropriate_place_insert_unsupported",
         "repeal_schedule_table_source_unsupported",
         "as_if_application_modification_unsupported",
@@ -132,6 +133,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "manual_compile_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
+    ),
+    "appropriate_place_index_entry_insert_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_appropriate_place_index_entry_candidate",
+        "The source inserts an index/list entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact list-entry insertion point instead of inferring it from live text.",
     ),
     "appropriate_place_insert_unsupported": (
         "manual_compile_candidate",
@@ -1061,6 +1067,24 @@ def _looks_like_appropriate_place_definition_entry_insert_instruction(text: str)
     )
 
 
+def _looks_like_appropriate_place_index_entry_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not _looks_like_appropriate_place_insert_instruction(norm):
+        return False
+    if _looks_like_appropriate_place_definition_entry_insert_instruction(norm):
+        return False
+    if not re.search(r"\binsert(?:ed|ion)?\b", norm):
+        return False
+    if re.search(r"\b(?:means|has\s+the\s+meaning|is\s+to\s+be\s+construed)\b", norm):
+        return False
+    return bool(
+        re.search(
+            r"[\"“]?[^\"”]{1,120}[\"”]?\s+paragraph\s+[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\b",
+            norm,
+        )
+    )
+
+
 def _looks_like_repeal_schedule_table_source(
     *,
     extracted_tag: str | None,
@@ -1304,6 +1328,8 @@ def classify_uk_effect_source_pathology(
             return "structural_sibling_insert_unsupported"
         if _looks_like_appropriate_place_definition_entry_insert_instruction(norm_text):
             return "appropriate_place_definition_entry_insert_unsupported"
+        if _looks_like_appropriate_place_index_entry_insert_instruction(norm_text):
+            return "appropriate_place_index_entry_insert_unsupported"
         if _looks_like_appropriate_place_insert_instruction(norm_text):
             return "appropriate_place_insert_unsupported"
         if _looks_like_repeal_schedule_table_source(
