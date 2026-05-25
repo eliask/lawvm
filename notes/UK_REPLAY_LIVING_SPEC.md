@@ -198,7 +198,7 @@ Current UK-specific invariants:
       definition-entry/list-entry compiler proves the carrier, payload
       semantics, and placement. Manual-frontier triage splits this family:
       rows whose extracted source carries a quoted definition-entry payload are
-      `uk_manual_frontier_structural_pseudo_definition_entry_payload_candidate`;
+      `uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate`;
       rows whose source is only a schedule/gateway/header fragment are
       `uk_manual_frontier_structural_pseudo_definition_source_insufficient`.
       A narrower child-substitution lane is owned:

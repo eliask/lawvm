@@ -2060,7 +2060,7 @@ def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_source_insu
     )
 
 
-def test_classify_uk_manual_compile_frontier_keeps_pseudo_definition_payload_candidate() -> None:
+def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_payload_placement_claim() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="added",
         source_pathology="nonstructural_root_gap",
@@ -2077,10 +2077,10 @@ def test_classify_uk_manual_compile_frontier_keeps_pseudo_definition_payload_can
         structural_for_replay=False,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
-        == "uk_manual_frontier_structural_pseudo_definition_entry_payload_candidate"
+        == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
     )
 
 
