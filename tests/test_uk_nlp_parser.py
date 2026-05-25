@@ -2212,6 +2212,21 @@ def test_parse_fragment_substitution_handles_direct_quoted_word_omission_at_end(
     ]
 
 
+def test_parse_fragment_substitution_handles_all_occurrences_word_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "d in subsection (6), the word \u201cqualifying\u201d in each place where it "
+        "occurs is repealed,"
+    )
+
+    assert subs == [
+        {
+            "original": "qualifying",
+            "replacement": "",
+            "rule_id": "uk_effect_all_occurrences_word_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_final_bare_quoted_word_repeal() -> None:
     subs = parse_fragment_substitution('a the “and” at the end of paragraph (aa) is repealed;')
 
