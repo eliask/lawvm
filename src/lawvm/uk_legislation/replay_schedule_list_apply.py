@@ -60,6 +60,9 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PARENTHETICAL_PARAGRAPH_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_GROUP_ANCHOR_RULE_ID = (
     "uk_replay_schedule_list_entry_group_anchor_resolved"
 )
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ORDINAL_RULE_ID = (
+    "uk_replay_schedule_list_entry_anchor_ordinal_resolved"
+)
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID = (
     "uk_replay_schedule_list_entry_alphabetical_position_resolved"
 )
@@ -591,6 +594,8 @@ class UKReplayScheduleListApplyMixin:
         prefix_normalized = False
         article_normalized = False
         parenthetical_paragraph_normalized = False
+        ordinal_resolved = False
+        pre_ordinal_anchor_match_count = 0
         grouped_entry_count = 0
         if not matches:
             matches = [
@@ -631,6 +636,17 @@ class UKReplayScheduleListApplyMixin:
                     )
                 ]
                 parenthetical_paragraph_normalized = len(matches) == 1
+        anchor_ordinal = (
+            selector.get("anchor_ordinal")
+            if isinstance(selector.get("anchor_ordinal"), int)
+            else 0
+        )
+        if len(matches) > 1 and anchor_ordinal > 0:
+            pre_ordinal_anchor_match_count = len(matches)
+            ordinal_index = anchor_ordinal - 1
+            if ordinal_index < len(matches):
+                matches = [matches[ordinal_index]]
+                ordinal_resolved = True
         if not matches:
             grouped_entry_rows: list[tuple[int, UKMutableNode, int, UKMutableNode]] = [
                 (group_idx, group, child_idx, child)
@@ -745,6 +761,26 @@ class UKReplayScheduleListApplyMixin:
                     blocking=False,
                     reason_code="anchor_leading_article_unique",
                     anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
+            )
+        if ordinal_resolved:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ORDINAL_RULE_ID,
+                message=(
+                    "UK replay resolved a schedule-list-entry anchor using the "
+                    "source's explicit ordinal qualifier."
+                ),
+                op=op,
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="anchor_ordinal_unique",
+                    anchor_ordinal=anchor_ordinal,
+                    anchor_match_count=pre_ordinal_anchor_match_count,
                     entry_count=len(entry_rows),
                 ),
             )

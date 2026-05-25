@@ -14,6 +14,19 @@ UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
 UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 
+_ENTRY_ORDINALS = {
+    "first": 1,
+    "1st": 1,
+    "second": 2,
+    "2nd": 2,
+    "third": 3,
+    "3rd": 3,
+    "fourth": 4,
+    "4th": 4,
+    "fifth": 5,
+    "5th": 5,
+}
+
 
 def _strip_schedule_entry_phrase(raw: str) -> str:
     text = " ".join(str(raw or "").split()).strip(" ,;.")
@@ -107,7 +120,8 @@ def _uk_schedule_list_entry_insert_selector(
     target_leaf_kind = _addr_leaf_kind(target)
 
     match = re.search(
-        r"\b(?P<direction>before|after)\s+(?:the\s+)?entry\s+"
+        r"\b(?P<direction>before|after)\s+(?:the\s+)?"
+        r"(?:(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?entry\s+"
         r"(?:relating\s+to|relation\s+to|for)\s+(?P<anchor>.+?)"
         r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)\s*[—–-]?\s*(?P<payload>.+)$",
         text,
@@ -115,7 +129,8 @@ def _uk_schedule_list_entry_insert_selector(
     )
     if match is None:
         match = re.search(
-            r"\binsertion,\s*(?P<direction>before|after)\s+(?:the\s+)?entry\s+"
+            r"\binsertion,\s*(?P<direction>before|after)\s+(?:the\s+)?"
+            r"(?:(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?entry\s+"
             r"(?:relating\s+to|for)\s+(?P<anchor>.+),?\s+of\s+(?P<payload>.+)$",
             text,
             re.I,
@@ -143,6 +158,9 @@ def _uk_schedule_list_entry_insert_selector(
         )
         if selector is not None and re.search(r"\bentry\s+relation\s+to\b", text, re.I):
             selector["source_anchor_form"] = "entry_relation_to_typo"
+        ordinal = match.groupdict().get("ordinal")
+        if selector is not None and ordinal:
+            selector["anchor_ordinal"] = _ENTRY_ORDINALS[ordinal.lower()]
         return selector
 
     match = re.search(

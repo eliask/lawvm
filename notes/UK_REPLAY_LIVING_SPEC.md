@@ -2290,7 +2290,11 @@ Current payload-descendant source-ref invariant:
   proceed with nonblocking
   `uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized`
   only when both the paragraph label `N` and the normalized entry text `X`
-  resolve to one direct entry in that partition. Source forms such
+  resolve to one direct entry in that partition. If source explicitly says
+  `after the second entry relating to X insert Y`, lowering preserves
+  `anchor_ordinal=2` and replay may choose the nth matching direct entry only
+  with nonblocking `uk_replay_schedule_list_entry_anchor_ordinal_resolved`;
+  without the explicit ordinal, multiple matches still block. Source forms such
   as `there is inserted the following entry- ...`, `the insertion, after the
   entry for X, of Y`, and quoted schedule-list anchors like `insert before
   "X"- Y` are part of this family. Explicit `at the appropriate place in
@@ -2307,7 +2311,9 @@ Current payload-descendant source-ref invariant:
   `uk_manual_frontier_schedule_list_entry_candidate`. Current witnesses:
   `asp/2000/7` affected `sch. 3` by `asp/2005/6` `Sch. 3 para. 9(a)`,
   `ssi/2009/286` `art. 2(2)(c)`, `asp/2010/8` `sch. 14 para. 1(b)`,
-  `asp/2005/10` `sch. 4 para. 12`, and `asp/2007/5` `Sch. 5 para. 4`.
+  `asp/2005/10` `sch. 4 para. 12`, `asp/2007/5` `Sch. 5 para. 4`, and
+  ordinal witness `ukpga/1933/12` affected `Sch. 1` by `ukpga/2012/9`
+  `Sch. 9 para. 136(b)`.
   If a source-owned payload on such an explicit carrier consists of multiple
   semicolon-delimited numbered paragraph entries, lowering emits one typed
   schedule-entry insert per entry and chains after-anchors through the inserted
