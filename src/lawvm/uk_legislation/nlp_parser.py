@@ -281,6 +281,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_wherever_occurring_passive_substituted = re.finditer(
+        r"for\s+(?:(?:the\s+)?words?\s+)?(?P<originals>.+?),?\s+"
+        r"wherever\s+occurring,?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"[“”\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_wherever_occurring_passive_substituted:
+        replacement = m.group("replacement").strip()
+        for original in _quoted_terms(m.group("originals")):
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_wherever_occurring_substitution_text_patch",
+                }
+            )
+
     matches_all_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"(?:\(\s*)?in (?:each|both) places?"
@@ -776,6 +794,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_from_beginning_passive_substituted:
+        subs.append(
+            {
+                "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+            }
+        )
+
+    matches_from_beginning_there_shall_be_substituted = re.finditer(
+        r"for\s+(?:the\s+)?words?\s+from\s+the\s+beginning"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+        r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’]\s+"
+        r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_from_beginning_there_shall_be_substituted:
         subs.append(
             {
                 "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
@@ -1787,7 +1823,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         rf"(?:,?\s+where\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+occurring)?"
         r",?\s+to\s+the\s+end"
         r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
-        r"\s+(?:are|is)\s+(?:omitted|repealed)",
+        r"\s+(?:are|is|shall\s+be)\s+(?:omitted|repealed)",
         text,
         re.I,
     )
@@ -1801,6 +1837,21 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
             patch["rule_id"] = "uk_effect_range_to_end_passive_ordinal_repeal_text_patch"
         subs.append(patch)
+
+    matches_passive_repeal_onwards = re.finditer(
+        r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]\s+"
+        r"onwards\s+(?:are|is|shall\s+be)\s+(?:omitted|repealed)",
+        text,
+        re.I,
+    )
+    for m in matches_passive_repeal_onwards:
+        subs.append(
+            {
+                "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
+                "replacement": "",
+                "rule_id": "uk_effect_range_to_end_passive_repeal_text_patch",
+            }
+        )
 
     matches_omit = re.finditer(r"from [“\"'‘](.*?)[”\"'’] to [“\"'‘](.*?)[”\"'’] (?:are omitted|is omitted|omit)", text, re.I)
     for m in matches_omit:
@@ -1859,7 +1910,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_definition_repeal = re.finditer(
         r"(?:the )?definitions? of (?P<terms>.+?)\s+"
-        r"(?:is|are)\s+(?:omitted|repealed)",
+        r"(?:is|are|shall\s+be)\s+(?:omitted|repealed)",
         text,
         re.I,
     )
