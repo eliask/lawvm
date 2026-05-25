@@ -4811,6 +4811,12 @@ Current bench replay-regime invariant:
   `TEXT_BEFORE_CHILD_paragraph_a` and may replace only the explicit target
   node's own lead text when that target has exactly one direct child matching
   the cited child label.
+  If the replacement is carried as a block amendment under the same target
+  label, `uk_effect_before_child_block_text_substitution_patch` may strip that
+  repeated source payload label before lowering to `TEXT_BEFORE_CHILD_*`; this
+  is a source-payload normalization, not permission to admit the whole block as
+  a parent replacement. Current witness: `ukpga/1970/9` affected `s. 50(6)` by
+  `uksi/2009/56 Sch. 1 para. 31(2)`.
   `at the end insert "Y"` and `insert at the end "Y"` lower with
   `uk_effect_at_end_text_insertion_patch` to an append patch (`TEXT_END`), not
   to a synthetic replace-from-empty-to-end selector. Replay appends to the

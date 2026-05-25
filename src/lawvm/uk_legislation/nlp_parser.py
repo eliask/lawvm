@@ -45,6 +45,10 @@ UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_both_subsequent_occurrences_substitution_text_patch"
 )
 UK_FROM_BEGINNING_OMISSION_RULE_ID = "uk_effect_from_beginning_omission_text_patch"
+UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_before_child_text_substitution_patch"
+UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID = (
+    "uk_effect_before_child_block_text_substitution_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -57,6 +61,13 @@ def _strip_inserted_child_label(text: str) -> str:
     if not m:
         return text.strip()
     return m.group(2).strip()
+
+
+def _strip_leading_source_payload_label(replacement: str, *, target_label: str) -> str:
+    label = target_label.strip()
+    if not label:
+        return replacement
+    return re.sub(rf"^\s*{re.escape(label)}\s+", "", replacement, count=1)
 
 
 def _quoted_terms(text: str) -> list[str]:
@@ -982,7 +993,37 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             {
                 "original": f"TEXT_BEFORE_CHILD_{unit_kind}_{m.group(2).strip()}",
                 "replacement": m.group(3).strip(),
-                "rule_id": "uk_effect_before_child_text_substitution_patch",
+                "rule_id": UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
+            }
+        )
+
+    matches_words_before_child_block_substituted = re.finditer(
+        r"for (?:the )?words? before "
+        r"(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\),?\s+"
+        r"substitute\s*[—-]\s+(?P<replacement>.+?)(?:\s+[.;])?$",
+        text,
+        re.I,
+    )
+    for m in matches_words_before_child_block_substituted:
+        replacement = m.group("replacement").strip()
+        if replacement.startswith(("“", '"', "'", "‘")):
+            continue
+        target_label_match = re.search(
+            r"\bin\s+(?:paragraph|sub-paragraph|subsection)\s+\((?P<label>[0-9A-Za-z]+)\)\s*$",
+            text[: m.start()],
+            re.I,
+        )
+        if target_label_match:
+            replacement = _strip_leading_source_payload_label(
+                replacement,
+                target_label=target_label_match.group("label"),
+            )
+        unit_kind = m.group(1).lower().replace("-", "")
+        subs.append(
+            {
+                "original": f"TEXT_BEFORE_CHILD_{unit_kind}_{m.group(2).strip()}",
+                "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
+                "rule_id": UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
             }
         )
 
