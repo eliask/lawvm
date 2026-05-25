@@ -3989,6 +3989,12 @@ Current bench replay-regime invariant:
   repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a
   structural delete and not an unbounded first-match text patch. Witness:
   `asp/2001/2`, affected by `asp/2005/12 s. 51(8)(a)`.
+- From-beginning omissions are bounded text deletions when the source supplies
+  a quoted endpoint, e.g. `omit from the beginning to "X"`. This lowers under
+  `uk_effect_from_beginning_omission_text_patch` as `TEXT_FROM__TO_X` with an
+  empty replacement and remains scoped to the effect-feed target. Current
+  witness: `ukpga/1970/9` affected `s. 20B(2)` by `ukpga/2008/9`
+  `Sch. 36 para. 68(5)`.
 - Effect inspection classifies text-patch rows whose explicit target exists
   but whose non-synthetic selector preimage is absent from both base and oracle
   target text surfaces as

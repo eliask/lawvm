@@ -17,6 +17,7 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.nlp_parser import (
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    UK_FROM_BEGINNING_OMISSION_RULE_ID,
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
@@ -590,6 +591,28 @@ def append_basic_text_rewrite_observations(
                     int(str(fragment.get("occurrence") or "0") or "0")
                     for fragment in fragments
                 ],
+            },
+        )
+    if UK_FROM_BEGINNING_OMISSION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_FROM_BEGINNING_OMISSION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_from_beginning_omission_text_patch",
+            reason=(
+                "UK source text omits words from the beginning of the affected "
+                "target to a quoted endpoint; lowering preserves that as a "
+                "bounded from-beginning deletion scoped to the feed target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
             },
         )
 

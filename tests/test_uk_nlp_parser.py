@@ -2411,6 +2411,20 @@ def test_parse_fragment_substitution_handles_from_beginning_there_shall_be_subst
     ]
 
 
+def test_parse_fragment_substitution_handles_from_beginning_omission() -> None:
+    subs = parse_fragment_substitution(
+        "5 In subsection (2), omit from the beginning to \u201ctaxpayer; and\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_taxpayer; and",
+            "replacement": "",
+            "rule_id": "uk_effect_from_beginning_omission_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_from_the_words_from_beginning_to_substituted() -> None:
     subs = parse_fragment_substitution(
         "a in subsection (1), from the words from the beginning to \u201cdetained\u201d "

@@ -22367,6 +22367,63 @@ def test_compile_the_ordinal_substitution_preserves_bounded_occurrence() -> None
     assert f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_ordinal_substitution_text_patch" in ops[0].provenance_tags
 
 
+def test_compile_from_beginning_omission_lowers_to_bounded_text_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>5</Pnumber>
+          <Text>5 In subsection (2), omit from the beginning to \u201ctaxpayer; and\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-d59475f4ea929a37bbc311c9aabeb98f",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 20B(2)",
+        affecting_uri="/id/ukpga/2008/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="9",
+        affecting_provisions="Sch. 36 para. 68(5)",
+        affecting_title="Finance Act 2008",
+        in_force_dates=[{"date": "2009-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "20b"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM__TO_taxpayer; and"
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_from_beginning_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_from_beginning_omission_text_patch"
+    ]
+    assert lowering_records[0]["family"] == "text_rewrite_lowering"
+    assert lowering_records[0]["reason_code"] == "explicit_from_beginning_omission_text_patch"
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+    assert lowering_records[0]["target"] == "section:20b/subsection:2"
+
+
 def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:
     extracted_el = ET.fromstring(
         f"""
