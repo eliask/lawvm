@@ -15,7 +15,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
 )
-from lawvm.uk_legislation.nlp_parser import US
+from lawvm.uk_legislation.nlp_parser import US, _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID,
@@ -51,6 +51,7 @@ UK_RANGE_INDEPENDENT_END_OCCURRENCE_RULE_ID = (
 UK_SOURCE_RANGE_DEFINITION_ENTRY_INSERT_RULE_ID = (
     "uk_effect_source_range_definition_entry_insert_text_patch"
 )
+UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
     {
@@ -285,6 +286,27 @@ def append_basic_text_rewrite_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="compound_lettered_text_patch_instruction_split",
+            reason=(
+                "UK source text carries multiple lettered word-level amendment "
+                "instructions in one source paragraph; lowering emits one "
+                "bounded text patch per extracted lettered instruction instead "
+                "of treating the paragraph as one broad replacement."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "fragment_count": len(fragment_subs or []),
             },
         )
     if UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID in rule_ids:
@@ -772,6 +794,32 @@ def _separate_source_range_definition_entry_insert_fragments(
                 "source_payload_additional_definition_terms": str(
                     item.get("source_payload_additional_definition_terms") or ""
                 ),
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_compound_lettered_text_replace_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
+            or not original
+            or not replacement
+        ):
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": replacement,
+                "rule_id": rule_id,
             }
         )
     return tuple(fragments)

@@ -21106,6 +21106,75 @@ def test_compile_first_second_occurrence_substitution_preserves_bounded_occurren
     assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
 
 
+def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>2 In section 13 of the 1990 Act, in subsection (1)\u2014
+          a for \u201cor (b)\u201d there is substituted \u201c,(b), (c) or (d)\u201d,
+          and b after \u201cthis Part\u201d there is inserted
+          \u201cor Part I of the Broadcasting Act 1996\u201d.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_compound_lettered_text_patches",
+        effect_type="amended",
+        applied=True,
+        requires_applied=True,
+        modified="2022-04-20",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 13(1)",
+        affecting_uri="/id/ukpga/1996/55",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="55",
+        affecting_provisions="Sch. 10 Pt. 1 para. 2",
+        affecting_title="Broadcasting Act 1996",
+        in_force_dates=[{"date": "2022-04-20", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [str(op.target) for op in ops] == [
+        "section:13/subsection:1",
+        "section:13/subsection:1",
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "or (b)",
+        "this Part",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        ",(b), (c) or (d)",
+        "this Part or Part I of the Broadcasting Act 1996",
+    ]
+    assert {
+        record["rule_id"]
+        for record in lowering_records
+        if record["family"] == "text_rewrite_lowering"
+    } == {"uk_effect_compound_lettered_text_patch_instruction"}
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_compound_lettered_text_patch_instruction"
+        in op.provenance_tags
+        for op in ops
+    )
+
+
 def test_compile_post_quoted_ordinal_substitution_preserves_bounded_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""
