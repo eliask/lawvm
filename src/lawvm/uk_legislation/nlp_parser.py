@@ -617,7 +617,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     # structural child-label range like FROM_(a)_TO_(b).
     matches_range_substituted = re.finditer(
         r"for (?:the )?words? from\s+(?:the\s+(?P<start_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<start>.*?)[”\"'’]"
-        r"(?:(?:\s+where it|,\s+where)\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
+        r"(?:(?:\s+where it|,\s+where(?:\s+it)?)\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
         r"\s+to\s+(?:the\s+(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:(?:,\s+where it|,\s+where)\s+(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
         r"(?:\s+\(?\s*in the (?P<range_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place\s*\)?)?"
@@ -626,6 +626,12 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_range_substituted:
+        if (
+            m.group("ordinal")
+            and m.group("end_ordinal")
+            and m.group("start").strip() == m.group("end").strip()
+        ):
+            continue
         patch = {
             "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
             "replacement": m.group("replacement").strip(),

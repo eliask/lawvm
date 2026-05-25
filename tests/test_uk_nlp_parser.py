@@ -1461,6 +1461,22 @@ def test_parse_fragment_substitution_handles_range_from_first_occurrence() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_range_comma_where_it_occurs() -> None:
+    subs = parse_fragment_substitution(
+        "a for the words from \u201cshall\u201d, where it second occurs, to "
+        "\u201cwhether\u201d substitute \u201cif\u201d, and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_shall_TO_whether",
+            "replacement": "if",
+            "occurrence": "2",
+            "rule_id": "uk_effect_range_occurrence_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_comma_before_substitute() -> None:
     subs = parse_fragment_substitution(
         "for the words from \u201cmeans\u2014\u201d to \u201c(and\u201d, substitute \u201creplacement\u201d"
