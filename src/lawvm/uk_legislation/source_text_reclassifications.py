@@ -150,7 +150,14 @@ _PREFIX_SUBSECTION_PARAGRAPH_WORD_OMISSION_RE = re.compile(
 _PREFIX_CHILD_WORD_OMISSION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
     r"in\s+(?P<child_kind>subsection|paragraph|sub-?paragraph)\s+\(\s*(?P<child_label>[0-9A-Za-z]+)\s*\)"
-    r"\s*,?\s+the\s+words?\s+[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*\.?\s*$",
+    r"\s*,?\s+the\s+words?\s+[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_PREFIX_SECTION_WORD_OMISSION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"in\s+section\s+(?P<section_label>[0-9]+[A-Za-z]?)"
+    r"(?:\s*\(\s*(?P<subsection_label>[0-9A-Za-z]+)\s*\))?\s*,?\s+"
+    r"(?:the\s+words?\s+)?[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _PREFIX_SUBSECTION_CONJOINED_PARAGRAPH_WORD_OMISSION_RE = re.compile(
@@ -252,6 +259,43 @@ def _child_qualified_word_omission_payload_match(
                 "fragment": fragment,
                 "source_child_kind": child_kind,
                 "source_child_label": child_label,
+                "matched_instruction": match.group(0),
+            }
+    if match is None:
+        match = _PREFIX_SECTION_WORD_OMISSION_RE.match(normalized)
+        if match is not None:
+            section_label = _source_child_label(match.group("section_label"))
+            subsection_label = _source_child_label(match.group("subsection_label") or "")
+            target_path = tuple(target.path or ())
+            target_kind = _addr_leaf_kind(target)
+            target_label = _source_child_label(_addr_leaf_label(target) or "")
+            if subsection_label:
+                target_parent_kind = target_path[-2][0] if len(target_path) >= 2 else ""
+                target_parent_label = (
+                    _source_child_label(target_path[-2][1]) if len(target_path) >= 2 else ""
+                )
+                if (
+                    target_parent_kind != "section"
+                    or target_parent_label != section_label
+                    or target_kind != "subsection"
+                    or target_label != subsection_label
+                ):
+                    return None
+                source_kind = "subsection"
+                source_label = subsection_label
+            else:
+                if target_kind != "section" or target_label != section_label:
+                    return None
+                source_kind = "section"
+                source_label = section_label
+            fragment = " ".join(match.group("fragment").split()).strip()
+            if not fragment:
+                return None
+            return {
+                "fragment": fragment,
+                "source_child_kind": source_kind,
+                "source_child_label": source_label,
+                "source_section_label": section_label,
                 "matched_instruction": match.group(0),
             }
     if match is None:

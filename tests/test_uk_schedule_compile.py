@@ -4656,6 +4656,98 @@ def test_compile_metadata_carried_quoted_words_repeal_from_source_fragment() -> 
     ] == ["uk_effect_metadata_carried_quoted_words_repeal_text_patch"]
 
 
+def test_compile_section_qualified_quote_only_word_omission_for_subsection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-1-paragraph-6-a-i">
+          <Pnumber>i</Pnumber>
+          <Text>i in section 36(3A), “section 257BA of the principal Act or”,</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_section_qualified_quote_only_omission_subsection",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-06",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 36(3A)",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 6(a)(i)",
+        affecting_title="Income Tax Act 2007",
+        in_force_dates=[{"date": "2007-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "36"), ("subsection", "3a"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "section 257BA of the principal Act or"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["source_child_kind"] == "subsection"
+    assert lowering_records[-1]["source_section_label"] == "36"
+
+
+def test_compile_child_qualified_word_omission_accepts_semicolon_terminated_row() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in subsection (2), the words “Subject to subsection (3) below,”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_word_omission_semicolon",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2008-02-01",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 17(2)",
+        affecting_uri="/id/ukpga/2008/5",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="5",
+        affecting_provisions="s. 2(a)",
+        affecting_title="Consumers, Estate Agents and Redress Act 2007",
+        in_force_dates=[{"date": "2008-02-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "17"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Subject to subsection (3) below,"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["source_child_kind"] == "subsection"
+    assert lowering_records[-1]["source_child_label"] == "2"
+
+
 def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None:
     extracted_el = ET.fromstring(
         f"""
