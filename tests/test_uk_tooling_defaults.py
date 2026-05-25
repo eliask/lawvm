@@ -743,6 +743,53 @@ def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
     assert args.evidence_jsonl == ".tmp/uk-manual.jsonl"
 
 
+def test_uk_bench_parser_accepts_diagnostic_pattern_summary() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "bench",
+            "-j",
+            "uk",
+            "--show",
+            "demo",
+            "--diagnostic-sample-lane",
+            "lowering",
+            "--diagnostic-pattern-summary",
+        ]
+    )
+
+    assert args.diagnostic_sample_lane == "lowering"
+    assert args.diagnostic_pattern_summary is True
+
+
+def test_uk_bench_diagnostic_preview_pattern_classifies_text_shapes() -> None:
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {
+                "extracted_text_preview": (
+                    "3 In section 115(6), for the entry beginning "
+                    "\u201cHer Majesty's Chief Inspector\u201d, substitute\u2014 \u201cInspectors\u201d."
+                )
+            }
+        )
+        == "entry_beginning_substitution"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {
+                "extracted_text_preview": (
+                    "1 In section 9(3) omit the words following the paragraphs."
+                )
+            }
+        )
+        == "words_following_paragraphs_omission"
+    )
+    assert uk_bench._diagnostic_preview_pattern({"extracted_text_preview": "..."}) == (
+        "literal_ellipsis_source"
+    )
+
+
 def test_uk_candidates_parser_accepts_manual_compile_evidence_jsonl() -> None:
     parser = cli._build_parser()
 

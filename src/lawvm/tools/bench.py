@@ -2617,6 +2617,14 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         metavar="N",
         help="[-j uk --show --diagnostic-sample-lane] maximum sidecar samples to print (default: 5)",
     )
+    bench_p.add_argument(
+        "--diagnostic-pattern-summary",
+        action="store_true",
+        help=(
+            "[-j uk --show --diagnostic-sample-lane] group matched diagnostics "
+            "by extracted source-preview pattern"
+        ),
+    )
     add_uk_replay_regime_arguments(bench_p, help_prefix="[-j uk --replay]")
     bench_p.add_argument(
         "--no-commencement",
