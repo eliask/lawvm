@@ -3749,7 +3749,8 @@ Current bench replay-regime invariant:
   default remains `manual_compile_candidate`, but deterministic frontend
   candidates such as `deterministic_frontend_candidate` may be exported when
   the caller intentionally wants parser/lowering work items rather than human
-  semantic compilation. The JSON/text metadata must disclose the status filter
+  semantic compilation. `actionable` and `all_actionable` expand to both
+  actionable statuses. The JSON/text metadata must disclose the status filter
   used so mixed work queues are not mistaken for manual-only review queues.
 - Saved-bench replay adjudications are a review frontier too.
   `uk-candidates --replay-adjudication-evidence-jsonl PATH` writes the selected

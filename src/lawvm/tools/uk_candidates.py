@@ -21,6 +21,16 @@ _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _RESIDUAL_CANDIDATE_SAMPLE_LIMIT = 5
 _RESIDUAL_CANDIDATE_ROOT_SAMPLE_LIMIT = 10
 _DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES = ("manual_compile_candidate",)
+_ACTIONABLE_MANUAL_COMPILE_EVIDENCE_STATUSES = (
+    "manual_compile_candidate",
+    "deterministic_frontend_candidate",
+)
+_ACTIONABLE_MANUAL_COMPILE_EVIDENCE_ALIASES = frozenset(
+    {
+        "actionable",
+        "all_actionable",
+    }
+)
 
 
 def _primary_frontier_score(result, *, score_mode: str = "auto") -> float:  # noqa: ANN001
@@ -1220,6 +1230,13 @@ def _manual_compile_evidence_statuses_from_args(value: object) -> set[str]:
     statuses = {item.strip() for item in raw_items if item.strip()}
     if not statuses:
         return set(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
+    expanded: set[str] = set()
+    for status in statuses:
+        if status in _ACTIONABLE_MANUAL_COMPILE_EVIDENCE_ALIASES:
+            expanded.update(_ACTIONABLE_MANUAL_COMPILE_EVIDENCE_STATUSES)
+        else:
+            expanded.add(status)
+    statuses = expanded
     return statuses
 
 
