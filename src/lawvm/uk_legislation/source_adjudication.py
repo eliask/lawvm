@@ -1769,6 +1769,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The affecting source names a different Act as the mutation target; the row is not a manual compilation opportunity for the current statute.",
         }
 
+    if blocking_rules & {
+        "uk_effect_repeal_table_quoted_words_text_repeal_unresolved",
+        "uk_effect_repeal_table_structural_repeal_unresolved",
+    }:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_repeal_table_candidate",
+            "reason": "The row depends on an unresolved repeal schedule/table source; a claim or future grouped repeal-table compiler must prove the exact extent row, target split, and target coverage before replay.",
+        }
+
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and any(
