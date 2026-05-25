@@ -553,6 +553,20 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                     for c in range(ord(s_let), ord(e_let) + 1):
                         all_parts.append(f"{prefix} {base}{chr(c)}".strip())
                     continue
+                if (
+                    s_let
+                    and e_let
+                    and len(s_let) == len(e_let) == 2
+                    and s_let[0] == e_let[0]
+                    and s_let[1].isalpha()
+                    and e_let[1].isalpha()
+                    and ord(e_let[1]) >= ord(s_let[1])
+                    and ord(e_let[1]) - ord(s_let[1]) < 26
+                ):
+                    stem = s_let[0]
+                    for c in range(ord(s_let[1]), ord(e_let[1]) + 1):
+                        all_parts.append(f"{prefix} {base}{stem}{chr(c)}".strip())
+                    continue
 
             # Mixed numeric -> alphanumeric range: "s. 60-61A" expands to
             # "s. 60", "s. 61", "s. 61A".
