@@ -2715,6 +2715,13 @@ Current payload-descendant source-ref invariant:
   remains unlowered. Current witnesses: `ukpga/1970/9`
   `key-466ee402020468dcf15367414cc067ea` and `ukpga/1996/61`
   `key-44e4624f0a59a184cffe26bacefd2d6a`.
+- Child-qualified range substitutions such as `for the words in subsection
+  (1) from "X" to "Y" there shall be substituted "Z"` lower under
+  `uk_effect_child_qualified_range_substitution_text_patch` only when the
+  source child label exactly matches the effect target. The emitted selector
+  is the bounded `TEXT_FROM_X_TO_Y` range; no parent or sibling target is
+  searched if the child label disagrees. Current witness: `ukpga/1949/88`
+  `key-762547a27bcc9bde8bed140b54c8f5dc`.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
   there shall be substituted "..."` or active
   `for sub-paragraphs (i) and (ii) substitute "..."` are classified as

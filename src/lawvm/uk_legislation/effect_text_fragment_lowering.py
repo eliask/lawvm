@@ -65,6 +65,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     append_source_carried_substitution_rewrite_observations,
     append_source_carried_tail_rewrite_observations,
     lower_labeled_child_end_range_selector,
+    UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
     UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
@@ -392,6 +393,14 @@ def _extract_text_fragment_substitutions(
         )
         if interpretation_entry_repeals:
             subs = list(interpretation_entry_repeals)
+    if not subs:
+        child_qualified_range_substitution = _effect_child_qualified_range_substitution_fragment(
+            effect=effect,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if child_qualified_range_substitution is not None:
+            subs = [child_qualified_range_substitution]
     if not subs:
         after_inserted_by_sibling = _fragment_substitution_after_words_inserted_by_sibling(
             extracted_el=extracted_el,
@@ -860,3 +869,45 @@ def _effect_interpretation_entries_relating_repeal_fragments(
             }
         )
     return tuple(fragments)
+
+
+def _effect_child_qualified_range_substitution_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word substituted", "words substituted", "substituted for words"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = re.search(
+        r"\bfor\s+the\s+words\s+in\s+"
+        r"(?P<kind>subsection|paragraph|sub-?paragraph)\s*"
+        r"\(\s*(?P<label>[0-9A-Za-z]+)\s*\)\s+"
+        r"from\s+[“\"](?P<start>.*?)[”\"]\s+to\s+[“\"](?P<end>.*?)[”\"]\s+"
+        r"(?:there\s+shall\s+be\s+substituted|substitute)\s+[“\"](?P<replacement>.*?)[”\"]",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return None
+    source_kind = match.group("kind").replace("-", "").lower()
+    source_kind = "subparagraph" if source_kind == "subparagraph" else source_kind
+    source_label = _clean_num(str(match.group("label") or ""))
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if source_kind != target_kind or not source_label or source_label != target_label:
+        return None
+    start = " ".join(match.group("start").split()).strip()
+    end = " ".join(match.group("end").split()).strip()
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not start or not end or not replacement:
+        return None
+    return {
+        "original": f"TEXT_FROM_{start}_TO_{end}",
+        "replacement": replacement,
+        "rule_id": UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
+    }
