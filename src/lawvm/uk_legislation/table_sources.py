@@ -203,6 +203,33 @@ def _uk_repeal_table_enactment_matches_effect(cell_text: str, effect: UKEffectRe
     return bool(_uk_repeal_table_enactment_match_basis(cell_text, effect))
 
 
+def _uk_repeal_table_enactment_match_cell(
+    row: Sequence[str],
+    *,
+    enactment_idx: int,
+    extent_idx: int,
+    effect: UKEffectRecord,
+    identity_cells: Sequence[str] | None = None,
+) -> tuple[str, str]:
+    primary_cell = row[enactment_idx] if enactment_idx < len(row) else ""
+    primary_basis = _uk_repeal_table_enactment_match_basis(primary_cell, effect)
+    if primary_basis:
+        return primary_cell, primary_basis
+    if identity_cells is None:
+        identity_cells = tuple(
+            cell
+            for idx, cell in enumerate(row)
+            if idx != extent_idx and cell.strip()
+        )
+    combined_cell = " | ".join(identity_cells)
+    if combined_cell == primary_cell:
+        return primary_cell, ""
+    combined_basis = _uk_repeal_table_enactment_match_basis(combined_cell, effect)
+    if combined_basis:
+        return combined_cell, f"combined_identity_cells_{combined_basis}"
+    return primary_cell, ""
+
+
 def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
     enactment_idx: int | None = None
     extent_idx: int | None = None
@@ -558,6 +585,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         last_enactment_cell = ""
+        last_identity_cells: tuple[str, ...] = ()
         for row in rows[1:]:
             if len(row) >= max(enactment_idx, extent_idx) + 1:
                 enactment_cell = row[enactment_idx]
@@ -566,14 +594,27 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                     last_enactment_cell = enactment_cell
                 elif last_enactment_cell:
                     enactment_cell = last_enactment_cell
+                identity_cells = tuple(
+                    cell
+                    for idx, cell in enumerate(row)
+                    if idx != extent_idx and cell.strip()
+                )
+                if identity_cells:
+                    last_identity_cells = identity_cells
+                elif last_identity_cells:
+                    identity_cells = last_identity_cells
             elif len(row) == 1 and last_enactment_cell:
                 enactment_cell = last_enactment_cell
                 extent_cell = row[0]
+                identity_cells = last_identity_cells or (last_enactment_cell,)
             else:
                 continue
-            enactment_match_basis = _uk_repeal_table_enactment_match_basis(
-                enactment_cell,
-                effect,
+            enactment_cell, enactment_match_basis = _uk_repeal_table_enactment_match_cell(
+                row,
+                enactment_idx=enactment_idx,
+                extent_idx=extent_idx,
+                effect=effect,
+                identity_cells=identity_cells,
             )
             if not enactment_match_basis:
                 continue
@@ -806,6 +847,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         last_enactment_cell = ""
+        last_identity_cells: tuple[str, ...] = ()
         for row in rows[1:]:
             if len(row) >= max(enactment_idx, extent_idx) + 1:
                 enactment_cell = row[enactment_idx]
@@ -814,14 +856,27 @@ def _uk_table_driven_repeal_table_structural_repeal(
                     last_enactment_cell = enactment_cell
                 elif last_enactment_cell:
                     enactment_cell = last_enactment_cell
+                identity_cells = tuple(
+                    cell
+                    for idx, cell in enumerate(row)
+                    if idx != extent_idx and cell.strip()
+                )
+                if identity_cells:
+                    last_identity_cells = identity_cells
+                elif last_identity_cells:
+                    identity_cells = last_identity_cells
             elif len(row) == 1 and last_enactment_cell:
                 enactment_cell = last_enactment_cell
                 extent_cell = row[0]
+                identity_cells = last_identity_cells or (last_enactment_cell,)
             else:
                 continue
-            enactment_match_basis = _uk_repeal_table_enactment_match_basis(
-                enactment_cell,
-                effect,
+            enactment_cell, enactment_match_basis = _uk_repeal_table_enactment_match_cell(
+                row,
+                enactment_idx=enactment_idx,
+                extent_idx=extent_idx,
+                effect=effect,
+                identity_cells=identity_cells,
             )
             if not enactment_match_basis:
                 continue
@@ -1374,18 +1429,29 @@ def _uk_container_label_body_mentions_label(body: str, wanted: str) -> bool:
 
 
 def _uk_section_label_in_simple_range(text: str, label: str) -> bool:
-    """Return true when a numeric section label falls inside `sections 26 to 31`."""
+    """Return true when a section label is owned by a simple source range."""
 
-    if not re.fullmatch(r"\d+", label or ""):
+    wanted_label = re.sub(r"[^0-9a-z]", "", (label or "").lower())
+    if not wanted_label:
         return False
-    wanted = int(label)
     for match in re.finditer(
-        r"\bsections?\s+(?P<start>\d+)\s*(?:to|-|–|—)\s*(?P<end>\d+)\b",
+        r"\bsections?\s+(?P<start>\d+[a-z]?)\s*(?:to|-|–|—)\s*(?P<end>\d+[a-z]?)\b",
         text or "",
         flags=re.I,
     ):
-        start = int(match.group("start"))
-        end = int(match.group("end"))
+        start_label = match.group("start").lower()
+        end_label = match.group("end").lower()
+        if wanted_label in {start_label, end_label}:
+            return True
+        if (
+            not wanted_label.isdigit()
+            or not start_label.isdigit()
+            or not end_label.isdigit()
+        ):
+            continue
+        wanted = int(wanted_label)
+        start = int(start_label)
+        end = int(end_label)
         low = min(start, end)
         high = max(start, end)
         if low <= wanted <= high:
