@@ -756,13 +756,13 @@ def test_uk_candidates_parser_accepts_manual_compile_evidence_statuses() -> None
             "--manual-compile-evidence-status",
             "manual_compile_candidate",
             "--manual-compile-evidence-status",
-            "deterministic_frontend_candidate",
+            "actionable",
         ]
     )
 
     assert args.manual_compile_evidence_status == [
         "manual_compile_candidate",
-        "deterministic_frontend_candidate",
+        "actionable",
     ]
 
 

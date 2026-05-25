@@ -30,6 +30,7 @@ from lawvm.tools.uk_candidates import (
     _include_candidate_row,
     _load_saved_bench_run,
     _matches_filters,
+    _manual_compile_evidence_statuses_from_args,
     _matching_frontier,
     _primary_frontier_score,
     _print_uk_candidates_text_summary,
@@ -243,6 +244,22 @@ def test_row_matches_claim_template_status_uses_candidate_counts() -> None:
     assert _row_matches_claim_template_status(row, "available") is True
     assert _row_matches_claim_template_status(row, "not_available") is False
     assert _row_matches_claim_template_status({}, "available") is False
+
+
+def test_manual_compile_evidence_status_actionable_alias_expands_review_queue() -> None:
+    assert _manual_compile_evidence_statuses_from_args(None) == {
+        "manual_compile_candidate"
+    }
+    assert _manual_compile_evidence_statuses_from_args(["actionable"]) == {
+        "manual_compile_candidate",
+        "deterministic_frontend_candidate",
+    }
+    assert _manual_compile_evidence_statuses_from_args(
+        ["manual_compile_candidate", "all_actionable"]
+    ) == {
+        "manual_compile_candidate",
+        "deterministic_frontend_candidate",
+    }
 
 
 def test_filtered_frontier_keeps_only_core_filtered_rows_sorted_by_frontier_score() -> None:

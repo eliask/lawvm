@@ -4070,7 +4070,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "with --manual-compile-evidence-jsonl, export rows with this "
             "manual compile frontier status; repeatable (default: "
-            "manual_compile_candidate)"
+            "manual_compile_candidate; use actionable for manual_compile_candidate "
+            "+ deterministic_frontend_candidate)"
         ),
     )
     uk_candidates_p.add_argument(
