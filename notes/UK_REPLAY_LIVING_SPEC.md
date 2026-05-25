@@ -2991,6 +2991,11 @@ Current payload-descendant source-ref invariant:
   `Sections 3 to 4A.`, may corroborate exact endpoint targets (`3` or `4A`).
   They must not infer interior alphanumeric membership such as section `4`
   without a separate grouped-feed or live-structure range expansion claim.
+- Repeal-table descendant phrasing in reversed order, such as
+  `Paragraph (c) of section 85B(2).`, may corroborate the exact descendant
+  target only when the section, subsection, and paragraph labels all match.
+  Nearby paragraph labels remain unresolved; this rule is target matching, not
+  a fallback to a unique live child.
 - Three-column repeal tables with separate `Reference`, `Short title or title`,
   and `Extent of repeal` columns may combine the non-extent identity cells for
   affected-Act matching when the reference cell alone is an old-style citation

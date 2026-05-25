@@ -1127,6 +1127,12 @@ def _uk_cell_has_section_descendant_scope(
     wanted = [label.lower() for label in descendant_labels if label]
     if not wanted:
         return True
+    if _uk_cell_has_reversed_section_descendant_scope(
+        scope_text,
+        section=section,
+        descendant_labels=wanted,
+    ):
+        return True
 
     explicit_ref_re = re.compile(rf"\b{section_pat}\s*((?:\([^)]*\)\s*)+)", re.I)
     for match in explicit_ref_re.finditer(scope_text):
@@ -1170,6 +1176,59 @@ def _uk_cell_has_section_descendant_scope(
         if matched_all:
             return True
 
+    return False
+
+
+def _uk_cell_has_reversed_section_descendant_scope(
+    scope_text: str,
+    *,
+    section: str,
+    descendant_labels: Sequence[str],
+) -> bool:
+    """Match source-owned phrasing like `paragraph (c) of section 85B(2)`."""
+    section_pat = re.escape(section.lower())
+    wanted = [label.lower() for label in descendant_labels if label]
+    subsection = wanted[0] if wanted else ""
+    paragraph = wanted[1] if len(wanted) >= 2 else ""
+    subparagraph = wanted[2] if len(wanted) >= 3 else ""
+    if subsection:
+        subsection_pat = re.escape(subsection)
+        if paragraph:
+            paragraph_pat = re.escape(paragraph)
+            if re.search(
+                rf"\b(?:paragraph|para)\.?\s*\(\s*{paragraph_pat}\s*\)\s+"
+                rf"of\s+section\s+{section_pat}\s*\(\s*{subsection_pat}\s*\)",
+                scope_text,
+                flags=re.I,
+            ):
+                if not subparagraph:
+                    return True
+                subparagraph_pat = re.escape(subparagraph)
+                return re.search(
+                    rf"\b(?:sub-?paragraph|subpara)\.?\s*\(\s*{subparagraph_pat}\s*\)",
+                    scope_text,
+                    flags=re.I,
+                ) is not None
+            if re.search(
+                rf"\b(?:paragraph|para)\.?\s*\(\s*{paragraph_pat}\s*\)\s+"
+                rf"of\s+subsection\s*\(\s*{subsection_pat}\s*\)"
+                rf"(?:(?!\bsection\b).){{0,120}}\bsection\s+{section_pat}\b",
+                scope_text,
+                flags=re.I,
+            ):
+                if not subparagraph:
+                    return True
+                subparagraph_pat = re.escape(subparagraph)
+                return re.search(
+                    rf"\b(?:sub-?paragraph|subpara)\.?\s*\(\s*{subparagraph_pat}\s*\)",
+                    scope_text,
+                    flags=re.I,
+                ) is not None
+        return re.search(
+            rf"\bsubsection\s*\(\s*{subsection_pat}\s*\)\s+of\s+section\s+{section_pat}\b",
+            scope_text,
+            flags=re.I,
+        ) is not None
     return False
 
 
