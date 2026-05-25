@@ -266,6 +266,81 @@ def test_parse_fragment_substitution_handles_respectively_there_is_substituted()
     ]
 
 
+def test_parse_fragment_substitution_handles_respectively_in_each_place_series() -> None:
+    subs = parse_fragment_substitution(
+        "h in paragraph 7, for “Director” (in each place), “he” (in each place) "
+        "and “him” there is substituted “OFT”, “it” and “it” respectively, and, "
+        "in the cross-heading before that paragraph, for “ Director ” there is "
+        "substituted “ OFT ”;"
+    )
+
+    assert subs == [
+        {
+            "original": "Director",
+            "replacement": "OFT",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "he",
+            "replacement": "it",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "him",
+            "replacement": "it",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": " Director ",
+            "replacement": " OFT ",
+        },
+    ]
+
+
+def test_parse_fragment_substitution_handles_respectively_four_term_series() -> None:
+    subs = parse_fragment_substitution(
+        "ii for “Director” (in each place), “he” (in each place), “his” "
+        "(in each place) and “Director's” there is substituted “OFT”, “it”, "
+        "“its” and “OFT's” respectively;"
+    )
+
+    assert subs == [
+        {
+            "original": "Director",
+            "replacement": "OFT",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "he",
+            "replacement": "it",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "his",
+            "replacement": "its",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "Director's",
+            "replacement": "OFT's",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+    ]
+
+
+def test_parse_fragment_substitution_keeps_unqualified_respectively_series_blocked() -> None:
+    subs = parse_fragment_substitution(
+        "for “Director” and “Secretary” there is substituted “OFT” and “Authority” respectively"
+    )
+
+    assert subs == [
+        {
+            "original": "Director” and “Secretary",
+            "replacement": "OFT",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_nested_quote_substitution() -> None:
     subs = parse_fragment_substitution(
         "iii for the words \u201ca medical practitioner (the \u201cnominated medical "
