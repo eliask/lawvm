@@ -31703,6 +31703,12 @@ def test_pipeline_compile_ops_rejects_anonymous_block_amendment_payload_descenda
     assert source_rows[0]["extracted_label"] == "b"
     assert source_rows[0]["extracted_text_preview"] == "b require the offender to do anything described in the order."
     assert source_rows[0]["amendment_container_tag"] == "BlockAmendment"
+    assert source_rows[0]["source_instruction_ancestor_tag"] == "P3"
+    assert source_rows[0]["source_instruction_ancestor_id"] == "section-175-2-a"
+    assert source_rows[0]["source_instruction_ancestor_label"] == "a"
+    assert source_rows[0]["source_instruction_ancestor_text_preview"].startswith(
+        "a for subsection (1) substitute"
+    )
     assert source_rows[0]["blocking"] is True
     assert source_rows[0]["strict_disposition"] == "block"
     assert source_rows[0]["quirks_disposition"] == "record"

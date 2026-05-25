@@ -426,6 +426,10 @@ def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
     extracted_label: str,
     extracted_text_preview: str,
     amendment_container_tag: str,
+    source_instruction_ancestor_tag: str,
+    source_instruction_ancestor_id: str,
+    source_instruction_ancestor_label: str,
+    source_instruction_ancestor_text_preview: str,
 ) -> dict[str, Any]:
     return {
         "rule_id": "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
@@ -440,6 +444,10 @@ def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
         "extracted_label": extracted_label,
         "extracted_text_preview": extracted_text_preview,
         "amendment_container_tag": amendment_container_tag,
+        "source_instruction_ancestor_tag": source_instruction_ancestor_tag,
+        "source_instruction_ancestor_id": source_instruction_ancestor_id,
+        "source_instruction_ancestor_label": source_instruction_ancestor_label,
+        "source_instruction_ancestor_text_preview": source_instruction_ancestor_text_preview,
         "reason": (
             "UK effects metadata named an affecting source provision, but greedy "
             "source extraction resolved the reference to an anonymous descendant "
