@@ -90,6 +90,9 @@ UK_RANGE_INDEPENDENT_END_OCCURRENCE_RULE_ID = (
 UK_SOURCE_RANGE_DEFINITION_ENTRY_INSERT_RULE_ID = (
     "uk_effect_source_range_definition_entry_insert_text_patch"
 )
+UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID = (
+    "uk_effect_interpretation_entries_relating_repeal_text_patch"
+)
 UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -536,6 +539,33 @@ def append_basic_text_rewrite_observations(
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
                 "tail_connector": str(primary.get("tail_connector") or ""),
+            },
+        )
+    if UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="interpretation_entries_relating_definition_repeal_lowered",
+            reason=(
+                "UK source text repeals entries relating to named terms inside "
+                "an explicitly marked interpretation provision; lowering "
+                "preserves each named term as a bounded definition-entry delete "
+                "selector instead of deleting bare words or treating table "
+                "entry wording as a host-text patch."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "definition_entry_selectors": tuple(
+                    str(fragment.get("original") or "")
+                    for fragment in fragment_subs or []
+                    if str(fragment.get("rule_id") or "")
+                    == UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID
+                ),
             },
         )
     if UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID in rule_ids:
@@ -1358,11 +1388,10 @@ def _separate_definition_repeal_fragments(
         original = str(item.get("original") or "")
         replacement = str(item.get("replacement") or "")
         rule_id = str(item.get("rule_id") or "")
-        if (
-            rule_id != "uk_effect_definition_entry_repeal_text_patch"
-            or replacement
-            or not original.startswith("TEXT_DEFINITION_ENTRY_")
-        ):
+        if rule_id not in {
+            "uk_effect_definition_entry_repeal_text_patch",
+            UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
+        } or replacement or not original.startswith("TEXT_DEFINITION_ENTRY_"):
             return ()
         fragments.append(
             {

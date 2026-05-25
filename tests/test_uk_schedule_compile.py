@@ -8032,6 +8032,135 @@ def test_compile_multiple_declarative_definition_entry_repeals_preserves_each_se
     )
 
 
+def test_compile_interpretation_entries_relating_repeal_preserves_each_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-5-14">
+          <Pnumber>14</Pnumber>
+          <Text>14 In section 108(1)(interpretation), the entries relating to the Hospital Trust and the Medical Practices Committee are repealed.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_interpretation_entries_relating_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 108(1)",
+        affecting_uri="/id/asp/2003/4",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="4",
+        affecting_provisions="sch. 4 para. 5(14)",
+        affecting_title="Primary Medical Services (Scotland) Act 2003",
+        in_force_dates=[{"date": "2024-04-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_REPEAL,
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "TEXT_DEFINITION_ENTRY_the Hospital Trust",
+        "TEXT_DEFINITION_ENTRY_the Medical Practices Committee",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_interpretation_entries_relating_repeal_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_interpretation_entries_relating_repeal_text_patch"
+        and record["blocking"] is False
+        and tuple(record["definition_entry_selectors"])
+        == (
+            "TEXT_DEFINITION_ENTRY_the Hospital Trust",
+            "TEXT_DEFINITION_ENTRY_the Medical Practices Committee",
+        )
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1978/29",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="108",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "“the Hospital Trust” has the meaning indicated in section 11; "
+                                "“kept term” means a retained term; "
+                                "“the Medical Practices Committee” has the meaning indicated in section 3;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    assert replayed.body.children[0].children[0].text == (
+        "“kept term” means a retained term;"
+    )
+
+
+def test_compile_entries_relating_repeal_does_not_lower_table_entries() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-1-paragraph-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In the Table, the entries relating to the Hospital Trust and the Medical Practices Committee are repealed.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entries_relating_repeal_negative",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 108(1)",
+        affecting_uri="/id/asp/2003/4",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="4",
+        affecting_provisions="sch. 1 para. 2",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2024-04-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_interpretation_entries_relating_repeal_text_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_definition_child_repeal_uses_bounded_definition_child_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
