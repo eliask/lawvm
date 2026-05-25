@@ -561,6 +561,8 @@ families,
 `uk_manual_frontier_source_carried_structured_text_patch_candidate`,
 `definition_child_and_tail_substitution` for
 `uk_manual_frontier_definition_child_and_tail_substitution_candidate`,
+`definition_child_structural_substitution` for
+`uk_manual_frontier_definition_child_structural_substitution_candidate`,
 `structural_child_range_substitution` for
 `uk_manual_frontier_structural_child_range_substitution_candidate`,
 `definition_entry_insert` for
@@ -587,6 +589,12 @@ term, definition child label, trailing connective, and replacement preview for
 sources that substitute a definition child together with the `and`/`or` tail at
 the end of that child. They are intentionally non-executable until a claim or
 future compiler owns both the definition-child text boundary and the
+post-child-tail boundary.
+`definition_child_structural_substitution` templates carry the parsed
+definition term, definition child label, included trailing connective when the
+source names one, and replacement preview for sources that substitute a
+definition child with structural payload. They are intentionally non-executable
+until a claim or compiler owns the replacement child shape and proves the
 post-child-tail boundary.
 `table_surface_mutation` templates carry `source_target_surface`,
 `source_target_address`, and `table_entry_shape` when lowering has identified
