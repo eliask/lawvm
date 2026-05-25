@@ -1534,6 +1534,27 @@ def test_classify_uk_manual_compile_frontier_marks_empty_type_whole_act_out_of_s
     )
 
 
+def test_classify_uk_manual_compile_frontier_marks_whole_act_text_patch_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="whole_act_word_level_text_patch_unsupported",
+        extracted_tag="P3",
+        extracted_text='for “EEA state” wherever it occurs substitute “ EEA State ” ; and',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_whole_act_word_level_text_patch_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_appropriate_place_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -3339,6 +3360,23 @@ def test_classify_uk_effect_empty_type_as_if_word_omission_rejected() -> None:
     )
 
     assert pathology == "temporary_as_if_word_omission_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_whole_act_word_level_text_patch_rejected() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text='for “EEA state” wherever it occurs substitute “ EEA State ” ; and',
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["/whole_act"],
+        lowering_rule_ids=["uk_effect_whole_act_word_level_text_patch_rejected"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "whole_act_word_level_text_patch_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 

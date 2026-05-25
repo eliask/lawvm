@@ -70,6 +70,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "non_substantive_shell_payload",
         "range_to_container_target_unsupported",
         "temporary_as_if_word_omission_unsupported",
+        "whole_act_word_level_text_patch_unsupported",
     }
 )
 UK_EFFECT_COMPARE_SHAPE_CLASSES = frozenset(
@@ -231,6 +232,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "manual_compile_candidate",
         "uk_manual_frontier_schedule_note_candidate",
         "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
+    ),
+    "whole_act_word_level_text_patch_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
+        "The source/effect row claims a word-level text rewrite across the whole Act; a future compiler must own document-wide text-patch semantics instead of sending it to ordinary replay.",
     ),
 }
 _UK_SOURCE_CONTAINER_EID_CHILD_STARTS = {
@@ -1414,6 +1420,8 @@ def classify_uk_effect_source_pathology(
             return "broad_schedule_flat_payload_unsupported"
         if "uk_effect_empty_type_as_if_words_omitted_rejected" in lowering_rules:
             return "temporary_as_if_word_omission_unsupported"
+        if "uk_effect_whole_act_word_level_text_patch_rejected" in lowering_rules:
+            return "whole_act_word_level_text_patch_unsupported"
         if "uk_effect_commencement_source_rejected" in lowering_rules:
             return "commencement_effect_out_of_scope"
         if _looks_like_conditional_temporal_repeal_source(norm_text):
