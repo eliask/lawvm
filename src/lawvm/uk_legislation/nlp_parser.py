@@ -468,7 +468,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"\(?\s*in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"
         r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s*\)?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
-        r"\s+[“”\"'‘](.*?)[”\"'’]",
+        r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )

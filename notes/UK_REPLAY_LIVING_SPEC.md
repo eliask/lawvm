@@ -2142,6 +2142,13 @@ Current payload-descendant source-ref invariant:
   bounded occurrence selector, and is not an all-occurrences rewrite. Current
   witness: `asp/2002/3` affected `s. 30(4)` by `asp/2005/3`
   `s. 21(2)(c)(ii)`.
+- the same passive ordinal-place family may include the replacement wrapper
+  `the words`, for example `for the words "X", in the first place where they
+  occur, there shall be substituted the words "Y"`. This remains a bounded
+  occurrence text replacement under
+  `uk_effect_post_quoted_ordinal_substitution_text_patch`, not a source-shape
+  repair. Current witness: `ukpga/1970/9` affected `s. 8A(1)` by
+  `ukpga/1995/4` `s. 103(3)(b)`.
 - the parser may lower `for the words from "X" where it first appears to the
   end substitute- Y` where `Y` is unquoted block text to `TEXT_FROM_X_TO_END`
   with the recorded start occurrence using
