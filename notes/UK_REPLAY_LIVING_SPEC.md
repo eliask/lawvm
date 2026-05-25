@@ -2604,12 +2604,14 @@ Current payload-descendant source-ref invariant:
   the insertion boundary; unresolved boundaries emit
   `uk_replay_table_column_insert_unresolved`. Other table-entry claims such as
   source-context-free `after that entry insert-`, flat numbered-entry payloads
-  without a source table row, and appropriate-place table insertions remain
-  `table_entry_target_unsupported`. The manual frontier classifier separates
-  deictic row placement, column insertion, appropriate-place table placement,
-  and generic table-entry candidates so future compilers can have distinct
-  proof obligations. Replay must not flatten any table amendment into the host
-  provision body just to remove a benchmark residual.
+  without a source table row, affected-table `at the end insert- ...` flat
+  payloads, and appropriate-place table insertions remain
+  `table_entry_target_unsupported` or generic table-entry manual-frontier
+  candidates. The manual frontier classifier separates deictic row placement,
+  column insertion, appropriate-place table placement, and generic table-entry
+  candidates so future compilers can have distinct proof obligations. Replay
+  must not flatten any table amendment into the host provision body just to
+  remove a benchmark residual.
 - schedule-list table-row insertions may inherit their anchor from the parent
   instruction when the extracted source element is only the `BlockAmendment`
   table payload. The parent must explicitly say `before/after the entry

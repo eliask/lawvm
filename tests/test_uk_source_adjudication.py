@@ -3010,6 +3010,28 @@ def test_classify_uk_manual_frontier_overlap_table_entry_candidate() -> None:
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
+def test_classify_uk_manual_frontier_table_target_end_insert_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="at the end insert- Section 75(5) of ITTOIA 2005.",
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "original_affected_provisions": "s. 98 Table",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
+
+
 def test_classify_uk_manual_frontier_deictic_table_entry_candidate() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
