@@ -2047,6 +2047,21 @@ def test_parse_fragment_substitution_handles_insert_text_at_end_reverse_order() 
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_new_line_unquoted_insert() -> None:
+    subs = parse_fragment_substitution(
+        "2 In section 12AA(6), at the end (and on a new line) insert\u2014 "
+        "But see section 12ABZA."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "But see section 12ABZA",
+            "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_passive_word_inserted_at_end() -> None:
     subs = parse_fragment_substitution(
         "a the word \u201cand\u201d shall be inserted at the end of paragraph (a); and"

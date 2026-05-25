@@ -4855,6 +4855,11 @@ Current bench replay-regime invariant:
   when the target is a container, preserving existing text and children. It
   must not flatten the target subtree or replace the whole target with only
   the inserted tail.
+  Unquoted dash payloads such as `at the end (and on a new line) insert-- Y`
+  lower under `uk_effect_at_end_unquoted_text_insertion_patch` to the same
+  bounded `TEXT_END` append. Parenthetical new-line wording is treated as a
+  presentation instruction, not inserted legal text. Current witness:
+  `ukpga/1970/9` affected `s. 12AA(6)` by `ukpga/2018/3 Sch. 6 para. 8(2)`.
   `omit the words from "X" to "Y"` lowers to `TEXT_FROM_X_TO_Y` deletion. When
   both bounded range anchors are found in the explicit target node's own text,
   replay rewrites that node text and preserves existing children. Only a
