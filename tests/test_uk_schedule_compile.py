@@ -21874,6 +21874,70 @@ def test_compile_first_second_occurrence_substitution_preserves_bounded_occurren
     assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
 
 
+def test_compile_first_two_places_substitution_preserves_bounded_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Pnumber>i</Pnumber>
+          <Text>for \u201c, a Health Board or the Agency\u201d, in the first two places where it occurs, substitute \u201c or a Health Board \u201d , and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-370d593684a0941e55d8991ef111e589",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 15(1)",
+        affecting_uri="/id/asp/2014/9",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="9",
+        affecting_provisions="s. 63(3)(a)(i)",
+        affecting_title="Public Bodies (Joint Working) (Scotland) Act 2014",
+        in_force_dates=[{"date": "2014-09-22", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "15"), ("subsection", "1")),
+        (("section", "15"), ("subsection", "1")),
+    ]
+    assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [2, 1]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        ", a Health Board or the Agency",
+        ", a Health Board or the Agency",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        " or a Health Board ",
+        " or a Health Board ",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_first_second_occurrence_substitution_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
+
+
 def test_compile_quoted_word_where_multiple_ordinal_substitution_preserves_bounded_occurrences() -> None:
     extracted_el = ET.fromstring(
         f"""
