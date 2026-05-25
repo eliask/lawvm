@@ -10958,6 +10958,113 @@ def test_compile_table_entry_for_column_omit_uses_owned_cell_selector() -> None:
     )
 
 
+def test_compile_source_named_section_table_entry_column_insert_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>13</Pnumber>
+          <P1para>
+            <Text>13 In section 98 of TMA 1970 (penalty for failure to provide
+            information etc), in the second column of the Table, in the entry
+            relating to CAA 2001, after “45G(4) and (5),” insert
+            “ 45R(5) and (6), ” .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_named_section_table_entry_column_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-10",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98",
+        affecting_uri="/id/ukpga/2021/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="26",
+        affecting_provisions="Sch. 22 para. 13",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-06-10", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "45G(4) and (5),"
+    assert ops[0].text_patch.replacement == "45G(4) and (5), 45R(5) and (6), "
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+    assert selector["selector_mode"] == "unique_relating_cell"
+    assert selector["relating_text"] == "CAA 2001"
+    assert selector["column_index"] == 2
+    assert selector["source_names_containing_target"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+        and record["reason_code"] == "explicit_table_entry_column_selector"
+        and record["target_ref"] == "s. 98"
+        and record["containing_target"] == "section:98"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_source_named_section_table_entry_column_insert_blocks_wrong_carrier() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>13</Pnumber>
+          <P1para>
+            <Text>13 In section 98 of TMA 1970 (penalty for failure to provide
+            information etc), in the second column of the Table, in the entry
+            relating to CAA 2001, after “45G(4) and (5),” insert
+            “ 45R(5) and (6), ” .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_named_section_table_entry_column_wrong_carrier",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-10",
+        affected_uri="/id/ukpga/1970/9/section/99",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 99",
+        affecting_uri="/id/ukpga/2021/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="26",
+        affecting_provisions="Sch. 22 para. 13",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-06-10", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        and record["reason_code"] == "table_entry_instruction_without_cell_target"
+        and record["target_ref"] == "s. 99"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_replay_table_entry_for_column_omit_mutates_selected_cell_only() -> None:
     selector = {
         "rule_id": "uk_effect_table_entry_relating_column_text_patch",

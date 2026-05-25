@@ -43,6 +43,24 @@ UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID = (
 UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 
 
+def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
+    """Return true when source text explicitly names the broad table carrier."""
+    if not text or not target.path:
+        return False
+    leaf_kind = _addr_leaf_kind(target)
+    leaf_label = _addr_leaf_label(target)
+    if leaf_kind != "section" or not leaf_label:
+        return False
+    return (
+        re.search(
+            rf"\bin\s+section\s+{re.escape(leaf_label)}\b",
+            text,
+            flags=re.I,
+        )
+        is not None
+    )
+
+
 def _uk_table_entry_inline_text_selector(
     *,
     target_ref: str,
@@ -53,7 +71,12 @@ def _uk_table_entry_inline_text_selector(
 ) -> dict[str, Any] | None:
     """Extract a deterministic base-table cell selector from inline table-entry wording."""
     text = " ".join((extracted_text or "").split())
-    if not text or "table" not in " ".join((target_ref, str(target))).lower():
+    target_names_table = "table" in " ".join((target_ref, str(target))).lower()
+    source_names_containing_target = _source_names_containing_target_for_table_cell(text, target)
+    if not text or (
+        not target_names_table
+        and not ("table" in text.lower() and source_names_containing_target)
+    ):
         return None
     fragments = parse_fragment_substitution(text)
     primary_fragment = fragments[0] if len(fragments) == 1 else None
@@ -77,6 +100,33 @@ def _uk_table_entry_inline_text_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    source_table_relating_column_match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        r"(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+        r"\s+column\s+of\s+(?:the\s+)?table,?\s+in\s+the\s+entry\s+"
+        r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<relating>.*?),\s+"
+        r"(?:after|for|omit|insert)\b",
+        text,
+        re.I,
+    )
+    if source_table_relating_column_match is not None:
+        relating_text = " ".join(
+            source_table_relating_column_match.group("relating").split()
+        ).strip(" ,;.")
+        column_index = _uk_ordinal_to_int(
+            source_table_relating_column_match.group("column_ordinal")
+        )
+        if original_text and relating_text and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_relating_cell",
+                "relating_text": relating_text,
+                "column_index": column_index,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+                "source_names_containing_target": source_names_containing_target,
+            }
     relating_match = re.search(
         r"\bin\s+the\s+entry\s+relating\s+to\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+for\b|,\s+after\b|,\s+omit\b|,\s+insert\b|$)",
         text,
@@ -93,6 +143,7 @@ def _uk_table_entry_inline_text_selector(
                 "table_label": "",
                 "original_target": str(target),
                 "target_ref": target_ref,
+                "source_names_containing_target": source_names_containing_target,
             }
     relating_column_match = re.search(
         r"\bin\s+the\s+entry\s+(?:for|relating\s+to)\s+(?:the\s+)?(?P<relating>.*?),\s+in\s+"
@@ -114,6 +165,7 @@ def _uk_table_entry_inline_text_selector(
                 "table_label": "",
                 "original_target": str(target),
                 "target_ref": target_ref,
+                "source_names_containing_target": source_names_containing_target,
             }
     entry_labels_column_match = re.search(
         r"\bin\s+entries\s+(?P<entries>[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)+),?\s+in\s+"
