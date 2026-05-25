@@ -13,6 +13,7 @@ Usage (from LawVM/ dir):
 
     # Refresh mutable resources only (current XML + effects feeds)
     uv run python scripts/acquire_uk_corpus.py -- refresh
+    uv run python scripts/acquire_uk_corpus.py -- refresh --statute ukpga/2020/17 --force-refresh
 
     # Fetch missing affecting acts discovered in effects feeds
     uv run python scripts/acquire_uk_corpus.py -- affecting
@@ -274,12 +275,14 @@ def _fetch_effects_pages(
     number: str,
     archive: Farchive,
     http: _HTTP,
+    *,
+    force: bool = False,
 ) -> int:
     """Fetch all pages of an effects feed.  Returns pages fetched (0 if none)."""
     base = f"{_LEG_BASE}/changes/affected/{act_type}/{year}/{number}/data.feed"
     p1_url = f"{base}?results-count=50&sort=modified"
 
-    if not _is_stale(archive, p1_url, _TTL_EFFECTS):
+    if not force and not _is_stale(archive, p1_url, _TTL_EFFECTS):
         # Already fresh — read total pages from cache
         data = archive.get(p1_url)
         if data:
@@ -306,7 +309,7 @@ def _fetch_effects_pages(
 
     for p in range(2, total_pages + 1):
         purl = f"{p1_url}&page={p}"
-        if not _is_stale(archive, purl, _TTL_EFFECTS):
+        if not force and not _is_stale(archive, purl, _TTL_EFFECTS):
             continue
         pdata = http.get(purl)
         if pdata:
@@ -463,9 +466,42 @@ def do_affecting(
     return {"fetched": n_ok, "failed": n_fail, "gone": n_404}
 
 
-def do_refresh(archive: Farchive, http: _HTTP) -> dict:
+def _split_statute_id(statute_id: str) -> tuple[str, str, str]:
+    parts = statute_id.strip("/").split("/")
+    if len(parts) != 3 or not all(parts):
+        raise ValueError(f"invalid UK statute id: {statute_id!r}")
+    return parts[0], parts[1], parts[2]
+
+
+def do_refresh(
+    archive: Farchive,
+    http: _HTTP,
+    *,
+    statute_ids: Optional[set[str]] = None,
+    force: bool = False,
+) -> dict:
     """Re-fetch mutable resources (current XML + effects feeds) if stale."""
     n_current = n_effects = 0
+
+    if statute_ids:
+        for sid in sorted(statute_ids):
+            act_type, year, number = _split_statute_id(sid)
+            current_url = f"{_LEG_BASE}/{act_type}/{year}/{number}/data.xml"
+            if force or _is_stale(archive, current_url, _TTL_CURRENT):
+                data = http.get(current_url)
+                if data and len(data) > 50 and _store_if_new(archive, current_url, data, "xml"):
+                    n_current += 1
+            pages = _fetch_effects_pages(
+                act_type,
+                year,
+                number,
+                archive,
+                http,
+                force=force,
+            )
+            if pages > 0:
+                n_effects += 1
+        return {"current": n_current, "effects": n_effects}
 
     # Current XMLs
     for loc in archive.locators("%/data.xml"):
@@ -542,9 +578,21 @@ def main() -> None:
         help="What to do (default: all)",
     )
     ap.add_argument("--types", nargs="+", default=PRIMARY_TYPES)
+    ap.add_argument(
+        "--statute",
+        action="append",
+        default=[],
+        metavar="STATUTE_ID",
+        help="target one statute for refresh, e.g. ukpga/2020/17 (repeatable)",
+    )
     ap.add_argument("--delay", type=float, default=_DEFAULT_DELAY)
     ap.add_argument("--archive", type=Path, default=_DEFAULT_ARCHIVE)
     ap.add_argument("--enacted-only", action="store_true")
+    ap.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="with refresh, refetch targeted mutable resources even if TTL says fresh",
+    )
     ap.add_argument("--affecting-types", nargs="+", default=None)
     ap.add_argument(
         "--events-jsonl",
@@ -587,6 +635,20 @@ def main() -> None:
     # ── Main pipeline ──
     print(f"UK corpus → {args.archive}")
     affecting_diagnostics: list[dict[str, object]] = []
+
+    if cmd == "refresh" and args.statute:
+        print("\n[refresh] mutable resources")
+        r = do_refresh(
+            archive,
+            http,
+            statute_ids=set(args.statute),
+            force=bool(args.force_refresh),
+        )
+        print(f"  current+{r['current']:,}  effects+{r['effects']:,}")
+        st = archive.stats()
+        print(f"\nDone. {st.locator_count:,} locators, {st.total_stored_bytes / 1e6:.1f} MB stored")
+        archive.close()
+        return
 
     # Always enumerate first (cheap, never stored)
     if cmd in ("all", "enumerate", "download"):
@@ -635,7 +697,12 @@ def main() -> None:
 
     if cmd == "refresh":
         print("\n[refresh] mutable resources")
-        r = do_refresh(archive, http)
+        r = do_refresh(
+            archive,
+            http,
+            statute_ids=set(args.statute) if args.statute else None,
+            force=bool(args.force_refresh),
+        )
         print(f"  current+{r['current']:,}  effects+{r['effects']:,}")
 
     st = archive.stats()

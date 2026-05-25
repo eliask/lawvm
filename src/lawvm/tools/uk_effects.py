@@ -92,6 +92,11 @@ class _EffectSummary:
     manual_compile_lowering_rule_ids: tuple[str, ...] = ()
     manual_compile_blocking_lowering_rule_ids: tuple[str, ...] = ()
     text_patch_evidence: tuple[dict[str, Any], ...] = ()
+    op_actions: tuple[str, ...] = ()
+    base_target_hits: tuple[bool, ...] = ()
+    oracle_target_hits: tuple[bool, ...] = ()
+    base_descendant_hits: tuple[bool, ...] = ()
+    oracle_descendant_hits: tuple[bool, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -581,6 +586,11 @@ def summarize_uk_effect(
             )
         ),
         text_patch_evidence=text_patch_evidence,
+        op_actions=tuple(op_actions),
+        base_target_hits=tuple(base_target_hits),
+        oracle_target_hits=tuple(oracle_target_hits),
+        base_descendant_hits=tuple(base_descendant_hits),
+        oracle_descendant_hits=tuple(oracle_descendant_hits),
     )
 
 

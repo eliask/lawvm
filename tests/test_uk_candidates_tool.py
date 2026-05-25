@@ -28,6 +28,7 @@ from lawvm.tools.uk_candidates import (
     _format_candidate_source_status,
     _format_saved_bench_rejection_rules,
     _include_candidate_row,
+    _load_saved_bench_run,
     _matches_filters,
     _matching_frontier,
     _primary_frontier_score,
@@ -717,6 +718,9 @@ def test_residual_candidate_inventory_counts_only_overlapping_candidate_rows() -
             compare_shape="commensurable",
             replay_applicable=True,
             structural_for_replay=True,
+            manual_compile_status="deterministic_frontend_supported",
+            manual_compile_rule_id="",
+            op_actions=("insert",),
         ),
         SimpleNamespace(resolver_eids=("section-6",), n_ops=1),
     ]
@@ -731,6 +735,54 @@ def test_residual_candidate_inventory_counts_only_overlapping_candidate_rows() -
     assert inventory["residual_candidate_count"] == 1
     assert inventory["residual_candidate_ops"] == 2
     assert inventory["residual_root_hits"] == {"section-3"}
+    assert inventory["residual_root_hit_counts"] == {"section-3": 1}
+    assert inventory["residual_root_side_counts"] == {"replayed_only": 1}
+    assert inventory["residual_candidate_source_pathology_counts"] == {"__none__": 1}
+    assert inventory["residual_candidate_compare_shape_counts"] == {"commensurable": 1}
+    assert inventory["residual_candidate_structural_counts"] == {
+        "structural_for_replay": 1
+    }
+    assert inventory["residual_candidate_action_counts"] == {"insert": 1}
+    assert inventory["residual_candidate_target_presence_counts"] == {
+        "oracle_targets_absent": 1
+    }
+    assert inventory["residual_candidate_target_presence_action_counts"] == {
+        "oracle_targets_absent:insert": 1
+    }
+    assert inventory["residual_candidate_manual_compile_rule_counts"] == {}
+    assert inventory["residual_candidate_root_samples"] == [
+        {
+            "root": "section-3",
+            "candidate_count": 1,
+            "structural_counts": {"structural_for_replay": 1},
+            "sample": {
+                "effect_id": "eff-3",
+                "effect_type": "inserted",
+                "affected_provisions": "s. 3",
+                "affecting_act_id": "ukpga/2025/1",
+                "affecting_provisions": "s. 10",
+                "effective_date": "2025-01-01",
+                "resolver_eids": ["section-3"],
+                "overlapping_residual_roots": ["section-3"],
+                "source_pathology": "",
+                "compare_shape": "commensurable",
+                "compiled_op_count": 2,
+                "op_actions": ["insert"],
+                "replay_applicable": True,
+                "structural_for_replay": True,
+                "manual_compile_status": "deterministic_frontend_supported",
+                "manual_compile_rule_id": "",
+                "target_presence": {
+                    "resolver_count": 1,
+                    "base_target_hit_count": 0,
+                    "oracle_target_hit_count": 0,
+                    "base_descendant_hit_count": 0,
+                    "oracle_descendant_hit_count": 0,
+                },
+            },
+        }
+    ]
+    assert inventory["residual_candidate_root_samples_omitted"] == 0
     assert inventory["residual_candidate_samples"] == [
         {
             "effect_id": "eff-3",
@@ -744,8 +796,18 @@ def test_residual_candidate_inventory_counts_only_overlapping_candidate_rows() -
             "source_pathology": "",
             "compare_shape": "commensurable",
             "compiled_op_count": 2,
+            "op_actions": ["insert"],
             "replay_applicable": True,
             "structural_for_replay": True,
+            "manual_compile_status": "deterministic_frontend_supported",
+            "manual_compile_rule_id": "",
+            "target_presence": {
+                "resolver_count": 1,
+                "base_target_hit_count": 0,
+                "oracle_target_hit_count": 0,
+                "base_descendant_hit_count": 0,
+                "oracle_descendant_hit_count": 0,
+            },
         }
     ]
     assert inventory["residual_candidate_samples_omitted"] == 0
@@ -766,8 +828,93 @@ def test_residual_candidate_inventory_does_not_back_sibling_residual_branches() 
     assert inventory["residual_candidate_count"] == 0
     assert inventory["residual_candidate_ops"] == 0
     assert inventory["residual_root_hits"] == set()
+    assert inventory["residual_root_hit_counts"] == {}
+    assert inventory["residual_root_side_counts"] == {}
+    assert inventory["residual_candidate_action_counts"] == {}
+    assert inventory["residual_candidate_target_presence_counts"] == {}
+    assert inventory["residual_candidate_target_presence_action_counts"] == {}
+    assert inventory["residual_candidate_root_samples"] == []
+    assert inventory["residual_candidate_root_samples_omitted"] == 0
     assert inventory["residual_candidate_samples"] == []
     assert inventory["residual_candidate_samples_omitted"] == 0
+
+
+def test_residual_candidate_inventory_prefers_structural_root_sample() -> None:
+    candidate_summaries = [
+        SimpleNamespace(
+            resolver_eids=("section-3",),
+            n_ops=1,
+            effect_id="non-structural",
+            source_pathology="",
+            replay_applicable=True,
+            structural_for_replay=False,
+            op_actions=("text_replace",),
+        ),
+        SimpleNamespace(
+            resolver_eids=("section-3",),
+            n_ops=1,
+            effect_id="structural",
+            source_pathology="",
+            replay_applicable=True,
+            structural_for_replay=True,
+            op_actions=("insert",),
+        ),
+    ]
+
+    inventory = _residual_candidate_inventory(
+        candidate_summaries,
+        residual_roots={"section-3"},
+        only_in_replayed=set(),
+        only_in_oracle={"section-3"},
+    )
+
+    assert inventory["residual_root_hit_counts"] == {"section-3": 2}
+    assert inventory["residual_candidate_target_presence_counts"] == {
+        "oracle_targets_absent": 2
+    }
+    assert inventory["residual_candidate_action_counts"] == {
+        "insert": 1,
+        "text_replace": 1,
+    }
+    assert inventory["residual_candidate_target_presence_action_counts"] == {
+        "oracle_targets_absent:insert": 1,
+        "oracle_targets_absent:text_replace": 1,
+    }
+    assert inventory["residual_candidate_root_samples"] == [
+        {
+            "root": "section-3",
+            "candidate_count": 2,
+            "structural_counts": {
+                "non_structural_for_replay": 1,
+                "structural_for_replay": 1,
+            },
+            "sample": {
+                "effect_id": "structural",
+                "effect_type": "",
+                "affected_provisions": "",
+                "affecting_act_id": "",
+                "affecting_provisions": "",
+                "effective_date": "",
+                "resolver_eids": ["section-3"],
+                "overlapping_residual_roots": ["section-3"],
+                "source_pathology": "",
+                "compare_shape": "",
+                "compiled_op_count": 1,
+                "op_actions": ["insert"],
+                "replay_applicable": True,
+                "structural_for_replay": True,
+                "manual_compile_status": "",
+                "manual_compile_rule_id": "",
+                "target_presence": {
+                    "resolver_count": 1,
+                    "base_target_hit_count": 0,
+                    "oracle_target_hit_count": 0,
+                    "base_descendant_hit_count": 0,
+                    "oracle_descendant_hit_count": 0,
+                },
+            },
+        }
+    ]
 
 
 def test_residual_candidate_inventory_only_hits_the_overlapping_resolver_eids() -> None:
@@ -785,6 +932,9 @@ def test_residual_candidate_inventory_only_hits_the_overlapping_resolver_eids() 
     assert inventory["residual_candidate_count"] == 1
     assert inventory["residual_candidate_ops"] == 2
     assert inventory["residual_root_hits"] == {"section-4"}
+    assert inventory["residual_root_hit_counts"] == {"section-4": 1}
+    assert inventory["residual_root_side_counts"] == {"oracle_only": 1}
+    assert inventory["residual_candidate_root_samples"][0]["root"] == "section-4"
     assert inventory["residual_candidate_samples"][0]["overlapping_residual_roots"] == ["section-4"]
 
 
@@ -1155,6 +1305,19 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
                 "candidate_op_count": 4,
                 "residual_candidate_effect_count": 1,
                 "residual_candidate_op_count": 2,
+                "residual_candidate_source_pathology_counts": {"__none__": 1},
+                "residual_candidate_compare_shape_counts": {"__none__": 1},
+                "residual_candidate_structural_counts": {"structural_for_replay": 1},
+                "residual_candidate_action_counts": {"insert": 1},
+                "residual_candidate_target_presence_counts": {
+                    "oracle_targets_absent": 1,
+                },
+                "residual_candidate_target_presence_action_counts": {
+                    "oracle_targets_absent:insert": 1,
+                },
+                "residual_candidate_manual_compile_rule_counts": {
+                    "uk_manual_frontier_deterministic_supported": 1,
+                },
                 "residual_roots": ["section-1", "section-2"],
                 "replayed_residual_roots": ["section-1"],
                 "oracle_residual_roots": ["section-2"],
@@ -1227,6 +1390,23 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
                 "candidate_op_count": 1,
                 "residual_candidate_effect_count": 1,
                 "residual_candidate_op_count": 1,
+                "residual_candidate_source_pathology_counts": {"uncovered_body": 1},
+                "residual_candidate_compare_shape_counts": {
+                    "collapsed_subtree_oracle_shape": 1,
+                },
+                "residual_candidate_structural_counts": {
+                    "non_structural_for_replay": 1,
+                },
+                "residual_candidate_action_counts": {"text_replace": 1},
+                "residual_candidate_target_presence_counts": {
+                    "oracle_targets_all_present": 1,
+                },
+                "residual_candidate_target_presence_action_counts": {
+                    "oracle_targets_all_present:text_replace": 1,
+                },
+                "residual_candidate_manual_compile_rule_counts": {
+                    "uk_manual_frontier_non_textual_or_out_of_scope": 1,
+                },
                 "residual_roots": ["section-3."],
                 "replayed_residual_roots": [],
                 "oracle_residual_roots": ["section-3."],
@@ -1359,6 +1539,34 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
         "candidate_op_count": 5,
         "residual_candidate_effect_count": 2,
         "residual_candidate_op_count": 3,
+        "residual_candidate_source_pathology_counts": {
+            "__none__": 1,
+            "uncovered_body": 1,
+        },
+        "residual_candidate_compare_shape_counts": {
+            "__none__": 1,
+            "collapsed_subtree_oracle_shape": 1,
+        },
+        "residual_candidate_structural_counts": {
+            "non_structural_for_replay": 1,
+            "structural_for_replay": 1,
+        },
+        "residual_candidate_action_counts": {
+            "insert": 1,
+            "text_replace": 1,
+        },
+        "residual_candidate_target_presence_counts": {
+            "oracle_targets_absent": 1,
+            "oracle_targets_all_present": 1,
+        },
+        "residual_candidate_target_presence_action_counts": {
+            "oracle_targets_absent:insert": 1,
+            "oracle_targets_all_present:text_replace": 1,
+        },
+        "residual_candidate_manual_compile_rule_counts": {
+            "uk_manual_frontier_deterministic_supported": 1,
+            "uk_manual_frontier_non_textual_or_out_of_scope": 1,
+        },
         "residual_root_count": 3,
         "replayed_residual_root_count": 1,
         "oracle_residual_root_count": 2,
@@ -1550,6 +1758,78 @@ def test_candidates_report_jsonable_can_omit_rows_for_summary_only() -> None:
     assert "rows" not in report
 
 
+def test_candidates_report_jsonable_can_limit_summary_count_maps() -> None:
+    report = _uk_candidates_report_jsonable(
+        label="uk_frontier",
+        rows=[
+            {
+                "status": "real residual frontier",
+                "effect_inspection_truncated": False,
+                "residual_analysis_skipped": False,
+                "residual_analysis_unavailable": False,
+                "replay_adjudication_kind_counts": {
+                    "rule-c": 1,
+                    "rule-b": 3,
+                    "rule-a": 3,
+                },
+                "manual_compile_rule_counts": {
+                    "manual-z": 1,
+                    "manual-y": 2,
+                    "manual-x": 3,
+                },
+            }
+        ],
+        filters=_uk_candidates_filters_jsonable(
+            top=1,
+            score_mode="auto",
+            residual_only=False,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            min_year=None,
+            max_year=None,
+            types=None,
+            summary_count_limit=2,
+        ),
+        inspected_count=1,
+        summary_only=True,
+        summary_count_limit=2,
+    )
+
+    summary = report["summary"]
+    assert summary["replay_adjudication_kind_counts"] == {
+        "rule-a": 3,
+        "rule-b": 3,
+    }
+    assert summary["manual_compile_rule_counts"] == {
+        "manual-x": 3,
+        "manual-y": 2,
+    }
+    assert summary["summary_count_map_omissions"] == {
+        "manual_compile_rule_counts": 1,
+        "replay_adjudication_kind_counts": 1,
+    }
+    assert report["filters"]["summary_count_limit"] == 2
+    assert "rows" not in report
+
+
+def test_load_saved_bench_run_does_not_mask_loader_type_errors() -> None:
+    def load_run(_label: str, *, include_diagnostics: bool = True) -> list[object]:
+        raise TypeError(f"loader bug include={include_diagnostics}")
+
+    with pytest.raises(TypeError, match="loader bug include=False"):
+        _load_saved_bench_run(load_run, "demo", include_diagnostics=False)
+
+
+def test_load_saved_bench_run_supports_legacy_test_loader_signature() -> None:
+    rows = [object()]
+
+    def load_run(_label: str) -> list[object]:
+        return rows
+
+    assert _load_saved_bench_run(load_run, "demo", include_diagnostics=False) is rows
+
+
 def test_candidates_report_jsonable_can_emit_compact_rows() -> None:
     row = {
         "statute_id": "ukpga/2000/1",
@@ -1609,6 +1889,76 @@ def test_candidates_report_jsonable_can_emit_compact_rows() -> None:
     assert report["summary"]["residual_compile_observation_count"] == 1
     assert report["summary"]["residual_compile_rejection_count"] == 1
     assert _compact_uk_candidate_row_jsonable(row)["statute_id"] == "ukpga/2000/1"
+
+
+def test_candidates_report_jsonable_can_limit_row_count_maps() -> None:
+    row = {
+        "statute_id": "ukpga/2000/1",
+        "status": "real residual frontier",
+        "effect_count": 10,
+        "effect_row_count": 7,
+        "effect_feed_page_count": 3,
+        "inspected_effect_count": 2,
+        "available_replay_applicable_effect_count": 2,
+        "available_applied_effect_count": 2,
+        "effect_inspection_truncated": False,
+        "residual_analysis_skipped": False,
+        "residual_analysis_unavailable": False,
+        "candidate_effect_count": 1,
+        "candidate_op_count": 1,
+        "residual_candidate_effect_count": 1,
+        "residual_candidate_op_count": 1,
+        "replay_adjudication_kind_counts": {
+            "rule-c": 1,
+            "rule-b": 3,
+            "rule-a": 3,
+        },
+        "saved_bench_diagnostic_rule_counts": {
+            "diag-z": 1,
+            "diag-y": 2,
+            "diag-x": 3,
+        },
+    }
+
+    report = _uk_candidates_report_jsonable(
+        label="uk_frontier",
+        rows=[row],
+        filters=_uk_candidates_filters_jsonable(
+            top=1,
+            score_mode="auto",
+            residual_only=False,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            min_year=None,
+            max_year=None,
+            types=None,
+            row_count_limit=2,
+        ),
+        inspected_count=1,
+        compact_rows=True,
+        row_count_limit=2,
+    )
+
+    compact = report["rows"][0]
+    assert compact["replay_adjudication_kind_counts"] == {
+        "rule-a": 3,
+        "rule-b": 3,
+    }
+    assert compact["saved_bench_diagnostic_rule_counts"] == {
+        "diag-x": 3,
+        "diag-y": 2,
+    }
+    assert compact["row_count_map_omissions"] == {
+        "replay_adjudication_kind_counts": 1,
+        "saved_bench_diagnostic_rule_counts": 1,
+    }
+    assert report["filters"]["row_count_limit"] == 2
+    assert report["summary"]["replay_adjudication_kind_counts"] == {
+        "rule-a": 3,
+        "rule-b": 3,
+        "rule-c": 1,
+    }
 
 
 def test_candidates_report_jsonable_records_frontier_truncation() -> None:
@@ -1882,6 +2232,82 @@ def test_uk_candidates_top_zero_json_summary_preserves_matched_frontier(monkeypa
     assert payload["summary"]["inspected_frontier_count"] == 0
     assert payload["summary"]["frontier_truncated"] is True
     assert payload["summary"]["emitted_row_count"] == 0
+    assert payload["summary"]["status_counts"] == {"frontier prefilter only": 2}
+    assert "rows" not in payload
+
+
+def test_uk_candidates_top_zero_summary_aggregates_saved_bench_counts_without_diagnostics(
+    monkeypatch,
+    capsys,
+) -> None:
+    load_calls: list[tuple[str, bool]] = []
+    rows = [
+        SimpleNamespace(
+            statute_id="ukpga/2000/1",
+            status="OK",
+            year=2000,
+            act_type="ukpga",
+            replay_commencement_score=-1.0,
+            replay_score=0.8,
+            commencement_score=-1.0,
+            score=0.8,
+            n_commenced_eids=0,
+            comparison_class="commensurable",
+            n_enacted_eids=10,
+            n_oracle_eids=12,
+            n_effects=2,
+            manual_compile_status_counts={"manual_compile_candidate": 2},
+            manual_compile_rule_counts={"uk_manual_frontier_heading_facet_candidate": 2},
+            lowering_observation_count=3,
+            lowering_observation_rule_counts={"uk_effect_heading_facet_word_patch_lowered": 3},
+            replay_adjudication_count=5,
+            replay_adjudication_kind_counts={"uk_replay_text_match_missing": 5},
+            replay_adjudication_bucket_counts={"text_surface": 5},
+        ),
+    ]
+
+    def fake_load_run(label: str, *, include_diagnostics: bool = True):
+        load_calls.append((label, include_diagnostics))
+        return rows
+
+    monkeypatch.setattr("lawvm.tools.uk_bench._load_run", fake_load_run)
+
+    uk_candidates.main(
+        Namespace(
+            label="demo",
+            top=0,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            score_mode="auto",
+            residual_only=False,
+            json=True,
+            summary_only=True,
+            compact_json=True,
+            min_year=None,
+            max_year=None,
+            types=None,
+            db=None,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert load_calls == [("demo", False)]
+    assert payload["summary"]["matched_frontier_count"] == 1
+    assert payload["summary"]["emitted_row_count"] == 0
+    assert payload["summary"]["bench_manual_compile_status_counts"] == {
+        "manual_compile_candidate": 2
+    }
+    assert payload["summary"]["bench_manual_compile_rule_counts"] == {
+        "uk_manual_frontier_heading_facet_candidate": 2
+    }
+    assert payload["summary"]["lowering_observation_rule_counts"] == {
+        "uk_effect_heading_facet_word_patch_lowered": 3
+    }
+    assert payload["summary"]["replay_adjudication_kind_counts"] == {
+        "uk_replay_text_match_missing": 5
+    }
+    assert payload["summary"]["replay_adjudication_bucket_counts"] == {"text_surface": 5}
     assert "rows" not in payload
 
 
@@ -3730,6 +4156,112 @@ def test_uk_candidates_summary_only_requires_json(capsys) -> None:
     assert "--summary-only requires --json" in capsys.readouterr().err
 
 
+def test_uk_candidates_rejects_nonpositive_summary_count_limit(capsys) -> None:
+    args = Namespace(
+        label="unused",
+        top=5,
+        fast=True,
+        effect_budget=None,
+        residual_budget=None,
+        score_mode="auto",
+        residual_only=False,
+        json=True,
+        summary_only=True,
+        compact_json=True,
+        summary_count_limit=0,
+        min_year=None,
+        max_year=None,
+        types=None,
+        db=None,
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        uk_candidates.main(args)
+
+    assert excinfo.value.code == 2
+    assert "--summary-count-limit must be a positive integer" in capsys.readouterr().err
+
+
+def test_uk_candidates_summary_count_limit_requires_json(capsys) -> None:
+    args = Namespace(
+        label="unused",
+        top=5,
+        fast=True,
+        effect_budget=None,
+        residual_budget=None,
+        score_mode="auto",
+        residual_only=False,
+        json=False,
+        summary_only=False,
+        compact_json=False,
+        summary_count_limit=5,
+        min_year=None,
+        max_year=None,
+        types=None,
+        db=None,
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        uk_candidates.main(args)
+
+    assert excinfo.value.code == 2
+    assert "--summary-count-limit requires --json" in capsys.readouterr().err
+
+
+def test_uk_candidates_rejects_nonpositive_row_count_limit(capsys) -> None:
+    args = Namespace(
+        label="unused",
+        top=5,
+        fast=True,
+        effect_budget=None,
+        residual_budget=None,
+        score_mode="auto",
+        residual_only=False,
+        json=True,
+        summary_only=False,
+        compact_json=True,
+        summary_count_limit=None,
+        row_count_limit=0,
+        min_year=None,
+        max_year=None,
+        types=None,
+        db=None,
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        uk_candidates.main(args)
+
+    assert excinfo.value.code == 2
+    assert "--row-count-limit must be a positive integer" in capsys.readouterr().err
+
+
+def test_uk_candidates_row_count_limit_requires_json(capsys) -> None:
+    args = Namespace(
+        label="unused",
+        top=5,
+        fast=True,
+        effect_budget=None,
+        residual_budget=None,
+        score_mode="auto",
+        residual_only=False,
+        json=False,
+        summary_only=False,
+        compact_json=False,
+        summary_count_limit=None,
+        row_count_limit=5,
+        min_year=None,
+        max_year=None,
+        types=None,
+        db=None,
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        uk_candidates.main(args)
+
+    assert excinfo.value.code == 2
+    assert "--row-count-limit requires --json" in capsys.readouterr().err
+
+
 def test_uk_candidates_rejects_nonpositive_effect_budget(capsys) -> None:
     args = Namespace(
         label="unused",
@@ -4352,6 +4884,17 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "replayed_residual_roots": [],
         "residual_candidate_effect_count": 0,
         "residual_candidate_op_count": 0,
+        "residual_candidate_root_hit_counts": {},
+        "residual_candidate_root_side_counts": {},
+        "residual_candidate_source_pathology_counts": {},
+        "residual_candidate_compare_shape_counts": {},
+        "residual_candidate_structural_counts": {},
+        "residual_candidate_action_counts": {},
+        "residual_candidate_target_presence_counts": {},
+        "residual_candidate_target_presence_action_counts": {},
+        "residual_candidate_manual_compile_rule_counts": {},
+        "residual_candidate_root_samples": [],
+        "residual_candidate_root_samples_omitted": 0,
         "residual_candidate_samples": [],
         "residual_candidate_samples_omitted": 0,
         "residual_roots": [],
@@ -4435,6 +4978,17 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
         "replayed_residual_roots": ["part-1"],
         "residual_candidate_effect_count": 1,
         "residual_candidate_op_count": 2,
+        "residual_candidate_root_hit_counts": {},
+        "residual_candidate_root_side_counts": {},
+        "residual_candidate_source_pathology_counts": {},
+        "residual_candidate_compare_shape_counts": {},
+        "residual_candidate_structural_counts": {},
+        "residual_candidate_action_counts": {},
+        "residual_candidate_target_presence_counts": {},
+        "residual_candidate_target_presence_action_counts": {},
+        "residual_candidate_manual_compile_rule_counts": {},
+        "residual_candidate_root_samples": [],
+        "residual_candidate_root_samples_omitted": 0,
         "residual_candidate_samples": [
             {
                 "affected_provisions": "Sch. 1 para. 2",
