@@ -2709,6 +2709,12 @@ Current payload-descendant source-ref invariant:
   subsection (3), paragraph (a) and in paragraph (b) the words "X" shall cease
   to have effect` for the word-repeal effect targeting paragraph `(b)`, while
   recording the sibling label as context rather than deleting the sibling.
+  Semicolon-terminated rows and exact section-qualified forms such as
+  `in section 36(3A), "X",` are part of the same rule only when the source
+  section/subsection labels exactly match the effect target; otherwise the row
+  remains unlowered. Current witnesses: `ukpga/1970/9`
+  `key-466ee402020468dcf15367414cc067ea` and `ukpga/1996/61`
+  `key-44e4624f0a59a184cffe26bacefd2d6a`.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
   there shall be substituted "..."` or active
   `for sub-paragraphs (i) and (ii) substitute "..."` are classified as
