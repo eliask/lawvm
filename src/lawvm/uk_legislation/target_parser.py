@@ -470,6 +470,40 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                         all_parts.append(f"{prefix}({group})")
                     continue
 
+        # Whitespace-compressed sibling subsection ranges:
+        # ``s. 13(1A) (9)-(12)`` means subsection (1A) plus sibling
+        # subsections (9) to (12), not paragraphs (9)-(12) under subsection
+        # (1A). Keep this narrower than general nested parenthesized ranges:
+        # only a single numeric/alphanumeric carried group may introduce the
+        # sibling range.
+        ws_group_range_m = re.match(
+            r"^(.*?\(([0-9]+[A-Z]*)\))\s+\(([0-9]+[A-Z]*)\)-\(([0-9]+[A-Z]*)\)$",
+            p,
+            re.I,
+        )
+        if ws_group_range_m:
+            base_ref = ws_group_range_m.group(1)
+            base_prefix = re.sub(r"\([0-9]+[A-Z]*\)$", "", base_ref, flags=re.I).rstrip()
+            expanded_range = _expand_parenthesized_range(
+                base_prefix,
+                ws_group_range_m.group(3),
+                ws_group_range_m.group(4),
+            )
+            if (
+                expanded_range
+                and len(re.findall(r"\(([0-9A-Z]+)\)", base_ref, re.I)) == 1
+                and _is_sibling_group_family(
+                    [
+                        ws_group_range_m.group(2),
+                        ws_group_range_m.group(3),
+                        ws_group_range_m.group(4),
+                    ]
+                )
+            ):
+                all_parts.append(base_ref)
+                all_parts.extend(expanded_range)
+                continue
+
         # Strip "and cross-heading(s)" / "and cross heading(s)" qualifier
         # suffix so ranges like "s. 9-12 and cross-heading" and
         # "Sch. 6 para. 45-48 and cross-headings" expand correctly.

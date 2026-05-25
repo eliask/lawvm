@@ -1084,6 +1084,35 @@ def _uk_parenthetical_labels_contain_sequence(haystack: Sequence[str], needle: S
     return False
 
 
+def _uk_parenthesized_label_in_simple_range(
+    text: str,
+    *,
+    label: str,
+    word_pattern: str,
+) -> bool:
+    wanted_label = re.sub(r"[^0-9a-z]", "", (label or "").lower())
+    if not wanted_label:
+        return False
+    for match in re.finditer(
+        rf"\b{word_pattern}\s*\(\s*(?P<start>\d+[a-z]?)\s*\)"
+        rf"\s*(?:to|-|–|—)\s*\(\s*(?P<end>\d+[a-z]?)\s*\)",
+        text or "",
+        flags=re.I,
+    ):
+        start_label = match.group("start").lower()
+        end_label = match.group("end").lower()
+        if wanted_label in {start_label, end_label}:
+            return True
+        if not (wanted_label.isdigit() and start_label.isdigit() and end_label.isdigit()):
+            continue
+        wanted = int(wanted_label)
+        start = int(start_label)
+        end = int(end_label)
+        if min(start, end) <= wanted <= max(start, end):
+            return True
+    return False
+
+
 def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
     is_numeric = schedule_pat.isdigit()
     wanted_num = int(schedule_pat) if is_numeric else None
@@ -1165,6 +1194,13 @@ def _uk_cell_has_section_descendant_scope(
             break
 
         segment = scope_text[start_idx:next_boundary]
+        if len(wanted) == 1 and _uk_parenthesized_label_in_simple_range(
+            segment,
+            label=wanted[0],
+            word_pattern=r"subsections?",
+        ):
+            return True
+
         current_pos = 0
         matched_all = True
         for label in wanted:

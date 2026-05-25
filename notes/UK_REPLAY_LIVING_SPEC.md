@@ -2993,6 +2993,17 @@ Current payload-descendant source-ref invariant:
   that target. They must not infer alphanumeric interior membership such as
   section `3B` without a separate grouped-feed or live-structure range expansion
   claim.
+- UK effects metadata may compact sibling subsection lists by omitting the
+  repeated section stem, for example `s. 13(1A) (9)-(12)`. Target splitting
+  treats this as `s. 13(1A)` plus sibling subsections `s. 13(9)` through
+  `s. 13(12)`, not as paragraphs `(9)` through `(12)` under subsection
+  `(1A)`. This rule is limited to a single numeric/alphanumeric carried
+  parenthesized group followed by a numeric/alphanumeric sibling range; nested
+  forms such as `s. 25(3)(a) (i)-(iv)` remain nested subparagraph ranges.
+  Repeal-table matching may then corroborate the numeric interior members of an
+  explicitly section-scoped source row such as `In section 13, subsection (1A)
+  and subsections (9) to (12).`; the section mention still bounds the row and
+  no unrelated subsection may be inferred.
 - Repeal-table Schedule targets may be corroborated by exact ordinal source
   names such as `First Schedule` or `Sixth Schedule` when the ordinal maps to
   the feed-named numeric Schedule target. This is only a Schedule-label match:

@@ -2851,6 +2851,42 @@ def test_split_metadata_whitespace_compressed_sibling_subsections() -> None:
     ]
 
 
+def test_split_metadata_whitespace_compressed_sibling_subsection_range() -> None:
+    parts = _split_metadata_provisions("s. 13(1A) (9)-(12)")
+
+    assert parts == [
+        "s. 13(1A)",
+        "s. 13(9)",
+        "s. 13(10)",
+        "s. 13(11)",
+        "s. 13(12)",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "13"), ("subsection", "1a")),
+        (("section", "13"), ("subsection", "9")),
+        (("section", "13"), ("subsection", "10")),
+        (("section", "13"), ("subsection", "11")),
+        (("section", "13"), ("subsection", "12")),
+    ]
+
+
+def test_split_metadata_nested_parenthesized_range_remains_nested() -> None:
+    parts = _split_metadata_provisions("s. 25(3)(a) (i)-(iv)")
+
+    assert parts == [
+        "s. 25(3)(a)(i)",
+        "s. 25(3)(a)(ii)",
+        "s. 25(3)(a)(iii)",
+        "s. 25(3)(a)(iv)",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "i")),
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "ii")),
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "iii")),
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "iv")),
+    ]
+
+
 def test_split_metadata_parenthesized_stemmed_alnum_range() -> None:
     assert _split_metadata_provisions("s. 33(1ZA)-(1ZF)") == [
         "s. 33(1ZA)",
@@ -12315,6 +12351,82 @@ def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
         and record["target"] == "section:27"
         and record["extent_cell"] == "Sections 26 to 31."
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_structural_subsection_range_member_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Short title or title</th>
+                  <th>Extent of repeal or revocation</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>10 &amp; 11 Eliz.2 c. 46.</td>
+                  <td>Transport Act 1962.</td>
+                  <td>In section 13, subsection (1A) and subsections (9) to (12).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_subsection_range_member",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-02-01",
+        affected_uri="/id/ukpga/1962/46/section/13/subsection/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 13(1A) (9)-(12)",
+        affecting_uri="/id/ukpga/2000/38",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="38",
+        affecting_provisions="Sch. 31 Pt. 4",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2001-02-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 5
+    assert [op.target.path for op in ops] == [
+        (("section", "13"), ("subsection", "1a")),
+        (("section", "13"), ("subsection", "9")),
+        (("section", "13"), ("subsection", "10")),
+        (("section", "13"), ("subsection", "11")),
+        (("section", "13"), ("subsection", "12")),
+    ]
+    assert all(op.action is StructuralAction.REPEAL for op in ops)
+    assert all(op.witness_rule_id == "uk_effect_repeal_table_structural_repeal" for op in ops)
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["target"] == "section:13/subsection:10"
+        and record["extent_cell"]
+        == "In section 13, subsection (1A) and subsections (9) to (12)."
         and record["blocking"] is False
         for record in lowering_records
     )
