@@ -1017,7 +1017,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     matches_after_insert = re.finditer(
         r"after (?:the )?words? [“\"'‘](.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
-        r"(?P<all_occurrences>,?\s+in (?:each|both) places?"
+        r"(?P<all_occurrences>,?\s+in (?:(?:each|both) places?|each of the two places)"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
         r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
@@ -1657,7 +1657,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     matches_after_insert = re.finditer(
         r"after [“\"'‘](.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
-        r"(?P<all_occurrences>,?\s+in (?:each|both) places?"
+        r"(?P<all_occurrences>,?\s+in (?:(?:each|both) places?|each of the two places)"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
         r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
