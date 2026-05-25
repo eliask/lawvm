@@ -2156,6 +2156,13 @@ Current payload-descendant source-ref invariant:
   and emits one text replacement per selected occurrence in descending order.
   Current witnesses: `ukpga/1985/66` affected `s. 17(1)` and `s. 17(6)` by
   `asp/2007/3` `s. 16(4)(a)(ii)` and `s. 16(4)(d)(ii)`.
+- relative multi-occurrence substitutions may use `both subsequent places`;
+  `for "X", where it appears in both subsequent places, substitute "Y"` lowers
+  to occurrence `3` and then occurrence `2` under
+  `uk_effect_both_subsequent_occurrences_substitution_text_patch`. This is a
+  bounded text rewrite over the effect-feed target and does not broaden the
+  target search. Current witness: `ukpga/1985/66` affected `s. 52(7)` by
+  `asp/2014/11` `sch. 3 para. 26(b)`.
 - the parser may lower `for the words from "X" where it first appears to the
   end substitute- Y` where `Y` is unquoted block text to `TEXT_FROM_X_TO_END`
   with the recorded start occurrence using

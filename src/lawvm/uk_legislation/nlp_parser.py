@@ -41,6 +41,9 @@ UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID = (
 UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
+UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
+    "uk_effect_both_subsequent_occurrences_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -550,6 +553,26 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                     "replacement": m.group("replacement").strip(),
                     "occurrence": occurrence,
                     "rule_id": UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+                }
+            )
+
+    matches_both_subsequent_occurrences_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“”\"'‘](?P<original>.*?)[”\"'’],?\s+"
+        r"where\s+(?:it|they|those words?)\s+(?:appears?|appear|occurs?|occur)"
+        r"\s+in\s+both\s+subsequent\s+places,?\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+        r"\s+[“”\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_both_subsequent_occurrences_substituted:
+        for occurrence in ("3", "2"):
+            subs.append(
+                {
+                    "original": m.group("original").strip(),
+                    "replacement": m.group("replacement").strip(),
+                    "occurrence": occurrence,
+                    "rule_id": UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
                 }
             )
 
