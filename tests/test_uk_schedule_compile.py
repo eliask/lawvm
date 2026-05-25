@@ -17983,6 +17983,106 @@ def test_compile_parent_appropriate_place_definition_entry_records_specific_reje
     assert rejection["strict_disposition"] == "block"
 
 
+def test_compile_appropriate_place_insert_records_specific_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a at the appropriate place insert— bridging renewal election paragraph 15ZA ;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_index_appropriate_place_insert_rejected",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-04-01",
+        affected_uri="/id/ukpga/2000/17/schedule/22/paragraph/147",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 147",
+        affecting_uri="/id/ukpga/2022/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="3",
+        affecting_provisions="s. 25(10)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2022-04-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_appropriate_place_insert_rejected"
+    assert rejection["reason_code"] == "appropriate_place_insert_requires_anchor_claim"
+    assert rejection["placement_family"] == "appropriate_place_insert_requires_anchor_claim"
+    assert rejection["unlowered_target_candidates"] == ["Sch. 22 para. 147"]
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert "bridging renewal election" in rejection["extracted_text_preview"]
+
+
+def test_compile_insert_at_appropriate_place_records_specific_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>b insert at the appropriate place— “relevant register paragraph 22B(6A)”.</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_index_insert_at_appropriate_place_rejected",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/2000/17/schedule/22/paragraph/147",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 147",
+        affecting_uri="/id/uksi/2020/332",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2020",
+        affecting_number="332",
+        affecting_provisions="reg. 2(8)(b)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2020-12-31", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert lowering_rejections[0]["rule_id"] == "uk_effect_appropriate_place_insert_rejected"
+    assert lowering_rejections[0]["reason_code"] == "appropriate_place_insert_requires_anchor_claim"
+    assert lowering_rejections[0]["placement_family"] == "appropriate_place_insert_requires_anchor_claim"
+
+
 def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""
