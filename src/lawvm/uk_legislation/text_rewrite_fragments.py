@@ -16,6 +16,8 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.nlp_parser import (
+    UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
+    UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_FROM_BEGINNING_OMISSION_RULE_ID,
     US,
@@ -603,6 +605,53 @@ def append_basic_text_rewrite_observations(
                 "UK source text omits words from the beginning of the affected "
                 "target to a quoted endpoint; lowering preserves that as a "
                 "bounded from-beginning deletion scoped to the feed target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_before_child_substitution_text_patch",
+            reason=(
+                "UK source text substitutes words before a named direct child; "
+                "lowering preserves that as a before-child text patch scoped "
+                "to the affected target instead of replacing the child or "
+                "flattening the parent subtree."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_before_child_block_substitution_text_patch",
+            reason=(
+                "UK source text substitutes words before a named direct child "
+                "with a block amendment payload; lowering preserves that as a "
+                "before-child text patch scoped to the affected target and "
+                "does not admit the direct child payload as a whole-parent "
+                "replacement."
             ),
             effect=effect,
             extracted_el=extracted_el,

@@ -22424,6 +22424,78 @@ def test_compile_from_beginning_omission_lowers_to_bounded_text_repeal() -> None
     assert lowering_records[0]["target"] == "section:20b/subsection:2"
 
 
+def test_compile_before_child_block_substitution_strips_source_payload_label() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In subsection (6) for the words before paragraph (a) substitute\u2014</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>6</Pnumber>
+                <P2para>
+                  <Text>If, on an appeal notified to the tribunal, the tribunal decides\u2014</Text>
+                </P2para>
+              </P2>
+            </BlockAmendment>
+            <AppendText>.</AppendText>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-8ef23efc2b3508be9ab58810b610118e",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 50(6)",
+        affecting_uri="/id/uksi/2009/56",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="56",
+        affecting_provisions="Sch. 1 para. 31(2)",
+        affecting_title="The Transfer of Tribunal Functions and Revenue and Customs Appeals Order 2009",
+        in_force_dates=[{"date": "2009-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "50"), ("subsection", "6"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_BEFORE_CHILD_paragraph_a"
+    assert ops[0].text_patch.replacement == (
+        "If, on an appeal notified to the tribunal, the tribunal decides\u2014"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_child_block_text_substitution_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_before_child_block_text_substitution_patch"
+    ]
+    assert lowering_records[0]["family"] == "text_rewrite_lowering"
+    assert lowering_records[0]["reason_code"] == (
+        "explicit_before_child_block_substitution_text_patch"
+    )
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+    assert lowering_records[0]["target"] == "section:50/subsection:6"
+
+
 def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:
     extracted_el = ET.fromstring(
         f"""

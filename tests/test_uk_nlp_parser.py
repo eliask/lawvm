@@ -1415,6 +1415,36 @@ def test_parse_fragment_substitution_handles_words_before_child_substitution() -
     ]
 
 
+def test_parse_fragment_substitution_handles_unquoted_words_before_child_block() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (6) for the words before paragraph (a) substitute\u2014 "
+        "6 If, on an appeal notified to the tribunal, the tribunal decides\u2014 ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEFORE_CHILD_paragraph_a",
+            "replacement": "If, on an appeal notified to the tribunal, the tribunal decides\u2014",
+            "rule_id": "uk_effect_before_child_block_text_substitution_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_does_not_strip_different_before_child_block_label() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (6) for the words before paragraph (a) substitute\u2014 "
+        "7 If, on an appeal notified to the tribunal, the tribunal decides\u2014 ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEFORE_CHILD_paragraph_a",
+            "replacement": "7 If, on an appeal notified to the tribunal, the tribunal decides\u2014",
+            "rule_id": "uk_effect_before_child_block_text_substitution_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_omit_quoted_range() -> None:
     subs = parse_fragment_substitution(
         "ii in paragraph (b), omit the words from \u201c(ignoring\u201d to \u201cthat Act)\u201d;"
