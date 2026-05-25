@@ -83,6 +83,9 @@ tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`,
 `bench -j uk --curate-preset
 canary|tight|stress|modern-canary|modern-tight|hard-canary|hard-tight|hard-stress`,
+`bench -j uk --corpus-stats --source-closure-stats` for replay-required
+affecting-act XML closure, `bench -j uk --curate-require-source-closure` for
+source-closed curated loops,
 `bench-regression-guard -j uk` with optional `duration_s` and per-phase
 regression limits, saved-run phase timing delta summaries when both UK runs
 were produced with `--phase-timings`, and replay diagnostics.
