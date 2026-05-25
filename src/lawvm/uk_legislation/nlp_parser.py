@@ -857,8 +857,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_labeled_end_range_substituted = re.finditer(
         r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
-        r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-        r"(?:occurs|appears))?"
+        r"(?:,?\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|appears),?)?"
         r" to the end of (?P<kind>sub-?paragraph|paragraph|subsection)\s*"
         r"\((?P<label>[0-9A-Za-z]+)\),?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
@@ -881,8 +881,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_labeled_end_range_block_substituted = re.finditer(
         r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
-        r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-        r"(?:occurs|appears))?"
+        r"(?:,?\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|appears),?)?"
         r" to the end of (?P<kind>sub-?paragraph|paragraph|subsection)\s*"
         r"\((?P<label>[0-9A-Za-z]+)\),?\s+"
         r"substitute(?:\s*[—-])?\s+(?P<replacement>.+?)(?:\s+\.)?$",

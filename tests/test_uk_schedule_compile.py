@@ -5995,6 +5995,76 @@ def test_compile_labeled_end_range_block_preserves_child_endpoint_selector() -> 
     assert lowering_records[0]["target_suffix_label"] == "a"
 
 
+def test_compile_labeled_end_range_ordinal_comma_block() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-14-8">
+          <Pnumber>8</Pnumber>
+          <Text>
+            8 In section 12 of that Act (when sequestration is awarded), in
+            subsection (1), for the words from \u201cpetition\u201d, where it first
+            occurs, to the end of paragraph (a), substitute debtor application
+            is made, the Accountant in Bankruptcy shall award sequestration
+            forthwith if he is satisfied\u2014 a that the application has been made
+            in accordance with the provisions of this Act and any provisions
+            made under this Act; .
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-ccc9790bf56a0435177e4fe3fb5aa1f8",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-04-01",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 12(1)",
+        affecting_uri="/id/asp/2007/3",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="s. 14(8)",
+        affecting_title="Bankruptcy and Diligence etc. (Scotland) Act 2007",
+        in_force_dates=[{"date": "2008-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "12"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert (
+        op.text_patch.selector.match_text
+        == f"TEXT_FROM_CHILD_END{US}paragraph{US}a{US}petition"
+    )
+    assert op.text_patch.selector.occurrence == 1
+    assert op.text_patch.replacement.startswith("debtor application is made")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_labeled_end_range_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_labeled_child_end_range_text_patch"
+    ]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+    assert lowering_records[0]["target"] == "section:12/subsection:1"
+    assert lowering_records[0]["target_suffix_kind"] == "paragraph"
+    assert lowering_records[0]["target_suffix_label"] == "a"
+
+
 def test_compile_labeled_end_range_blocks_incompatible_child_endpoint_target() -> None:
     extracted_el = ET.fromstring(
         f"""

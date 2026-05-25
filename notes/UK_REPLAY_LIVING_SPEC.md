@@ -2191,6 +2191,11 @@ Current payload-descendant source-ref invariant:
   parent target and encoding the explicit child endpoint in the selector.
   Current witness: `ukpga/1978/29` affected `s. 17AA(3)` by `asp/2005/13`
   `sch. 2 para. 2(5)(a)`.
+- labeled child-end ranges may also carry ordinal start wording with a comma:
+  `from "X", where it first occurs, to the end of paragraph (a), substitute Y`
+  preserves the ordinal occurrence and the explicit child endpoint under the
+  same parser and lowering rules. Current witness: `ukpga/1985/66` affected
+  `s. 12(1)` by `asp/2007/3 s. 14(8)`.
 - the parser may lower `for the words from "X" to the end, substitute "- Y`
   where the replacement has an opening quote before a block dash but no closing
   quote in the flattened source text to `TEXT_FROM_X_TO_END` using
