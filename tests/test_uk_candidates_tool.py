@@ -34,6 +34,7 @@ from lawvm.tools.uk_candidates import (
     _matching_frontier,
     _primary_frontier_score,
     _print_uk_candidates_text_summary,
+    _replay_adjudication_kinds_from_args,
     _replay_applicable_effects_with_budget,
     _row_matches_claim_template_status,
     _summarize_effect_inventory,
@@ -259,6 +260,19 @@ def test_manual_compile_evidence_status_actionable_alias_expands_review_queue() 
     ) == {
         "manual_compile_candidate",
         "deterministic_frontend_candidate",
+    }
+
+
+def test_replay_adjudication_kind_alias_expands_residual_claim_kind() -> None:
+    assert _replay_adjudication_kinds_from_args(None) == set()
+    assert _replay_adjudication_kinds_from_args(
+        ["uk_text_match_already_rewritten_mixed_residual_eids"]
+    ) == {"uk_replay_text_match_already_rewritten"}
+    assert _replay_adjudication_kinds_from_args(
+        ["uk_effect_table_entry_row_insert", "uk_text_match_already_rewritten"]
+    ) == {
+        "uk_effect_table_entry_row_insert",
+        "uk_replay_text_match_already_rewritten",
     }
 
 
@@ -4914,6 +4928,10 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "residual_candidate_root_samples_omitted": 0,
         "residual_candidate_samples": [],
         "residual_candidate_samples_omitted": 0,
+        "replay_adjudication_bucket_counts": {},
+        "replay_adjudication_kind_counts": {},
+        "replay_adjudication_samples": [],
+        "replay_adjudication_samples_omitted": 0,
         "residual_roots": [],
         "status": "frontier prefilter only",
         "triage_rule_id": "uk_frontier_prefilter_only",
@@ -4973,6 +4991,19 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
                     }
                 ],
                 "residual_candidate_samples_omitted": 3,
+                "replay_adjudication_kind_counts": {
+                    "uk_replay_text_match_already_rewritten": 1,
+                },
+                "replay_adjudication_bucket_counts": {
+                    "text_surface": 1,
+                },
+                "replay_adjudication_samples": [
+                    {
+                        "kind": "uk_replay_text_match_already_rewritten",
+                        "op_id": "key-demo",
+                    }
+                ],
+                "replay_adjudication_samples_omitted": 7,
                 "enacted_source_status": "available",
                 "enacted_source_size": 123,
                 "enacted_source_sha256": "enacted-sha",
@@ -5013,6 +5044,19 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
             }
         ],
         "residual_candidate_samples_omitted": 3,
+        "replay_adjudication_bucket_counts": {
+            "text_surface": 1,
+        },
+        "replay_adjudication_kind_counts": {
+            "uk_replay_text_match_already_rewritten": 1,
+        },
+        "replay_adjudication_samples": [
+            {
+                "kind": "uk_replay_text_match_already_rewritten",
+                "op_id": "key-demo",
+            }
+        ],
+        "replay_adjudication_samples_omitted": 7,
         "residual_roots": ["part-1", "schedule-1"],
         "status": "real residual frontier",
         "triage_rule_id": "uk_residual_claim_backed_by_candidate_overlap",

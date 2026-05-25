@@ -31,6 +31,12 @@ _ACTIONABLE_MANUAL_COMPILE_EVIDENCE_ALIASES = frozenset(
         "all_actionable",
     }
 )
+_REPLAY_ADJUDICATION_KIND_ALIASES: dict[str, tuple[str, ...]] = {
+    "uk_text_match_already_rewritten": ("uk_replay_text_match_already_rewritten",),
+    "uk_text_match_already_rewritten_mixed_residual_eids": (
+        "uk_replay_text_match_already_rewritten",
+    ),
+}
 
 
 def _primary_frontier_score(result, *, score_mode: str = "auto") -> float:  # noqa: ANN001
@@ -365,6 +371,21 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
             ),
             "residual_candidate_samples_omitted": int(
                 row.get("residual_candidate_samples_omitted") or 0
+            ),
+            "replay_adjudication_kind_counts": dict(
+                cast(Mapping[str, int], row.get("replay_adjudication_kind_counts") or {})
+            ),
+            "replay_adjudication_bucket_counts": dict(
+                cast(
+                    Mapping[str, int],
+                    row.get("replay_adjudication_bucket_counts") or {},
+                )
+            ),
+            "replay_adjudication_samples": list(
+                row.get("replay_adjudication_samples") or ()
+            ),
+            "replay_adjudication_samples_omitted": int(
+                row.get("replay_adjudication_samples_omitted") or 0
             ),
         },
         "enacted_source": {
@@ -876,6 +897,24 @@ def _result_has_replay_adjudication_kind(
             return True
     kind_counts = _count_map_from_object(getattr(result, "replay_adjudication_kind_counts", {}))
     return any(kind in kind_counts for kind in kinds)
+
+
+def _replay_adjudication_kinds_from_args(value: object) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        raw_items = (value,)
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        raw_items = tuple(str(item) for item in value)
+    else:
+        raw_items = (str(value),)
+    kinds: set[str] = set()
+    for item in raw_items:
+        kind = item.strip()
+        if not kind:
+            continue
+        kinds.update(_REPLAY_ADJUDICATION_KIND_ALIASES.get(kind, (kind,)))
+    return kinds
 
 
 def _replay_adjudication_sample_rows(
@@ -3224,10 +3263,9 @@ def main(args: "argparse.Namespace") -> None:
     max_year: int | None = getattr(args, "max_year", None)
     type_args = getattr(args, "types", None)
     types = {str(t).strip() for t in type_args} if type_args else None
-    replay_adjudication_kind_args = getattr(args, "replay_adjudication_kind", None) or ()
-    replay_adjudication_kinds = {
-        str(kind).strip() for kind in replay_adjudication_kind_args if str(kind).strip()
-    }
+    replay_adjudication_kinds = _replay_adjudication_kinds_from_args(
+        getattr(args, "replay_adjudication_kind", None)
+    )
     replay_adjudication_sample_limit = int(
         getattr(args, "replay_adjudication_sample_limit", 5) or 0
     )

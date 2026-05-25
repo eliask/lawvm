@@ -3759,7 +3759,10 @@ Current bench replay-regime invariant:
   triage/export surface only: it carries the saved replay regime, source
   witnesses, adjudication bucket, detail payload, blocking/strict dispositions,
   and stable work-item IDs, but it does not authorize replay repair or compile
-  manual claims.
+  manual claims. The filter accepts residual-claim aliases where useful; for
+  example `uk_text_match_already_rewritten_mixed_residual_eids` expands to
+  `uk_replay_text_match_already_rewritten` so review exports can start from the
+  bench residual claim kind and still sample the underlying replay witness.
 - UK evidence/proof bundles are also replay evidence surfaces. Their
   `compiler_observations.uk_compile_observation_summary` and
   `uk_compile_rejection_summary` must preserve effect source pathology and
@@ -5140,7 +5143,10 @@ Current bench replay-regime invariant:
 - Residual evidence includes root-level candidate hit counts, side counts
   (`replayed_only`, `oracle_only`, `both`), source-pathology counts, compare
   shape counts, structural/non-structural counts, and manual-frontier rule
-  counts. These fields are next-action selectors for large residual frontiers.
+  counts. It also carries bounded replay-adjudication kind/bucket counts and
+  samples when available, so a residual work item preserves the adjudication
+  witness that selected its claim kind. These fields are next-action selectors
+  for large residual frontiers.
 - The same residual-candidate count families are aggregated into the
   `uk-candidates` JSON summary so corpus-level runs can rank likely replay
   work without parsing each emitted row.
