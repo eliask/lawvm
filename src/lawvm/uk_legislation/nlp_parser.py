@@ -485,7 +485,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"\s+to\s+(?:the\s+(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:(?:,\s+where it|,\s+where)\s+(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
         r"(?:\s+\(?\s*in the (?P<range_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place\s*\)?)?"
-        r",?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        r",?\s+(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -558,7 +558,9 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
         r" to the end of (?P<kind>sub-?paragraph|paragraph|subsection)\s*"
-        r"\((?P<label>[0-9A-Za-z]+)\),?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        r"\((?P<label>[0-9A-Za-z]+)\),?\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+        r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -579,7 +581,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
-        r" to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?,?\s+"
+        r" (?:to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
         r"(?P<verb>substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
         r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,

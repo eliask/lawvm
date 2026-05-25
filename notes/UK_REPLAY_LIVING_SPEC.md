@@ -1780,8 +1780,13 @@ Current payload-descendant source-ref invariant:
   it does not infer any additional preimages from the target text. The related
   passive range form `for the words from the beginning to "X" there shall be
   substituted "Y"` lowers to `TEXT_FROM__TO_X` using
-  `uk_effect_from_beginning_passive_substitution_text_patch`. Current witness:
-  `ukpga/1990/42` affected `s. 52`, `s. 14`, and `s. 104(6)` by
+  `uk_effect_from_beginning_passive_substitution_text_patch`. Passive bounded
+  range forms such as `for the words from "X" to "Y" there shall be
+  substituted "Z"`, `for the words from "X" to the end of paragraph (c) there
+  shall be substituted "Z"`, and `for the words from "X" onwards there shall
+  be substituted "Z"` lower to the same explicit range selectors used by their
+  active `substitute` counterparts. Current witness: `ukpga/1990/42` affected
+  `s. 52`, `s. 14`, `s. 104(6)`, `s. 97(1)`, `s. 88(7)`, and `s. 53(8)` by
   `ukpga/2003/21 Sch. 15`.
 - preposed beginning insertions of the form `there shall be inserted at the
   beginning the words "X"` lower to an explicit `TEXT_BEGINNING` text patch
