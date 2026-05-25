@@ -1286,6 +1286,21 @@ def test_parse_fragment_substitution_handles_beginning_of_subsection_insert() ->
     ]
 
 
+def test_parse_fragment_substitution_handles_preposed_at_end_insert() -> None:
+    subs = parse_fragment_substitution(
+        "1 In subsection (1A), there shall be inserted at the end the words "
+        "\u201c and the amounts referred to in that subsection are net amounts\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "and the amounts referred to in that subsection are net amounts",
+            "rule_id": "uk_effect_preposed_at_end_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_entry_for_of_insert() -> None:
     subs = parse_fragment_substitution(
         "Schedule 3 is amended by the insertion, after the entry for "

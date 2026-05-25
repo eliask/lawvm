@@ -3875,6 +3875,60 @@ def test_compile_words_inserted_at_end_of_that_paragraph_to_text_replace() -> No
     assert ops[0].text_patch.replacement == "or is Scottish Water,"
 
 
+def test_compile_preposed_words_inserted_at_end_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-104-1">
+          <Pnumber>1</Pnumber>
+          <Text>
+            1 In subsection (1A), there shall be inserted at the end the words
+            \u201c and the amounts referred to in that subsection are net amounts,
+            that is to say, amounts which take into account any relief,
+            allowance or repayment of tax for which a claim is made and give
+            credit for any income tax deducted at source and any tax credit to
+            which section 231 of the principal Act applies\u201d.
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-b381513e13a98f383d3587b0b3d892cb",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1995-05-01",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 8A(1A)",
+        affecting_uri="/id/ukpga/1995/4",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1995",
+        affecting_number="4",
+        affecting_provisions="s. 104(1)",
+        affecting_title="Finance Act 1995",
+        in_force_dates=[{"date": "1995-05-01", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "8a"), ("subsection", "1a"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement.startswith(
+        "and the amounts referred to in that subsection are net amounts"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_preposed_at_end_text_insertion_patch"
+        in op.provenance_tags
+    )
+
+
 def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
