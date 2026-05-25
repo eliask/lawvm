@@ -2091,9 +2091,10 @@ Current payload-descendant source-ref invariant:
   `ukpga/2009/1` `s. 253(7)`.
 - `before/after the entry relating to "X" insert- "Y"` is not a text-patch
   family. It lowers to `uk_effect_schedule_list_entry_insert` only when the
-  affected target is a schedule or explicit schedule partition and source
-  parsing has a typed `schedule_entry` carrier. Replay then requires exactly
-  one direct schedule-entry anchor on that carrier and inserts a
+  affected target is a schedule, explicit schedule partition, or an explicit
+  schedule paragraph/subparagraph carrier and source parsing has a typed
+  `schedule_entry` carrier. Replay then requires exactly one direct
+  schedule-entry anchor on that carrier and inserts a
   `schedule_entry` sibling before/after that anchor. Missing or ambiguous
   anchors block with
   `uk_replay_schedule_list_entry_anchor_unresolved`, classified as source
@@ -2126,6 +2127,14 @@ Current payload-descendant source-ref invariant:
   `asp/2000/7` affected `sch. 3` by `asp/2005/6` `Sch. 3 para. 9(a)`,
   `ssi/2009/286` `art. 2(2)(c)`, `asp/2010/8` `sch. 14 para. 1(b)`,
   `asp/2005/10` `sch. 4 para. 12`, and `asp/2007/5` `Sch. 5 para. 4`.
+  If a source-owned payload on such an explicit carrier consists of multiple
+  semicolon-delimited numbered paragraph entries, lowering emits one typed
+  schedule-entry insert per entry and chains after-anchors through the inserted
+  predecessor so replay preserves source order rather than repeatedly inserting
+  after the original anchor. Current witness: `ukpga/2000/17`
+  `Sch. 15 para. 26(2)` affected by `ukpga/2008/9`
+  `Sch. 11 para. 2(b)`, which inserts paragraph 30A, 30B, and 30C after the
+  direct entry for paragraph 30.
   A schedule-partition lowering witness is `asp/2002/11` affected
   `sch. 2 Pt. 2` by `asp/2025/11` `sch. 4 para. 2(2)(a)`; corpus replay
   currently keeps that row visible as `uk_replay_schedule_list_entry_anchor_unresolved`

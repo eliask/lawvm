@@ -337,7 +337,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         original_targets_str=ctx.original_targets_str,
         lowering_rejections_out=lowering_rejections_out,
     )
-    if _append_handled_lowering_op(target_ops, schedule_list_entry):
+    if _extend_handled_lowering_ops(target_ops, schedule_list_entry):
         return unchanged
     table_column_insert = try_lower_table_column_insert(
         effect=effect,

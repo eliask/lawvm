@@ -28,6 +28,7 @@ from lawvm.uk_legislation.schedule_list_selectors import (
     _uk_schedule_list_entry_insert_selector,
     _uk_schedule_list_entry_repeal_selector,
     _uk_schedule_list_entry_replace_selector,
+    split_schedule_entry_insert_payload,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
     UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID as _UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
@@ -250,7 +251,7 @@ def try_lower_schedule_list_entry_mutation(
     extraction_witness: UKProvisionExtractionWitness,
     original_targets_str: list[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
-) -> UKScheduleLoweringResult:
+) -> UKScheduleBatchLoweringResult:
     schedule_list_entry_selector = (
         _uk_schedule_list_entry_insert_selector(
             target_ref=t_str,
@@ -320,23 +321,25 @@ def try_lower_schedule_list_entry_mutation(
                     "anchor_direction": str(schedule_list_entry_selector["direction"]),
                 },
             )
-            return UKScheduleLoweringResult(
+            return UKScheduleBatchLoweringResult(
                 handled=True,
-                op=_build_schedule_payload_op(
-                    effect=effect,
-                    sequence=sequence,
-                    action=StructuralAction.INSERT,
-                    target=target,
-                    payload=payload_node,
-                    effect_witness=effect_witness,
-                    extraction_witness=extraction_witness,
-                    original_targets_str=original_targets_str,
-                    t_str=t_str,
-                    provenance_note=(
-                        f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}"
-                        f"{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}"
+                ops=(
+                    _build_schedule_payload_op(
+                        effect=effect,
+                        sequence=sequence,
+                        action=StructuralAction.INSERT,
+                        target=target,
+                        payload=payload_node,
+                        effect_witness=effect_witness,
+                        extraction_witness=extraction_witness,
+                        original_targets_str=original_targets_str,
+                        t_str=t_str,
+                        provenance_note=(
+                            f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}"
+                            f"{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}"
+                        ),
+                        witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID,
                     ),
-                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID,
                 ),
             )
 
@@ -353,37 +356,65 @@ def try_lower_schedule_list_entry_mutation(
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
-            detail=dict(schedule_list_entry_selector),
-        )
-        payload_node = IRNode(
-            kind=IRNodeKind.SCHEDULE_ENTRY,
-            label=None,
-            text=str(schedule_list_entry_selector["inserted_text"]),
-            attrs={
-                "source_rule_id": "uk_schedule_list_entry_insert_payload",
-                "anchor_text": str(schedule_list_entry_selector["anchor_text"]),
-                "anchor_direction": str(schedule_list_entry_selector["direction"]),
+            detail={
+                **dict(schedule_list_entry_selector),
+                "inserted_entry_count": len(
+                    split_schedule_entry_insert_payload(
+                        str(schedule_list_entry_selector["inserted_text"])
+                    )
+                ),
             },
         )
-        return UKScheduleLoweringResult(
-            handled=True,
-            op=_build_schedule_payload_op(
-                effect=effect,
-                sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=target,
-                payload=payload_node,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                original_targets_str=original_targets_str,
-                t_str=t_str,
-                provenance_note=(
-                    f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}"
-                    f"{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}"
-                ),
-                witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
-            ),
+        inserted_entries = split_schedule_entry_insert_payload(
+            str(schedule_list_entry_selector["inserted_text"])
         )
+        if not inserted_entries:
+            return UKScheduleBatchLoweringResult(handled=True)
+        insert_ops: list[LegalOperation] = []
+        anchor_text = str(schedule_list_entry_selector["anchor_text"])
+        direction = str(schedule_list_entry_selector["direction"])
+        for entry_index, inserted_text in enumerate(inserted_entries):
+            entry_selector = {
+                **dict(schedule_list_entry_selector),
+                "anchor_text": anchor_text,
+                "inserted_text": inserted_text,
+                "source_inserted_text": str(schedule_list_entry_selector["inserted_text"]),
+                "inserted_entry_index": entry_index,
+                "inserted_entry_count": len(inserted_entries),
+            }
+            payload_node = IRNode(
+                kind=IRNodeKind.SCHEDULE_ENTRY,
+                label=None,
+                text=inserted_text,
+                attrs={
+                    "source_rule_id": "uk_schedule_list_entry_insert_payload",
+                    "anchor_text": anchor_text,
+                    "anchor_direction": direction,
+                    "source_inserted_entry_index": str(entry_index),
+                    "source_inserted_entry_count": str(len(inserted_entries)),
+                },
+            )
+            insert_ops.append(
+                _build_schedule_payload_op(
+                    effect=effect,
+                    sequence=sequence,
+                    action=StructuralAction.INSERT,
+                    target=target,
+                    payload=payload_node,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    t_str=t_str,
+                    provenance_note=(
+                        f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}"
+                        f"{json.dumps(entry_selector, ensure_ascii=False)}"
+                    ),
+                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+                )
+            )
+            if direction == "after":
+                anchor_text = inserted_text
+        return UKScheduleBatchLoweringResult(handled=True, ops=tuple(insert_ops))
 
     schedule_list_entry_repeal_selector = (
         _uk_schedule_list_entry_repeal_selector(
@@ -411,23 +442,25 @@ def try_lower_schedule_list_entry_mutation(
             extracted_text=extracted_text,
             detail=dict(schedule_list_entry_repeal_selector),
         )
-        return UKScheduleLoweringResult(
+        return UKScheduleBatchLoweringResult(
             handled=True,
-            op=_build_schedule_payload_op(
-                effect=effect,
-                sequence=sequence,
-                action=StructuralAction.REPEAL,
-                target=target,
-                payload=None,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                original_targets_str=original_targets_str,
-                t_str=t_str,
-                provenance_note=(
-                    f"{_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR}"
-                    f"{json.dumps(schedule_list_entry_repeal_selector, ensure_ascii=False)}"
+            ops=(
+                _build_schedule_payload_op(
+                    effect=effect,
+                    sequence=sequence,
+                    action=StructuralAction.REPEAL,
+                    target=target,
+                    payload=None,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    t_str=t_str,
+                    provenance_note=(
+                        f"{_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR}"
+                        f"{json.dumps(schedule_list_entry_repeal_selector, ensure_ascii=False)}"
+                    ),
+                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
                 ),
-                witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
             ),
         )
 
@@ -441,7 +474,7 @@ def try_lower_schedule_list_entry_mutation(
         else None
     )
     if schedule_list_entry_replace_selector is None:
-        return UKScheduleLoweringResult(handled=False)
+        return UKScheduleBatchLoweringResult(handled=False)
 
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
@@ -467,23 +500,25 @@ def try_lower_schedule_list_entry_mutation(
             "anchor_text": str(schedule_list_entry_replace_selector["anchor"]),
         },
     )
-    return UKScheduleLoweringResult(
+    return UKScheduleBatchLoweringResult(
         handled=True,
-        op=_build_schedule_payload_op(
-            effect=effect,
-            sequence=sequence,
-            action=StructuralAction.REPLACE,
-            target=target,
-            payload=payload_node,
-            effect_witness=effect_witness,
-            extraction_witness=extraction_witness,
-            original_targets_str=original_targets_str,
-            t_str=t_str,
-            provenance_note=(
-                f"{_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR}"
-                f"{json.dumps(schedule_list_entry_replace_selector, ensure_ascii=False)}"
+        ops=(
+            _build_schedule_payload_op(
+                effect=effect,
+                sequence=sequence,
+                action=StructuralAction.REPLACE,
+                target=target,
+                payload=payload_node,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                original_targets_str=original_targets_str,
+                t_str=t_str,
+                provenance_note=(
+                    f"{_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR}"
+                    f"{json.dumps(schedule_list_entry_replace_selector, ensure_ascii=False)}"
+                ),
+                witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
             ),
-            witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
         ),
     )
 
