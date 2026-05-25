@@ -2900,6 +2900,9 @@ Current payload-descendant source-ref invariant:
   `repeal_schedule_table_source_unsupported` and
   `uk_manual_frontier_repeal_table_candidate`. This keeps the table witness
   visible without smuggling the whole repeal schedule into a single target.
+  Repeal-table source pathology is keyed by the explicit table header, so rows
+  with blank effect types still classify as repeal-table source rather than
+  generic parser/extraction misses.
 - bounded repeal-table quoted-words rows are now owned by
   `uk_effect_repeal_table_quoted_words_text_repeal`: the compiler must match a
   unique repeal table row by affected Act identity, split only explicit extent

@@ -1130,12 +1130,12 @@ def _looks_like_repeal_schedule_table_source(
     tag = extracted_tag or ""
     if tag not in {"Schedule", "Part", "Table", "Tgroup", "Pblock"}:
         return False
+    norm = _normalize_effect_text(text)
+    if re.search(r"\b(?:enactment|reference|chapter|short title|title)\b.+\bextent\s+of\s+repeal(?:\s+or\s+revocation)?\b", norm):
+        return True
     norm_effect_type = _normalize_effect_text(effect_type)
     if not any(term in norm_effect_type for term in ("repeal", "omit")):
         return False
-    norm = _normalize_effect_text(text)
-    if re.search(r"\b(?:enactment|extent)\s+of\s+repeal\b", norm):
-        return True
     return bool(re.search(r"\bthe\s+whole\s+act\s+except\b", norm))
 
 
