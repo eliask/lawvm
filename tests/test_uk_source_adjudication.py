@@ -1672,6 +1672,31 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_list_entry_before_ge
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_entry_beginning_substitution_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "In schedule 19, for the entry beginning "
+            "\u201cHer Majesty's Chief Inspector of Constabulary\u201d, substitute- "
+            "\u201cHer Majesty's Inspectors of Constabulary\u201d."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_structural_sibling_insert_before_generic_parser() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

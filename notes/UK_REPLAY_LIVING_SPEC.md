@@ -2305,7 +2305,8 @@ Current payload-descendant source-ref invariant:
   source form may say either `at the appropriate place` or
   `at an appropriate place`; non-alphabetical `appropriate place` wording
   remains a manual/frontier placement claim. Rows that look like
-  schedule-list-entry amendments but
+  schedule-list-entry amendments, including prefix-anchor forms such as
+  `for the entry beginning "X" substitute Y`, but
   lack enough carrier/target information remain in
   `schedule_list_entry_target_unsupported` /
   `uk_manual_frontier_schedule_list_entry_candidate`. Current witnesses:
@@ -2313,7 +2314,8 @@ Current payload-descendant source-ref invariant:
   `ssi/2009/286` `art. 2(2)(c)`, `asp/2010/8` `sch. 14 para. 1(b)`,
   `asp/2005/10` `sch. 4 para. 12`, `asp/2007/5` `Sch. 5 para. 4`, and
   ordinal witness `ukpga/1933/12` affected `Sch. 1` by `ukpga/2012/9`
-  `Sch. 9 para. 136(b)`.
+  `Sch. 9 para. 136(b)`. Prefix-anchor manual-frontier witness:
+  `asp/2010/8` affected `s. 115(6)` by `asp/2012/8 sch. 7 para. 40(3)`.
   If a source-owned payload on such an explicit carrier consists of multiple
   semicolon-delimited numbered paragraph entries, lowering emits one typed
   schedule-entry insert per entry and chains after-anchors through the inserted
