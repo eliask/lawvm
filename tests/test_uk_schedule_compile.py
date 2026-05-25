@@ -5272,6 +5272,26 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_range_occurrence_substitution_text_patch",
         ),
         (
+            "i for “poinding”, where it first occurs, there is substituted “attachment”;",
+            "word substituted",
+            "sch. 7 para. 24(3)",
+            "poinding",
+            "attachment",
+            1,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+        ),
+        (
+            "iii for “a poinding”, where it second occurs, there is substituted “an attaching”;",
+            "words substituted",
+            "sch. 7 para. 24(3)",
+            "a poinding",
+            "an attaching",
+            2,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+        ),
+        (
             "7 In section 14(5)(a), for the words from “member” to “and” "
             "substitute constable of the Police Service; and aa another case.",
             "words substituted",
