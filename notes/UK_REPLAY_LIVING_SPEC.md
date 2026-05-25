@@ -678,6 +678,9 @@ preserve rejected operations as evidence.
 Current rule:
 
 - non-`repeal` `/whole_act` operations are not applied by the ordinary executor
+- known word-level `/whole_act` text patches should be rejected during lowering
+  with `uk_effect_whole_act_word_level_text_patch_rejected`, not compiled as
+  deterministic ops that the prepare filter will later skip
 - the prepare result must include the accepted operations and a typed
   `uk_replay_unsupported_action` adjudication for each rejected operation
 - public replay paths should still append those adjudications to
@@ -4504,6 +4507,14 @@ Current bench replay-regime invariant:
   provisions rather than compiling `/whole_act` replace/repeal or expanding all
   live children except the exceptions.
   - current witness: `asp/2003/5` / `asp/2007/14 Sch. 4 para. 42`
+- Word-level substitutions or omissions whose effect metadata target is `Act`
+  are document-wide text patch claims. Until LawVM has an explicit whole-Act
+  text-patch compiler, lowering blocks them with
+  `uk_effect_whole_act_word_level_text_patch_rejected` and manual-frontier
+  classification reports
+  `uk_manual_frontier_whole_act_word_level_text_patch_candidate`.
+  - current witness: `ukpga/1978/29` affected `Act` by `ssi/2013/177`
+    `Sch. para. 2(a)`.
 - UK insertion ordering must distinguish ordinary alphabetic item suffixes
   from Roman numerals by sibling scheme. A schedule item batch such as
   `2(da)-(dk)` belongs after item `d` and before item `e`; labels like `dc`,

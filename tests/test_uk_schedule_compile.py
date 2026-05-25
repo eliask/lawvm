@@ -9034,6 +9034,53 @@ def test_compile_rejects_empty_type_whole_act_action_inferred_from_incidental_so
     assert lowering_rejections[0]["strict_disposition"] == "block"
 
 
+def test_compile_rejects_whole_act_word_level_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>for “EEA state” wherever it occurs substitute “ EEA State ” ; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_whole_act_word_level_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-06-06",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="Act",
+        affecting_uri="/id/uksi/2013/177",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="177",
+        affecting_provisions="Sch. para. 2(a)",
+        affecting_title="The National Health Service (Superannuation Scheme, Pension Scheme and Additional Voluntary Contributions) (Scotland) Amendment Regulations 2013",
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    assert lowering_rejections[0]["rule_id"] == "uk_effect_whole_act_word_level_text_patch_rejected"
+    assert lowering_rejections[0]["reason_code"] == "whole_act_word_level_text_patch_unsupported"
+    assert lowering_rejections[0]["target_ref"] == "Act"
+    assert lowering_rejections[0]["target"] == "/whole_act"
+    assert lowering_rejections[0]["effect_type"] == "words substituted"
+    assert lowering_rejections[0]["action"] == "replace"
+    assert lowering_rejections[0]["blocking"] is True
+    assert lowering_rejections[0]["strict_disposition"] == "block"
+
+
 def test_compile_preserves_explicit_whole_act_repeal_effect_type() -> None:
     extracted_el = ET.fromstring(
         f"""

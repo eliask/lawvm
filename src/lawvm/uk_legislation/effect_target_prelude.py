@@ -382,6 +382,7 @@ def reject_external_or_partial_whole_act_scope(
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
+    effect_type_norm = " ".join(str(effect_type or "").lower().split())
     external_act_target = (
         _external_act_target_from_source_text(extracted_text)
         if str(target.special or "") == "whole_act"
@@ -407,7 +408,31 @@ def reject_external_or_partial_whole_act_scope(
         )
         return True
 
-    if str(target.special or "") == "whole_act" and not effect_type:
+    if str(target.special or "") == "whole_act" and effect_type_norm.startswith("word"):
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_whole_act_word_level_text_patch_rejected",
+            family="unsupported_target_scope",
+            reason_code="whole_act_word_level_text_patch_unsupported",
+            reason=(
+                "UK effect metadata points at the whole Act for a word-level "
+                "text patch; lowering must not send a document-wide text "
+                "rewrite to ordinary replay without an explicit whole-act text "
+                "patch compiler."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "effect_type": effect_type,
+                "action": action,
+            },
+        )
+        return True
+
+    if str(target.special or "") == "whole_act" and not effect_type_norm:
         text = " ".join((extracted_text or "").split())
         explicit_whole_act_repeal = bool(
             re.search(
