@@ -561,6 +561,8 @@ families,
 `uk_manual_frontier_source_carried_structured_text_patch_candidate`,
 `definition_child_and_tail_substitution` for
 `uk_manual_frontier_definition_child_and_tail_substitution_candidate`,
+`structural_child_range_substitution` for
+`uk_manual_frontier_structural_child_range_substitution_candidate`,
 `definition_entry_insert` for
 `uk_manual_frontier_appropriate_place_definition_entry_candidate`,
 `index_entry_insert` for

@@ -506,6 +506,30 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_sibling_insertion_boundary",
             ],
         )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_structural_child_range_substitution_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="structural_child_range_substitution",
+            placement_family="source_named_child_range_required",
+            required_ownership=[
+                "source_named_child_range",
+                "replacement_payload_shape",
+                "removed_child_identities",
+                "parent_text_or_tail_boundary",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_exact_child_range",
+                "claim_identifies_each_removed_child_unit",
+                "claim_identifies_replacement_payload_as_text_or_child_units",
+                "claim_preserves_unclaimed_siblings_and_parent_text",
+                "changed_paths_are_within_claimed_child_range_boundary",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_amendment_program_target_candidate":
         detail = _first_lowering_rejection_detail(
             row=row,
