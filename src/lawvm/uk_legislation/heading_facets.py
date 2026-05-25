@@ -277,7 +277,8 @@ def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) 
         return None
     match = re.search(
         r"\bfor\s+(?:the\s+)?(?:italic\s+)?(?:heading|cross-heading|cross heading)\s+"
-        r"before\s+(?:paragraph|section|article)\s+[0-9A-Za-z().]+\s+"
+        r"before\s+(?:paragraphs?|sections?|articles?)\s+[0-9A-Za-z().]+"
+        r"(?:\s*(?:to|-|–|—)\s*[0-9A-Za-z().]+)?\s+"
         r"substitute\s*[—-]?\s+(.+?)\s*$",
         text,
         re.I,
@@ -285,7 +286,9 @@ def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) 
     if match is None:
         return None
     replacement = match.group(1).strip()
+    replacement = replacement.strip(" “”\"'‘’")
     replacement = re.sub(r"\s+\.$", "", replacement).strip()
+    replacement = replacement.strip(" “”\"'‘’")
     return replacement or None
 
 
