@@ -59,6 +59,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "structural_sibling_insert_unsupported",
         "heading_facet_target_unsupported",
         "crossheading_target_unsupported",
+        "table_crossheading_target_unsupported",
         "schedule_note_target_unsupported",
         "misselected_target_context",
         "nonstructural_root_gap",
@@ -196,6 +197,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "manual_compile_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
+    ),
+    "table_crossheading_target_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_table_crossheading_candidate",
+        "The source targets a table cross-heading surface; a claim or future table compiler must identify the table, heading cell/prefix, and row boundary instead of treating it as a normal paragraph heading.",
     ),
     "schedule_note_target_unsupported": (
         "manual_compile_candidate",
@@ -335,6 +341,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_in_definition_range_text_rewrite_applied",
         "uk_replay_in_definition_range_to_end_text_rewrite_applied",
         "uk_replay_implicit_first_subparagraph_parent_text_recovered",
+        "uk_replay_ordinal_sentence_text_rewrite_applied",
         "uk_replay_schedule_list_entry_alphabetical_position_resolved",
         "uk_replay_schedule_list_entry_anchor_article_normalized",
         "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized",
@@ -1011,6 +1018,20 @@ def _looks_like_table_entry_instruction(text: str, *, target_paths: Iterable[str
     )
 
 
+def _looks_like_table_crossheading_target(text: str, *, target_paths: Iterable[str] = ()) -> bool:
+    norm = _normalize_effect_text(text)
+    targets_norm = " ".join(str(path or "").lower() for path in target_paths)
+    if re.search(r"\btable\s+cross[- ]?heading\b", targets_norm):
+        return True
+    if re.search(r"(?:^|[:/ -])table\b", targets_norm) and "crossheading" in targets_norm:
+        return True
+    return bool(
+        re.search(r"\btable\b", norm)
+        and re.search(r"\bcross[- ]?heading\b", norm)
+        and re.search(r"\b(?:entry|entries|row|column|columns)\b", norm)
+    )
+
+
 def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -1234,6 +1255,8 @@ def classify_uk_effect_source_pathology(
         return "nonstructural_root_gap"
     if norm_text and not actions:
         if "uk_effect_crossheading_replace_rejected" in lowering_rules:
+            if _looks_like_table_crossheading_target(norm_text, target_paths=targets):
+                return "table_crossheading_target_unsupported"
             return "crossheading_target_unsupported"
         if "uk_effect_heading_only_ref_rejected" in lowering_rules:
             return "heading_facet_target_unsupported"
@@ -1259,6 +1282,8 @@ def classify_uk_effect_source_pathology(
             return "schedule_note_target_unsupported"
         targets_norm = " ".join(targets).lower()
         if re.search(r"(?:^|[:/ -])cross[-_ ]?heading\b", targets_norm):
+            if _looks_like_table_crossheading_target(norm_text, target_paths=targets):
+                return "table_crossheading_target_unsupported"
             return "crossheading_target_unsupported"
         if re.search(r"(?:^|[:/ -])(?:heading|title|sidenote)\b", targets_norm):
             return "heading_facet_target_unsupported"
@@ -1646,6 +1671,12 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         }
 
     if "uk_effect_crossheading_replace_rejected" in blocking_rules:
+        if source_pathology_norm == "table_crossheading_target_unsupported":
+            return {
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_table_crossheading_candidate",
+                "reason": "The source targets a table cross-heading surface; a claim or future table compiler must identify the table, heading cell/prefix, and row boundary instead of treating it as a normal paragraph heading.",
+            }
         return {
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_crossheading_candidate",

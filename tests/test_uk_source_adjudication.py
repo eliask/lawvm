@@ -1919,6 +1919,31 @@ def test_classify_uk_manual_compile_frontier_marks_crossheading_pathology() -> N
     assert result["rule_id"] == "uk_manual_frontier_crossheading_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_table_crossheading_pathology() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="table_crossheading_target_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "in paragraph 51(6), in the definition of primary activity, in the "
+            "table (the cross-heading preceding entry 1 of which becomes "
+            "\"Environmental Permitting\")"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_crossheading_replace_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_crossheading_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_treats_record_disposition_as_nonblocking() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="inserted",
@@ -2963,6 +2988,28 @@ def test_classify_uk_effect_crossheading_target() -> None:
     )
 
     assert pathology == "crossheading_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_table_crossheading_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "In Schedule 6, in paragraph 51(6), in the definition of "
+            "primary activity, in the table (the cross-heading preceding "
+            "entry 1 of which becomes \"Installations regulated under the "
+            "Environmental Permitting Regulations\")"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:6/paragraph:51/subparagraph:6/item:table/crossheading"],
+        lowering_rule_ids=["uk_effect_crossheading_replace_rejected"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "table_crossheading_target_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 

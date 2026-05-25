@@ -22,6 +22,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_structural_sibling_insert_candidate",
         "uk_manual_frontier_table_appropriate_place_candidate",
         "uk_manual_frontier_table_column_insert_candidate",
+        "uk_manual_frontier_table_crossheading_candidate",
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
     }
