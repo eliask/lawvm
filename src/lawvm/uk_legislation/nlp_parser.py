@@ -44,6 +44,7 @@ UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
 UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_both_subsequent_occurrences_substitution_text_patch"
 )
+UK_FROM_BEGINNING_OMISSION_RULE_ID = "uk_effect_from_beginning_omission_text_patch"
 
 
 def _normalize_quotes(text: str) -> str:
@@ -1065,6 +1066,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
                 "replacement": m.group("replacement").strip(),
                 "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+            }
+        )
+
+    matches_from_beginning_omitted = re.finditer(
+        r"omit\s+(?:(?:the\s+)?words?\s+)?from\s+the\s+beginning"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+        r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_from_beginning_omitted:
+        subs.append(
+            {
+                "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
+                "replacement": "",
+                "rule_id": UK_FROM_BEGINNING_OMISSION_RULE_ID,
             }
         )
 
