@@ -8,6 +8,7 @@ from lawvm.core.ir import TextPatchSpec, TextSelector
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.uk_legislation.text_rewrite_fragments import (
     _separate_all_occurrences_text_replace_fragments,
+    _separate_compound_lettered_text_replace_fragments,
     _separate_definition_repeal_fragments,
     _separate_definition_child_repeal_fragments,
     _separate_multi_quoted_word_repeal_fragments,
@@ -37,6 +38,9 @@ def build_uk_text_patch_items(
     )
     separate_all_occurrences_replacements = _separate_all_occurrences_text_replace_fragments(
         fragment_subs
+    )
+    separate_compound_lettered_replacements = (
+        _separate_compound_lettered_text_replace_fragments(fragment_subs)
     )
     separate_multi_quoted_word_repeals = _separate_multi_quoted_word_repeal_fragments(
         fragment_subs
@@ -115,6 +119,21 @@ def build_uk_text_patch_items(
             )
     elif curr_action == "text_replace" and separate_all_occurrences_replacements:
         for fragment in separate_all_occurrences_replacements:
+            text_patch_items.append(
+                (
+                    TextPatchSpec(
+                        kind=TextPatchKindEnum.REPLACE,
+                        selector=TextSelector(
+                            match_text=fragment["original"],
+                            occurrence=0,
+                        ),
+                        replacement=fragment["replacement"],
+                    ),
+                    [fragment],
+                )
+            )
+    elif curr_action == "text_replace" and separate_compound_lettered_replacements:
+        for fragment in separate_compound_lettered_replacements:
             text_patch_items.append(
                 (
                     TextPatchSpec(

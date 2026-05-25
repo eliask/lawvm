@@ -5168,3 +5168,20 @@ Current bench replay-regime invariant:
 - Strict mode must treat the recovery as blockable. Quirks mode may apply it
   only with the replay adjudication carrying the source anchor, trim selector,
   payload kind/label, and parent-tail trimming evidence.
+
+## UK Compound Lettered Text Patch Instructions
+
+- Rule `uk_effect_compound_lettered_text_patch_instruction` handles one source
+  paragraph that carries multiple lettered word-level instructions, such as
+  `a for "X" there is substituted "Y", and b after "Z" there is inserted "W"`.
+- The parser must not admit a quote-spanning synthetic preimage across the
+  sibling boundary. It first discards the false `for ... there is inserted ...`
+  capture if its preimage contains embedded quote marks, then marks the real
+  sibling fragments with the compound rule.
+- Lowering emits one bounded `TEXT_REPLACE` operation per marked fragment,
+  preserving the shared affected target and attaching the compound rule in
+  the text-rewrite witness. It must not collapse the row to the first fragment
+  or compile the entire source paragraph as one broad text replacement.
+- This is a parser/lowering family, not a replay recovery. Strict mode should
+  be able to block any future compound form whose fragments cannot be split
+  into independently owned text patches.

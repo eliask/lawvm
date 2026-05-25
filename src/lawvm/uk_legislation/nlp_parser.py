@@ -29,6 +29,11 @@ _ORDINAL_OCCURRENCE_WORDS = (
     r"fourth|fourthly|4th|fifth|fifthly|5th"
 )
 
+_QUOTE_CHARS = "\"'\u201c\u201d\u2018\u2019"
+_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
+    "uk_effect_compound_lettered_text_patch_instruction"
+)
+
 
 def _normalize_quotes(text: str) -> str:
     return (text.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")).strip()
@@ -129,6 +134,44 @@ def _deduplicate_fragment_substitutions(subs: list[Dict[str, str]]) -> list[Dict
         if "rule_id" in sub and "rule_id" not in deduped[existing_index]:
             deduped[existing_index] = sub
     return deduped
+
+
+def _compound_lettered_text_patch_source(text: str) -> bool:
+    """Return True for one paragraph carrying lettered sibling text patches."""
+    return bool(
+        re.search(
+            r"[—-]\s*[a-z]\s+\bfor\b.+?\band\s+[a-z]\s+\bafter\b",
+            text,
+            re.I,
+        )
+    )
+
+
+def _mark_compound_lettered_text_patches(
+    text: str,
+    subs: list[Dict[str, str]],
+) -> list[Dict[str, str]]:
+    if not subs or not _compound_lettered_text_patch_source(text):
+        return subs
+    marked: list[Dict[str, str]] = []
+    for sub in subs:
+        original = str(sub.get("original") or "")
+        rule_id = str(sub.get("rule_id") or "")
+        if (
+            rule_id == "uk_effect_for_there_is_inserted_replacement_text_patch"
+            and any(quote in original for quote in _QUOTE_CHARS)
+        ):
+            continue
+        if rule_id in {"", "uk_effect_after_quoted_anchor_insert_text_patch"}:
+            marked.append(
+                {
+                    **sub,
+                    "rule_id": _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
+                }
+            )
+            continue
+        marked.append(sub)
+    return marked
 
 
 @dataclass
@@ -790,7 +833,9 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     matches_for_there_is_inserted = re.finditer(
-        r"for [“\"'‘](.*?)[”\"'’]\s+there\s+(?:is|are|shall\s+be)\s+inserted\s+[“\"'‘](.*?)[”\"'’]",
+        r"for [“\"'‘]([^“”\"'‘’]*?)[”\"'’]\s+"
+        r"there\s+(?:is|are|shall\s+be)\s+inserted\s+"
+        r"[“\"'‘]([^“”\"'‘’]*?)[”\"'’]",
         text,
         re.I,
     )
@@ -2120,6 +2165,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         if m:
             subs.append({"original": m.group(2).strip(), "replacement": m.group(1).strip()})
 
+    subs = _mark_compound_lettered_text_patches(text, subs)
     return tuple(tuple(sub.items()) for sub in _deduplicate_fragment_substitutions(subs))
 
 def is_whole_node_replacement(text: str, effect_type: str) -> bool:

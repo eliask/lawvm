@@ -920,6 +920,28 @@ def test_parse_fragment_substitution_handles_for_there_is_inserted_as_replacemen
     ]
 
 
+def test_parse_fragment_substitution_splits_compound_lettered_text_patches() -> None:
+    subs = parse_fragment_substitution(
+        "2 In section 13 of the 1990 Act, in subsection (1)\u2014 "
+        "a for \u201cor (b)\u201d there is substituted \u201c,(b), (c) or (d)\u201d, "
+        "and b after \u201cthis Part\u201d there is inserted "
+        "\u201cor Part I of the Broadcasting Act 1996\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "or (b)",
+            "replacement": ",(b), (c) or (d)",
+            "rule_id": "uk_effect_compound_lettered_text_patch_instruction",
+        },
+        {
+            "original": "this Part",
+            "replacement": "this Part or Part I of the Broadcasting Act 1996",
+            "rule_id": "uk_effect_compound_lettered_text_patch_instruction",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_before_anchor_ordinal_insert() -> None:
     subs = parse_fragment_substitution(
         "ii before \u201cperiod\u201d, in the first place it occurs, insert \u201ccurrent\u201d , and"
