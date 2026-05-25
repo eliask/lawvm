@@ -4581,6 +4581,60 @@ def _diagnostic_record_preview(record: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+_DIAGNOSTIC_PREVIEW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("literal_ellipsis_source", re.compile(r"^\s*\.\.\.\s*$")),
+    ("definition_omission", re.compile(r"\bomit\s+the\s+definition\s+of\b", re.I)),
+    (
+        "entry_beginning_substitution",
+        re.compile(r"\bfor\s+the\s+entry\s+beginning\s+[“\"'‘]", re.I),
+    ),
+    (
+        "paragraph_substitution",
+        re.compile(r"\bfor\s+paragraph\s+\([^)]+\)\s+substitute", re.I),
+    ),
+    (
+        "words_following_paragraphs_omission",
+        re.compile(r"\bomit\s+the\s+words\s+following\s+the\s+paragraphs\b", re.I),
+    ),
+    (
+        "range_to_end_substitution",
+        re.compile(r"\bfor\s+(?:the\s+)?words?\s+from\b.+\bto\s+the\s+end\b", re.I),
+    ),
+    (
+        "range_substitution",
+        re.compile(r"\bfor\s+(?:the\s+)?words?\s+from\b.+\bto\b", re.I),
+    ),
+    (
+        "quoted_word_substitution",
+        re.compile(
+            r"\bfor\s+(?:the\s+)?words?\s+[“\"'‘].+"
+            r"\b(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\b",
+            re.I,
+        ),
+    ),
+    (
+        "table_end_insertion",
+        re.compile(r"\bin\s+the\s+table\b.+\bat\s+the\s+end\b", re.I),
+    ),
+    (
+        "appropriate_place",
+        re.compile(r"\bappropriate\s+place\b", re.I),
+    ),
+)
+
+
+def _diagnostic_preview_pattern(record: Mapping[str, Any]) -> str:
+    text = " ".join(str(record.get("extracted_text_preview") or "").split())
+    if not text:
+        return "no_extracted_preview"
+    for name, pattern in _DIAGNOSTIC_PREVIEW_PATTERNS:
+        if pattern.search(text):
+            return name
+    if re.search(r"\b(substitute|insert|omit|repeal|leave\s+out)\b", text, re.I):
+        return "unclassified_instruction_text"
+    return "other_source_shape"
+
+
 def _print_bench_diagnostic_samples(
     label: str,
     *,
@@ -4588,6 +4642,7 @@ def _print_bench_diagnostic_samples(
     rule_id: str = "",
     blocking_only: bool = False,
     limit: int = 5,
+    pattern_summary: bool = False,
 ) -> None:
     path = _bench_diagnostics_path(label)
     if not path.exists():
@@ -4598,6 +4653,7 @@ def _print_bench_diagnostic_samples(
     lane_total = 0
     rule_counts: Counter[str] = Counter()
     statute_counts: Counter[str] = Counter()
+    pattern_counts: Counter[str] = Counter()
     samples: list[dict[str, Any]] = []
     with open(path, encoding="utf-8") as handle:
         for line in handle:
@@ -4619,6 +4675,9 @@ def _print_bench_diagnostic_samples(
             matched += 1
             rule_counts[current_rule or "unknown"] += 1
             statute_counts[str(parsed_row.get("statute_id") or "unknown")] += 1
+            record = parsed_row.get("record")
+            if pattern_summary and isinstance(record, dict):
+                pattern_counts[_diagnostic_preview_pattern(record)] += 1
             if len(samples) < sample_limit:
                 samples.append(parsed_row)
 
@@ -4644,13 +4703,26 @@ def _print_bench_diagnostic_samples(
                 f"{key}={count}" for key, count in sorted(statute_counts.items())
             )
         )
+    if pattern_summary and pattern_counts:
+        print(
+            "  Patterns: "
+            + ", ".join(
+                f"{key}={count}" for key, count in pattern_counts.most_common()
+            )
+        )
     for row in samples:
         record = row.get("record") if isinstance(row.get("record"), dict) else {}
+        pattern_part = (
+            f"pattern={_diagnostic_preview_pattern(record)} "
+            if pattern_summary
+            else ""
+        )
         print(
             "  "
             f"{row.get('statute_id')} "
             f"rule={row.get('rule_id') or '-'} "
             f"blocking={bool(row.get('blocking'))} "
+            f"{pattern_part}"
             + _diagnostic_record_preview(record)
         )
 
@@ -5918,6 +5990,7 @@ def _show_run(
     diagnostic_sample_rule: str = "",
     diagnostic_sample_blocking: bool = False,
     diagnostic_sample_limit: int = 5,
+    diagnostic_pattern_summary: bool = False,
     summary_only: bool = False,
 ) -> None:
     include_diagnostics = bool(replay_adjudication_sample_kinds) and not summary_only
@@ -5956,6 +6029,7 @@ def _show_run(
             rule_id=diagnostic_sample_rule,
             blocking_only=diagnostic_sample_blocking,
             limit=diagnostic_sample_limit,
+            pattern_summary=diagnostic_pattern_summary,
         )
 
 
@@ -6874,6 +6948,9 @@ def main(args) -> None:  # noqa: ANN001
                 getattr(args, "diagnostic_sample_blocking", False)
             ),
             diagnostic_sample_limit=diagnostic_sample_limit,
+            diagnostic_pattern_summary=bool(
+                getattr(args, "diagnostic_pattern_summary", False)
+            ),
             summary_only=getattr(args, "summary_only", False),
         )
         return
