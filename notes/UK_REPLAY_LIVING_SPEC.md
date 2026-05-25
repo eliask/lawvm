@@ -2492,6 +2492,14 @@ Current payload-descendant source-ref invariant:
   `section 15(2)(b) (...)` are source-insufficient when paired with blocking
   word-level lowering. They must not remain unclassified manual frontier rows,
   because the public witness does not contain an executable amendment program.
+- context/header-only extracted instruction rows such as `1 In section 183A of
+  the Broadcasting Act 1990-` are also source-insufficient when paired with a
+  blocking word-level lowering rejection. They may name the broad source
+  context, but they do not carry the child instruction or payload needed to
+  prove a text patch. Manual frontier reports
+  `uk_manual_frontier_instruction_header_source_insufficient` instead of a
+  generic unclassified row. Current witness: `ukpga/1990/42` affected
+  `s. 183A(4)` and `s. 183A(6)(b)` by `ukpga/2016/11 s. 54(1)(a)-(b)`.
 - Effect-feed target references may use the undotted abbreviation `para` as
   well as `para.`. UK target parsing treats both as `paragraph` under
   `uk_target_ref_undotted_para_abbreviation_normalized`; otherwise

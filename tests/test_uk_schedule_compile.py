@@ -49,6 +49,9 @@ from lawvm.uk_legislation.source_context import (
     _implicit_first_subparagraph_context_normalized_ref,
     _source_ancestor_chain,
 )
+from lawvm.uk_legislation.source_definition_fragments import (
+    _fragment_substitution_source_carried_quoted_text_substitution,
+)
 from lawvm.uk_legislation.substitution_metadata import _expand_sibling_targets_from_text
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
@@ -6857,6 +6860,41 @@ def test_compile_source_carried_quoted_substitution_from_parent_context() -> Non
         "uk_effect_source_carried_quoted_text_substitution_text_patch"
     ]
     assert observations[0]["blocking"] is False
+
+
+def test_source_carried_quoted_substitution_rejects_instruction_row_as_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-54">
+              <Pnumber>54</Pnumber>
+              <P1para>
+                <P2 id="section-54-1">
+                  <Pnumber>1</Pnumber>
+                  <P2para>
+                    <Text>
+                      For “the Secretary of State and the Scottish Ministers”
+                      there is substituted—
+                    </Text>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P2")
+    assert extracted_el is not None
+
+    fragment = _fragment_substitution_source_carried_quoted_text_substitution(
+        extracted_el=extracted_el,
+        source_root=source_root,
+        extracted_text="1 In section 183A of the Broadcasting Act 1990—",
+    )
+
+    assert fragment is None
 
 
 def test_compile_source_carried_words_quoted_substitution_with_structured_prefix() -> None:

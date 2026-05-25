@@ -1866,6 +1866,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
 
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
+        and not re.search(
+            r"\b(?:substitute|substituted|insert|inserted|omit|omitted|repeal|repealed)\b",
+            extracted_text_norm,
+        )
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_instruction_header_source_insufficient",
+            "reason": "The extracted source is only an amendment header or context row, not a legal payload or complete action formula; replay requires the missing child instruction/payload before a text patch can be claimed.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and extracted_tag_norm not in {"", "BlockAmendment"}
         and re.search(
             r"\b(?:substitute|substituted|insert|inserted|omit|omitted|repeal|repealed)\b",
