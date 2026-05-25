@@ -4518,6 +4518,205 @@ def test_compile_prefix_subsection_paragraph_word_omission_rejects_target_mismat
     assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
 
 
+def test_compile_prefix_subparagraph_item_word_omission() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-15-paragraph-69-9-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in sub-paragraph (1)(a), the words “granted by the Commission”,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-387e9a4d44a66f45cbdaf6105cf8e497",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 2 Pt. 2 para. 5A(1)(a)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 69(9)(a) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("schedule", "2"),
+        ("part", "2"),
+        ("paragraph", "5a"),
+        ("subparagraph", "1"),
+        ("item", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "granted by the Commission"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["source_parent_kind"] == "subparagraph"
+    assert lowering_records[-1]["source_parent_label"] == "1"
+    assert lowering_records[-1]["source_child_kind"] == "item"
+    assert lowering_records[-1]["source_child_label"] == "a"
+
+
+def test_compile_prefix_subparagraph_item_word_omission_rejects_target_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-15-paragraph-69-9-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in sub-paragraph (1)(a), the words “granted by the Commission”,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_prefix_subparagraph_item_word_omission_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 2 Pt. 2 para. 5A(1)(b)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 69(9)(a) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+
+
+def test_compile_prefix_subparagraph_word_omission() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-15-paragraph-69-9-c">
+          <Pnumber>c</Pnumber>
+          <Text>c in sub-paragraph (2), the words “granted by the Authority”,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-8af91246b528862f80b8bae8e6b846af",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 2 Pt. 2 para. 5A(2)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 69(9)(c) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("schedule", "2"),
+        ("part", "2"),
+        ("paragraph", "5a"),
+        ("subparagraph", "2"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "granted by the Authority"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["source_child_kind"] == "subparagraph"
+    assert lowering_records[-1]["source_child_label"] == "2"
+
+
+def test_compile_prefix_subparagraph_word_omission_rejects_target_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-15-paragraph-69-9-c">
+          <Pnumber>c</Pnumber>
+          <Text>c in sub-paragraph (2), the words “granted by the Authority”,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_prefix_subparagraph_word_omission_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 2 Pt. 2 para. 5A(1)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 69(9)(c) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+
+
 def test_compile_child_qualified_final_word_omission() -> None:
     extracted_el = ET.fromstring(
         f"""
