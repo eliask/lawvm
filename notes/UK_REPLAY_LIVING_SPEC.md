@@ -4216,6 +4216,16 @@ Current bench replay-regime invariant:
   - if the target subtree does not contain exactly one bounded definition entry,
     replay emits blocking `uk_replay_definition_entry_shape_gap`; it must not
     fall back to deleting the bare term
+- Effect/source lowering may also compile the narrow interpretation-provision
+  form `In section N(M)(interpretation), the entries relating to the X and the
+  Y are repealed` under
+  `uk_effect_interpretation_entries_relating_repeal_text_patch`. The rule is
+  source-local: the target must be a subsection, the source must explicitly
+  carry `(interpretation)`, and table/column/schedule wording is rejected. It
+  lowers each named term to `TEXT_DEFINITION_ENTRY_*`; replay still requires a
+  uniquely bounded definition entry and otherwise emits
+  `uk_replay_definition_entry_shape_gap`. Current corpus witness:
+  `ukpga/1978/29` effect `key-f6d33f04bf06ca098c8def427ae6e09f`.
 - Parser lowering may also compile `for the definition of "X", substitute- ...`
   as `TEXT_DEFINITION_ENTRY_X` using
   `uk_effect_definition_entry_substitution_text_patch`; the comma after the

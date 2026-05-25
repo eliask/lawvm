@@ -65,6 +65,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     append_source_carried_substitution_rewrite_observations,
     append_source_carried_tail_rewrite_observations,
     lower_labeled_child_end_range_selector,
+    UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
 )
@@ -383,6 +384,14 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_after_ordinal_insert is not None:
             subs = [metadata_carried_after_ordinal_insert]
+    if not subs:
+        interpretation_entry_repeals = _effect_interpretation_entries_relating_repeal_fragments(
+            effect=effect,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if interpretation_entry_repeals:
+            subs = list(interpretation_entry_repeals)
     if not subs:
         after_inserted_by_sibling = _fragment_substitution_after_words_inserted_by_sibling(
             extracted_el=extracted_el,
@@ -801,3 +810,53 @@ def _effect_metadata_carried_after_ordinal_insert_fragment(
         "occurrence": _ORDINAL_OCCURRENCES[match.group("ordinal").lower()],
         "rule_id": UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     }
+
+
+def _effect_interpretation_entries_relating_repeal_fragments(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> tuple[dict[str, str], ...]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return ()
+    if not target.path or target.path[-1][0] != "subsection":
+        return ()
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return ()
+    if not re.search(
+        r"\bsection\s+[0-9]+[A-Za-z]?\s*\([^)]+\)\s*\(\s*interpretation\s*\)",
+        text,
+        flags=re.I,
+    ):
+        return ()
+    if re.search(r"\b(?:table|column|schedule)\b", text, flags=re.I):
+        return ()
+    match = re.search(
+        r"\b(?:the\s+)?entries\s+relating\s+to\s+(?P<terms>.+?)\s+"
+        r"(?:are|is|shall\s+be)\s+(?:repealed|omitted)\b",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return ()
+    term_parts = [part.strip(" \t\r\n,.;:") for part in re.split(r"\s+and\s+", match.group("terms"))]
+    terms = tuple(part for part in term_parts if part)
+    if not terms:
+        return ()
+    if len(terms) > 1 and any(not re.match(r"(?i)^the\s+[A-Z]", term) for term in terms):
+        return ()
+    fragments = []
+    for term in terms:
+        if not re.match(r"(?i)^(?:the\s+)?[A-Z][A-Za-z0-9&'(). /-]{1,140}$", term):
+            return ()
+        fragments.append(
+            {
+                "original": f"TEXT_DEFINITION_ENTRY_{term}",
+                "replacement": "",
+                "rule_id": UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
+            }
+        )
+    return tuple(fragments)
