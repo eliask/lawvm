@@ -27609,6 +27609,61 @@ def test_compile_missing_space_before_there_is_substituted() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_dangling_passive_substitution_quote() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>c</Pnumber>
+          <Text>c in sub-paragraph (4), for the words \u201cMedical Practices Committee\u201d there is substituted \u201cHealth Board;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-4465f7658914ffba08f89bc507f836af",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2004-04-01",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="Sch. 9 para. 1(4)",
+        affecting_uri="/id/asp/2003/4",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="4",
+        affecting_provisions="sch. 4 para. 5(18)(c)",
+        affecting_title="Community Care and Health (Scotland) Act 2002",
+        in_force_dates=[{"date": "2004-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("schedule", "9"), ("paragraph", "1"), ("subparagraph", "4"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "Medical Practices Committee"
+    assert op.text_patch.replacement == "Health Board;"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_dangling_passive_substitution_quote_text_patch"
+        in op.provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_dangling_passive_substitution_quote_text_patch"
+    ]
+    assert lowering_records[0]["family"] == "source_text_recovery"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_all_occurrences_passive_with_words_marker() -> None:
     extracted_el = ET.fromstring(
         f"""

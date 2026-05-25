@@ -1444,6 +1444,21 @@ def test_parse_fragment_substitution_handles_missing_space_before_there_is_subst
     ]
 
 
+def test_parse_fragment_substitution_handles_dangling_passive_substitution_quote() -> None:
+    subs = parse_fragment_substitution(
+        "c in sub-paragraph (4), for the words \u201cMedical Practices Committee\u201d "
+        "there is substituted \u201cHealth Board;"
+    )
+
+    assert subs == [
+        {
+            "original": "Medical Practices Committee",
+            "replacement": "Health Board;",
+            "rule_id": "uk_effect_dangling_passive_substitution_quote_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_all_occurrences_passive_with_words_marker() -> None:
     subs = parse_fragment_substitution(
         "2 for the word \u201cassessment\u201d, in each place where it occurs, "
