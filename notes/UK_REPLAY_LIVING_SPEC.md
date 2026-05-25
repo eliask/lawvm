@@ -5651,3 +5651,22 @@ Current bench replay-regime invariant:
 - This is a parser/lowering family, not a replay recovery. Strict mode should
   be able to block any future compound form whose fragments cannot be split
   into independently owned text patches.
+
+## UK Non-Schedule List Entry Carriers
+
+- Rule `uk_non_schedule_list_entry_preserved` preserves `UnorderedList/ListItem`
+  children that occur inside ordinary body provisions, such as a subsection
+  list, as replay-addressable `schedule_entry` children rather than flattening
+  them into host text.
+- The parser keeps the parent provision intro in the parent `text` and moves
+  only the XML list items into child entries. This prevents entry-level
+  amendment sources from becoming broad parent-text patches that could leave
+  entry tails or parentheticals behind.
+- Rule `uk_effect_schedule_list_entry_replace` may target a non-table
+  `section`, `subsection`, `paragraph`, or `subparagraph` carrier when source
+  explicitly says `for the entry relating to ... substitute ...`. Replay must
+  resolve the named anchor to exactly one direct `schedule_entry` child before
+  replacing it.
+- This remains strict-compatible because failure to find a unique direct entry
+  child is blocking. The compiler must not fall back to replacing bare words in
+  the parent text, and table-entry sources remain outside this rule.
