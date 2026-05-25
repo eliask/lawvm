@@ -2765,8 +2765,12 @@ Current payload-descendant source-ref invariant:
   `uk_manual_frontier_source_pathology_insufficient`. This is source
   insufficient: the fragment may be legally relevant payload, but it does not
   contain the operative formula needed to prove the preimage/replacement pair.
+  Numbered block payloads such as `1 A licence ...` are included when the
+  leading number is a payload label rather than a numbered formula like
+  `1 In section ...`; the latter remains `unhandled_instruction_text`.
   Current witness: `asp/2000/5` affected `s. 73(1)` by `asp/2003/9`
-  `Sch. 13 para. 13(a)(iii)`.
+  `Sch. 13 para. 13(a)(iii)` and `ukpga/1990/42` affected `s. 53(1)` by
+  `ukpga/2003/21 Sch. 15 para. 25(2)`.
 - Source text such as `the words "X", where they occur in subsections (1) and
   (2), are repealed` lowers through
   `uk_effect_source_carried_multi_subunit_repeal_text_patch` when the source
