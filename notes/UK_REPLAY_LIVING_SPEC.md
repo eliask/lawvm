@@ -4727,6 +4727,11 @@ Current bench replay-regime invariant:
   `TEXT_AFTER_X_TO_END`: replay retains the explicit anchor and rewrites only
   the target node's own tail, or a uniquely matching descendant text node. It
   must not flatten a target subtree just to make the tail replacement apply.
+  `omit the words after "X"` lowers to the same tail selector with an empty
+  replacement under `uk_effect_after_anchor_to_end_omission_text_patch`; this
+  is a bounded text deletion scoped to the effect-feed target, not permission
+  to delete descendants or sibling structure. Current witness: `ukpga/1970/9`
+  affected `s. 9(1)(b)` by `ukpga/2016/24 Sch. 1 para. 51(4)(a)`.
   `for the words before paragraph (a) substitute "Y"` lowers to
   `TEXT_BEFORE_CHILD_paragraph_a` and may replace only the explicit target
   node's own lead text when that target has exactly one direct child matching
@@ -4745,6 +4750,12 @@ Current bench replay-regime invariant:
   target-subtree collapse path. These rules do not cover table or cell targets,
   heading or cross-heading facets, definition-child deletion, or `appropriate
   place(s)` placement.
+  Passive range repeals may qualify the end anchor by ordinal occurrence, e.g.
+  `the words from "X" to "Y", where it first occurs, are repealed`; lowering
+  records `end_occurrence` under
+  `uk_effect_range_independent_end_occurrence_repeal_text_patch` so replay
+  does not broaden the range to the wrong repeated end anchor. Current witness:
+  `ukpga/1978/29` affected `Sch. 7 para. 6` by `asp/2005/13 s. 38(3)(c)`.
 
 ## UK Effect Ordering
 

@@ -2032,6 +2032,25 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             patch["rule_id"] = "uk_effect_range_occurrence_repeal_text_patch"
         subs.append(patch)
 
+    matches_repeal_range_end_occurrence = re.finditer(
+        r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
+        r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’],?\s+"
+        rf"where\s+(?:(?:it|they|those words?)\s+)?(?P<end_ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+"
+        r"(?:occurs?|occurring|appear)s?,?\s+"
+        r"(?:are|is|shall\s+be)\s+(?:omitted|repealed)",
+        text,
+        re.I,
+    )
+    for m in matches_repeal_range_end_occurrence:
+        subs.append(
+            {
+                "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
+                "replacement": "",
+                "end_occurrence": _ORDINAL_OCCURRENCES[m.group("end_ordinal").lower()],
+                "rule_id": "uk_effect_range_independent_end_occurrence_repeal_text_patch",
+            }
+        )
+
     matches_passive_repeal_to_end = re.finditer(
         r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
         rf"(?:,?\s+where\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+occurring)?"
@@ -2082,6 +2101,20 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": f"TEXT_FROM_{m.group(1).strip()}_TO_{m.group(2).strip()}",
                 "replacement": "",
                 "rule_id": "uk_effect_omit_quoted_range_text_patch",
+            }
+        )
+
+    matches_omit_after_anchor = re.finditer(
+        r"\bomit\s+(?:the\s+)?words?\s+after\s+[“\"'‘](?P<anchor>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_omit_after_anchor:
+        subs.append(
+            {
+                "original": f"TEXT_AFTER_{m.group('anchor').strip()}_TO_END",
+                "replacement": "",
+                "rule_id": "uk_effect_after_anchor_to_end_omission_text_patch",
             }
         )
 

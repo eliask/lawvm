@@ -25725,6 +25725,125 @@ def test_compile_heading_facet_words_following_anchor_to_tail_replace() -> None:
     assert ops[0].text_patch.replacement == "or Northern Ireland."
 
 
+def test_compile_omit_words_after_anchor_to_tail_delete() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in paragraph (b) omit the words after \u201csource\u201d, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_omit_words_after_anchor",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-06",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9(1)(b)",
+        affecting_uri="/id/ukpga/2016/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="24",
+        affecting_provisions="Sch. 1 para. 51(4)(a)",
+        affecting_title="Finance Act 2016",
+        in_force_dates=[{"date": "2017-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "9"), ("subsection", "1"), ("paragraph", "b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_source_TO_END"
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_anchor_to_end_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_after_anchor_to_end_omission_text_patch"
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_passive_range_repeal_preserves_end_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>c</Pnumber>
+          <Text>c in paragraph 6, the words from \u201c, unless\u201d to \u201ccase,\u201d, where it first occurs, are repealed;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_passive_range_repeal_end_occurrence",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2006-04-01",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="Sch. 7 para. 6",
+        affecting_uri="/id/asp/2005/13",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="13",
+        affecting_provisions="s. 38(3)(c)",
+        affecting_title="Smoking, Health and Social Care (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("schedule", "7"), ("paragraph", "6"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_, unless_TO_case,"
+    assert ops[0].text_patch.selector.end_occurrence == 1
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_independent_end_occurrence_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert {
+        record["rule_id"]
+        for record in lowering_records
+    } >= {
+        "uk_effect_range_independent_end_occurrence_repeal_text_patch",
+        "uk_effect_range_independent_end_occurrence_text_patch",
+    }
+    repeal_record = next(
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_range_independent_end_occurrence_repeal_text_patch"
+    )
+    assert repeal_record["blocking"] is False
+    assert repeal_record["end_occurrence"] == 1
+
+
 def test_compile_heading_facet_after_anchor_insert_targets_heading_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
