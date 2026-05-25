@@ -3922,6 +3922,12 @@ Current bench replay-regime invariant:
   end substitute "..."` lowers to `TEXT_FROM_the_TO_END` with occurrence `2`,
   not an unbounded first-match patch. Witness: `asp/2000/11`, affected by
   `asp/2010/13 s. 106(2)(a)`.
+- The same ordinal range family accepts the comma-separated wording `from
+  "X", where it second occurs, to "Y" substitute "Z"` as
+  `uk_effect_range_occurrence_substitution_text_patch`; this is still a
+  bounded text range and does not cover source-carried structured replacement
+  blocks. Witness: `ukpga/1985/66` affected `s. 20(1)` by
+  `asp/2014/11 Sch. 3 para. 15(a)`.
 - UK range-to-end substitution also accepts the drafting form `there is
   substituted`, not only imperative `substitute`. An instruction such as `for
   the words from "member" to the end there is substituted "..."` lowers to
