@@ -93,6 +93,9 @@ UK_SOURCE_RANGE_DEFINITION_ENTRY_INSERT_RULE_ID = (
 UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID = (
     "uk_effect_interpretation_entries_relating_repeal_text_patch"
 )
+UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_child_qualified_range_substitution_text_patch"
+)
 UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -566,6 +569,29 @@ def append_basic_text_rewrite_observations(
                     if str(fragment.get("rule_id") or "")
                     == UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID
                 ),
+            },
+        )
+    if UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="child_qualified_range_substitution_lowered",
+            reason=(
+                "UK source text substitutes a quoted range inside a named child "
+                "provision; lowering verifies that the child named by source "
+                "matches the effect target before emitting a bounded range text "
+                "patch."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
             },
         )
     if UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID in rule_ids:

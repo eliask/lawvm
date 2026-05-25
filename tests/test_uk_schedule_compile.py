@@ -4748,6 +4748,74 @@ def test_compile_child_qualified_word_omission_accepts_semicolon_terminated_row(
     assert lowering_records[-1]["source_child_label"] == "2"
 
 
+def test_compile_child_qualified_range_substitution_requires_target_match() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-9">
+          <Pnumber>9</Pnumber>
+          <Text>9 In section 11ZD (modification of registration), for the words in subsection (1) from “on any ground” to “or (4)” there shall be substituted “under section 11ZA(1)(b) or (c), (1A), (3) or (4)”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_range_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-01-01",
+        affected_uri="/id/ukpga/1949/88",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="s. 11ZD(1)",
+        affecting_uri="/id/uksi/2022/0000",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="0000",
+        affecting_provisions="art. 9",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2023-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "11zd"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_on any ground_TO_or (4)"
+    assert ops[0].text_patch.replacement == "under section 11ZA(1)(b) or (c), (1A), (3) or (4)"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_range_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_range_substitution_text_patch"
+    assert lowering_records[-1]["blocking"] is False
+
+    mismatch_effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_range_substitution_mismatch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-01-01",
+        affected_uri="/id/ukpga/1949/88",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="s. 11ZD(2)",
+        affecting_uri="/id/uksi/2022/0000",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="0000",
+        affecting_provisions="art. 9",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2023-01-01", "prospective": "false"}],
+    )
+
+    assert compile_effect_to_ir_ops(mismatch_effect, extracted_el, sequence=0) == []
+
+
 def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None:
     extracted_el = ET.fromstring(
         f"""
