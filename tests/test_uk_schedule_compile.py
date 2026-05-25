@@ -169,6 +169,95 @@ def _append_patch(insertion: str) -> TextPatchSpec:
     )
 
 
+def test_replay_words_in_brackets_replaces_unique_parenthesized_span() -> None:
+    op = LegalOperation(
+        op_id="uk_test_words_in_brackets_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "100"), ("subsection", "6"))),
+        text_patch=_replace_patch("TEXT_IN_BRACKETS", "(including a nil liability)"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2016/24",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="100",
+                    attrs={"eId": "section-100"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            attrs={"eId": "section-100-6"},
+                            text="A reference to liability (under section 6) is included.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "A reference to liability (including a nil liability) is included."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_words_in_brackets_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "words_in_brackets_selector"
+
+
+def test_replay_words_in_brackets_blocks_ambiguous_parenthesized_spans() -> None:
+    op = LegalOperation(
+        op_id="uk_test_words_in_brackets_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "100"), ("subsection", "6"))),
+        text_patch=_replace_patch("TEXT_IN_BRACKETS", "(replacement)"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2016/24",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="100",
+                    attrs={"eId": "section-100"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            attrs={"eId": "section-100-6"},
+                            text="A reference (one) and another reference (two).",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    assert (
+        executor.statute.body.children[0].children[0].text
+        == "A reference (one) and another reference (two)."
+    )
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     candidates_by_len = {
         90: [(2, "too-short", "x" * 90)],
@@ -23736,6 +23825,62 @@ def test_compile_parenthesized_nested_quote_substitution_lowers_to_text_patch() 
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_parenthesized_nested_quote_substitution_text_patch"
         in op.provenance_tags
     )
+
+
+def test_compile_words_in_brackets_substitution_lowers_to_bounded_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>9</Pnumber>
+          <Text>9 In section 100(6), for the words in brackets substitute
+          \u201c(including a case where the amount of a liability to pay a secondary
+          Class 1 contribution is \u00a30)\u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-8413390972a40db4c949900584e4eaea",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-03-15",
+        affected_uri="/id/ukpga/2016/24",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2016",
+        affected_number="24",
+        affected_provisions="s. 100(6)",
+        affecting_uri="/id/ukpga/2022/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="9",
+        affecting_provisions="s. 9",
+        affecting_title="National Insurance Contributions Act 2022",
+        in_force_dates=[{"date": "2022-03-15", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "100"), ("subsection", "6"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_IN_BRACKETS"
+    assert (
+        op.text_patch.replacement
+        == "(including a case where the amount of a liability to pay a secondary Class 1 contribution is \u00a30)"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_words_in_brackets_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert lowering_rejections == []
 
 
 def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> None:
