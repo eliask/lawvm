@@ -35,6 +35,21 @@ _REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
 ] = weakref.WeakKeyDictionary()
 
 
+def _uk_quoted_capture(name: str) -> str:
+    return (
+        rf"(?:[\u201c\"](?P<{name}_double>.*?)[\u201d\"]|"
+        rf"[\u2018'](?P<{name}_single>.*?)[\u2019'])"
+    )
+
+
+def _uk_first_quote_group(match: re.Match[str], *names: str) -> str:
+    for name in names:
+        value = match.group(name)
+        if value is not None:
+            return " ".join(value.split()).strip()
+    return ""
+
+
 @dataclass(frozen=True)
 class _UKTableDrivenWordSubstitution:
     recognized: bool
@@ -211,44 +226,31 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
     text = " ".join(extent_cell.split()).strip()
     if not text:
         return "", 0, 0
-    quoted = r"(?:\u201c(?P<{name}_curly>.*?)\u201d|\"(?P<{name}_double>.*?)\"|'(?P<{name}_single>.*?)')"
+    quoted = _uk_quoted_capture
     range_match = re.search(
         r"\bthe\s+words?\s+from\s+"
-        + quoted.format(name="start")
+        + quoted("start")
         + r"(?:,?\s+where\s+(?:they|it|the\s+words?)\s+"
         r"(?P<occurrence>firstly|first|1st|secondly|second|2nd|thirdly|third|3rd|fourthly|fourth|4th|fifthly|fifth|5th)"
         r"\s+occurs?)?"
         r",?\s+to\s+"
         r"(?:(?:the\s+)?end|"
-        + quoted.format(name="end")
+        + quoted("end")
         + r")",
         text,
         re.I,
     )
     if range_match is not None:
-        start = next(
-            group.strip()
-            for group in (
-                range_match.group("start_curly"),
-                range_match.group("start_double"),
-                range_match.group("start_single"),
-            )
-            if group is not None
+        start = _uk_first_quote_group(
+            range_match,
+            "start_double",
+            "start_single",
         )
-        end = next(
-            (
-                group.strip()
-                for group in (
-                    range_match.group("end_curly"),
-                    range_match.group("end_double"),
-                    range_match.group("end_single"),
-                )
-                if group is not None
-            ),
-            "",
+        end = _uk_first_quote_group(
+            range_match,
+            "end_double",
+            "end_single",
         )
-        start = " ".join(start.split()).strip()
-        end = " ".join(end.split()).strip()
         if not start:
             return "", 0, 0
         occurrence = 0
@@ -259,22 +261,13 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
         return f"TEXT_FROM_{start}_TO_END", occurrence, 0
     match = re.search(
         r"\bthe\s+words?\s+"
-        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
+        + _uk_quoted_capture("quoted"),
         text,
         re.I,
     )
     if match is None:
         return "", 0, 0
-    original = next(
-        group.strip()
-        for group in (
-            match.group("curly"),
-            match.group("double"),
-            match.group("single"),
-        )
-        if group is not None
-    )
-    return " ".join(original.split()).strip(), 0, 0
+    return _uk_first_quote_group(match, "quoted_double", "quoted_single"), 0, 0
 
 
 def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, ...]:
@@ -283,7 +276,7 @@ def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, 
         return ()
     match = re.search(
         r"\b(?:the\s+)?(?:definition\s+of|entry\s+for)\s+"
-        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
+        + _uk_quoted_capture("term"),
         text,
         re.I,
     )
@@ -291,19 +284,10 @@ def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, 
         tail = text[match.end() :]
         if re.search(r"\b(?:paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|head|heads)\b", tail, re.I):
             return ()
-        term = next(
-            group.strip()
-            for group in (
-                match.group("curly"),
-                match.group("double"),
-                match.group("single"),
-            )
-            if group is not None
-        )
-        term = " ".join(term.split()).strip()
+        term = _uk_first_quote_group(match, "term_double", "term_single")
         return (f"TEXT_DEFINITION_ENTRY_{term}",) if term else ()
     plural_match = re.search(
-        r"\b(?:the\s+)?entries\s+for\s+(?P<body>.+?)(?:\.|$)",
+        r"\b(?:the\s+)?(?:entries\s+for|definitions\s+of)\s+(?P<body>.+?)(?:\.|$)",
         text,
         re.I,
     )
@@ -313,20 +297,8 @@ def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, 
     if re.search(r"\b(?:paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|head|heads)\b", body, re.I):
         return ()
     terms: list[str] = []
-    for term_match in re.finditer(
-        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
-        body,
-    ):
-        term = next(
-            group.strip()
-            for group in (
-                term_match.group("curly"),
-                term_match.group("double"),
-                term_match.group("single"),
-            )
-            if group is not None
-        )
-        term = " ".join(term.split()).strip()
+    for term_match in re.finditer(_uk_quoted_capture("term"), body):
+        term = _uk_first_quote_group(term_match, "term_double", "term_single")
         if term:
             terms.append(f"TEXT_DEFINITION_ENTRY_{term}")
     return tuple(terms)
@@ -338,23 +310,14 @@ def _uk_repeal_table_definition_child_selectors(extent_cell: str) -> tuple[str, 
         return ()
     match = re.search(
         r"\bin\s+the\s+definition\s+of\s+"
-        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')"
-        r",?\s+(?P<kind>paragraphs?|sub-?paragraphs?)\s+(?P<labels>[^.;]+)",
+        + _uk_quoted_capture("term")
+        + r",?\s+(?P<kind>paragraphs?|sub-?paragraphs?)\s+(?P<labels>[^.;]+)",
         text,
         re.I,
     )
     if match is None:
         return ()
-    term = next(
-        group.strip()
-        for group in (
-            match.group("curly"),
-            match.group("double"),
-            match.group("single"),
-        )
-        if group is not None
-    )
-    term = " ".join(term.split()).strip()
+    term = _uk_first_quote_group(match, "term_double", "term_single")
     if not term:
         return ()
     labels_text = match.group("labels")
@@ -587,7 +550,6 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                     continue
                 additional_originals: tuple[str, ...] = ()
                 rule_id = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
-                target_kinds = {kind.lower() for kind, _ in target.path}
                 original = ""
                 occurrence = 0
                 end_occurrence = 0
@@ -597,7 +559,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         occurrence,
                         end_occurrence,
                     ) = _uk_repeal_table_quoted_words_selector(extent_clause)
-                if not original and "section" in target_kinds:
+                if not original:
                     definition_originals = _uk_repeal_table_definition_entry_selectors(extent_clause)
                     if definition_originals:
                         original = definition_originals[0]
@@ -606,7 +568,6 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 if (
                     not original
                     and not structural_definition_entry_effect
-                    and "section" in target_kinds
                 ):
                     definition_child_originals = _uk_repeal_table_definition_child_selectors(
                         extent_clause

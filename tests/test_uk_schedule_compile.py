@@ -10149,6 +10149,70 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_quoted_words_accepts_mixed_publisher_quotes() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 20— (a) in paragraph 5(1)(c), the words “(within the meaning of section 231A(4) of the Taxes Act 1988)&quot;; (b) in paragraph 12, the word “and&quot; at the end of paragraph (a).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_quote_words",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri="/id/ukpga/2000/17/schedule/20/paragraph/5/1/c",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 20 para. 5(1)(c)",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "(within the meaning of section 231A(4) of the Taxes Act 1988)"
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_quoted_words"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_provision_repeal() -> None:
     source_root = ET.fromstring(
         """
@@ -11264,6 +11328,69 @@ def test_compile_repeal_table_definition_entry_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_schedule_paragraph_definition_entry_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 20, in paragraph 25(1), the definition of “normal accounting practice&quot;.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_schedule_paragraph_definition_entry",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri="/id/ukpga/2000/17/schedule/20/paragraph/25/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 20 para. 25(1)",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("schedule", "20"), ("paragraph", "25"), ("subparagraph", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_DEFINITION_ENTRY_normal accounting practice"
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_definition_entry_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_definition_entry_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_definition_entry"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_singular_entry_for_text_repeal() -> None:
     source_root = ET.fromstring(
         """
@@ -11386,6 +11513,72 @@ def test_compile_repeal_table_plural_entries_for_text_repeal() -> None:
             "TEXT_DEFINITION_ENTRY_joint surveillance operation",
             "TEXT_DEFINITION_ENTRY_police member",
         )
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_plural_definitions_for_schedule_paragraph_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 23, in paragraph 5, the definitions of “normal accounting practice&quot; and “statutory accounts&quot;.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_plural_definitions_schedule_paragraph",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri="/id/ukpga/2000/17/schedule/23/paragraph/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 23 para. 5",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "TEXT_DEFINITION_ENTRY_normal accounting practice",
+        "TEXT_DEFINITION_ENTRY_statutory accounts",
+    ]
+    assert all(op.witness_rule_id == "uk_effect_repeal_table_definition_entry_text_repeal" for op in ops)
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_definition_entry_text_repeal"
+        and tuple(record["originals"])
+        == (
+            "TEXT_DEFINITION_ENTRY_normal accounting practice",
+            "TEXT_DEFINITION_ENTRY_statutory accounts",
+        )
+        and record["blocking"] is False
         for record in lowering_records
     )
 
