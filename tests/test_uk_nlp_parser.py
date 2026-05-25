@@ -1763,6 +1763,27 @@ def test_parse_fragment_substitution_handles_passive_labeled_paragraph_end_range
     ]
 
 
+def test_parse_fragment_substitution_handles_labeled_end_range_block() -> None:
+    subs = parse_fragment_substitution(
+        "a for the words from \u201ca list\u201d to the end of paragraph (a) "
+        "substitute \u2014 a in relation to a list published in accordance with "
+        "regulations, the first part of the list; ;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_a list_TO_END",
+            "replacement": (
+                "a in relation to a list published in accordance with regulations, "
+                "the first part of the list; ;"
+            ),
+            "target_suffix_kind": "paragraph",
+            "target_suffix_label": "a",
+            "rule_id": "uk_effect_labeled_end_range_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_to_end_first_appears_block() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (6), for the words from \u201cthe\u201d where it first appears "
