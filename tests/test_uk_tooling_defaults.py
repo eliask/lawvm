@@ -199,6 +199,33 @@ def test_uk_bench_parser_accepts_source_closure_curation_gate() -> None:
     assert args.curate_require_source_closure is True
 
 
+def test_uk_bench_parser_accepts_diagnostic_sidecar_sample_flags() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "bench",
+            "-j",
+            "uk",
+            "--show",
+            "uk-demo",
+            "--diagnostic-sample-lane",
+            "source_acquisition",
+            "--diagnostic-sample-rule",
+            "uk_affecting_act_xml_missing_rejected",
+            "--diagnostic-sample-blocking",
+            "--diagnostic-sample-limit",
+            "3",
+        ]
+    )
+
+    assert args.show == "uk-demo"
+    assert args.diagnostic_sample_lane == "source_acquisition"
+    assert args.diagnostic_sample_rule == "uk_affecting_act_xml_missing_rejected"
+    assert args.diagnostic_sample_blocking is True
+    assert args.diagnostic_sample_limit == 3
+
+
 def test_uk_bench_parser_accepts_curated_corpus_preset() -> None:
     parser = cli._build_parser()
 

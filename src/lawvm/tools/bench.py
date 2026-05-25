@@ -2592,6 +2592,31 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         metavar="N",
         help="[-j uk --replay] samples per selected replay adjudication kind (default: 5)",
     )
+    bench_p.add_argument(
+        "--diagnostic-sample-lane",
+        metavar="LANE",
+        help=(
+            "[-j uk --show] stream sample rows from a bench diagnostics sidecar "
+            "for one lane, e.g. source_acquisition or lowering"
+        ),
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-rule",
+        metavar="RULE_ID",
+        help="[-j uk --show --diagnostic-sample-lane] restrict samples to one rule_id",
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-blocking",
+        action="store_true",
+        help="[-j uk --show --diagnostic-sample-lane] only sample blocking diagnostics",
+    )
+    bench_p.add_argument(
+        "--diagnostic-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="[-j uk --show --diagnostic-sample-lane] maximum sidecar samples to print (default: 5)",
+    )
     add_uk_replay_regime_arguments(bench_p, help_prefix="[-j uk --replay]")
     bench_p.add_argument(
         "--no-commencement",
