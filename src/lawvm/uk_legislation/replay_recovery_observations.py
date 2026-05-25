@@ -128,6 +128,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="node_local_range_to_end_selector",
     ),
+    "uk_replay_words_in_brackets_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a words-in-brackets text rewrite after proving "
+            "the resolved target has exactly one parenthesized text span."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="words_in_brackets_selector",
+    ),
     "uk_replay_subtree_range_text_rewrite_flattened": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a bounded range text rewrite over the "

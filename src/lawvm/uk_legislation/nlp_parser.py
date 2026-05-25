@@ -456,6 +456,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 }
             )
 
+    matches_words_in_brackets_substituted = re.finditer(
+        r"for\s+(?:the\s+)?words?\s+in\s+brackets\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+        r"[“”\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_words_in_brackets_substituted:
+        subs.append(
+            {
+                "original": "TEXT_IN_BRACKETS",
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_words_in_brackets_substitution_text_patch",
+            }
+        )
+
     matches_all_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"(?:\(\s*)?in (?:each|both) places?"

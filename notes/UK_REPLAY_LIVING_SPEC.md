@@ -1869,6 +1869,13 @@ Current payload-descendant source-ref invariant:
   quoted insertion payload; it does not interpret `(3)` as a structural child
   target. Current witness: `ukpga/1991/22` affected `s. 48(5)` by
   `ukpga/2025/34 s. 49(5)(b)`.
+- `for the words in brackets substitute "X"` lowers to the bounded
+  `TEXT_IN_BRACKETS` selector under
+  `uk_effect_words_in_brackets_substitution_text_patch`. Replay applies it
+  only when the resolved target has exactly one parenthesized text span, or a
+  future explicit occurrence is supplied; multiple spans block rather than
+  guessing. Current witness: `ukpga/2016/24` affected `s. 100(6)` by
+  `ukpga/2022/9 s. 9`.
 - bare range substitutions of the form `from "X" to "Y" substitute <unquoted
   payload>` lower to `TEXT_FROM_X_TO_Y` target-local text replacement under
   `uk_effect_bare_range_unquoted_substitution_text_patch`. This is the same

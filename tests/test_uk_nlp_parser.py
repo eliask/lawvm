@@ -650,6 +650,21 @@ def test_parse_fragment_substitution_handles_parenthesized_all_occurrences_subst
     ]
 
 
+def test_parse_fragment_substitution_handles_words_in_brackets_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "9 In section 100(6), for the words in brackets substitute "
+        "\u201c(including a case where the amount is \u00a30)\u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_IN_BRACKETS",
+            "replacement": "(including a case where the amount is \u00a30)",
+            "rule_id": "uk_effect_words_in_brackets_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_first_and_second_occurrence_substitution() -> None:
     subs = parse_fragment_substitution(
         "i for \u201c retained \u201d (in the first and second places it appears) "
