@@ -5251,6 +5251,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
         ),
         (
+            "i after the word “provision”, in each of the two places where it occurs, "
+            "there is inserted “, assistance in provision or performance”; and",
+            "words inserted",
+            "s. 31(2)",
+            "provision",
+            "provision, assistance in provision or performance",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        ),
+        (
             "c repeal the words “or to the Scottish Crime and Drug Enforcement Agency”.",
             "words repealed",
             "s. 24(2)(b)",
@@ -5525,7 +5536,12 @@ def test_compile_additional_frontier_text_patch_idioms(
         lowering_rejections_out=lowering_rejections,
     )
 
-    assert lowering_rejections == []
+    if expected_rule_id == "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch":
+        assert lowering_rejections
+        assert all(row.get("blocking") is False for row in lowering_rejections)
+        assert lowering_rejections[-1]["rule_id"] == expected_rule_id
+    else:
+        assert lowering_rejections == []
     assert len(ops) == 1
     assert ops[0].action is expected_action
     assert ops[0].text_patch is not None
