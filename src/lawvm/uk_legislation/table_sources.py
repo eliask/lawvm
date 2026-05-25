@@ -508,6 +508,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     """Resolve bounded repeal-schedule rows to quoted word-level text deletes."""
     effect_type = str(effect.effect_type or "").strip().lower()
     word_effect = effect_type in {
+        "",
         "words repealed",
         "word repealed",
         "words omitted",
@@ -806,6 +807,11 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         )
                     continue
                 if not _uk_repeal_table_clause_is_structural_repeal(extent_clause):
+                    if (
+                        source_supplies_repeal_action
+                        and _uk_repeal_table_quoted_words_selector(extent_clause)[0]
+                    ):
+                        continue
                     norm_clause = " ".join(extent_clause.split()).lower()
                     if re.search(r"\b(?:word|words)\b", norm_clause) and re.search(
                         r"\b(?:section|sections|schedule|schedules|paragraph|paragraphs|"
@@ -854,6 +860,13 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 )
 
     if len(matches) != 1:
+        if (
+            source_supplies_repeal_action
+            and not matches
+            and not mixed_structural_word_matches
+            and not broad_container_matches
+        ):
+            return _UKRepealTableStructuralRepeal(recognized=False)
         if not matches and len(mixed_structural_word_matches) == 1:
             (
                 table_index,
