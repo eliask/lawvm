@@ -1004,10 +1004,24 @@ def _uk_table_cell_mentions_target(
             return False
         if paragraph:
             paragraph_pat = re.escape(paragraph.lower())
-            if not re.search(rf"\b(?:paragraph|paragraphs|para)\.?\s*{paragraph_pat}\b", text):
+            if not (
+                re.search(rf"\b(?:paragraph|paragraphs|para)\.?\s*{paragraph_pat}\b", text)
+                or _uk_container_label_in_simple_list(
+                    text,
+                    label=paragraph,
+                    word_pattern=r"paragraphs?|paras?\.?",
+                )
+            ):
                 return False
-        for label in (subparagraph,):
-            if label and f"({label.lower()})" not in text:
+        if subparagraph:
+            if not (
+                f"({subparagraph.lower()})" in text
+                or _uk_container_label_in_simple_list(
+                    text,
+                    label=subparagraph,
+                    word_pattern=r"sub-?paragraphs?",
+                )
+            ):
                 return False
         return True
 
@@ -1102,6 +1116,26 @@ def _uk_section_label_in_simple_list(text: str, label: str) -> bool:
     ):
         labels = re.findall(r"\b\d+\b", match.group("body"))
         if wanted in labels:
+            return True
+    return False
+
+
+def _uk_container_label_in_simple_list(
+    text: str,
+    *,
+    label: str,
+    word_pattern: str,
+) -> bool:
+    """Return true when a label is listed in a same-kind table extent phrase."""
+    wanted = _clean_num(label)
+    if not wanted:
+        return False
+    for match in re.finditer(
+        rf"\b(?:{word_pattern})\s+(?P<body>[^.;]+)",
+        text or "",
+        flags=re.I,
+    ):
+        if _uk_container_label_body_mentions_label(match.group("body"), wanted):
             return True
     return False
 

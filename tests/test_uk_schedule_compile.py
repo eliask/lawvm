@@ -10272,6 +10272,88 @@ def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("paragraph_label", "expected_ops"),
+    [
+        ("21", 1),
+        ("42", 1),
+        ("44", 0),
+    ],
+)
+def test_compile_repeal_table_structural_schedule_paragraph_list_and_range_members(
+    paragraph_label: str,
+    expected_ops: int,
+) -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 29, paragraphs 20, 21 and 41 to 43.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id=f"uk_test_repeal_table_structural_schedule_paragraph_{paragraph_label}",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri=f"/id/ukpga/2000/17/schedule/29/paragraph/{paragraph_label}",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions=f"Sch. 29 para. {paragraph_label}",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == expected_ops
+    if expected_ops:
+        assert ops[0].action is StructuralAction.REPEAL
+        assert ops[0].target.path == (("schedule", "29"), ("paragraph", paragraph_label))
+        assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+        assert any(
+            record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+            and record["target"] == f"schedule:29/paragraph:{paragraph_label}"
+            and record["extent_cell"] == "In Schedule 29, paragraphs 20, 21 and 41 to 43."
+            and record["blocking"] is False
+            for record in lowering_records
+        )
+    else:
+        assert any(
+            record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+            and record["target"] == f"schedule:29/paragraph:{paragraph_label}"
+            and record["match_count"] == 0
+            and record["blocking"] is True
+            for record in lowering_records
+        )
+
+
 def test_compile_repeal_table_structural_title_year_member_repeal() -> None:
     source_root = ET.fromstring(
         """
