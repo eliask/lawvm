@@ -28994,6 +28994,57 @@ def test_compile_schedule_list_entry_insert_lowers_to_typed_schedule_entry() -> 
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_insert_preserves_explicit_anchor_ordinal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>b after the second entry relating to the Act of 2003 insert\u2014
+          Any offence against a child or young person under section 4 of the
+          Asylum and Immigration (Treatment of Claimants, etc) Act 2004.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6f0e8a50f1b8b531ee88ea7230fe05bb",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-04-06",
+        affected_uri="/id/ukpga/1933/12/schedule/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1933",
+        affected_number="12",
+        affected_provisions="Sch. 1",
+        affecting_uri="/id/ukpga/2012/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="9",
+        affecting_provisions="Sch. 9 para. 136(b)",
+        affecting_title="Protection of Freedoms Act 2012",
+        in_force_dates=[{"date": "2013-04-06", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target == LegalAddress(path=(("schedule", "1"),))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text.startswith("Any offence against a child or young person")
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "after"
+    assert selector["anchor_text"] == "the Act of 2003"
+    assert selector["anchor_ordinal"] == 2
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_insert"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_insert_allows_explicit_schedule_partition_target() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -29804,6 +29855,51 @@ def test_replay_schedule_list_entry_insert_blocks_when_anchor_ambiguous() -> Non
     assert adjudications[0].kind == "uk_replay_schedule_list_entry_anchor_unresolved"
     assert adjudications[0].detail["reason_code"] == "anchor_not_unique"
     assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_replay_schedule_list_entry_insert_resolves_explicit_anchor_ordinal() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_ordinal",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="Inserted entry"),
+        provenance_tags=(
+            'schedule_list_entry_selector:{"rule_id":"uk_effect_schedule_list_entry_insert",'
+            '"direction":"after","anchor_text":"the Act of 2003","inserted_text":"Inserted entry",'
+            '"anchor_ordinal":2}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1933/12",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="the Act of 2003: first entry"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="the Act of 2003: second entry"),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert [child.text for child in replayed.supplements[0].children] == [
+        "the Act of 2003: first entry",
+        "the Act of 2003: second entry",
+        "Inserted entry",
+    ]
+    assert [adj.kind for adj in adjudications] == [
+        "uk_replay_schedule_list_entry_anchor_ordinal_resolved"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["anchor_ordinal"] == 2
+    assert adjudications[0].detail["anchor_match_count"] == 2
 
 
 def test_replay_schedule_list_entry_insert_blocks_partition_parenthetical_anchor_label_mismatch() -> None:
