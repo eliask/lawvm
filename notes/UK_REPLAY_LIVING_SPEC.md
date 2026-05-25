@@ -3004,6 +3004,13 @@ Current payload-descendant source-ref invariant:
   "D" respectively`. The feed target still supplies the replay address; a
   source header such as `In each of the following provisions...` does not let
   lowering invent additional targets beyond the effect-feed row.
+- the same family also covers longer source-local series where the originals
+  carry explicit all-occurrence markers, e.g. `for "A" (in each place), "B" (in
+  each place) and "C" there is substituted "D", "E" and "F" respectively`.
+  The parser pairs quoted originals and replacements by order only when the
+  source clause itself says `wherever` or `in each/both places`; otherwise the
+  unqualified series remains a blocked/manual text-patch frontier rather than
+  being silently widened to all occurrences.
 - source text that says `from "X" to the end substitute-` followed by an
   unquoted block lowers under
   `uk_effect_anchor_to_end_block_substitution_text_patch`. The rule is limited

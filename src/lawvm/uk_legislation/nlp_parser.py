@@ -43,11 +43,12 @@ def _strip_inserted_child_label(text: str) -> str:
 
 
 def _quoted_terms(text: str) -> list[str]:
-    return [
-        m.group(1).strip()
-        for m in re.finditer(r"[“\"'‘](.*?)[”\"'’]", text)
-        if m.group(1).strip()
-    ]
+    terms: list[str] = []
+    for m in re.finditer(r"“([^”]*)”|\"([^\"]*)\"|‘([^’]*)’|'([^']*)'", text):
+        term = next((group for group in m.groups() if group is not None), "")
+        if term.strip():
+            terms.append(term.strip())
+    return terms
 
 
 def _last_quoted_term(text: str) -> str | None:
@@ -55,6 +56,21 @@ def _last_quoted_term(text: str) -> str | None:
     if not terms:
         return None
     return terms[-1]
+
+
+def _span_overlaps(span: tuple[int, int], blocked_spans: list[tuple[int, int]]) -> bool:
+    start, end = span
+    return any(start < blocked_end and blocked_start < end for blocked_start, blocked_end in blocked_spans)
+
+
+def _has_respectively_all_occurrences_signal(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\bwherever\b|\bin\s+(?:each|both)\s+places?\b",
+            text,
+            re.I,
+        )
+    )
 
 
 def _looks_like_definition_entry_payload(text: str) -> bool:
@@ -147,6 +163,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     # Clean up newlines/extra spaces
     text = " ".join(text.split())
+    respectively_spans: list[tuple[int, int]] = []
 
     matches_nested_quote_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.+)[”\"'’],?\s+"
@@ -253,6 +270,35 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                     "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
                 }
             )
+        respectively_spans.append(m.span())
+
+    matches_respectively_series_there_is_substituted = re.finditer(
+        r"\bfor\s+(?P<originals>.+?)\s+"
+        r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"(?P<replacements>.+?)\s+respectively\b",
+        text,
+        re.I,
+    )
+    for m in matches_respectively_series_there_is_substituted:
+        originals_text = m.group("originals")
+        replacements_text = m.group("replacements")
+        originals = _quoted_terms(originals_text)
+        replacements = _quoted_terms(replacements_text)
+        if (
+            len(originals) < 2
+            or len(originals) != len(replacements)
+            or not _has_respectively_all_occurrences_signal(originals_text)
+        ):
+            continue
+        for original, replacement in zip(originals, replacements):
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+                }
+            )
+        respectively_spans.append(m.span())
 
     # Pattern 1: Substitution (Multiple possible)
     # Use non-greedy match for the fragments.
@@ -289,6 +335,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_wherever_occurring_passive_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
         replacement = m.group("replacement").strip()
         for original in _quoted_terms(m.group("originals")):
             subs.append(
@@ -878,6 +926,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_are_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
         subs.append({"original": m.group(1), "replacement": m.group(2)})
 
     matches_preposed_passive_substituted = re.finditer(
@@ -902,6 +952,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_there_is_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
         subs.append({"original": m.group(1), "replacement": m.group(2)})
 
     matches_is_replaced_with = re.finditer(
