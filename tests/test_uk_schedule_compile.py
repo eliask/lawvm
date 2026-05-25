@@ -10149,6 +10149,70 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_quoted_words_allows_blank_feed_type_when_source_claims_words() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 22, in paragraph 84(1) the words “or structure”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_blank_feed_type_quoted_words",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-03-01",
+        affected_uri="/id/ukpga/2000/17/schedule/22/paragraph/84/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 84(1)",
+        affecting_uri="/id/ukpga/2001/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="2",
+        affecting_provisions="Sch. 2 para. 108(16) Sch. 4",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2001-03-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "22"), ("paragraph", "84"), ("subparagraph", "1"))
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "or structure"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_quoted_words"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_quoted_words_accepts_mixed_publisher_quotes() -> None:
     source_root = ET.fromstring(
         """
