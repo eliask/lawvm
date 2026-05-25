@@ -16,6 +16,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.nlp_parser import (
+    UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
@@ -559,6 +560,38 @@ def append_basic_text_rewrite_observations(
                 ],
             },
         )
+    if UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID in rule_ids:
+        fragments = [
+            fragment
+            for fragment in fragment_subs or []
+            if str(fragment.get("rule_id") or "")
+            == UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID
+        ]
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_both_subsequent_occurrences_quoted_substitution",
+            reason=(
+                "UK source text substitutes quoted words in both places after "
+                "the first occurrence; lowering preserves that relative selector "
+                "as bounded second and third occurrence text patches scoped to "
+                "the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrences": [
+                    int(str(fragment.get("occurrence") or "0") or "0")
+                    for fragment in fragments
+                ],
+            },
+        )
 
 
 def append_source_carried_tail_rewrite_observations(
@@ -966,6 +999,7 @@ def _separate_occurrence_text_replace_fragments(
         rule_id = str(item.get("rule_id") or "")
         if rule_id not in {
             "uk_effect_first_second_occurrence_substitution_text_patch",
+            UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
             UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
             UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
         } or not original or not occurrence.isdigit():

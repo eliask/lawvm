@@ -22130,6 +22130,79 @@ def test_compile_quoted_word_ordinal_places_substitution_preserves_bounded_occur
     assert lowering_rejections[0]["occurrences"] == [3, 1]
 
 
+def test_compile_both_subsequent_places_substitution_preserves_bounded_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b for \u201cappeal\u201d, where it appears in both subsequent places, substitute \u201creview or appeal\u201d.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-14096848744a5d42a9f2e68f0b8594a2",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-05-08",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 52(7)",
+        affecting_uri="/id/asp/2014/11",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="11",
+        affecting_provisions="sch. 3 para. 26(b)",
+        affecting_title="Courts Reform (Scotland) Act 2014",
+        in_force_dates=[{"date": "2015-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "52"), ("subsection", "7")),
+        (("section", "52"), ("subsection", "7")),
+    ]
+    assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [3, 2]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "appeal",
+        "appeal",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        "review or appeal",
+        "review or appeal",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_both_subsequent_occurrences_substitution_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "2"]
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_both_subsequent_occurrences_substitution_text_patch"
+    ]
+    assert lowering_records[0]["family"] == "text_rewrite_lowering"
+    assert lowering_records[0]["reason_code"] == (
+        "explicit_both_subsequent_occurrences_quoted_substitution"
+    )
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+    assert lowering_records[0]["occurrences"] == [3, 2]
+
+
 def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:
     extracted_el = ET.fromstring(
         f"""

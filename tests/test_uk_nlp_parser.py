@@ -500,6 +500,28 @@ def test_parse_fragment_substitution_handles_multiple_ordinal_places_substitutio
     ]
 
 
+def test_parse_fragment_substitution_handles_both_subsequent_places_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "b for \u201cappeal\u201d, where it appears in both subsequent places, "
+        "substitute \u201creview or appeal\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "appeal",
+            "replacement": "review or appeal",
+            "occurrence": "3",
+            "rule_id": "uk_effect_both_subsequent_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "appeal",
+            "replacement": "review or appeal",
+            "occurrence": "2",
+            "rule_id": "uk_effect_both_subsequent_occurrences_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_where_bare_ordinal_substitution() -> None:
     subs = parse_fragment_substitution(
         "b for \u201cthe adult\u201d, where first occurring, "
