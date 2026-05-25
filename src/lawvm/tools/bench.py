@@ -2450,6 +2450,15 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="print corpus statistics by decade (N statutes, amendment distribution) without running the benchmark",
     )
     bench_p.add_argument(
+        "--source-closure-stats",
+        dest="source_closure_stats",
+        action="store_true",
+        help=(
+            "[-j uk --corpus-stats] also inspect replay-required affecting-act "
+            "XML closure from the archive; slower than header-only corpus stats"
+        ),
+    )
+    bench_p.add_argument(
         "--diagnose",
         action="store_true",
         help="with --show: classify failure modes for worst performers "

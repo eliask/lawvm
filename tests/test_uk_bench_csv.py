@@ -930,6 +930,88 @@ def test_uk_bench_curated_sample_keeps_only_source_complete_rows() -> None:
     assert [row["statute_id"] for row in selected] == ["asp/2000/1", "ukpga/1990/42"]
 
 
+def test_uk_bench_corpus_source_closure_summary_separates_affecting_xml(
+    monkeypatch,
+) -> None:
+    from lawvm.uk_legislation import effects as uk_effects_model
+
+    def make_effect(
+        effect_id: str,
+        *,
+        effect_type: str,
+        affecting_number: str,
+        applied: bool = True,
+    ) -> uk_effects_model.UKEffectRecord:
+        return uk_effects_model.UKEffectRecord(
+            effect_id=effect_id,
+            effect_type=effect_type,
+            applied=applied,
+            requires_applied=False,
+            modified="2026-01-01",
+            affected_uri="",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions="s. 1",
+            affecting_uri="",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2020",
+            affecting_number=affecting_number,
+            affecting_provisions="s. 1",
+            affecting_title="Affecting Act",
+        )
+
+    effect_rows = {
+        "ukpga/2000/1": [
+            make_effect("eff-1", effect_type="inserted", affecting_number="1"),
+            make_effect(
+                "eff-2",
+                effect_type="commencement order",
+                affecting_number="9",
+            ),
+        ],
+        "ukpga/2000/2": [
+            make_effect("eff-3", effect_type="inserted", affecting_number="2"),
+            make_effect("eff-4", effect_type="words substituted", affecting_number="3"),
+        ],
+    }
+
+    monkeypatch.setattr(
+        uk_effects_model,
+        "load_effects_for_statute_from_archive",
+        lambda statute_id, _archive, parse_rejections_out=None: effect_rows[statute_id],
+    )
+    monkeypatch.setattr(
+        uk_effects_model,
+        "get_affecting_act_xml_from_archive",
+        lambda act_id, _archive: {
+            "ukpga/2020/1": b"x" * 100,
+            "ukpga/2020/2": None,
+            "ukpga/2020/3": b"<short/>",
+        }[act_id],
+    )
+
+    summary = uk_bench._corpus_source_closure_summary(
+        (
+            {"statute_id": "ukpga/2000/1"},
+            {"statute_id": "ukpga/2000/2"},
+        ),
+        archive=cast(Farchive, object()),
+        applicability_mode="effective_date_plus_feed_applied",
+    )
+
+    assert summary["effect_row_count"] == 4
+    assert summary["required_effect_count"] == 3
+    assert summary["required_affecting_act_ref_count"] == 3
+    assert summary["unique_required_affecting_act_count"] == 3
+    assert summary["row_closure_counts"] == {"full": 1, "missing": 1}
+    assert summary["required_affecting_act_source_status_counts"] == {
+        "absent": 1,
+        "available": 1,
+        "too_small": 1,
+    }
+
+
 def test_uk_bench_hard_curated_sample_keeps_source_complete_effectful_heavy_rows() -> None:
     rows = [
         {
