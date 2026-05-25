@@ -2523,6 +2523,12 @@ Current payload-descendant source-ref invariant:
   target, source supplies the quoted preimage. It must not override more
   specific child-qualified omission rules where the quoted phrase is followed
   by `in paragraph ...` / `in sub-paragraph ...`.
+  Prefix target forms such as `in subsection (1)(a), the words "X"` and
+  `in sub-paragraph (1)(a), the words "X"` / `in sub-paragraph (2), the words
+  "X"` are owned by
+  `uk_effect_child_qualified_word_omission_text_patch`; lowering verifies the
+  source parent/child labels against the effect target before emitting a text
+  repeal.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
   there shall be substituted "..."` are classified as
   `uk_manual_frontier_structural_child_range_substitution_candidate` while no
