@@ -508,6 +508,12 @@ def uk_affecting_act_schedule_part_standalone_split_rejection(
     authority_layer: str,
     split_first_part: str,
     split_second_part: str,
+    schedule_component_tag: str,
+    schedule_component_id: str,
+    schedule_component_label: str,
+    standalone_part_candidate_tag: str,
+    standalone_part_candidate_id: str,
+    standalone_part_candidate_label: str,
 ) -> dict[str, Any]:
     return {
         "rule_id": "uk_affecting_act_schedule_part_standalone_split_rejected",
@@ -520,6 +526,12 @@ def uk_affecting_act_schedule_part_standalone_split_rejection(
         "authority_layer": authority_layer,
         "split_first_part": split_first_part,
         "split_second_part": split_second_part,
+        "schedule_component_tag": schedule_component_tag,
+        "schedule_component_id": schedule_component_id,
+        "schedule_component_label": schedule_component_label,
+        "standalone_part_candidate_tag": standalone_part_candidate_tag,
+        "standalone_part_candidate_id": standalone_part_candidate_id,
+        "standalone_part_candidate_label": standalone_part_candidate_label,
         "reason": (
             "UK affecting provisions named a schedule part, but source extraction could "
             "not resolve that part while preserving the schedule container. LawVM rejects "
