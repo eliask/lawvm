@@ -8157,6 +8157,107 @@ def test_compile_source_carried_child_tail_repeal_rejects_mismatched_subsection_
     assert lowering_records[0]["blocking"] is True
 
 
+def test_compile_source_carried_child_tail_omit_after_paragraph_from_exact_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-3-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>2 In subsection (1), omit the words after paragraph (b).</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-tail-omit-after-paragraph",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-10-31",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 56(1)",
+        affecting_uri="/id/ukpga/2024/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="15",
+        affecting_provisions="Sch. 4 para. 3(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2024-10-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "56"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_b"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_carried_child_tail_omit_after_paragraph_rejects_mismatched_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-3-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>2 In subsection (2), omit the words after paragraph (b).</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-tail-omit-after-paragraph-mismatch",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-10-31",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 56(1)",
+        affecting_uri="/id/ukpga/2024/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="15",
+        affecting_provisions="Sch. 4 para. 3(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2024-10-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_source_carried_subparagraph_tail_repeal_from_exact_paragraph_context() -> None:
     extracted_el = ET.fromstring(
         f"""

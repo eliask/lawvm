@@ -2831,6 +2831,10 @@ Current payload-descendant source-ref invariant:
   it must not delete sibling provisions or pick a parent body by approximate
   text anchoring. Current witness: `asp/2000/1` affected `s. 21(5)` by
   `ssi/2013/177 Sch. para. 4(a)`.
+- The equivalent imperative form `in subsection (1), omit the words after
+  paragraph (b)` lowers through the same rule and selector, with the same exact
+  containing-subsection check. Current witness: `ukpga/1990/42` affected
+  `s. 56(1)` by `ukpga/2024/15 Sch. 4 para. 3(2)`.
 - Source text such as `in paragraph (a), the words following sub-paragraph
   (ii) are repealed` lowers through
   `uk_effect_source_carried_subparagraph_tail_repeal_text_patch` when the feed

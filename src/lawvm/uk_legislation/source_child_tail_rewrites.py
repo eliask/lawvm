@@ -15,6 +15,13 @@ _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
     r"are\s+repealed\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_CHILD_TAIL_OMIT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
+    r"(?:omit|repeal)\s+the\s+words\s+(?:following|after)\s+"
+    r"paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+paragraph\s+\((?P<paragraph>[0-9A-Za-z]+)\),?\s+"
@@ -46,6 +53,8 @@ def _fragment_substitution_source_carried_child_tail_repeal(
     if not text:
         return None
     match = _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE.match(text)
+    if match is None:
+        match = _SOURCE_CARRIED_CHILD_TAIL_OMIT_RE.match(text)
     if match is None:
         subparagraph_match = _SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE.match(text)
         if subparagraph_match is None:
