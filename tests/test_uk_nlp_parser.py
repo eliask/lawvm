@@ -1459,6 +1459,22 @@ def test_parse_fragment_substitution_handles_dangling_passive_substitution_quote
     ]
 
 
+def test_parse_fragment_substitution_handles_dangling_active_substitution_quote() -> None:
+    subs = parse_fragment_substitution(
+        "250 In section 31C(2)(b) (appeals: appeals to Special Commissioners) "
+        "for \u201csection 350 of the principal Act\u201d substitute "
+        "\u201csection 963(3) of ITA 2007."
+    )
+
+    assert subs == [
+        {
+            "original": "section 350 of the principal Act",
+            "replacement": "section 963(3) of ITA 2007.",
+            "rule_id": "uk_effect_dangling_active_substitution_quote_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_all_occurrences_passive_with_words_marker() -> None:
     subs = parse_fragment_substitution(
         "2 for the word \u201cassessment\u201d, in each place where it occurs, "

@@ -1854,6 +1854,13 @@ Current payload-descendant source-ref invariant:
   `source_text_recovery` and remains target-local. Current witness:
   `ukpga/1978/29` affected `Sch. 9 para. 1(4)` by `asp/2003/4 Sch. 4 para.
   5(18)(c)`.
+- Damaged active substitutions using `for "X" substitute "Y` follow the same
+  source-recovery boundary under
+  `uk_effect_dangling_active_substitution_quote_text_patch`. The rule is not
+  a generic quote repair: it requires the explicit source preimage and uses
+  only the trailing replacement text bounded by the extracted instruction.
+  Current witness: `ukpga/1970/9` effect
+  `key-fb76bd8bdf30acb3807975d0d3166317`.
 - passive range omissions of the form `the words from "X" onwards shall be
   omitted` lower to `TEXT_FROM_X_TO_END` under
   `uk_effect_range_to_end_passive_repeal_text_patch`. This is a bounded text
