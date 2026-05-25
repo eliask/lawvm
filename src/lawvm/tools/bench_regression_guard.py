@@ -94,6 +94,21 @@ def load_durations(path: Path) -> dict[str, float]:
     return _load_float_column(path, "duration_s")
 
 
+def load_process_maxrss(path: Path) -> dict[str, float]:
+    """Load {statute_id -> process_maxrss_kb} from one bench run CSV."""
+    return {
+        statute_id: value
+        for statute_id, value in _load_float_column(path, "process_maxrss_kb").items()
+        if value > 0.0
+    }
+
+
+def _max_process_maxrss_row(rows: dict[str, float]) -> tuple[str, float] | None:
+    if not rows:
+        return None
+    return max(rows.items(), key=lambda item: item[1])
+
+
 def load_phase_timings(path: Path) -> dict[str, dict[str, float]]:
     """Load persisted per-row phase timings when a bench CSV contains them."""
     rows: dict[str, dict[str, float]] = {}
@@ -147,14 +162,30 @@ def _load_uk_scores(path: Path) -> tuple[str, dict[str, float]]:
             return _load_first_float_column(path, ("similarity", "score"))
 
         scores: dict[str, float] = {}
+        fallback_scored_without_replay: list[str] = []
         for row in reader:
             sid = row["statute_id"].strip()
             score = _parse_float_cell(row, "replay_commencement_score")
             if score is None:
                 score = _parse_float_cell(row, "replay_score")
             if score is None:
+                fallback_score = _parse_float_cell(row, "score")
+                if fallback_score is None:
+                    fallback_score = _parse_float_cell(row, "similarity")
+                if fallback_score is not None:
+                    fallback_scored_without_replay.append(sid or "<blank statute_id>")
                 continue
             scores[sid] = score
+    if fallback_scored_without_replay:
+        examples = ", ".join(fallback_scored_without_replay[:5])
+        if len(fallback_scored_without_replay) > 5:
+            examples += f", ... {len(fallback_scored_without_replay) - 5} more"
+        raise ValueError(
+            f"CSV {path} has replay score columns but "
+            f"{len(fallback_scored_without_replay)} row(s) with fallback score and "
+            "no replay-primary score; mixed UK score lanes are not valid guard evidence. "
+            f"Examples: {examples}"
+        )
     if not scores:
         raise ValueError(
             f"CSV {path} has replay score columns but no parseable replay score values. "
@@ -194,6 +225,14 @@ def _load_uk_replay_regimes(path: Path) -> dict[str, str]:
                 f"authority={values['uk_authority_mode']}"
             )
     return regimes
+
+
+def _uk_replay_regime_columns_present(path: Path) -> bool:
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"Empty or header-less CSV: {path}")
+        return set(_UK_REPLAY_REGIME_COLUMNS).issubset(set(reader.fieldnames))
 
 
 def mean(values: list[float]) -> float:
@@ -289,6 +328,8 @@ def run_guard(
     jurisdiction: str = "fi",
     duration_threshold_s: float = 1.0,
     max_duration_regressions: int | None = None,
+    rss_threshold_mb: float = 64.0,
+    max_rss_regressions: int | None = None,
     phase_threshold_s: float = 1.0,
     max_phase_regressions: int | None = None,
     phase_names: tuple[str, ...] = (),
@@ -305,6 +346,12 @@ def run_guard(
         return 1
     if max_duration_regressions is not None and max_duration_regressions < 0:
         print("ERROR: --max-duration-regressions must be nonnegative")
+        return 1
+    if rss_threshold_mb < 0.0:
+        print("ERROR: --rss-threshold-mb must be nonnegative")
+        return 1
+    if max_rss_regressions is not None and max_rss_regressions < 0:
+        print("ERROR: --max-rss-regressions must be nonnegative")
         return 1
     if phase_threshold_s < 0.0:
         print("ERROR: --phase-threshold-s must be nonnegative")
@@ -362,11 +409,43 @@ def run_guard(
 
     if jurisdiction == "uk":
         try:
+            baseline_has_regime_columns = _uk_replay_regime_columns_present(baseline_path)
+            current_has_regime_columns = _uk_replay_regime_columns_present(current_path)
             baseline_regimes = _load_uk_replay_regimes(baseline_path)
             current_regimes = _load_uk_replay_regimes(current_path)
         except (ValueError, OSError) as exc:
             print(f"ERROR loading UK replay regime CSV data: {exc}")
             return 1
+        if baseline_has_regime_columns or current_has_regime_columns:
+            missing_baseline_regime = (
+                sorted(set(common) - set(baseline_regimes))
+                if baseline_has_regime_columns
+                else []
+            )
+            missing_current_regime = (
+                sorted(set(common) - set(current_regimes))
+                if current_has_regime_columns
+                else []
+            )
+            if missing_baseline_regime or missing_current_regime:
+                print("ERROR: UK replay regime evidence missing on common scored row(s)")
+                if missing_baseline_regime:
+                    examples = ", ".join(missing_baseline_regime[:10])
+                    if len(missing_baseline_regime) > 10:
+                        examples += f", ... {len(missing_baseline_regime) - 10} more"
+                    print(
+                        f"  Baseline missing regime evidence: "
+                        f"{len(missing_baseline_regime)} row(s): {examples}"
+                    )
+                if missing_current_regime:
+                    examples = ", ".join(missing_current_regime[:10])
+                    if len(missing_current_regime) > 10:
+                        examples += f", ... {len(missing_current_regime) - 10} more"
+                    print(
+                        f"  Current missing regime evidence: "
+                        f"{len(missing_current_regime)} row(s): {examples}"
+                    )
+                return 1
         regime_common = sorted(set(baseline_regimes) & set(current_regimes) & set(common))
         if regime_common:
             old_regime_counts = Counter(baseline_regimes[sid] for sid in regime_common)
@@ -451,6 +530,7 @@ def run_guard(
     fail = False
     fail_reasons: list[str] = []
     duration_regressions: list[tuple[str, float, float, float]] = []
+    rss_regressions: list[tuple[str, float, float, float]] = []
     phase_regressions: list[tuple[str, str, float, float, float]] = []
     if max_duration_regressions is not None:
         try:
@@ -495,6 +575,59 @@ def run_guard(
             print()
         else:
             print(f"Duration regressions > {duration_threshold_s:.3f}s : 0  (none)")
+            print()
+    if max_rss_regressions is not None:
+        try:
+            baseline_rss = load_process_maxrss(baseline_path)
+            current_rss = load_process_maxrss(current_path)
+        except (ValueError, OSError) as exc:
+            print(f"ERROR loading process_maxrss_kb CSV data: {exc}")
+            return 1
+        baseline_max_rss = _max_process_maxrss_row(baseline_rss)
+        current_max_rss = _max_process_maxrss_row(current_rss)
+        if baseline_max_rss is None or current_max_rss is None:
+            print("ERROR: baseline and current must both have positive process_maxrss_kb rows")
+            return 1
+        baseline_max_sid, baseline_max_kb = baseline_max_rss
+        current_max_sid, current_max_kb = current_max_rss
+        old_rss_max = baseline_max_kb / 1024.0
+        new_rss_max = current_max_kb / 1024.0
+        rss_delta = new_rss_max - old_rss_max
+        sign = "+" if rss_delta >= 0 else ""
+        print("Peak process_maxrss_mb (measured rows):")
+        print(
+            f"  Baseline max : {old_rss_max:.1f} MB "
+            f"after {baseline_max_sid} (measured rows: {len(baseline_rss)})"
+        )
+        print(
+            f"  Current max  : {new_rss_max:.1f} MB "
+            f"after {current_max_sid} (measured rows: {len(current_rss)})"
+        )
+        print(f"  Delta        : {sign}{rss_delta:.1f} MB")
+        print()
+        rss_regressions = []
+        if rss_delta > rss_threshold_mb:
+            rss_regressions = [
+                (
+                    f"run_peak:{baseline_max_sid}->{current_max_sid}",
+                    old_rss_max,
+                    new_rss_max,
+                    rss_delta,
+                )
+            ]
+        if rss_regressions:
+            print(
+                f"RSS peak regression > {rss_threshold_mb:.1f} MB : "
+                f"{len(rss_regressions)} run(s)  "
+                f"(max allowed: {max_rss_regressions})"
+            )
+            print(f"  {'Evidence':<40} {'Baseline':>12} {'Current':>12} {'Delta':>12}")
+            print(f"  {'-' * 40} {'-' * 12} {'-' * 12} {'-' * 12}")
+            for evidence, old, new, delta in rss_regressions:
+                print(f"  {evidence:<40} {old:>10.1f}MB {new:>10.1f}MB {delta:>+10.1f}MB")
+            print()
+        else:
+            print(f"RSS peak regression > {rss_threshold_mb:.1f} MB : 0  (none)")
             print()
     if max_phase_regressions is not None:
         try:
@@ -558,6 +691,12 @@ def run_guard(
             f"{len(duration_regressions)} statutes slowed beyond duration threshold "
             f"(max allowed: {max_duration_regressions})"
         )
+    if max_rss_regressions is not None and len(rss_regressions) > max_rss_regressions:
+        fail = True
+        fail_reasons.append(
+            f"{len(rss_regressions)} run-level RSS peaks grew beyond threshold "
+            f"(max allowed: {max_rss_regressions})"
+        )
     if max_phase_regressions is not None and len(phase_regressions) > max_phase_regressions:
         fail = True
         fail_reasons.append(
@@ -586,6 +725,8 @@ def main(args: "argparse.Namespace") -> None:
             jurisdiction=jurisdiction,
             duration_threshold_s=args.duration_threshold_s,
             max_duration_regressions=args.max_duration_regressions,
+            rss_threshold_mb=args.rss_threshold_mb,
+            max_rss_regressions=args.max_rss_regressions,
             phase_threshold_s=args.phase_threshold_s,
             max_phase_regressions=args.max_phase_regressions,
             phase_names=tuple(args.phase_names or ()),
@@ -599,6 +740,7 @@ __all__ = [
     "UK_BENCH_RUNS_DIR",
     "find_csv_by_label",
     "load_durations",
+    "load_process_maxrss",
     "load_phase_timings",
     "load_scores",
     "main",

@@ -98,6 +98,10 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
             "2.5",
             "--max-duration-regressions",
             "1",
+            "--rss-threshold-mb",
+            "128",
+            "--max-rss-regressions",
+            "1",
             "--phase-threshold-s",
             "3.5",
             "--max-phase-regressions",
@@ -114,6 +118,8 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.current == "new"
     assert args.duration_threshold_s == 2.5
     assert args.max_duration_regressions == 1
+    assert args.rss_threshold_mb == 128
+    assert args.max_rss_regressions == 1
     assert args.phase_threshold_s == 3.5
     assert args.max_phase_regressions == 2
     assert args.phase_names == ["compile_ops", "replay"]
@@ -1245,6 +1251,68 @@ def test_bench_regression_guard_rejects_uk_replay_regime_mismatch(
     assert "ukpga/2000/1" in out
 
 
+def test_bench_regression_guard_rejects_missing_uk_replay_regime_evidence(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = [
+        "statute_id",
+        "replay_score",
+        "uk_metadata_backfill_enabled",
+        "uk_oracle_alignment_enabled",
+        "uk_metadata_only_effects_enabled",
+        "uk_applicability_mode",
+        "uk_authority_mode",
+    ]
+    rows = [
+        {
+            "statute_id": "ukpga/2000/1",
+            "replay_score": "0.95",
+            "uk_metadata_backfill_enabled": "1",
+            "uk_oracle_alignment_enabled": "1",
+            "uk_metadata_only_effects_enabled": "0",
+            "uk_applicability_mode": "effective_date_plus_feed_applied",
+            "uk_authority_mode": "source_text_only",
+        },
+        {
+            "statute_id": "ukpga/2000/2",
+            "replay_score": "0.90",
+            "uk_metadata_backfill_enabled": "1",
+            "uk_oracle_alignment_enabled": "1",
+            "uk_metadata_only_effects_enabled": "0",
+            "uk_applicability_mode": "effective_date_plus_feed_applied",
+            "uk_authority_mode": "source_text_only",
+        },
+    ]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(rows[0])
+        writer.writerow({**rows[1], "uk_authority_mode": ""})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: UK replay regime evidence missing on common scored row(s)" in out
+    assert "Current missing regime evidence: 1 row(s): ukpga/2000/2" in out
+
+
 def test_bench_regression_guard_prefers_uk_replay_score_when_present(
     tmp_path,
     monkeypatch,
@@ -1342,6 +1410,52 @@ def test_bench_regression_guard_uses_rowwise_uk_replay_primary_score(
     assert "Score column         : uk_replay_primary" in out
 
 
+def test_bench_regression_guard_rejects_mixed_uk_replay_and_raw_score_lanes(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "replay_score", "replay_commencement_score"]
+    for path in (baseline, current):
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "score": "0.70",
+                    "replay_score": "0.90",
+                    "replay_commencement_score": "",
+                }
+            )
+            writer.writerow(
+                {
+                    "statute_id": "ukpga/2000/2",
+                    "score": "0.80",
+                    "replay_score": "",
+                    "replay_commencement_score": "",
+                }
+            )
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR loading CSV" in out
+    assert "mixed UK score lanes are not valid guard evidence" in out
+    assert "ukpga/2000/2" in out
+
+
 def test_bench_regression_guard_can_fail_on_duration_regressions(
     tmp_path,
     monkeypatch,
@@ -1378,6 +1492,75 @@ def test_bench_regression_guard_can_fail_on_duration_regressions(
     assert "Duration regressions > 1.000s : 1 statute(s)" in out
     assert "ukpga/2000/2" in out
     assert "RESULT: FAIL" in out
+
+
+def test_bench_regression_guard_can_fail_on_rss_regressions(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "process_maxrss_kb"]
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "process_maxrss_kb": "102400"})
+        writer.writerow({"statute_id": "ukpga/2000/2", "score": "0.80", "process_maxrss_kb": "204800"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "process_maxrss_kb": "122880"})
+        writer.writerow({"statute_id": "ukpga/2000/2", "score": "0.80", "process_maxrss_kb": "358400"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        rss_threshold_mb=64.0,
+        max_rss_regressions=0,
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Peak process_maxrss_mb (measured rows):" in out
+    assert "RSS peak regression > 64.0 MB : 1 run(s)" in out
+    assert "ukpga/2000/2" in out
+    assert "RESULT: FAIL" in out
+
+
+def test_bench_regression_guard_rejects_unmeasured_zero_rss_rows(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(bench_regression_guard, "UK_BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "old.csv"
+    current = tmp_path / "new.csv"
+    fieldnames = ["statute_id", "score", "process_maxrss_kb"]
+    for path in (baseline, current):
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow({"statute_id": "ukpga/2000/1", "score": "0.90", "process_maxrss_kb": "0"})
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        threshold=0.02,
+        max_regressions=0,
+        jurisdiction="uk",
+        max_rss_regressions=0,
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: baseline and current must both have positive process_maxrss_kb rows" in out
 
 
 def test_bench_regression_guard_prints_phase_timing_deltas(
@@ -1870,6 +2053,25 @@ def test_bench_regression_guard_rejects_negative_limits(capsys) -> None:
     out = capsys.readouterr().out
     assert rc == 1
     assert "ERROR: --max-duration-regressions must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        rss_threshold_mb=-0.1,
+        max_rss_regressions=0,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --rss-threshold-mb must be nonnegative" in out
+
+    rc = bench_regression_guard.run_guard(
+        "old",
+        "new",
+        max_rss_regressions=-1,
+    )
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "ERROR: --max-rss-regressions must be nonnegative" in out
 
     rc = bench_regression_guard.run_guard(
         "old",

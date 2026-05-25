@@ -2414,7 +2414,10 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         type=int,
         default=None,
         metavar="N",
-        help="parallel workers (FI default: 1=sequential; UK/EE default: cpu_count)",
+        help=(
+            "parallel workers (FI default: 1=sequential; UK replay default is "
+            "memory-safe, max 4; UK non-replay/EE default is bounded by cpu_count)"
+        ),
     )
     bench_p.add_argument(
         "--by-decade",
@@ -2548,6 +2551,12 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk] print a bench report without writing run CSV/history artifacts",
     )
     bench_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        dest="summary_only",
+        help="[-j uk] print bounded headline metrics instead of the full detailed report",
+    )
+    bench_p.add_argument(
         "--replay",
         action="store_true",
         help="[-j uk] also run amendment replay and report replayed vs enacted EID scores",
@@ -2583,6 +2592,16 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         action="store_true",
         dest="no_text_scores",
         help="[-j uk] skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+    )
+    bench_p.add_argument(
+        "--worker-max-tasks",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "[-j uk] recycle each parallel worker after N statutes to cap long-run "
+            "worker RSS growth; slower, but useful for WSL2/full-corpus replay sweeps"
+        ),
     )
     bench_p.add_argument(
         "--min-year",

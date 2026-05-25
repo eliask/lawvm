@@ -4033,6 +4033,24 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     uk_candidates_p.add_argument(
+        "--summary-count-limit",
+        type=int,
+        metavar="N",
+        help=(
+            "with --json, keep only the top N entries in each aggregate summary "
+            "count map and report per-map omissions"
+        ),
+    )
+    uk_candidates_p.add_argument(
+        "--row-count-limit",
+        type=int,
+        metavar="N",
+        help=(
+            "with --json, keep only the top N entries in each emitted row count "
+            "map and report per-row omissions"
+        ),
+    )
+    uk_candidates_p.add_argument(
         "--manual-compile-evidence-jsonl",
         metavar="PATH",
         help=(
@@ -5803,6 +5821,22 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="max_duration_regressions",
         help="enable duration_s regression guard with this max allowed slowed statute count",
+    )
+    brg_p.add_argument(
+        "--rss-threshold-mb",
+        type=float,
+        default=64.0,
+        help=(
+            "run-peak process_maxrss memory-growth threshold when RSS guard "
+            "is enabled (default: 64.0 MB)"
+        ),
+    )
+    brg_p.add_argument(
+        "--max-rss-regressions",
+        type=int,
+        default=None,
+        dest="max_rss_regressions",
+        help="enable process_maxrss_kb regression guard with this max allowed run-peak regression count",
     )
     brg_p.add_argument(
         "--phase-threshold-s",

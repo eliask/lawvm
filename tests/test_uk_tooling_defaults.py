@@ -117,6 +117,17 @@ def test_uk_bench_parser_accepts_replay_regime_flags() -> None:
     assert args.uk_authority_mode == "source_text_only"
 
 
+def test_uk_bench_parallel_help_describes_memory_safe_replay_default(capsys) -> None:
+    parser = cli._build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["bench", "-j", "uk", "--help"])
+
+    text = capsys.readouterr().out
+    assert "UK replay default is memory-safe, max 4" in text
+    assert "UK/EE default: cpu_count" not in text
+
+
 def test_uk_bench_parser_accepts_no_save_smoke_flag() -> None:
     parser = cli._build_parser()
 
@@ -124,6 +135,22 @@ def test_uk_bench_parser_accepts_no_save_smoke_flag() -> None:
 
     assert args.no_save is True
     assert args.limit == 1
+
+
+def test_uk_bench_parser_accepts_summary_only_flag() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["bench", "-j", "uk", "--summary-only"])
+
+    assert args.summary_only is True
+
+
+def test_uk_bench_parser_accepts_worker_recycling_flag() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["bench", "-j", "uk", "--worker-max-tasks", "50"])
+
+    assert args.worker_max_tasks == 50
 
 
 def test_uk_bench_parser_accepts_curated_corpus_flags() -> None:
@@ -196,8 +223,8 @@ def test_uk_bench_statute_filter_runs_single_corpus_row(monkeypatch, tmp_path, c
         return []
 
     monkeypatch.setattr(uk_bench, "_run_bench", fake_run_bench)
-    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label: None)
-    monkeypatch.setattr(uk_bench, "_save_results", lambda results, label: None)
+    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label, **kwargs: None)
+    monkeypatch.setattr(uk_bench, "_save_results", lambda results, label, **kwargs: None)
 
     args = Namespace(
         history=False,
@@ -360,8 +387,8 @@ def test_uk_bench_limit_zero_allows_empty_diagnostic_budget_after_filters(
         return []
 
     monkeypatch.setattr(uk_bench, "_run_bench", fake_run_bench)
-    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label: None)
-    monkeypatch.setattr(uk_bench, "_save_results", lambda results, label: None)
+    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label, **kwargs: None)
+    monkeypatch.setattr(uk_bench, "_save_results", lambda results, label, **kwargs: None)
 
     args = Namespace(
         history=False,
@@ -422,6 +449,42 @@ def test_uk_bench_rejects_nonpositive_parallel_before_archive_access(
 
     assert excinfo.value.code == 2
     assert "error: --parallel must be a positive integer" in capsys.readouterr().err
+
+
+def test_uk_bench_rejects_nonpositive_worker_max_tasks_before_archive_access(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        uk_bench,
+        "Farchive",
+        lambda *args, **kwargs: pytest.fail("Farchive should not be opened"),
+    )
+
+    args = Namespace(
+        history=False,
+        show=None,
+        compare=None,
+        corpus_csv=False,
+        db="does-not-matter.farchive",
+        limit=None,
+        types=None,
+        label="bad-worker-max-tasks",
+        min_year=None,
+        max_year=None,
+        statute=None,
+        replay=False,
+        no_commencement=True,
+        parallel=None,
+        worker_max_tasks=0,
+        no_save=True,
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        uk_bench.main(args)
+
+    assert excinfo.value.code == 2
+    assert "error: --worker-max-tasks must be a positive integer" in capsys.readouterr().err
 
 
 def test_uk_bench_rejects_inverted_year_range_before_archive_access(
@@ -1017,7 +1080,7 @@ def test_uk_bench_limit_zero_preserves_empty_diagnostic_budget(monkeypatch, tmp_
     monkeypatch.setattr(uk_bench, "Farchive", DummyArchive)
     monkeypatch.setattr(uk_bench, "_load_corpus_csv", fake_load_corpus_csv)
     monkeypatch.setattr(uk_bench, "_run_bench", fake_run_bench)
-    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label: None)
+    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label, **kwargs: None)
     save_calls: list[tuple[list[object], str]] = []
     monkeypatch.setattr(
         uk_bench,
@@ -1056,6 +1119,8 @@ def test_uk_bench_limit_zero_preserves_empty_diagnostic_budget(monkeypatch, tmp_
         "applicability_mode": "effective_date_plus_feed_applied",
         "authority_mode": "current_mixed",
         "allow_metadata_only_effects": True,
+        "score_text": True,
+        "record_replay_subphases": False,
     }
     assert save_calls == []
 
@@ -1099,8 +1164,8 @@ def test_uk_bench_source_first_candidate_threads_regime(monkeypatch, tmp_path) -
         return []
 
     monkeypatch.setattr(uk_bench, "_run_bench", fake_run_bench)
-    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label: None)
-    monkeypatch.setattr(uk_bench, "_save_results", lambda results, label: None)
+    monkeypatch.setattr(uk_bench, "_print_report", lambda results, label, **kwargs: None)
+    monkeypatch.setattr(uk_bench, "_save_results", lambda results, label, **kwargs: None)
 
     args = Namespace(
         history=False,
@@ -1137,6 +1202,8 @@ def test_uk_bench_source_first_candidate_threads_regime(monkeypatch, tmp_path) -
         "applicability_mode": "effective_date_plus_feed_applied",
         "authority_mode": "source_text_only",
         "allow_metadata_only_effects": False,
+        "score_text": True,
+        "record_replay_subphases": False,
     }
 
 
