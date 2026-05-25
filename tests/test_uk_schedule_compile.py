@@ -1355,8 +1355,14 @@ def test_compile_insert_uses_extracted_after_section_anchor() -> None:
         comments="",
         in_force_dates=[{"date": "2021-02-24", "prospective": "false"}],
     )
+    lowering_records: list[dict[str, Any]] = []
 
-    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.INSERT
@@ -17372,6 +17378,62 @@ def test_compile_comma_ordinal_range_to_end_block_substitution() -> None:
     assert lowering_records[0]["reason_code"] == (
         "explicit_range_to_end_ordinal_block_substitution_text_patch"
     )
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
+def test_compile_passive_range_substitution_accepts_words_wrapper() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-152-5-c">
+          <Pnumber>c</Pnumber>
+          <Text>c for the words from \u201ctwo or more inhabitants of the parish\u201d to \u201csufficient persons\u201d there shall be substituted the words \u201cone or more independent persons appointed by the collector\u201d, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-cec0a41228409f34d372f02f391a9eed",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 61(5)",
+        affecting_uri="/id/ukpga/1989/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1989",
+        affecting_number="26",
+        affecting_provisions="s. 152(5)(c)(7)",
+        affecting_title="Finance Act 1989",
+        in_force_dates=[{"date": "1989-07-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "61"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_FROM_two or more inhabitants of the parish_TO_sufficient persons"
+    )
+    assert ops[0].text_patch.replacement == (
+        "one or more independent persons appointed by the collector"
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_range_substitution_text_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_quoted_range_substitution_text_patch"
     assert lowering_records[0]["blocking"] is False
     assert lowering_records[0]["strict_disposition"] == "record"
 

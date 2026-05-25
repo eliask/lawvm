@@ -20,6 +20,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_FROM_BEGINNING_OMISSION_RULE_ID,
+    UK_RANGE_SUBSTITUTION_RULE_ID,
     UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
@@ -686,6 +687,29 @@ def append_basic_text_rewrite_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_RANGE_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_quoted_range_substitution_text_patch",
+            reason=(
+                "UK source text substitutes the words from one quoted anchor "
+                "to another quoted anchor; lowering preserves that as a "
+                "bounded range text patch scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+                "end_occurrence": op_text_end_occurrence,
             },
         )
 

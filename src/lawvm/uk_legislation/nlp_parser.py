@@ -55,6 +55,7 @@ UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID = (
 UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_labeled_end_range_substitution_text_patch"
 )
+UK_RANGE_SUBSTITUTION_RULE_ID = "uk_effect_range_substitution_text_patch"
 
 
 def _normalize_quotes(text: str) -> str:
@@ -725,7 +726,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"\s+to\s+(?:the\s+(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:(?:,\s+where it|,\s+where)\s+(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
         r"(?:\s+\(?\s*in the (?P<range_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place\s*\)?)?"
-        r",?\s+(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        r",?\s+(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+        r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -739,7 +741,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         patch = {
             "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
             "replacement": m.group("replacement").strip(),
-            "rule_id": "uk_effect_range_substitution_text_patch",
+            "rule_id": UK_RANGE_SUBSTITUTION_RULE_ID,
         }
         if m.group("start_pre_ordinal"):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("start_pre_ordinal").lower()]

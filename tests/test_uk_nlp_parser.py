@@ -1784,6 +1784,22 @@ def test_parse_fragment_substitution_handles_labeled_end_range_block() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_passive_range_with_words_wrapper() -> None:
+    subs = parse_fragment_substitution(
+        "c for the words from \u201ctwo or more inhabitants of the parish\u201d to "
+        "\u201csufficient persons\u201d there shall be substituted the words "
+        "\u201cone or more independent persons appointed by the collector\u201d, and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_two or more inhabitants of the parish_TO_sufficient persons",
+            "replacement": "one or more independent persons appointed by the collector",
+            "rule_id": "uk_effect_range_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_to_end_first_appears_block() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (6), for the words from \u201cthe\u201d where it first appears "
