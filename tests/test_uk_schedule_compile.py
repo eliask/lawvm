@@ -1162,6 +1162,68 @@ def test_compile_mixed_heading_structural_insert_expands_source_owned_p2group_ch
     assert not any(record.get("blocking") is True for record in lowering_records)
 
 
+def test_compile_mixed_heading_structural_insert_allows_explicit_schedule_paragraph() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-32-paragraph-1-5">
+          <Pnumber>5</Pnumber>
+          <P2para>
+            <Text>After that paragraph insert—</Text>
+            <BlockAmendment>
+              <P1group>
+                <Title>Quantitative restrictions not to apply to ordinary charters</Title>
+                <P1>
+                  <Pnumber>89A</Pnumber>
+                  <P1para><Text>Paragraphs 94 to 102 do not apply in the following cases.</Text></P1para>
+                </P1>
+              </P1group>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_heading_schedule_paragraph_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-10",
+        affected_uri="/id/ukpga/2000/17/schedule/22/paragraph/89A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 89A and heading",
+        affecting_uri="/id/ukpga/2003/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="14",
+        affecting_provisions="Sch. 32 para. 1(5)",
+        affecting_title="Finance Act 2003",
+        comments="",
+        in_force_dates=[{"date": "2003-07-10", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target == LegalAddress((("schedule", "22"), ("paragraph", "89a")))
+    assert ops[0].payload is not None
+    assert ops[0].payload.label == "89A"
+    assert any(
+        record["rule_id"] == "uk_effect_mixed_heading_structural_insert_target_normalized"
+        and record["heading_facet_status"] == "unresolved"
+        for record in lowering_records
+    )
+    assert not any(record.get("blocking") is True for record in lowering_records)
+
+
 def test_compile_mixed_heading_structural_insert_blocks_without_source_payload() -> None:
     extracted_el = ET.fromstring(
         f"""

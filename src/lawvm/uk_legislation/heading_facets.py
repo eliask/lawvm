@@ -125,7 +125,16 @@ def _mixed_heading_structural_insert_ref(ref: str, *, action: str) -> str:
     if "cross-heading" in ref_clean.lower() or "cross heading" in ref_clean.lower():
         return ""
     structural_ref = re.sub(r"\s+and\s+heading\s*$", "", ref_clean, flags=re.I).strip()
-    if "(" not in structural_ref or ")" not in structural_ref:
+    has_child_label = "(" in structural_ref and ")" in structural_ref
+    has_explicit_leaf_label = bool(
+        re.search(
+            r"\b(?:s\.?|section|para\.?|paragraph)\s+\d+[A-Z]?\b",
+            structural_ref,
+            flags=re.I,
+        )
+    )
+    has_range = bool(re.search(r"\b(?:to|-)\b", structural_ref, flags=re.I))
+    if not (has_child_label or (has_explicit_leaf_label and not has_range)):
         return ""
     return structural_ref
 
