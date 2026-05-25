@@ -18,6 +18,7 @@ from lawvm.uk_legislation.lowering_records import (
 from lawvm.uk_legislation.nlp_parser import (
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+    UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
@@ -388,6 +389,37 @@ def append_basic_text_rewrite_observations(
                 "UK source text explicitly inserts quoted words after a quoted "
                 "anchor in one or more named ordinal places; lowering preserves "
                 "each ordinal as a bounded text patch scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrences": [
+                    int(str(fragment.get("occurrence") or "0") or "0")
+                    for fragment in fragments
+                ],
+            },
+        )
+    if UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID in rule_ids:
+        fragments = [
+            fragment
+            for fragment in fragment_subs or []
+            if str(fragment.get("rule_id") or "")
+            == UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID
+        ]
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_ordinal_occurrences_quoted_substitution",
+            reason=(
+                "UK source text explicitly substitutes quoted words at one or "
+                "more named ordinal occurrences; lowering preserves each "
+                "ordinal as a bounded text patch scoped to the affected target."
             ),
             effect=effect,
             extracted_el=extracted_el,
@@ -811,6 +843,7 @@ def _separate_occurrence_text_replace_fragments(
         if rule_id not in {
             "uk_effect_first_second_occurrence_substitution_text_patch",
             UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+            UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
         } or not original or not occurrence.isdigit():
             return ()
         fragments.append(

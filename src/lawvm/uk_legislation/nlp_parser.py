@@ -38,6 +38,9 @@ _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
 )
+UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
+    "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -498,6 +501,32 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "rule_id": "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
             }
         )
+
+    matches_post_quoted_where_ordinal_occurrences_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“”\"'‘](?P<original>.*?)[”\"'’],?\s+"
+        r"where\s+(?:(?:it|they|those words?)\s+)?"
+        rf"(?P<ordinals>(?:{_ORDINAL_OCCURRENCE_WORDS})"
+        rf"(?:\s*(?:,|and)\s*(?:{_ORDINAL_OCCURRENCE_WORDS}))+)\s+"
+        r"(?:occurs?|occur|occurring|appears?|appear),?\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+        r"\s+[“”\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_post_quoted_where_ordinal_occurrences_substituted:
+        for occurrence in sorted(
+            _ordinal_occurrences_from_phrase(m.group("ordinals")),
+            key=int,
+            reverse=True,
+        ):
+            subs.append(
+                {
+                    "original": m.group("original").strip(),
+                    "replacement": m.group("replacement").strip(),
+                    "occurrence": occurrence,
+                    "rule_id": UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+                }
+            )
 
     matches_parenthesized_nested_quote_substituted = re.finditer(
         r"for\s+[“”\"'‘]\((?P<original>[“\"'‘].*?[”\"'’])\)\s+"

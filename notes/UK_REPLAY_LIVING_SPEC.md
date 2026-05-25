@@ -2009,6 +2009,16 @@ Current payload-descendant source-ref invariant:
   context. Current witnesses: `ukpga/1985/66` affected `s. 56C(1)` by
   `asp/2014/11 s. 33(3)` and affected `s. 17(8)` by
   `asp/2014/11 s. 26(3)(d)`.
+- the parser may lower quoted-word substitutions with explicit multi-ordinal
+  occurrence wording such as `for the word "X", where it first and third
+  occurs, substitute "Y"` to one occurrence-qualified text patch per ordinal
+  using `uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch`.
+  Patches are emitted in descending occurrence order to avoid earlier edits
+  shifting later matches. This requires an explicit quoted preimage, quoted
+  replacement, and source-owned ordinal occurrence phrase. Current witnesses:
+  `ukpga/1985/66` affected `s. 2(1)` by `asp/2007/3 Sch. 1 para. 3(3)`,
+  affected `s. 2(2)` by `asp/2007/3 Sch. 1 para. 3(4)(b)`, and affected
+  `s. 24(2)` by `asp/2007/3 Sch. 1 para. 23(2)`.
 - the parser may lower inverted wording `the word "Y" is inserted after the
   word "X" where it second appears` to the same text-patch shape, using
   `uk_effect_word_inserted_after_word_where_ordinal_text_patch`. The inserted
