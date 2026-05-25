@@ -181,6 +181,24 @@ def test_uk_bench_parser_accepts_source_closure_stats_flag() -> None:
     assert args.source_closure_stats is True
 
 
+def test_uk_bench_parser_accepts_source_closure_curation_gate() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "bench",
+            "-j",
+            "uk",
+            "--curate-corpus",
+            "data/uk/bench_corpus_tight_source_closed.csv",
+            "--curate-require-source-closure",
+        ]
+    )
+
+    assert args.curate_corpus == "data/uk/bench_corpus_tight_source_closed.csv"
+    assert args.curate_require_source_closure is True
+
+
 def test_uk_bench_parser_accepts_curated_corpus_preset() -> None:
     parser = cli._build_parser()
 
