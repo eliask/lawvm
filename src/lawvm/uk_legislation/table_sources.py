@@ -772,11 +772,29 @@ def _uk_table_driven_repeal_table_structural_repeal(
             if not enactment_match_basis:
                 continue
             for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
-                if not _uk_table_cell_mentions_target(
+                if _uk_table_cell_explicitly_excepts_target(
                     extent_clause,
                     target=target,
                     affected_year=str(effect.affected_year or ""),
                 ):
+                    continue
+                container_except_reason_code = ""
+                source_mentions_target = _uk_table_cell_mentions_target(
+                    extent_clause,
+                    target=target,
+                    affected_year=str(effect.affected_year or ""),
+                )
+                if not source_mentions_target:
+                    if _uk_table_cell_mentions_target_via_container_except(
+                        extent_clause,
+                        target=target,
+                        affected_year=str(effect.affected_year or ""),
+                    ):
+                        source_mentions_target = True
+                        container_except_reason_code = (
+                            "container_except_extent_row_feed_descendant_repeal"
+                        )
+                if not source_mentions_target:
                     broad_container_target = _uk_table_cell_mentions_target_ancestor_container(
                         extent_clause,
                         target=target,
@@ -835,9 +853,12 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         enactment_cell,
                         extent_clause,
                         enactment_match_basis,
-                        "source_repeal_schedule_structural_repeal"
-                        if source_supplies_repeal_action
-                        else "",
+                        container_except_reason_code
+                        or (
+                            "source_repeal_schedule_structural_repeal"
+                            if source_supplies_repeal_action
+                            else ""
+                        ),
                     )
                 )
 
@@ -1046,6 +1067,72 @@ def _uk_table_cell_mentions_target_ancestor_container(
         ):
             return str(ancestor)
     return ""
+
+
+def _uk_table_cell_mentions_target_via_container_except(
+    cell_text: str,
+    *,
+    target: LegalAddress,
+    affected_year: str,
+) -> bool:
+    """Match rows like `Schedule 12, except paragraphs 17 and 18` to child feed rows."""
+    labels = {kind: label for kind, label in target.path}
+    paragraph = labels.get("paragraph", "")
+    body = _uk_schedule_paragraph_exception_body(
+        cell_text,
+        target=target,
+        affected_year=affected_year,
+    )
+    wanted = _clean_num(paragraph)
+    return bool(body and wanted) and not _uk_container_label_body_mentions_label(
+        body,
+        wanted,
+    )
+
+
+def _uk_table_cell_explicitly_excepts_target(
+    cell_text: str,
+    *,
+    target: LegalAddress,
+    affected_year: str,
+) -> bool:
+    labels = {kind: label for kind, label in target.path}
+    paragraph = labels.get("paragraph", "")
+    body = _uk_schedule_paragraph_exception_body(
+        cell_text,
+        target=target,
+        affected_year=affected_year,
+    )
+    wanted = _clean_num(paragraph)
+    return bool(body and wanted) and _uk_container_label_body_mentions_label(
+        body,
+        wanted,
+    )
+
+
+def _uk_schedule_paragraph_exception_body(
+    cell_text: str,
+    *,
+    target: LegalAddress,
+    affected_year: str,
+) -> str:
+    labels = {kind: label for kind, label in target.path}
+    schedule = labels.get("schedule", "")
+    paragraph = labels.get("paragraph", "")
+    if not schedule or not paragraph:
+        return ""
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", " ".join(cell_text.split()).lower())
+    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
+    if years and affected_year and affected_year not in years:
+        return ""
+    if not _uk_schedule_in_cell_text(scope_text, re.escape(schedule.lower())):
+        return ""
+    exception_match = re.search(
+        r"\bexcept\s+(?P<body>(?:paragraphs?|paras?\.?)\s+[^.;]+)",
+        scope_text,
+        flags=re.I,
+    )
+    return exception_match.group("body") if exception_match is not None else ""
 
 
 def _uk_table_cell_mentions_target(
