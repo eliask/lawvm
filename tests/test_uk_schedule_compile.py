@@ -10551,6 +10551,68 @@ def test_compile_repeal_table_structural_schedule_paragraph_list_and_range_membe
         )
 
 
+def test_compile_repeal_table_broad_schedule_repeal_blocks_descendant_feed_row() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>Schedule 12.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_broad_schedule_descendant",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-04-06",
+        affected_uri="/id/ukpga/2000/17/schedule/12/paragraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 12 para. 1",
+        affecting_uri="/id/ukpga/2003/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="1",
+        affecting_provisions="Sch. 8 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2003-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+        and record["reason_code"] == "broad_container_repeal_requires_grouped_feed_compilation"
+        and record["target"] == "schedule:12/paragraph:1"
+        and record["broad_container_target"] == "schedule:12"
+        and record["extent_cell"] == "Schedule 12."
+        and record["blocking"] is True
+        and record["strict_disposition"] == "block"
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_title_year_member_repeal() -> None:
     source_root = ET.fromstring(
         """
