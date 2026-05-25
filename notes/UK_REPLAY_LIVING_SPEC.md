@@ -2174,6 +2174,10 @@ Current payload-descendant source-ref invariant:
   `uk_effect_range_to_end_ordinal_block_substitution_text_patch`. Current
   witness: `asp/2000/4` affected `s. 58(6)` by `asp/2010/8`
   `sch. 1 para. 11(2)(b)`.
+  The same rule also covers the comma-separated form `from "X", where it
+  second occurs, to the end substitute Y` without changing action family.
+  Current witness: `ukpga/1978/29` affected `s. 29(6)` by `asp/2005/13`
+  `s. 26(2)(c)(ii)`.
 - the parser may lower `for the words from "X" to the end, substitute "- Y`
   where the replacement has an opening quote before a block dash but no closing
   quote in the flattened source text to `TEXT_FROM_X_TO_END` using

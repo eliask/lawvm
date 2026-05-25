@@ -17255,6 +17255,65 @@ def test_compile_word_range_to_end_uses_ordinal_start_occurrence() -> None:
     assert replayed.body.children[0].children[0].text == "first limb and still live"
 
 
+def test_compile_comma_ordinal_range_to_end_block_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-26-2-c-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii for the words from \u201clist\u201d, where it second occurs, to the end substitute list\u2014 a in relation to a list referred to in subsection (8)(a), (cc) or (e), perform; b in relation to a list referred to in subsection (8)(c) or (d), undertake to provide or are approved to assist in providing; ;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-328260260a7454282618fefdd2866054",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 29(6)",
+        affecting_uri="/id/asp/2005/13",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="13",
+        affecting_provisions="s. 26(2)(c)(ii)",
+        affecting_title="Smoking, Health and Social Care (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "29"), ("subsection", "6"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_list_TO_END"
+    assert ops[0].text_patch.selector.occurrence == 2
+    assert ops[0].text_patch.replacement.startswith("list\u2014 a in relation to a list")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_to_end_ordinal_block_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_range_to_end_ordinal_block_substitution_text_patch"
+    ]
+    assert lowering_records[0]["family"] == "text_rewrite_lowering"
+    assert lowering_records[0]["reason_code"] == (
+        "explicit_range_to_end_ordinal_block_substitution_text_patch"
+    )
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_compile_word_range_repeal_uses_parenthesized_ordinal_start_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""
