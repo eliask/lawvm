@@ -258,6 +258,22 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_crossheading_target",
             ],
         )
+    if summary.manual_compile_rule_id == "uk_manual_frontier_table_crossheading_candidate":
+        return _surface_text_rewrite_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="table_crossheading_text_rewrite",
+            facet_family="table_crossheading",
+            placement_family="explicit_table_heading_cell_or_prefix_required",
+            required_validator_checks=[
+                "source_witness_targets_table_crossheading_surface",
+                "claim_identifies_exact_table_carrier",
+                "claim_identifies_heading_cell_or_text_prefix_boundary",
+                "claim_preserves_table_rows_columns_and_entry_text",
+                "claim_text_preimage_or_becomes_payload_matches_table_heading_surface",
+                "changed_paths_are_within_declared_table_heading_surface",
+            ],
+        )
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_definition_child_and_tail_substitution_candidate"
