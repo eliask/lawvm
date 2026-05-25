@@ -391,6 +391,8 @@ def _schedule_part_standalone_split_rejection(
         return None
     if not re.fullmatch(r"(?:Part|Pt)\.?\s+[0-9A-Za-zIVXLCivxlc]+", second_part.strip(), flags=re.I):
         return None
+    schedule_component = _extract_from_affecting_source_context(context, first_part)
+    standalone_part_candidate = _extract_from_affecting_source_context(context, second_part)
     return uk_affecting_act_schedule_part_standalone_split_rejection(
         effect_id=str(effect.effect_id or ""),
         affecting_act_id=str(effect.affecting_act_id or ""),
@@ -399,6 +401,26 @@ def _schedule_part_standalone_split_rejection(
         authority_layer=context.authority_layer,
         split_first_part=first_part,
         split_second_part=second_part,
+        schedule_component_tag=_tag(schedule_component) if schedule_component is not None else "",
+        schedule_component_id=str(
+            schedule_component.get("id") or schedule_component.get("Id") or ""
+        )
+        if schedule_component is not None
+        else "",
+        schedule_component_label=_clean_num(_direct_structural_num(schedule_component))
+        if schedule_component is not None
+        else "",
+        standalone_part_candidate_tag=_tag(standalone_part_candidate)
+        if standalone_part_candidate is not None
+        else "",
+        standalone_part_candidate_id=str(
+            standalone_part_candidate.get("id") or standalone_part_candidate.get("Id") or ""
+        )
+        if standalone_part_candidate is not None
+        else "",
+        standalone_part_candidate_label=_clean_num(_direct_structural_num(standalone_part_candidate))
+        if standalone_part_candidate is not None
+        else "",
     )
 
 

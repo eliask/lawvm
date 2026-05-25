@@ -32377,9 +32377,11 @@ def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> No
         affecting_title="Counter-Terrorism and Sentencing Act 2021",
         in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
     )
-    main_part = ET.Element("Part", {"id": "part-1"})
-    ET.SubElement(main_part, "Number").text = "Part 1"
-    ET.SubElement(main_part, "Title").text = "Main-body Part 1"
+    main_part = ET.Element(f"{{{_LEG_NS}}}Part", {"id": "part-1"})
+    ET.SubElement(main_part, f"{{{_LEG_NS}}}Number").text = "Part 1"
+    ET.SubElement(main_part, f"{{{_LEG_NS}}}Title").text = "Main-body Part 1"
+    schedule = ET.Element(f"{{{_LEG_NS}}}Schedule", {"id": "schedule-1"})
+    ET.SubElement(schedule, f"{{{_LEG_NS}}}Number").text = "Schedule 1"
     xml_bytes = f"""
     <Legislation xmlns="{_LEG_NS}">
       <Body>
@@ -32400,6 +32402,8 @@ def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> No
 
     def fake_extractor(_xml_bytes, provision_ref, **_kwargs):
         calls.append(provision_ref)
+        if provision_ref == "Sch. 1":
+            return schedule
         if provision_ref == "Pt. 1":
             return main_part
         return None
@@ -32418,7 +32422,7 @@ def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> No
     )
 
     assert extracted is None
-    assert calls == ["Sch. 1 Pt. 1"]
+    assert calls == ["Sch. 1 Pt. 1", "Sch. 1", "Pt. 1"]
     assert observations == (
         {
             "rule_id": "uk_affecting_act_schedule_part_standalone_split_rejected",
@@ -32431,6 +32435,12 @@ def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> No
             "authority_layer": "AFFECTING_ACT_TEXT",
             "split_first_part": "Sch. 1",
             "split_second_part": "Pt. 1",
+            "schedule_component_tag": "Schedule",
+            "schedule_component_id": "schedule-1",
+            "schedule_component_label": "1",
+            "standalone_part_candidate_tag": "Part",
+            "standalone_part_candidate_id": "part-1",
+            "standalone_part_candidate_label": "1",
             "reason": (
                 "UK affecting provisions named a schedule part, but source extraction could "
                 "not resolve that part while preserving the schedule container. LawVM rejects "
