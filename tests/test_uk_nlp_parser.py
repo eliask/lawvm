@@ -10,6 +10,18 @@ def test_normalize_uk_parser_text_preserves_quoted_dash_payloads() -> None:
     assert normalize_uk_parser_text(text) == 'at the end insert\u2014 "A\u2013B"'
 
 
+def test_normalize_uk_parser_text_does_not_treat_word_apostrophe_as_quote() -> None:
+    text = "Minister's functions\u2013 at the end insert - X"
+
+    assert normalize_uk_parser_text(text) == "Minister's functions\u2014 at the end insert - X"
+
+
+def test_normalize_uk_parser_text_keeps_single_quoted_payload_dash_and_apostrophe() -> None:
+    text = "at the end insert\u2013 'tenant's A\u2013B'"
+
+    assert normalize_uk_parser_text(text) == "at the end insert\u2014 'tenant's A\u2013B'"
+
+
 def test_parse_fragment_substitution_accepts_dash_variants_outside_quotes() -> None:
     subs = parse_fragment_substitution("at the end insert\u2013 and section 15 .")
 

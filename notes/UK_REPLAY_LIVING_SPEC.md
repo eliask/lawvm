@@ -1748,6 +1748,9 @@ Current parser-surface normalization invariant:
   - dash-like instruction punctuation outside quoted legal text is normalized
     to a single dash surface
   - quoted legal preimages and payloads are preserved after whitespace collapse
+  - straight apostrophes between word characters are word punctuation, not quote
+    delimiters, so they must not accidentally shield later instruction dashes
+    from parser-only normalization
 - this normalizer belongs before source-language parsing, not in replay apply or
   oracle comparison
 - if a normalization changes target resolution, legal structure, quoted legal
