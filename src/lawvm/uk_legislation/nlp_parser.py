@@ -73,6 +73,9 @@ UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
 UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID = (
     "uk_effect_unquoted_definition_range_to_end_substitution_text_patch"
 )
+UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID = (
+    "uk_effect_all_occurrences_word_repeal_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -2217,6 +2220,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": m.group("original").strip(),
                 "replacement": m.group("replacement").strip(),
                 "rule_id": "uk_effect_leave_out_and_insert_text_patch",
+            }
+        )
+
+    matches_all_occurrences_word_repeal = re.finditer(
+        r"(?:the\s+)?word\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
+        r"in\s+each\s+place\s+where\s+it\s+occurs\s+"
+        r"(?:is|are|shall\s+be)\s+(?:repealed|omitted)",
+        text,
+        re.I,
+    )
+    for m in matches_all_occurrences_word_repeal:
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": "",
+                "rule_id": UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
             }
         )
 

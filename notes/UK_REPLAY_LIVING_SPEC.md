@@ -4022,6 +4022,12 @@ Current bench replay-regime invariant:
   an all-occurrences patch scoped to the affected target. Current witnesses:
   `ukpga/1970/9` affected `s. 109B`, `s. 59FA`, `s. 109E`, and `Sch. 3ZB` by
   `ukpga/2019/1` `Sch. 7 para. 6(1)(a)/(c)`.
+- Explicit all-occurrences word repeals such as `the word "X" in each place
+  where it occurs is repealed` lower under
+  `uk_effect_all_occurrences_word_repeal_text_patch` to a target-scoped text
+  deletion. This uses the same all-occurrences observation family and must not
+  widen the effect-feed target. Current witness: `asp/2003/13` affected
+  `s. 268(6)` by `asp/2015/9 s. 16(2)(d)`.
 - UK range repeal parsing preserves parenthesized ordinal start anchors. An
   instruction such as `the words from "in" (where first occurring) to "Act" are
   repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a

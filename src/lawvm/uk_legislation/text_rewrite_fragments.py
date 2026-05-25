@@ -31,6 +31,7 @@ from lawvm.uk_legislation.nlp_parser import (
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
@@ -92,6 +93,7 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_after_quoted_anchor_each_occasion_insert_text_patch",
         "uk_effect_all_occurrences_substitution_text_patch",
+        UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
         "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
