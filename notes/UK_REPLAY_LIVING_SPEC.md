@@ -1888,8 +1888,10 @@ Current payload-descendant source-ref invariant:
   quoted terms inside the inserted payload. The parser must bind the payload to
   the final closing quote of the instruction rather than truncating at the
   first nested quote, but the selector remains the explicit definition term plus
-  explicit quoted anchor. Current witness: `ukpga/1992/8` affected `s. 115B(9)`
-  by `uksi/2014/1283 Sch. para. 4(c)(ii)`.
+  explicit quoted anchor. The same family accepts an optional comma between the
+  anchor and `insert`. Current witnesses: `ukpga/1992/8` affected `s. 115B(9)`
+  by `uksi/2014/1283 Sch. para. 4(c)(ii)`, and `ukpga/1962/46` affected
+  `s. 52(4)` by `uksi/2012/1659 Sch. 2 para. 21`.
 - compound child-anchor insertions of the form
   `after subsection (4)(a)(i), insert "X"` lower under
   `uk_effect_after_compound_subsection_child_text_insertion_patch` to a

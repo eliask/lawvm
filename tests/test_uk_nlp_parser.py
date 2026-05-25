@@ -799,6 +799,24 @@ def test_parse_fragment_substitution_scopes_after_anchor_insert_to_definition() 
     ]
 
 
+def test_parse_fragment_substitution_scopes_comma_after_anchor_insert_to_definition() -> None:
+    subs = parse_fragment_substitution(
+        "21 In section 52(4), in the definition of \u201cindependent inland waterway undertaking\u201d, "
+        "after \u201cof the Boards\u201d, insert \u201cor Canal & River Trust\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": (
+                "TEXT_IN_DEFINITION_independent inland waterway undertaking"
+                "\x1fAFTER\x1fof the Boards"
+            ),
+            "replacement": "of the Boards or Canal & River Trust",
+            "rule_id": "uk_effect_in_definition_after_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_scopes_nested_quote_after_anchor_insert_to_definition() -> None:
     subs = parse_fragment_substitution(
         "ii in the definition of \u201ccontributions\u201d after "
