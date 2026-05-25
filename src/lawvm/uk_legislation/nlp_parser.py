@@ -1058,11 +1058,11 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     # Treat this as a text replacement on the matched fragment so replay can
     # materialize the inserted words without inventing structural descendants.
     matches_after_insert = re.finditer(
-        r"after (?:the )?words? [“\"'‘](.*?)[”\"'’]"
+        r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
-        r"(?P<all_occurrences>,?\s+in (?:(?:each|both) places?|each of the two places)"
+        r"(?P<all_occurrences>,?\s+in (?:(?:each|both) places?|each place|each of the two places)"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
-        r"(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
+        r"(?:occurs?|occurring|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
         r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
@@ -1221,7 +1221,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         rf"in\s+the\s+(?P<ordinals>(?:{_ORDINAL_OCCURRENCE_WORDS})"
         rf"(?:\s*(?:,|and)\s*(?:{_ORDINAL_OCCURRENCE_WORDS}))*)\s+places?"
         r"\s+where\s+(?:it|they|those words?)\s+(?:occurs?|appear)s?,?\s+"
-        r"insert\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
         text,
         re.I,
     )

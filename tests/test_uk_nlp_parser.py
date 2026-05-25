@@ -152,6 +152,21 @@ def test_parse_fragment_substitution_handles_after_anchor_in_each_place_insert()
     ]
 
 
+def test_parse_fragment_substitution_handles_after_anchor_in_each_place_occurring_insert() -> None:
+    subs = parse_fragment_substitution(
+        "3 In subsection (6), after \u201cBoard\u201d, in each place occurring, "
+        "insert \u201cor Canal & River Trust\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "Board",
+            "replacement": "Board or Canal & River Trust",
+            "rule_id": "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_in_both_places_where_it_appears_insert() -> None:
     subs = parse_fragment_substitution(
         "b after \u201ccourt\u201d, in both places where it appears, "
@@ -682,6 +697,22 @@ def test_parse_fragment_substitution_handles_after_anchor_single_ordinal_place_w
             "original": "any",
             "replacement": "any interim or final",
             "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_after_anchor_ordinal_place_there_shall_be_inserted() -> None:
+    subs = parse_fragment_substitution(
+        "a after the word \u201cperson\u2019s\u201d, in the first place where it occurs, "
+        "there shall be inserted \u201c liability to income tax or \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "person\u2019s",
+            "replacement": "person\u2019s liability to income tax or ",
+            "occurrence": "1",
             "rule_id": "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch",
         }
     ]
