@@ -22090,6 +22090,70 @@ def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> N
     assert _fragment_substitution(op)[0]["occurrence"] == "1"
 
 
+def test_compile_after_anchor_ordinal_places_insert_preserves_bounded_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 56C(1), after \u201cthe\u201d, in the first and second places where it occurs, insert \u201cAccountant in Bankruptcy, or as the case may be, the\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_anchor_ordinal_places_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-04-01",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 56C(1)",
+        affecting_uri="/id/asp/2014/11",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="11",
+        affecting_provisions="s. 33(3)",
+        affecting_title="Bankruptcy and Debt Advice (Scotland) Act 2014",
+        in_force_dates=[{"date": "2015-04-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [2, 1]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "the",
+        "the",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        "the Accountant in Bankruptcy, or as the case may be, the",
+        "the Accountant in Bankruptcy, or as the case may be, the",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
+    assert [record["rule_id"] for record in lowering_rejections] == [
+        "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
+    ]
+    assert lowering_rejections[0]["blocking"] is False
+    assert lowering_rejections[0]["occurrences"] == [2, 1]
+
+
 def test_compile_after_prefixed_anchor_ordinal_insert_preserves_bounded_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

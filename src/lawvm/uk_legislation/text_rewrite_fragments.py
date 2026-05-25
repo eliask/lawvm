@@ -15,7 +15,11 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
 )
-from lawvm.uk_legislation.nlp_parser import US, _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
+from lawvm.uk_legislation.nlp_parser import (
+    US,
+    UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+    _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
+)
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID,
@@ -366,6 +370,37 @@ def append_basic_text_rewrite_observations(
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
                 "tail_connector": str(primary.get("tail_connector") or ""),
+            },
+        )
+    if UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID in rule_ids:
+        fragments = [
+            fragment
+            for fragment in fragment_subs or []
+            if str(fragment.get("rule_id") or "")
+            == UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID
+        ]
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_ordinal_places_after_anchor_insert",
+            reason=(
+                "UK source text explicitly inserts quoted words after a quoted "
+                "anchor in one or more named ordinal places; lowering preserves "
+                "each ordinal as a bounded text patch scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrences": [
+                    int(str(fragment.get("occurrence") or "0") or "0")
+                    for fragment in fragments
+                ],
             },
         )
 
@@ -773,11 +808,10 @@ def _separate_occurrence_text_replace_fragments(
         replacement = str(item.get("replacement") or "")
         occurrence = str(item.get("occurrence") or "")
         rule_id = str(item.get("rule_id") or "")
-        if (
-            rule_id != "uk_effect_first_second_occurrence_substitution_text_patch"
-            or not original
-            or not occurrence.isdigit()
-        ):
+        if rule_id not in {
+            "uk_effect_first_second_occurrence_substitution_text_patch",
+            UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+        } or not original or not occurrence.isdigit():
             return ()
         fragments.append(
             {

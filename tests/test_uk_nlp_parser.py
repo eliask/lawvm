@@ -627,6 +627,44 @@ def test_parse_fragment_substitution_handles_after_anchor_ordinal_insert() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_after_anchor_ordinal_places_where_insert() -> None:
+    subs = parse_fragment_substitution(
+        "3 In section 56C(1), after \u201cthe\u201d, in the first and second places "
+        "where it occurs, insert \u201cAccountant in Bankruptcy, or as the case may be, the\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "the",
+            "replacement": "the Accountant in Bankruptcy, or as the case may be, the",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch",
+        },
+        {
+            "original": "the",
+            "replacement": "the Accountant in Bankruptcy, or as the case may be, the",
+            "occurrence": "1",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch",
+        },
+    ]
+
+
+def test_parse_fragment_substitution_handles_after_anchor_single_ordinal_place_where_insert() -> None:
+    subs = parse_fragment_substitution(
+        "d in subsection (8), after \u201cany\u201d, in the second place where it occurs, "
+        "insert \u201cinterim or final\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "any",
+            "replacement": "any interim or final",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_where_ordinal_insert() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (2), after \u201csection\u201d where it first occurs "

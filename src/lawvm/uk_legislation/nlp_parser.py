@@ -35,6 +35,9 @@ _QUOTE_CHARS = "\"'\u201c\u201d\u2018\u2019"
 _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
     "uk_effect_compound_lettered_text_patch_instruction"
 )
+UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -63,6 +66,16 @@ def _last_quoted_term(text: str) -> str | None:
     if not terms:
         return None
     return terms[-1]
+
+
+def _ordinal_occurrences_from_phrase(text: str) -> tuple[str, ...]:
+    occurrences: list[str] = []
+    for part in re.split(r"\s*(?:,|and)\s*", text.strip(), flags=re.I):
+        ordinal = _ORDINAL_OCCURRENCES.get(part.lower())
+        if ordinal is None or ordinal in occurrences:
+            continue
+        occurrences.append(ordinal)
+    return tuple(occurrences)
 
 
 def _span_overlaps(span: tuple[int, int], blocked_spans: list[tuple[int, int]]) -> bool:
@@ -1171,6 +1184,38 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                     "original": original,
                     "replacement": f"{original}{joiner}{inserted}",
                     "rule_id": "uk_effect_after_quoted_anchor_definition_entry_block_insert_text_patch",
+                }
+            )
+
+    matches_after_ordinal_places_insert = re.finditer(
+        r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
+        rf"in\s+the\s+(?P<ordinals>(?:{_ORDINAL_OCCURRENCE_WORDS})"
+        rf"(?:\s*(?:,|and)\s*(?:{_ORDINAL_OCCURRENCE_WORDS}))*)\s+places?"
+        r"\s+where\s+(?:it|they|those words?)\s+(?:occurs?|appear)s?,?\s+"
+        r"insert\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_after_ordinal_places_insert:
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        for occurrence in sorted(
+            _ordinal_occurrences_from_phrase(m.group("ordinals")),
+            key=int,
+            reverse=True,
+        ):
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": f"{original}{joiner}{inserted}",
+                    "occurrence": occurrence,
+                    "rule_id": UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
                 }
             )
 
