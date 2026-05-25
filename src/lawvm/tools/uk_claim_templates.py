@@ -124,6 +124,32 @@ def _heading_facet_wrapper_insert_parts(source_preview: str) -> dict[str, str]:
     }
 
 
+def _table_crossheading_rewrite_parts(source_preview: str) -> dict[str, str]:
+    """Return table-crossheading rewrite evidence without stealing entry patches."""
+    source_norm = " ".join(source_preview.split())
+    becomes_match = re.search(
+        r"\bcross[- ]heading\s+preceding\s+(?P<anchor>entry\s+[0-9A-Za-z]+)"
+        r"\s+of\s+which\s+becomes\s+[\"“](?P<replacement>[^\"”]{1,300})[\"”]",
+        source_norm,
+        flags=re.I,
+    )
+    if becomes_match is not None:
+        return {
+            "text_match": "",
+            "replacement": " ".join(becomes_match.group("replacement").split()),
+            "source_formula": "becomes",
+            "table_crossheading_anchor": " ".join(becomes_match.group("anchor").split()),
+        }
+
+    text_match, replacement = _quoted_for_substitute_pair(source_norm)
+    return {
+        "text_match": text_match,
+        "replacement": replacement,
+        "source_formula": "substitute" if replacement else "",
+        "table_crossheading_anchor": "",
+    }
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -158,6 +184,32 @@ def _surface_text_rewrite_claim_template(
         "required_validator_checks": required_validator_checks,
         "executable": False,
     }
+
+
+def _table_crossheading_claim_template(
+    *,
+    statute_id: str,
+    row: Any,
+) -> dict[str, Any]:
+    template = _surface_text_rewrite_claim_template(
+        statute_id=statute_id,
+        row=row,
+        action_family="table_crossheading_text_rewrite",
+        facet_family="table_crossheading",
+        placement_family="explicit_table_heading_cell_or_prefix_required",
+        required_validator_checks=[
+            "source_witness_targets_table_crossheading_surface",
+            "claim_identifies_exact_table_carrier",
+            "claim_identifies_heading_cell_or_text_prefix_boundary",
+            "claim_preserves_table_rows_columns_and_entry_text",
+            "claim_text_preimage_or_becomes_payload_matches_table_heading_surface",
+            "changed_paths_are_within_declared_table_heading_surface",
+        ],
+    )
+    source_preview = " ".join((row.summary.source_extracted_text_preview or "").split())
+    parts = _table_crossheading_rewrite_parts(source_preview)
+    template.update(parts)
+    return template
 
 
 def _bounded_mutation_claim_template(
@@ -259,21 +311,7 @@ def manual_compile_suggested_claim_template(
             ],
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_table_crossheading_candidate":
-        return _surface_text_rewrite_claim_template(
-            statute_id=statute_id,
-            row=row,
-            action_family="table_crossheading_text_rewrite",
-            facet_family="table_crossheading",
-            placement_family="explicit_table_heading_cell_or_prefix_required",
-            required_validator_checks=[
-                "source_witness_targets_table_crossheading_surface",
-                "claim_identifies_exact_table_carrier",
-                "claim_identifies_heading_cell_or_text_prefix_boundary",
-                "claim_preserves_table_rows_columns_and_entry_text",
-                "claim_text_preimage_or_becomes_payload_matches_table_heading_surface",
-                "changed_paths_are_within_declared_table_heading_surface",
-            ],
-        )
+        return _table_crossheading_claim_template(statute_id=statute_id, row=row)
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_definition_child_and_tail_substitution_candidate"
