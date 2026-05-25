@@ -2688,7 +2688,8 @@ Current payload-descendant source-ref invariant:
   to have effect` for the word-repeal effect targeting paragraph `(b)`, while
   recording the sibling label as context rather than deleting the sibling.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
-  there shall be substituted "..."` are classified as
+  there shall be substituted "..."` or active
+  `for sub-paragraphs (i) and (ii) substitute "..."` are classified as
   `uk_manual_frontier_structural_child_range_substitution_candidate` while no
   compiler owns the removed child identities and replacement payload shape.
   Deictic text patches such as `for those words in the second place where they

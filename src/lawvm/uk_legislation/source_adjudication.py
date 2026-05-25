@@ -1147,7 +1147,7 @@ def _looks_like_structural_child_range_substitution_instruction(text: str) -> bo
         re.search(
             r"\bfor\s+(?:paragraphs|sub-?paragraphs|subsections)\s+"
             r"\([0-9A-Za-z]+\)\s+and\s+\([0-9A-Za-z]+\)\s+"
-            r"there\s+(?:is|are|shall\s+be)\s+substituted\b",
+            r"(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute)\b",
             norm,
         )
     )
