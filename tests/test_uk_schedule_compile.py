@@ -2047,6 +2047,17 @@ def test_split_metadata_carries_part_context_for_space_separated_chapters() -> N
     ]
 
 
+def test_split_metadata_spaced_section_range_does_not_become_descendant_path() -> None:
+    parts = _split_metadata_provisions("s. 70 - 72")
+
+    assert parts == ["s. 70", "s. 71", "s. 72"]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "70"),),
+        (("section", "71"),),
+        (("section", "72"),),
+    ]
+
+
 def test_source_text_sibling_expansion_rejects_nested_context_clauses() -> None:
     expanded = _expand_sibling_targets_from_text(
         "s. 7(1)(a)",

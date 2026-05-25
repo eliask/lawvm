@@ -488,7 +488,11 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 all_parts.extend(expanded_range)
                 continue
 
-        range_m = re.search(r"^(.*?)\s?([0-9A-Z]+)-([0-9A-Z]+)$", p_for_range, re.I)
+        range_m = re.search(
+            r"^(.*?)\s?([0-9A-Z]+)\s*[-–—]\s*([0-9A-Z]+)$",
+            p_for_range,
+            re.I,
+        )
         if range_m:
             prefix = range_m.group(1).strip()
             start_str = range_m.group(2)
