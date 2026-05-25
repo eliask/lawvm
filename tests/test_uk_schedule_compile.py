@@ -10272,6 +10272,141 @@ def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
     )
 
 
+def test_compile_repeal_schedule_table_with_empty_feed_type_uses_source_action() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Title>Repeals</Title>
+            <Table>
+              <tbody>
+                <tr>
+                  <td>Taxes Management Act 1970 (c. 9)</td>
+                  <td>In section 98 in column 1 of the Table the words "old entry".</td>
+                </tr>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>Sections 79 to 81.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_schedule_empty_type_source_action",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/2000/17/section/80",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="s. 80",
+        affecting_uri="/id/ukpga/2001/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="2",
+        affecting_provisions="Sch. 4",
+        affecting_title="Capital Allowances Act 2001",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "80"),)
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["reason_code"] == "source_repeal_schedule_structural_repeal"
+        and record["target"] == "section:80"
+        and record["extent_cell"] == "Sections 79 to 81."
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for record in lowering_records
+    )
+
+
+def test_compile_empty_feed_type_table_text_without_repeal_schedule_still_blocks() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Title>Consequential amendments</Title>
+            <Table>
+              <thead><tr><th>Chapter</th><th>Short title</th><th>Amendment</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>2000 c. 17</td>
+                  <td>Finance Act 2000</td>
+                  <td>In section 98 in column 1 of the Table the words "old entry".</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_non_repeal_table_blocks",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/2000/17/section/80",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="s. 80",
+        affecting_uri="/id/ukpga/2001/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="2",
+        affecting_provisions="Sch. 4",
+        affecting_title="Capital Allowances Act 2001",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_lowering_no_supported_action_rejected"
+        and record["reason_code"] == "no_supported_action"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        for record in lowering_records
+    )
+
+
 @pytest.mark.parametrize(
     ("paragraph_label", "expected_ops"),
     [

@@ -428,6 +428,20 @@ def _uk_repeal_table_gateway_text(text: Optional[str]) -> bool:
     )
 
 
+def _uk_repeal_schedule_source_text(text: Optional[str]) -> bool:
+    """Return true when the extracted source itself is a repeal schedule/table."""
+    norm = " ".join((text or "").split()).lower()
+    if not norm:
+        return False
+    if not re.search(r"\brepeals?\b|\brevocations?\b", norm[:240]):
+        return False
+    return (
+        re.search(r"\bextent\s+of\s+(?:repeal|revocation)", norm) is not None
+        or re.search(r"\benactments?\b", norm[:400]) is not None
+        or re.search(r"\bsection\s+\d+\b", norm[:400]) is not None
+    )
+
+
 def _uk_repeal_extent_search_roots(
     *,
     extracted_el: Optional[ET.Element],
@@ -447,11 +461,26 @@ def _uk_repeal_extent_search_roots(
     return search_roots
 
 
-def _uk_table_is_repeal_extent_source_table(table: ET.Element) -> tuple[int, int] | None:
+def _uk_table_is_repeal_extent_source_table(
+    table: ET.Element,
+    *,
+    source_is_repeal_schedule: bool = False,
+) -> tuple[int, int] | None:
     for row in _uk_table_rows_with_rowspans(table)[:4]:
         columns = _uk_repeal_table_columns(row)
         if columns is not None:
             return columns
+    if source_is_repeal_schedule:
+        for row in _uk_table_rows_with_rowspans(table)[:8]:
+            if len(row) < 2:
+                continue
+            extent_cell = " ".join(row[1].split()).lower()
+            if re.search(
+                r"\b(?:section|sections|schedule|schedules|paragraph|paragraphs|"
+                r"subsection|subsections|sub-?paragraph|sub-?paragraphs|word|words)\b",
+                extent_cell,
+            ):
+                return 0, 1
     return None
 
 
@@ -460,10 +489,14 @@ def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[tuple[ET.Element,
     if cached is not None:
         return cached
     tables: list[tuple[ET.Element, tuple[int, int]]] = []
+    source_is_repeal_schedule = _uk_repeal_schedule_source_text(_text_content(root))
     for el in root.iter():
         if _tag(el).lower() != "table":
             continue
-        columns = _uk_table_is_repeal_extent_source_table(el)
+        columns = _uk_table_is_repeal_extent_source_table(
+            el,
+            source_is_repeal_schedule=source_is_repeal_schedule,
+        )
         if columns is not None:
             tables.append((el, columns))
     result = tuple(tables)
@@ -694,7 +727,10 @@ def _uk_table_driven_repeal_table_structural_repeal(
 ) -> _UKRepealTableStructuralRepeal:
     """Resolve repeal-schedule rows that exactly corroborate a provision repeal."""
     effect_type = str(effect.effect_type or "").strip().lower()
-    if effect_type not in {"repealed", "omitted", "revoked"}:
+    source_supplies_repeal_action = (
+        not effect_type and _uk_repeal_schedule_source_text(extracted_text)
+    )
+    if effect_type not in {"repealed", "omitted", "revoked"} and not source_supplies_repeal_action:
         return _UKRepealTableStructuralRepeal(recognized=False)
     if str(target.special or "") == "whole_act":
         return _UKRepealTableStructuralRepeal(recognized=False)
@@ -779,7 +815,9 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         enactment_cell,
                         extent_clause,
                         enactment_match_basis,
-                        "",
+                        "source_repeal_schedule_structural_repeal"
+                        if source_supplies_repeal_action
+                        else "",
                     )
                 )
 
