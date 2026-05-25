@@ -533,6 +533,8 @@ rows and `schedule_part_wrapper_insertion` for heading-frontier rows that
 insert a schedule Part heading before an anchor paragraph plus its existing
 italic heading,
 `crossheading_text_rewrite` for `uk_manual_frontier_crossheading_candidate`,
+`table_crossheading_text_rewrite` for
+`uk_manual_frontier_table_crossheading_candidate`,
 `schedule_note_text_rewrite` for `uk_manual_frontier_schedule_note_candidate`,
 `schedule_list_entry_mutation` for
 `uk_manual_frontier_schedule_list_entry_candidate`,
@@ -555,7 +557,9 @@ families,
 `definition_child_and_tail_substitution` for
 `uk_manual_frontier_definition_child_and_tail_substitution_candidate`,
 `definition_entry_insert` for
-`uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
+`uk_manual_frontier_appropriate_place_definition_entry_candidate`,
+`index_entry_insert` for
+`uk_manual_frontier_appropriate_place_index_entry_candidate`, and
 `range_to_container_substitution` for
 `uk_manual_frontier_range_to_container_candidate`. They list required
 validator checks; replay must ignore them until a separate validated claim
@@ -2563,12 +2567,17 @@ Current payload-descendant source-ref invariant:
   `appropriate_place_definition_entry_insert_unsupported` and
   `uk_manual_frontier_appropriate_place_definition_entry_candidate`, because
   they are plausible semantic-compile work items but still lack a source-named
-  insertion anchor. It is not a generic parser miss because replay must not
-  pick an insertion point by alphabetical coincidence, oracle order, or
-  live-tree uniqueness. Lowering records these rows under
-  `uk_effect_appropriate_place_definition_entry_insert_rejected` rather than
-  the generic overlap-substitution parser-miss rule so work queues can route
-  them to a placement-claim validator. A broad ancestor or sibling amendment
+  insertion anchor. Index/list-entry payloads such as `"relevant register"
+  paragraph 22B(6A)` use
+  `appropriate_place_index_entry_insert_unsupported` and
+  `uk_manual_frontier_appropriate_place_index_entry_candidate`; they are not
+  definition-entry payloads and need a target list/index carrier plus an exact
+  predecessor, successor, or ordering claim. It is not a generic parser miss
+  because replay must not pick an insertion point by alphabetical coincidence,
+  oracle order, or live-tree uniqueness. Lowering records definition-entry rows
+  under `uk_effect_appropriate_place_definition_entry_insert_rejected` rather
+  than the generic overlap-substitution parser-miss rule so work queues can
+  route them to a placement-claim validator. A broad ancestor or sibling amendment
   formula that names a different definition term is not a valid placement
   claim for the current child row. Current witness: `asp/2001/2`
   `asp/2019/17 Sch. para. 3(6)(a)(iii)/(vi)/(viii)` and
@@ -2867,6 +2876,20 @@ Current payload-descendant source-ref invariant:
   under the new Part wrapper, and any lineage/wrapper migration events.
   Current witness: `ukpga/2020/14` affected `Sch. 15 Pt. 1 heading` by
   `ukpga/2024/3 s. 12(3)(b)`.
+- Table cross-heading targets are separated from ordinary cross-heading facets.
+  A target such as `Sch. 6 para. 51 Table cross-heading` is classified as
+  `table_crossheading_target_unsupported` /
+  `uk_manual_frontier_table_crossheading_candidate` because the affected
+  surface is a table heading cell or text prefix, not the host paragraph body
+  or a normal cross-heading node. Claim templates use
+  `table_crossheading_text_rewrite` and must prove the exact table carrier,
+  heading-cell/prefix boundary, row boundary, and preservation of table
+  entries. If the source says the cross-heading preceding `entry N` `becomes`
+  quoted text, the template records that `becomes` payload and anchor instead
+  of reusing unrelated later `for/substitute` entry patches.
+  Current witnesses: `ukpga/2000/17` affected `Sch. 6 para. 51 Table
+  cross-heading` by `uksi/2007/3538 Sch. 21 para. 27(2)(a)` and `Sch. 6
+  para. 51(6) Table cross-heading` by `uksi/2010/675 Sch. 26 Pt. 1 para. 16`.
 - Mixed targets of the form `s. N(X) and heading` may lower the structural
   insert under `uk_effect_mixed_heading_structural_insert_target_normalized`
   when the source carries an explicit inserted structural payload for `X`.
