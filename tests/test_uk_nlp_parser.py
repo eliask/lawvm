@@ -1198,6 +1198,20 @@ def test_parse_fragment_substitution_handles_words_following_anchor_substitution
     ]
 
 
+def test_parse_fragment_substitution_handles_omit_words_after_anchor() -> None:
+    subs = parse_fragment_substitution(
+        "a in paragraph (b) omit the words after \u201csource\u201d, and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_source_TO_END",
+            "replacement": "",
+            "rule_id": "uk_effect_after_anchor_to_end_omission_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_words_before_child_substitution() -> None:
     subs = parse_fragment_substitution(
         "i for the words before paragraph (a), substitute "
@@ -2219,6 +2233,22 @@ def test_parse_fragment_substitution_handles_passive_range_to_end_repeal_with_or
             "replacement": "",
             "occurrence": "3",
             "rule_id": "uk_effect_range_to_end_passive_ordinal_repeal_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_passive_range_repeal_with_end_occurrence() -> None:
+    subs = parse_fragment_substitution(
+        "c in paragraph 6, the words from \u201c, unless\u201d to \u201ccase,\u201d, "
+        "where it first occurs, are repealed;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_, unless_TO_case,",
+            "replacement": "",
+            "end_occurrence": "1",
+            "rule_id": "uk_effect_range_independent_end_occurrence_repeal_text_patch",
         }
     ]
 

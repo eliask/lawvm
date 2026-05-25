@@ -630,6 +630,7 @@ def _promote_text_fragment_substitutions(
         op_text_match=op_text_match,
         op_text_replacement=op_text_replacement,
         op_text_occurrence=op_text_occurrence,
+        op_text_end_occurrence=op_text_end_occurrence,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,

@@ -37,6 +37,10 @@ UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
 )
 UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
 UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
+UK_AFTER_ANCHOR_TO_END_OMISSION_RULE_ID = "uk_effect_after_anchor_to_end_omission_text_patch"
+UK_RANGE_INDEPENDENT_END_OCCURRENCE_REPEAL_RULE_ID = (
+    "uk_effect_range_independent_end_occurrence_repeal_text_patch"
+)
 UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID = "uk_effect_source_carried_child_tail_repeal_text_patch"
 UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID = (
     "uk_effect_source_carried_following_words_repeal_text_patch"
@@ -250,6 +254,7 @@ def append_basic_text_rewrite_observations(
     op_text_match: Optional[str],
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
+    op_text_end_occurrence: int,
     extracted_el: Optional[ET.Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
@@ -297,6 +302,50 @@ def append_basic_text_rewrite_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AFTER_ANCHOR_TO_END_OMISSION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AFTER_ANCHOR_TO_END_OMISSION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_after_anchor_to_end_omission",
+            reason=(
+                "UK source text explicitly omits the words after a quoted "
+                "anchor; lowering preserves that as a bounded TEXT_AFTER_*_TO_END "
+                "deletion scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    if UK_RANGE_INDEPENDENT_END_OCCURRENCE_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_INDEPENDENT_END_OCCURRENCE_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_repeal_end_occurrence",
+            reason=(
+                "UK source text explicitly repeals a quoted word range and "
+                "qualifies the end anchor by ordinal occurrence; lowering "
+                "preserves the independent end occurrence instead of broadening "
+                "the range."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "end_occurrence": op_text_end_occurrence,
             },
         )
     if UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID in rule_ids:
