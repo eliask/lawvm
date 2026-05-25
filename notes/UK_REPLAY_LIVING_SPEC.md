@@ -2739,6 +2739,18 @@ Current payload-descendant source-ref invariant:
   replay-oriented caller reclassifies that diagnostic as nonblocking under
   `uk_effect_nonreplay_lowering_observed` once source-pathology classification
   proves the out-of-scope as-if lane.
+- Source text that applies or invokes another Act's rules by reference is also
+  non-textual under the structural replay lens. Empty-effect rows with no
+  supported action are classified as
+  `application_by_reference_effect_out_of_scope` when the source says another
+  rule set `shall ... have effect ... for the purpose of ...` or sends
+  compensation disputes to be determined under a named Act. Manual frontier
+  reports `uk_manual_frontier_application_by_reference_out_of_scope` rather
+  than generic unsupported-effect-family. This is not a source-insufficient
+  text mutation: the source is visible, but it does not amend the target Act's
+  text/tree. Current witness: `ukpga/1961/33` rows affected by railway/harbour
+  instruments such as `wsi/2001/2197 Sch. 2 para. 5(2)` and
+  `uksi/2001/3682 art. 16(5)`.
 - `BlockAmendment` fragments that expose only payload text while the feed says
   `words substituted` or another word-level effect are classified as
   `payload_fragment_without_action_formula` and

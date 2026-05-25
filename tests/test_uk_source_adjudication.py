@@ -2204,6 +2204,29 @@ def test_classify_uk_manual_compile_frontier_keeps_unsupported_family_out_of_sco
     assert result["rule_id"] == "uk_manual_frontier_unsupported_effect_family"
 
 
+def test_classify_uk_manual_compile_frontier_marks_application_by_reference_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="application_by_reference_effect_out_of_scope",
+        extracted_tag="P1",
+        extracted_text=(
+            "The compensation shall be determined, in case of dispute, under "
+            "Part I of the Land Compensation Act 1961."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_application_by_reference_out_of_scope"
+
+
 def test_classify_uk_manual_compile_frontier_external_act_target_out_of_scope() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="",
@@ -2334,6 +2357,60 @@ def test_classify_uk_effect_appropriate_place_alphabetical_insert_source_patholo
 
     assert pathology == "appropriate_place_insert_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_application_by_reference_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "The rules set out in section 5 of the 1961 Act shall, so far as "
+            "applicable and subject to any necessary modifications, have effect "
+            "for the purpose of assessing compensation."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_compensation_determined_under_act_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "Any compensation payable shall be determined, in case of dispute, "
+            "under Part I of the Land Compensation Act 1961."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_application_by_reference_does_not_hide_text_mutation() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "In section 5, for the words from X to the end substitute text about "
+            "compensation determined under Part I of the Land Compensation Act 1961."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology != "application_by_reference_effect_out_of_scope"
 
 
 def test_classify_uk_effect_for_entry_relating_to_source_pathology() -> None:

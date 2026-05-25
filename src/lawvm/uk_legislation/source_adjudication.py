@@ -48,6 +48,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "appropriate_place_index_entry_insert_unsupported",
         "appropriate_place_insert_unsupported",
         "repeal_schedule_table_source_unsupported",
+        "application_by_reference_effect_out_of_scope",
         "as_if_application_modification_unsupported",
         "commencement_effect_out_of_scope",
         "application_modification_payload_out_of_scope",
@@ -148,6 +149,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "manual_compile_candidate",
         "uk_manual_frontier_repeal_table_candidate",
         "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
+    ),
+    "application_by_reference_effect_out_of_scope": (
+        "non_textual_or_out_of_scope",
+        "uk_manual_frontier_application_by_reference_out_of_scope",
+        "The source applies or invokes another Act's rules by reference, rather than mutating the affected statute text/tree under the current UK replay model.",
     ),
     "as_if_application_modification_unsupported": (
         "non_textual_or_out_of_scope",
@@ -1177,6 +1183,22 @@ def _looks_like_commencement_effect_source(text: str) -> bool:
     return bool(re.search(r"\bshall\s+come\s+into\s+force\b|\bcomes?\s+into\s+force\b", norm))
 
 
+def _looks_like_application_by_reference_effect_source(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    if re.search(r"\b(?:insert|substitute|omit|repeal|renumber)\b", norm):
+        return False
+    if re.search(r"\bshall\b.{0,220}\bhave\s+effect\b.{0,220}\bfor\s+the\s+purpose\s+of\b", norm):
+        return True
+    return bool(
+        re.search(r"\bcompensation\b", norm)
+        and re.search(r"\bdetermined\b", norm)
+        and re.search(r"\bunder\s+(?:part|section|sections?)\b", norm)
+        and re.search(r"\bact\s+\d{4}\b", norm)
+    )
+
+
 def _looks_like_conditional_temporal_repeal_source(text: str) -> bool:
     norm = " ".join((text or "").split()).strip().lower()
     if not norm:
@@ -1343,6 +1365,8 @@ def classify_uk_effect_source_pathology(
             norm_text,
         ):
             return "as_if_application_modification_unsupported"
+        if _looks_like_application_by_reference_effect_source(norm_text):
+            return "application_by_reference_effect_out_of_scope"
         if _looks_like_commencement_effect_source(norm_text):
             return "commencement_effect_out_of_scope"
         if (
