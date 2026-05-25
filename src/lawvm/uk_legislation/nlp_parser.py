@@ -413,7 +413,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?"
         r"(?:\s*\))?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
-        r"\s+[“”\"'‘](.*?)[”\"'’]",
+        r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -768,6 +768,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 }
             )
 
+    matches_quoted_words_anchor_to_end_substituted = re.finditer(
+        r"for\s+(?:the\s+)?words?\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+to the end"
+        r"(?: of (?:the )?(?:subsection|paragraph|sub-paragraph|section))?"
+        r",?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_quoted_words_anchor_to_end_substituted:
+        subs.append(
+            {
+                "original": f"TEXT_FROM_{m.group('anchor').strip()}_TO_END",
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_quoted_words_anchor_to_end_substitution_text_patch",
+            }
+        )
+
     matches_anchor_to_end_block_substituted = re.finditer(
         r"(?:for (?:the )?words?\s+)?(?:from\s+)?[“\"'‘](.*?)[”\"'’]\s+to\s+the\s+end"
         r"(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?"
@@ -1033,6 +1049,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": m.group("original").strip(),
                 "replacement": m.group("replacement").strip(),
                 "rule_id": "uk_effect_preposed_passive_substitution_text_patch",
+            }
+        )
+
+    matches_missing_space_there_is_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]"
+        r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"(?:(?:the )?words? )?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_missing_space_there_is_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_missing_space_there_is_substituted_text_patch",
             }
         )
 

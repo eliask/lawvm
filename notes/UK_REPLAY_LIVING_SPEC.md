@@ -1778,6 +1778,13 @@ Current payload-descendant source-ref invariant:
 - the parser may lower `for "X" to the end substitute- <block text>` to a
   `TEXT_FROM_X_TO_END` patch using the named rule
   `uk_effect_quoted_anchor_to_end_block_substitution_text_patch`
+- the parser also accepts `for the words "X" to the end substitute "Y"` as the
+  same bounded range-to-end selector, with rule
+  `uk_effect_quoted_words_anchor_to_end_substitution_text_patch`. This covers
+  quoted replacement text and does not authorize target-subtree flattening
+  beyond the existing `TEXT_FROM_X_TO_END` replay rules. Current witnesses:
+  `ukpga/1962/46` affected `s. 65(5)` by `uksi/2014/560 Sch. 1 para. 9` and
+  `uksi/2014/3229 Sch. 5 para. 4`.
 - parser-owned post-child local text tails are preserved as source-shape
   evidence, not inferred at replay time. When UK XML stores paragraph children
   between an introductory `Text` node and a trailing local `Text` node, the
@@ -3921,6 +3928,20 @@ Current bench replay-regime invariant:
   `TEXT_FROM_member_TO_END` with rule
   `uk_effect_range_to_end_there_is_substituted_text_patch`. Witness:
   `asp/2000/11`, affected by `asp/2006/10 Sch. 6 para. 9(7)`.
+- Passive quoted-word substitution tolerates source transport spacing damage
+  where `there` is directly adjacent to the closing quote of the preimage, e.g.
+  `for the words "X"there shall be substituted the words "Y"`. Lowering emits
+  `uk_effect_missing_space_there_is_substituted_text_patch`, preserving the
+  quoted preimage and replacement rather than normalizing arbitrary surrounding
+  text. Witness: `ukpga/1970/9` affected `s. 61(4)` by
+  `ukpga/1989/26 s. 152(4)(7)`.
+- All-occurrence passive substitutions accept the replacement marker `the
+  words` after `there shall be substituted`, e.g. `for the word "assessment",
+  in each place where it occurs, there shall be substituted the words "..."`.
+  This remains under `uk_effect_all_occurrences_substitution_text_patch` and
+  emits one all-occurrences text patch scoped to the affected provision.
+  Witness: `ukpga/1970/9` affected `s. 55` by
+  `ukpga/1994/9 Sch. 19 para. 18(2)`.
 - UK range repeal parsing preserves parenthesized ordinal start anchors. An
   instruction such as `the words from "in" (where first occurring) to "Act" are
   repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a
