@@ -1802,6 +1802,23 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_at_end_unquoted_dash_insert = re.finditer(
+        r"at the end(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)"
+        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?,?\s+"
+        r"insert\s*[—-]\s+(?P<inserted>[^.;]+?)\s*\.?\s*$",
+        text,
+        re.I,
+    )
+    for m in matches_at_end_unquoted_dash_insert:
+        inserted = m.group("inserted").strip()
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": inserted,
+                "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+            }
+        )
+
     matches_insert_at_end = re.finditer(
         r"insert at the end [“\"'‘](.*?)[”\"'’]",
         text,
