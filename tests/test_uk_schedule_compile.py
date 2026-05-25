@@ -13647,6 +13647,82 @@ def test_compile_repeal_table_mixed_structural_and_word_repeal_splits_ops() -> N
     ]
 
 
+def test_compile_repeal_table_mixed_following_word_repeal_with_section_context() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>The National Health Service (Scotland) Act 1978 (c. 29)</td>
+                  <td>In section 102, paragraph (a) of subsection (4), the word “or” immediately following that paragraph and subsection (5).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_following_word",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2005-10-05",
+        affected_uri="/id/ukpga/1978/29/section/102/subsection/4/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 102(4)(a) and word",
+        affecting_uri="/id/asp/2003/13",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="13",
+        affecting_provisions="sch. 5",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2005-10-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.REPEAL,
+    ]
+    assert ops[0].target.path == (("section", "102"), ("subsection", "4"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_a"
+    )
+    assert ops[1].target.path == (
+        ("section", "102"),
+        ("subsection", "4"),
+        ("paragraph", "a"),
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_mixed_structural_word_repeal_split"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_split"
+        and record["target"] == "section:102/subsection:4/paragraph:a"
+        and record["text_target"] == "section:102/subsection:4"
+        and record["text_selector"] == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_a"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_part_list_non_member_unresolved() -> None:
     source_root = ET.fromstring(
         """

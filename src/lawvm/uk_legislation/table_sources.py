@@ -780,6 +780,26 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
     ) is not None
 
 
+def _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
+    extent_clause: str,
+    *,
+    target: LegalAddress,
+    affected_year: str,
+) -> bool:
+    """Return true when a mixed row names the parent context plus target leaf."""
+    if len(target.path) < 2:
+        return False
+    parent_target = LegalAddress(path=target.path[:-1], special=None)
+    return _uk_table_cell_mentions_target(
+        extent_clause,
+        target=parent_target,
+        affected_year=affected_year,
+    ) and _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
+        extent_clause,
+        target=target,
+    )
+
+
 def _uk_repeal_table_mixed_clause_word_selector(
     extent_clause: str,
     *,
@@ -806,7 +826,25 @@ def _uk_repeal_table_mixed_clause_word_selector(
     )
     match = preceding_target or preceding_bare
     if match is None:
-        return ""
+        following_target = re.search(
+            r"(?:the\s+)?word\s+"
+            + quoted
+            + r"\s+(?:immediately\s+)?following\s+(?:it|that\s+"
+            + re.escape(leaf_kind)
+            + r")\b",
+            text,
+            re.I,
+        )
+        if following_target is None:
+            return ""
+        word = _uk_first_quote_group(
+            following_target,
+            "word_double",
+            "word_single",
+        )
+        if not word:
+            return ""
+        return f"TEXT_WORD_{word}_IMMEDIATELY_FOLLOWING_{leaf_kind}_{leaf_label}"
     word = _uk_first_quote_group(match, "word_double", "word_single")
     if not word:
         return ""
@@ -903,6 +941,18 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         container_except_reason_code = (
                             "container_except_extent_row_feed_descendant_repeal"
                         )
+                if not source_mentions_target and re.search(
+                    r"\b(?:word|words)\b",
+                    " ".join(extent_clause.split()),
+                    flags=re.I,
+                ):
+                    source_mentions_target = (
+                        _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
+                            extent_clause,
+                            target=target,
+                            affected_year=str(effect.affected_year or ""),
+                        )
+                    )
                 if not source_mentions_target:
                     broad_container_target = _uk_table_cell_mentions_target_ancestor_container(
                         extent_clause,
@@ -935,7 +985,23 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
                         norm_clause,
                     ):
-                        if _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
+                        mixed_word_selector = _uk_repeal_table_mixed_clause_word_selector(
+                            extent_clause,
+                            target=target,
+                        )
+                        if mixed_word_selector:
+                            matches.append(
+                                (
+                                    table_index,
+                                    " | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell,
+                                    extent_clause,
+                                    enactment_match_basis,
+                                    "mixed_structural_and_word_repeal_split",
+                                    mixed_word_selector,
+                                )
+                            )
+                        elif _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
                             extent_clause,
                             target=target,
                         ):
@@ -951,32 +1017,15 @@ def _uk_table_driven_repeal_table_structural_repeal(
                                 )
                             )
                         else:
-                            mixed_word_selector = _uk_repeal_table_mixed_clause_word_selector(
-                                extent_clause,
-                                target=target,
+                            mixed_structural_word_matches.append(
+                                (
+                                    table_index,
+                                    " | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell,
+                                    extent_clause,
+                                    enactment_match_basis,
+                                )
                             )
-                            if mixed_word_selector:
-                                matches.append(
-                                    (
-                                        table_index,
-                                        " | ".join((enactment_cell, extent_clause)),
-                                        enactment_cell,
-                                        extent_clause,
-                                        enactment_match_basis,
-                                        "mixed_structural_and_word_repeal_split",
-                                        mixed_word_selector,
-                                    )
-                                )
-                            else:
-                                mixed_structural_word_matches.append(
-                                    (
-                                        table_index,
-                                        " | ".join((enactment_cell, extent_clause)),
-                                        enactment_cell,
-                                        extent_clause,
-                                        enactment_match_basis,
-                                    )
-                                )
                     continue
                 matches.append(
                     (
