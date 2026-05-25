@@ -464,6 +464,28 @@ def test_parse_fragment_substitution_handles_where_multiple_ordinal_occurs_subst
     ]
 
 
+def test_parse_fragment_substitution_handles_multiple_ordinal_places_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "ii for \u201cit\u201d, in the first and third places where it occurs, "
+        "substitute \u201che\u201d;"
+    )
+
+    assert subs == [
+        {
+            "original": "it",
+            "replacement": "he",
+            "occurrence": "3",
+            "rule_id": "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "it",
+            "replacement": "he",
+            "occurrence": "1",
+            "rule_id": "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_where_bare_ordinal_substitution() -> None:
     subs = parse_fragment_substitution(
         "b for \u201cthe adult\u201d, where first occurring, "

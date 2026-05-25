@@ -2149,6 +2149,13 @@ Current payload-descendant source-ref invariant:
   `uk_effect_post_quoted_ordinal_substitution_text_patch`, not a source-shape
   repair. Current witness: `ukpga/1970/9` affected `s. 8A(1)` by
   `ukpga/1995/4` `s. 103(3)(b)`.
+- multi-ordinal substitutions may express the occurrence selector as ordinal
+  places rather than direct `where it first and third occurs` wording: `for
+  "X", in the first and third places where it occurs, substitute "Y"` lowers
+  under `uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch`
+  and emits one text replacement per selected occurrence in descending order.
+  Current witnesses: `ukpga/1985/66` affected `s. 17(1)` and `s. 17(6)` by
+  `asp/2007/3` `s. 16(4)(a)(ii)` and `s. 16(4)(d)(ii)`.
 - the parser may lower `for the words from "X" where it first appears to the
   end substitute- Y` where `Y` is unquoted block text to `TEXT_FROM_X_TO_END`
   with the recorded start occurrence using
