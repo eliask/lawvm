@@ -4559,6 +4559,102 @@ def _load_bench_diagnostic_rows(label: str) -> dict[str, dict[str, tuple[dict[st
     }
 
 
+def _diagnostic_record_preview(record: Mapping[str, Any]) -> str:
+    effect_id = str(record.get("effect_id") or "")
+    affecting_act_id = str(record.get("affecting_act_id") or "")
+    affecting_provisions = str(record.get("affecting_provisions") or "")
+    locator = str(record.get("locator") or "")
+    reason = " ".join(str(record.get("reason") or "").split())
+    if len(reason) > 180:
+        reason = reason[:177].rstrip() + "..."
+    parts = []
+    if effect_id:
+        parts.append(f"effect={effect_id}")
+    if affecting_act_id:
+        parts.append(f"affecting={affecting_act_id}")
+    if affecting_provisions:
+        parts.append(f"provisions={affecting_provisions}")
+    if locator:
+        parts.append(f"locator={locator}")
+    if reason:
+        parts.append(f"reason={reason}")
+    return " ".join(parts)
+
+
+def _print_bench_diagnostic_samples(
+    label: str,
+    *,
+    lane: str,
+    rule_id: str = "",
+    blocking_only: bool = False,
+    limit: int = 5,
+) -> None:
+    path = _bench_diagnostics_path(label)
+    if not path.exists():
+        print(f"\nDiagnostic samples: sidecar not found for {label}")
+        return
+    sample_limit = max(0, limit)
+    matched = 0
+    lane_total = 0
+    rule_counts: Counter[str] = Counter()
+    statute_counts: Counter[str] = Counter()
+    samples: list[dict[str, Any]] = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            parsed_row = json.loads(line)
+            if not isinstance(parsed_row, dict):
+                continue
+            if parsed_row.get("schema") != "uk_bench_diagnostic.v1":
+                continue
+            if str(parsed_row.get("diagnostic_lane") or "") != lane:
+                continue
+            lane_total += 1
+            current_rule = str(parsed_row.get("rule_id") or "")
+            if rule_id and current_rule != rule_id:
+                continue
+            if blocking_only and not bool(parsed_row.get("blocking")):
+                continue
+            matched += 1
+            rule_counts[current_rule or "unknown"] += 1
+            statute_counts[str(parsed_row.get("statute_id") or "unknown")] += 1
+            if len(samples) < sample_limit:
+                samples.append(parsed_row)
+
+    print(
+        "\nDiagnostic samples: "
+        f"lane={lane} "
+        f"rule={rule_id or '*'} "
+        f"blocking_only={blocking_only} "
+        f"matched={matched} "
+        f"lane_total={lane_total}"
+    )
+    if rule_counts:
+        print(
+            "  Rules: "
+            + ", ".join(
+                f"{key}={count}" for key, count in sorted(rule_counts.items())
+            )
+        )
+    if statute_counts:
+        print(
+            "  Statutes: "
+            + ", ".join(
+                f"{key}={count}" for key, count in sorted(statute_counts.items())
+            )
+        )
+    for row in samples:
+        record = row.get("record") if isinstance(row.get("record"), dict) else {}
+        print(
+            "  "
+            f"{row.get('statute_id')} "
+            f"rule={row.get('rule_id') or '-'} "
+            f"blocking={bool(row.get('blocking'))} "
+            + _diagnostic_record_preview(record)
+        )
+
+
 def _append_history(
     results: list[_BenchResult] | _BenchRunAccumulator,
     label: str,
@@ -5818,6 +5914,10 @@ def _show_run(
     phase_timings: bool = False,
     replay_adjudication_sample_kinds: Sequence[str] = (),
     replay_adjudication_sample_limit: int = 5,
+    diagnostic_sample_lane: str = "",
+    diagnostic_sample_rule: str = "",
+    diagnostic_sample_blocking: bool = False,
+    diagnostic_sample_limit: int = 5,
     summary_only: bool = False,
 ) -> None:
     include_diagnostics = bool(replay_adjudication_sample_kinds) and not summary_only
@@ -5849,6 +5949,14 @@ def _show_run(
             diagnostics_count = _count_jsonl_rows(diagnostics_path)
             if diagnostics_count:
                 print(f"Bench diagnostics sidecar: {diagnostics_path} rows={diagnostics_count}")
+    if diagnostic_sample_lane:
+        _print_bench_diagnostic_samples(
+            label,
+            lane=diagnostic_sample_lane,
+            rule_id=diagnostic_sample_rule,
+            blocking_only=diagnostic_sample_blocking,
+            limit=diagnostic_sample_limit,
+        )
 
 
 def _primary_score_mode(
@@ -6741,6 +6849,15 @@ def main(args) -> None:  # noqa: ANN001
             file=sys.stderr,
         )
         sys.exit(2)
+    diagnostic_sample_limit = int(
+        getattr(args, "diagnostic_sample_limit", 5) or 0
+    )
+    if diagnostic_sample_limit < 0:
+        print(
+            "error: --diagnostic-sample-limit must be zero or a positive integer",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     replay_adjudication_sample_kinds = tuple(
         getattr(args, "replay_adjudication_samples", None) or ()
     )
@@ -6751,6 +6868,12 @@ def main(args) -> None:  # noqa: ANN001
             phase_timings=getattr(args, "phase_timings", False),
             replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
             replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+            diagnostic_sample_lane=str(getattr(args, "diagnostic_sample_lane", "") or ""),
+            diagnostic_sample_rule=str(getattr(args, "diagnostic_sample_rule", "") or ""),
+            diagnostic_sample_blocking=bool(
+                getattr(args, "diagnostic_sample_blocking", False)
+            ),
+            diagnostic_sample_limit=diagnostic_sample_limit,
             summary_only=getattr(args, "summary_only", False),
         )
         return

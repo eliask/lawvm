@@ -3993,6 +3993,68 @@ def test_uk_bench_show_run_summary_only_ignores_sample_request_diagnostics_load(
     assert "rows=not-counted" in out
 
 
+def test_uk_bench_show_run_streams_diagnostic_sidecar_samples(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    bench_dir = tmp_path / "runs"
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        replay_score=0.7,
+        source_acquisition_observation_count=1,
+        source_acquisition_rejection_count=1,
+        source_acquisition_rejection_rule_counts={
+            "uk_affecting_act_xml_missing_rejected": 1
+        },
+        effect_diagnostics=(
+            {
+                "rule_id": "uk_affecting_act_xml_missing_rejected",
+                "effect_id": "eff-1",
+                "affecting_act_id": "ukpga/2020/1",
+                "affecting_provisions": "s. 1(2)",
+                "locator": "https://www.legislation.gov.uk/ukpga/2020/1/data.xml",
+                "reason": "missing affecting source",
+                "blocking": True,
+                "strict_disposition": "block",
+            },
+        ),
+        comparison_class="commensurable",
+    )
+
+    uk_bench._save_results([result], "show-diagnostic-samples")
+    capsys.readouterr()
+
+    uk_bench._show_run(
+        "show-diagnostic-samples",
+        diagnostic_sample_lane="source_acquisition",
+        diagnostic_sample_blocking=True,
+        summary_only=True,
+    )
+
+    out = capsys.readouterr().out
+    assert (
+        "Diagnostic samples: lane=source_acquisition rule=* "
+        "blocking_only=True matched=1 lane_total=1"
+    ) in out
+    assert "Rules: uk_affecting_act_xml_missing_rejected=1" in out
+    assert "Statutes: ukpga/2000/1=1" in out
+    assert "effect=eff-1" in out
+    assert "affecting=ukpga/2020/1" in out
+    assert "reason=missing affecting source" in out
+
+
 def test_uk_bench_compare_does_not_load_diagnostics_sidecars(
     monkeypatch,
     tmp_path,
