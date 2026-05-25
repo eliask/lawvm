@@ -894,7 +894,13 @@ def prepare_table_cell_text_patch_context(
     table_marker_parent = _uk_parent_target_before_table_marker(target)
     parent_target = (
         target
-        if selector_mode in {"unique_column_text", "unique_entry_cell"}
+        if (
+            selector_mode in {"unique_column_text", "unique_entry_cell"}
+            or (
+                selector_mode == "unique_relating_cell"
+                and bool(table_cell_selector.get("source_names_containing_target"))
+            )
+        )
         and table_marker_parent is None
         else table_marker_parent
     )

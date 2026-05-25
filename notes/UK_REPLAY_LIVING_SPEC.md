@@ -2819,7 +2819,10 @@ Current payload-descendant source-ref invariant:
   `uk_effect_table_entry_relating_text_patch` for `in the entry relating to X,
   for "Y" substitute "Z"`, `uk_effect_table_entry_label_text_patch` for
   `in entry 1A in the table`, `uk_effect_table_entry_relating_column_text_patch`
-  for `in the entry for X, in the Nth column`,
+  for `in the entry for X, in the Nth column` and for broad section targets
+  where the source itself names the carrier and table cell, e.g.
+  `In section 98 ..., in the second column of the Table, in the entry relating
+  to CAA 2001, after "45G(4) and (5)," insert "45R(5) and (6),"`,
   `uk_effect_table_entry_label_column_text_patch` for `in entry X, in column Y`,
   `uk_effect_table_entry_labels_column_text_patch` for `in entries X and Y,
   in column Z`, `uk_effect_table_entry_deictic_label_column_text_patch` for
@@ -2841,9 +2844,16 @@ Current payload-descendant source-ref invariant:
     or by a subsection `(1)` table. Lowering records this as an implicit
     subsection-one table carrier in the selector rather than changing legal
     scope silently.
+  - A broad target such as `s. 98` may be used as the containing table carrier
+    only when the source text explicitly names that same carrier (`In section
+    98`) and the selector also names the table column, row relation, and text
+    preimage. Otherwise table-entry wording remains a blocking
+    `uk_effect_table_entry_instruction_rejected` manual-frontier row.
   - current witnesses: `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32
     Sch. 17 para. 4(3)(a)`, `s. 122(1) Table` by `ukpga/2022/32 Sch. 21
-    para. 3(a)`, and `s. 166(5) Table` by `ukpga/2026/2 s. 7(9)(d)`
+    para. 3(a)`, `s. 166(5) Table` by `ukpga/2026/2 s. 7(9)(d)`, and
+    broad-source-carrier `ukpga/1970/9 s. 98` by `ukpga/2021/26 Sch. 22
+    para. 13`
 - Direct table-row inserts shaped as `after that entry insert- ...` may lower
   only when the previous source sibling explicitly identifies the table entry
   (for example `in the entry relating to X, for "Y" substitute "Z"`) and the
