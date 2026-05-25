@@ -2450,6 +2450,11 @@ Current payload-descendant source-ref invariant:
   in each schedule`, and `the entries for X, Y and Z are repealed` lower instead to
   `uk_effect_schedule_list_entry_repeal`: the target remains the schedule
   carrier, but a provenance selector lists the claimed direct entry anchors.
+  Repeal-table extent cells may also lower through this lane when the table
+  itself supplies the repeal action and the extent cell says `In schedule N, the
+  entries "A" and "B".`; the selector records
+  `source_anchor_form=repeal_table_schedule_entries`. Current witness:
+  `asp/2010/8` affected `sch. 8` by `ssi/2013/211 Sch. 2`.
   Heading-only targets are excluded from this selector: a source such as
   `In the Part heading, omit "requirement"` is a heading-facet text patch, not
   authorization to delete a schedule/list entry named `requirement`.
