@@ -106,6 +106,7 @@ class _EffectFilters:
     effect_type_contains: str = ""
     source_pathology: str = ""
     lowering_rule: str = ""
+    lowering_reason_code: str = ""
     source_acquisition_rule: str = ""
     manual_compile_status: str = ""
     manual_compile_rule: str = ""
@@ -865,6 +866,7 @@ def _effect_filters_jsonable(filters: _EffectFilters) -> dict[str, Any]:
         "effect_type_contains": filters.effect_type_contains,
         "source_pathology": filters.source_pathology,
         "lowering_rule": filters.lowering_rule,
+        "lowering_reason_code": filters.lowering_reason_code,
         "source_acquisition_rule": filters.source_acquisition_rule,
         "manual_compile_status": filters.manual_compile_status,
         "manual_compile_rule": filters.manual_compile_rule,
@@ -896,6 +898,7 @@ def _effect_summary_matches_filters(
     *,
     source_pathology: str = "",
     lowering_rule: str = "",
+    lowering_reason_code: str = "",
     source_acquisition_rule: str = "",
     manual_compile_status: str = "",
     manual_compile_rule: str = "",
@@ -907,6 +910,10 @@ def _effect_summary_matches_filters(
     if lowering_rule:
         lowering_rules = _rule_counts(tuple(summary.lowering_rejections))
         if lowering_rule not in lowering_rules:
+            return False
+    if lowering_reason_code:
+        reason_codes = _lowering_reason_code_counts(summary)
+        if lowering_reason_code not in reason_codes:
             return False
     if source_acquisition_rule:
         source_acquisition_rules = _rule_counts(tuple(summary.source_acquisition_rejections))
@@ -921,6 +928,15 @@ def _effect_summary_matches_filters(
         if actual_rule != manual_compile_rule:
             return False
     return True
+
+
+def _lowering_reason_code_counts(summary: _EffectSummary) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in summary.lowering_rejections:
+        reason_code = str(record.get("reason_code") or "")
+        if reason_code:
+            counts[reason_code] = counts.get(reason_code, 0) + 1
+    return counts
 
 
 def _actionable_claim_template_status(
@@ -947,6 +963,7 @@ def _effect_row_matches_filters(
     statute_id: str = "",
     source_pathology: str = "",
     lowering_rule: str = "",
+    lowering_reason_code: str = "",
     source_acquisition_rule: str = "",
     manual_compile_status: str = "",
     manual_compile_rule: str = "",
@@ -956,6 +973,7 @@ def _effect_row_matches_filters(
         row.summary,
         source_pathology=source_pathology,
         lowering_rule=lowering_rule,
+        lowering_reason_code=lowering_reason_code,
         source_acquisition_rule=source_acquisition_rule,
         manual_compile_status=manual_compile_status,
         manual_compile_rule=manual_compile_rule,
@@ -1407,6 +1425,7 @@ def main(args: "argparse.Namespace") -> None:
     effect_type_contains: str = (getattr(args, "effect_type_contains", "") or "").lower()
     source_pathology_filter: str = getattr(args, "source_pathology", "") or ""
     lowering_rule_filter: str = getattr(args, "lowering_rule", "") or ""
+    lowering_reason_code_filter: str = getattr(args, "lowering_reason_code", "") or ""
     source_acquisition_rule_filter: str = getattr(args, "source_acquisition_rule", "") or ""
     manual_compile_status_filter: str = getattr(args, "manual_compile_status", "") or ""
     manual_compile_rule_filter: str = getattr(args, "manual_compile_rule", "") or ""
@@ -1430,10 +1449,12 @@ def main(args: "argparse.Namespace") -> None:
         manual_compile_status_filter
         or manual_compile_rule_filter
         or claim_template_status_filter
+        or lowering_reason_code_filter
     ):
         print(
             "error: --evidence-jsonl requires --manual-compile-status, "
-            "--manual-compile-rule, or --claim-template-status",
+            "--manual-compile-rule, --claim-template-status, or "
+            "--lowering-reason-code",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -1443,6 +1464,7 @@ def main(args: "argparse.Namespace") -> None:
         effect_type_contains=effect_type_contains,
         source_pathology=source_pathology_filter,
         lowering_rule=lowering_rule_filter,
+        lowering_reason_code=lowering_reason_code_filter,
         source_acquisition_rule=source_acquisition_rule_filter,
         manual_compile_status=manual_compile_status_filter,
         manual_compile_rule=manual_compile_rule_filter,
@@ -1492,6 +1514,7 @@ def main(args: "argparse.Namespace") -> None:
             post_summary_filter=bool(
                 source_pathology_filter
                 or lowering_rule_filter
+                or lowering_reason_code_filter
                 or source_acquisition_rule_filter
                 or manual_compile_status_filter
                 or manual_compile_rule_filter
@@ -1516,6 +1539,7 @@ def main(args: "argparse.Namespace") -> None:
         if (
             source_pathology_filter
             or lowering_rule_filter
+            or lowering_reason_code_filter
             or source_acquisition_rule_filter
             or manual_compile_status_filter
             or manual_compile_rule_filter
@@ -1529,6 +1553,7 @@ def main(args: "argparse.Namespace") -> None:
                     statute_id=statute_id,
                     source_pathology=source_pathology_filter,
                     lowering_rule=lowering_rule_filter,
+                    lowering_reason_code=lowering_reason_code_filter,
                     source_acquisition_rule=source_acquisition_rule_filter,
                     manual_compile_status=manual_compile_status_filter,
                     manual_compile_rule=manual_compile_rule_filter,
@@ -1542,6 +1567,7 @@ def main(args: "argparse.Namespace") -> None:
                 or non_candidate_only
                 or source_pathology_filter
                 or lowering_rule_filter
+                or lowering_reason_code_filter
                 or source_acquisition_rule_filter
                 or manual_compile_status_filter
                 or manual_compile_rule_filter

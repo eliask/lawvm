@@ -3725,6 +3725,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="only show rows carrying this lowering rejection rule ID",
     )
     uk_effects_p.add_argument(
+        "--lowering-reason-code",
+        metavar="CODE",
+        help="only show rows carrying this lowering observation or rejection reason_code",
+    )
+    uk_effects_p.add_argument(
         "--source-acquisition-rule",
         metavar="RULE_ID",
         help="only show rows carrying this source-acquisition rejection rule ID",

@@ -4732,6 +4732,7 @@ def test_uk_effects_main_lowering_rule_filter_classifies_before_limit(
             effect_type_contains="",
             source_pathology="",
             lowering_rule="uk_effect_overlap_substitution_unlowered",
+            lowering_reason_code="",
             source_acquisition_rule="",
             limit=1,
             applied_only=False,
@@ -5054,7 +5055,10 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
         candidate=False,
         resolver_eids=(),
         lowering_rejections=(
-            {"rule_id": "uk_effect_overlap_substitution_unlowered"},
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "reason_code": "overlap_substitution_parse_failed",
+            },
         ),
         source_acquisition_rejections=(
             {"rule_id": "uk_affecting_act_xml_missing_rejected"},
@@ -5073,6 +5077,10 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
     )
     assert _effect_summary_matches_filters(
         summary,
+        lowering_reason_code="overlap_substitution_parse_failed",
+    )
+    assert _effect_summary_matches_filters(
+        summary,
         source_acquisition_rule="uk_affecting_act_xml_missing_rejected",
     )
     assert _effect_summary_matches_filters(
@@ -5085,6 +5093,10 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
     )
     assert not _effect_summary_matches_filters(summary, source_pathology="__none__")
     assert not _effect_summary_matches_filters(summary, lowering_rule="missing-rule")
+    assert not _effect_summary_matches_filters(
+        summary,
+        lowering_reason_code="missing_reason",
+    )
     assert not _effect_summary_matches_filters(
         summary,
         source_acquisition_rule="missing-rule",
@@ -5207,6 +5219,7 @@ def test_uk_effects_report_jsonable_can_omit_rows_for_summary_only() -> None:
         "effect_type_contains": "",
         "source_pathology": "",
         "lowering_rule": "",
+        "lowering_reason_code": "",
         "source_acquisition_rule": "",
         "manual_compile_status": "",
         "manual_compile_rule": "",
@@ -5288,6 +5301,7 @@ def test_uk_effects_evidence_jsonl_requires_manual_frontier_filter(capsys) -> No
         effect_type_contains="",
         source_pathology="",
         lowering_rule="",
+        lowering_reason_code="",
         source_acquisition_rule="",
         manual_compile_status="",
         manual_compile_rule="",
@@ -5307,7 +5321,8 @@ def test_uk_effects_evidence_jsonl_requires_manual_frontier_filter(capsys) -> No
     assert excinfo.value.code == 2
     assert (
         "--evidence-jsonl requires --manual-compile-status, "
-        "--manual-compile-rule, or --claim-template-status"
+        "--manual-compile-rule, --claim-template-status, or "
+        "--lowering-reason-code"
         in capsys.readouterr().err
     )
 
