@@ -1846,6 +1846,14 @@ Current payload-descendant source-ref invariant:
   `ukpga/1990/42` affected `s. 185(5)` by `ukpga/2003/21 Sch. 15
   para. 64(1)(b)`; `ukpga/1990/16` affected `s. 9(1)` by `uksi/2004/3279
   reg. 11(a)(i)`.
+- damaged passive substitutions whose source replacement starts with a quote
+  but lacks the matching closing quote may lower under
+  `uk_effect_dangling_passive_substitution_quote_text_patch` only when the
+  source still gives an explicit quoted preimage and the replacement is bounded
+  by the end of the extracted instruction. This is recorded as
+  `source_text_recovery` and remains target-local. Current witness:
+  `ukpga/1978/29` affected `Sch. 9 para. 1(4)` by `asp/2003/4 Sch. 4 para.
+  5(18)(c)`.
 - passive range omissions of the form `the words from "X" onwards shall be
   omitted` lower to `TEXT_FROM_X_TO_END` under
   `uk_effect_range_to_end_passive_repeal_text_patch`. This is a bounded text

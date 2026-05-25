@@ -22,6 +22,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID,
     UK_FROM_BEGINNING_OMISSION_RULE_ID,
     UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID,
     UK_RANGE_SUBSTITUTION_RULE_ID,
@@ -381,6 +382,28 @@ def append_basic_text_rewrite_observations(
                 "between the closing quote of the preimage and 'there'; lowering "
                 "treats this as source text spacing damage while preserving the "
                 "quoted preimage and replacement exactly."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    if UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID,
+            family="source_text_recovery",
+            reason_code="source_text_dangling_passive_substitution_quote",
+            reason=(
+                "UK source text carries a passive substitution whose replacement "
+                "starts with a quote but lacks the matching closing quote; lowering "
+                "uses the explicit source preimage and the bounded trailing replacement "
+                "text instead of treating the whole instruction as a host replacement."
             ),
             effect=effect,
             extracted_el=extracted_el,
