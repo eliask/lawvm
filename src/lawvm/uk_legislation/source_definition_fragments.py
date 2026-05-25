@@ -1492,6 +1492,8 @@ def _fragment_substitution_source_carried_quoted_text_substitution(
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve block payloads whose parent instruction gives the quoted preimage."""
+    if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return None
     replacement = " ".join((extracted_text or "").split()).strip()
     if not replacement:
         return None

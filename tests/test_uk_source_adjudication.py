@@ -2117,6 +2117,27 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap
     assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
 
 
+def test_classify_uk_manual_compile_frontier_marks_instruction_header_source_insufficient() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text="1 In section 183A of the Broadcasting Act 1990—",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_instruction_header_source_insufficient"
+
+
 def test_classify_uk_effect_compare_shape_marks_table_cell_surface_gap() -> None:
     result = classify_uk_effect_compare_shape(
         effect_type="word substituted",
