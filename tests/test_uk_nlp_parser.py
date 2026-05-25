@@ -480,6 +480,22 @@ def test_parse_fragment_substitution_handles_where_bare_ordinal_substitution() -
     ]
 
 
+def test_parse_fragment_substitution_handles_passive_ordinal_place_substitution_with_words_wrapper() -> None:
+    subs = parse_fragment_substitution(
+        "b for the words \u201cthe trustee\u201d, in the first place where they occur, "
+        "there shall be substituted the words \u201c any relevant trustee \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "the trustee",
+            "replacement": "any relevant trustee",
+            "occurrence": "1",
+            "rule_id": "uk_effect_post_quoted_ordinal_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_wherever_occurring_substitution() -> None:
     subs = parse_fragment_substitution(
         "b in subsections (2), (3) and (6), for \u201cthe Information Centre\u201d, "
