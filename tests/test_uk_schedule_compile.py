@@ -4717,6 +4717,106 @@ def test_compile_prefix_subparagraph_word_omission_rejects_target_mismatch() -> 
     assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
 
 
+def test_compile_conjoined_prefix_subsection_paragraph_word_omission() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-15-paragraph-44-5">
+          <Pnumber>5</Pnumber>
+          <Text>5 In subsection (3), paragraph (a) and in paragraph (b) the words “in any other case” shall cease to have effect.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-23470eb3605ff5124b7b2e3d7aeacbbb",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 103A(3)(b)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 44(5) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "103a"),
+        ("subsection", "3"),
+        ("paragraph", "b"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "in any other case"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_word_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert lowering_records[-1]["rule_id"] == "uk_effect_child_qualified_word_omission_text_patch"
+    assert lowering_records[-1]["source_parent_kind"] == "subsection"
+    assert lowering_records[-1]["source_parent_label"] == "3"
+    assert lowering_records[-1]["source_child_kind"] == "paragraph"
+    assert lowering_records[-1]["source_child_label"] == "b"
+    assert lowering_records[-1]["source_sibling_label"] == "a"
+
+
+def test_compile_conjoined_prefix_subsection_paragraph_word_omission_rejects_target_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-15-paragraph-44-5">
+          <Pnumber>5</Pnumber>
+          <Text>5 In subsection (3), paragraph (a) and in paragraph (b) the words “in any other case” shall cease to have effect.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_conjoined_prefix_subsection_paragraph_word_omission_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 103A(3)(c)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 44(5) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+
+
 def test_compile_child_qualified_final_word_omission() -> None:
     extracted_el = ET.fromstring(
         f"""
