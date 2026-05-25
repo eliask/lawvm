@@ -84,6 +84,7 @@ class _UKRepealTableStructuralRepeal:
     enactment_cell: str = ""
     extent_cell: str = ""
     enactment_match_basis: str = ""
+    broad_container_target: str = ""
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -744,6 +745,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
 
     matches: list[tuple[int, str, str, str, str, str]] = []
     mixed_structural_word_matches: list[tuple[int, str, str, str, str]] = []
+    broad_container_matches: list[tuple[int, str, str, str, str, str]] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
         return _UKRepealTableStructuralRepeal(recognized=False)
@@ -775,6 +777,24 @@ def _uk_table_driven_repeal_table_structural_repeal(
                     target=target,
                     affected_year=str(effect.affected_year or ""),
                 ):
+                    broad_container_target = _uk_table_cell_mentions_target_ancestor_container(
+                        extent_clause,
+                        target=target,
+                        affected_year=str(effect.affected_year or ""),
+                    )
+                    if _uk_repeal_table_clause_is_structural_repeal(
+                        extent_clause
+                    ) and broad_container_target:
+                        broad_container_matches.append(
+                            (
+                                table_index,
+                                " | ".join((enactment_cell, extent_clause)),
+                                enactment_cell,
+                                extent_clause,
+                                enactment_match_basis,
+                                broad_container_target,
+                            )
+                        )
                     continue
                 if not _uk_repeal_table_clause_is_structural_repeal(extent_clause):
                     norm_clause = " ".join(extent_clause.split()).lower()
@@ -839,6 +859,26 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 enactment_cell=enactment_cell,
                 extent_cell=extent_cell,
                 enactment_match_basis=enactment_match_basis,
+            )
+        if not matches and len(broad_container_matches) == 1:
+            (
+                table_index,
+                row_text,
+                enactment_cell,
+                extent_cell,
+                enactment_match_basis,
+                broad_container_target,
+            ) = broad_container_matches[0]
+            return _UKRepealTableStructuralRepeal(
+                recognized=True,
+                reason_code="broad_container_repeal_requires_grouped_feed_compilation",
+                match_count=0,
+                table_index=table_index,
+                row_text=row_text,
+                enactment_cell=enactment_cell,
+                extent_cell=extent_cell,
+                enactment_match_basis=enactment_match_basis,
+                broad_container_target=broad_container_target,
             )
         return _UKRepealTableStructuralRepeal(
             recognized=True,
@@ -968,6 +1008,44 @@ def _uk_cell_has_section_descendant_scope(
             return True
 
     return False
+
+
+def _uk_table_cell_mentions_target_ancestor_container(
+    cell_text: str,
+    *,
+    target: LegalAddress,
+    affected_year: str,
+) -> str:
+    """Return a matched source-owned ancestor when the feed target is a descendant."""
+    labels = {kind: label for kind, label in target.path}
+    ancestor_candidates: list[LegalAddress] = []
+    section = labels.get("section", "")
+    subsection = labels.get("subsection", "")
+    schedule = labels.get("schedule", "")
+    paragraph = labels.get("paragraph", "")
+    subparagraph = labels.get("subparagraph", "")
+    if schedule and (paragraph or subparagraph):
+        ancestor_candidates.append(LegalAddress(path=(("schedule", schedule),)))
+    if section and (subsection or paragraph or subparagraph):
+        ancestor_candidates.append(LegalAddress(path=(("section", section),)))
+    if section and subsection and (paragraph or subparagraph):
+        ancestor_candidates.append(
+            LegalAddress(path=(("section", section), ("subsection", subsection)))
+        )
+    if not ancestor_candidates:
+        return ""
+
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", " ".join(cell_text.split()).lower())
+    if re.search(r"\b(?:paragraphs?|paras?\.?|sub-?paragraphs?|subsections?)\b", scope_text):
+        return ""
+    for ancestor in ancestor_candidates:
+        if _uk_table_cell_mentions_target(
+            cell_text,
+            target=ancestor,
+            affected_year=affected_year,
+        ):
+            return str(ancestor)
+    return ""
 
 
 def _uk_table_cell_mentions_target(
