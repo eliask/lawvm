@@ -267,7 +267,14 @@ def _uk_schedule_list_entry_repeal_selector(
         if match is not None:
             anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
         else:
-            match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
+            match = re.search(
+                r"\bomit(?:ted)?\s+(?:the\s+)?entry\s+[“\"'](?P<anchor>.+?)[”\"']"
+                r"(?:\s+in\s+each\s+schedule)?(?:,?\s+and\b|[.;,]|$)",
+                text,
+                re.I,
+            )
+            if match is None:
+                match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
             if match is not None:
                 anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
     if not anchors:
