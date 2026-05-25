@@ -389,7 +389,7 @@ class UKReplayScheduleListApplyMixin:
             and str(selector.get("placement_family") or "") == "definition_list_end_from_source_range"
         )
         if carrier_node is None or (
-            carrier_kind not in {"schedule", "part", "chapter", "division"}
+            carrier_kind not in {"schedule", "part", "chapter", "division", "paragraph", "subparagraph"}
             and not end_definition_list_carrier
         ):
             if self._target_under_repealed_prefix(target):
@@ -415,7 +415,7 @@ class UKReplayScheduleListApplyMixin:
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
                 message=(
                     "UK replay skipped schedule-list-entry insert: target did "
-                    "not resolve to a schedule or schedule-partition carrier."
+                    "not resolve to a schedule or schedule-entry carrier."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(

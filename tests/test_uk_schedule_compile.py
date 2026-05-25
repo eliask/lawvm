@@ -25661,6 +25661,128 @@ def test_compile_schedule_list_entry_insert_records_relation_to_typo() -> None:
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_insert_splits_subparagraph_payload_entries() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>b in sub-paragraph (2), after the entry relating to paragraph 30
+          insert— paragraph 30A (shipbuilding); paragraph 30B (producing coal);
+          paragraph 30C (producing steel); .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_subparagraph_multi_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-04-06",
+        affected_uri="/id/ukpga/2000/17/schedule/15/paragraph/26/subparagraph/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 15 para. 26(2)",
+        affecting_uri="/id/ukpga/2008/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="9",
+        affecting_provisions="Sch. 11 para. 2(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2008-04-06", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "paragraph 30A (shipbuilding)",
+        "paragraph 30B (producing coal)",
+        "paragraph 30C (producing steel)",
+    ]
+    assert all(op.target == LegalAddress(path=(("schedule", "15"), ("paragraph", "26"), ("subparagraph", "2"))) for op in ops)
+    assert all(op.witness_rule_id == "uk_effect_schedule_list_entry_insert" for op in ops)
+    selector_notes = [
+        next(note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:"))
+        for op in ops
+    ]
+    selectors = [
+        json.loads(note.removeprefix("schedule_list_entry_selector:")) for note in selector_notes
+    ]
+    assert [selector["anchor_text"] for selector in selectors] == [
+        "paragraph 30",
+        "paragraph 30A (shipbuilding)",
+        "paragraph 30B (producing coal)",
+    ]
+    assert all(selector["inserted_entry_count"] == 3 for selector in selectors)
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_insert"
+    assert observations[0]["inserted_entry_count"] == 3
+
+
+def test_replay_schedule_list_entry_insert_handles_subparagraph_carrier_chain() -> None:
+    ops = []
+    target = LegalAddress(path=(("schedule", "15"), ("paragraph", "26"), ("subparagraph", "2")))
+    for index, (anchor, payload) in enumerate(
+        (
+            ("paragraph 30", "paragraph 30A (shipbuilding)"),
+            ("paragraph 30A (shipbuilding)", "paragraph 30B (producing coal)"),
+            ("paragraph 30B (producing coal)", "paragraph 30C (producing steel)"),
+        )
+    ):
+        ops.append(
+            LegalOperation(
+                op_id=f"uk_test_schedule_subparagraph_entry_{index}",
+                sequence=index,
+                action=StructuralAction.INSERT,
+                target=target,
+                payload=IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text=payload),
+                provenance_tags=(
+                    'schedule_list_entry_selector:{"rule_id":"uk_effect_schedule_list_entry_insert",'
+                    f'"direction":"after","anchor_text":"{anchor}","inserted_text":"{payload}"}}',
+                ),
+            )
+        )
+    base = IRStatute(
+        statute_id="ukpga/2000/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="15",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="26",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="2",
+                                children=(
+                                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="paragraph 29 (receipt of royalties and licence fees);"),
+                                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="paragraph 30 (property development);"),
+                                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="paragraph 31 (hotels and comparable establishments);"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    subparagraph = replayed.supplements[0].children[0].children[0]
+
+    assert [child.text for child in subparagraph.children] == [
+        "paragraph 29 (receipt of royalties and licence fees);",
+        "paragraph 30 (property development);",
+        "paragraph 30A (shipbuilding)",
+        "paragraph 30B (producing coal)",
+        "paragraph 30C (producing steel)",
+        "paragraph 31 (hotels and comparable establishments);",
+    ]
+
+
 def test_replay_schedule_list_entry_insert_places_unlabeled_entry_before_anchor() -> None:
     extracted_el = ET.fromstring(
         f"""

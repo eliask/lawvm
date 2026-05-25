@@ -34,6 +34,28 @@ def _strip_schedule_entry_payload(raw: str) -> str:
     return _strip_schedule_entry_phrase(text)
 
 
+def split_schedule_entry_insert_payload(raw: str) -> tuple[str, ...]:
+    """Split source-owned schedule-entry payloads into sibling entries.
+
+    The split is intentionally narrow: every semicolon-delimited part must look
+    like a numbered paragraph entry. Otherwise the payload remains a single
+    entry so lowering does not invent structure from ordinary prose.
+    """
+    payload = _strip_schedule_entry_payload(raw)
+    if ";" not in payload:
+        return (payload,) if payload else ()
+    parts = tuple(
+        _strip_schedule_entry_phrase(part)
+        for part in re.split(r"\s*;\s*(?:and\s+)?", payload, flags=re.I)
+    )
+    parts = tuple(part for part in parts if part)
+    if len(parts) < 2:
+        return (payload,) if payload else ()
+    if all(re.match(r"^paragraph\s+\d+[A-Za-z]?\b", part, flags=re.I) for part in parts):
+        return parts
+    return (payload,) if payload else ()
+
+
 def _schedule_list_entry_selector_from_parts(
     *,
     direction: str,
@@ -77,6 +99,8 @@ def _uk_schedule_list_entry_insert_selector(
         "part",
         "chapter",
         "division",
+        "paragraph",
+        "subparagraph",
     }:
         return None
     target_leaf_kind = _addr_leaf_kind(target)
