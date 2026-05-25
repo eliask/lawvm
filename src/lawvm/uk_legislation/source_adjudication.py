@@ -986,6 +986,14 @@ def _looks_like_instruction_text(text: str) -> bool:
     )
 
 
+def _looks_like_definition_entry_payload(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(r"^[\"“][^\"”]{1,200}[\"”]\s+(?:means|includes|has\b)", norm)
+        or re.search(r"^[\"“][^\"”]{1,200}[\"”]\s+means[—-]", norm)
+    )
+
+
 def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     if not (
@@ -1653,10 +1661,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         }
 
     if "uk_effect_structural_pseudo_definition_target_rejected" in blocking_rules:
+        if _looks_like_definition_entry_payload(extracted_text_norm):
+            return {
+                "status": "deterministic_frontend_candidate",
+                "rule_id": "uk_manual_frontier_structural_pseudo_definition_entry_payload_candidate",
+                "reason": "The effect feed encodes a definition entry as a pseudo structural path and the source carries a quoted definition-entry payload; a deterministic definition-entry compiler must prove the carrier, insertion/replacement semantics, and placement before replay.",
+            }
         return {
-            "status": "deterministic_frontend_candidate",
-            "rule_id": "uk_manual_frontier_structural_pseudo_definition_target_candidate",
-            "reason": "The effect feed encodes a definition entry as a pseudo structural path; a deterministic definition-entry/list-entry compiler must prove the carrier, payload semantics, and placement before replay.",
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_structural_pseudo_definition_source_insufficient",
+            "reason": "The effect feed encodes a definition entry as a pseudo structural path, but the extracted source is not a definition-entry payload; acquire or extract the child amendment row before a definition-entry compiler can replay it.",
         }
 
     if "uk_effect_source_range_definition_entry_at_end_insert_rejected" in blocking_rules:
@@ -1931,20 +1945,6 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
 
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
-        and source_pathology_norm == "unhandled_instruction_text"
-        and not re.search(
-            r"\b(?:substitute|substituted|insert|inserted|omit|omitted|repeal|repealed)\b",
-            extracted_text_norm,
-        )
-    ):
-        return {
-            "status": "source_insufficient",
-            "rule_id": "uk_manual_frontier_instruction_header_source_insufficient",
-            "reason": "The extracted source is only an amendment header or context row, not a legal payload or complete action formula; replay requires the missing child instruction/payload before a text patch can be claimed.",
-        }
-
-    if (
-        "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and extracted_tag_norm not in {"", "BlockAmendment"}
         and re.search(
             r"\b(?:substitute|substituted|insert|inserted|omit|omitted|repeal|repealed)\b",
@@ -1988,6 +1988,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "deterministic lowering must combine those source surfaces explicitly "
                 "instead of treating the fragment as a standalone instruction."
             ),
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
+        and not re.search(
+            r"\b(?:substitute|substituted|insert|inserted|omit|omitted|repeal|repealed)\b",
+            extracted_text_norm,
+        )
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_instruction_header_source_insufficient",
+            "reason": "The extracted source is only an amendment header or context row, not a legal payload or complete action formula; replay requires the missing child instruction/payload before a text patch can be claimed.",
         }
 
     if "uk_effect_missing_structural_payload_rejected" in blocking_rules:
