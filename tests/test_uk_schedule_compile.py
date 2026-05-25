@@ -11857,6 +11857,145 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_quoted_words_matches_ordinal_schedule_name() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Short title</th>
+                  <th>Extent of repeal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>10 &amp; 11 Eliz.2 c. 46.</td>
+                  <td>Transport Act 1962.</td>
+                  <td>In the First Schedule, in paragraph 3, the words from “Railways” to “other”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_quoted_words_ordinal_schedule_name",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2000-11-30",
+        affected_uri="/id/ukpga/1962/46/schedule/1/paragraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="Sch. 1 para. 3",
+        affecting_uri="/id/ukpga/2000/38",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="38",
+        affecting_provisions="Sch. 31 Pt. 4",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2000-11-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("schedule", "1"), ("paragraph", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_Railways_TO_other"
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_quoted_words_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_quoted_words"
+        and record["blocking"] is False
+        and record["extent_cell"]
+        == "In the First Schedule, in paragraph 3, the words from “Railways” to “other”."
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_quoted_words_blocks_wrong_ordinal_schedule_name() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Short title</th>
+                  <th>Extent of repeal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>10 &amp; 11 Eliz.2 c. 46.</td>
+                  <td>Transport Act 1962.</td>
+                  <td>In the First Schedule, in paragraph 3, the words from “Railways” to “other”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_quoted_words_wrong_ordinal_schedule_name",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2000-11-30",
+        affected_uri="/id/ukpga/1962/46/schedule/2/paragraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="Sch. 2 para. 3",
+        affecting_uri="/id/ukpga/2000/38",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="38",
+        affecting_provisions="Sch. 31 Pt. 4",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2000-11-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["reason_code"] == "no_unique_matching_repeal_table_row"
+        and record["blocking"] is True
+        and record["match_count"] == 0
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_quoted_words_allows_blank_feed_type_when_source_claims_words() -> None:
     source_root = ET.fromstring(
         """

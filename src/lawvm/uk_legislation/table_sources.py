@@ -1099,6 +1099,14 @@ def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
         segment = text[start_idx:next_boundary]
         if re.search(rf"\b{schedule_pat}\b", segment):
             return True
+        before = text[max(0, m.start() - 48) : m.start()]
+        ordinal_match = re.search(r"\b(?P<ordinal>[a-z]+(?:-[a-z]+)?)\s+$", before)
+        if (
+            is_numeric
+            and ordinal_match is not None
+            and _uk_ordinal_to_int(ordinal_match.group("ordinal")) == wanted_num
+        ):
+            return True
 
         if is_numeric:
             for match in re.finditer(

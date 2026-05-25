@@ -2993,6 +2993,11 @@ Current payload-descendant source-ref invariant:
   that target. They must not infer alphanumeric interior membership such as
   section `3B` without a separate grouped-feed or live-structure range expansion
   claim.
+- Repeal-table Schedule targets may be corroborated by exact ordinal source
+  names such as `First Schedule` or `Sixth Schedule` when the ordinal maps to
+  the feed-named numeric Schedule target. This is only a Schedule-label match:
+  paragraph/subparagraph scope must still be explicitly matched by the same
+  owned extent row, and a different ordinal Schedule remains unresolved.
 - Repeal-table descendant phrasing in reversed order, such as
   `Paragraph (c) of section 85B(2).`, may corroborate the exact descendant
   target only when the section, subsection, and paragraph labels all match.
