@@ -703,6 +703,37 @@ def test_uk_candidates_parser_accepts_manual_compile_evidence_statuses() -> None
     ]
 
 
+def test_uk_manual_frontier_validate_parser_defaults() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-manual-frontier-validate",
+            ".tmp/uk-manual-frontier.jsonl",
+            "--json",
+            "--summary-only",
+            "--validation-jsonl",
+            ".tmp/uk-manual-validation.jsonl",
+            "--remaining-jsonl",
+            ".tmp/uk-manual-remaining.jsonl",
+            "--fail-on-stale",
+            "--fail-on-validation-error",
+            "--fail-on-remaining",
+        ]
+    )
+
+    assert args.command == "uk-manual-frontier-validate"
+    assert args.input == ".tmp/uk-manual-frontier.jsonl"
+    assert args.db is None
+    assert args.json is True
+    assert args.summary_only is True
+    assert args.validation_jsonl == ".tmp/uk-manual-validation.jsonl"
+    assert args.remaining_jsonl == ".tmp/uk-manual-remaining.jsonl"
+    assert args.fail_on_stale is True
+    assert args.fail_on_validation_error is True
+    assert args.fail_on_remaining is True
+
+
 def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
     payload = build_uk_replay_payload(
         statute_id="ukpga/2000/1",

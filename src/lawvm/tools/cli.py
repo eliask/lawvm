@@ -4092,6 +4092,63 @@ def _build_parser() -> argparse.ArgumentParser:
         help="maximum replay adjudication samples to include per emitted statute (default: 5)",
     )
 
+    uk_manual_frontier_validate_p = sub.add_parser(
+        "uk-manual-frontier-validate",
+        help="validate exported UK manual-frontier JSONL rows against current lowering",
+        description=(
+            "Re-summarize exported uk-candidates manual-frontier workqueue rows "
+            "against the current archive-backed compiler and mark stale/resolved rows."
+        ),
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "input",
+        metavar="INPUT",
+        help="manual-frontier JSONL path exported by uk-candidates",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="Farchive DB path (default: data/uk_legislation.farchive)",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable validation rows",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="omit per-row validation details from stdout while preserving summary counts and JSONL exports",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--validation-jsonl",
+        metavar="PATH",
+        help="write all validation findings as JSONL",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--remaining-jsonl",
+        metavar="PATH",
+        help=(
+            "write original workqueue rows still classified as live manual-frontier "
+            "items, annotated with current validation"
+        ),
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--fail-on-stale",
+        action="store_true",
+        help="exit 1 when any input row is already resolved or no longer live manual-frontier work",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--fail-on-validation-error",
+        action="store_true",
+        help="exit 1 when any input row is malformed or its effect_id is no longer found",
+    )
+    uk_manual_frontier_validate_p.add_argument(
+        "--fail-on-remaining",
+        action="store_true",
+        help="exit 1 when any input row is still live manual-frontier work",
+    )
+
     # --- disagreement ---
     disagree_p = sub.add_parser(
         "disagreement",
@@ -6964,6 +7021,11 @@ def main() -> None:
         from lawvm.tools.uk_candidates import main as uk_candidates_main
 
         uk_candidates_main(args)
+
+    elif args.command == "uk-manual-frontier-validate":
+        from lawvm.tools.uk_manual_frontier import main as uk_manual_frontier_main
+
+        uk_manual_frontier_main(args)
 
     elif args.command == "eu-reul":
         from lawvm.tools.eu_reul import main as eu_reul_main
