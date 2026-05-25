@@ -9037,6 +9037,61 @@ def test_compile_source_carried_child_tail_substitution_from_exact_subsection_co
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_source_carried_child_tail_substitution_uses_feed_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-34-6-c">
+          <Pnumber>c</Pnumber>
+          <P3para>
+            <Text>c for the words after paragraph (d) substitute \u201c the arrangements are to be regarded as DTA tax avoidance arrangements for the purposes of section 917A of ITA 2007 \u201d .</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-99266831e54b25ce0aa116088d804770",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/2016/24",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2016",
+        affected_number="24",
+        affected_provisions="s. 42(9)",
+        affecting_uri="/id/ukpga/2021/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="26",
+        affecting_provisions="s. 34(6)(c)",
+        affecting_title="Finance Act 2021",
+        in_force_dates=[{"date": "2021-06-10", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "42"), ("subsection", "9"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_d"
+    assert ops[0].text_patch.replacement == (
+        "the arrangements are to be regarded as DTA tax avoidance arrangements "
+        "for the purposes of section 917A of ITA 2007"
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_substitution_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_compile_source_carried_structured_tail_substitution_to_child_replaces() -> None:
     extracted_el = ET.fromstring(
         f"""
