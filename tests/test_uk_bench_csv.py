@@ -1012,6 +1012,32 @@ def test_uk_bench_corpus_source_closure_summary_separates_affecting_xml(
     }
 
 
+def test_uk_bench_filter_replay_source_closed_entries_keeps_full_or_not_required() -> None:
+    rows = [
+        {"statute_id": "ukpga/2000/1"},
+        {"statute_id": "ukpga/2000/2"},
+        {"statute_id": "ukpga/2000/3"},
+        {"statute_id": "ukpga/2000/4"},
+    ]
+
+    filtered = uk_bench._filter_replay_source_closed_entries(
+        rows,
+        source_closure_summary={
+            "row_closure_statuses": {
+                "ukpga/2000/1": "full",
+                "ukpga/2000/2": "partial",
+                "ukpga/2000/3": "missing",
+                "ukpga/2000/4": "not_required",
+            }
+        },
+    )
+
+    assert filtered == [
+        {"statute_id": "ukpga/2000/1"},
+        {"statute_id": "ukpga/2000/4"},
+    ]
+
+
 def test_uk_bench_hard_curated_sample_keeps_source_complete_effectful_heavy_rows() -> None:
     rows = [
         {

@@ -6476,6 +6476,7 @@ def _corpus_source_closure_summary(
     )
 
     row_closure_counts: Counter[str] = Counter()
+    row_closure_statuses: dict[str, str] = {}
     required_act_status_cache: dict[str, str] = {}
     required_effect_count = 0
     effect_row_count = 0
@@ -6517,7 +6518,9 @@ def _corpus_source_closure_summary(
                 required_act_ids.add(act_id)
         required_act_ref_count += len(required_act_ids)
         if not required_act_ids:
-            row_closure_counts["not_required"] += 1
+            closure_status = "not_required"
+            row_closure_counts[closure_status] += 1
+            row_closure_statuses[statute_id] = closure_status
             continue
 
         statuses: list[str] = []
@@ -6528,11 +6531,13 @@ def _corpus_source_closure_summary(
                 )[0]
             statuses.append(required_act_status_cache[act_id])
         if statuses and all(status == "available" for status in statuses):
-            row_closure_counts["full"] += 1
+            closure_status = "full"
         elif any(status == "available" for status in statuses):
-            row_closure_counts["partial"] += 1
+            closure_status = "partial"
         else:
-            row_closure_counts["missing"] += 1
+            closure_status = "missing"
+        row_closure_counts[closure_status] += 1
+        row_closure_statuses[statute_id] = closure_status
 
     return {
         "effect_row_count": effect_row_count,
@@ -6540,6 +6545,7 @@ def _corpus_source_closure_summary(
         "required_affecting_act_ref_count": required_act_ref_count,
         "unique_required_affecting_act_count": len(required_act_status_cache),
         "row_closure_counts": dict(sorted(row_closure_counts.items())),
+        "row_closure_statuses": dict(sorted(row_closure_statuses.items())),
         "required_affecting_act_source_status_counts": dict(
             sorted(Counter(required_act_status_cache.values()).items())
         ),
@@ -6609,6 +6615,23 @@ def _print_corpus_stats(
             f"{source_closure_summary['effect_feed_rejection_count']} "
             f"{source_closure_summary['effect_feed_rejection_rule_counts']}"
         )
+
+
+def _filter_replay_source_closed_entries(
+    entries: Sequence[dict[str, object]],
+    *,
+    source_closure_summary: Mapping[str, object],
+) -> list[dict[str, object]]:
+    raw_statuses = source_closure_summary.get("row_closure_statuses")
+    if not isinstance(raw_statuses, Mapping):
+        return list(entries)
+    allowed_statuses = {"full", "not_required"}
+    selected: list[dict[str, object]] = []
+    for entry in entries:
+        statute_id = str(entry.get("statute_id") or "")
+        if str(raw_statuses.get(statute_id) or "") in allowed_statuses:
+            selected.append(dict(entry))
+    return selected
 
 
 def _stratified_source_complete_sample(
@@ -6833,6 +6856,28 @@ def main(args) -> None:  # noqa: ANN001
         return
 
     if curate_output is not None:
+        curate_require_source_closure = bool(
+            getattr(args, "curate_require_source_closure", False)
+        )
+        source_closure_summary = None
+        if curate_require_source_closure:
+            source_closure_summary = _corpus_source_closure_summary(
+                corpus,
+                archive=archive,
+                applicability_mode=str(
+                    getattr(args, "uk_applicability_mode", None)
+                    or "effective_date_plus_feed_applied"
+                ),
+            )
+            before_count = len(corpus)
+            corpus = _filter_replay_source_closed_entries(
+                corpus,
+                source_closure_summary=source_closure_summary,
+            )
+            print(
+                "  Replay source-closed filter: "
+                f"{before_count} -> {len(corpus)} statutes"
+            )
         hard_curate = curate_preset in _CURATE_HARD_PRESETS
         selected = _write_curated_corpus(
             corpus,
@@ -6846,9 +6891,24 @@ def main(args) -> None:  # noqa: ANN001
             print(f"  Curated source-complete hard corpus: {curate_output}")
         else:
             print(f"  Curated source-complete corpus: {curate_output}")
+        if curate_require_source_closure:
+            print("  Required replay source closure: full/not_required")
         print(f"  Requested rows: {curate_size}")
         print(f"  Written rows: {len(selected)}")
-        _print_corpus_stats(selected)
+        selected_source_closure_summary = None
+        if curate_require_source_closure or getattr(args, "source_closure_stats", False):
+            selected_source_closure_summary = _corpus_source_closure_summary(
+                selected,
+                archive=archive,
+                applicability_mode=str(
+                    getattr(args, "uk_applicability_mode", None)
+                    or "effective_date_plus_feed_applied"
+                ),
+            )
+        _print_corpus_stats(
+            selected,
+            source_closure_summary=selected_source_closure_summary,
+        )
         archive.close()
         return
 

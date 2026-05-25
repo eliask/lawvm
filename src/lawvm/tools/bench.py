@@ -2548,6 +2548,15 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk --curate-corpus] maximum curated rows to write (default: preset size or 200)",
     )
     bench_p.add_argument(
+        "--curate-require-source-closure",
+        dest="curate_require_source_closure",
+        action="store_true",
+        help=(
+            "[-j uk --curate-corpus] only curate rows whose replay-required "
+            "affecting-act XML closure is full, or not required"
+        ),
+    )
+    bench_p.add_argument(
         "--limit",
         type=int,
         metavar="N",
