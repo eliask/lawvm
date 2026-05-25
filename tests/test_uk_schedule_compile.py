@@ -18064,6 +18064,84 @@ def test_compile_word_range_repeal_with_pre_predicate_comma() -> None:
     assert observations[0]["text_match"] == "TEXT_FROM_where_TO_Bankruptcy"
 
 
+def test_compile_listed_word_and_range_to_end_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-13-1-b">
+          <Pnumber>b</Pnumber>
+          <Text>
+            b in subsection (3)(b) the words\u2014 i \u201cthe first\u201d, and ii from
+            \u201cmade\u201d to the end, are repealed.
+          </Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-d158855d314e5c5d14badd23bad15505",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2010-11-15",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 72(3)(b)",
+        affecting_uri="/id/asp/2010/6",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="6",
+        affecting_provisions="s. 13(1)(b)",
+        affecting_title="Home Owner and Debtor Protection (Scotland) Act 2010",
+        in_force_dates=[{"date": "2010-11-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL] * 2
+    assert [op.target.path for op in ops] == [
+        (("section", "72"), ("subsection", "3"), ("paragraph", "b")),
+        (("section", "72"), ("subsection", "3"), ("paragraph", "b")),
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == [
+        "the first",
+        "TEXT_FROM_made_TO_END",
+    ]
+    assert all(op.text_patch is not None for op in ops)
+    assert all(op.text_patch.kind is TextPatchKindEnum.DELETE for op in ops if op.text_patch)
+    assert all(op.text_patch.replacement is None for op in ops if op.text_patch)
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}"
+        "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["text_match"] == "the first"
+    assert observations[0]["listed_text_matches"] == (
+        "the first",
+        "TEXT_FROM_made_TO_END",
+    )
+    assert {record["reason_code"] for record in observations} == {
+        "explicit_listed_word_and_range_to_end_repeal"
+    }
+    assert all(record["blocking"] is False for record in observations)
+    assert all(record["strict_disposition"] == "record" for record in observations)
+
+
 def test_compile_word_range_repeal_scopes_to_source_parent_definition() -> None:
     source_root = ET.fromstring(
         f"""

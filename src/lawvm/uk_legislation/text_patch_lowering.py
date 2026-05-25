@@ -11,6 +11,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     _separate_compound_lettered_text_replace_fragments,
     _separate_definition_repeal_fragments,
     _separate_definition_child_repeal_fragments,
+    _separate_listed_word_and_range_to_end_repeal_fragments,
     _separate_multi_quoted_word_repeal_fragments,
     _separate_occurrence_text_replace_fragments,
     _separate_source_range_definition_entry_insert_fragments,
@@ -45,6 +46,9 @@ def build_uk_text_patch_items(
     separate_multi_quoted_word_repeals = _separate_multi_quoted_word_repeal_fragments(
         fragment_subs
     )
+    separate_listed_word_and_range_to_end_repeals = (
+        _separate_listed_word_and_range_to_end_repeal_fragments(fragment_subs)
+    )
     if curr_action == "text_repeal" and separate_definition_repeals:
         for fragment in separate_definition_repeals:
             text_patch_items.append(
@@ -75,6 +79,20 @@ def build_uk_text_patch_items(
             )
     elif curr_action == "text_repeal" and separate_multi_quoted_word_repeals:
         for fragment in separate_multi_quoted_word_repeals:
+            text_patch_items.append(
+                (
+                    TextPatchSpec(
+                        kind=TextPatchKindEnum.DELETE,
+                        selector=TextSelector(
+                            match_text=fragment["original"],
+                            occurrence=0,
+                        ),
+                    ),
+                    [fragment],
+                )
+            )
+    elif curr_action == "text_repeal" and separate_listed_word_and_range_to_end_repeals:
+        for fragment in separate_listed_word_and_range_to_end_repeals:
             text_patch_items.append(
                 (
                     TextPatchSpec(

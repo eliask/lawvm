@@ -80,6 +80,9 @@ UK_ORDINAL_WORD_REPEAL_RULE_ID = "uk_effect_ordinal_word_repeal_text_patch"
 UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID = (
     "uk_effect_range_repeal_pre_predicate_comma_text_patch"
 )
+UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
+    "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -2259,6 +2262,30 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "occurrence": _ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
                 "rule_id": UK_ORDINAL_WORD_REPEAL_RULE_ID,
             }
+        )
+
+    matches_listed_word_and_range_to_end_repeal = re.finditer(
+        r"(?:the\s+)?words?\s*[—-]\s*"
+        r"(?:[ivxlcdm]+|[0-9A-Za-z]+)\s+[“\"'‘](?P<word>.*?)[”\"'’],?\s+and\s+"
+        r"(?:[ivxlcdm]+|[0-9A-Za-z]+)\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]\s+"
+        r"to\s+the\s+end,?\s+(?:are|is|shall\s+be)\s+(?:repealed|omitted)",
+        text,
+        re.I,
+    )
+    for m in matches_listed_word_and_range_to_end_repeal:
+        subs.extend(
+            [
+                {
+                    "original": m.group("word").strip(),
+                    "replacement": "",
+                    "rule_id": UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
+                },
+                {
+                    "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
+                    "replacement": "",
+                    "rule_id": UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
+                },
+            ]
         )
 
     matches_imperative_contextual_word_omission = re.finditer(

@@ -33,6 +33,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
     UK_ORDINAL_WORD_REPEAL_RULE_ID,
+    UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
     UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
@@ -813,6 +814,34 @@ def append_basic_text_rewrite_observations(
                 "occurrence": op_text_occurrence,
             },
         )
+    if UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_listed_word_and_range_to_end_repeal",
+            reason=(
+                "UK source text lists a quoted-word repeal and a range-to-end "
+                "repeal under one words-repealed instruction; lowering emits "
+                "separate bounded text deletions for each listed limb."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "listed_text_matches": tuple(
+                    str(item.get("original") or "")
+                    for item in fragment_subs or []
+                    if str(item.get("rule_id") or "")
+                    == UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID
+                ),
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
     if UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID in rule_ids:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
@@ -1445,6 +1474,32 @@ def _separate_multi_quoted_word_repeal_fragments(
         replacement = str(item.get("replacement") or "")
         rule_id = str(item.get("rule_id") or "")
         if rule_id != UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID or replacement or not original:
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": "",
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_listed_word_and_range_to_end_repeal_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID
+            or replacement
+            or not original
+        ):
             return ()
         fragments.append(
             {

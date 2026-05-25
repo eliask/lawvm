@@ -2701,6 +2701,26 @@ def test_parse_fragment_substitution_handles_range_repeal_with_pre_predicate_com
     ]
 
 
+def test_parse_fragment_substitution_handles_listed_word_and_range_to_end_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "b in subsection (3)(b) the words\u2014 i \u201cthe first\u201d, and ii from "
+        "\u201cmade\u201d to the end, are repealed."
+    )
+
+    assert subs == [
+        {
+            "original": "the first",
+            "replacement": "",
+            "rule_id": "uk_effect_listed_word_and_range_to_end_repeal_text_patch",
+        },
+        {
+            "original": "TEXT_FROM_made_TO_END",
+            "replacement": "",
+            "rule_id": "uk_effect_listed_word_and_range_to_end_repeal_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_where_ordinal_occurring_substitution() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (1)(a), for the words from \u201can\u201d, where second occurring, "
