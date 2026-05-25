@@ -30,13 +30,26 @@ def uk_compiled_effect_facts(
     payloads = tuple(op.payload for op in compiled_ops if op.payload is not None)
     format_target = target_formatter or _default_target_path
     format_payload_text = payload_text_formatter or _default_payload_text
+    lowering_target_paths = tuple(
+        value
+        for row in lowering_rejections[lowering_rejection_start_index:]
+        for value in (
+            str(row.get("target") or ""),
+            str(row.get("target_ref") or ""),
+            str(row.get("affected_provisions") or ""),
+        )
+        if value
+    )
     return UKCompiledEffectFacts(
         op_actions=tuple(_action_name(op.action) for op in compiled_ops),
         payload_kinds=tuple(str(payload.kind) for payload in payloads),
         payload_texts=tuple(
             format_payload_text(payload.text or "") for payload in payloads
         ),
-        target_paths=tuple(format_target(op.target) for op in compiled_ops),
+        target_paths=(
+            *(format_target(op.target) for op in compiled_ops),
+            *lowering_target_paths,
+        ),
         lowering_rule_ids=tuple(
             str(row.get("rule_id") or "")
             for row in lowering_rejections[lowering_rejection_start_index:]

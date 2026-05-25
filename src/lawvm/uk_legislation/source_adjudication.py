@@ -1025,6 +1025,11 @@ def _looks_like_table_crossheading_target(text: str, *, target_paths: Iterable[s
         return True
     if re.search(r"(?:^|[:/ -])table\b", targets_norm) and "crossheading" in targets_norm:
         return True
+    if re.search(r"(?:^|[:/ -])table\b", targets_norm) and re.search(
+        r"\bcross[- ]?heading\b",
+        norm,
+    ):
+        return True
     return bool(
         re.search(r"\btable\b", norm)
         and re.search(r"\bcross[- ]?heading\b", norm)
