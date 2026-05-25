@@ -791,6 +791,21 @@ def test_parse_fragment_substitution_handles_anchor_to_end_block_substitution() 
     ]
 
 
+def test_parse_fragment_substitution_handles_anchor_onwards_block_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "4 In subsection (4), for the words from \u201cwhether as being\u201d onwards "
+        "substitute if he is\u2014 a a person against whom proceedings are taken."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_whether as being_TO_END",
+            "replacement": "if he is\u2014 a a person against whom proceedings are taken.",
+            "rule_id": "uk_effect_anchor_to_end_block_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_ordinal_insert() -> None:
     subs = parse_fragment_substitution(
         "i after \u201cSecretary of State\u201d, in the first place it occurs, "
