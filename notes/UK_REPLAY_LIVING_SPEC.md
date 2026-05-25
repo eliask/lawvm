@@ -1946,6 +1946,13 @@ Current payload-descendant source-ref invariant:
   replay uses the requested occurrence within the definition entry instead of
   requiring the start anchor to be unique. Current witness: `asp/2003/1`
   affected `s. 61` by `asp/2005/5 Sch. 3 para. 23(5)`.
+- definition-scoped range-to-end substitutions may name the definition term
+  without quotation marks when the term is comma-bounded by the source formula.
+  Lowering emits
+  `uk_effect_unquoted_definition_range_to_end_substitution_text_patch` and
+  still targets the bounded `TEXT_IN_DEFINITION_* FROM * TO_END` selector, not
+  the whole subsection. Current witness: `asp/2006/4` affected `s. 13(5)` by
+  `asp/2010/8 sch. 17 para. 34`.
 - the parser may lower `after the definition of "X" insert- <block text>` and
   `after the definition of "X", insert- <block text>` to a
   `TEXT_AFTER_DEFINITION_X` patch using the named rule
