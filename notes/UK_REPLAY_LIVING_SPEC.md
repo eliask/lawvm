@@ -3362,7 +3362,11 @@ Current payload-descendant source-ref invariant:
   to unquoted block payloads so it does not duplicate existing quoted
   `TEXT_FROM_X_TO_END` substitution rules. The replay selector remains a
   bounded text-span operation; it may not become a structural replacement or
-  consume sibling provisions.
+  consume sibling provisions. Source-pathology classification treats rows with
+  this lowering observation as supported, even if the replacement block contains
+  visibly structured `a`/`b` tails, because the executable mutation is still a
+  bounded parent text-span replacement. Current witness: `ukpga/1949/88`
+  affected `s. 24G(5)` by `uksi/2023/1287 reg. 2(a)`.
 - source text that targets `cross-heading` facets lowers only through explicit
   before-anchor whole-heading replacement, quoted text-patch, titled replacement
   split, or guarded heading-wrapper repeal lanes. Other crossheading rows are

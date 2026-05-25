@@ -958,6 +958,27 @@ def test_classify_uk_effect_source_pathology_marks_structured_tail_substitution(
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_accepts_lowered_anchor_to_end_block_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "a in subsection (5), for the words from “may be lawfully” to the end "
+            "substitute— a may be lawfully imported into the United Kingdom, or "
+            "b has been imported into the United Kingdom."
+        ),
+        op_actions=["text_replace"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:24g/subsection:5"],
+        lowering_rule_ids=["uk_effect_anchor_to_end_block_substitution_text_patch"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+    assert is_core_uk_effect_source_candidate(pathology) is True
+
+
 def test_classify_uk_effect_source_pathology_keeps_flat_tail_substitution_core() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",
