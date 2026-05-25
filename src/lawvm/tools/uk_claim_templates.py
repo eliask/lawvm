@@ -822,7 +822,11 @@ def manual_compile_suggested_claim_template(
         summary.manual_compile_rule_id
         != "uk_manual_frontier_appropriate_place_definition_entry_candidate"
     ):
-        return {}
+        if (
+            summary.manual_compile_rule_id
+            != "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
+        ):
+            return {}
     source_preview = summary.source_extracted_text_preview or ""
     source_norm = " ".join(source_preview.split())
     match = re.search(
@@ -843,7 +847,12 @@ def manual_compile_suggested_claim_template(
         "claim_kind": "semantic_compile",
         "claim_status": "template_only_not_validated",
         "action_family": "definition_entry_insert",
-        "placement_family": "appropriate_place_requires_anchor_claim",
+        "placement_family": (
+            "pseudo_definition_target_requires_anchor_claim"
+            if summary.manual_compile_rule_id
+            == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
+            else "appropriate_place_requires_anchor_claim"
+        ),
         "jurisdiction": "uk",
         "statute_id": statute_id,
         "effect_id": effect.effect_id,
@@ -860,7 +869,12 @@ def manual_compile_suggested_claim_template(
         "inserted_definition_entry_preview": payload[:500],
         "candidate_target_surface": effect.affected_provisions,
         "required_validator_checks": [
-            "source_witness_contains_exact_appropriate_place_instruction",
+            (
+                "effect_metadata_names_pseudo_definition_target"
+                if summary.manual_compile_rule_id
+                == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
+                else "source_witness_contains_exact_appropriate_place_instruction"
+            ),
             "payload_is_complete_definition_entry",
             "claim_supplies_exact_definition_entry_anchor_or_insertion_index",
             "target_subtree_contains_definition_list_surface",

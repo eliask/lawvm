@@ -1663,9 +1663,9 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     if "uk_effect_structural_pseudo_definition_target_rejected" in blocking_rules:
         if _looks_like_definition_entry_payload(extracted_text_norm):
             return {
-                "status": "deterministic_frontend_candidate",
-                "rule_id": "uk_manual_frontier_structural_pseudo_definition_entry_payload_candidate",
-                "reason": "The effect feed encodes a definition entry as a pseudo structural path and the source carries a quoted definition-entry payload; a deterministic definition-entry compiler must prove the carrier, insertion/replacement semantics, and placement before replay.",
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate",
+                "reason": "The effect feed encodes a definition entry as a pseudo structural path and the source carries a quoted definition-entry payload, but no source-owned insertion anchor or ordering rule is available; a claim or future definition-entry compiler must prove the carrier, insertion/replacement semantics, and placement before replay.",
             }
         return {
             "status": "source_insufficient",
