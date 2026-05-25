@@ -1772,6 +1772,17 @@ Current payload-descendant source-ref invariant:
   `uk_effect_preposed_passive_substitution_text_patch` and must preserve the
   explicit effect target. Current witness: `ukpga/1990/16` affected `s. 9(5)`
   by `uksi/2004/3279 reg. 11(b)`.
+- passive same-target text substitutions of the form `for "X", wherever
+  occurring, there shall be substituted "Y"` are also deterministic text
+  patches under `uk_effect_wherever_occurring_substitution_text_patch`. When
+  the same formula names multiple quoted preimages joined by `and`, the parser
+  emits one all-occurrences patch per quoted preimage and the same replacement;
+  it does not infer any additional preimages from the target text. The related
+  passive range form `for the words from the beginning to "X" there shall be
+  substituted "Y"` lowers to `TEXT_FROM__TO_X` using
+  `uk_effect_from_beginning_passive_substitution_text_patch`. Current witness:
+  `ukpga/1990/42` affected `s. 52`, `s. 14`, and `s. 104(6)` by
+  `ukpga/2003/21 Sch. 15`.
 - preposed beginning insertions of the form `there shall be inserted at the
   beginning the words "X"` lower to an explicit `TEXT_BEGINNING` text patch
   under `uk_effect_preposed_beginning_text_insertion_patch`; this is still a
@@ -1783,7 +1794,16 @@ Current payload-descendant source-ref invariant:
   `uk_effect_quoted_word_passive_omit_text_patch`. This rule requires an
   explicit quoted preimage and does not apply to `the entry for "X" shall be
   omitted`, which remains a table/entry-boundary claim. Current witness:
-  `ukpga/1990/16` affected `s. 9(1)` by `uksi/2004/3279 reg. 11(a)(i)`.
+  `ukpga/1990/42` affected `s. 185(5)` by `ukpga/2003/21 Sch. 15
+  para. 64(1)(b)`; `ukpga/1990/16` affected `s. 9(1)` by `uksi/2004/3279
+  reg. 11(a)(i)`.
+- passive range omissions of the form `the words from "X" onwards shall be
+  omitted` lower to `TEXT_FROM_X_TO_END` under
+  `uk_effect_range_to_end_passive_repeal_text_patch`. This is a bounded text
+  deletion from the explicit start preimage to the end of the target text
+  surface; it does not authorize deleting a parent or sibling. Current witness:
+  `ukpga/1990/42` affected `Sch. 6 para. 13(2)` by `ukpga/2003/21 s. 342(a)
+  Sch. 19(1)`.
 - passive from-beginning substitutions of the form `for the words from the
   beginning of the subsection to "X" are substituted the words "Y"` lower to a
   bounded `TEXT_FROM__TO_X` target-local text replacement under

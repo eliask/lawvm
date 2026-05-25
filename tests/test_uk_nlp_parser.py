@@ -349,6 +349,41 @@ def test_parse_fragment_substitution_handles_wherever_occurring_substitution() -
     ]
 
 
+def test_parse_fragment_substitution_handles_wherever_occurring_passive_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "24 In section 52, for \u201cthe Commission\u201d, wherever occurring, "
+        "there shall be substituted \u201c OFCOM \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "the Commission",
+            "replacement": "OFCOM",
+            "rule_id": "uk_effect_wherever_occurring_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_multiple_wherever_occurring_passive_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "6 In section 14, for \u201cThe Commission\u201d and \u201cthe Commission\u201d, wherever "
+        "occurring, there shall be substituted \u201c OFCOM \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "The Commission",
+            "replacement": "OFCOM",
+            "rule_id": "uk_effect_wherever_occurring_substitution_text_patch",
+        },
+        {
+            "original": "the Commission",
+            "replacement": "OFCOM",
+            "rule_id": "uk_effect_wherever_occurring_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_parenthesized_all_occurrences_substitution() -> None:
     subs = parse_fragment_substitution(
         "e in subsection (7), for \u201c retained EU \u201d "
@@ -967,6 +1002,21 @@ def test_parse_fragment_substitution_handles_omit_words_from_second_place_to_end
     ]
 
 
+def test_parse_fragment_substitution_handles_words_from_anchor_onwards_omitted() -> None:
+    subs = parse_fragment_substitution(
+        "a in sub-paragraph (2), the words from \u201cand shall include\u201d onwards "
+        "shall be omitted; and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_and shall include_TO_END",
+            "replacement": "",
+            "rule_id": "uk_effect_range_to_end_passive_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_there_is_substituted() -> None:
     subs = parse_fragment_substitution(
         'a in subsections (1), (4) and (7), for “the Director” there is substituted “the OFT”;'
@@ -1485,6 +1535,20 @@ def test_parse_fragment_substitution_handles_definition_entry_repeal() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_definition_entry_shall_be_omitted() -> None:
+    subs = parse_fragment_substitution(
+        "b in subsection (5), the definition of \u201cthe Commission\u201d shall be omitted."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_DEFINITION_ENTRY_the Commission",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_imperative_definition_entry_repeal() -> None:
     subs = parse_fragment_substitution(
         "a omit the definition of \u201cclinical commissioning group\u201d;"
@@ -1807,6 +1871,21 @@ def test_parse_fragment_substitution_handles_from_beginning_passive_substitution
         {
             "original": "TEXT_FROM__TO_a person",
             "replacement": "For the purposes of the Enterprise Act 2002, a person",
+            "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_from_beginning_there_shall_be_substituted() -> None:
+    subs = parse_fragment_substitution(
+        "3 In subsection (6), for the words from the beginning to \u201cshall be made\u201d "
+        "there shall be substituted \u201c An application shall be made \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_shall be made",
+            "replacement": "An application shall be made",
             "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
         }
     ]
