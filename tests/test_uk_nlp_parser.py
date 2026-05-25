@@ -243,6 +243,21 @@ def test_parse_fragment_substitution_handles_all_occurrences_substitution() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_each_case_occurs_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a for \u201can exit charge payment plan\u201d, in each case it occurs, "
+        "substitute \u201c a CT exit charge payment plan \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "an exit charge payment plan",
+            "replacement": " a CT exit charge payment plan ",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_each_place_occurring_substitution() -> None:
     subs = parse_fragment_substitution(
         "b for \u201cthe Board\u201d, in each place occurring, substitute \u201cCanal & River Trust\u201d."
@@ -538,6 +553,22 @@ def test_parse_fragment_substitution_handles_where_bare_ordinal_substitution() -
     ]
 
 
+def test_parse_fragment_substitution_handles_where_occurs_ordinal_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "c in sub-paragraph (3), for \u201cthe earlier year\u201d, where it occurs first, "
+        "substitute \u201c an earlier year \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "the earlier year",
+            "replacement": "an earlier year",
+            "occurrence": "1",
+            "rule_id": "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_passive_ordinal_place_substitution_with_words_wrapper() -> None:
     subs = parse_fragment_substitution(
         "b for the words \u201cthe trustee\u201d, in the first place where they occur, "
@@ -672,6 +703,22 @@ def test_parse_fragment_substitution_handles_ordinal_substitution() -> None:
         {
             "original": "by",
             "replacement": "be",
+            "occurrence": "1",
+            "rule_id": "uk_effect_ordinal_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_the_ordinal_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a for the first \u201cthe closure notice\u201d substitute "
+        "\u201c a partial or final closure notice \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "the closure notice",
+            "replacement": " a partial or final closure notice ",
             "occurrence": "1",
             "rule_id": "uk_effect_ordinal_substitution_text_patch",
         }
