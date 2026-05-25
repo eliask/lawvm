@@ -20,6 +20,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
         "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
+        "uk_manual_frontier_structural_child_range_substitution_candidate",
         "uk_manual_frontier_structural_sibling_insert_candidate",
         "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate",
         "uk_manual_frontier_table_appropriate_place_candidate",
