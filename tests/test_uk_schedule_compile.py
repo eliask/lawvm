@@ -23423,6 +23423,56 @@ def test_compile_heading_facet_becomes_lowers_to_full_heading_replacement() -> N
     )
 
 
+def test_compile_italic_heading_before_paragraph_becomes_lowers_to_heading_facet() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Text>7 The italic heading before paragraph 101 accordingly becomes
+          “ Civil penalties: incorrect certificates ”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_italic_heading_before_paragraph_becomes",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-04-01",
+        affected_uri="/id/ukpga/2000/17/schedule/6/paragraph/101/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 101 heading",
+        affecting_uri="/id/ukpga/2007/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="11",
+        affecting_provisions="Sch. 2 para. 12(7)",
+        affecting_title="Finance Act 2007",
+        in_force_dates=[{"date": "2009-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "6"), ("paragraph", "101")),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch(
+        "TEXT_ALL",
+        "Civil penalties: incorrect certificates",
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_full_replacement_lowered"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
 def test_compile_schedule_part_heading_substitute_lowers_to_full_heading_replacement() -> None:
     extracted_el = ET.fromstring(
         f"""
