@@ -172,6 +172,15 @@ def test_uk_bench_parser_accepts_curated_corpus_flags() -> None:
     assert args.curate_size == 150
 
 
+def test_uk_bench_parser_accepts_source_closure_stats_flag() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["bench", "-j", "uk", "--corpus-stats", "--source-closure-stats"])
+
+    assert args.corpus_stats is True
+    assert args.source_closure_stats is True
+
+
 def test_uk_bench_parser_accepts_curated_corpus_preset() -> None:
     parser = cli._build_parser()
 

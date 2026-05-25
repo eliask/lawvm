@@ -6463,7 +6463,102 @@ def _is_source_complete_entry(entry: dict[str, object]) -> bool:
     )
 
 
-def _print_corpus_stats(entries: Sequence[dict[str, object]]) -> None:
+def _corpus_source_closure_summary(
+    entries: Sequence[dict[str, object]],
+    *,
+    archive: Farchive,
+    applicability_mode: str,
+) -> dict[str, object]:
+    from lawvm.uk_legislation.effects import (
+        get_affecting_act_xml_from_archive,
+        load_effects_for_statute_from_archive,
+        uk_effect_requires_affecting_source_for_replay,
+    )
+
+    row_closure_counts: Counter[str] = Counter()
+    required_act_status_cache: dict[str, str] = {}
+    required_effect_count = 0
+    effect_row_count = 0
+    required_act_ref_count = 0
+    feed_observation_count = 0
+    feed_rejection_count = 0
+    feed_observation_rule_counts: Counter[str] = Counter()
+    feed_rejection_rule_counts: Counter[str] = Counter()
+    for entry in entries:
+        statute_id = str(entry.get("statute_id") or "")
+        if not statute_id:
+            row_closure_counts["missing_statute_id"] += 1
+            continue
+        feed_observations: list[dict[str, Any]] = []
+        effects = load_effects_for_statute_from_archive(
+            statute_id,
+            archive,
+            parse_rejections_out=feed_observations,
+        )
+        effect_row_count += len(effects)
+        feed_observation_count += len(feed_observations)
+        for observation in feed_observations:
+            rule_id = str(observation.get("rule_id") or "unknown")
+            feed_observation_rule_counts[rule_id] += 1
+            if is_blocking_compile_record(observation):
+                feed_rejection_count += 1
+                feed_rejection_rule_counts[rule_id] += 1
+
+        required_act_ids: set[str] = set()
+        for effect in effects:
+            if not uk_effect_requires_affecting_source_for_replay(
+                effect,
+                applicability_mode=applicability_mode,
+            ):
+                continue
+            required_effect_count += 1
+            act_id = str(effect.affecting_act_id or "")
+            if act_id:
+                required_act_ids.add(act_id)
+        required_act_ref_count += len(required_act_ids)
+        if not required_act_ids:
+            row_closure_counts["not_required"] += 1
+            continue
+
+        statuses: list[str] = []
+        for act_id in sorted(required_act_ids):
+            if act_id not in required_act_status_cache:
+                required_act_status_cache[act_id] = _source_state(
+                    get_affecting_act_xml_from_archive(act_id, archive)
+                )[0]
+            statuses.append(required_act_status_cache[act_id])
+        if statuses and all(status == "available" for status in statuses):
+            row_closure_counts["full"] += 1
+        elif any(status == "available" for status in statuses):
+            row_closure_counts["partial"] += 1
+        else:
+            row_closure_counts["missing"] += 1
+
+    return {
+        "effect_row_count": effect_row_count,
+        "required_effect_count": required_effect_count,
+        "required_affecting_act_ref_count": required_act_ref_count,
+        "unique_required_affecting_act_count": len(required_act_status_cache),
+        "row_closure_counts": dict(sorted(row_closure_counts.items())),
+        "required_affecting_act_source_status_counts": dict(
+            sorted(Counter(required_act_status_cache.values()).items())
+        ),
+        "effect_feed_observation_count": feed_observation_count,
+        "effect_feed_observation_rule_counts": dict(
+            sorted(feed_observation_rule_counts.items())
+        ),
+        "effect_feed_rejection_count": feed_rejection_count,
+        "effect_feed_rejection_rule_counts": dict(
+            sorted(feed_rejection_rule_counts.items())
+        ),
+    }
+
+
+def _print_corpus_stats(
+    entries: Sequence[dict[str, object]],
+    *,
+    source_closure_summary: Mapping[str, object] | None = None,
+) -> None:
     by_type = Counter(str(entry.get("type") or "unknown") for entry in entries)
     by_decade = Counter(_entry_decade(entry) for entry in entries)
     by_effect_bucket = Counter(_effect_bucket(entry) for entry in entries)
@@ -6484,6 +6579,36 @@ def _print_corpus_stats(entries: Sequence[dict[str, object]]) -> None:
     print(f"By effect pages: {dict(sorted(by_effect_bucket.items()))}")
     print(f"Enacted source status: {dict(sorted(enacted_status.items()))}")
     print(f"Oracle source status: {dict(sorted(oracle_status.items()))}")
+    if source_closure_summary is not None:
+        print("Affecting source closure: current XML required for replay")
+        print(f"  Effect rows inspected: {source_closure_summary['effect_row_count']}")
+        print(
+            "  Replay source-required effects: "
+            f"{source_closure_summary['required_effect_count']}"
+        )
+        print(
+            "  Required affecting-act refs: "
+            f"{source_closure_summary['required_affecting_act_ref_count']}"
+        )
+        print(
+            "  Unique required affecting acts: "
+            f"{source_closure_summary['unique_required_affecting_act_count']}"
+        )
+        print(f"  Rows by closure: {source_closure_summary['row_closure_counts']}")
+        print(
+            "  Required affecting-act source status: "
+            f"{source_closure_summary['required_affecting_act_source_status_counts']}"
+        )
+        print(
+            "  Effect feed observations: "
+            f"{source_closure_summary['effect_feed_observation_count']} "
+            f"{source_closure_summary['effect_feed_observation_rule_counts']}"
+        )
+        print(
+            "  Effect feed rejections: "
+            f"{source_closure_summary['effect_feed_rejection_count']} "
+            f"{source_closure_summary['effect_feed_rejection_rule_counts']}"
+        )
 
 
 def _stratified_source_complete_sample(
@@ -6690,7 +6815,20 @@ def main(args) -> None:  # noqa: ANN001
         print(f"  Year filter: {min_year or '...'}-{max_year or '...'} → {len(corpus)} statutes")
 
     if getattr(args, "corpus_stats", False):
-        _print_corpus_stats(corpus)
+        source_closure_summary = None
+        if getattr(args, "source_closure_stats", False):
+            source_closure_summary = _corpus_source_closure_summary(
+                corpus,
+                archive=archive,
+                applicability_mode=str(
+                    getattr(args, "uk_applicability_mode", None)
+                    or "effective_date_plus_feed_applied"
+                ),
+            )
+        _print_corpus_stats(
+            corpus,
+            source_closure_summary=source_closure_summary,
+        )
         archive.close()
         return
 
