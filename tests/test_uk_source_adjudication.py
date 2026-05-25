@@ -2829,6 +2829,24 @@ def test_classify_uk_effect_repeal_schedule_table_source_pathology() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_repeal_table_header_without_effect_type_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="Part",
+        extracted_text=(
+            "Part IV Railways Reference Short title or title Extent of repeal or "
+            "revocation Transport Act 1962 Sections 3 to 4A."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "repeal_schedule_table_source_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_payload_fragment_without_action_formula() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="BlockAmendment",
