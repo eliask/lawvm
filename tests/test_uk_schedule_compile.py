@@ -3826,7 +3826,16 @@ def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -
         lowering_rejections_out=lowering_rejections,
     )
 
-    assert lowering_rejections == []
+    observations = [
+        record
+        for record in lowering_rejections
+        if record["rule_id"] == "uk_effect_at_end_unquoted_text_insertion_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_at_end_unquoted_text_insertion_patch"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.TEXT_REPLACE
     assert ops[0].target.path == (("section", "10"), ("subsection", "1"))
@@ -3838,6 +3847,77 @@ def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_unquoted_text_insertion_patch"
         in ops[0].provenance_tags
     )
+
+
+def test_compile_at_end_new_line_unquoted_insert_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-6-paragraph-8-2">
+          <Pnumber>2</Pnumber>
+          <Text>
+            2 In section 12AA(6) (partnership return to include information
+            about partners), at the end (and on a new line) insert\u2014 But see
+            section 12ABZA.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-d07d89d8f5c5d129a1b6723659d0916f",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-03-15",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 12AA(6)",
+        affecting_uri="/id/ukpga/2018/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2018",
+        affecting_number="3",
+        affecting_provisions="Sch. 6 para. 8(2)",
+        affecting_title="Finance Act 2018",
+        in_force_dates=[{"date": "2018-03-15", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.payload is None
+    assert op.target.path == (("section", "12aa"), ("subsection", "6"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == "But see section 12ABZA"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_unquoted_text_insertion_patch"
+        in op.provenance_tags
+    )
+
+    observations = [
+        record
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_at_end_unquoted_text_insertion_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_at_end_unquoted_text_insertion_patch"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["target"] == "section:12aa/subsection:6"
+    assert observations[0]["text_match"] == "TEXT_FROM__TO_END"
+    assert observations[0]["canonical_text_match"] == "TEXT_END"
+    assert observations[0]["replacement"] == "But see section 12ABZA"
 
 
 def test_compile_words_substituted_from_quoted_anchor_to_end_with_block_payload() -> None:

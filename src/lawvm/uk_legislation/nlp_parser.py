@@ -67,6 +67,9 @@ UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID = (
     "uk_effect_anchor_to_end_block_substitution_text_patch"
 )
 UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_patch"
+UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
+    "uk_effect_at_end_unquoted_text_insertion_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -2117,7 +2120,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_at_end_unquoted_dash_insert = re.finditer(
         r"at the end(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)"
-        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?,?\s+"
+        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?"
+        r"(?:\s+\([^)]*\))?,?\s+"
         r"insert\s*[—-]\s+(?P<inserted>[^.;]+?)\s*\.?\s*$",
         text,
         re.I,
@@ -2128,7 +2132,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             {
                 "original": "TEXT_FROM__TO_END",
                 "replacement": inserted,
-                "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+                "rule_id": UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
             }
         )
 

@@ -18,6 +18,7 @@ from lawvm.uk_legislation.lowering_records import (
 from lawvm.uk_legislation.nlp_parser import (
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+    UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
@@ -826,6 +827,30 @@ def append_basic_text_rewrite_observations(
                 "target_ref": target_ref,
                 "target": str(target),
                 "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_at_end_unquoted_text_insertion_patch",
+            reason=(
+                "UK source text inserts an unquoted dash payload at the end "
+                "of the affected target; lowering preserves that as a bounded "
+                "TEXT_END append and treats parenthetical new-line wording as "
+                "presentation, not legal text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "canonical_text_match": "TEXT_END",
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
             },
