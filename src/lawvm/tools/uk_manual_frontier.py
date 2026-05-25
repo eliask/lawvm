@@ -94,15 +94,15 @@ def _validation_status(
             "resolved_deterministic_supported",
             "uk_manual_frontier_validator_currently_deterministic_supported",
         )
-    if current_compiled_op_count > 0 and not current_blocking_rules:
-        return (
-            "resolved_compiles_without_blocking_lowering",
-            "uk_manual_frontier_validator_currently_compiles",
-        )
     if current_manual_status:
         return (
             "still_manual_frontier",
             "uk_manual_frontier_validator_still_manual_frontier",
+        )
+    if current_compiled_op_count > 0 and not current_blocking_rules:
+        return (
+            "resolved_compiles_without_blocking_lowering",
+            "uk_manual_frontier_validator_currently_compiles",
         )
     if current_blocking_rules:
         return (

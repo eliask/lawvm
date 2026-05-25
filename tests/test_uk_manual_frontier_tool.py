@@ -34,6 +34,7 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
     effects = (
         SimpleNamespace(effect_id="eff-now-supported"),
         SimpleNamespace(effect_id="eff-still-frontier"),
+        SimpleNamespace(effect_id="eff-still-frontier-with-op"),
     )
 
     monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
@@ -59,6 +60,21 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
                 lowering_rejections=(),
                 manual_compile_status="deterministic_frontend_supported",
                 manual_compile_rule_id="uk_manual_frontier_deterministic_supported",
+                replay_applicable=True,
+                structural_for_replay=True,
+            )
+        if getattr(effect, "effect_id") == "eff-still-frontier-with-op":
+            return uk_effects._EffectSummary(
+                source_pathology="source_carried_structured_tail_substitution_unsupported",
+                compare_shape="commensurable",
+                n_ops=1,
+                candidate=True,
+                resolver_eids=("section-2",),
+                lowering_rejections=(),
+                manual_compile_status="manual_compile_candidate",
+                manual_compile_rule_id=(
+                    "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
+                ),
                 replay_applicable=True,
                 structural_for_replay=True,
             )
@@ -110,6 +126,15 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
             {
                 "line_number": 3,
                 "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-still-frontier-with-op",
+                "manual_compile_status": "manual_compile_candidate",
+                "manual_compile_rule_id": (
+                    "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
+                ),
+            },
+            {
+                "line_number": 4,
+                "statute_id": "ukpga/2020/1",
                 "effect_id": "eff-missing",
             },
         ),
@@ -118,6 +143,7 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
 
     assert [row["validator_status"] for row in rows] == [
         "resolved_deterministic_supported",
+        "still_manual_frontier",
         "still_manual_frontier",
         "effect_not_found",
     ]
@@ -128,7 +154,12 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
         "uk_effect_metadata_cross_container_renumber_rejected"
     ]
     assert rows[1]["current_suggested_claim_template_status"] == "available"
-    assert rows[2]["blocking"] is True
+    assert rows[2]["current_compiled_op_count"] == 1
+    assert rows[2]["current_blocking_lowering_rule_ids"] == []
+    assert rows[2]["current_manual_compile_rule_id"] == (
+        "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
+    )
+    assert rows[3]["blocking"] is True
 
 
 def test_uk_manual_frontier_validate_main_emits_json(
