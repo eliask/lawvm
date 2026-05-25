@@ -2514,6 +2514,15 @@ Current payload-descendant source-ref invariant:
   specific classifications before this header fallback:
   `uk_manual_frontier_effect_metadata_carried_text_patch_candidate` and
   `uk_manual_frontier_definition_target_fragment_source_insufficient`.
+- quoted word-repeal object fragments whose official effect metadata supplies
+  `words repealed`/`words omitted` may lower under
+  `uk_effect_metadata_carried_quoted_words_repeal_text_patch` when the source
+  row carries exactly one quoted word/phrase and does not independently scope
+  that phrase to a subsection/paragraph range. This
+  is an effect-feed elaboration rule: metadata supplies the action and affected
+  target, source supplies the quoted preimage. It must not override more
+  specific child-qualified omission rules where the quoted phrase is followed
+  by `in paragraph ...` / `in sub-paragraph ...`.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
   there shall be substituted "..."` are classified as
   `uk_manual_frontier_structural_child_range_substitution_candidate` while no

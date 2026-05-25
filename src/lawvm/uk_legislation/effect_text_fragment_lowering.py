@@ -60,6 +60,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     append_source_carried_substitution_rewrite_observations,
     append_source_carried_tail_rewrite_observations,
     lower_labeled_child_end_range_selector,
+    UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
@@ -360,6 +361,13 @@ def _extract_text_fragment_substitutions(
         and _multi_fragment_text_selector(str(subs[0].get("original") or ""))
     ):
         subs = list(multi_quoted_word_repeals)
+    if not subs:
+        metadata_carried_word_repeal = _effect_metadata_carried_quoted_words_repeal_fragment(
+            effect_type=effect.effect_type,
+            extracted_text=extracted_text,
+        )
+        if metadata_carried_word_repeal is not None:
+            subs = [metadata_carried_word_repeal]
     if not subs:
         after_inserted_by_sibling = _fragment_substitution_after_words_inserted_by_sibling(
             extracted_el=extracted_el,
@@ -702,3 +710,40 @@ def _simple_quoted_omission_fragment(extracted_text: str) -> Optional[dict[str, 
     if not m_omit:
         return None
     return {"original": m_omit.group(1), "replacement": ""}
+
+
+def _effect_metadata_carried_quoted_words_repeal_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text or not re.search(r"\bthe\s+words?\b", text, flags=re.I):
+        return None
+    if re.search(r"\bwhere\s+they\s+occur\b", text, flags=re.I):
+        return None
+    if re.search(
+        r"\bin\s+(?:subsection|paragraph|sub-?paragraph)\s*\([^)]+\)(?:\([^)]+\))?",
+        text,
+        flags=re.I,
+    ):
+        return None
+    quote_matches = tuple(re.finditer(r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\")", text))
+    quoted = tuple(
+        match.group("curly") if match.group("curly") is not None else match.group("double")
+        for match in quote_matches
+    )
+    quoted = tuple(" ".join(fragment.split()).strip() for fragment in quoted if " ".join(fragment.split()).strip())
+    if len(quoted) != 1 or len(quote_matches) != 1:
+        return None
+    tail = text[quote_matches[0].end() :]
+    if re.search(r"\bin\s+(?:paragraph|sub-?paragraph|subsection)\b", tail, flags=re.I):
+        return None
+    return {
+        "original": quoted[0],
+        "replacement": "",
+        "rule_id": UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
+    }
