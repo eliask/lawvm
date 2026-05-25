@@ -15898,6 +15898,61 @@ def test_compile_after_child_insert_appends_to_named_child() -> None:
     assert adjudications[0].detail["source_shape"] == "source_carried_after_child_selector"
 
 
+def test_compile_after_child_insert_with_comma_appends_to_named_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-3-paragraph-30-a-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii after paragraph (a), insert \u201cand\u201d, and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-38f078b70f7a886cf4160f71d6541191",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 56J(1)(a)",
+        affecting_uri="/id/asp/2014/11",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="11",
+        affecting_provisions="sch. 3 para. 30(a)(ii)",
+        affecting_title="Bankruptcy and Debt Advice (Scotland) Act 2014",
+        in_force_dates=[{"date": "2015-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "56j"),
+        ("subsection", "1"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_paragraph_a"
+    assert ops[0].text_patch.replacement == "and"
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_after_child_text_insertion_patch",
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_after_child_text_insertion_patch"
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_compile_words_inserted_insert_at_end_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

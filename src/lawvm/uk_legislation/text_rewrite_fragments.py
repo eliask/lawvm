@@ -17,6 +17,7 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.nlp_parser import (
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
+    UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
@@ -794,6 +795,29 @@ def append_basic_text_rewrite_observations(
                 "or onwards with an unquoted block payload; lowering preserves "
                 "that as a bounded range-to-end text patch scoped to the "
                 "affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_after_child_text_insertion_patch",
+            reason=(
+                "UK source text inserts quoted words after a named direct "
+                "child of the affected target; lowering preserves the child "
+                "anchor as a bounded text patch instead of appending to the "
+                "whole target or inserting a structural sibling."
             ),
             effect=effect,
             extracted_el=extracted_el,

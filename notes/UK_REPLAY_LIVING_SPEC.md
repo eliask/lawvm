@@ -2458,7 +2458,10 @@ Current payload-descendant source-ref invariant:
   `Sch. 14 para. 12(2)(a)`, lowers `after paragraph (a) insert- aa ...` to an
   `insert` at `schedule:10/paragraph:1/item:aa`. The existing
   `TEXT_AFTER_CHILD_*` text patch remains valid only for inline insertions into
-  the named child, not for creating siblings.
+  the named child, not for creating siblings. The inline text form may include
+  a comma after the child reference, e.g. `after paragraph (a), insert "and"`;
+  current witness: `ukpga/1985/66` affected `s. 56J(1)(a)` by `asp/2014/11`
+  `sch. 3 para. 30(a)(ii)`.
 - Deictic and mixed block forms such as `after that paragraph, insert- <new
   sibling block>` and `at the end of paragraph (b), insert- <punctuation plus
   new sibling>` are the same unsupported structural-sibling family until a
