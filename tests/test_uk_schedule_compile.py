@@ -17995,6 +17995,75 @@ def test_compile_word_range_repeal_uses_parenthesized_ordinal_start_occurrence()
     )
 
 
+def test_compile_word_range_repeal_with_pre_predicate_comma() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-11-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>
+            a in subsection (1), the words from \u201cwhere\u201d to \u201cBankruptcy\u201d,
+            are repealed; and
+          </Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-4ce917303c146cb4c4370d53e7a14bff",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2008-04-01",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 21A(1)",
+        affecting_uri="/id/asp/2007/3",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="s. 11(2)(a)",
+        affecting_title="Bankruptcy and Diligence etc. (Scotland) Act 2007",
+        in_force_dates=[{"date": "2008-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target.path == (("section", "21a"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.DELETE
+    assert op.text_patch.selector.match_text == "TEXT_FROM_where_TO_Bankruptcy"
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}"
+        "uk_effect_range_repeal_pre_predicate_comma_text_patch"
+        in op.provenance_tags
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_range_repeal_pre_predicate_comma_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_range_repeal_pre_predicate_comma"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["target"] == "section:21a/subsection:1"
+    assert observations[0]["text_match"] == "TEXT_FROM_where_TO_Bankruptcy"
+
+
 def test_compile_word_range_repeal_scopes_to_source_parent_definition() -> None:
     source_root = ET.fromstring(
         f"""

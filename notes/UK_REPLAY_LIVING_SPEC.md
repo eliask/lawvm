@@ -4891,6 +4891,11 @@ Current bench replay-regime invariant:
   `uk_effect_range_independent_end_occurrence_repeal_text_patch` so replay
   does not broaden the range to the wrong repeated end anchor. Current witness:
   `ukpga/1978/29` affected `Sch. 7 para. 6` by `asp/2005/13 s. 38(3)(c)`.
+  Passive range repeals may also carry a comma before the passive predicate,
+  e.g. `the words from "X" to "Y", are repealed`; lowering records
+  `uk_effect_range_repeal_pre_predicate_comma_text_patch` and still emits the
+  bounded `TEXT_FROM_X_TO_Y` deletion. Current witness: `ukpga/1985/66`
+  affected `s. 21A(1)` by `asp/2007/3 s. 11(2)(a)`.
 
 ## UK Effect Ordering
 

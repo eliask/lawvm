@@ -2686,6 +2686,21 @@ def test_parse_fragment_substitution_handles_passive_range_repeal_with_end_occur
     ]
 
 
+def test_parse_fragment_substitution_handles_range_repeal_with_pre_predicate_comma() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (1), the words from \u201cwhere\u201d to \u201cBankruptcy\u201d, "
+        "are repealed; and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_where_TO_Bankruptcy",
+            "replacement": "",
+            "rule_id": "uk_effect_range_repeal_pre_predicate_comma_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_where_ordinal_occurring_substitution() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (1)(a), for the words from \u201can\u201d, where second occurring, "
