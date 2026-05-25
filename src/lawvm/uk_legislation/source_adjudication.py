@@ -42,6 +42,8 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "source_carried_multi_subunit_text_rewrite_unsupported",
         "source_carried_child_tail_text_rewrite_unsupported",
         "source_carried_structured_tail_substitution_unsupported",
+        "relative_other_place_occurrence_unsupported",
+        "referent_qualified_text_substitution_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
         "appropriate_place_definition_entry_insert_unsupported",
@@ -194,6 +196,16 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "deterministic_frontend_candidate",
         "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
         "The source substitutes a tail range with visibly structured child material; compile must preserve the carried child structure instead of flattening it into host text.",
+    ),
+    "relative_other_place_occurrence_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_relative_other_place_occurrence_candidate",
+        "The source uses a relative occurrence phrase such as 'each other place'; compile needs sibling-aware occurrence selection instead of rewriting every target occurrence.",
+    ),
+    "referent_qualified_text_substitution_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_referent_qualified_text_substitution_candidate",
+        "The source limits substitution to quoted words only where they refer to a named actor; compile needs a referent-sensitive text predicate instead of replacing every phrase occurrence.",
     ),
     "structural_sibling_insert_unsupported": (
         "deterministic_frontend_candidate",
@@ -356,6 +368,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_ordinal_sentence_text_rewrite_applied",
         "uk_replay_schedule_list_entry_alphabetical_position_resolved",
         "uk_replay_schedule_list_entry_anchor_article_normalized",
+        "uk_replay_schedule_list_entry_anchor_ordinal_resolved",
         "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized",
         "uk_replay_schedule_list_entry_anchor_prefix_normalized",
         "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized",
@@ -397,6 +410,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_labeled_child_end_range_applied",
         "uk_replay_node_local_range_text_rewrite_applied",
         "uk_replay_node_local_range_to_end_text_rewrite_applied",
+        "uk_replay_words_in_brackets_text_rewrite_applied",
         "uk_replay_subtree_range_text_rewrite_flattened",
         "uk_replay_subtree_range_to_end_text_rewrite_flattened",
         "uk_replay_children_range_replaced_with_text_applied",
@@ -1292,6 +1306,30 @@ def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
     return bool(re.search(r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.+\b(?:[ivxlcdm]+)\s+\w", norm))
 
 
+def _looks_like_relative_other_place_occurrence(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    return bool(
+        re.search(
+            r"\beach\s+other\s+place\s+"
+            r"(?:(?:where|in\s+which)\s+(?:it|they|those\s+words?)\s+)?"
+            r"(?:occurs?|occurring|appears?)\b",
+            norm,
+        )
+    )
+
+
+def _looks_like_referent_qualified_text_substitution(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    return bool(
+        re.search(r"\bfor\b.+[\"“].+[\"”].+\bwhere\s+(?:it|they|he|him|his|those\s+words?)\s+refers?\s+to\b", norm)
+        and re.search(r"\bsubstitute\b", norm)
+    )
+
+
 def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
@@ -1382,6 +1420,10 @@ def classify_uk_effect_source_pathology(
             return "conditional_temporal_repeal_unsupported"
         if _looks_like_definition_child_and_tail_substitution(norm_text):
             return "definition_child_and_tail_substitution_unsupported"
+        if _looks_like_relative_other_place_occurrence(norm_text):
+            return "relative_other_place_occurrence_unsupported"
+        if _looks_like_referent_qualified_text_substitution(norm_text):
+            return "referent_qualified_text_substitution_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:
             return "application_modification_payload_out_of_scope"
         if "uk_effect_schedule_note_target_rejected" in lowering_rules:
