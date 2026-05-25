@@ -15396,6 +15396,75 @@ def test_compile_all_occurrences_word_repeal_records_observation() -> None:
     assert observations[0]["occurrence"] == 0
 
 
+def test_compile_ordinal_word_repeal_records_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-16-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>
+            a in subsection (1), the word \u201cqualifying\u201d in the first place
+            where it occurs is repealed,
+          </Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-d48958fd73a5c267fcd33473ef14fe0b",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2015-04-01",
+        affected_uri="/id/asp/2003/13",
+        affected_class="ScottishAct",
+        affected_year="2003",
+        affected_number="13",
+        affected_provisions="s. 268(1)",
+        affecting_uri="/id/asp/2015/9",
+        affecting_class="ScottishAct",
+        affecting_year="2015",
+        affecting_number="9",
+        affecting_provisions="s. 16(2)(a)",
+        affecting_title="Mental Health (Scotland) Act 2015",
+        in_force_dates=[{"date": "2015-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target.path == (("section", "268"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.DELETE
+    assert op.text_patch.selector.match_text == "qualifying"
+    assert op.text_patch.selector.occurrence == 1
+    assert op.text_patch.replacement is None
+    assert f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_ordinal_word_repeal_text_patch" in (
+        op.provenance_tags
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_ordinal_word_repeal_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_ordinal_word_repeal_text_patch"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["target"] == "section:268/subsection:1"
+    assert observations[0]["text_match"] == "qualifying"
+    assert observations[0]["replacement"] == ""
+    assert observations[0]["occurrence"] == 1
+
+
 def test_compile_each_case_occurs_records_all_occurrences_lowering_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
