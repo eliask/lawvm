@@ -2988,9 +2988,11 @@ Current payload-descendant source-ref invariant:
   the extracted node itself contains the table or explicitly acts as a
   repeal-table gateway.
 - Simple repeal-table section ranges with alphanumeric endpoints, such as
-  `Sections 3 to 4A.`, may corroborate exact endpoint targets (`3` or `4A`).
-  They must not infer interior alphanumeric membership such as section `4`
-  without a separate grouped-feed or live-structure range expansion claim.
+  `Sections 3 to 4A.`, may corroborate exact endpoint targets (`3` or `4A`)
+  and numeric interior targets (`4`) when the effect feed independently names
+  that target. They must not infer alphanumeric interior membership such as
+  section `3B` without a separate grouped-feed or live-structure range expansion
+  claim.
 - Repeal-table descendant phrasing in reversed order, such as
   `Paragraph (c) of section 85B(2).`, may corroborate the exact descendant
   target only when the section, subsection, and paragraph labels all match.
