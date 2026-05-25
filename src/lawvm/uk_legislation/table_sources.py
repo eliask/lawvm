@@ -21,6 +21,9 @@ from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_quoted_words_text_repeal"
 )
+_UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_repeal_table_sentence_text_repeal"
+)
 _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_definition_entry_text_repeal"
 )
@@ -354,6 +357,23 @@ def _uk_repeal_table_sentence_repeal_requires_selector(extent_cell: str) -> bool
     )
 
 
+def _uk_repeal_table_sentence_selector(extent_cell: str) -> str:
+    text = " ".join((extent_cell or "").split()).strip()
+    if not text:
+        return ""
+    match = re.search(
+        r"\b(?:the\s+)?(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+sentence\b",
+        text,
+        re.I,
+    )
+    if match is None:
+        return ""
+    ordinal = _uk_ordinal_to_int(match.group("ordinal"))
+    if ordinal is None:
+        return ""
+    return f"TEXT_SENTENCE_{ordinal}"
+
+
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
@@ -581,6 +601,14 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         original = definition_originals[0]
                         additional_originals = definition_originals[1:]
                         rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
+                if (
+                    not original
+                    and not structural_definition_entry_effect
+                ):
+                    sentence_original = _uk_repeal_table_sentence_selector(extent_clause)
+                    if sentence_original:
+                        original = sentence_original
+                        rule_id = _UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID
                 if (
                     not original
                     and not structural_definition_entry_effect

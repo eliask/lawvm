@@ -11699,7 +11699,7 @@ def test_compile_repeal_table_plural_definitions_for_schedule_paragraph_text_rep
     )
 
 
-def test_compile_repeal_table_sentence_repeal_reports_selector_gap() -> None:
+def test_compile_repeal_table_sentence_repeal_lowers_ordinal_sentence_selector() -> None:
     source_root = ET.fromstring(
         """
         <Legislation>
@@ -11748,13 +11748,115 @@ def test_compile_repeal_table_sentence_repeal_reports_selector_gap() -> None:
         source_root=source_root,
     )
 
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("schedule", "15"), ("paragraph", "29"), ("subparagraph", "4"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_SENTENCE_2"
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_sentence_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_sentence_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_sentence"
+        and record["blocking"] is False
+        and record["extent_cell"] == "In Schedule 15, in paragraph 29(4), the second sentence."
+        and record["original"] == "TEXT_SENTENCE_2"
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/2000/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="15",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="29",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="4",
+                                text="First sentence. Second sentence. Third sentence.",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subparagraph = replayed.supplements[0].children[0].children[0]
+    assert subparagraph.text == "First sentence. Third sentence."
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_ordinal_sentence_text_rewrite_applied",
+    ]
+
+
+def test_compile_repeal_table_sentence_repeal_blocks_unowned_sentence_description() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 15, in paragraph 29(4), the final sentence.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_sentence_repeal_unowned_description",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri="/id/ukpga/2000/17/schedule/15/paragraph/29/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 15 para. 29(4)",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
     assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_sentence_text_repeal"
+        for record in lowering_records
+    )
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
-        and record["reason_code"] == "sentence_repeal_requires_sentence_selector"
+        and record["reason_code"] == "no_unique_matching_repeal_table_row"
         and record["blocking"] is True
         and record["strict_disposition"] == "block"
-        and record["extent_cell"] == "In Schedule 15, in paragraph 29(4), the second sentence."
         for record in lowering_records
     )
 

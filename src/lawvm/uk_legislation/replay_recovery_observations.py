@@ -92,6 +92,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="contextual_adjacent_word_selector",
     ),
+    "uk_replay_ordinal_sentence_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an ordinal sentence text delete after proving "
+            "a unique target text node under the source-named provision."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="ordinal_sentence_selector",
+    ),
     "uk_replay_after_anchor_to_end_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied an after-anchor tail text rewrite "
