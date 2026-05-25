@@ -38,6 +38,9 @@ _SOURCE_AMENDMENT_INSERTED_PARENT_STRUCTURAL_INSERT_RE = re.compile(
     r"(?P<inserted_text>.+?)\s*$",
     flags=re.I | re.S,
 )
+UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID = (
+    "uk_effect_amendment_program_inserted_parent_child_insert_text_patch"
+)
 
 
 def _fragment_substitution_source_carried_multi_subunit_repeal(
@@ -125,7 +128,9 @@ def _amendment_program_inserted_parent_structural_insert(
         return None
     if not source_item or not target_items or _clean_num(target_items[-1]) != source_item:
         return None
-    source_label = lambda value: str(value or "").strip().strip("()").lower().strip(".")
+    def source_label(value: object) -> str:
+        return str(value or "").strip().strip("()").lower().strip(".")
+
     return {
         "source_subparagraph_label": source_subparagraph,
         "source_item_label": source_item,
@@ -134,6 +139,34 @@ def _amendment_program_inserted_parent_structural_insert(
         "anchor_label": source_label(match.group("anchor")),
         "inserted_label": source_label(match.group("inserted_label")),
         "inserted_text_preview": " ".join(str(match.group("inserted_text") or "").split())[:240],
+    }
+
+
+def _fragment_substitution_amendment_program_inserted_parent_child_insert(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Lower a child insert into text created by a prior amendment instruction."""
+    detail = _amendment_program_inserted_parent_structural_insert(
+        extracted_text=extracted_text,
+        target=target,
+    )
+    if detail is None:
+        return None
+    inserted_label = detail["inserted_label"]
+    inserted_text = detail["inserted_text_preview"]
+    if not inserted_label or not inserted_text:
+        return None
+    return {
+        "original": (
+            "TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_"
+            f"{detail['inserted_parent_label']}_"
+            f"{detail['direction'].upper()}_{detail['anchor_label']}"
+        ),
+        "replacement": f"{inserted_label} {inserted_text}",
+        "rule_id": UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID,
+        **detail,
     }
 
 

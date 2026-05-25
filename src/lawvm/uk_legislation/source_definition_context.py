@@ -171,8 +171,20 @@ def _scope_fragment_substitutions_to_source_definition_parent(
         original = str(fragment.get("original") or "")
         replacement = str(fragment.get("replacement") or "")
         scoped_fragment = dict(fragment)
+        omit_paragraph_match = re.fullmatch(r"TEXT_OMIT_PARAGRAPH_(?P<lbl>.+)", original)
         range_match = re.fullmatch(r"TEXT_FROM_(?P<start>.+)_TO_(?P<end>.+)", original)
-        if range_match is not None:
+        if omit_paragraph_match is not None:
+            lbl = omit_paragraph_match.group("lbl").strip()
+            if definition_term:
+                scoped_fragment["original"] = (
+                    f"TEXT_DEFINITION_CHILD_PARAGRAPH_{definition_term}{US}{lbl}"
+                )
+                scoped_fragment["source_parent_id"] = source_parent_id
+                scoped_fragment["source_definition_term"] = definition_term
+                scoped_fragment["source_child_label"] = lbl
+                scoped_fragment["rule_id"] = "uk_effect_definition_child_repeal_text_patch"
+                changed = True
+        elif range_match is not None:
             start = range_match.group("start").strip()
             end = range_match.group("end").strip()
             if start and end and end != "END":

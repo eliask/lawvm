@@ -1070,6 +1070,725 @@ def test_uk_table_entry_inline_text_insertion_lowers_to_owned_table_cell_selecto
     )
 
 
+def test_uk_preposed_passive_word_substitution_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-b514f36ba66275b696cc718d2ec64ac2",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-12-19",
+        affected_uri="/id/ukpga/1990/16/section/9/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="16",
+        affected_provisions="s. 9(5)",
+        affecting_uri="/id/uksi/2004/3279",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2004",
+        affecting_number="3279",
+        affecting_provisions="reg. 11(b)",
+        affecting_title="General Food Regulations 2004",
+    )
+    extracted = ET.fromstring(
+        "<P3>b in subsection (5) there shall be substituted for the words "
+        "\u201cor 8 above\u201d the words \u201c or regulation 4(a) of the General Food "
+        "Regulations 2004 \u201d .</P3>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "9"), ("subsection", "5")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "or 8 above"
+    assert op.text_patch.replacement == "or regulation 4(a) of the General Food Regulations 2004"
+    assert lowering_records == []
+
+
+def test_uk_preposed_beginning_word_insert_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-1a109cef2fe1892b82c9fa2922aec374",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-12-19",
+        affected_uri="/id/ukpga/1990/16/section/40/4/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="16",
+        affected_provisions="s. 40(4)(a)",
+        affecting_uri="/id/uksi/2004/2990",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2004",
+        affecting_number="2990",
+        affecting_provisions="reg. 4(a)",
+        affecting_title="General Food Regulations 2004",
+    )
+    extracted = ET.fromstring(
+        "<P3>a in subsection (4)(a) there shall be inserted at the beginning "
+        "the words \u201csubject to subsection (4B) below,\u201d;</P3>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "40"), ("subsection", "4"), ("paragraph", "a")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_BEGINNING"
+    assert op.text_patch.replacement == "subject to subsection (4B) below,"
+    assert lowering_records == []
+
+
+def test_uk_passive_quoted_word_omission_lowers_to_text_repeal() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-8bfffcac10012e3aab654502eb0da22b",
+        effect_type="word omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-12-19",
+        affected_uri="/id/ukpga/1990/16/section/9/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="16",
+        affected_provisions="s. 9(1)",
+        affecting_uri="/id/uksi/2004/3279",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2004",
+        affecting_number="3279",
+        affecting_provisions="reg. 11(a)(i)",
+        affecting_title="General Food Regulations 2004",
+    )
+    extracted = ET.fromstring(
+        "<P4>i after paragraph (a) the word \u201cor\u201d shall be omitted; and</P4>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target == LegalAddress(path=(("section", "9"), ("subsection", "1")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "or"
+    assert op.text_patch.replacement is None
+    assert lowering_records == []
+
+
+def test_uk_from_beginning_passive_substitution_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-b6e69d8fa4c579f7b4ace4cb45cbdeb0",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1991/22/section/10/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1991",
+        affected_number="22",
+        affected_provisions="s. 10(1)",
+        affecting_uri="/id/uksi/2003/1398",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="1398",
+        affecting_provisions="Sch. para. 18(2)(a)",
+        affecting_title="Enterprise Act 2002 (Part 8 Domestic Infringements) Order 2003",
+    )
+    extracted = ET.fromstring(
+        "<P3>a in subsection (1) for the words from the beginning of the subsection "
+        "to \u201ca person\u201d are substituted the words \u201cFor the purposes of the "
+        "Enterprise Act 2002, a person\u201d; and</P3>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "10"), ("subsection", "1")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM__TO_a person"
+    assert op.text_patch.replacement == "For the purposes of the Enterprise Act 2002, a person"
+    assert lowering_records == []
+
+
+def test_uk_passive_range_to_end_repeal_lowers_to_text_repeal() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-917ac841868ff6a93a8f6605650de783",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1991/22/section/114/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1991",
+        affected_number="22",
+        affected_provisions="s. 114(1)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 19(4)(a)",
+        affecting_title="Transport (Scotland) Act 2005",
+    )
+    extracted = ET.fromstring(
+        "<P3>a in subsection (1) the words from \u201cto\u201d, where thirdly occurring, "
+        "to the end are repealed; and</P3>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target == LegalAddress(path=(("section", "114"), ("subsection", "1")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM_to_TO_END"
+    assert op.text_patch.selector.occurrence == 3
+    assert op.text_patch.replacement is None
+    assert lowering_records == []
+
+
+def test_uk_after_parenthesized_anchor_insert_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-f1113ffbe8d438095b776f0d04b0fa77",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-13",
+        affected_uri="/id/ukpga/1991/22/section/48/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1991",
+        affected_number="22",
+        affected_provisions="s. 48(5)",
+        affecting_uri="/id/ukpga/2025/34",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="34",
+        affecting_provisions="s. 49(5)(b)",
+        affecting_title="Planning and Infrastructure Act 2025",
+    )
+    extracted = ET.fromstring("<P3>b after (3) insert \u201cor (3ZA)\u201d .</P3>")
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "48"), ("subsection", "5")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "(3)"
+    assert op.text_patch.replacement == "(3) or (3ZA)"
+    assert lowering_records == []
+
+
+def test_uk_bare_range_unquoted_substitution_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-30388dad5dbe57f6b427629a3a50cf41",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-13",
+        affected_uri="/id/ukpga/1991/22/section/48/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1991",
+        affected_number="22",
+        affected_provisions="s. 48(5)",
+        affecting_uri="/id/ukpga/2025/34",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="34",
+        affecting_provisions="s. 49(5)(a)",
+        affecting_title="Planning and Infrastructure Act 2025",
+    )
+    extracted = ET.fromstring(
+        "<P3>a from \u201care to\u201d to \u201clicence\u201d substitute "
+        "(including public charge points) are to the person entitled, by virtue of\u2014 "
+        "a a statutory right, b a street works licence, or c where the apparatus "
+        "is a public charge point installed in England in pursuance of a street "
+        "works permit, the permit, ;</P3>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "48"), ("subsection", "5")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM_are to_TO_licence"
+    assert op.text_patch.replacement == (
+        "(including public charge points) are to the person entitled, by virtue of\u2014 "
+        "a a statutory right, b a street works licence, or c where the apparatus "
+        "is a public charge point installed in England in pursuance of a street "
+        "works permit, the permit, ;"
+    )
+    assert lowering_records == []
+
+
+def test_uk_insert_text_at_end_lowers_to_append_patch() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-b4df2158228bbb9e4b7b6dae7b5bddeb",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/103/4/a/ii",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 103(4)(a)(ii)",
+        affecting_uri="/id/uksi/2011/1484",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2011",
+        affecting_number="1484",
+        affecting_provisions="Sch. 7 para. 15(a)(i)",
+        affecting_title="Pensions Act 2008 (Abolition of Contracting-out for Defined Contribution Pension Schemes) (Consequential Amendments) Regulations 2011",
+    )
+    extracted = ET.fromstring("<P4>i insert \u201c or \u201d at the end of sub-paragraph (ii);</P4>")
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(
+        path=(("section", "103"), ("subsection", "4"), ("paragraph", "a"), ("subparagraph", "ii"))
+    )
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == "or"
+    assert lowering_records == []
+
+
+def test_uk_nested_quote_definition_after_anchor_insert_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-f38bfb45f70c9f787e2a554d2e4bffa2",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/115B/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 115B(9)",
+        affecting_uri="/id/uksi/2014/1283",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2014",
+        affecting_number="1283",
+        affecting_provisions="Sch. para. 4(c)(ii)",
+        affecting_title=(
+            "Social Security (Contributions) (Amendment No. 4) Regulations 2014"
+        ),
+    )
+    extracted = ET.fromstring(
+        "<P4>ii in the definition of \u201ccontributions\u201d after "
+        "\u201cin respect of contributions\u201d insert \u201c(and accordingly, in the "
+        "definition of \u201cthe Class 1 element\u201d given by this subsection, "
+        "\u201cClass 1 contributions\u201d includes any interest or penalty in respect "
+        "of Class 1 contributions)\u201d.</P4>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "115b"), ("subsection", "9")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_contributions\x1fAFTER\x1fin respect of contributions"
+    )
+    assert op.text_patch.replacement == (
+        "in respect of contributions (and accordingly, in the definition of "
+        "\u201cthe Class 1 element\u201d given by this subsection, "
+        "\u201cClass 1 contributions\u201d includes any interest or penalty in respect "
+        "of Class 1 contributions)"
+    )
+    assert lowering_records == []
+
+
+def test_uk_compound_subsection_child_insert_lowers_to_child_selector() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-bf6536b7a0a6398f32dc77868e8b6bc4",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/103/4/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 103(4)(a)",
+        affecting_uri="/id/uksi/2019/479",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="479",
+        affecting_provisions="reg. 67(a)",
+        affecting_title="Social Security (Miscellaneous Amendments) Regulations 2019",
+    )
+    extracted = ET.fromstring("<P3>a after subsection (4)(a)(i), insert \u201c or \u201d ;</P3>")
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(
+        path=(("section", "103"), ("subsection", "4"), ("paragraph", "a"))
+    )
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_AFTER_CHILD_subparagraph_i"
+    assert op.text_patch.replacement == "or"
+    assert lowering_records == []
+
+
+def test_uk_grouped_after_insert_child_row_lowers_from_source_parent_payload() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-ab53f11b55f85b914b9cfbee30e92de3",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/138/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 138(1)",
+        affecting_uri="/id/ukpga/2005/6",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="6",
+        affecting_provisions="Sch. 1 para. 51(a)",
+        affecting_title="Child Benefit Act 2005",
+    )
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <P1 id="schedule-1-paragraph-51">
+            <Pnumber>51</Pnumber>
+            <P1para>
+              <Text>In section 138(1), after\u2014</Text>
+              <P3 id="schedule-1-paragraph-51-a">
+                <Pnumber>a</Pnumber>
+                <P3para><Text>\u201ca child\u201d, and</Text></P3para>
+              </P3>
+              <P3 id="schedule-1-paragraph-51-b">
+                <Pnumber>b</Pnumber>
+                <P3para><Text>\u201cof the child\u201d, in both places,</Text></P3para>
+              </P3>
+              <Text>insert \u201cor qualifying young person\u201d.</Text>
+            </P1para>
+          </P1>
+        </Legislation>
+        """
+    )
+    extracted = next(
+        el for el in source_root.iter() if el.get("id") == "schedule-1-paragraph-51-a"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "138"), ("subsection", "1")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "a child"
+    assert op.text_patch.replacement == "a child or qualifying young person"
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_source_parent_grouped_after_anchor_insert_text_patch"
+    ]
+    assert lowering_records[0]["source_parent_id"] == "schedule-1-paragraph-51"
+
+
+def test_uk_grouped_after_insert_all_occurrences_child_row_lowers_from_source_parent_payload() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-f026c0b6abe1ba905b5fad1098dc70a1",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/138/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 138(1)",
+        affecting_uri="/id/ukpga/2005/6",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="6",
+        affecting_provisions="Sch. 1 para. 51(b)",
+        affecting_title="Child Benefit Act 2005",
+    )
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <P1 id="schedule-1-paragraph-51">
+            <Pnumber>51</Pnumber>
+            <P1para>
+              <Text>In section 138(1), after\u2014</Text>
+              <P3 id="schedule-1-paragraph-51-a">
+                <Pnumber>a</Pnumber>
+                <P3para><Text>\u201ca child\u201d, and</Text></P3para>
+              </P3>
+              <P3 id="schedule-1-paragraph-51-b">
+                <Pnumber>b</Pnumber>
+                <P3para><Text>\u201cof the child\u201d, in both places,</Text></P3para>
+              </P3>
+              <Text>insert \u201cor qualifying young person\u201d.</Text>
+            </P1para>
+          </P1>
+        </Legislation>
+        """
+    )
+    extracted = next(
+        el for el in source_root.iter() if el.get("id") == "schedule-1-paragraph-51-b"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "138"), ("subsection", "1")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "of the child"
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement == "of the child or qualifying young person"
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
+    ]
+    source_context_record = next(
+        record for record in lowering_records if record["family"] == "source_context_elaboration"
+    )
+    assert source_context_record["all_occurrences"] is True
+    assert source_context_record["source_parent_id"] == "schedule-1-paragraph-51"
+
+
+def test_uk_final_bare_quoted_word_repeal_lowers_to_final_text_repeal() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-d3e56242f5a1e2af629389e9f2e56818",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/103/4/aa",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 103(4)(aa)",
+        affecting_uri="/id/nisr/2012/413",
+        affecting_class="NorthernIrelandStatutoryRule",
+        affecting_year="2012",
+        affecting_number="413",
+        affecting_provisions="Sch. 4 para. 3(a)",
+        affecting_title="Pensions Act 2008 (Abolition of Contracting-out for Defined Contribution Pension Schemes) (Consequential Amendments) Order (Northern Ireland) 2012",
+    )
+    extracted = ET.fromstring("<P3>a the \u201cand\u201d at the end of paragraph (aa) is repealed;</P3>")
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target == LegalAddress(path=(("section", "103"), ("subsection", "4"), ("paragraph", "aa")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "and"
+    assert op.text_patch.selector.occurrence == -1
+    assert op.text_patch.replacement is None
+    assert lowering_records == []
+
+
+def test_uk_mixed_repeal_table_lowers_separately_named_structural_target() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-292dcbda92d5cb86343fe00b5daed96c",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/142/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 142(2)",
+        affecting_uri="/id/ukpga/2002/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="19",
+        affecting_provisions="Sch. 2",
+        affecting_title="Tax Credits Act 2002",
+        affected_title="Social Security Administration (Northern Ireland) Act 1992",
+    )
+    source_root = ET.fromstring(
+        """
+        <Schedule>
+          <Table>
+            <TR>
+              <TH>Short title and chapter</TH>
+              <TH>Extent of repeal</TH>
+            </TR>
+            <TR>
+              <TD>Social Security Administration (Northern Ireland) Act 1992 (c. 8)</TD>
+              <TD>In section 142, in subsection (1), the words
+              \u201cfrom contributions of any class,\u201d and the words
+              \u201cin the case of contributions of that class\u201d and subsection (2).</TD>
+            </TR>
+          </Table>
+        </Schedule>
+        """
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        source_root,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("section", "142"), ("subsection", "2")))
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_repeal_table_structural_repeal"
+    ]
+    assert (
+        lowering_records[0]["reason_code"]
+        == "mixed_structural_and_word_repeal_split_structural_target"
+    )
+    assert lowering_records[0]["split_from_mixed_extent_row"] is True
+
+
+def test_uk_mixed_repeal_table_rejects_word_scoped_subsection_as_structural() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-292dcbda92d5cb86343fe00b5daed96c-negative",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-08-01",
+        affected_uri="/id/ukpga/1992/8/section/142/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="8",
+        affected_provisions="s. 142(1)",
+        affecting_uri="/id/ukpga/2002/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="19",
+        affecting_provisions="Sch. 2",
+        affecting_title="Tax Credits Act 2002",
+        affected_title="Social Security Administration (Northern Ireland) Act 1992",
+    )
+    source_root = ET.fromstring(
+        """
+        <Schedule>
+          <Table>
+            <TR>
+              <TH>Short title and chapter</TH>
+              <TH>Extent of repeal</TH>
+            </TR>
+            <TR>
+              <TD>Social Security Administration (Northern Ireland) Act 1992 (c. 8)</TD>
+              <TD>In section 142, in subsection (1), the words
+              \u201cfrom contributions of any class,\u201d and the words
+              \u201cin the case of contributions of that class\u201d and subsection (2).</TD>
+            </TR>
+          </Table>
+        </Schedule>
+        """
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        source_root,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_repeal_table_structural_repeal_unresolved"
+    ]
+    assert lowering_records[0]["reason_code"] == "mixed_structural_and_word_repeal_requires_split"
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_executor_applies_table_entry_inline_text_insertion_to_rowspanned_cell_only() -> None:
     extracted = ET.fromstring(
         "<P4>ii in the second column, in the second entry relating to the Welsh "
@@ -4297,6 +5016,105 @@ def test_uk_mutable_ir_maps_source_point_alias_to_item_kind() -> None:
     assert UKMutableNode(kind="point", label="i").kind == IRNodeKind.ITEM
 
 
+def test_prepare_replay_uk_ops_canonicalizes_point_address_alias_for_core_ir_boundary() -> None:
+    op = LegalOperation(
+        op_id="uk_test_point_address_alias",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(
+            path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("point", "i"))
+        ),
+        payload=IRNode(kind=IRNodeKind.ITEM, label="i", text="replacement"),
+        source=_source(),
+    )
+
+    prepared = _prepare_replay_uk_ops([op])
+
+    assert prepared.accepted_ops[0].target.path == (
+        ("section", "1"),
+        ("subsection", "1"),
+        ("paragraph", "a"),
+        ("item", "i"),
+    )
+    assert "uk_address_alias:point_to_item" in prepared.accepted_ops[0].provenance_tags
+    assert op.target.path[-1] == ("point", "i")
+
+
+def test_prepare_replay_uk_ops_canonicalizes_point_alias_before_overlap_classification() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ITEM,
+                                            label="i",
+                                            text="alpha quality partnership scheme beta scheme",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    source = OperationSource(statute_id="ukpga/2020/1", effective="2020-01-01")
+    broad = LegalOperation(
+        op_id="uk_test_point_alias_broad",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("item", "i"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="quality partnership scheme", occurrence=0),
+            replacement="partnership scheme",
+        ),
+        source=source,
+    )
+    ordinal = LegalOperation(
+        op_id="uk_test_point_alias_ordinal",
+        sequence=2,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("section", "1"), ("subsection", "1"), ("paragraph", "a"), ("point", "i"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="scheme", occurrence=1),
+            replacement="scheme or framework",
+        ),
+        source=source,
+    )
+
+    prepared = _prepare_replay_uk_ops([broad, ordinal], base_ir=statute)
+
+    assert [op.op_id for op in prepared.accepted_ops] == ["uk_test_point_alias_broad"]
+    assert [row.kind for row in prepared.rejected_adjudications] == [
+        "uk_replay_same_source_text_patch_overlap_blocked"
+    ]
+    assert prepared.rejected_adjudications[0].op_id == "uk_test_point_alias_ordinal"
+
+
 def test_executor_canonicalizes_source_point_alias_in_labeled_child_recovery() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
@@ -4534,6 +5352,70 @@ def test_executor_recovers_source_carried_structured_tail_substitution() -> None
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
+
+
+def test_executor_recovers_source_carried_structured_tail_substitution_from_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="5",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="The order may last for more than the old limit.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    source = OperationSource(
+        statute_id="ukpga/2026/2",
+        title="Amending Act",
+        raw_text=(
+            "2 In subsection (2), for the words from “more than” to the end "
+            "of the subsection substitute — a more than 6 months, or b more than 12 months."
+        ),
+    )
+
+    for label, text in (("a", "more than 6 months"), ("b", "more than 12 months")):
+        executor.apply_op(
+            LegalOperation(
+                op_id=f"uk_test_source_carried_structured_tail_from_{label}",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("section", "5"), ("subsection", "2"), ("paragraph", label))),
+                payload=IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=text),
+                source=source,
+            )
+        )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The order may last for"
+    assert [(child.kind, child.label, child.text) for child in subsection.children] == [
+        (IRNodeKind.PARAGRAPH, "a", "more than 6 months"),
+        (IRNodeKind.PARAGRAPH, "b", "more than 12 months"),
+    ]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_source_carried_structured_tail_substitution_recovered",
+        "uk_replay_source_carried_structured_tail_substitution_recovered",
+    ]
+    assert adjudications[0].detail["source_anchor"] == "more than"
+    assert adjudications[0].detail["trim_selector"] == "TEXT_FROM_more than_TO_END"
+    assert adjudications[0].detail["trim_mode"] == "from_quoted_text_to_end"
+    assert adjudications[0].detail["parent_tail_trimmed"] is True
+    assert adjudications[1].detail["parent_tail_trimmed"] is False
 
 
 def test_executor_classifies_repeated_form_label_payload_shape_gap() -> None:
@@ -8252,6 +9134,58 @@ def test_executor_occurrence_text_replacements_preserve_later_occurrences() -> N
 
     assert executor.statute.body.children[0].children[0].text == (
         "assimilated status, assimilated law and retained references"
+    )
+    assert adjudications == []
+
+
+def test_executor_zero_occurrence_text_replacement_updates_all_matches() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="138",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "payment in respect of the child and recovery "
+                                "in respect of the child"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_all_occurrences_grouped_after_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "138"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="of the child", occurrence=0),
+                replacement="of the child or qualifying young person",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "payment in respect of the child or qualifying young person and recovery "
+        "in respect of the child or qualifying young person"
     )
     assert adjudications == []
 

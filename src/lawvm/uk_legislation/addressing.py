@@ -181,7 +181,7 @@ def _order_schedule_materialization_ops(ops: list[LegalOperation]) -> list[Legal
             return 1
         return 2
 
-    return [
+    sorted_ops = [
         op
         for _idx, op in sorted(
             enumerate(ops),
@@ -193,6 +193,59 @@ def _order_schedule_materialization_ops(ops: list[LegalOperation]) -> list[Legal
             ),
         )
     ]
+
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for op in sorted_ops:
+        eff = str(getattr(op.source, "effective", "") or "")
+        stat_id = str(getattr(op.source, "statute_id", "") or "")
+        groups[(eff, stat_id)].append(op)
+
+    final_ops = []
+    for key in sorted(groups.keys()):
+        group_ops = groups[key]
+        final_ops.extend(_dependency_sort_ops(group_ops))
+    return final_ops
+
+
+def _op_depends_on(op1: LegalOperation, op2: LegalOperation) -> bool:
+    # If op2 is a renumbering operation, and its destination is a prefix of op1's target path
+    if _action_name(op2.action) == "renumber" and op2.destination is not None:
+        dest_path = tuple(op2.destination.path or ())
+        target_path = tuple(op1.target.path or ())
+        if len(target_path) >= len(dest_path) and target_path[:len(dest_path)] == dest_path:
+            return True
+    return False
+
+
+def _dependency_sort_ops(ops: list[LegalOperation]) -> list[LegalOperation]:
+    n = len(ops)
+    adj = {i: set() for i in range(n)}
+    in_degree = [0] * n
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                if _op_depends_on(ops[j], ops[i]):
+                    if j not in adj[i]:
+                        adj[i].add(j)
+                        in_degree[j] += 1
+    from heapq import heappush, heappop, heapify
+    queue = [i for i in range(n) if in_degree[i] == 0]
+    heapify(queue)
+    result = []
+    while queue:
+        u = heappop(queue)
+        result.append(ops[u])
+        for v in adj[u]:
+            in_degree[v] -= 1
+            if in_degree[v] == 0:
+                heappush(queue, v)
+    if len(result) < n:
+        seen = set(result)
+        for op in ops:
+            if op not in seen:
+                result.append(op)
+    return result
 
 
 def _looks_like_roman_subitem_label(label: str) -> bool:

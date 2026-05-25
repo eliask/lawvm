@@ -29,6 +29,10 @@ from lawvm.uk_legislation.schedule_list_selectors import (
     _uk_schedule_list_entry_repeal_selector,
     _uk_schedule_list_entry_replace_selector,
 )
+from lawvm.uk_legislation.source_definition_fragments import (
+    UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID as _UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+    UKPseudoDefinitionEntryRangeTextPatches,
+)
 from lawvm.uk_legislation.source_parent_payloads import (
     SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE as _SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
     _source_parent_instruction_with_payload,
@@ -60,6 +64,82 @@ _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_tabl
 class UKScheduleLoweringResult:
     handled: bool
     op: Optional[LegalOperation] = None
+
+
+@dataclass(frozen=True)
+class UKScheduleBatchLoweringResult:
+    handled: bool
+    ops: tuple[LegalOperation, ...] = ()
+
+
+def lower_source_range_definition_list_end_schedule_entries(
+    *,
+    effect: UKEffectRecord,
+    metadata_pseudo_definition_range: Optional[UKPseudoDefinitionEntryRangeTextPatches],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    t_str: str,
+) -> UKScheduleBatchLoweringResult:
+    if metadata_pseudo_definition_range is None:
+        return UKScheduleBatchLoweringResult(handled=False)
+    target = metadata_pseudo_definition_range.target
+    ops: list[LegalOperation] = []
+    for entry in metadata_pseudo_definition_range.at_end_entries:
+        inserted_text = str(entry.get("inserted_text") or "").strip()
+        if not inserted_text:
+            continue
+        selector = {
+            "rule_id": _UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+            "direction": "end",
+            "anchor_text": "",
+            "inserted_text": inserted_text,
+            "target_ref": t_str,
+            "target": str(target),
+            "placement_family": "definition_list_end_from_source_range",
+            "source_row_id": str(entry.get("source_row_id") or ""),
+            "source_inserted_definition_terms": tuple(
+                term
+                for term in str(entry.get("source_inserted_definition_terms") or "").split("\x1f")
+                if term
+            ),
+            "source_payload_additional_definition_terms": tuple(
+                term
+                for term in str(entry.get("source_payload_additional_definition_terms") or "").split("\x1f")
+                if term
+            ),
+        }
+        payload_node = IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            label=None,
+            text=inserted_text,
+            attrs={
+                "source_rule_id": "uk_source_range_definition_list_end_insert_payload",
+                "anchor_direction": "end",
+                "placement_family": "definition_list_end_from_source_range",
+                "source_row_id": str(entry.get("source_row_id") or ""),
+            },
+        )
+        ops.append(
+            _build_schedule_payload_op(
+                effect=effect,
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=target,
+                payload=payload_node,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                original_targets_str=original_targets_str,
+                t_str=t_str,
+                provenance_note=(
+                    f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}"
+                    f"{json.dumps(selector, ensure_ascii=False)}"
+                ),
+                witness_rule_id=_UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+            )
+        )
+    return UKScheduleBatchLoweringResult(handled=bool(ops), ops=tuple(ops))
 
 
 def try_lower_schedule_table_end_rows_insert(

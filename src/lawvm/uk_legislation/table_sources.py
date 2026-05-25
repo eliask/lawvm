@@ -24,7 +24,11 @@ _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
 _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_definition_entry_text_repeal"
 )
+_UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_repeal_table_definition_child_text_repeal"
+)
 _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID = "uk_effect_repeal_table_structural_repeal"
+_UK_DEFINITION_SELECTOR_SEPARATOR = "\x1f"
 _REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
     ET.Element,
     tuple[tuple[ET.Element, tuple[int, int]], ...],
@@ -193,6 +197,8 @@ def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
             or "provision" in text
             or "short title and chapter" in text
             or "title and chapter" in text
+            or "reference" in text
+            or "chapter" in text
         ):
             enactment_idx = idx
     if enactment_idx is None or extent_idx is None or enactment_idx == extent_idx:
@@ -325,6 +331,51 @@ def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, 
     return tuple(terms)
 
 
+def _uk_repeal_table_definition_child_selectors(extent_cell: str) -> tuple[str, ...]:
+    text = " ".join(extent_cell.split()).strip()
+    if not text:
+        return ()
+    match = re.search(
+        r"\bin\s+the\s+definition\s+of\s+"
+        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')"
+        r",?\s+(?P<kind>paragraphs?|sub-?paragraphs?)\s+(?P<labels>[^.;]+)",
+        text,
+        re.I,
+    )
+    if match is None:
+        return ()
+    term = next(
+        group.strip()
+        for group in (
+            match.group("curly"),
+            match.group("double"),
+            match.group("single"),
+        )
+        if group is not None
+    )
+    term = " ".join(term.split()).strip()
+    if not term:
+        return ()
+    labels_text = match.group("labels")
+    label_matches = list(re.finditer(r"\(\s*(?P<label>[0-9A-Za-z]+)\s*\)", labels_text))
+    if not label_matches:
+        return ()
+    label_remainder = re.sub(r"\(\s*[0-9A-Za-z]+\s*\)", "", labels_text)
+    label_remainder = re.sub(r"\b(?:and|or)\b|[,()\s]", "", label_remainder, flags=re.I)
+    if label_remainder:
+        return ()
+    # Nested labels such as `(a)(iii)` need a separate nested-child ownership rule.
+    compact = re.sub(r"\s+", "", labels_text)
+    if re.search(r"\([0-9A-Za-z]+\)\([0-9A-Za-z]+\)", compact):
+        return ()
+    kind = "SUBPARAGRAPH" if "sub" in match.group("kind").lower() else "PARAGRAPH"
+    return tuple(
+        f"TEXT_DEFINITION_CHILD_{kind}_{term}{_UK_DEFINITION_SELECTOR_SEPARATOR}"
+        f"{label_match.group('label').strip()}"
+        for label_match in label_matches
+    )
+
+
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
@@ -361,6 +412,39 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
             if part_text:
                 expanded.append(f"{context}, {part_text}".rstrip(".") + ".")
     return expanded
+
+
+def _uk_repeal_table_gateway_text(text: Optional[str]) -> bool:
+    """Return true when prose points outward to a repeal extent table."""
+    norm = " ".join((text or "").split()).lower()
+    if not norm:
+        return False
+    if "extent specified" in norm and (
+        "schedule" in norm or "column" in norm or "table" in norm
+    ):
+        return True
+    return "enactments specified" in norm and (
+        "extent" in norm or "column" in norm or "schedule" in norm
+    )
+
+
+def _uk_repeal_extent_search_roots(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+) -> list[ET.Element]:
+    """Select source roots that are legally relevant to repeal-table lookup."""
+    search_roots: list[ET.Element] = []
+    if extracted_el is not None:
+        search_roots.append(extracted_el)
+    if (
+        source_root is not None
+        and source_root is not extracted_el
+        and _uk_repeal_table_gateway_text(extracted_text)
+    ):
+        search_roots.append(source_root)
+    return search_roots
 
 
 def _uk_table_is_repeal_extent_source_table(table: ET.Element) -> tuple[int, int] | None:
@@ -409,27 +493,51 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     extracted_text: Optional[str],
     source_root: Optional[ET.Element],
     target: LegalAddress,
+    allow_structural_definition_entry: bool = False,
 ) -> _UKRepealTableQuotedWordsTextRepeal:
     """Resolve bounded repeal-schedule rows to quoted word-level text deletes."""
     effect_type = str(effect.effect_type or "").strip().lower()
-    if effect_type not in {"words repealed", "word repealed", "words omitted", "word omitted"}:
+    word_effect = effect_type in {
+        "words repealed",
+        "word repealed",
+        "words omitted",
+        "word omitted",
+    }
+    structural_definition_entry_effect = allow_structural_definition_entry and effect_type in {
+        "repealed",
+        "omitted",
+        "revoked",
+    }
+    if not word_effect and not structural_definition_entry_effect:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
-    source_text = " ".join((extracted_text or "").split()).lower()
-    if "extent of repeal" not in source_text:
-        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
-    search_roots = [root for root in (extracted_el, source_root) if root is not None]
+    search_roots = _uk_repeal_extent_search_roots(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+    )
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
     matches: list[tuple[int, str, tuple[str, ...], int, int, str, str, str, str, str]] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
+    if not tables:
+        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
+        last_enactment_cell = ""
         for row in rows[1:]:
-            if len(row) <= max(enactment_idx, extent_idx):
+            if len(row) >= max(enactment_idx, extent_idx) + 1:
+                enactment_cell = row[enactment_idx]
+                extent_cell = row[extent_idx]
+                if enactment_cell:
+                    last_enactment_cell = enactment_cell
+                elif last_enactment_cell:
+                    enactment_cell = last_enactment_cell
+            elif len(row) == 1 and last_enactment_cell:
+                enactment_cell = last_enactment_cell
+                extent_cell = row[0]
+            else:
                 continue
-            enactment_cell = row[enactment_idx]
-            extent_cell = row[extent_idx]
             enactment_match_basis = _uk_repeal_table_enactment_match_basis(
                 enactment_cell,
                 effect,
@@ -443,16 +551,36 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                     affected_year=str(effect.affected_year or ""),
                 ):
                     continue
-                original, occurrence, end_occurrence = _uk_repeal_table_quoted_words_selector(extent_clause)
                 additional_originals: tuple[str, ...] = ()
                 rule_id = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
                 target_kinds = {kind.lower() for kind, _ in target.path}
+                original = ""
+                occurrence = 0
+                end_occurrence = 0
+                if not structural_definition_entry_effect:
+                    (
+                        original,
+                        occurrence,
+                        end_occurrence,
+                    ) = _uk_repeal_table_quoted_words_selector(extent_clause)
                 if not original and "section" in target_kinds:
                     definition_originals = _uk_repeal_table_definition_entry_selectors(extent_clause)
                     if definition_originals:
                         original = definition_originals[0]
                         additional_originals = definition_originals[1:]
                         rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
+                if (
+                    not original
+                    and not structural_definition_entry_effect
+                    and "section" in target_kinds
+                ):
+                    definition_child_originals = _uk_repeal_table_definition_child_selectors(
+                        extent_clause
+                    )
+                    if definition_child_originals:
+                        original = definition_child_originals[0]
+                        additional_originals = definition_child_originals[1:]
+                        rule_id = _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID
                 if not original:
                     continue
                 matches.append(
@@ -523,6 +651,39 @@ def _uk_repeal_table_clause_is_structural_repeal(extent_clause: str) -> bool:
     )
 
 
+def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
+    extent_clause: str,
+    *,
+    target: LegalAddress,
+) -> bool:
+    """Return true when a mixed word/structural repeal row separately names target."""
+    label = target.leaf_label().strip()
+    if not label:
+        return False
+    kind = target.leaf_kind().strip().lower()
+    kind_patterns = {
+        "section": r"sections?",
+        "subsection": r"subsections?",
+        "schedule": r"schedules?",
+        "paragraph": r"paragraphs?",
+        "subparagraph": r"sub-?paragraphs?",
+    }
+    kind_pattern = kind_patterns.get(kind)
+    if kind_pattern is None:
+        return False
+    scope_text = " ".join((extent_clause or "").split())
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", scope_text)
+    if kind in {"subsection", "paragraph", "subparagraph"}:
+        label_pattern = rf"\(\s*{re.escape(label)}\s*\)(?=$|[\s,.;])"
+    else:
+        label_pattern = rf"{re.escape(label)}\b"
+    return re.search(
+        rf"(?:[,;]|\band\b)\s*(?:the\s+)?{kind_pattern}\s*{label_pattern}",
+        scope_text,
+        flags=re.I,
+    ) is not None
+
+
 def _uk_table_driven_repeal_table_structural_repeal(
     *,
     effect: UKEffectRecord,
@@ -537,23 +698,35 @@ def _uk_table_driven_repeal_table_structural_repeal(
         return _UKRepealTableStructuralRepeal(recognized=False)
     if str(target.special or "") == "whole_act":
         return _UKRepealTableStructuralRepeal(recognized=False)
-    source_text = " ".join((extracted_text or "").split()).lower()
-    if "extent of repeal" not in source_text:
-        return _UKRepealTableStructuralRepeal(recognized=False)
-    search_roots = [root for root in (extracted_el, source_root) if root is not None]
+    search_roots = _uk_repeal_extent_search_roots(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+    )
     if not search_roots:
         return _UKRepealTableStructuralRepeal(recognized=False)
 
-    matches: list[tuple[int, str, str, str, str]] = []
+    matches: list[tuple[int, str, str, str, str, str]] = []
     mixed_structural_word_matches: list[tuple[int, str, str, str, str]] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
+    if not tables:
+        return _UKRepealTableStructuralRepeal(recognized=False)
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
+        last_enactment_cell = ""
         for row in rows[1:]:
-            if len(row) <= max(enactment_idx, extent_idx):
+            if len(row) >= max(enactment_idx, extent_idx) + 1:
+                enactment_cell = row[enactment_idx]
+                extent_cell = row[extent_idx]
+                if enactment_cell:
+                    last_enactment_cell = enactment_cell
+                elif last_enactment_cell:
+                    enactment_cell = last_enactment_cell
+            elif len(row) == 1 and last_enactment_cell:
+                enactment_cell = last_enactment_cell
+                extent_cell = row[0]
+            else:
                 continue
-            enactment_cell = row[enactment_idx]
-            extent_cell = row[extent_idx]
             enactment_match_basis = _uk_repeal_table_enactment_match_basis(
                 enactment_cell,
                 effect,
@@ -574,15 +747,30 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
                         norm_clause,
                     ):
-                        mixed_structural_word_matches.append(
-                            (
-                                table_index,
-                                " | ".join((enactment_cell, extent_clause)),
-                                enactment_cell,
-                                extent_clause,
-                                enactment_match_basis,
+                        if _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
+                            extent_clause,
+                            target=target,
+                        ):
+                            matches.append(
+                                (
+                                    table_index,
+                                    " | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell,
+                                    extent_clause,
+                                    enactment_match_basis,
+                                    "mixed_structural_and_word_repeal_split_structural_target",
+                                )
                             )
-                        )
+                        else:
+                            mixed_structural_word_matches.append(
+                                (
+                                    table_index,
+                                    " | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell,
+                                    extent_clause,
+                                    enactment_match_basis,
+                                )
+                            )
                     continue
                 matches.append(
                     (
@@ -591,6 +779,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         enactment_cell,
                         extent_clause,
                         enactment_match_basis,
+                        "",
                     )
                 )
 
@@ -619,10 +808,17 @@ def _uk_table_driven_repeal_table_structural_repeal(
             match_count=len(matches),
         )
 
-    table_index, row_text, enactment_cell, extent_cell, enactment_match_basis = matches[0]
+    (
+        table_index,
+        row_text,
+        enactment_cell,
+        extent_cell,
+        enactment_match_basis,
+        reason_code,
+    ) = matches[0]
     return _UKRepealTableStructuralRepeal(
         recognized=True,
-        reason_code="",
+        reason_code=reason_code,
         match_count=1,
         table_index=table_index,
         row_text=row_text,
@@ -647,6 +843,36 @@ def _uk_parenthetical_labels_contain_sequence(haystack: Sequence[str], needle: S
     return False
 
 
+def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
+    is_numeric = schedule_pat.isdigit()
+    wanted_num = int(schedule_pat) if is_numeric else None
+
+    for m in re.finditer(r"\b(?:schedule|schedules|sch|schs)\b\.?", text):
+        start_idx = m.end()
+        next_boundary = len(text)
+        boundary_pat = r"\b(?:part|pt|section|sections|s|paragraph|paragraphs|para|paras)\b\.?|;"
+        bm = re.search(boundary_pat, text[start_idx:])
+        if bm:
+            next_boundary = start_idx + bm.start()
+
+        segment = text[start_idx:next_boundary]
+        if re.search(rf"\b{schedule_pat}\b", segment):
+            return True
+
+        if is_numeric:
+            for match in re.finditer(
+                r"\b(?P<start>\d+)\s*(?:to|-|–|—)\s*(?P<end>\d+)\b",
+                segment,
+            ):
+                start = int(match.group("start"))
+                end = int(match.group("end"))
+                low = min(start, end)
+                high = max(start, end)
+                if low <= wanted_num <= high:
+                    return True
+    return False
+
+
 def _uk_cell_has_section_descendant_scope(
     text: str,
     *,
@@ -654,11 +880,13 @@ def _uk_cell_has_section_descendant_scope(
     descendant_labels: Sequence[str],
 ) -> bool:
     """Return true when descendant labels belong to the requested section."""
-    # Quoted legal text may itself contain parenthetical labels. Those labels
-    # are payload/preimage evidence, not target-scope evidence.
-    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
+    scope_text = " ".join(text.split()).lower()
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", scope_text)
     section_pat = re.escape(section.lower())
     wanted = [label.lower() for label in descendant_labels if label]
+    if not wanted:
+        return True
+
     explicit_ref_re = re.compile(rf"\b{section_pat}\s*((?:\([^)]*\)\s*)+)", re.I)
     for match in explicit_ref_re.finditer(scope_text):
         if _uk_parenthetical_labels_contain_sequence(
@@ -667,14 +895,40 @@ def _uk_cell_has_section_descendant_scope(
         ):
             return True
 
-    singular_prefix = re.search(rf"\bsection\s+{section_pat}\b", scope_text, re.I) is not None
-    plural_prefix = re.search(r"\bsections\b", scope_text, re.I) is not None
-    if singular_prefix and not plural_prefix:
-        before_act_title = re.split(r"\bof\b", scope_text, maxsplit=1, flags=re.I)[0]
-        return _uk_parenthetical_labels_contain_sequence(
-            _uk_parenthetical_labels(before_act_title),
-            wanted,
-        )
+    for match in re.finditer(rf"\b{section_pat}\b", scope_text):
+        start_idx = match.end()
+        next_boundary = len(scope_text)
+        boundary_matches = list(re.finditer(
+            r"\b(?:section|sections|s|schedule|schedules|sch|schs|part|pt|chapter|ch|paragraph|paragraphs|para|paras)\.?\s+(?:\d+|[a-zA-Z]\b)",
+            scope_text[start_idx:]
+        ))
+        for bm in boundary_matches:
+            bm_text = bm.group(0)
+            if any(w in bm_text for w in wanted):
+                continue
+            next_boundary = start_idx + bm.start()
+            break
+
+        segment = scope_text[start_idx:next_boundary]
+        current_pos = 0
+        matched_all = True
+        for label in wanted:
+            if label == "proviso":
+                m = re.search(r"\bproviso\b", segment[current_pos:])
+                if not m:
+                    matched_all = False
+                    break
+                current_pos += m.end()
+            else:
+                pat = rf"(?:\(\s*{re.escape(label)}\s*\)|\b{re.escape(label)}\b)"
+                m = re.search(pat, segment[current_pos:])
+                if not m:
+                    matched_all = False
+                    break
+                current_pos += m.end()
+        if matched_all:
+            return True
+
     return False
 
 
@@ -723,11 +977,17 @@ def _uk_table_cell_mentions_target(
             text,
         )
         section_range_match = _uk_section_label_in_simple_range(text, section)
+        section_list_match = _uk_section_label_in_simple_list(text, section)
         listed_section_match = (
             re.search(r"\bsections\b", text) is not None
             and re.search(rf"\b{section_pat}\s*\(", text) is not None
         )
-        if not direct_section_match and not section_range_match and not listed_section_match:
+        if (
+            not direct_section_match
+            and not section_range_match
+            and not section_list_match
+            and not listed_section_match
+        ):
             return False
         descendant_labels = [label for label in (subsection, paragraph, subparagraph) if label]
         if descendant_labels and not _uk_cell_has_section_descendant_scope(
@@ -740,7 +1000,7 @@ def _uk_table_cell_mentions_target(
 
     if schedule:
         schedule_pat = re.escape(schedule.lower())
-        if not re.search(rf"\b(?:schedule|sch)\.?\s*{schedule_pat}\b", text):
+        if not _uk_schedule_in_cell_text(scope_text, schedule_pat):
             return False
         if paragraph:
             paragraph_pat = re.escape(paragraph.lower())
@@ -829,6 +1089,23 @@ def _uk_section_label_in_simple_range(text: str, label: str) -> bool:
     return False
 
 
+def _uk_section_label_in_simple_list(text: str, label: str) -> bool:
+    """Return true when a numeric section label is listed in `sections 153 and 154`."""
+
+    if not re.fullmatch(r"\d+", label or ""):
+        return False
+    wanted = label.strip()
+    for match in re.finditer(
+        r"\bsections?\s+(?P<body>[0-9,\sand]+)(?:\.|;|$)",
+        text or "",
+        flags=re.I,
+    ):
+        labels = re.findall(r"\b\d+\b", match.group("body"))
+        if wanted in labels:
+            return True
+    return False
+
+
 def _uk_table_is_column_1_2_source_table(table: ET.Element) -> bool:
     rows = _uk_table_rows_with_rowspans(table)
     for row in rows[:3]:
@@ -878,6 +1155,110 @@ def _uk_table_rows_with_rowspans(table: ET.Element) -> list[list[str]]:
         if any(cells):
             rows.append(cells)
     return rows
+
+
+def _uk_table_is_fee_table(table: ET.Element) -> bool:
+    rows = _uk_table_rows_with_rowspans(table)
+    for row in rows[:3]:
+        header = " ".join(row).lower()
+        if "enactment specifying fees" in header or "fee payable" in header:
+            return True
+    return False
+
+
+def _uk_table_driven_fee_substitution(
+    *,
+    effect: UKEffectRecord,
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    target: LegalAddress,
+) -> _UKTableDrivenWordSubstitution:
+    if source_root is None:
+        affecting_title = (effect.affecting_title or "").lower()
+        if "fee" in affecting_title or "fees" in affecting_title:
+            return _UKTableDrivenWordSubstitution(
+                recognized=True,
+                reason_code="source_root_unavailable",
+            )
+        return _UKTableDrivenWordSubstitution(recognized=False)
+
+    tables = [
+        el
+        for el in source_root.iter()
+        if el.tag.split("}")[-1].lower() == "table" and _uk_table_is_fee_table(el)
+    ]
+    if not tables:
+        return _UKTableDrivenWordSubstitution(recognized=False)
+
+    affected_year = str(effect.affected_year or "")
+    matches = []
+
+    for table_index, table in enumerate(tables):
+        rows = _uk_table_rows_with_rowspans(table)
+        current_chapter = ""
+        current_act_title = ""
+        current_provision = ""
+
+        for row in rows:
+            if len(row) < 3:
+                continue
+
+            col0 = row[0].strip()
+            col1 = row[1].strip()
+            col2 = row[2].strip()
+
+            if col0:
+                current_chapter = col0
+                col1_lower = col1.lower()
+                if not any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                    current_act_title = col1
+                    current_provision = ""
+                    continue
+
+            if col1:
+                col1_lower = col1.lower()
+                if any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                    current_provision = col1
+
+            if not current_provision:
+                continue
+
+            if affected_year and affected_year not in current_chapter and affected_year not in current_act_title:
+                continue
+
+            combined_cell = f"{current_provision} {col2}"
+            if _uk_table_cell_mentions_target(
+                combined_cell,
+                target=target,
+                affected_year=affected_year,
+            ):
+                new_fee = row[3].strip() if len(row) > 3 else ""
+                old_fee = row[4].strip() if len(row) > 4 else ""
+                original = f"TEXT_FEE_SUM_{old_fee}" if old_fee else "TEXT_FEE_SUM_ANY"
+                if new_fee:
+                    matches.append((table_index, original, new_fee, " | ".join(row[:4])))
+
+    if len(matches) == 0:
+        return _UKTableDrivenWordSubstitution(recognized=False)
+
+    if len(matches) > 1:
+        return _UKTableDrivenWordSubstitution(
+            recognized=True,
+            replacement=matches[0][2],
+            reason_code="no_unique_matching_table_row",
+            match_count=len(matches),
+        )
+
+    table_index, original, new_fee, row_text = matches[0]
+    return _UKTableDrivenWordSubstitution(
+        recognized=True,
+        original=original,
+        replacement=new_fee,
+        reason_code="",
+        match_count=1,
+        table_index=table_index,
+        row_text=row_text,
+    )
 
 
 def _uk_table_driven_corresponding_entry_word_substitution(
@@ -978,6 +1359,13 @@ def lower_uk_table_driven_corresponding_entry_word_substitution(
         target=target,
     )
     if not substitution.recognized:
+        substitution = _uk_table_driven_fee_substitution(
+            effect=effect,
+            extracted_text=extracted_text,
+            source_root=source_root,
+            target=target,
+        )
+    if not substitution.recognized:
         return UKTableWordSubstitutionLowering(
             recognized=False,
             skip_effect=False,
@@ -1053,3 +1441,102 @@ def lower_uk_table_driven_corresponding_entry_word_substitution(
         op_text_match=op_text_match,
         op_text_replacement=op_text_replacement,
     )
+
+
+def _uk_table_driven_fee_target_refinements(
+    *,
+    effect: UKEffectRecord,
+    source_root: Optional[ET.Element],
+    target: LegalAddress,
+) -> list[LegalAddress]:
+    """Identify if a generic target provision matches multiple refined child targets in a fee table."""
+    if source_root is None:
+        return []
+
+    tables = [
+        el
+        for el in source_root.iter()
+        if el.tag.split("}")[-1].lower() == "table" and _uk_table_is_fee_table(el)
+    ]
+    if not tables:
+        return []
+
+    affected_year = str(effect.affected_year or "")
+    refined_targets = []
+
+    for table in tables:
+        rows = _uk_table_rows_with_rowspans(table)
+        current_chapter = ""
+        current_act_title = ""
+        current_provision = ""
+
+        for row in rows:
+            if len(row) < 3:
+                continue
+
+            col0 = row[0].strip()
+            col1 = row[1].strip()
+            col2 = row[2].strip()
+
+            if col0:
+                current_chapter = col0
+                col1_lower = col1.lower()
+                if not any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                    current_act_title = col1
+                    current_provision = ""
+                    continue
+
+            if col1:
+                col1_lower = col1.lower()
+                if any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                    current_provision = col1
+
+            if not current_provision:
+                continue
+
+            if affected_year and affected_year not in current_chapter and affected_year not in current_act_title:
+                continue
+
+            combined_cell = f"{current_provision} {col2}"
+            if _uk_table_cell_mentions_target(
+                combined_cell,
+                target=target,
+                affected_year=affected_year,
+            ):
+                labels = {kind: lbl for kind, lbl in target.path}
+                if "subsection" in labels and "paragraph" not in labels:
+                    match = re.match(r"^\s*(\([a-z0-9]+\)|[a-z0-9]+)\b", col2, re.I)
+                    if match:
+                        child_label = match.group(1).strip("()").lower()
+                        if child_label in {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "a", "b", "c", "d", "e", "f", "g"}:
+                            refined = LegalAddress(path=target.path + (("paragraph", child_label),))
+                            refined_targets.append(refined)
+                elif "paragraph" in labels and "subparagraph" not in labels:
+                    match = re.match(r"^\s*(\([a-z0-9]+\)|[a-z0-9]+)\b", col2, re.I)
+                    if match:
+                        child_label = match.group(1).strip("()").lower()
+                        if child_label in {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "a", "b", "c", "d", "e", "f", "g"}:
+                            refined = LegalAddress(path=target.path + (("subparagraph", child_label),))
+                            refined_targets.append(refined)
+
+    return refined_targets
+
+
+def address_to_citation(addr: LegalAddress) -> str:
+    """Format a LegalAddress back into a standard UK citation string."""
+    labels = {kind: lbl for kind, lbl in addr.path}
+    section = labels.get("section")
+    subsection = labels.get("subsection")
+    paragraph = labels.get("paragraph")
+    subparagraph = labels.get("subparagraph")
+
+    parts = []
+    if section:
+        parts.append(f"s. {section}")
+    if subsection:
+        parts.append(f"({subsection})")
+    if paragraph:
+        parts.append(f"({paragraph})")
+    if subparagraph:
+        parts.append(f"({subparagraph})")
+    return "".join(parts)

@@ -171,8 +171,11 @@ def _roman_to_int(s: str) -> str:
     round-trip canonicalization.  The previous implementation only
     handled I..X.
     """
+    if not re.match(r"^[ivx]+$", s, re.IGNORECASE):
+        return s
     value = _shared_roman_to_arabic(s)
     return s if value is None else str(value)
+
 
 
 @lru_cache(maxsize=32768)
@@ -181,7 +184,7 @@ def _clean_num_cached(raw: str) -> str:
         return ""
     s = str(raw).strip()
     s = re.sub(
-        r"^(Part|Section|Schedule|Chapter|Paragraph|Article|Rule|Regulation)"
+        r"^(Part|Section|Schedule|Chapter|Paragraph|Article|Rule|Regulation|Annex)"
         r"(?=\s+|[0-9IVXLCDM]+[A-Za-z]?\b)\s*",
         "",
         s,
@@ -333,20 +336,67 @@ def _parse_definition_ordered_list(el: ET.Element, parent_el: ET.Element) -> lis
         text = _text_content(child)
         if not label or not text:
             continue
-        nodes.append(
-            UKMutableNode(
-                kind=IRNodeKind.ITEM,
-                label=None,
-                text=text,
-                attrs={
-                    "source_rule_id": "uk_definition_ordered_list_child_preserved",
-                    "definition_term": term,
-                    "definition_child_label": label,
-                    "source_tag": _tag(el),
-                    "source_list_type": el.get("Type", ""),
-                },
-            )
+        new_node = UKMutableNode(
+            kind=IRNodeKind.ITEM,
+            label=None,
+            text=text,
+            attrs={
+                "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                "definition_term": term,
+                "definition_child_label": label,
+                "source_tag": _tag(el),
+                "source_list_type": el.get("Type", ""),
+            },
         )
+        _add_attrs(new_node, child)
+        nodes.append(new_node)
+    return nodes
+
+
+def _parse_generic_ordered_list(
+    el: ET.Element,
+    context: str,
+    force_active: bool,
+    pit_date: Optional[str],
+    is_eur: bool,
+) -> list[UKMutableNode]:
+    nodes: list[UKMutableNode] = []
+    item_index = 0
+    for child in el:
+        if _tag(child) != "ListItem":
+            continue
+        num_override = child.get("NumberOverride")
+        if num_override:
+            label = num_override.strip().strip("()")
+        else:
+            label = _alpha_label(item_index)
+        item_index += 1
+
+        if context.startswith("schedule"):
+            kind = "paragraph"
+        else:
+            if is_eur:
+                kind = "paragraph"
+            else:
+                if label.isdigit():
+                    kind = "subsection"
+                elif re.match(r"^[a-z]+$", label, re.IGNORECASE):
+                    kind = "paragraph"
+                elif re.match(r"^[ivx]+$", label, re.IGNORECASE):
+                    kind = "subparagraph"
+                else:
+                    kind = "paragraph"
+
+        new_node = UKMutableNode(
+            kind=cast(IRNodeKind, kind),
+            label=label,
+            text="",
+            children=_parse_children(child, context, force_active, pit_date, is_eur),
+        )
+        if not new_node.children:
+            new_node.text = _text_content(child)
+        _add_attrs(new_node, child)
+        nodes.append(new_node)
     return nodes
 
 
@@ -833,6 +883,10 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             definition_children = _parse_definition_ordered_list(child, parent_el)
             if definition_children:
                 children.extend(definition_children)
+                continue
+            generic_children = _parse_generic_ordered_list(child, context, force_active, pit_date, is_eur)
+            if generic_children:
+                children.extend(generic_children)
                 continue
         elif context == "schedule" and ct == "UnorderedList":
             schedule_entries = _parse_schedule_body_list_entries(child, start_ordinal=schedule_entry_ordinal)
@@ -1451,16 +1505,31 @@ def _visit_eid(
             if f"hash:{h}" not in eid_map:
                 eid_map[f"hash:{h}"] = eid
         if clean_num:
-            eid_map[f"{new_context}:{kind}-{clean_num}".lower()] = eid
-            if is_eur and kind == "schedule":
-                eid_map[f"{new_context}:annex-{clean_num}".lower()] = eid
-            eid_map[f"{new_context}:suffix:{kind}-{clean_num}".lower()] = eid
-            # Also add title-slug alias so pblocks/crossheadings with matching headings
-            # can find numbered nodes (e.g. Schedule 1 ECHR article chapters).
-            if slug:
-                eid_map[f"{new_context}:suffix:{kind}-{slug}".lower()] = eid
+            is_nested_schedule_descendant = False
+            if context.startswith("schedule") and parent_path_key:
+                if kind in {"paragraph", "subsection", "subparagraph", "item", "point", "p2", "p3", "p4"}:
+                    clean_parent = parent_path_key.replace("body:", "")
+                    if ":" in clean_parent:
+                        is_nested_schedule_descendant = True
+
+            if not is_nested_schedule_descendant:
+                eid_map[f"{new_context}:{kind}-{clean_num}".lower()] = eid
+                if is_eur and kind == "schedule":
+                    eid_map[f"{new_context}:annex-{clean_num}".lower()] = eid
+                eid_map[f"{new_context}:suffix:{kind}-{clean_num}".lower()] = eid
+                # Also add title-slug alias so pblocks/crossheadings with matching headings
+                # can find numbered nodes (e.g. Schedule 1 ECHR article chapters).
+                if slug:
+                    eid_map[f"{new_context}:suffix:{kind}-{slug}".lower()] = eid
         elif slug:
-            eid_map[f"{new_context}:suffix:{kind}-{slug}".lower()] = eid
+            is_nested_schedule_descendant = False
+            if context.startswith("schedule") and parent_path_key:
+                if kind in {"paragraph", "subsection", "subparagraph", "item", "point", "p2", "p3", "p4"}:
+                    clean_parent = parent_path_key.replace("body:", "")
+                    if ":" in clean_parent:
+                        is_nested_schedule_descendant = True
+            if not is_nested_schedule_descendant:
+                eid_map[f"{new_context}:suffix:{kind}-{slug}".lower()] = eid
 
     next_parent_path = parent_path_key if kind in ("p1group", "pblock", "crossheading") else this_node_path
     kind_counts = {}

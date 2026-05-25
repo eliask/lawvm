@@ -41,6 +41,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_table_entry_row_insert_selector,
 )
 from lawvm.uk_legislation.table_sources import (
+    _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
@@ -82,6 +83,17 @@ class UKTableCellContext:
     table_cell_selector: Optional[dict[str, Any]] = None
     selector_rule_id: str = ""
     source_carried_table_entry_paragraph_substitution: Optional[dict[str, Any]] = None
+
+
+def _uk_definition_pseudo_parent_target(target: LegalAddress) -> Optional[LegalAddress]:
+    """Return the owning provision for feed pseudo-targets like s.167(1) defn."""
+    for index, (kind, label) in enumerate(target.path):
+        if kind.lower() == "paragraph" and label.strip().lower() == "defn":
+            parent_path = target.path[:index]
+            if parent_path and any(parent_kind == "section" for parent_kind, _ in parent_path):
+                return LegalAddress(path=parent_path, special=target.special)
+            return None
+    return None
 
 
 def try_lower_table_column_insert(
@@ -438,6 +450,98 @@ def try_lower_repeal_table_effect(
     original_targets_str: list[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTableBatchLoweringResult:
+    pseudo_definition_parent_target = _uk_definition_pseudo_parent_target(target)
+    if pseudo_definition_parent_target is not None:
+        pseudo_definition_text_repeal = _uk_table_driven_repeal_table_quoted_words_text_repeal(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_root=source_root,
+            target=pseudo_definition_parent_target,
+            allow_structural_definition_entry=True,
+        )
+        if (
+            pseudo_definition_text_repeal.recognized
+            and pseudo_definition_text_repeal.original
+            and pseudo_definition_text_repeal.rule_id
+            == _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
+        ):
+            pseudo_definition_originals = (
+                pseudo_definition_text_repeal.original,
+                *pseudo_definition_text_repeal.additional_originals,
+            )
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
+                family="source_repeal_table_elaboration",
+                reason_code="unique_repeal_table_extent_row_definition_entry_from_pseudo_target",
+                reason=(
+                    "UK repeal-table source row matched the affected Act and "
+                    "owning provision exactly, the feed target used a pseudo "
+                    "definition child path, and the extent cell explicitly "
+                    "names the definition entry; lowering emits a bounded "
+                    "definition-entry text delete instead of structurally "
+                    "repealing the pseudo path."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "original_target": str(target),
+                    "target": str(pseudo_definition_parent_target),
+                    "table_index": pseudo_definition_text_repeal.table_index,
+                    "row_text": pseudo_definition_text_repeal.row_text,
+                    "enactment_cell": pseudo_definition_text_repeal.enactment_cell,
+                    "extent_cell": pseudo_definition_text_repeal.extent_cell,
+                    "enactment_match_basis": (
+                        pseudo_definition_text_repeal.enactment_match_basis
+                    ),
+                    "original": pseudo_definition_text_repeal.original,
+                    "originals": pseudo_definition_originals,
+                    "occurrence": pseudo_definition_text_repeal.occurrence,
+                    "end_occurrence": pseudo_definition_text_repeal.end_occurrence,
+                },
+            )
+            return UKTableBatchLoweringResult(
+                handled=True,
+                ops=_build_repeal_table_text_ops(
+                    effect=effect,
+                    sequence=sequence,
+                    target=pseudo_definition_parent_target,
+                    originals=pseudo_definition_originals,
+                    occurrence=pseudo_definition_text_repeal.occurrence,
+                    end_occurrence=pseudo_definition_text_repeal.end_occurrence,
+                    rule_id=_UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    t_str=t_str,
+                ),
+            )
+        if pseudo_definition_text_repeal.recognized:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=f"{_UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID}_unresolved",
+                family="source_repeal_table_elaboration",
+                reason_code=pseudo_definition_text_repeal.reason_code,
+                reason=(
+                    "UK repeal-table source exposed a pseudo definition "
+                    "target, but the source table did not uniquely name a "
+                    "definition entry in the owning provision."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "original_target": str(target),
+                    "target": str(pseudo_definition_parent_target),
+                    "match_count": pseudo_definition_text_repeal.match_count,
+                },
+            )
+            return UKTableBatchLoweringResult(handled=True)
+
     repeal_table_structural_repeal = _uk_table_driven_repeal_table_structural_repeal(
         effect=effect,
         extracted_el=extracted_el,
@@ -446,11 +550,15 @@ def try_lower_repeal_table_effect(
         target=target,
     )
     if repeal_table_structural_repeal.recognized and repeal_table_structural_repeal.match_count == 1:
+        reason_code = (
+            repeal_table_structural_repeal.reason_code
+            or "unique_repeal_table_extent_row_structural_repeal"
+        )
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
             rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
             family="source_repeal_table_elaboration",
-            reason_code="unique_repeal_table_extent_row_structural_repeal",
+            reason_code=reason_code,
             reason=(
                 "UK repeal-table source row matched the affected Act and "
                 "provision exactly, and its extent cell names a whole "
@@ -468,6 +576,9 @@ def try_lower_repeal_table_effect(
                 "enactment_cell": repeal_table_structural_repeal.enactment_cell,
                 "extent_cell": repeal_table_structural_repeal.extent_cell,
                 "enactment_match_basis": repeal_table_structural_repeal.enactment_match_basis,
+                "split_from_mixed_extent_row": (
+                    reason_code == "mixed_structural_and_word_repeal_split_structural_target"
+                ),
             },
         )
         return UKTableBatchLoweringResult(
@@ -526,6 +637,14 @@ def try_lower_repeal_table_effect(
                 "UK repeal-table source row matched the affected Act and "
                 "provision exactly, and its extent cell names a definition "
                 "entry repeal; lowering emits definition-entry text deletes "
+                "instead of replaying the broad repeal schedule."
+            )
+        elif repeal_table_rule_id == _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID:
+            reason_code = "unique_repeal_table_extent_row_definition_child"
+            reason = (
+                "UK repeal-table source row matched the affected Act and "
+                "provision exactly, and its extent cell names definition "
+                "child repeals; lowering emits definition-child text deletes "
                 "instead of replaying the broad repeal schedule."
             )
         else:

@@ -241,7 +241,8 @@ def extract_uk_structural_payload_ir(
 
     if content_ir is None and actual_el is not None:
         parse_context = "schedule" if _addr_container(target) == "schedule" else ""
-        content_ir = _parse_structural_payload_element(actual_el, parse_context=parse_context)
+        is_eur = effect.affected_class == "EuropeanUnionRegulation" or "/eur/" in getattr(effect, "affected_uri", "")
+        content_ir = _parse_structural_payload_element(actual_el, parse_context=parse_context, is_eur=is_eur)
         if content_ir is not None:
             direct_text = _direct_payload_text(actual_el)
             if direct_text:
@@ -403,43 +404,44 @@ def _parse_structural_payload_element(
     actual_el: ET.Element,
     *,
     parse_context: str,
+    is_eur: bool = False,
 ) -> Optional[dict[str, Any]]:
     tag = _tag(actual_el)
     if tag == "Part":
         return _parse_part(
-            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag in ("Chapter", "EUChapter"):
         return _parse_chapter(
-            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag == "Pblock":
         return _parse_pblock(
-            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag == "P1group":
         return _parse_p1group(
-            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag in ("Section", "P1", "Article", "Rule", "ConventionRights", "EUSection"):
         return _parse_section(
-            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag in ("Subsection", "P2"):
         return _parse_p2(
-            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag == "P3":
         return _parse_p3(
-            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag == "P4":
         return _parse_p4(
-            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
+            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     if tag == "Schedule":
         return _parse_schedule_single(
-            actual_el, "schedule", force_active=True, pit_date=None, is_eur=False
+            actual_el, "schedule", force_active=True, pit_date=None, is_eur=is_eur
         ).to_dict()
     return None
 

@@ -50,6 +50,75 @@ class UKReplayInsertApplyMixin:
     statute: UKMutableStatute
     eid_map: dict[str, str]
 
+    def _skip_insert_if_parent_already_has_target_child(
+        self,
+        *,
+        parent_node: UKMutableNode,
+        target: LegalAddress,
+        op: LegalOperation,
+        target_resolution_recovery: str,
+    ) -> bool:
+        leaf_kind = _addr_leaf_kind(target)
+        leaf_label = _addr_leaf_label(target)
+        if not leaf_kind or not leaf_label:
+            return False
+        if op.payload is None:
+            return False
+        payload_label = _clean_num(str(op.payload.label or ""))
+        if payload_label != _clean_num(str(leaf_label)):
+            return False
+        payload_kind = str(getattr(op.payload.kind, "value", op.payload.kind) or "").lower()
+        if payload_kind and payload_kind != str(leaf_kind).lower():
+            return False
+        existing_child = next(
+            (
+                child
+                for child in parent_node.children
+                if uk_match_kind_label(child, str(leaf_kind), str(leaf_label))
+            ),
+            None,
+        )
+        if existing_child is None:
+            return False
+        if uk_existing_target_insert_already_materialized(existing_child, op):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_existing_target_already_materialized",
+                message=(
+                    "UK replay skipped insert: target child already exists under "
+                    "the resolved parent with the same normalized payload text."
+                ),
+                op=op,
+                detail=uk_replay_action_target_detail(
+                    op,
+                    target,
+                    blocking=False,
+                    payload_kind=str(op.payload.kind),
+                    payload_label=op.payload.label or "",
+                    target_resolution_recovery=target_resolution_recovery,
+                ),
+            )
+            return True
+        conflict_detail = uk_existing_target_insert_conflict_detail(existing_child, op)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_existing_target_conflict_gap" if conflict_detail else "uk_replay_existing_target_gap",
+            message=(
+                "UK replay skipped insert: resolved parent already contains "
+                "the target child before applying the op."
+            ),
+            op=op,
+            detail=uk_replay_blocking_action_target_detail(
+                op,
+                target,
+                payload_kind=str(op.payload.kind),
+                payload_label=op.payload.label or "",
+                target_resolution_recovery=target_resolution_recovery,
+                **(conflict_detail or {}),
+            ),
+        )
+        return True
+
     def _apply_insert_op(
         self,
         op: LegalOperation,
@@ -326,6 +395,13 @@ class UKReplayInsertApplyMixin:
             return candidate
 
         if parent_node and insert_idx is not None:
+            if self._skip_insert_if_parent_already_has_target_child(
+                parent_node=parent_node,
+                target=target,
+                op=op,
+                target_resolution_recovery="resolved_parent_child_duplicate_guard",
+            ):
+                return True
             new_node = _inherit_parent_local_eid(parent_node, new_node)
             self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} at routed index {insert_idx}")
             children = list(parent_node.children)
@@ -334,6 +410,13 @@ class UKReplayInsertApplyMixin:
             self._record_child_inserted(parent_node, new_node)
             return True
         if parent_node:
+            if self._skip_insert_if_parent_already_has_target_child(
+                parent_node=parent_node,
+                target=target,
+                op=op,
+                target_resolution_recovery="resolved_parent_child_duplicate_guard",
+            ):
+                return True
             new_node = _inherit_parent_local_eid(parent_node, new_node)
             self._log(
                 f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {parent_node.kind} {parent_node.label}"
@@ -352,7 +435,17 @@ class UKReplayInsertApplyMixin:
 
         if parent_addr is not None:
             p_node, _, _ = self._find_node_by_target(parent_addr)
+            if p_node is not None and ("definition_term" in p_node.attrs or "definition_child_label" in p_node.attrs):
+                p_node = None
+
             if p_node:
+                if self._skip_insert_if_parent_already_has_target_child(
+                    parent_node=p_node,
+                    target=target,
+                    op=op,
+                    target_resolution_recovery="explicit_parent_child_duplicate_guard",
+                ):
+                    return True
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {p_node.kind} {p_node.label}")
                 inserted = uk_insert_child_sorted(p_node, new_node)
@@ -383,6 +476,13 @@ class UKReplayInsertApplyMixin:
                 sch_node, _, _ = self._find_node_by_target(target)
                 if sch_node:
                     sch_node = cast(UKMutableNode, sch_node)
+                    if self._skip_insert_if_parent_already_has_target_child(
+                        parent_node=sch_node,
+                        target=target,
+                        op=op,
+                        target_resolution_recovery="schedule_root_child_duplicate_guard",
+                    ):
+                        return True
                     new_node = _inherit_parent_local_eid(sch_node, new_node)
                     self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into schedule {sch_node.label}")
                     inserted = uk_insert_child_sorted(sch_node, new_node)
@@ -403,6 +503,13 @@ class UKReplayInsertApplyMixin:
             )
             if pred_parent is not None and pred_idx is not None:
                 pred_parent = cast(UKMutableNode, pred_parent)
+                if self._skip_insert_if_parent_already_has_target_child(
+                    parent_node=pred_parent,
+                    target=target,
+                    op=op,
+                    target_resolution_recovery="body_predecessor_parent_child_duplicate_guard",
+                ):
+                    return True
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} after body predecessor {pred_label}")
                 children: list[UKMutableNode] = list(pred_parent.children)
                 children.insert(pred_idx + 1, new_node)
@@ -427,6 +534,13 @@ class UKReplayInsertApplyMixin:
             parent_eid = "-".join(target_eid.split("-")[:-1])
             p_node, _, _ = self._find_node_and_parent_statute(parent_eid)
             if p_node:
+                if self._skip_insert_if_parent_already_has_target_child(
+                    parent_node=p_node,
+                    target=target,
+                    op=op,
+                    target_resolution_recovery="eid_parent_child_duplicate_guard",
+                ):
+                    return True
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
                 parent_node = cast(UKMutableNode, p_node)

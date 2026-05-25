@@ -17,6 +17,9 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
+from lawvm.uk_legislation.source_amendment_program_fragments import (
+    UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID,
+)
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
 
@@ -36,11 +39,17 @@ UK_SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RULE_ID = (
 UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID = (
     "uk_effect_source_carried_multi_subunit_repeal_text_patch"
 )
+UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID = (
+    "uk_effect_definition_child_and_tail_substitution_text_patch"
+)
 UK_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RULE_ID = (
     "uk_effect_amendment_inserted_text_substitution_text_patch"
 )
 UK_RANGE_INDEPENDENT_END_OCCURRENCE_RULE_ID = (
     "uk_effect_range_independent_end_occurrence_text_patch"
+)
+UK_SOURCE_RANGE_DEFINITION_ENTRY_INSERT_RULE_ID = (
+    "uk_effect_source_range_definition_entry_insert_text_patch"
 )
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -50,6 +59,7 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_all_occurrences_substitution_text_patch",
         "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
 )
@@ -277,6 +287,39 @@ def append_basic_text_rewrite_observations(
                 "occurrence": op_text_occurrence,
             },
         )
+    if UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID in rule_ids:
+        primary = next(
+            (
+                fragment
+                for fragment in fragment_subs or []
+                if str(fragment.get("rule_id") or "")
+                == UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID
+            ),
+            {},
+        )
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="definition_child_and_tail_substitution_lowered",
+            reason=(
+                "UK source text explicitly substitutes a named definition child "
+                "and the connector at the end of that child; lowering preserves "
+                "the claim as a bounded definition-child replacement instead of "
+                "rewriting the whole definition or subsection."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+                "tail_connector": str(primary.get("tail_connector") or ""),
+            },
+        )
 
 
 def append_source_carried_tail_rewrite_observations(
@@ -421,6 +464,38 @@ def append_source_carried_substitution_rewrite_observations(
                 "text_match": op_text_match,
                 "source_paragraph_label": str(primary.get("source_paragraph_label") or ""),
                 "source_item_label": str(primary.get("source_item_label") or ""),
+            },
+        )
+    if UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID,
+            family="amendment_program_lowering",
+            reason_code="source_targets_inserted_parent_child_in_amendment_instruction",
+            reason=(
+                "UK source text inserts a child into text created by an earlier "
+                "amendment instruction; lowering preserves that as a bounded "
+                "target-local amendment-program text patch rather than applying "
+                "it to unrelated live base law."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "source_subparagraph_label": str(
+                    primary.get("source_subparagraph_label") or ""
+                ),
+                "source_item_label": str(primary.get("source_item_label") or ""),
+                "inserted_parent_label": str(
+                    primary.get("inserted_parent_label") or ""
+                ),
+                "direction": str(primary.get("direction") or ""),
+                "anchor_label": str(primary.get("anchor_label") or ""),
+                "inserted_label": str(primary.get("inserted_label") or ""),
             },
         )
     if op_text_end_occurrence:
@@ -667,6 +742,41 @@ def _separate_occurrence_text_replace_fragments(
     return tuple(fragments)
 
 
+def _separate_source_range_definition_entry_insert_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != UK_SOURCE_RANGE_DEFINITION_ENTRY_INSERT_RULE_ID
+            or not original.startswith("TEXT_AFTER_DEFINITION_")
+            or not replacement
+        ):
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": replacement,
+                "rule_id": rule_id,
+                "source_anchor_definition_term": str(
+                    item.get("source_anchor_definition_term") or ""
+                ),
+                "source_inserted_definition_terms": str(
+                    item.get("source_inserted_definition_terms") or ""
+                ),
+                "source_payload_additional_definition_terms": str(
+                    item.get("source_payload_additional_definition_terms") or ""
+                ),
+            }
+        )
+    return tuple(fragments)
+
+
 def _separate_all_occurrences_text_replace_fragments(
     fragment_subs: Optional[list],
 ) -> tuple[dict[str, str], ...]:
@@ -700,6 +810,32 @@ def _separate_multi_quoted_word_repeal_fragments(
         replacement = str(item.get("replacement") or "")
         rule_id = str(item.get("rule_id") or "")
         if rule_id != UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID or replacement or not original:
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": "",
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_definition_child_repeal_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != "uk_effect_definition_child_repeal_text_patch"
+            or replacement
+            or not original.startswith("TEXT_DEFINITION_CHILD_")
+        ):
             return ()
         fragments.append(
             {

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
+from lawvm.core.ir_helpers import is_zombie
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def get_all_eids(nodes, pit_date=None):
     eids = set()
     for n in nodes:
-        if n.is_zombie(pit_date):
+        if is_zombie(n, pit_date):
             continue
         eid = n.attrs.get("eId") or n.attrs.get("id")
         if eid: eids.add(eid)
@@ -76,19 +77,25 @@ def main():
         # In baseline mode, we compare against itself
         current_xml = base_xml
     else:
-        pipeline = UKReplayPipeline(repo_root)
+        from farchive import Farchive
+        db_path = repo_root / "data" / "uk_legislation.farchive"
+        archive = Farchive(db_path)
+        try:
+            pipeline = UKReplayPipeline(repo_root)
 
-        # Compile ops
-        print(f"\n--- Compiling Ops for {statute_id} (PIT: {pit_date or 'latest'}) ---")
-        ops = pipeline.compile_ops_for_statute(statute_id, pit_date=pit_date)
-        print(f"Compiled {len(ops)} operations.")
-        for op in ops:
-            kind = op.payload.kind if op.payload is not None else "none"
-            print(f"  Op {op.op_id}: {op.action} {op.target} -> IR kind: {kind}")
+            # Compile ops
+            print(f"\n--- Compiling Ops for {statute_id} (PIT: {pit_date or 'latest'}) ---")
+            ops = pipeline.compile_ops_for_statute(statute_id, pit_date=pit_date, archive=archive)
+            print(f"Compiled {len(ops)} operations.")
+            for op in ops:
+                kind = op.payload.kind if op.payload is not None else "none"
+                print(f"  Op {op.op_id}: {op.action} {op.target} -> IR kind: {kind}")
 
-        # 4. Run Replay
-        print(f"\n--- Running Replay for {statute_id} ---")
-        replayed_ir = pipeline.apply_ops(base_ir, ops, eid_map=eid_map, text_map=text_map)
+            # 4. Run Replay
+            print(f"\n--- Running Replay for {statute_id} ---")
+            replayed_ir = pipeline.apply_ops(base_ir, ops, eid_map=eid_map, text_map=text_map)
+        finally:
+            archive.close()
 
         # Save for analysis
         slug = statute_id.replace("/", "_")

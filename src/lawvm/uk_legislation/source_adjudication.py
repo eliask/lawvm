@@ -309,6 +309,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_after_definition_child_structured_insert_applied",
         "uk_replay_after_definition_text_insert_applied",
         "uk_replay_after_anchor_to_end_text_rewrite_applied",
+        "uk_replay_amendment_program_inserted_parent_child_insert_applied",
         "uk_replay_contextual_word_anchor_kind_normalized",
         "uk_replay_contextual_word_text_rewrite_applied",
         "uk_replay_amendment_insert_tail_text_rewrite_applied",
@@ -339,6 +340,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized",
         "uk_replay_schedule_list_entry_anchor_prefix_normalized",
         "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized",
+        "uk_replay_schedule_list_entry_end_position_resolved",
         "uk_replay_schedule_list_entry_group_anchor_resolved",
         "uk_replay_schedule_list_entry_repeal_numbered_anchor_normalized",
         "uk_replay_schedule_list_entry_repeal_parenthetical_paragraph_normalized",
@@ -378,6 +380,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_node_local_range_to_end_text_rewrite_applied",
         "uk_replay_subtree_range_text_rewrite_flattened",
         "uk_replay_subtree_range_to_end_text_rewrite_flattened",
+        "uk_replay_children_range_replaced_with_text_applied",
+        "uk_replay_proviso_child_structured_text_rewrite_applied",
     }
 )
 
@@ -1217,6 +1221,7 @@ def classify_uk_effect_source_pathology(
         "uk_effect_source_parent_substitution_range_payload_lowered",
         "uk_effect_source_parent_at_end_added_payload_lowered",
         "uk_effect_after_paragraph_insert_labelled_series_lowered",
+        "uk_effect_after_paragraph_insert_single_label_lowered",
     } & lowering_rules:
         return ""
     if not norm_text and not actions and not is_structural:
@@ -1512,6 +1517,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "deterministic_frontend_supported",
             "rule_id": "uk_manual_frontier_deterministic_supported",
             "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
+        }
+
+    if "uk_effect_structural_pseudo_definition_target_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_structural_pseudo_definition_target_candidate",
+            "reason": "The effect feed encodes a definition entry as a pseudo structural path; a deterministic definition-entry/list-entry compiler must prove the carrier, payload semantics, and placement before replay.",
+        }
+
+    if "uk_effect_source_range_definition_entry_at_end_insert_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_definition_list_end_insert_candidate",
+            "reason": "The source range includes an at-end definition-entry insertion; a deterministic definition-list-end compiler must prove the list carrier and append point before replaying that row.",
         }
 
     nonstructural_replay_family = uk_nonstructural_replay_candidate_family_for_effect_type(

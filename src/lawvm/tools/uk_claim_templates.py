@@ -101,6 +101,29 @@ def _definition_child_and_tail_parts(source_preview: str) -> dict[str, str]:
     }
 
 
+def _heading_facet_wrapper_insert_parts(source_preview: str) -> dict[str, str]:
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bbefore\s+paragraph\s+(?P<anchor_paragraph>[0-9A-Za-z]+)\s+"
+        r"of\s+Schedule\s+(?P<schedule_label>[0-9A-Za-z]+)\s*"
+        r"\(\s*and\s+the\s+italic\s+heading\s+before\s+it\s*\)\s+"
+        r"insert\s*[—–-]\s*"
+        r"(?P<part_label>Part\s+[0-9A-Za-zIVXLCivxlc]+)\s+"
+        r"(?P<heading>.+?)\s*;?\s*$",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {}
+    return {
+        "schedule_label": " ".join(match.group("schedule_label").split()),
+        "anchor_paragraph_label": " ".join(match.group("anchor_paragraph").split()),
+        "inserted_part_label": " ".join(match.group("part_label").split()),
+        "inserted_heading_text": " ".join(match.group("heading").split()).strip(" ;"),
+        "carried_existing_heading": "italic heading before anchor paragraph",
+    }
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -179,6 +202,33 @@ def manual_compile_suggested_claim_template(
     summary = row.summary
     effect = row.effect
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
+        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+        wrapper_parts = _heading_facet_wrapper_insert_parts(source_preview)
+        if wrapper_parts:
+            template = _bounded_mutation_claim_template(
+                statute_id=statute_id,
+                row=row,
+                action_family="schedule_part_wrapper_insertion",
+                placement_family="before_anchor_paragraph_and_carried_heading",
+                required_ownership=[
+                    "source_named_schedule_part_heading",
+                    "anchor_paragraph_identity",
+                    "carried_existing_italic_heading_boundary",
+                    "partition_scope_or_non_scope_claim",
+                    "lineage_or_wrapper_migration_events_if_existing_children_move",
+                    "mutation_boundary",
+                ],
+                required_validator_checks=[
+                    "source_witness_names_inserted_part_heading",
+                    "claim_identifies_exact_schedule_anchor_paragraph",
+                    "claim_identifies_existing_heading_before_anchor",
+                    "claim_states_whether_following_children_move_under_new_part",
+                    "claim_preserves_unclaimed_schedule_children",
+                    "changed_paths_are_within_declared_wrapper_heading_or_migration_paths",
+                ],
+            )
+            template.update(wrapper_parts)
+            return template
         return _surface_text_rewrite_claim_template(
             statute_id=statute_id,
             row=row,
@@ -326,6 +376,16 @@ def manual_compile_suggested_claim_template(
                 "table_entry_shape": detail.get("entry_shape", ""),
             }
         )
+        if (
+            summary.manual_compile_rule_id
+            == "uk_manual_frontier_table_appropriate_place_candidate"
+        ):
+            template["required_ownership"].append(
+                "table_ordering_rule_or_anchor_claim"
+            )
+            template["required_validator_checks"].append(
+                "claim_identifies_table_ordering_rule_or_anchor"
+            )
         return template
     if summary.manual_compile_rule_id == "uk_manual_frontier_appropriate_place_candidate":
         return _bounded_mutation_claim_template(
@@ -605,6 +665,52 @@ def manual_compile_suggested_claim_template(
                 "claim_emits_lineage_or_migration_events_for_displaced_units",
                 "claim_preserves_crossheading_or_heading_facet_scope",
                 "changed_paths_are_within_source_range_or_declared_migration_paths",
+            ],
+            "executable": False,
+        }
+    if summary.manual_compile_rule_id == "uk_manual_frontier_definition_list_end_insert_candidate":
+        source_preview = summary.source_extracted_text_preview or ""
+        source_norm = " ".join(source_preview.split())
+        match = re.search(
+            r"\bat\s+the\s+end\s+insert\s*[—–-]\s*(?P<payload>.+)$",
+            source_norm,
+            flags=re.I | re.S,
+        )
+        payload = (
+            " ".join(match.group("payload").split()).strip()
+            if match is not None
+            else source_norm
+        )
+        term_match = re.search(r"[\"“]\s*(?P<term>[^\"”]{1,160}?)\s*[\"”]", payload)
+        term = " ".join(str(term_match.group("term") if term_match else "").split()).strip()
+        return {
+            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+            "claim_kind": "semantic_compile",
+            "claim_status": "template_only_not_validated",
+            "action_family": "definition_entry_insert",
+            "placement_family": "definition_list_end_requires_boundary_claim",
+            "jurisdiction": "uk",
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_act_id": effect.affecting_act_id,
+            "affecting_provisions": effect.affecting_provisions,
+            "source_pathology": summary.source_pathology or "",
+            "source_preview_sha256": (
+                hashlib.sha256(source_preview.encode("utf-8")).hexdigest()
+                if source_preview
+                else ""
+            ),
+            "inserted_definition_term": term,
+            "inserted_definition_entry_preview": payload[:500],
+            "candidate_target_surface": effect.affected_provisions,
+            "required_validator_checks": [
+                "source_witness_contains_exact_definition_list_end_instruction",
+                "payload_is_complete_definition_entry",
+                "claim_identifies_exact_definition_list_target",
+                "target_subtree_contains_definition_list_surface",
+                "inserted_term_is_not_already_present_in_target_at_effective_preimage",
+                "changed_paths_remain_inside_claimed_interpretation_target",
             ],
             "executable": False,
         }

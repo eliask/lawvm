@@ -280,6 +280,11 @@ SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE = re.compile(
     r"substitute\b",
     flags=re.I | re.S,
 )
+SOURCE_FROM_ANCHOR_STRUCTURED_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+    r"to\s+the\s+end\b.+?\bsubstitute\b",
+    flags=re.I | re.S,
+)
 
 
 def source_following_anchor_structured_substitution_anchor(source_text: str) -> str:
@@ -290,6 +295,25 @@ def source_following_anchor_structured_substitution_anchor(source_text: str) -> 
     if match is None:
         return ""
     return " ".join(match.group("anchor").split()).strip()
+
+
+def source_structured_tail_substitution_trim_selector(source_text: str) -> tuple[str, str, str]:
+    """Return replay selector, anchor, and range mode for source-carried children."""
+    text = str(source_text or "")
+    if not text:
+        return "", "", ""
+    from_match = SOURCE_FROM_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(text)
+    if from_match is not None:
+        anchor = " ".join(from_match.group("anchor").split()).strip()
+        if anchor:
+            return f"TEXT_FROM_{anchor}_TO_END", anchor, "from_quoted_text_to_end"
+    following_match = SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(text)
+    if following_match is None:
+        return "", "", ""
+    anchor = " ".join(following_match.group("anchor").split()).strip()
+    if not anchor:
+        return "", "", ""
+    return f"TEXT_AFTER_{anchor}_TO_END", anchor, "after_quoted_text_to_end"
 
 
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(

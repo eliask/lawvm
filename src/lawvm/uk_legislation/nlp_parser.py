@@ -80,9 +80,26 @@ def _strip_optional_child_label(text: str, label: str) -> str:
 
 
 def _deduplicate_fragment_substitutions(subs: list[Dict[str, str]]) -> list[Dict[str, str]]:
+    definition_child_labels = set()
+    for sub in subs:
+        orig = sub.get("original") or ""
+        if orig.startswith("TEXT_DEFINITION_CHILD_PARAGRAPH_"):
+            parts = orig.split(US)
+            if len(parts) >= 2:
+                lbl = parts[-1].strip(" \x1f")
+                definition_child_labels.add(lbl)
+    filtered = []
+    for sub in subs:
+        orig = sub.get("original") or ""
+        if orig.startswith("TEXT_OMIT_PARAGRAPH_"):
+            lbl = orig[len("TEXT_OMIT_PARAGRAPH_") :].strip()
+            if lbl in definition_child_labels:
+                continue
+        filtered.append(sub)
+
     deduped: list[Dict[str, str]] = []
     by_key: dict[tuple[str, str, str], int] = {}
-    for sub in subs:
+    for sub in filtered:
         key = (
             str(sub.get("original") or ""),
             str(sub.get("replacement") or ""),
@@ -322,8 +339,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_post_quoted_ordinal_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
-        r"in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"
-        r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s+"
+        r"\(?\s*in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"
+        r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s*\)?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
         r"\s+[“”\"'‘](.*?)[”\"'’]",
         text,
@@ -445,10 +462,11 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     # This is a text-span replacement across the target subtree, not a
     # structural child-label range like FROM_(a)_TO_(b).
     matches_range_substituted = re.finditer(
-        r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
+        r"for (?:the )?words? from\s+(?:the\s+(?P<start_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:(?:\s+where it|,\s+where)\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
-        r" to [“\"'‘](?P<end>.*?)[”\"'’]"
+        r"\s+to\s+(?:the\s+(?P<end_pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?[“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:(?:,\s+where it|,\s+where)\s+(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+(?:occurs|occurring),?)?"
+        r"(?:\s+\(?\s*in the (?P<range_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place\s*\)?)?"
         r",?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
         re.I,
@@ -459,12 +477,21 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             "replacement": m.group("replacement").strip(),
             "rule_id": "uk_effect_range_substitution_text_patch",
         }
+        if m.group("start_pre_ordinal"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("start_pre_ordinal").lower()]
+            patch["rule_id"] = "uk_effect_range_occurrence_substitution_text_patch"
         if m.group("ordinal"):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
             patch["rule_id"] = "uk_effect_range_occurrence_substitution_text_patch"
+        if m.group("end_pre_ordinal"):
+            patch["end_occurrence"] = _ORDINAL_OCCURRENCES[m.group("end_pre_ordinal").lower()]
+            patch["rule_id"] = "uk_effect_range_independent_end_occurrence_substitution_text_patch"
         if m.group("end_ordinal"):
             patch["end_occurrence"] = _ORDINAL_OCCURRENCES[m.group("end_ordinal").lower()]
             patch["rule_id"] = "uk_effect_range_independent_end_occurrence_substitution_text_patch"
+        if m.group("range_ordinal"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("range_ordinal").lower()]
+            patch["rule_id"] = "uk_effect_range_occurrence_substitution_text_patch"
         subs.append(patch)
 
     matches_range_unquoted_substituted = re.finditer(
@@ -488,6 +515,25 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
             patch["rule_id"] = "uk_effect_range_where_ordinal_substitution_text_patch"
         subs.append(patch)
+
+    matches_bare_range_unquoted_substituted = re.finditer(
+        r"(?<!words )(?<!word )\bfrom [“\"'‘](?P<start>.*?)[”\"'’]"
+        r"\s+to [“\"'‘](?P<end>.*?)[”\"'’],?\s+substitute\s*[—-]?\s+"
+        r"(?P<replacement>.+?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_bare_range_unquoted_substituted:
+        replacement = m.group("replacement").strip()
+        if replacement.startswith(("“", '"', "'", "‘")):
+            continue
+        subs.append(
+            {
+                "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
+                "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
+                "rule_id": "uk_effect_bare_range_unquoted_substitution_text_patch",
+            }
+        )
 
     matches_labeled_end_range_substituted = re.finditer(
         r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
@@ -548,8 +594,26 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_quoted_anchor_to_end_block_substituted = re.finditer(
+        r"for\s+[“\"'‘](.*?)[”\"'’]\s+to the end"
+        r"(?: of (?:the )?(?:subsection|paragraph|sub-paragraph|section))?"
+        r",?\s+substitute[—-]?\s+(.+)$",
+        text,
+        re.I,
+    )
+    for m in matches_quoted_anchor_to_end_block_substituted:
+        replacement = m.group(2).strip()
+        if replacement:
+            subs.append(
+                {
+                    "original": f"TEXT_FROM_{m.group(1).strip()}_TO_END",
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_quoted_anchor_to_end_block_substitution_text_patch",
+                }
+            )
+
     matches_anchor_to_end_block_substituted = re.finditer(
-        r"(?:for (?:the )?words? )?from [“\"'‘](.*?)[”\"'’] to the end"
+        r"(?:for (?:the )?words?\s+)?(?:from\s+)?[“\"'‘](.*?)[”\"'’]\s+to\s+the\s+end"
         r"(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?"
         r",?\s+substitute\s*[—-]?\s+(.+?)(?:\s+[.;])?$",
         text,
@@ -624,23 +688,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
-    matches_quoted_anchor_to_end_block_substituted = re.finditer(
-        r"for\s+[“\"'‘](.*?)[”\"'’]\s+to the end"
-        r"(?: of (?:the )?(?:subsection|paragraph|sub-paragraph|section))?"
-        r",?\s+substitute[—-]?\s+(.+)$",
-        text,
-        re.I,
-    )
-    for m in matches_quoted_anchor_to_end_block_substituted:
-        replacement = m.group(2).strip()
-        if replacement:
-            subs.append(
-                {
-                    "original": f"TEXT_FROM_{m.group(1).strip()}_TO_END",
-                    "replacement": replacement,
-                    "rule_id": "uk_effect_quoted_anchor_to_end_block_substitution_text_patch",
-                }
-            )
+
 
     matches_opening_words_substituted = re.finditer(
         r"for (?:the )?opening words substitute [“\"'‘](.*?)[”\"'’]",
@@ -718,6 +766,73 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_from_beginning_passive_substituted = re.finditer(
+        r"for\s+(?:the\s+)?words?\s+from\s+the\s+beginning"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+        r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’]\s+"
+        r"(?:is|are|shall\s+be)\s+substituted\s+"
+        r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_from_beginning_passive_substituted:
+        subs.append(
+            {
+                "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+            }
+        )
+
+    matches_from_beginning_block_substituted = re.finditer(
+        r"(?:for|from)\s+(?:the\s+)?words?\s+from\s+the\s+beginning\s+to\s+"
+        r"[“\"'‘](.*?)[”\"'’]\s+substitute\s*[—-]?\s+(.+?)(?:\s+[.;])?$",
+        text,
+        re.I,
+    )
+    for m in matches_from_beginning_block_substituted:
+        replacement = m.group(2).strip()
+        if replacement and not replacement.startswith(("“", '"', "'", "‘")):
+            subs.append(
+                {
+                    "original": f"TEXT_FROM__TO_{m.group(1).strip()}",
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
+                }
+            )
+
+    matches_proviso_child_substituted = re.finditer(
+        r"for\s+paragraph\s+\(?([a-zA-Z0-9]+)\)?\s+of\s+the\s+proviso\s+substitute\s*[—-]?\s+(.+?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_proviso_child_substituted:
+        subs.append(
+            {
+                "original": f"TEXT_PROVISO_CHILD_{m.group(1).strip()}",
+                "replacement": m.group(2).strip(),
+                "rule_id": "uk_effect_proviso_child_substitution_text_patch",
+            }
+        )
+
+    matches_paragraphs_substituted = re.finditer(
+        r"for\s+paragraphs?\s+(?P<labels>[a-zA-Z0-9\s\(\),&and]+)\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_paragraphs_substituted:
+        labels_str = m.group("labels")
+        labels = [lbl.strip("() ") for lbl in re.split(r",|\band\b|&", labels_str) if lbl.strip()]
+        if labels:
+            labels_suffix = "_".join(labels)
+            subs.append(
+                {
+                    "original": f"TEXT_REPLACE_CHILDREN_PARAGRAPH_{labels_suffix}",
+                    "replacement": m.group("replacement").strip(),
+                    "rule_id": "uk_effect_paragraphs_range_substitution_text_patch",
+                }
+            )
+
     # Pattern 1a: "for the words 'X' are substituted the words 'Y'"
     matches_are_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’](?:\s*\([^)]*\))?\s+(?:is|are|shall\s+be)\s+substituted\s+(?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]",
@@ -726,6 +841,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_are_substituted:
         subs.append({"original": m.group(1), "replacement": m.group(2)})
+
+    matches_preposed_passive_substituted = re.finditer(
+        r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"for\s+(?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"(?:(?:the )?words? )?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_preposed_passive_substituted:
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_preposed_passive_substitution_text_patch",
+            }
+        )
 
     matches_there_is_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’](?:\s*\([^)]*\))?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+(?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]",
@@ -751,7 +882,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
         r"(?P<all_occurrences>,?\s+in (?:each|both) places?"
         r"(?:\s+(?:(?:it|they|those words?)\s+)?(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
-        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
+        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
@@ -801,6 +932,25 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": original,
                 "replacement": f"{original}{joiner}{inserted}",
                 "rule_id": "uk_effect_bare_quoted_anchor_insert_text_patch",
+            }
+        )
+
+    matches_after_parenthesized_anchor_insert = re.finditer(
+        r"\bafter\s+\((?P<original>[0-9A-Za-z]+)\),?\s+"
+        r"(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_after_parenthesized_anchor_insert:
+        original = f"({m.group('original').strip()})"
+        inserted = m.group("inserted").strip()
+        joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "rule_id": "uk_effect_after_parenthesized_anchor_insert_text_patch",
             }
         )
 
@@ -915,7 +1065,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
         rf"where\s+(?:(?:it|they|those words?)\s+)?"
         rf"(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+"
-        r"(?:occurs?|occurring|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
+        r"(?:occurs?|occurring|appear)s?,?\s+(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)\s+"
         r"[“\"'‘](?P<inserted>.+)[”\"'’]\s*(?:[,.;]|$)",
         text,
         re.I,
@@ -944,7 +1094,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’],?\s+"
         rf"where\s+(?:(?:it|they|those words?)\s+)?"
         rf"({_ORDINAL_OCCURRENCE_WORDS})\s+"
-        r"(?:occurs?|occurring|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
+        r"(?:occurs?|occurring|appear)s?,?\s+(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)\s+"
         r"[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
@@ -1145,6 +1295,21 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_after_compound_subsection_child_insert = re.finditer(
+        r"after\s+subsection\s+\([0-9A-Za-z]+\)\([a-z]\)\(([ivxlcdm0-9A-Za-z]+)\),?\s+"
+        r"insert\s+[“\"'‘](.+?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_after_compound_subsection_child_insert:
+        subs.append(
+            {
+                "original": f"TEXT_AFTER_CHILD_subparagraph_{m.group(1).strip()}",
+                "replacement": m.group(2).strip(),
+                "rule_id": "uk_effect_after_compound_subsection_child_text_insertion_patch",
+            }
+        )
+
     matches_after_definition_child_insert = re.finditer(
         r"in the definition of [“\"'‘](.*?)[”\"'’],\s+"
         r"after\s+(paragraph)\s+\(([0-9A-Za-z]+)\)\s+insert\s*[—-]?\s+(.+?)(?:\s+\.)?$",
@@ -1240,6 +1405,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "rule_id": "uk_effect_definition_child_repeal_text_patch",
             }
         )
+    matches_omit_paragraphs = re.finditer(
+        r"\bomit\s+paragraphs?\s+(?P<labels>[0-9A-Za-z\s\(\),&and]+)\.?",
+        text,
+        re.I,
+    )
+    for m in matches_omit_paragraphs:
+        labels_str = m.group("labels")
+        labels = [lbl.strip("() ") for lbl in re.split(r",|\band\b|&", labels_str) if lbl.strip()]
+        for lbl in labels:
+            if lbl:
+                subs.append(
+                    {
+                        "original": f"TEXT_OMIT_PARAGRAPH_{lbl}",
+                        "replacement": "",
+                        "rule_id": "uk_effect_omit_paragraph_fragment_patch",
+                    }
+                )
+
 
     matches_definition_child_substituted_postpositive = re.finditer(
         r"for\s+(paragraph)\s+\(([0-9A-Za-z]+)\)\s+"
@@ -1260,6 +1443,31 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                     ),
                     "replacement": replacement,
                     "rule_id": "uk_effect_definition_child_substitution_text_patch",
+                }
+            )
+
+    matches_definition_child_and_tail_substituted = re.finditer(
+        r"for\s+(paragraph)\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+        r"of\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]\s+"
+        r"and\s+the\s+[“\"'‘]?(?P<tail_connector>or|and)[”\"'’]?\s+"
+        r"at\s+the\s+end\s+of\s+that\s+paragraph\s+"
+        r"substitute\s*[—–-]?\s+(?P<replacement>.+?)(?:\s+\.)?$",
+        text,
+        re.I | re.S,
+    )
+    for m in matches_definition_child_and_tail_substituted:
+        replacement = _strip_optional_child_label(m.group("replacement"), m.group("label"))
+        replacement = re.sub(r"\s+\.$", "", replacement).strip()
+        if replacement:
+            subs.append(
+                {
+                    "original": (
+                        f"TEXT_DEFINITION_CHILD_{m.group(1).strip().upper()}_"
+                        f"{m.group('term').strip()}{US}{m.group('label').strip()}"
+                    ),
+                    "replacement": replacement,
+                    "tail_connector": m.group("tail_connector").strip().lower(),
+                    "rule_id": "uk_effect_definition_child_and_tail_substitution_text_patch",
                 }
             )
 
@@ -1286,10 +1494,11 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             )
 
     matches_in_definition_after_insert = re.finditer(
-        r"in the definition of [“\"'‘](.*?)[”\"'’],\s+"
+        r"in the definition of [“\"'‘](.*?)[”\"'’],?\s+"
         r"after\s+[“\"'‘](.*?)[”\"'’]\s+"
         r"(?:there is inserted|there are inserted|there shall be inserted|insert)"
-        r"(?:\s+(?:the\s+)?words?)?\s*;?\s+[“\"'‘](.*?)[”\"'’]",
+        r"(?:\s+(?:the\s+)?words?)?\s*;?\s+[“\"'‘](.+?)[”\"'’]"
+        r"\s*(?:[,;]\s*(?:and)?|\.)?\s*$",
         text,
         re.I,
     )
@@ -1313,7 +1522,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"(?P<all_occurrences>,?\s+in (?:each|both) places?"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
-        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
+        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
@@ -1417,6 +1626,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_preposed_at_beginning_insert = re.finditer(
+        r"(?:there is inserted|there are inserted|there shall be inserted)\s+"
+        r"at the beginning(?: of (?:(?:that|the) )?"
+        r"(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?"
+        r"(?:\s+\([^)]*\))?)?,?\s+"
+        r"(?:the\s+)?words?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_preposed_at_beginning_insert:
+        subs.append(
+            {
+                "original": "TEXT_BEGINNING",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": "uk_effect_preposed_beginning_text_insertion_patch",
+            }
+        )
+
     matches_at_end_insert = re.finditer(
         r"at the end(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?,?\s+"
         r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
@@ -1446,6 +1673,21 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": "TEXT_FROM__TO_END",
                 "replacement": inserted,
                 "rule_id": "uk_effect_at_end_text_insertion_patch",
+            }
+        )
+
+    matches_insert_text_at_end = re.finditer(
+        r"\binsert(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]"
+        r"\s+at\s+the\s+end(?:\s+of\s+[^.;]+)?",
+        text,
+        re.I,
+    )
+    for m in matches_insert_text_at_end:
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": "uk_effect_insert_text_at_end_patch",
             }
         )
 
@@ -1540,12 +1782,32 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             patch["rule_id"] = "uk_effect_range_occurrence_repeal_text_patch"
         subs.append(patch)
 
+    matches_passive_repeal_to_end = re.finditer(
+        r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
+        rf"(?:,?\s+where\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+occurring)?"
+        r",?\s+to\s+the\s+end"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+        r"\s+(?:are|is)\s+(?:omitted|repealed)",
+        text,
+        re.I,
+    )
+    for m in matches_passive_repeal_to_end:
+        patch = {
+            "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
+            "replacement": "",
+            "rule_id": "uk_effect_range_to_end_passive_repeal_text_patch",
+        }
+        if m.group("ordinal"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
+            patch["rule_id"] = "uk_effect_range_to_end_passive_ordinal_repeal_text_patch"
+        subs.append(patch)
+
     matches_omit = re.finditer(r"from [“\"'‘](.*?)[”\"'’] to [“\"'‘](.*?)[”\"'’] (?:are omitted|is omitted|omit)", text, re.I)
     for m in matches_omit:
         subs.append({"original": f"FROM_{m.group(1)}_TO_{m.group(2)}", "replacement": ""})
 
     matches_omit_range = re.finditer(
-        r"\bomit\s+(?:the\s+)?words?\s+from\s+[“\"'‘](.*?)[”\"'’]\s+to\s+[“\"'‘](.*?)[”\"'’]",
+        r"\bomit\s+(?:(?:the\s+)?words?\s+)?from\s+[“\"'‘](.*?)[”\"'’]\s+to\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -1559,7 +1821,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     matches_omit_to_end = re.finditer(
-        r"omit (?:the )?words? from [“\"'‘](.*?)[”\"'’] to the end",
+        r"omit (?:(?:the )?words? )?from [“\"'‘](.*?)[”\"'’] to the end",
         text,
         re.I,
     )
@@ -1567,7 +1829,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         subs.append({"original": f"TEXT_FROM_{m.group(1).strip()}_TO_END", "replacement": ""})
 
     matches_omit_to_end_ordinal = re.finditer(
-        r"(?:omit\s+)?(?:the )?words? from [“\"'‘](.*?)[”\"'’]\s+in the\s+(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+place where it occurs to the end\s+(?:are|is)\s+(?:omitted|repealed)",
+        r"(?:omit\s+)?(?:(?:the )?words? )?from [“\"'‘](.*?)[”\"'’]\s+in the\s+(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+place where it occurs to the end\s+(?:are|is)\s+(?:omitted|repealed)",
         text,
         re.I,
     )
@@ -1634,6 +1896,20 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     for m in matches_words_are_omitted:
         subs.append({"original": m.group(1).strip(), "replacement": ""})
 
+    matches_words_shall_be_omitted = re.finditer(
+        r"(?:the )?words? [“\"'‘](.*?)[”\"'’]\s+shall\s+be\s+(?:omitted|repealed)",
+        text,
+        re.I,
+    )
+    for m in matches_words_shall_be_omitted:
+        subs.append(
+            {
+                "original": m.group(1).strip(),
+                "replacement": "",
+                "rule_id": "uk_effect_quoted_word_passive_omit_text_patch",
+            }
+        )
+
     matches_final_word_repealed = re.finditer(
         r"(?:the\s+)?word\s+[“\"'‘](.*?)[”\"'’]\s+at the end(?: of [^.;]+)?\s+"
         r"(?:is|are)\s+(?:omitted|repealed)",
@@ -1647,6 +1923,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "replacement": "",
                 "occurrence": "-1",
                 "rule_id": "uk_effect_final_quoted_word_repeal_text_patch",
+            }
+        )
+
+    matches_final_bare_quoted_word_repealed = re.finditer(
+        r"(?:the\s+)?[“\"'‘](?P<word>.*?)[”\"'’]\s+at the end(?: of [^.;]+)?\s+"
+        r"(?:is|are)\s+(?:omitted|repealed)",
+        text,
+        re.I,
+    )
+    for m in matches_final_bare_quoted_word_repealed:
+        subs.append(
+            {
+                "original": m.group("word").strip(),
+                "replacement": "",
+                "occurrence": "-1",
+                "rule_id": "uk_effect_final_bare_quoted_word_repeal_text_patch",
             }
         )
 

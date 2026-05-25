@@ -17,6 +17,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
 from lawvm.uk_legislation.replay_text import _multi_fragment_text_selector
 from lawvm.uk_legislation.source_amendment_program_fragments import (
+    _fragment_substitution_amendment_program_inserted_parent_child_insert,
     _fragment_substitution_amendment_inserted_text_substitution,
     _fragment_substitution_source_carried_multi_subunit_repeal,
 )
@@ -40,6 +41,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
 )
 from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_after_words_inserted_by_sibling,
+    _fragment_substitution_grouped_after_insert_from_parent,
     _fragment_substitution_grouped_anchor_occurrence,
     append_source_fragment_context_observations,
 )
@@ -374,6 +376,14 @@ def _extract_text_fragment_substitutions(
         )
         if grouped_anchor_occurrence is not None:
             subs = [grouped_anchor_occurrence]
+    if not subs:
+        grouped_after_insert = _fragment_substitution_grouped_after_insert_from_parent(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if grouped_after_insert is not None:
+            subs = [grouped_after_insert]
     if not subs and source_carried_table_entry_paragraph_substitution is not None:
         subs = [
             {
@@ -470,6 +480,15 @@ def _extract_text_fragment_substitutions(
         if source_carried_multi_subunit_repeal is not None:
             subs = [source_carried_multi_subunit_repeal]
     if not subs:
+        amendment_program_child_insert = (
+            _fragment_substitution_amendment_program_inserted_parent_child_insert(
+                extracted_text=extracted_text,
+                target=target,
+            )
+        )
+        if amendment_program_child_insert is not None:
+            subs = [amendment_program_child_insert]
+    if not subs:
         amendment_inserted_text_substitution = (
             _fragment_substitution_amendment_inserted_text_substitution(
                 extracted_text=extracted_text,
@@ -478,6 +497,18 @@ def _extract_text_fragment_substitutions(
         )
         if amendment_inserted_text_substitution is not None:
             subs = [amendment_inserted_text_substitution]
+    if subs:
+        filtered_subs = []
+        for sub in subs:
+            orig = str(sub.get("original") or "")
+            if orig.startswith("TEXT_REPLACE_CHILDREN_"):
+                parts = orig[len("TEXT_REPLACE_CHILDREN_") :].split("_")
+                if parts:
+                    child_kind = parts[0].lower()
+                    if target.path and target.path[-1][0].lower() == child_kind:
+                        continue
+            filtered_subs.append(sub)
+        subs = filtered_subs
     return list(subs or [])
 
 

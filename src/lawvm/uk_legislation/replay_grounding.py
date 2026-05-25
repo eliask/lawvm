@@ -19,6 +19,23 @@ def _grounding_eid(node: UKMutableNode) -> Optional[str]:
     return _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
 
 
+def _find_best_oracle_path(oracle_id: str, eid_map: dict[str, str], current_context: str) -> Optional[str]:
+    # Find all keys mapping to oracle_id
+    candidates = [k for k, v in eid_map.items() if v == oracle_id]
+    if not candidates:
+        return None
+    # Filter out ordinal keys (those containing '[')
+    non_ordinal = [c for c in candidates if "[" not in c]
+    if non_ordinal:
+        candidates = non_ordinal
+    # If any candidate starts with current_context, prefer it
+    context_matches = [c for c in candidates if c.startswith(current_context + ":") or c == current_context]
+    if context_matches:
+        return context_matches[0]
+    # Otherwise return the shortest candidate or first candidate
+    return min(candidates, key=len)
+
+
 def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
     clean_label = _clean_num(label) if label else ""
     if not clean_label:
@@ -80,6 +97,7 @@ class UKReplayGroundingMixin:
         """Walks the entire statute and updates EIDs to match the Oracle map."""
         if not self.eid_map:
             return
+        is_eur = self.statute.statute_id.startswith("eur/")
 
         # Collect the full set of oracle EID values (the canonical IDs we want to
         # assign).  Used both for pre-seeding and in the main matching loop.
@@ -127,6 +145,8 @@ class UKReplayGroundingMixin:
         # not be overwritten with a generic local label.
         def _ensure_local_eid(node: UKMutableNode) -> None:
             kind_value = _uk_kind_value(node.kind)
+            if is_eur and kind_value == "section":
+                kind_value = "article"
             if kind_value == "schedule_entry":
                 for key in ("eId", "id"):
                     node.attrs.pop(key, None)
@@ -165,11 +185,15 @@ class UKReplayGroundingMixin:
                 kind = node.kind
                 kind_name = _uk_kind_value(kind).lower()
                 clean_label = _grounding_clean_label(kind_name, node.label)
-                next_path_key = uk_semantic_path_key(
-                    parent_path_key,
-                    kind=kind_name,
-                    clean_label=clean_label,
-                )
+                oracle_path = _find_best_oracle_path(existing_eid, self.eid_map, context)
+                if oracle_path:
+                    next_path_key = oracle_path
+                else:
+                    next_path_key = uk_semantic_path_key(
+                        parent_path_key,
+                        kind=kind_name,
+                        clean_label=clean_label,
+                    )
                 new_context = context
                 if kind_name == "schedule" and clean_label:
                     new_context = f"schedule-{clean_label}"
@@ -186,6 +210,8 @@ class UKReplayGroundingMixin:
 
             kind = node.kind
             kind_name = _uk_kind_value(kind).lower()
+            if is_eur and kind_name == "section":
+                kind_name = "article"
             clean_label = _grounding_clean_label(kind_name, node.label)
             raw_label = str(node.label or "").strip()
             heading = node.attrs.get("heading") or ""
@@ -314,6 +340,8 @@ class UKReplayGroundingMixin:
                 kind_syns = ["section", "p1", "article"]
             elif kind_name in ("paragraph", "subsection", "p2", "p3", "subparagraph", "item", "point"):
                 kind_syns = ["paragraph", "subsection", "p2", "p3", "subparagraph", "item", "point"]
+                if context.startswith("schedule"):
+                    kind_syns.extend(["section", "article", "p1"])
 
             # Pass 1: Local & Flat Matching (High Priority for top-level nodes)
             if not oracle_id:
@@ -450,6 +478,9 @@ class UKReplayGroundingMixin:
                 before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
                 node.attrs["eId"] = oracle_id
                 seen_oracle_ids.add(oracle_id)
+                oracle_path = _find_best_oracle_path(oracle_id, self.eid_map, context)
+                if oracle_path:
+                    next_path_key = oracle_path
                 self.oracle_alignment_events.append(
                     {
                         "rule_id": "uk_oracle_eid_alignment_adapter",
@@ -486,16 +517,21 @@ class UKReplayGroundingMixin:
                 elif parent_eid:
                     before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
                     local_label = clean_label
+                    raw_tail_label = raw_label.lower().strip("().")
                     if (
-                        raw_label
-                        and kind_name in {"subparagraph", "item", "point"}
-                        and re.fullmatch(
-                            r"[ivxlcdm]+",
-                            raw_label,
-                            re.IGNORECASE,
-                        )
+                        raw_tail_label
+                        and kind_name in {
+                            "paragraph",
+                            "subsection",
+                            "subparagraph",
+                            "item",
+                            "point",
+                            "p2",
+                            "p3",
+                        }
+                        and re.fullmatch(r"[ivxlcdm]+", raw_tail_label, re.IGNORECASE)
                     ):
-                        local_label = raw_label.lower().strip(".")
+                        local_label = raw_tail_label
                     part = local_label if local_label else kind_name
                     if context.startswith("schedule") and clean_label:
                         if kind_name in {"paragraph", "subparagraph", "subsection", "item", "point", "p2", "p3"}:
@@ -507,7 +543,19 @@ class UKReplayGroundingMixin:
                                 part = f"paragraph-{local_label}"
                         else:
                             part = f"{kind_name}-{clean_label}"
-                    fallback_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{part}"
+                    else:
+                        if context == "body":
+                            if kind_name in {"part", "chapter", "section", "article", "rule", "regulation"}:
+                                part = f"{kind_name}-{clean_label}"
+                            else:
+                                part = local_label
+                        else:
+                            part = f"{kind_name}-{local_label}"
+
+                    if context == "body" and kind_name in {"part", "chapter", "section", "article", "rule", "regulation"}:
+                        fallback_eid = part
+                    else:
+                        fallback_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{part}"
                     if not clean_label and kind_name not in {"schedule", "part", "chapter"}:
                         for key in ("eId", "id"):
                             node.attrs.pop(key, None)

@@ -20,8 +20,11 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
 means
+|have\s+the\s+same\s+meaning\s+as
 |has\s+the\s+same\s+meaning\s+as
+|have\s+the\s+meaning
 |has\s+the\s+meaning
+|are\s+to\s+be\s+construed
 |is\s+to\s+be\s+construed
 |shall\s+be\s+construed
 |includes
@@ -29,8 +32,11 @@ means
 
 _UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL = r"""
 means
+|have\s+the\s+same\s+meaning\s+as
 |has\s+the\s+same\s+meaning\s+as
+|have\s+the\s+meaning
 |has\s+the\s+meaning
+|are\s+to\s+be\s+construed
 |is\s+to\s+be\s+construed
 |includes
 """
@@ -40,6 +46,7 @@ _UK_NEXT_DEFINITION_PATTERN = re.compile(
     [;\.,]\s*
     [“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019]
     (?:\s*\([^;]*?\))*
+    (?:\s+(?:and|or)\s+[“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019])*
     \s+
     (?:{_UK_DEFINITION_PREDICATE_PATTERN})\b
     """,
@@ -50,11 +57,71 @@ _UK_NEXT_DEFINITION_PATTERN_WITHOUT_SHALL = re.compile(
     rf"""
     [;\.]\s*
     [“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019]
+    (?:\s+(?:and|or)\s+[“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019])*
     \s+
     (?:{_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL})\b
     """,
     flags=re.I | re.S | re.X,
 )
+
+
+def _uk_amendment_program_line_label_matches(text: str, label: str) -> list[re.Match[str]]:
+    label_pattern = re.escape(str(label or "").strip().strip("()").lower().strip("."))
+    if not label_pattern:
+        return []
+    return list(
+        re.finditer(
+            rf"(?m)(?:^|\n)(?P<prefix>[ \t]*){label_pattern}[ \t]*(?=\n|$)",
+            text,
+            flags=re.I,
+        )
+    )
+
+
+def _uk_amendment_program_next_line_label_match(
+    text: str,
+    *,
+    start: int,
+) -> re.Match[str] | None:
+    label_pattern = re.compile(
+        r"(?m)(?:^|\n)[ \t]*(?:[0-9]+[A-Za-z]?|[A-Za-z]{1,4})[ \t]*(?=\n|$)"
+    )
+    for match in label_pattern.finditer(text, pos=start):
+        return match
+    return None
+
+
+def _uk_apply_amendment_program_inserted_parent_child_insert(
+    text: str,
+    *,
+    inserted_parent_label: str,
+    direction: str,
+    anchor_label: str,
+    replacement: str,
+) -> str | None:
+    parent_matches = _uk_amendment_program_line_label_matches(text, inserted_parent_label)
+    if len(parent_matches) != 1:
+        return None
+    anchor_matches = [
+        match
+        for match in _uk_amendment_program_line_label_matches(text, anchor_label)
+        if match.start() > parent_matches[0].end()
+    ]
+    if len(anchor_matches) != 1:
+        return None
+    anchor_match = anchor_matches[0]
+    if direction == "before":
+        insert_at = anchor_match.start()
+    elif direction == "after":
+        next_label = _uk_amendment_program_next_line_label_match(
+            text,
+            start=anchor_match.end(),
+        )
+        insert_at = next_label.start() if next_label is not None else len(text)
+    else:
+        return None
+    insertion = "\n\n" + " ".join(replacement.split()).strip() + "\n\n"
+    return f"{text[:insert_at].rstrip()}{insertion}{text[insert_at:].lstrip()}"
 
 
 def _definition_term_pattern(
@@ -88,6 +155,7 @@ def _compile_definition_entry_start_pattern(
         (?P<prefix>{prefix_pattern})
         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
         (?:\s*\([^;]*?\))*
+        (?:\s+(?:and|or)\s+[“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019])*
         \s+
         (?:{predicate_pattern})\b
         """,
@@ -112,6 +180,7 @@ def _compile_definition_entry_range_pattern(
         rf"""
         (?P<prefix>{prefix_pattern})
         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+        (?:\s+(?:and|or)\s+[“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019])*
         \s+
         (?:{predicate_pattern})\b
         .*?
@@ -470,12 +539,16 @@ def _rewrite_definition_entry_text(
         \s*
         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
         (?:\s*\([^;]*?\))*
+        (?:\s+(?:and|or)\s+[“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019])*
         (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
         \s+
         (?P<predicate>
             means
+            |have\s+the\s+same\s+meaning\s+as
             |has\s+the\s+same\s+meaning\s+as
+            |have\s+the\s+meaning
             |has\s+the\s+meaning
+            |are\s+to\s+be\s+construed
             |is\s+to\s+be\s+construed
             |shall\s+be\s+construed
             |includes
@@ -905,6 +978,42 @@ class UKReplayTextApplyMixin:
         text = node.text or ""
         if not text:
             return node, False
+        if match.startswith("TEXT_FEE_SUM_"):
+            old_fee = match[len("TEXT_FEE_SUM_"):]
+            found_matches = []
+            if old_fee and old_fee != "ANY":
+                pattern = _text_patch_pattern(
+                    old_fee,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                found_matches = list(re.finditer(pattern, text, flags=re.I))
+            if not found_matches:
+                fee_regex = r"£\d+(?:,\d{3})*(?:[\.·]\d{2})?\b|\bNIL\b|\bsixpence\b|\btwo\s+pence\b|\bone\s+shilling\b|\bthree\s+pounds\b|\bfive\s+shillings\b|\btwenty\s+shillings\b|\btwo\s+shillings\s+and\s+sixpence\b|\bten\s+shillings\b"
+                found_matches = list(re.finditer(fee_regex, text, flags=re.I))
+            if not found_matches:
+                return node, False
+
+            if occurrence == 0:
+                new_text = text
+                for m in reversed(found_matches):
+                    new_text = new_text[:m.start()] + replacement + new_text[m.end():]
+                rebuilt = dc_replace(node, text=new_text)
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            elif occurrence == -1:
+                m = found_matches[-1]
+                rebuilt = dc_replace(node, text=text[:m.start()] + replacement + text[m.end():])
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            else:
+                if occurrence <= len(found_matches):
+                    m = found_matches[occurrence - 1]
+                    rebuilt = dc_replace(node, text=text[:m.start()] + replacement + text[m.end():])
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+                return node, False
+
         if match == "TEXT_ALL":
             rebuilt = dc_replace(node, text=replacement)
             self._replace_node_in_statute(node, rebuilt)
@@ -963,34 +1072,41 @@ class UKReplayTextApplyMixin:
             return rebuilt, True
         if match.startswith("TEXT_FROM_") and "_TO_" in match:
             start_text, end_text = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
-            if not start_text or not end_text:
+            if not end_text:
                 return node, False
-            start_ordinal = occurrence if occurrence > 0 else 1
+            if start_text:
+                start_ordinal = occurrence if occurrence > 0 else 1
+                if occurrence > 0:
+                    start_matches, used_word_start = _range_anchor_matches(text, start_text)
+                else:
+                    start_matches = list(re.finditer(re.escape(start_text), text))
+                    used_word_start = False
+                if len(start_matches) >= start_ordinal:
+                    start_match = start_matches[start_ordinal - 1]
+                    if used_word_start and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
+                else:
+                    start_pattern = _text_patch_pattern(
+                        start_text,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    start_matches = list(re.finditer(start_pattern, text, flags=re.I | re.S))
+                    if len(start_matches) < start_ordinal:
+                        return node, False
+                    start_match = start_matches[start_ordinal - 1]
+                start_start = start_match.start()
+                start_end = start_match.end()
+            else:
+                start_start = 0
+                start_end = 0
+
             end_ordinal = end_occurrence if end_occurrence > 0 else 0
-            if occurrence > 0:
-                start_matches, used_word_start = _range_anchor_matches(text, start_text)
-            else:
-                start_matches = list(re.finditer(re.escape(start_text), text))
-                used_word_start = False
-            if len(start_matches) >= start_ordinal:
-                start_match = start_matches[start_ordinal - 1]
-                if used_word_start and recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
-            else:
-                start_pattern = _text_patch_pattern(
-                    start_text,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
-                start_matches = list(re.finditer(start_pattern, text, flags=re.I | re.S))
-                if len(start_matches) < start_ordinal:
-                    return node, False
-                start_match = start_matches[start_ordinal - 1]
             if end_ordinal:
                 end_matches, used_word_end = _range_anchor_matches(text, end_text)
                 if len(end_matches) >= end_ordinal:
                     end_match = end_matches[end_ordinal - 1]
-                    if end_match.start() < start_match.end():
+                    if end_match.start() < start_end:
                         return node, False
                     end_end = end_match.end()
                     if used_word_end and recovery_rule_ids_out is not None:
@@ -1005,15 +1121,15 @@ class UKReplayTextApplyMixin:
                     if len(end_matches) < end_ordinal:
                         return node, False
                     end_match = end_matches[end_ordinal - 1]
-                    if end_match.start() < start_match.end():
+                    if end_match.start() < start_end:
                         return node, False
                     end_end = end_match.end()
             else:
-                end_idx = text.find(end_text, start_match.end())
+                end_idx = text.find(end_text, start_end)
                 if end_idx == -1:
                     return node, False
                 end_end = end_idx + len(end_text)
-            rebuilt = dc_replace(node, text=f"{text[: start_match.start()]}{replacement}{text[end_end:]}")
+            rebuilt = dc_replace(node, text=f"{text[:start_start]}{replacement}{text[end_end:]}")
             self._replace_node_in_statute(node, rebuilt)
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_node_local_range_text_rewrite_applied")
@@ -1312,6 +1428,101 @@ class UKReplayTextApplyMixin:
         """
         text_nodes = _text_nodes_in_document_order(node)
 
+        if match.startswith("TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_"):
+            program_match = re.fullmatch(
+                r"TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_([0-9A-Za-z]+)_(BEFORE|AFTER)_([0-9A-Za-z]+)",
+                match,
+            )
+            if program_match is None or not replacement:
+                return node, False
+            candidate_replacements: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                new_text = _uk_apply_amendment_program_inserted_parent_child_insert(
+                    text_node.text or "",
+                    inserted_parent_label=program_match.group(1),
+                    direction=program_match.group(2).lower(),
+                    anchor_label=program_match.group(3),
+                    replacement=replacement,
+                )
+                if new_text is not None:
+                    candidate_replacements.append((path, text_node, new_text))
+            if len(candidate_replacements) != 1:
+                return node, False
+            path, text_node, new_text = candidate_replacements[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_amendment_program_inserted_parent_child_insert_applied"
+                )
+            return rebuilt, True
+
+        if match.startswith("TEXT_FEE_SUM_"):
+            old_fee = match[len("TEXT_FEE_SUM_"):]
+            all_matches = []
+            for path, tn in text_nodes:
+                text = tn.text or ""
+                found_matches = []
+                if old_fee and old_fee != "ANY":
+                    pattern = _text_patch_pattern(
+                        old_fee,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    found_matches = list(re.finditer(pattern, text, flags=re.I))
+                if not found_matches:
+                    fee_regex = r"£\d+(?:,\d{3})*(?:[\.·]\d{2})?\b|\bNIL\b|\bsixpence\b|\btwo\s+pence\b|\bone\s+shilling\b|\bthree\s+pounds\b|\bfive\s+shillings\b|\btwenty\s+shillings\b|\btwo\s+shillings\s+and\s+sixpence\b|\bten\s+shillings\b"
+                    found_matches = list(re.finditer(fee_regex, text, flags=re.I))
+                for m in found_matches:
+                    all_matches.append((path, tn, m))
+
+            if not all_matches:
+                return node, False
+
+            if occurrence == 0:
+                from collections import defaultdict
+                by_path = defaultdict(list)
+                for path, tn, m in all_matches:
+                    by_path[path].append((tn, m))
+                rebuilt = node
+                for path, matches_in_node in by_path.items():
+                    tn = matches_in_node[0][0]
+                    new_text = tn.text
+                    sorted_matches = sorted(matches_in_node, key=lambda x: x[1].start(), reverse=True)
+                    for _, m in sorted_matches:
+                        new_text = new_text[:m.start()] + replacement + new_text[m.end():]
+                    rebuilt = self._replace_descendant_at_path(
+                        rebuilt,
+                        path,
+                        dc_replace(tn, text=new_text),
+                    )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            elif occurrence == -1:
+                path, tn, m = all_matches[-1]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(tn, text=tn.text[:m.start()] + replacement + tn.text[m.end():]),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            else:
+                if occurrence <= len(all_matches):
+                    path, tn, m = all_matches[occurrence - 1]
+                    rebuilt = self._replace_descendant_at_path(
+                        node,
+                        path,
+                        dc_replace(tn, text=tn.text[:m.start()] + replacement + tn.text[m.end():]),
+                    )
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+                return node, False
+
         if match == "TEXT_OPENING_WORDS":
             if not node.text:
                 return node, False
@@ -1429,6 +1640,31 @@ class UKReplayTextApplyMixin:
                 recovery_rule_ids_out.append("uk_replay_amendment_insert_tail_text_rewrite_applied")
             return rebuilt, True
 
+        if match.startswith("TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_"):
+            program_match = re.fullmatch(
+                r"TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_([0-9A-Za-z]+)_(BEFORE|AFTER)_([0-9A-Za-z]+)",
+                match,
+            )
+            if program_match is None or not replacement:
+                return node, False
+            text = node.text or ""
+            new_text = _uk_apply_amendment_program_inserted_parent_child_insert(
+                text,
+                inserted_parent_label=program_match.group(1),
+                direction=program_match.group(2).lower(),
+                anchor_label=program_match.group(3),
+                replacement=replacement,
+            )
+            if new_text is None:
+                return node, False
+            rebuilt = dc_replace(node, text=new_text)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_amendment_program_inserted_parent_child_insert_applied"
+                )
+            return rebuilt, True
+
         if match.startswith("TEXT_IN_CHILDREN_"):
             child_match = re.fullmatch(
                 rf"TEXT_IN_CHILDREN_([A-Za-z]+)_([0-9A-Za-z_]+){re.escape(US)}(.+)",
@@ -1470,6 +1706,55 @@ class UKReplayTextApplyMixin:
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_source_carried_multi_child_text_rewrite_applied")
             return rebuilt, True
+
+        if match.startswith("TEXT_PROVISO_CHILD_"):
+            child_label = match[len("TEXT_PROVISO_CHILD_") :].strip()
+            structured_child_matches = [
+                ( (index,), child )
+                for index, child in enumerate(node.children)
+                if _clean_num(child.label or "") == _clean_num(child_label)
+                and (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind)) in ("subparagraph", "paragraph")
+            ]
+            if len(structured_child_matches) == 1:
+                child_path, child_node = structured_child_matches[0]
+                if replacement:
+                    rebuilt_child = dc_replace(child_node, text=replacement.strip())
+                    rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
+                    self._replace_node_in_statute(node, rebuilt)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append(
+                            "uk_replay_proviso_child_structured_text_rewrite_applied"
+                        )
+                    return rebuilt, True
+
+        if match.startswith("TEXT_REPLACE_CHILDREN_"):
+            parts = match[len("TEXT_REPLACE_CHILDREN_") :].split("_")
+            if len(parts) >= 3:
+                child_kind = parts[0].lower()
+                labels_to_remove = set(parts[1:])
+                matching_children = [
+                    (index, child)
+                    for index, child in enumerate(node.children)
+                    if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind)) == child_kind
+                    and _clean_num(child.label or "") in labels_to_remove
+                ]
+                if len(matching_children) == len(labels_to_remove):
+                    indices_to_remove = {idx for idx, _ in matching_children}
+                    new_children = [
+                        child for idx, child in enumerate(node.children)
+                        if idx not in indices_to_remove
+                    ]
+                    current_text = node.text or ""
+                    if replacement.strip().startswith(",") or replacement.strip().startswith(";"):
+                        current_text = current_text.rstrip("—: ")
+                    new_text = f"{current_text} {replacement.strip()}".strip()
+                    rebuilt = dc_replace(node, text=new_text, children=tuple(new_children))
+                    self._replace_node_in_statute(node, rebuilt)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append(
+                            "uk_replay_children_range_replaced_with_text_applied"
+                        )
+                    return rebuilt, True
 
         if match.startswith("TEXT_AFTER_CHILD_TAIL_"):
             child_match = re.fullmatch(
@@ -2184,22 +2469,27 @@ class UKReplayTextApplyMixin:
                 parts = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
                 if len(parts) == 2:
                     start_text, end_text = parts[0], parts[1]
-                    start_idx, start_recovery_rule_ids = _find_text_range_start_index(
-                        full_text,
-                        start_text,
-                        occurrence=occurrence,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    if start_recovery_rule_ids and recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.extend(start_recovery_rule_ids)
+                    if start_text:
+                        start_idx, start_recovery_rule_ids = _find_text_range_start_index(
+                            full_text,
+                            start_text,
+                            occurrence=occurrence,
+                            allow_punctuation_spacing=allow_punctuation_spacing,
+                            allow_word_punctuation_elision=allow_word_punctuation_elision,
+                        )
+                        if start_recovery_rule_ids and recovery_rule_ids_out is not None:
+                            recovery_rule_ids_out.extend(start_recovery_rule_ids)
+                        start_len = len(start_text)
+                    else:
+                        start_idx = 0
+                        start_len = 0
                     end_idx = -1
                     if start_idx != -1:
                         if end_occurrence > 0:
                             end_matches, used_word_end = _range_anchor_matches(full_text, end_text)
                             if len(end_matches) >= end_occurrence:
                                 end_match = end_matches[end_occurrence - 1]
-                                if end_match.start() >= start_idx + len(start_text):
+                                if end_match.start() >= start_idx + start_len:
                                     end_idx = end_match.start()
                                     end_end = end_match.end()
                                     if used_word_end and recovery_rule_ids_out is not None:
@@ -2207,19 +2497,26 @@ class UKReplayTextApplyMixin:
                                             "uk_replay_text_range_anchor_word_boundary_normalized"
                                         )
                         else:
-                            end_idx = full_text.find(end_text, start_idx + len(start_text))
+                            end_idx = full_text.find(end_text, start_idx + start_len)
                             end_end = end_idx + len(end_text)
                     if start_idx == -1 or end_idx == -1:
-                        start_pattern = _text_patch_pattern(
-                            start_text,
-                            allow_punctuation_spacing=allow_punctuation_spacing,
-                            allow_word_punctuation_elision=allow_word_punctuation_elision,
-                        )
-                        start_matches = list(re.finditer(start_pattern, full_text, flags=re.I | re.S))
-                        ordinal = occurrence if occurrence > 0 else 1
-                        if len(start_matches) < ordinal:
-                            return node, False
-                        start_match = start_matches[ordinal - 1]
+                        if start_text:
+                            start_pattern = _text_patch_pattern(
+                                start_text,
+                                allow_punctuation_spacing=allow_punctuation_spacing,
+                                allow_word_punctuation_elision=allow_word_punctuation_elision,
+                            )
+                            start_matches = list(re.finditer(start_pattern, full_text, flags=re.I | re.S))
+                            ordinal = occurrence if occurrence > 0 else 1
+                            if len(start_matches) < ordinal:
+                                return node, False
+                            start_match = start_matches[ordinal - 1]
+                            start_start = start_match.start()
+                            start_end = start_match.end()
+                        else:
+                            start_pattern = ""
+                            start_start = 0
+                            start_end = 0
                         if end_occurrence > 0:
                             end_pattern = _text_patch_pattern(
                                 end_text,
@@ -2230,23 +2527,34 @@ class UKReplayTextApplyMixin:
                             if len(end_matches) < end_occurrence:
                                 return node, False
                             end_match = end_matches[end_occurrence - 1]
-                            if end_match.start() < start_match.end():
+                            if end_match.start() < start_end:
                                 return node, False
-                            new_text = full_text[: start_match.start()] + replacement + full_text[end_match.end() :]
+                            new_text = full_text[:start_start] + replacement + full_text[end_match.end() :]
                         else:
-                            pattern = (
-                                start_pattern
-                                + r".*?"
-                                + _text_patch_pattern(
+                            if start_text:
+                                pattern = (
+                                    start_pattern
+                                    + r".*?"
+                                    + _text_patch_pattern(
+                                        end_text,
+                                        allow_punctuation_spacing=allow_punctuation_spacing,
+                                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                                    )
+                                )
+                                m = re.search(pattern, full_text, flags=re.I | re.S)
+                                if not m:
+                                    return node, False
+                                new_text = full_text[: m.start()] + replacement + full_text[m.end() :]
+                            else:
+                                end_pattern = _text_patch_pattern(
                                     end_text,
                                     allow_punctuation_spacing=allow_punctuation_spacing,
                                     allow_word_punctuation_elision=allow_word_punctuation_elision,
                                 )
-                            )
-                            m = re.search(pattern, full_text, flags=re.I | re.S)
-                            if not m:
-                                return node, False
-                            new_text = full_text[: m.start()] + replacement + full_text[m.end() :]
+                                m = re.search(end_pattern, full_text, flags=re.I | re.S)
+                                if not m:
+                                    return node, False
+                                new_text = replacement + full_text[m.end() :]
                     else:
                         new_text = full_text[:start_idx] + replacement + full_text[end_end:]
                     rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])

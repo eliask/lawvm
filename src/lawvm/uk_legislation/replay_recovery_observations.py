@@ -267,6 +267,16 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="amendment_instruction_insert_tail_selector",
     ),
+    "uk_replay_amendment_program_inserted_parent_child_insert_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an amendment-program child insertion after proving "
+            "the inserted parent and child anchor are unique in the target "
+            "amendment-instruction text."
+        ),
+        family="amendment_program_recovery",
+        strict_disposition="record",
+        source_shape="amendment_program_inserted_parent_child_selector",
+    ),
     "uk_replay_before_definition_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a before-definition text rewrite after "
@@ -320,6 +330,24 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         family="text_rewrite_recovery",
         strict_disposition="record",
         source_shape="definition_after_anchor_selector",
+    ),
+    "uk_replay_proviso_child_structured_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay replaced the text of a proviso child paragraph "
+            "after matching the child label."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="proviso_child_selector",
+    ),
+    "uk_replay_children_range_replaced_with_text_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay deleted a range of child provisions and "
+            "inserted replacement text in the parent."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="children_range_selector",
     ),
 }
 

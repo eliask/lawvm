@@ -194,6 +194,57 @@ def test_parse_fragment_substitution_handles_all_occurrences_substitution() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_preposed_beginning_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (4)(a) there shall be inserted at the beginning the "
+        "words “subject to subsection (4B) below,”;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEGINNING",
+            "replacement": "subject to subsection (4B) below,",
+            "rule_id": "uk_effect_preposed_beginning_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_after_parenthesized_anchor_insert() -> None:
+    subs = parse_fragment_substitution("b after (3) insert “or (3ZA)” .")
+
+    assert subs == [
+        {
+            "original": "(3)",
+            "replacement": "(3) or (3ZA)",
+            "rule_id": "uk_effect_after_parenthesized_anchor_insert_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_does_not_treat_explicit_child_insert_as_parenthesized_text_anchor() -> None:
+    subs = parse_fragment_substitution("after subsection (3) insert “or (3ZA)”")
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_CHILD_subsection_3",
+            "replacement": "or (3ZA)",
+            "rule_id": "uk_effect_after_child_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_quoted_word_shall_be_omitted() -> None:
+    subs = parse_fragment_substitution('i after paragraph (a) the word “or” shall be omitted; and')
+
+    assert subs == [
+        {
+            "original": "or",
+            "replacement": "",
+            "rule_id": "uk_effect_quoted_word_passive_omit_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_respectively_there_is_substituted() -> None:
     subs = parse_fragment_substitution(
         "1 In each of the following provisions of the 2002 Act, for the words "
@@ -513,6 +564,29 @@ def test_parse_fragment_substitution_scopes_after_anchor_insert_to_definition() 
     ]
 
 
+def test_parse_fragment_substitution_scopes_nested_quote_after_anchor_insert_to_definition() -> None:
+    subs = parse_fragment_substitution(
+        "ii in the definition of \u201ccontributions\u201d after "
+        "\u201cin respect of contributions\u201d insert \u201c(and accordingly, in the "
+        "definition of \u201cthe Class 1 element\u201d given by this subsection, "
+        "\u201cClass 1 contributions\u201d includes any interest or penalty in respect "
+        "of Class 1 contributions)\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_IN_DEFINITION_contributions\x1fAFTER\x1fin respect of contributions",
+            "replacement": (
+                "in respect of contributions (and accordingly, in the definition "
+                "of \u201cthe Class 1 element\u201d given by this subsection, "
+                "\u201cClass 1 contributions\u201d includes any interest or penalty "
+                "in respect of Class 1 contributions)"
+            ),
+            "rule_id": "uk_effect_in_definition_after_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_scopes_after_anchor_all_occurrence_insert_to_definition() -> None:
     subs = parse_fragment_substitution(
         "ii in the definition of \u201can action for removing from heritable property\u201d "
@@ -788,6 +862,20 @@ def test_parse_fragment_substitution_handles_after_child_insert() -> None:
             "original": "TEXT_AFTER_CHILD_subparagraph_i",
             "replacement": "or",
             "rule_id": "uk_effect_after_child_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_after_compound_subsection_child_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a after subsection (4)(a)(i), insert \u201c or \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_CHILD_subparagraph_i",
+            "replacement": "or",
+            "rule_id": "uk_effect_after_compound_subsection_child_text_insertion_patch",
         }
     ]
 
@@ -1241,6 +1329,20 @@ def test_parse_fragment_substitution_handles_insert_at_end_reverse_order() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_insert_text_at_end_reverse_order() -> None:
+    subs = parse_fragment_substitution(
+        "i insert \u201c or \u201d at the end of sub-paragraph (ii);"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "or",
+            "rule_id": "uk_effect_insert_text_at_end_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_direct_words_are_repealed() -> None:
     subs = parse_fragment_substitution(
         "b in paragraph 2(1), the words \u201cor section 66 of this Act\u201d are repealed."
@@ -1352,6 +1454,19 @@ def test_parse_fragment_substitution_handles_direct_quoted_word_omission_at_end(
             "original": "or",
             "replacement": "",
             "rule_id": "uk_effect_direct_quoted_word_omission_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_final_bare_quoted_word_repeal() -> None:
+    subs = parse_fragment_substitution('a the “and” at the end of paragraph (aa) is repealed;')
+
+    assert subs == [
+        {
+            "original": "and",
+            "replacement": "",
+            "occurrence": "-1",
+            "rule_id": "uk_effect_final_bare_quoted_word_repeal_text_patch",
         }
     ]
 
@@ -1651,6 +1766,22 @@ def test_parse_fragment_substitution_handles_there_shall_be_substituted() -> Non
     ]
 
 
+def test_parse_fragment_substitution_handles_preposed_there_shall_be_substituted() -> None:
+    subs = parse_fragment_substitution(
+        "b in subsection (5) there shall be substituted for the words "
+        "“or 8 above” the words “ or regulation 4(a) of the General Food "
+        "Regulations 2004 ” ."
+    )
+
+    assert subs == [
+        {
+            "original": "or 8 above",
+            "replacement": "or regulation 4(a) of the General Food Regulations 2004",
+            "rule_id": "uk_effect_preposed_passive_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_from_beginning_to_substituted() -> None:
     subs = parse_fragment_substitution(
         '8 In subsection (13) for the words from the beginning to “in Northern Ireland,” '
@@ -1665,6 +1796,22 @@ def test_parse_fragment_substitution_handles_from_beginning_to_substituted() -> 
     ]
 
 
+def test_parse_fragment_substitution_handles_from_beginning_passive_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (1) for the words from the beginning of the subsection "
+        "to \u201ca person\u201d are substituted the words "
+        "\u201cFor the purposes of the Enterprise Act 2002, a person\u201d; and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_a person",
+            "replacement": "For the purposes of the Enterprise Act 2002, a person",
+            "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_from_the_words_from_beginning_to_substituted() -> None:
     subs = parse_fragment_substitution(
         "a in subsection (1), from the words from the beginning to \u201cdetained\u201d "
@@ -1675,6 +1822,22 @@ def test_parse_fragment_substitution_handles_from_the_words_from_beginning_to_su
         {
             "original": "TEXT_FROM__TO_detained",
             "replacement": "Where a person is detained under section 4(2), the",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_passive_range_to_end_repeal_with_ordinal() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (1) the words from \u201cto\u201d, where thirdly occurring, "
+        "to the end are repealed; and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_to_TO_END",
+            "replacement": "",
+            "occurrence": "3",
+            "rule_id": "uk_effect_range_to_end_passive_ordinal_repeal_text_patch",
         }
     ]
 
@@ -1727,9 +1890,73 @@ def test_parse_fragment_substitution_handles_range_unquoted_substitution() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_bare_range_unquoted_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a from \u201care to\u201d to \u201clicence\u201d substitute "
+        "(including public charge points) are to the person entitled, by virtue of\u2014 "
+        "a a statutory right, b a street works licence, or c where the apparatus "
+        "is a public charge point installed in England in pursuance of a street "
+        "works permit, the permit, ;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_are to_TO_licence",
+            "replacement": (
+                "(including public charge points) are to the person entitled, by virtue of\u2014 "
+                "a a statutory right, b a street works licence, or c where the apparatus "
+                "is a public charge point installed in England in pursuance of a street "
+                "works permit, the permit, ;"
+            ),
+            "rule_id": "uk_effect_bare_range_unquoted_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_is_replaced_with() -> None:
     subs = parse_fragment_substitution(
         "In subsection (2), the words “Alpha” is replaced with “Beta”."
     )
 
     assert subs == [{"original": "Alpha", "replacement": "Beta"}]
+
+
+def test_parse_fragment_substitution_handles_from_beginning_block_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "2 For the words from the beginning to “the registrar may” substitute— "
+        "A1 This section applies where..."
+    )
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_the registrar may",
+            "replacement": "A1 This section applies where...",
+            "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_proviso_child_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "For paragraph (ii) of the proviso substitute— "
+        "ii an investigation under Part 1 of the 2009 Act..."
+    )
+    assert subs == [
+        {
+            "original": "TEXT_PROVISO_CHILD_ii",
+            "replacement": "ii an investigation under Part 1 of the 2009 Act...",
+            "rule_id": "uk_effect_proviso_child_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_paragraphs_range_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "for paragraphs (a) and (b) substitute “ , on furnishing the prescribed particulars, ”"
+    )
+    assert subs == [
+        {
+            "original": "TEXT_REPLACE_CHILDREN_PARAGRAPH_a_b",
+            "replacement": ", on furnishing the prescribed particulars,",
+            "rule_id": "uk_effect_paragraphs_range_substitution_text_patch",
+        }
+    ]

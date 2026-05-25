@@ -11,6 +11,7 @@ import json
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
@@ -166,6 +167,36 @@ def has_blocking_lowering_rejection(rejections: list[dict[str, Any]] | tuple[dic
     return any(is_blocking_compile_record(rejection) for rejection in rejections)
 
 
+def _manual_compile_claim_template_for_effect_report(
+    *,
+    statute_id: str,
+    effect,  # noqa: ANN001
+    source_pathology: str,
+    extracted: Optional[ET.Element],
+    lowering_rejections: list[dict[str, Any]],
+    manual_frontier: dict[str, Any],
+    show_text: bool,
+) -> dict[str, Any]:
+    from lawvm.tools.uk_claim_templates import manual_compile_suggested_claim_template
+
+    status = str(manual_frontier.get("status") or "")
+    rule_id = str(manual_frontier.get("rule_id") or "")
+    if status not in {"manual_compile_candidate", "source_insufficient"} or not rule_id:
+        return {}
+    summary = SimpleNamespace(
+        source_pathology=source_pathology or "",
+        source_extracted_text_preview=_text_snippet(
+            extracted,
+            limit=100000 if show_text else 300,
+        ),
+        lowering_rejections=tuple(lowering_rejections),
+        manual_compile_status=status,
+        manual_compile_rule_id=rule_id,
+    )
+    row = SimpleNamespace(effect=effect, summary=summary)
+    return manual_compile_suggested_claim_template(statute_id=statute_id, row=row)
+
+
 def print_lowering_rejections(rejections: list[dict[str, Any]], *, prefix: str = "") -> None:
     lowering_observation_rows = tuple(dict(item) for item in rejections)
     lowering_rejection_rows = _blocking_rows(lowering_observation_rows)
@@ -222,6 +253,15 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         structural_for_replay=effect.is_structural_for_replay(applicability_mode=applicability_mode),
         compare_shape=compare_shape,
     )
+    suggested_claim_template = _manual_compile_claim_template_for_effect_report(
+        statute_id=statute_id,
+        effect=effect,
+        source_pathology=source_pathology,
+        extracted=extracted,
+        lowering_rejections=lowering_rejections,
+        manual_frontier=manual_frontier,
+        show_text=show_text,
+    )
     return {
         "report_kind": "uk_effect_frontier_report",
         "statute_id": statute_id,
@@ -250,6 +290,10 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
             "text": _text_snippet(extracted, limit=100000 if show_text else 300),
         },
         "manual_compile_frontier": manual_frontier,
+        "suggested_claim_template_status": (
+            "available" if suggested_claim_template else "not_available"
+        ),
+        "suggested_claim_template": suggested_claim_template,
         "lowering": {
             "compiled_op_count": len(op_rows),
             "observation_count": len(lowering_observation_rows),
