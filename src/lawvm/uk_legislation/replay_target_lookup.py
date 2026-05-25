@@ -153,11 +153,19 @@ class UKReplayTargetLookupMixin:
             if not roots:
                 return None, None, None
 
+            is_eur = bool(self.statute.metadata.get("is_eur", False))
             curr_cands = roots
             for p_kind, p_label in path:
                 next_cands: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
                 for curr_node, _, _ in curr_cands:
                     for i, child in enumerate(curr_node.children):
+                        if is_eur:
+                            nk = _uk_kind_value(child.kind).lower()
+                            tk = str(p_kind).lower()
+                            if nk == "paragraph" and tk == "subsection":
+                                continue
+                            if nk == "subsection" and tk == "paragraph":
+                                continue
                         if uk_match_kind_label(child, p_kind, p_label):
                             next_cands.append((child, curr_node, i))
                     if not next_cands and allow_compound_subsection_alias and p_kind.lower() == "subsection" and p_label:

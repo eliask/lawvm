@@ -20,6 +20,8 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
         "uk_affecting_act_article_schedule_payload_source_extracted",
         "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
+        "uk_affecting_act_compound_reference_split_fallback",
+        "uk_affecting_act_schedule_part_standalone_split_rejected",
     }
 )
 
@@ -444,6 +446,77 @@ def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
             "inside a BlockAmendment/InlineAmendment payload. That payload child is "
             "amended text, not the cited source instruction, so LawVM rejects it "
             "instead of treating it as source context."
+        ),
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_compound_reference_split_fallback(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    split_first_part: str,
+    split_second_part: str,
+    split_selected_part: str,
+    extracted_element_id: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_compound_reference_split_fallback",
+        "family": "target_resolution_recovery",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "split_first_part": split_first_part,
+        "split_second_part": split_second_part,
+        "split_selected_part": split_selected_part,
+        "extracted_element_id": extracted_element_id,
+        "reason": (
+            "UK affecting provisions contained a compound/combined reference that either "
+            "failed to extract as one address or initially resolved only to a gateway "
+            "provision. LawVM split the reference at an explicit structural component "
+            "boundary and extracted one component without treating the gateway and "
+            "payload references as a single address."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_schedule_part_standalone_split_rejection(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    split_first_part: str,
+    split_second_part: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_schedule_part_standalone_split_rejected",
+        "family": "source_pathology",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "split_first_part": split_first_part,
+        "split_second_part": split_second_part,
+        "reason": (
+            "UK affecting provisions named a schedule part, but source extraction could "
+            "not resolve that part while preserving the schedule container. LawVM rejects "
+            "the attempted standalone Part/Pt split because it may select a main-body "
+            "Part with the same label and contaminate the amendment payload."
         ),
         "blocking": True,
         "strict_disposition": "block",

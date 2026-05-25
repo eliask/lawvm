@@ -327,6 +327,40 @@ def reject_schedule_entry_missing_source(
     return True
 
 
+def reject_structural_pseudo_definition_target(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Reject metadata pseudo-definition paths until a definition-entry compiler owns them."""
+    if action not in {"insert", "replace"}:
+        return False
+    if not any(str(label).strip().lower() in {"defn", "defns"} for _kind, label in target.path):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_structural_pseudo_definition_target_rejected",
+        family="definition_entry_elaboration",
+        reason_code="metadata_definition_pseudo_target_requires_definition_entry_compiler",
+        reason=(
+            "UK effect metadata encodes a definition entry as a pseudo structural "
+            "target path. Lowering must not replay that pseudo path as ordinary "
+            "item/subparagraph structure; a definition-entry compiler must prove "
+            "the entry carrier, insertion/replacement semantics, and placement."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"target_ref": t_str, "target": str(target), "action": action},
+    )
+    return True
+
+
 def reject_external_or_partial_whole_act_scope(
     *,
     effect: UKEffectRecord,
@@ -439,6 +473,14 @@ def resolve_effect_target_context(
     heading_facet_target = _is_heading_only_ref(t_str)
     parsed_target = _parse_affected_target(t_str)
     target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+    if any(kind == "subsection" and label == "proviso" for kind, label in target.path):
+        new_path = []
+        for kind, label in target.path:
+            if kind == "subsection" and label == "proviso":
+                new_path.append(("subsection", "1"))
+            else:
+                new_path.append((kind, label))
+        target = LegalAddress(path=tuple(new_path), special=target.special)
     target = refine_enacted_schedule_table_row_part_target(
         effect=effect,
         action=action,

@@ -27,6 +27,8 @@ def uk_ir_node_kind(kind: Any) -> IRNodeKind:
     if isinstance(kind, str):
         if kind == "point":
             return IRNodeKind.ITEM
+        if kind == "article":
+            return IRNodeKind.SECTION
         return IRNodeKind(kind)
     raise TypeError(f"UKMutableNode.kind must be a string or IRNodeKind, got {type(kind).__name__}")
 

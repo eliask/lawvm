@@ -109,6 +109,8 @@ class UKReplayRenumberApplyMixin:
             child_kind = str(child.kind or "").lower()
             child_label = _clean_num(str(child.label or ""))
             if child_kind == destination_kind and child_label == _clean_num(destination_label or ""):
+                if len(source_node.children) > 1:
+                    continue
                 return False
 
         if not destination_kind:

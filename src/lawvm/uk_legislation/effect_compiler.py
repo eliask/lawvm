@@ -24,7 +24,9 @@ from lawvm.uk_legislation.effect_single_target_lowering import (
 )
 from lawvm.uk_legislation.effect_special_lowering import (
     lower_uk_after_paragraph_insert_labelled_series,
+    lower_uk_after_paragraph_insert_single_label,
     lower_uk_metadata_renumber_effect,
+    lower_uk_source_carried_structured_tail_substitution,
 )
 from lawvm.uk_legislation.effect_target_prelude import (
     append_added_type_source_structuralized_observation,
@@ -45,6 +47,8 @@ from lawvm.uk_legislation.source_action_inference import (
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     _source_after_paragraph_insert_labelled_series,
+    _source_after_paragraph_insert_single_label,
+    _source_carried_structured_tail_substitution,
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
@@ -56,6 +60,13 @@ from lawvm.uk_legislation.witness_builders import (
     _uk_extraction_witness,
 )
 from lawvm.uk_legislation.xml_helpers import _text_content
+from lawvm.uk_legislation.effect_target_prelude import canonicalize_uk_address
+from lawvm.uk_legislation.target_parser import _parse_affected_target
+from lawvm.uk_legislation.table_sources import (
+    _uk_table_driven_fee_target_refinements,
+    address_to_citation,
+)
+
 
 
 @dataclass(frozen=True)
@@ -284,6 +295,43 @@ def compile_effect_to_ir_ops(
         )
         _mark_lower_phase("compile_lower_special")
         return ops
+    after_paragraph_insert = _source_after_paragraph_insert_single_label(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        affected_provisions=effect.affected_provisions,
+    )
+    if action == "insert" and after_paragraph_insert is not None:
+        ops = lower_uk_after_paragraph_insert_single_label(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            after_paragraph_insert=after_paragraph_insert,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        _mark_lower_phase("compile_lower_special")
+        return ops
+    structured_tail_substitution = _source_carried_structured_tail_substitution(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        affected_provisions=effect.affected_provisions,
+        affecting_provisions=effect.affecting_provisions,
+    )
+    if action in {"insert", "replace", "text_replace"} and structured_tail_substitution is not None:
+        ops = lower_uk_source_carried_structured_tail_substitution(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            structured_tail_substitution=structured_tail_substitution,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        _mark_lower_phase("compile_lower_special")
+        return ops
 
     target_prelude = _prepare_effect_target_prelude(
         effect=effect,
@@ -299,8 +347,26 @@ def compile_effect_to_ir_ops(
     if target_prelude is None:
         return []
     targets_str = target_prelude.targets_str
+    refined_targets_str = []
+    for t_str in targets_str:
+        try:
+            parsed_target = _parse_affected_target(t_str)
+            target = canonicalize_uk_address(parsed_target)
+            refinement_addresses = _uk_table_driven_fee_target_refinements(
+                effect=effect,
+                source_root=source_root,
+                target=target,
+            )
+            if refinement_addresses:
+                for ref_target in refinement_addresses:
+                    refined_targets_str.append(address_to_citation(ref_target))
+            else:
+                refined_targets_str.append(t_str)
+        except Exception:
+            refined_targets_str.append(t_str)
+    targets_str = refined_targets_str
+    original_targets_str = list(targets_str)
     mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
-    original_targets_str = target_prelude.original_targets_str
     trailing_repeal_refs = target_prelude.trailing_repeal_refs
     replacement_leaf_override = target_prelude.replacement_leaf_override
     replacement_leaf_kind = target_prelude.replacement_leaf_kind

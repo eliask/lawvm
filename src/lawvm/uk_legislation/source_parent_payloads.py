@@ -30,6 +30,12 @@ UK_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RULE_ID = (
 UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID = (
     "uk_effect_after_paragraph_insert_labelled_series_lowered"
 )
+UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID = (
+    "uk_effect_after_paragraph_insert_single_label_lowered"
+)
+UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_carried_structured_tail_substitution_lowered"
+)
 
 SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE = re.compile(
     r"\b(?:before|after)\s+(?:the\s+)?entry\s+"
@@ -75,10 +81,92 @@ _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_TEXT_RE = re.compile(
     r"insert\s+(?P<payload>.+?)\s*$",
     flags=re.I | re.S,
 )
+_UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_REF_RE = re.compile(
+    r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<subsection>[0-9A-Za-z]+)\)\s*"
+    r"\((?P<label>[a-z]+)\)\s*$",
+    flags=re.I,
+)
+_UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_TEXT_RE = re.compile(
+    r"^\s*after\s+paragraph\s+\((?P<anchor>[a-z]+)\),?\s*"
+    r"insert\s*[—–-]?\s*(?P<label>[a-z]+)\s+(?P<text>.+?)\s*$",
+    flags=re.I | re.S,
+)
 _UK_LABELLED_SERIES_ITEM_RE = re.compile(
     r"(?:^|;\s+(?:or\s+)?)(?P<label>[a-z])\s+",
     flags=re.I,
 )
+_UK_INLINE_LABELLED_SERIES_ITEM_RE = re.compile(
+    r"(?:^|[,;]\s+(?:or\s+)?)(?P<label>[a-z])\s+",
+    flags=re.I,
+)
+_UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
+    r"^\s*(?P<label>[a-z])\s+",
+    flags=re.I,
+)
+_UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
+    r"for\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+    r"to\s+the\s+end\s+of\s+the\s+subsection\s+"
+    r"substitute\s*[“\"'‘]?[—–-]\s*(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+paragraph\s+(?P<paragraph>[0-9A-Za-z]+)(?:\s+\([^)]*\))?,?\s+"
+    r"in\s+sub-?paragraph\s+\((?P<subparagraph>[0-9A-Za-z]+)\),?\s+"
+    r"for\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+    r"to\s+the\s+end,?\s+"
+    r"substitute\s*[“\"'‘]?[—–-]\s*(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_EFFECT_CONTEXT_TAIL_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?P<row_label>[0-9A-Za-z]+|[ivxlcdm]+)\s+"
+    r"(?:(?P=row_label)\s+)?"
+    r"in\s+sub-?paragraph\s+\((?P<subparagraph>[0-9A-Za-z]+)\),?\s+"
+    r"for\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+    r"to\s+the\s+end,?\s+"
+    r"substitute\s*[“\"'‘]?[—–-]\s*(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_UK_AFFECTING_CHILD_LABEL_RE = re.compile(r"\((?P<label>[a-z])\)\s*$", flags=re.I)
+
+
+def _next_alpha_label(label: str) -> str:
+    chars = list(label.strip().lower())
+    if not chars or any(not ("a" <= char <= "z") for char in chars):
+        return ""
+    index = len(chars) - 1
+    while index >= 0:
+        if chars[index] != "z":
+            chars[index] = chr(ord(chars[index]) + 1)
+            return "".join(chars)
+        chars[index] = "a"
+        index -= 1
+    return "a" + "".join(chars)
+
+
+def _source_carried_top_level_alpha_matches(payload_tail: str) -> list[re.Match[str]]:
+    """Return contiguous top-level alpha labels without consuming nested roman lists."""
+    first = _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE.match(payload_tail)
+    if first is None:
+        return []
+    matches = [first]
+    expected = _next_alpha_label(_source_parent_range_label(first.group("label")))
+    search_start = first.end()
+    while expected:
+        pattern = re.compile(
+            rf"[,;]\s+(?:or\s+)?(?P<label>{re.escape(expected)})\s+",
+            flags=re.I,
+        )
+        match = pattern.search(payload_tail, search_start)
+        if match is None:
+            break
+        matches.append(match)
+        expected = _next_alpha_label(_source_parent_range_label(match.group("label")))
+        search_start = match.end()
+    return matches
 
 
 def _could_match_source_parent_schedule_entry_insert(text: str) -> bool:
@@ -431,5 +519,229 @@ def _source_after_paragraph_insert_labelled_series(
         "start_label": start_label,
         "end_label": end_label,
         "semicolon_target": str(anchor_target),
+        "payloads": tuple(payloads),
+    }
+
+
+def _source_after_paragraph_insert_single_label(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Lower `after paragraph (aa) insert- ab ...` rows to a sibling insert."""
+    if extracted_el is None or _tag(extracted_el) not in {"P3", "P4"}:
+        return None
+    ref_match = _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_REF_RE.match(
+        affected_provisions or ""
+    )
+    if ref_match is None:
+        return None
+    raw_text = " ".join((extracted_text or "").split()).strip()
+    row_label = _source_parent_range_label(_direct_structural_num(extracted_el))
+    text = raw_text
+    if row_label:
+        text = re.sub(
+            rf"^\s*(?:{re.escape(row_label)}\s+){{1,2}}(?=after\s+paragraph\b)",
+            "",
+            text,
+            count=1,
+            flags=re.I,
+        ).strip()
+    text_match = _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_TEXT_RE.match(text)
+    if text_match is None:
+        return None
+    section = ref_match.group("section")
+    subsection = ref_match.group("subsection")
+    target_label = _source_parent_range_label(ref_match.group("label"))
+    source_label = _source_parent_range_label(text_match.group("label"))
+    anchor_label = _source_parent_range_label(text_match.group("anchor"))
+    if not target_label or target_label != source_label:
+        return None
+    if _next_alpha_label(anchor_label) != target_label:
+        return None
+    payload_text = " ".join(text_match.group("text").split()).strip()
+    payload_text = re.sub(r"\s*;\s*(?:and\s*)?\.?\s*$", "", payload_text, flags=re.I)
+    payload_text = payload_text.rstrip(".").strip()
+    if not payload_text:
+        return None
+    anchor_target = LegalAddress(
+        path=(
+            ("section", section),
+            ("subsection", subsection),
+            ("paragraph", anchor_label),
+        )
+    )
+    target_ref = f"s. {section}({subsection})({target_label})"
+    return {
+        "rule_id": UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": text[: text_match.start("text")].strip(),
+        "target_ref": affected_provisions,
+        "section": section,
+        "subsection": subsection,
+        "anchor_label": anchor_label,
+        "anchor_target": str(anchor_target),
+        "source_row_label": row_label,
+        "payload": {
+            "label": target_label,
+            "text": payload_text,
+            "target_ref": target_ref,
+            "target": f"section:{section}/subsection:{subsection}/paragraph:{target_label}",
+        },
+    }
+
+
+def _source_carried_structured_tail_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+    affecting_provisions: str = "",
+) -> Optional[dict[str, Any]]:
+    """Lower parent-tail word substitutions carrying visible child labels.
+
+    This deliberately handles only the tight subsection -> paragraph form:
+    the effect target must be the same subsection named by source, and every
+    replacement child label must be visibly present in the source row.
+    """
+    if extracted_el is None or _tag(extracted_el) not in {"P1", "P2", "P3", "P4"}:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    text_match = _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE.match(text)
+    subparagraph_text_match = _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE.match(text)
+    subparagraph_effect_context_match = (
+        _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_EFFECT_CONTEXT_TAIL_SUBSTITUTION_RE.match(text)
+    )
+    if text_match is None and subparagraph_text_match is None and subparagraph_effect_context_match is None:
+        return None
+    try:
+        target = canonicalize_uk_address(_parse_affected_target(affected_provisions))
+    except ValueError:
+        return None
+    payload_kind = "paragraph"
+    target_prefix = ""
+    target_ref_prefix = ""
+    target_label_key = ""
+    affecting_row_label = ""
+    active_match: re.Match[str]
+    source_scope_context = "explicit_source"
+    if text_match is not None:
+        active_match = text_match
+        if _addr_leaf_kind(target) != "subsection":
+            return None
+        source_subsection = _source_parent_range_label(text_match.group("subsection"))
+        target_subsection = _source_parent_range_label(_addr_leaf_label(target) or "")
+        if not source_subsection or source_subsection != target_subsection:
+            return None
+        section_label = ""
+        for kind, label in target.path:
+            if str(kind or "").lower() == "section":
+                section_label = str(label or "")
+                break
+        if not section_label:
+            return None
+        target_prefix = f"section:{section_label}/subsection:{source_subsection}"
+        target_ref_prefix = f"s. {section_label}({source_subsection})"
+        target_label_key = "subsection"
+        anchor = " ".join(text_match.group("anchor").split()).strip()
+        payload_tail = " ".join(text_match.group("payload").split()).strip()
+    else:
+        if subparagraph_text_match is None and subparagraph_effect_context_match is None:
+            return None
+        active_match = (
+            subparagraph_text_match
+            if subparagraph_text_match is not None
+            else subparagraph_effect_context_match
+        )
+        if _addr_leaf_kind(target) != "subparagraph":
+            return None
+        source_paragraph = ""
+        if subparagraph_text_match is not None:
+            source_paragraph = _source_parent_range_label(subparagraph_text_match.group("paragraph"))
+        source_subparagraph = _source_parent_range_label(active_match.group("subparagraph"))
+        target_paragraph = ""
+        for kind, label in target.path:
+            if str(kind or "").lower() == "paragraph":
+                target_paragraph = _source_parent_range_label(str(label or ""))
+                break
+        target_subparagraph = _source_parent_range_label(_addr_leaf_label(target) or "")
+        if subparagraph_text_match is not None and source_paragraph != target_paragraph:
+            return None
+        if not source_subparagraph or source_subparagraph != target_subparagraph:
+            return None
+        if not source_paragraph:
+            if not target_paragraph:
+                return None
+            source_row_label = _source_parent_range_label(_direct_structural_num(extracted_el))
+            matched_row_label = _source_parent_range_label(active_match.group("row_label"))
+            affecting_label_match = _UK_AFFECTING_CHILD_LABEL_RE.search(affecting_provisions or "")
+            affecting_row_label = (
+                _source_parent_range_label(affecting_label_match.group("label"))
+                if affecting_label_match is not None
+                else ""
+            )
+            if (
+                not source_row_label
+                or source_row_label != matched_row_label
+                or source_row_label != affecting_row_label
+            ):
+                return None
+            source_paragraph = target_paragraph
+            source_scope_context = "explicit_source_with_effect_target_context"
+        if not source_paragraph:
+            return None
+        schedule_label = ""
+        for kind, label in target.path:
+            if str(kind or "").lower() == "schedule":
+                schedule_label = str(label or "")
+                break
+        if not schedule_label:
+            return None
+        payload_kind = "item"
+        target_prefix = f"schedule:{schedule_label}/paragraph:{source_paragraph}/subparagraph:{source_subparagraph}"
+        target_ref_prefix = f"Sch. {schedule_label} para. {source_paragraph}({source_subparagraph})"
+        target_label_key = "subparagraph"
+        anchor = " ".join(active_match.group("anchor").split()).strip()
+        payload_tail = " ".join(active_match.group("payload").split()).strip()
+    if not anchor or not payload_tail:
+        return None
+    matches = _source_carried_top_level_alpha_matches(payload_tail)
+    if not matches:
+        return None
+    payloads: list[dict[str, str]] = []
+    for index, match in enumerate(matches):
+        label = _source_parent_range_label(match.group("label"))
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(payload_tail)
+        item_text = payload_tail[match.end() : next_start].strip()
+        item_text = item_text.rstrip(" .")
+        if not label or not item_text:
+            return None
+        payloads.append(
+            {
+                "label": label,
+                "text": item_text,
+                "target_ref": f"{target_ref_prefix}({label})",
+                "target": f"{target_prefix}/{payload_kind}:{label}",
+            }
+        )
+    start_ord = ord(payloads[0]["label"])
+    expected_labels = tuple(chr(label_ord) for label_ord in range(start_ord, start_ord + len(payloads)))
+    if tuple(payload["label"] for payload in payloads) != expected_labels:
+        return None
+    return {
+        "rule_id": UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": text[: active_match.start("payload")].strip(),
+        "target_ref": affected_provisions,
+        "target": str(target),
+        target_label_key: _source_parent_range_label(_addr_leaf_label(target) or ""),
+        "source_anchor": anchor,
+        "trim_selector": f"TEXT_FROM_{anchor}_TO_END",
+        "payload_kind": payload_kind,
+        "source_scope_context": source_scope_context,
+        "affecting_row_label": affecting_row_label,
         "payloads": tuple(payloads),
     }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING, Optional, Sequence
 
-from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
+from lawvm.core.ir import LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.witnesses import (

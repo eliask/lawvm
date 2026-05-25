@@ -7,7 +7,7 @@ from dataclasses import replace as dc_replace
 from typing import cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
-from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
+from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
@@ -27,7 +27,7 @@ from lawvm.uk_legislation.replay_text import _node_text_contains_text, _subtree_
 from lawvm.uk_legislation.source_labeled_child_parts import (
     _source_carried_labeled_child_replacement_shape,
 )
-from lawvm.uk_legislation.source_text_reclassifications import source_following_anchor_structured_substitution_anchor
+from lawvm.uk_legislation.source_text_reclassifications import source_structured_tail_substitution_trim_selector
 from lawvm.uk_legislation.text_matching import _text_match_has_word_punctuation_elision_candidate, _text_patch_pattern
 from lawvm.uk_legislation.text_rewrite_fragments import _text_rewrite_rule_ids_for_op
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -527,7 +527,7 @@ class UKReplayTargetDiagnosticsMixin:
         if len(path) < 2:
             return False
         leaf_kind = str(path[-1][0] or "").lower()
-        if leaf_kind not in {"paragraph", "subparagraph", "item", "point"}:
+        if leaf_kind not in {"subsection", "paragraph", "subparagraph", "item", "point"}:
             return False
         parent_target = LegalAddress(path=path[:-1], special=None)
         parent_node, _, _ = self._find_node_by_target(parent_target)
@@ -644,8 +644,8 @@ class UKReplayTargetDiagnosticsMixin:
         witness = _witness_for_op(op)
         extraction = getattr(witness, "extraction_witness", None)
         source_text = str(getattr(extraction, "extracted_text", "") or getattr(op.source, "raw_text", "") or "")
-        anchor = source_following_anchor_structured_substitution_anchor(source_text)
-        if not anchor:
+        trim_selector, anchor, trim_mode = source_structured_tail_substitution_trim_selector(source_text)
+        if not trim_selector:
             return False
         path = tuple(getattr(target, "path", ()) or ())
         if len(path) < 2:
@@ -674,7 +674,7 @@ class UKReplayTargetDiagnosticsMixin:
         if not parent_had_children:
             parent_node, parent_tail_trimmed = self._apply_text_replace_on_node_text_only(
                 parent_node,
-                f"TEXT_AFTER_{anchor}_TO_END",
+                trim_selector,
                 "",
                 occurrence=0,
             )
@@ -705,6 +705,8 @@ class UKReplayTargetDiagnosticsMixin:
                 family="source_carried_structured_tail_substitution",
                 recovery_target=str(parent_target),
                 source_anchor=anchor,
+                trim_selector=trim_selector,
+                trim_mode=trim_mode,
                 payload_kind=str(new_node.kind),
                 payload_label=str(new_node.label or ""),
                 parent_had_children_before=parent_had_children,

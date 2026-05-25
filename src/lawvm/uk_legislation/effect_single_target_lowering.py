@@ -23,6 +23,7 @@ from lawvm.uk_legislation.effect_payload_rejections import (
     reject_mixed_heading_structural_insert_missing_payload,
 )
 from lawvm.uk_legislation.effect_schedule_lowering import (
+    lower_source_range_definition_list_end_schedule_entries,
     try_lower_schedule_list_entry_mutation,
     try_lower_schedule_table_end_rows_insert,
 )
@@ -44,6 +45,7 @@ from lawvm.uk_legislation.effect_target_prelude import (
     refine_numbered_schedule_entry_repeal_target,
     reject_external_or_partial_whole_act_scope,
     reject_schedule_entry_missing_source,
+    reject_structural_pseudo_definition_target,
     reject_unsupported_target_facet,
     resolve_effect_target_context,
 )
@@ -54,9 +56,12 @@ from lawvm.uk_legislation.heading_facets import (
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.source_amendment_program_fragments import (
+    _fragment_substitution_amendment_program_inserted_parent_child_insert,
     reject_amendment_program_inserted_parent_structural_insert,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
+    lower_metadata_pseudo_definition_entry_range_insertions,
+    lower_metadata_pseudo_definition_child_substitution,
     lower_source_carried_definition_child_at_end_insert,
     lower_source_carried_definition_child_text_omission,
 )
@@ -206,6 +211,40 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,
     )
+    metadata_pseudo_definition_child = lower_metadata_pseudo_definition_child_substitution(
+        effect=effect,
+        action=action,
+        target=target,
+        target_ref=t_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if metadata_pseudo_definition_child is not None:
+        target = metadata_pseudo_definition_child.target
+        payload_match_target = target
+    metadata_pseudo_definition_range = lower_metadata_pseudo_definition_entry_range_insertions(
+        effect=effect,
+        action=action,
+        target=target,
+        target_ref=t_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if metadata_pseudo_definition_range is not None:
+        target = metadata_pseudo_definition_range.target
+        payload_match_target = target
+        source_range_definition_list_end = lower_source_range_definition_list_end_schedule_entries(
+            effect=effect,
+            metadata_pseudo_definition_range=metadata_pseudo_definition_range,
+            sequence=ctx.sequence,
+            effect_witness=ctx.effect_witness,
+            extraction_witness=ctx.extraction_witness,
+            original_targets_str=ctx.original_targets_str,
+            t_str=t_str,
+        )
+        _extend_handled_lowering_ops(target_ops, source_range_definition_list_end)
     crossheading_context = build_crossheading_context(
         effect=effect,
         action=action,
@@ -231,6 +270,16 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     if reject_schedule_entry_missing_source(
         effect=effect,
         effect_type=effect_type,
+        action=action,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return unchanged
+    if metadata_pseudo_definition_range is None and reject_structural_pseudo_definition_target(
+        effect=effect,
         action=action,
         t_str=t_str,
         target=target,
@@ -491,6 +540,22 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         fragment_subs = [crossheading_text_patch_fragment]
         op_text_match = crossheading_text_patch_fragment["original"]
         op_text_replacement = crossheading_text_patch_fragment["replacement"]
+    elif metadata_pseudo_definition_child is not None:
+        curr_action = "text_replace"
+        content_ir = None
+        fragment_subs = [metadata_pseudo_definition_child.fragment]
+        op_text_match = metadata_pseudo_definition_child.op_text_match
+        op_text_replacement = metadata_pseudo_definition_child.op_text_replacement
+    elif metadata_pseudo_definition_range is not None:
+        if metadata_pseudo_definition_range.fragments:
+            curr_action = "text_replace"
+            content_ir = None
+            fragment_subs = list(metadata_pseudo_definition_range.fragments)
+            op_text_match = fragment_subs[0]["original"]
+            op_text_replacement = fragment_subs[0]["replacement"]
+        else:
+            curr_action = ""
+            content_ir = None
     substitution_insert_normalization = lower_substituted_payload_insert_normalization(
         effect=effect,
         curr_action=curr_action,
@@ -521,7 +586,13 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     content_ir = structural_sibling_insert.content_ir
     structural_sibling_insert_detail = structural_sibling_insert.detail
 
-    if reject_amendment_program_inserted_parent_structural_insert(
+    amendment_program_inserted_parent_child_insert = (
+        _fragment_substitution_amendment_program_inserted_parent_child_insert(
+            extracted_text=extracted_text,
+            target=target,
+        )
+    )
+    if amendment_program_inserted_parent_child_insert is None and reject_amendment_program_inserted_parent_structural_insert(
         effect=effect,
         curr_action=curr_action,
         target=target,

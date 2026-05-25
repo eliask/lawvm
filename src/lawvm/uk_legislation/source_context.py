@@ -28,12 +28,14 @@ from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_article_schedule_payload_source_extracted,
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
+    uk_affecting_act_compound_reference_split_fallback,
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
     uk_affecting_act_implicit_first_subparagraph_context_ignored,
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_parenthesized_range_source_extracted,
+    uk_affecting_act_schedule_part_standalone_split_rejection,
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
     uk_affecting_act_xml_too_small_rejection,
@@ -359,6 +361,125 @@ def _extract_from_affecting_source_context(
     return extracted
 
 
+def _compound_reference_parts(provision_ref: str) -> tuple[str, str] | None:
+    keyword_pat = re.compile(r"\b(?:Sch(?:edule)?|Part|Pt)\b", re.I)
+    matches = list(keyword_pat.finditer(provision_ref))
+    if not matches:
+        return None
+    leading_prefix = provision_ref[: matches[0].start()]
+    if re.search(r"\b(?:s|section|art|article|rule|regulation)\.?\s*[0-9A-Za-z]+", leading_prefix, re.I):
+        idx = matches[0].start()
+    elif len(matches) >= 2:
+        idx = matches[1].start()
+    else:
+        return None
+    first_part = provision_ref[:idx].strip()
+    second_part = provision_ref[idx:].strip()
+    if not first_part or not second_part:
+        return None
+    return first_part, second_part
+
+
+def _schedule_part_standalone_split_rejection(
+    *,
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    first_part: str,
+    second_part: str,
+) -> dict[str, Any] | None:
+    if not re.fullmatch(r"Sch(?:edule)?\.?\s+\S+", first_part.strip(), flags=re.I):
+        return None
+    if not re.fullmatch(r"(?:Part|Pt)\.?\s+[0-9A-Za-zIVXLCivxlc]+", second_part.strip(), flags=re.I):
+        return None
+    return uk_affecting_act_schedule_part_standalone_split_rejection(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        split_first_part=first_part,
+        split_second_part=second_part,
+    )
+
+
+def _compound_reference_split_observation(
+    *,
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    first_part: str,
+    second_part: str,
+    selected_part: str,
+    split_el: ET.Element,
+) -> dict[str, Any]:
+    return uk_affecting_act_compound_reference_split_fallback(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        split_first_part=first_part,
+        split_second_part=second_part,
+        split_selected_part=selected_part,
+        extracted_element_id=str(split_el.get("id") or split_el.get("Id") or ""),
+    )
+
+
+def _extract_compound_reference_component(
+    context: UKAffectingSourceContext,
+    component_ref: str,
+) -> Optional[ET.Element]:
+    component_el = _extract_from_affecting_source_context(context, component_ref)
+    if component_el is not None:
+        return component_el
+    normalized = _schedule_part_context_normalized_ref(component_ref)
+    if normalized is None:
+        return None
+    requested_part_label, normalized_ref = normalized
+    normalized_el = _extract_from_affecting_source_context(context, normalized_ref)
+    if normalized_el is None or not _has_matching_part_ancestor(
+        context,
+        normalized_el,
+        requested_part_label,
+    ):
+        return None
+    return normalized_el
+
+
+def _extract_source_ref_with_schedule_part_context(
+    context: UKAffectingSourceContext,
+    provision_ref: str,
+) -> Optional[ET.Element]:
+    el = _extract_from_affecting_source_context(context, provision_ref)
+    if el is not None:
+        return el
+    normalized = _schedule_part_context_normalized_ref(provision_ref)
+    if normalized is None:
+        return None
+    requested_part_label, normalized_ref = normalized
+    normalized_el = _extract_from_affecting_source_context(context, normalized_ref)
+    if normalized_el is None or not _has_matching_part_ancestor(
+        context,
+        normalized_el,
+        requested_part_label,
+    ):
+        return None
+    return normalized_el
+
+
+def _source_range_child_with_context(
+    context: UKAffectingSourceContext,
+    el: ET.Element,
+) -> ET.Element:
+    if _tag(el) not in {"BlockAmendment", "InlineAmendment"} or context.parent_map is None:
+        return el
+    parent = context.parent_map.get(el)
+    while parent is not None:
+        if _tag(parent) in {"P1", "P2", "P3", "P4", "P5", "P6", "Section", "Subsection", "Paragraph"}:
+            return parent
+        parent = context.parent_map.get(parent)
+    return el
+
+
 def _block_amendment_payload_descendant_source_rejection(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
@@ -465,7 +586,9 @@ def _extract_article_schedule_payload_source(
         return None, ()
 
     article_text = _text_content(article_el)
-    if not re.search(r"\bset\s+out\s+in\s+the\s+Schedule\b", article_text, flags=re.I):
+    affecting_prov = str(effect.affecting_provisions or "")
+    has_explicit_sch = re.search(r"\bSch(?:edule)?\b", affecting_prov, flags=re.I) is not None
+    if not has_explicit_sch and not re.search(r"\bset\s+out\s+in\s+the\s+Schedule\b", article_text, flags=re.I):
         return None, ()
 
     schedule_el = _unique_root_schedule_payload(context)
@@ -553,31 +676,53 @@ def _extract_parenthesized_range_source(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
 ) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
-    parsed = _parenthesized_range_source_ref(str(effect.affecting_provisions or ""))
+    return _extract_parenthesized_range_source_ref(
+        context,
+        effect,
+        str(effect.affecting_provisions or ""),
+    )
+
+
+def _extract_parenthesized_range_source_ref(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    provision_ref: str,
+) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    parsed = _parenthesized_range_source_ref(provision_ref)
     if parsed is None:
         return None, ()
     parent_ref, start_label, end_label = parsed
     wanted_labels = _expand_source_child_label_range(start_label, end_label)
     if not wanted_labels:
         return None, ()
-    parent_el = _extract_from_affecting_source_context(context, parent_ref)
-    if parent_el is None:
-        return None, ()
-    by_label: dict[str, ET.Element] = {}
-    for child in parent_el.iter():
-        if child is parent_el:
-            continue
-        if _tag(child) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Section", "Subsection", "Paragraph"}:
-            continue
-        label = _source_parent_range_label(_direct_structural_num(child))
-        if label and label not in by_label:
-            by_label[label] = child
     selected: list[ET.Element] = []
     for label in wanted_labels:
-        child = by_label.get(label)
+        child = _extract_source_ref_with_schedule_part_context(
+            context,
+            f"{parent_ref}({label})",
+        )
         if child is None:
+            break
+        selected.append(_source_range_child_with_context(context, child))
+    if len(selected) != len(wanted_labels):
+        parent_el = _extract_source_ref_with_schedule_part_context(context, parent_ref)
+        if parent_el is None:
             return None, ()
-        selected.append(child)
+        by_label: dict[str, ET.Element] = {}
+        for child in parent_el.iter():
+            if child is parent_el:
+                continue
+            if _tag(child) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Section", "Subsection", "Paragraph"}:
+                continue
+            label = _source_parent_range_label(_direct_structural_num(child))
+            if label and label not in by_label:
+                by_label[label] = child
+        selected = []
+        for label in wanted_labels:
+            child = by_label.get(label)
+            if child is None:
+                return None, ()
+            selected.append(child)
     wrapper = ET.Element("SourceRange")
     wrapper.set("rule_id", "uk_affecting_act_parenthesized_range_source_extracted")
     wrapper.set("source_ref", str(effect.affecting_provisions or ""))
@@ -747,6 +892,43 @@ def _extract_from_affecting_source_context_with_observations(
     provision_ref = str(effect.affecting_provisions or "")
     el = _extract_from_affecting_source_context(context, provision_ref)
     if el is not None:
+        compound_parts = _compound_reference_parts(provision_ref)
+        if compound_parts is not None:
+            first_part, second_part = compound_parts
+            unsafe_schedule_part_split = _schedule_part_standalone_split_rejection(
+                context=context,
+                effect=effect,
+                first_part=first_part,
+                second_part=second_part,
+            )
+            if unsafe_schedule_part_split is None:
+                second_el = _extract_compound_reference_component(context, second_part)
+                second_observations: tuple[dict[str, Any], ...] = ()
+                if second_el is None:
+                    second_el, second_observations = _extract_parenthesized_range_source_ref(
+                        context,
+                        effect,
+                        second_part,
+                    )
+                if second_el is not None and second_el is not el:
+                    payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
+                        context,
+                        effect,
+                        second_el,
+                    )
+                    if payload_descendant_rejection is not None:
+                        return None, (payload_descendant_rejection,)
+                    return second_el, (
+                        _compound_reference_split_observation(
+                            context=context,
+                            effect=effect,
+                            first_part=first_part,
+                            second_part=second_part,
+                            selected_part="second",
+                            split_el=second_el,
+                        ),
+                        *second_observations,
+                    )
         payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
             context,
             effect,
@@ -763,6 +945,79 @@ def _extract_from_affecting_source_context_with_observations(
     article_schedule_el, article_schedule_observations = _extract_article_schedule_payload_source(context, effect)
     if article_schedule_el is not None:
         return article_schedule_el, article_schedule_observations
+
+    normalized = _schedule_part_context_normalized_ref(provision_ref)
+    if normalized is not None:
+        requested_part_label, normalized_ref = normalized
+        normalized_el = _extract_from_affecting_source_context(context, normalized_ref)
+        if normalized_el is None or not _has_matching_part_ancestor(
+            context,
+            normalized_el,
+            requested_part_label,
+        ):
+            return None, ()
+
+        observation = uk_affecting_act_nonaddressable_schedule_part_context_ignored(
+            effect_id=str(effect.effect_id or ""),
+            affecting_act_id=str(effect.affecting_act_id or ""),
+            affecting_provisions=provision_ref,
+            locator=context.locator,
+            authority_layer=context.authority_layer,
+            requested_part_label=requested_part_label,
+            normalized_affecting_provisions=normalized_ref,
+            extracted_element_id=str(normalized_el.get("id") or normalized_el.get("Id") or ""),
+        )
+        return normalized_el, (observation,)
+
+    compound_parts = _compound_reference_parts(provision_ref)
+    if compound_parts is not None:
+        first_part, second_part = compound_parts
+        schedule_part_rejection = _schedule_part_standalone_split_rejection(
+            context=context,
+            effect=effect,
+            first_part=first_part,
+            second_part=second_part,
+        )
+        if schedule_part_rejection is not None:
+            return None, (schedule_part_rejection,)
+        split_el = None
+        split_selected_part = ""
+        split_observations: tuple[dict[str, Any], ...] = ()
+        if second_part:
+            split_el = _extract_compound_reference_component(context, second_part)
+            if split_el is not None:
+                split_selected_part = "second"
+            else:
+                split_el, split_observations = _extract_parenthesized_range_source_ref(
+                    context,
+                    effect,
+                    second_part,
+                )
+                if split_el is not None:
+                    split_selected_part = "second"
+
+        if split_el is None and first_part:
+            split_el = _extract_compound_reference_component(context, first_part)
+            if split_el is not None:
+                split_selected_part = "first"
+
+        if split_el is not None:
+            payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
+                context,
+                effect,
+                split_el,
+            )
+            if payload_descendant_rejection is not None:
+                return None, (payload_descendant_rejection,)
+            observation = _compound_reference_split_observation(
+                context=context,
+                effect=effect,
+                first_part=first_part,
+                second_part=second_part,
+                selected_part=split_selected_part,
+                split_el=split_el,
+            )
+            return split_el, (observation, *split_observations)
 
     implicit_first_ref = _implicit_first_subparagraph_context_normalized_ref(provision_ref)
     if implicit_first_ref is not None:
@@ -781,30 +1036,7 @@ def _extract_from_affecting_source_context_with_observations(
             )
             return implicit_first_el, (observation,)
 
-    normalized = _schedule_part_context_normalized_ref(provision_ref)
-    if normalized is None:
-        return None, ()
-
-    requested_part_label, normalized_ref = normalized
-    normalized_el = _extract_from_affecting_source_context(context, normalized_ref)
-    if normalized_el is None or not _has_matching_part_ancestor(
-        context,
-        normalized_el,
-        requested_part_label,
-    ):
-        return None, ()
-
-    observation = uk_affecting_act_nonaddressable_schedule_part_context_ignored(
-        effect_id=str(effect.effect_id or ""),
-        affecting_act_id=str(effect.affecting_act_id or ""),
-        affecting_provisions=provision_ref,
-        locator=context.locator,
-        authority_layer=context.authority_layer,
-        requested_part_label=requested_part_label,
-        normalized_affecting_provisions=normalized_ref,
-        extracted_element_id=str(normalized_el.get("id") or normalized_el.get("Id") or ""),
-    )
-    return normalized_el, (observation,)
+    return None, ()
 
 
 def _extracted_element_text(el: Optional[ET.Element]) -> str:
@@ -825,6 +1057,18 @@ def _looks_like_non_substantive_shell_text(text: str) -> bool:
     return normalized.count(".") >= 4
 
 
+def _looks_like_non_substantive_shell_element(el: Optional[ET.Element]) -> bool:
+    if el is None:
+        return False
+    if _tag(el) == "SourceRange":
+        children = list(el)
+        return bool(children) and all(
+            _looks_like_non_substantive_shell_text(_text_content(child))
+            for child in children
+        )
+    return _looks_like_non_substantive_shell_text(_extracted_element_text(el))
+
+
 def _select_enacted_source_for_current_shell(
     *,
     effect: UKEffectRecord,
@@ -835,10 +1079,7 @@ def _select_enacted_source_for_current_shell(
     enacted_xml_loader: Callable[[str, Any], Optional[bytes]] = get_affecting_act_enacted_xml_from_archive,
 ) -> tuple[UKAffectingSourceContext, Optional[ET.Element], tuple[dict[str, Any], ...]]:
     current_missing = current_el is None
-    current_shell = (
-        current_el is not None
-        and _looks_like_non_substantive_shell_text(_extracted_element_text(current_el))
-    )
+    current_shell = _looks_like_non_substantive_shell_element(current_el)
     if not current_missing and not current_shell:
         return current_context, current_el, ()
 
@@ -870,7 +1111,23 @@ def _select_enacted_source_for_current_shell(
     ):
         return current_context, current_el, ()
 
-    enacted_el = _extract_from_affecting_source_context(enacted_context, effect.affecting_provisions)
+    provision_ref = str(effect.affecting_provisions or "")
+    enacted_source_observations: tuple[dict[str, Any], ...] = ()
+    if (
+        _compound_reference_parts(provision_ref) is not None
+        or _parenthesized_range_source_ref(provision_ref) is not None
+    ):
+        enacted_el, enacted_source_observations = (
+            _extract_from_affecting_source_context_with_observations(
+                enacted_context,
+                effect,
+            )
+        )
+    else:
+        enacted_el = _extract_from_affecting_source_context(
+            enacted_context,
+            effect.affecting_provisions,
+        )
     enacted_payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
         enacted_context,
         effect,
@@ -879,7 +1136,7 @@ def _select_enacted_source_for_current_shell(
     if enacted_payload_descendant_rejection is not None:
         return current_context, current_el, (enacted_payload_descendant_rejection,)
     enacted_text = _extracted_element_text(enacted_el)
-    if enacted_el is None or _looks_like_non_substantive_shell_text(enacted_text):
+    if enacted_el is None or _looks_like_non_substantive_shell_element(enacted_el):
         return current_context, current_el, ()
 
     if current_missing:
@@ -906,4 +1163,4 @@ def _select_enacted_source_for_current_shell(
             current_text_preview=_preview_source_text(current_text),
             enacted_text_preview=_preview_source_text(enacted_text),
         )
-    return enacted_context, enacted_el, (observation,)
+    return enacted_context, enacted_el, (observation, *enacted_source_observations)

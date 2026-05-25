@@ -9,8 +9,10 @@ from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.uk_legislation.text_rewrite_fragments import (
     _separate_all_occurrences_text_replace_fragments,
     _separate_definition_repeal_fragments,
+    _separate_definition_child_repeal_fragments,
     _separate_multi_quoted_word_repeal_fragments,
     _separate_occurrence_text_replace_fragments,
+    _separate_source_range_definition_entry_insert_fragments,
 )
 
 
@@ -28,7 +30,11 @@ def build_uk_text_patch_items(
 ) -> list[UKTextPatchItem]:
     text_patch_items: list[UKTextPatchItem] = []
     separate_definition_repeals = _separate_definition_repeal_fragments(fragment_subs)
+    separate_definition_child_repeals = _separate_definition_child_repeal_fragments(fragment_subs)
     separate_occurrence_replacements = _separate_occurrence_text_replace_fragments(fragment_subs)
+    separate_source_range_definition_inserts = (
+        _separate_source_range_definition_entry_insert_fragments(fragment_subs)
+    )
     separate_all_occurrences_replacements = _separate_all_occurrences_text_replace_fragments(
         fragment_subs
     )
@@ -37,6 +43,20 @@ def build_uk_text_patch_items(
     )
     if curr_action == "text_repeal" and separate_definition_repeals:
         for fragment in separate_definition_repeals:
+            text_patch_items.append(
+                (
+                    TextPatchSpec(
+                        kind=TextPatchKindEnum.DELETE,
+                        selector=TextSelector(
+                            match_text=fragment["original"],
+                            occurrence=0,
+                        ),
+                    ),
+                    [fragment],
+                )
+            )
+    elif curr_action == "text_repeal" and separate_definition_child_repeals:
+        for fragment in separate_definition_child_repeals:
             text_patch_items.append(
                 (
                     TextPatchSpec(
@@ -72,6 +92,21 @@ def build_uk_text_patch_items(
                         selector=TextSelector(
                             match_text=fragment["original"],
                             occurrence=int(fragment["occurrence"]),
+                        ),
+                        replacement=fragment["replacement"],
+                    ),
+                    [fragment],
+                )
+            )
+    elif curr_action == "text_replace" and separate_source_range_definition_inserts:
+        for fragment in separate_source_range_definition_inserts:
+            text_patch_items.append(
+                (
+                    TextPatchSpec(
+                        kind=TextPatchKindEnum.REPLACE,
+                        selector=TextSelector(
+                            match_text=fragment["original"],
+                            occurrence=0,
                         ),
                         replacement=fragment["replacement"],
                     ),

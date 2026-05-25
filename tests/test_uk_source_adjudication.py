@@ -104,6 +104,7 @@ def test_uk_replay_recovery_observations_are_explicitly_owned() -> None:
             "target_resolution_recovery",
             "text_match_recovery",
             "text_rewrite_recovery",
+            "amendment_program_recovery",
         }
         assert observation.strict_disposition in {"block", "record"}
 
@@ -1958,6 +1959,54 @@ def test_classify_uk_manual_compile_frontier_accepts_source_structuralized_added
 
     assert result["status"] == "deterministic_frontend_supported"
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
+
+
+def test_classify_uk_manual_compile_frontier_promotes_pseudo_definition_target() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="added",
+        source_pathology="nonstructural_root_gap",
+        extracted_tag="P1",
+        extracted_text="73 Schedule 2 shall have effect.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_structural_pseudo_definition_target_rejected",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_structural_pseudo_definition_target_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_promotes_definition_list_end_insert() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="added",
+        source_pathology="",
+        extracted_tag="SourceRange",
+        extracted_text=(
+            "f at the end there is inserted- "
+            "“television multiplex service” means a multiplex service."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_source_range_definition_entry_at_end_insert_rejected",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=2,
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_list_end_insert_candidate"
 
 
 def test_classify_uk_manual_compile_frontier_accepts_ceases_replay_repeal() -> None:

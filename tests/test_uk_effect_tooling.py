@@ -74,6 +74,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
+        "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_repeal_table_candidate",
@@ -1766,6 +1767,143 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     }
 
 
+def test_heading_frontier_template_distinguishes_part_wrapper_insert() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-heading-wrapper",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-09-06",
+        affected_uri="/id/ukpga/2020/14/schedule/15/part/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="14",
+        affected_provisions="Sch. 15 Pt. 1 heading",
+        affecting_uri="/id/ukpga/2024/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="3",
+        affecting_provisions="s. 12(3)(b)",
+        affecting_title="Finance Act 2024",
+    )
+    row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="heading_facet_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_heading_only_ref_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "b before paragraph 1 of Schedule 15 (and the italic heading before it) "
+                "insert— Part 1 Income tax and other related relief ;"
+            ),
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
+            manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_heading_only_ref_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_heading_only_ref_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2020/14",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2020/14",
+        row=row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "schedule_part_wrapper_insertion"
+    assert template["placement_family"] == "before_anchor_paragraph_and_carried_heading"
+    assert template["schedule_label"] == "15"
+    assert template["anchor_paragraph_label"] == "1"
+    assert template["inserted_part_label"] == "Part 1"
+    assert template["inserted_heading_text"] == "Income tax and other related relief"
+    assert "partition_scope_or_non_scope_claim" in template["required_ownership"]
+    assert "claim_states_whether_following_children_move_under_new_part" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_single_uk_effect_report_includes_manual_claim_template() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-heading-wrapper",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-09-06",
+        affected_uri="/id/ukpga/2020/14/schedule/15/part/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="14",
+        affected_provisions="Sch. 15 Pt. 1 heading",
+        affecting_uri="/id/ukpga/2024/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="3",
+        affecting_provisions="s. 12(3)(b)",
+        affecting_title="Finance Act 2024",
+    )
+    extracted = ET.fromstring(
+        """
+        <P3 id="section-12-3-b">
+          <Pnumber>b</Pnumber>
+          <Text>before paragraph 1 of Schedule 15 (and the italic heading before it) insert— Part 1 Income tax and other related relief ;</Text>
+        </P3>
+        """
+    )
+
+    report = uk_effect_report_jsonable(
+        statute_id="ukpga/2020/14",
+        effect=effect,
+        source_pathology="heading_facet_target_unsupported",
+        extracted=extracted,
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_heading_only_ref_rejected",
+                "blocking": True,
+                "target_ref": "Sch. 15 Pt. 1 heading",
+            }
+        ],
+        compare_shape="",
+        candidate=False,
+        op_rows=[],
+    )
+
+    assert report["manual_compile_frontier"]["rule_id"] == (
+        "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert report["suggested_claim_template_status"] == "available"
+    assert report["suggested_claim_template"]["action_family"] == (
+        "schedule_part_wrapper_insertion"
+    )
+    assert report["suggested_claim_template"]["inserted_heading_text"] == (
+        "Income tax and other related relief"
+    )
+
+
 def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) -> None:
     effect = UKEffectRecord(
         effect_id="eff-heading",
@@ -2908,6 +3046,10 @@ def test_uk_manual_compile_evidence_jsonl_table_appropriate_place_template_carri
     assert template["source_target_surface"] == "s. 379(1) table"
     assert template["source_target_address"] == "section:379/subsection:1/paragraph:table"
     assert template["table_entry_shape"] == "appropriate_place_table_entry"
+    assert "table_ordering_rule_or_anchor_claim" in template["required_ownership"]
+    assert "claim_identifies_table_ordering_rule_or_anchor" in (
+        template["required_validator_checks"]
+    )
     assert template["executable"] is False
 
 

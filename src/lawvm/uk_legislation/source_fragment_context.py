@@ -37,8 +37,22 @@ _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
     flags=re.I,
 )
 
+_GROUPED_AFTER_INSERT_CHILD_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
+    r"[“\"'‘](?P<anchor>.*?)[”\"'’]"
+    r"(?P<all_occurrences>,?\s+in\s+(?:both|each)\s+places?)?"
+    r"\s*,?\s*(?:and)?\s*$",
+    flags=re.I,
+)
+
+_GROUPED_AFTER_INSERT_PARENT_TAIL_RE = re.compile(
+    r"\binsert(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]\s*\.?\s*$",
+    flags=re.I,
+)
+
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
 _SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
+_SOURCE_TAIL_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 
 
 def append_source_fragment_context_observations(
@@ -111,6 +125,37 @@ def append_source_fragment_context_observations(
                 "occurrence": op_text_occurrence,
             },
         )
+    grouped_after_insert_rule_ids = {
+        "uk_effect_source_parent_grouped_after_anchor_insert_text_patch",
+        "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
+    }
+    for grouped_after_insert_fragment in fragment_subs or []:
+        grouped_after_insert_rule_id = str(grouped_after_insert_fragment.get("rule_id") or "")
+        if grouped_after_insert_rule_id not in grouped_after_insert_rule_ids:
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=grouped_after_insert_rule_id,
+            family="source_context_elaboration",
+            reason_code="text_insert_payload_resolved_from_group_parent",
+            reason=(
+                "UK source child row gives a quoted anchor while its grouped "
+                "parent instruction carries the insertion payload. Lowering "
+                "combines those source-local facts instead of guessing from "
+                "live text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(grouped_after_insert_fragment.get("source_parent_id") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "all_occurrences": bool(grouped_after_insert_fragment.get("all_occurrences")),
+            },
+        )
 
 
 def _fragment_substitution_after_words_inserted_by_sibling(
@@ -171,6 +216,27 @@ def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
             parts.append(child.tail)
     text = " ".join(" ".join(parts).split())
     _SOURCE_LEAD_TEXT_CACHE[el] = text
+    return text
+
+
+def _source_tail_text_after_subordinate_rows(el: ET.Element) -> str:
+    cached = _SOURCE_TAIL_TEXT_CACHE.get(el)
+    if cached is not None:
+        return cached
+    parts: list[str] = []
+    seen_subordinate = False
+    for child in el:
+        if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS:
+            seen_subordinate = True
+            if child.tail:
+                parts.append(child.tail)
+            continue
+        if seen_subordinate:
+            parts.append(_text_content(child))
+            if child.tail:
+                parts.append(child.tail)
+    text = " ".join(" ".join(parts).split())
+    _SOURCE_TAIL_TEXT_CACHE[el] = text
     return text
 
 
@@ -239,5 +305,51 @@ def _fragment_substitution_grouped_anchor_occurrence(
                 or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
             ),
             "rule_id": "uk_effect_grouped_anchor_occurrence_substitution_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_grouped_after_insert_from_parent(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve grouped `after-- child rows insert "X"` source fragments."""
+    child_match = _GROUPED_AFTER_INSERT_CHILD_RE.match(" ".join((extracted_text or "").split()))
+    if not child_match:
+        return None
+    anchor = child_match.group("anchor").strip()
+    if not anchor:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor).strip()
+        if not re.search(r"\bafter\s*[—-]\s*$", candidate_text, flags=re.I):
+            continue
+        tail_text = _source_tail_text_after_subordinate_rows(ancestor)
+        tail_match = _GROUPED_AFTER_INSERT_PARENT_TAIL_RE.search(tail_text)
+        if not tail_match:
+            continue
+        inserted = tail_match.group("inserted").strip()
+        if not inserted:
+            return None
+        joiner = "" if anchor.endswith((" ", "\t", "\n", "\r")) or inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        all_occurrences = bool(child_match.group("all_occurrences"))
+        return {
+            "original": anchor,
+            "replacement": f"{anchor}{joiner}{inserted}",
+            "all_occurrences": "true" if all_occurrences else "",
+            "source_parent_id": str(
+                ancestor.get("id")
+                or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+            ),
+            "rule_id": (
+                "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch"
+                if all_occurrences
+                else "uk_effect_source_parent_grouped_after_anchor_insert_text_patch"
+            ),
         }
     return None
