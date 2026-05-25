@@ -20,6 +20,31 @@ from pathlib import Path
 from typing import Any
 
 
+def _first_present_column(
+    rows: list[dict[str, str]],
+    candidates: tuple[str, ...],
+) -> str:
+    if not rows:
+        return ""
+    fieldnames = set(rows[0])
+    for candidate in candidates:
+        if candidate in fieldnames:
+            return candidate
+    return ""
+
+
+def _float_or_zero(value: str | None) -> float:
+    if value in {None, ""}:
+        return 0.0
+    return float(value)
+
+
+def _int_or_zero(value: str | None) -> int:
+    if value in {None, ""}:
+        return 0
+    return int(float(value))
+
+
 def _load_rows(run_arg: str) -> tuple[Path, list[dict[str, str]]]:
     if run_arg:
         path = Path(run_arg)
@@ -50,43 +75,75 @@ def main(args: argparse.Namespace) -> None:
         print("No rows to report.")
         return
 
-    similarities = [float(r["similarity"]) for r in rows]
-    mean_sim = sum(similarities) / total
-    below_threshold = sum(1 for s in similarities if s < args.threshold)
+    score_column = _first_present_column(rows, ("similarity", "score", "replay_score"))
+    if not score_column:
+        print(
+            "Bench CSV has no recognized score column "
+            "(expected one of: similarity, score, replay_score).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    count_column = _first_present_column(rows, ("amendments", "n_effects", "n_ops"))
+    elapsed_column = _first_present_column(
+        rows,
+        ("elapsed_s", "duration_s", "phase_total_s"),
+    )
+
+    scores = [_float_or_zero(r.get(score_column)) for r in rows]
+    mean_score = sum(scores) / total
+    below_threshold = sum(1 for score in scores if score < args.threshold)
     error_count = sum(1 for r in rows if r.get("status", "OK") != "OK")
 
     if args.json:
-        output: list[dict[str, Any]] = [
-            {
-                "statute_id": r["statute_id"],
-                "similarity": float(r["similarity"]),
-                "status": r.get("status", ""),
-                "amendments": int(r.get("amendments", 0)),
-                "elapsed_s": float(r.get("elapsed_s", 0)),
-            }
-            for r in rows
-        ]
+        output: dict[str, Any] = {
+            "run": str(path),
+            "score_column": score_column,
+            "count_column": count_column,
+            "elapsed_column": elapsed_column,
+            "rows": [
+                {
+                    "statute_id": r["statute_id"],
+                    "score": _float_or_zero(r.get(score_column)),
+                    "status": r.get("status", ""),
+                    "count": _int_or_zero(r.get(count_column)) if count_column else 0,
+                    "elapsed_s": (
+                        _float_or_zero(r.get(elapsed_column))
+                        if elapsed_column
+                        else 0.0
+                    ),
+                }
+                for r in rows
+            ],
+        }
         print(json.dumps(output, indent=2))
         return
 
     print(f"Run: {path}")
-    print(f"Total: {total}  Mean similarity: {mean_sim:.6f}  "
-          f"Below {args.threshold}: {below_threshold}  Errors: {error_count}")
+    print(f"Score column: {score_column}")
+    print(
+        f"Total: {total}  Mean score: {mean_score:.6f}  "
+        f"Below {args.threshold}: {below_threshold}  Errors: {error_count}"
+    )
     print()
 
     # Determine which rows to display
     if args.top > 0:
-        display = sorted(rows, key=lambda r: float(r["similarity"]), reverse=True)[: args.top]
+        display = sorted(
+            rows,
+            key=lambda r: _float_or_zero(r.get(score_column)),
+            reverse=True,
+        )[: args.top]
         label = f"Top {args.top} best-scoring statutes"
     else:
         n = args.bottom
-        display = sorted(rows, key=lambda r: float(r["similarity"]))[: n]
+        display = sorted(rows, key=lambda r: _float_or_zero(r.get(score_column)))[: n]
         label = f"Bottom {n} worst-scoring statutes"
 
     print(f"{label}:")
-    print(f"  {'statute_id':<18}  {'similarity':>10}  {'status':<8}  {'amendments':>10}")
+    print(f"  {'statute_id':<18}  {'score':>10}  {'status':<8}  {'count':>10}")
     for r in display:
         print(
-            f"  {r['statute_id']:<18}  {float(r['similarity']):>10.6f}"
-            f"  {r.get('status', ''):<8}  {int(r.get('amendments', 0)):>10}"
+            f"  {r['statute_id']:<18}  {_float_or_zero(r.get(score_column)):>10.6f}"
+            f"  {r.get('status', ''):<8}  "
+            f"{(_int_or_zero(r.get(count_column)) if count_column else 0):>10}"
         )
