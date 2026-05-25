@@ -32,6 +32,9 @@ UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID = "uk_effect_multi_quoted_word_repeal_text_p
 UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID = (
     "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
 )
+UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
+    "uk_effect_metadata_carried_after_ordinal_insert_text_patch"
+)
 UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
 UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID = "uk_effect_source_carried_child_tail_repeal_text_patch"
@@ -338,6 +341,29 @@ def append_basic_text_rewrite_observations(
                 "target": str(target),
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
+            },
+        )
+    if UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
+            family="effect_feed_elaboration",
+            reason_code="metadata_action_source_after_ordinal_insert",
+            reason=(
+                "The official UK effect feed supplies the word-level insertion "
+                "action while the source row carries the quoted anchor, ordinal "
+                "occurrence, and quoted insertion payload; lowering combines "
+                "those source surfaces into a bounded TEXT_REPLACE."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
             },
         )
     if UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID in rule_ids:

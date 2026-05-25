@@ -15328,6 +15328,63 @@ def test_compile_after_anchor_each_place_occurring_records_all_occurrences_obser
     ] == ["uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"]
 
 
+def test_compile_metadata_carried_after_ordinal_insert_preserves_bounded_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-1-paragraph-32-21-a-i">
+          <Pnumber>i</Pnumber>
+          <Text>i after \u201chospital\u201d where firstly occurring \u201cor in a care home service\u201d; and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_after_ordinal_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-10-05",
+        affected_uri="/id/asp/2003/13",
+        affected_class="ScottishAct",
+        affected_year="2003",
+        affected_number="13",
+        affected_provisions="s. 254(7)(b)",
+        affecting_uri="/id/ssi/2005/465",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="465",
+        affecting_provisions="Sch. 1 para. 32(21)(a)(i)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2005-10-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "254"), ("subsection", "7"), ("paragraph", "b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "hospital"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "hospital or in a care home service"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_after_ordinal_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_metadata_carried_after_ordinal_insert_text_patch"
+    ] == ["uk_effect_metadata_carried_after_ordinal_insert_text_patch"]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["occurrence"] == 1
+
+
 def test_compile_definition_scoped_all_occurrences_insert_and_replay() -> None:
     extracted_el = ET.fromstring(
         f"""
