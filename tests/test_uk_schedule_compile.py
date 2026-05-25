@@ -11583,6 +11583,66 @@ def test_compile_repeal_table_plural_definitions_for_schedule_paragraph_text_rep
     )
 
 
+def test_compile_repeal_table_sentence_repeal_reports_selector_gap() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Finance Act 2000 (c. 17)</td>
+                  <td>In Schedule 15, in paragraph 29(4), the second sentence.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_sentence_repeal_selector_gap",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri="/id/ukpga/2000/17/schedule/15/paragraph/29/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 15 para. 29(4)",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["reason_code"] == "sentence_repeal_requires_sentence_selector"
+        and record["blocking"] is True
+        and record["strict_disposition"] == "block"
+        and record["extent_cell"] == "In Schedule 15, in paragraph 29(4), the second sentence."
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_definition_child_repeals_for_text_repeal() -> None:
     source_root = ET.fromstring(
         """

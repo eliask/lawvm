@@ -340,6 +340,19 @@ def _uk_repeal_table_definition_child_selectors(extent_cell: str) -> tuple[str, 
     )
 
 
+def _uk_repeal_table_sentence_repeal_requires_selector(extent_cell: str) -> bool:
+    text = " ".join((extent_cell or "").split()).strip()
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:the\s+)?(?:first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+sentence\b",
+            text,
+            re.I,
+        )
+    )
+
+
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
@@ -519,6 +532,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+    unsupported_sentence_repeal: Optional[_UKRepealTableQuotedWordsTextRepeal] = None
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         last_enactment_cell = ""
@@ -577,6 +591,20 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         additional_originals = definition_child_originals[1:]
                         rule_id = _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID
                 if not original:
+                    if (
+                        unsupported_sentence_repeal is None
+                        and _uk_repeal_table_sentence_repeal_requires_selector(extent_clause)
+                    ):
+                        unsupported_sentence_repeal = _UKRepealTableQuotedWordsTextRepeal(
+                            recognized=True,
+                            reason_code="sentence_repeal_requires_sentence_selector",
+                            match_count=1,
+                            table_index=table_index,
+                            row_text=" | ".join((enactment_cell, extent_clause)),
+                            enactment_cell=enactment_cell,
+                            extent_cell=extent_clause,
+                            enactment_match_basis=enactment_match_basis,
+                        )
                     continue
                 matches.append(
                     (
@@ -594,6 +622,8 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 )
 
     if len(matches) != 1:
+        if unsupported_sentence_repeal is not None and not matches:
+            return unsupported_sentence_repeal
         return _UKRepealTableQuotedWordsTextRepeal(
             recognized=True,
             reason_code="no_unique_matching_repeal_table_row",
