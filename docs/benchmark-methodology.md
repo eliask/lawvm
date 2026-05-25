@@ -66,7 +66,10 @@ Long UK replay sweeps are intended to be archive-first and memory-aware. The UK
 replay parallel default is deliberately conservative, `--worker-max-tasks N`
 can recycle workers to bound long-run RSS growth, and saved rows include
 `process_maxrss_kb` as process high-water evidence so memory pressure is
-visible separately from slow wall-time rows. The full per-row diagnostic
+visible separately from slow wall-time rows. Replay rows with unusually large
+source XML or effect feeds are routed through a single recycled worker lane
+when `--parallel` is greater than 1, so multiple multi-GB rows do not start
+concurrently. The full per-row diagnostic
 evidence streams to CSV/JSONL sidecars; aggregate text-report top-N rows retain
 only scalar summary fields so report generation does not keep large diagnostic
 payloads alive across the sweep. Saved history rows also record the maximum

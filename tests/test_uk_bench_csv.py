@@ -29,6 +29,39 @@ def test_uk_bench_default_workers_are_memory_safe_for_replay() -> None:
     assert uk_bench._default_uk_bench_workers(do_replay=False, cpu_count=32) == 8
 
 
+def test_uk_bench_replay_heavy_rows_are_partitioned_for_isolated_lane() -> None:
+    ordinary = {
+        "statute_id": "ukpga/2000/1",
+        "n_effects": "4",
+        "n_effect_feed_pages": "4",
+        "enacted_source_size": "1000",
+        "oracle_source_size": "2000",
+    }
+    effect_heavy = {
+        **ordinary,
+        "statute_id": "ukpga/1988/1",
+        "n_effects": "274",
+    }
+    source_heavy = {
+        **ordinary,
+        "statute_id": "ukpga/2010/4",
+        "enacted_source_size": str(6 * 1024 * 1024),
+        "oracle_source_size": str(8 * 1024 * 1024),
+    }
+
+    normal, heavy = uk_bench._partition_uk_replay_heavy_entries(
+        [ordinary, effect_heavy, source_heavy]
+    )
+
+    assert [entry["statute_id"] for entry in normal] == ["ukpga/2000/1"]
+    assert [entry["statute_id"] for entry in heavy] == [
+        "ukpga/1988/1",
+        "ukpga/2010/4",
+    ]
+    assert uk_bench._uk_bench_replay_heavy_reasons(effect_heavy) == ("effects>=50",)
+    assert uk_bench._uk_bench_replay_heavy_reasons(source_heavy) == ("source_mb>=12",)
+
+
 def test_uk_bench_residual_claim_classifies_source_backed_renumber_oracle_branch() -> None:
     tier, kind, section_claim_count = uk_bench._classify_uk_residual_claim_for_bench(
         comparison_class="commensurable",

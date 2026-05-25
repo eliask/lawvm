@@ -180,6 +180,9 @@ _WORKER_ALLOW_METADATA_ONLY_EFFECTS: bool = True
 _WORKER_SCORE_TEXT: bool = True
 _WORKER_RECORD_REPLAY_SUBPHASES: bool = False
 
+_UK_REPLAY_HEAVY_EFFECT_THRESHOLD = 50
+_UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD = 12 * 1024 * 1024
+
 
 def _configure_uk_bench_worker(
     db_path: str,
@@ -302,6 +305,38 @@ def _uk_bench_parallel_submission_cost(entry: dict[str, object]) -> tuple[int, i
         source_size,
         _uk_bench_row_int(entry, "year"),
     )
+
+
+def _uk_bench_replay_heavy_reasons(entry: dict[str, object]) -> tuple[str, ...]:
+    """Return memory-risk reasons for rows that should not replay concurrently."""
+    reasons: list[str] = []
+    n_effects = max(
+        _uk_bench_row_int(entry, "n_effects"),
+        _uk_bench_row_int(entry, "n_effect_feed_pages"),
+    )
+    source_size = _uk_bench_row_int(entry, "enacted_source_size") + _uk_bench_row_int(
+        entry,
+        "oracle_source_size",
+    )
+    if n_effects >= _UK_REPLAY_HEAVY_EFFECT_THRESHOLD:
+        reasons.append(f"effects>={_UK_REPLAY_HEAVY_EFFECT_THRESHOLD}")
+    if source_size >= _UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD:
+        reasons.append(f"source_mb>={_UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD // (1024 * 1024)}")
+    return tuple(reasons)
+
+
+def _partition_uk_replay_heavy_entries(
+    corpus: Sequence[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Split replay corpus rows into ordinary parallel work and heavy isolated work."""
+    ordinary: list[dict[str, object]] = []
+    heavy: list[dict[str, object]] = []
+    for entry in corpus:
+        if _uk_bench_replay_heavy_reasons(entry):
+            heavy.append(dict(entry))
+        else:
+            ordinary.append(dict(entry))
+    return ordinary, heavy
 
 
 # ---------------------------------------------------------------------------
@@ -2899,6 +2934,114 @@ def _get_score_witness_dict_rows(r: _BenchResult, label: str) -> list[dict[str, 
     return rows
 
 
+def _run_bench_parallel_entries(
+    entries: Sequence[dict],
+    archive: Farchive,
+    *,
+    do_replay: bool,
+    repo_root: Optional[Path],
+    workers: int,
+    do_commencement: bool,
+    allow_metadata_backfill: bool,
+    allow_oracle_alignment: bool,
+    applicability_mode: str,
+    authority_mode: str,
+    allow_metadata_only_effects: bool,
+    score_text: bool,
+    record_replay_subphases: bool,
+    worker_max_tasks_per_child: int | None,
+) -> Generator[_BenchResult, None, None]:
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    worker_config = (
+        str(archive._db_path),
+        do_replay,
+        str(repo_root) if repo_root is not None else "",
+        do_commencement,
+        allow_metadata_backfill,
+        allow_oracle_alignment,
+        applicability_mode,
+        authority_mode,
+        allow_metadata_only_effects,
+        score_text,
+        record_replay_subphases,
+    )
+    # Fast fork-backed default: child workers inherit these globals.
+    _configure_uk_bench_worker(*worker_config)
+    pool_kwargs: dict[str, object] = {}
+    if worker_max_tasks_per_child is not None:
+        # max_tasks_per_child may use spawn; initializer makes worker config
+        # explicit instead of relying on fork-inherited module globals.
+        pool_kwargs = {
+            "initializer": _configure_uk_bench_worker,
+            "initargs": worker_config,
+            "max_tasks_per_child": worker_max_tasks_per_child,
+        }
+
+    with ProcessPoolExecutor(max_workers=workers, **pool_kwargs) as pool:
+        future_to_entry: dict[object, dict] = {}
+        submission_order = sorted(
+            entries,
+            key=_uk_bench_parallel_submission_cost,
+            reverse=True,
+        )
+        next_submission = 0
+        max_in_flight = max(1, workers * 2)
+
+        def _submit_next() -> _BenchResult | None:
+            nonlocal next_submission
+            if next_submission >= len(submission_order):
+                return None
+            entry = submission_order[next_submission]
+            next_submission += 1
+            try:
+                future_to_entry[pool.submit(_score_statute_worker, entry)] = entry
+            except Exception as exc:
+                return _bench_exception_result(
+                    entry,
+                    exc,
+                    allow_metadata_backfill=allow_metadata_backfill,
+                    allow_oracle_alignment=allow_oracle_alignment,
+                    applicability_mode=applicability_mode,
+                    authority_mode=authority_mode,
+                    allow_metadata_only_effects=allow_metadata_only_effects,
+                )
+            return None
+
+        while next_submission < len(submission_order) and len(future_to_entry) < max_in_flight:
+            submit_error = _submit_next()
+            if submit_error is not None:
+                yield submit_error
+
+        while future_to_entry:
+            completed_iter = iter(as_completed(future_to_entry))
+            try:
+                future = next(completed_iter)
+            except StopIteration:
+                break
+            # Pop before calling result(): completed futures retain their
+            # returned _BenchResult, so keeping them in this dict defeats
+            # streaming and can exhaust memory on full-corpus WSL2 runs.
+            entry = future_to_entry.pop(future)
+            try:
+                r = future.result()
+            except Exception as exc:
+                r = _bench_exception_result(
+                    entry,
+                    exc,
+                    allow_metadata_backfill=allow_metadata_backfill,
+                    allow_oracle_alignment=allow_oracle_alignment,
+                    applicability_mode=applicability_mode,
+                    authority_mode=authority_mode,
+                    allow_metadata_only_effects=allow_metadata_only_effects,
+                )
+            yield r
+            while next_submission < len(submission_order) and len(future_to_entry) < max_in_flight:
+                submit_error = _submit_next()
+                if submit_error is not None:
+                    yield submit_error
+
+
 def _run_bench(
     corpus: list[dict],
     archive: Farchive,
@@ -2916,95 +3059,44 @@ def _run_bench(
     worker_max_tasks_per_child: int | None = None,
 ) -> Generator[_BenchResult, None, None]:
     if workers > 1 or worker_max_tasks_per_child is not None:
-        from concurrent.futures import ProcessPoolExecutor, as_completed
-
-        worker_config = (
-            str(archive._db_path),
-            do_replay,
-            str(repo_root) if repo_root is not None else "",
-            do_commencement,
-            allow_metadata_backfill,
-            allow_oracle_alignment,
-            applicability_mode,
-            authority_mode,
-            allow_metadata_only_effects,
-            score_text,
-            record_replay_subphases,
-        )
-        # Fast fork-backed default: child workers inherit these globals.
-        _configure_uk_bench_worker(*worker_config)
-        pool_kwargs: dict[str, object] = {}
-        if worker_max_tasks_per_child is not None:
-            # max_tasks_per_child may use spawn; initializer makes worker config
-            # explicit instead of relying on fork-inherited module globals.
-            pool_kwargs = {
-                "initializer": _configure_uk_bench_worker,
-                "initargs": worker_config,
-                "max_tasks_per_child": worker_max_tasks_per_child,
-            }
-
-        with ProcessPoolExecutor(max_workers=workers, **pool_kwargs) as pool:
-            future_to_idx = {}
-            submission_order = sorted(
-                enumerate(corpus),
-                key=lambda item: (_uk_bench_parallel_submission_cost(item[1]), -item[0]),
-                reverse=True,
+        ordinary_corpus = list(corpus)
+        heavy_corpus: list[dict[str, object]] = []
+        if do_replay and workers > 1:
+            ordinary_corpus, heavy_corpus = _partition_uk_replay_heavy_entries(corpus)
+        if ordinary_corpus:
+            yield from _run_bench_parallel_entries(
+                ordinary_corpus,
+                archive,
+                do_replay=do_replay,
+                repo_root=repo_root,
+                workers=workers,
+                do_commencement=do_commencement,
+                allow_metadata_backfill=allow_metadata_backfill,
+                allow_oracle_alignment=allow_oracle_alignment,
+                applicability_mode=applicability_mode,
+                authority_mode=authority_mode,
+                allow_metadata_only_effects=allow_metadata_only_effects,
+                score_text=score_text,
+                record_replay_subphases=record_replay_subphases,
+                worker_max_tasks_per_child=worker_max_tasks_per_child,
             )
-            next_submission = 0
-            max_in_flight = max(1, workers * 2)
-
-            def _submit_next() -> _BenchResult | None:
-                nonlocal next_submission
-                if next_submission >= len(submission_order):
-                    return None
-                idx, entry = submission_order[next_submission]
-                next_submission += 1
-                try:
-                    future_to_idx[pool.submit(_score_statute_worker, entry)] = idx
-                except Exception as exc:
-                    return _bench_exception_result(
-                        entry,
-                        exc,
-                        allow_metadata_backfill=allow_metadata_backfill,
-                        allow_oracle_alignment=allow_oracle_alignment,
-                        applicability_mode=applicability_mode,
-                        authority_mode=authority_mode,
-                        allow_metadata_only_effects=allow_metadata_only_effects,
-                    )
-                return None
-
-            while next_submission < len(submission_order) and len(future_to_idx) < max_in_flight:
-                submit_error = _submit_next()
-                if submit_error is not None:
-                    yield submit_error
-
-            while future_to_idx:
-                completed_iter = iter(as_completed(future_to_idx))
-                try:
-                    future = next(completed_iter)
-                except StopIteration:
-                    break
-                # Pop before calling result(): completed futures retain their
-                # returned _BenchResult, so keeping them in this dict defeats
-                # streaming and can exhaust memory on full-corpus WSL2 runs.
-                idx = future_to_idx.pop(future)
-                try:
-                    r = future.result()
-                except Exception as exc:
-                    r = _bench_exception_result(
-                        corpus[idx],
-                        exc,
-                        allow_metadata_backfill=allow_metadata_backfill,
-                        allow_oracle_alignment=allow_oracle_alignment,
-                        applicability_mode=applicability_mode,
-                        authority_mode=authority_mode,
-                        allow_metadata_only_effects=allow_metadata_only_effects,
-                    )
-                yield r
-                while next_submission < len(submission_order) and len(future_to_idx) < max_in_flight:
-                    submit_error = _submit_next()
-                    if submit_error is not None:
-                        yield submit_error
+        if heavy_corpus:
+            yield from _run_bench_parallel_entries(
+                heavy_corpus,
+                archive,
+                do_replay=do_replay,
+                repo_root=repo_root,
+                workers=1,
+                do_commencement=do_commencement,
+                allow_metadata_backfill=allow_metadata_backfill,
+                allow_oracle_alignment=allow_oracle_alignment,
+                applicability_mode=applicability_mode,
+                authority_mode=authority_mode,
+                allow_metadata_only_effects=allow_metadata_only_effects,
+                score_text=score_text,
+                record_replay_subphases=record_replay_subphases,
+                worker_max_tasks_per_child=1,
+            )
         return
 
     # Sequential fallback.
@@ -6708,6 +6800,19 @@ def main(args) -> None:  # noqa: ANN001
     )
     progress_total = acc.total_count + len(corpus)
     print(f"Scoring {len(corpus)} statutes (workers={workers}{worker_recycling})...")
+    if do_replay and workers > 1:
+        _, replay_heavy_entries = _partition_uk_replay_heavy_entries(corpus)
+        if replay_heavy_entries:
+            examples = ", ".join(
+                str(entry.get("statute_id") or "") for entry in replay_heavy_entries[:5]
+            )
+            if len(replay_heavy_entries) > 5:
+                examples += f", ... {len(replay_heavy_entries) - 5} more"
+            print(
+                "Replay memory guard: "
+                f"{len(replay_heavy_entries)} heavy row(s) will run in a "
+                f"single recycled worker lane ({examples})"
+            )
     run_kwargs: dict[str, object] = {
         "do_replay": do_replay,
         "repo_root": _REPO_ROOT,
