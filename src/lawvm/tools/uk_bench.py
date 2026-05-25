@@ -4684,6 +4684,7 @@ def _print_bench_diagnostic_samples(
     *,
     lane: str,
     rule_id: str = "",
+    pattern: str = "",
     blocking_only: bool = False,
     limit: int = 5,
     pattern_summary: bool = False,
@@ -4716,12 +4717,17 @@ def _print_bench_diagnostic_samples(
                 continue
             if blocking_only and not bool(parsed_row.get("blocking")):
                 continue
+            record = parsed_row.get("record")
+            current_pattern = (
+                _diagnostic_preview_pattern(record) if isinstance(record, dict) else "unknown"
+            )
+            if pattern and current_pattern != pattern:
+                continue
             matched += 1
             rule_counts[current_rule or "unknown"] += 1
             statute_counts[str(parsed_row.get("statute_id") or "unknown")] += 1
-            record = parsed_row.get("record")
-            if pattern_summary and isinstance(record, dict):
-                pattern_counts[_diagnostic_preview_pattern(record)] += 1
+            if pattern_summary:
+                pattern_counts[current_pattern] += 1
             if len(samples) < sample_limit:
                 samples.append(parsed_row)
 
@@ -4729,6 +4735,7 @@ def _print_bench_diagnostic_samples(
         "\nDiagnostic samples: "
         f"lane={lane} "
         f"rule={rule_id or '*'} "
+        f"pattern={pattern or '*'} "
         f"blocking_only={blocking_only} "
         f"matched={matched} "
         f"lane_total={lane_total}"
@@ -6032,6 +6039,7 @@ def _show_run(
     replay_adjudication_sample_limit: int = 5,
     diagnostic_sample_lane: str = "",
     diagnostic_sample_rule: str = "",
+    diagnostic_sample_pattern: str = "",
     diagnostic_sample_blocking: bool = False,
     diagnostic_sample_limit: int = 5,
     diagnostic_pattern_summary: bool = False,
@@ -6071,6 +6079,7 @@ def _show_run(
             label,
             lane=diagnostic_sample_lane,
             rule_id=diagnostic_sample_rule,
+            pattern=diagnostic_sample_pattern,
             blocking_only=diagnostic_sample_blocking,
             limit=diagnostic_sample_limit,
             pattern_summary=diagnostic_pattern_summary,
@@ -6988,6 +6997,9 @@ def main(args) -> None:  # noqa: ANN001
             replay_adjudication_sample_limit=replay_adjudication_sample_limit,
             diagnostic_sample_lane=str(getattr(args, "diagnostic_sample_lane", "") or ""),
             diagnostic_sample_rule=str(getattr(args, "diagnostic_sample_rule", "") or ""),
+            diagnostic_sample_pattern=str(
+                getattr(args, "diagnostic_sample_pattern", "") or ""
+            ),
             diagnostic_sample_blocking=bool(
                 getattr(args, "diagnostic_sample_blocking", False)
             ),

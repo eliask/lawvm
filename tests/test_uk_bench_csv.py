@@ -4039,6 +4039,7 @@ def test_uk_bench_show_run_streams_diagnostic_sidecar_samples(
     uk_bench._show_run(
         "show-diagnostic-samples",
         diagnostic_sample_lane="source_acquisition",
+        diagnostic_sample_pattern="no_extracted_preview",
         diagnostic_sample_blocking=True,
         summary_only=True,
     )
@@ -4046,7 +4047,7 @@ def test_uk_bench_show_run_streams_diagnostic_sidecar_samples(
     out = capsys.readouterr().out
     assert (
         "Diagnostic samples: lane=source_acquisition rule=* "
-        "blocking_only=True matched=1 lane_total=1"
+        "pattern=no_extracted_preview blocking_only=True matched=1 lane_total=1"
     ) in out
     assert "Rules: uk_affecting_act_xml_missing_rejected=1" in out
     assert "Statutes: ukpga/2000/1=1" in out

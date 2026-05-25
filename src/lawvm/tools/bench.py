@@ -2606,6 +2606,14 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk --show --diagnostic-sample-lane] restrict samples to one rule_id",
     )
     bench_p.add_argument(
+        "--diagnostic-sample-pattern",
+        metavar="PATTERN",
+        help=(
+            "[-j uk --show --diagnostic-sample-lane] restrict samples to one "
+            "extracted source-preview pattern"
+        ),
+    )
+    bench_p.add_argument(
         "--diagnostic-sample-blocking",
         action="store_true",
         help="[-j uk --show --diagnostic-sample-lane] only sample blocking diagnostics",
