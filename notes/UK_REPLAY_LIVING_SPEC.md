@@ -2021,6 +2021,15 @@ Current payload-descendant source-ref invariant:
   `ukpga/1985/66` affected `s. 2(1)` by `asp/2007/3 Sch. 1 para. 3(3)`,
   affected `s. 2(2)` by `asp/2007/3 Sch. 1 para. 3(4)(b)`, and affected
   `s. 24(2)` by `asp/2007/3 Sch. 1 para. 23(2)`.
+- Some source rows omit the insertion verb while the official effect feed
+  supplies `words inserted`, for example `after "hospital" where firstly
+  occurring "or in a care home service"`. These may lower under
+  `uk_effect_metadata_carried_after_ordinal_insert_text_patch` only when the
+  feed action is insertion and the source row supplies a quoted anchor, explicit
+  ordinal occurrence, and quoted payload. This is an effect-feed elaboration
+  observation, not a generic parser action. Current witnesses: `asp/2003/13`
+  affected `s. 254(7)(b)` and `s. 254(8)(b)` by `ssi/2005/465
+  Sch. 1 para. 32(21)`.
 - the parser may lower inverted wording `the word "Y" is inserted after the
   word "X" where it second appears` to the same text-patch shape, using
   `uk_effect_word_inserted_after_word_where_ordinal_text_patch`. The inserted
