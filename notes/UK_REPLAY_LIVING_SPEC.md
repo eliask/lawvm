@@ -5396,6 +5396,10 @@ Current bench replay-regime invariant:
   replay state, alter benchmark scoring, or reinterpret a blocked row as
   supported unless the current compiler already emits deterministic operations
   without blocking lowering.
+- Current manual-frontier status takes precedence over compiled-op count. A row
+  that emits partial operations while still carrying a manual-frontier
+  source-pathology classification remains `still_manual_frontier`; partial
+  lowering is not proof that the source issue has been discharged.
 - Validator statuses distinguish at least:
   `resolved_deterministic_supported`, `resolved_compiles_without_blocking_lowering`,
   `still_manual_frontier`, `still_blocked_without_manual_frontier_classification`,
