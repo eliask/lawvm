@@ -2280,11 +2280,29 @@ Current payload-descendant source-ref invariant:
   all-occurrences text rewrite over the effect-feed target, not a target search
   expansion. Current witnesses: `ukpga/1962/46` affected `s. 27(6)` and
   `s. 28(2)-(4)` by `uksi/2012/1659 Sch. 2 paras. 17(3), 18`.
+- `in each other place occurring` is not the same as all-occurrences. It is
+  relative to sibling source rows such as a preceding `where first occurring`
+  insertion. Until LawVM owns a sibling-aware occurrence selector such as
+  "all target occurrences except those already claimed by the paired row",
+  source rows in this family remain
+  `relative_other_place_occurrence_unsupported` /
+  `uk_manual_frontier_relative_other_place_occurrence_candidate`. Current
+  witness: `ukpga/1962/46` affected `s. 62(1)` by `uksi/2012/1659`
+  `Sch. 2 para. 36(b)`.
 - `after each occurrence of "X" insert "Y"` also lowers through
   `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`. It is a
   quoted-anchor text rewrite over every target occurrence, not a structural
   child insert. Current witness: `asp/2001/11` affected `s. 1(2)(b)` by
   `ssi/2005/623 art. 21(2)(i)`.
+- Referent-qualified substitutions such as `for "he" and "him", where they
+  refer to the Rail Regulator, substitute "it"` are not bare all-occurrences
+  text substitutions. They remain
+  `referent_qualified_text_substitution_unsupported` /
+  `uk_manual_frontier_referent_qualified_text_substitution_candidate` until a
+  compiler can prove a referent-sensitive text predicate from source/local
+  context instead of replacing every matching pronoun. Current witness:
+  `ukpga/1996/61` affected `s. 4(4)` and `Sch. 4 para. 8(1)` by
+  `ukpga/2005/14`.
 - `after "X", where it first occurs, insert "Y"` may contain nested quoted
   terms inside the inserted payload. The parser uses an end-anchored payload
   scan only for that nested-quote case, lowering to

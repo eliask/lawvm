@@ -2458,6 +2458,55 @@ def test_classify_uk_manual_compile_frontier_preserves_unclassified_rows() -> No
     assert "inspect the source and lowering evidence" in result["reason"]
 
 
+def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="relative_other_place_occurrence_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "b after “the British Waterways Board”, in each other place occurring, "
+            "insert “or, as the case may be, Canal & River Trust”."
+        ),
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_relative_other_place_occurrence_candidate"
+    assert "sibling-aware occurrence selection" in result["reason"]
+
+
+def test_classify_uk_manual_compile_frontier_marks_referent_qualified_pathology() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="referent_qualified_text_substitution_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "for “his”, where it refers to the Rail Regulator, substitute “its”."
+        ),
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_referent_qualified_text_substitution_candidate"
+    assert "referent-sensitive text predicate" in result["reason"]
+
+
 def test_classify_uk_effect_unhandled_instruction_text_without_ops() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P2",
@@ -2900,6 +2949,42 @@ def test_classify_uk_effect_source_carried_multi_subunit_text_rewrite() -> None:
     )
 
     assert pathology == "source_carried_multi_subunit_text_rewrite_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_relative_other_place_occurrence() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "b after “the British Waterways Board”, in each other place occurring, "
+            "insert “or, as the case may be, Canal & River Trust”."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "relative_other_place_occurrence_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_referent_qualified_text_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "for “he” and “him”, where they refer to the Rail Regulator, "
+            "substitute “it”."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "referent_qualified_text_substitution_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
