@@ -2514,6 +2514,11 @@ Current payload-descendant source-ref invariant:
   specific classifications before this header fallback:
   `uk_manual_frontier_effect_metadata_carried_text_patch_candidate` and
   `uk_manual_frontier_definition_target_fragment_source_insufficient`.
+  A quoted definition-entry payload paired only with word-insertion effect
+  metadata is not a deterministic text-patch candidate unless source context
+  supplies an insertion anchor. It is classified as
+  `uk_manual_frontier_appropriate_place_definition_entry_candidate`, reusing
+  the definition-entry placement claim template.
 - quoted word-repeal object fragments whose official effect metadata supplies
   `words repealed`/`words omitted` may lower under
   `uk_effect_metadata_carried_quoted_words_repeal_text_patch` when the source

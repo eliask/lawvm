@@ -1435,7 +1435,7 @@ def test_classify_uk_manual_compile_frontier_marks_feed_definition_fragment() ->
     )
 
 
-def test_classify_uk_manual_compile_frontier_marks_definition_entry_payload_candidate() -> None:
+def test_classify_uk_manual_compile_frontier_marks_unanchored_definition_entry_payload_claim() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
         source_pathology="unhandled_instruction_text",
@@ -1455,10 +1455,10 @@ def test_classify_uk_manual_compile_frontier_marks_definition_entry_payload_cand
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
-        == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
+        == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
     )
 
 

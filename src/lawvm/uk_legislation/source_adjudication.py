@@ -1974,6 +1974,19 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and source_pathology_norm == "unhandled_instruction_text"
+        and extracted_tag_norm == "BlockAmendment"
+        and "insert" in effect_type_norm
+        and _looks_like_definition_entry_payload(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+            "reason": "The official effect feed supplies a word-level insertion action and target, while the extracted source carries a definition-entry payload without a source-owned insertion anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and source_pathology_norm == "unhandled_instruction_text"
         and _looks_like_effect_metadata_carried_text_patch_fragment(
             effect_type=effect_type_norm,
             text=extracted_text_norm,
