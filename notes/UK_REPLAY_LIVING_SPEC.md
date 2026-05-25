@@ -2142,6 +2142,11 @@ Current payload-descendant source-ref invariant:
   bounded occurrence selector, and is not an all-occurrences rewrite. Current
   witness: `asp/2002/3` affected `s. 30(4)` by `asp/2005/3`
   `s. 21(2)(c)(ii)`.
+- post-quoted ordinal substitutions may place the ordinal after the occurrence
+  verb: `for "X", where it occurs first, substitute "Y"` lowers under
+  `uk_effect_post_quoted_where_ordinal_substitution_text_patch`. Current
+  witness: `ukpga/1970/9` affected `Sch. 1B para. 3(3)` by `ukpga/2016/24`
+  `s. 25(10)(c)`.
 - the same passive ordinal-place family may include the replacement wrapper
   `the words`, for example `for the words "X", in the first place where they
   occur, there shall be substituted the words "Y"`. This remains a bounded
@@ -3974,6 +3979,11 @@ Current bench replay-regime invariant:
   "Y"`. This remains target-scoped and does not search for other targets.
   Witness: `ukpga/2008/18` affected `Sch. 17 Pt. 5` by `uksi/2012/1659`
   `Sch. 3 para. 19(3)(b)`.
+- The same all-occurrences substitution family accepts `in each case it
+  occurs`, e.g. `for "X", in each case it occurs, substitute "Y"`. This remains
+  an all-occurrences patch scoped to the affected target. Current witnesses:
+  `ukpga/1970/9` affected `s. 109B`, `s. 59FA`, `s. 109E`, and `Sch. 3ZB` by
+  `ukpga/2019/1` `Sch. 7 para. 6(1)(a)/(c)`.
 - UK range repeal parsing preserves parenthesized ordinal start anchors. An
   instruction such as `the words from "in" (where first occurring) to "Act" are
   repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a
@@ -4754,7 +4764,10 @@ Current bench replay-regime invariant:
   `before "X", in the first/second/... place it occurs, insert "Y"`, and
   `after "X", in the first/second/... place it occurs, insert "Y"` lower with
   an explicit occurrence index. The equivalent prefixed form `after the
-  first/second/... "X" insert "Y"` is the same bounded text-patch family.
+  first/second/... "X" insert "Y"` and `for the first/second/... "X"
+  substitute "Y"` are the same bounded text-patch family. Current substitution
+  witness: `ukpga/1970/9` affected `Sch. 3ZA para. 2(3)(b)` by
+  `ukpga/2017/32` `Sch. 15 para. 21(2)(a)`.
   `for the words "X" in paragraph N substitute "Y"` lowers as
   `uk_effect_child_qualified_quoted_substitution_text_patch` when the effect
   feed already targets that child; the source child qualifier is preserved as

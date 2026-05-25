@@ -15046,6 +15046,66 @@ def test_compile_each_place_occurring_records_all_occurrences_lowering_observati
     assert all_occurrence_record["occurrence"] == 0
 
 
+def test_compile_each_case_occurs_records_all_occurrences_lowering_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-7-paragraph-6-1-a">
+          <Pnumber>a</Pnumber>
+          <Text>a for \u201can exit charge payment plan\u201d, in each case it occurs, substitute \u201c a CT exit charge payment plan \u201d ,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-0828f6bc831ee4f2df959b52fe180144",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-02-12",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 109B",
+        affecting_uri="/id/ukpga/2019/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2019",
+        affecting_number="1",
+        affecting_provisions="Sch. 7 para. 6(1)(a)",
+        affecting_title="Finance Act 2019",
+        in_force_dates=[{"date": "2019-02-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "109b"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "an exit charge payment plan"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == " a CT exit charge payment plan "
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_all_occurrences_substitution_text_patch"
+    ] == ["uk_effect_all_occurrences_substitution_text_patch"]
+    all_occurrence_record = lowering_records[0]
+    assert all_occurrence_record["family"] == "text_rewrite_lowering"
+    assert all_occurrence_record["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert all_occurrence_record["blocking"] is False
+    assert all_occurrence_record["strict_disposition"] == "record"
+    assert all_occurrence_record["target"] == "section:109b"
+    assert all_occurrence_record["text_match"] == "an exit charge payment plan"
+    assert all_occurrence_record["replacement"] == " a CT exit charge payment plan "
+    assert all_occurrence_record["occurrence"] == 0
+
+
 def test_compile_both_places_there_is_substituted_records_all_occurrences_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -22201,6 +22261,110 @@ def test_compile_both_subsequent_places_substitution_preserves_bounded_occurrenc
     assert lowering_records[0]["blocking"] is False
     assert lowering_records[0]["strict_disposition"] == "record"
     assert lowering_records[0]["occurrences"] == [3, 2]
+
+
+def test_compile_where_occurs_ordinal_substitution_preserves_bounded_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Pnumber>c</Pnumber>
+          <Text>c in sub-paragraph (3), for \u201cthe earlier year\u201d, where it occurs first, substitute \u201c an earlier year \u201d ;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-df19268cff83c4d2c28b2d321f3c2a8c",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="Sch. 1B para. 3(3)",
+        affecting_uri="/id/ukpga/2016/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="24",
+        affecting_provisions="s. 25(10)(c)",
+        affecting_title="Finance Act 2016",
+        in_force_dates=[{"date": "2016-09-15", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "1b"), ("paragraph", "3"), ("subparagraph", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "the earlier year"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "an earlier year"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_where_ordinal_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
+def test_compile_the_ordinal_substitution_preserves_bounded_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a for the first \u201cthe closure notice\u201d substitute \u201c a partial or final closure notice \u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2c2f2e4b25f1402547db7ccaf0879221",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="Sch. 3ZA para. 2(3)(b)",
+        affecting_uri="/id/ukpga/2017/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="Sch. 15 para. 21(2)(a)",
+        affecting_title="Finance (No. 2) Act 2017",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "3za"),
+        ("paragraph", "2"),
+        ("subparagraph", "3"),
+        ("item", "b"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "the closure notice"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == " a partial or final closure notice "
+    assert f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_ordinal_substitution_text_patch" in ops[0].provenance_tags
 
 
 def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:
