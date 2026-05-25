@@ -460,6 +460,22 @@ def _remaining_workqueue_rows(
         row["validator_current_source_pathology"] = str(
             validation.get("current_source_pathology") or ""
         )
+        # Preserve the original workqueue evidence fields, but expose the
+        # current classification at top level so downstream queue tooling does
+        # not accidentally group by stale exported families.
+        row["current_manual_compile_status"] = row[
+            "validator_current_manual_compile_status"
+        ]
+        row["current_manual_compile_rule_id"] = row[
+            "validator_current_manual_compile_rule_id"
+        ]
+        row["current_compiled_op_count"] = row[
+            "validator_current_compiled_op_count"
+        ]
+        row["current_blocking_lowering_rule_ids"] = list(
+            row["validator_current_blocking_lowering_rule_ids"]
+        )
+        row["current_source_pathology"] = row["validator_current_source_pathology"]
         current_template = validation.get("current_suggested_claim_template")
         if isinstance(current_template, Mapping) and current_template:
             row["suggested_claim_template"] = dict(current_template)
