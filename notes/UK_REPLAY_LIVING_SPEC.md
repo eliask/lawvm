@@ -1739,6 +1739,21 @@ Current block-substitution context invariant:
   `regulation` identity during affecting-source extraction; normalizing them to
   `section` is a target-kind mutation, not a harmless parser shortcut
 
+Current parser-surface normalization invariant:
+
+- UK source text is not mutated for storage, replay payloads, or source
+  witnesses just to make parser regular expressions easier
+- `normalize_uk_parser_text(...)` builds a parser-only view:
+  - transport whitespace is collapsed, matching the existing parser behavior
+  - dash-like instruction punctuation outside quoted legal text is normalized
+    to a single dash surface
+  - quoted legal preimages and payloads are preserved after whitespace collapse
+- this normalizer belongs before source-language parsing, not in replay apply or
+  oracle comparison
+- if a normalization changes target resolution, legal structure, quoted legal
+  text, or replay matching, it must become a typed observation/finding rather
+  than a silent parser convenience
+
 Current payload-descendant source-ref invariant:
 
 - effects metadata may cite a source instruction that is absent from the
