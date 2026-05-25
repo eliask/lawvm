@@ -1998,6 +1998,17 @@ Current payload-descendant source-ref invariant:
   witnesses: `asp/2001/2` affected `s. 79(2)` by `asp/2019/17`
   `sch. para. 3(7)(b)`, and `asp/2002/11` affected `s. 5(1)(a)` by
   `asp/2010/11 Sch. 3 para. 1`.
+- the parser may lower `after "X", in the second place where it occurs, insert
+  "Y"` and bounded multi-ordinal forms such as `in the first and second places`
+  to occurrence-qualified text patches using
+  `uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch`. Multi-place
+  insertions emit one patch per ordinal in descending occurrence order so replay
+  mutates later occurrences before earlier ones. This rule requires an explicit
+  quoted anchor, explicit ordinal place wording, and a quoted insertion payload;
+  it does not recover source-carried block fragments with missing parent
+  context. Current witnesses: `ukpga/1985/66` affected `s. 56C(1)` by
+  `asp/2014/11 s. 33(3)` and affected `s. 17(8)` by
+  `asp/2014/11 s. 26(3)(d)`.
 - the parser may lower inverted wording `the word "Y" is inserted after the
   word "X" where it second appears` to the same text-patch shape, using
   `uk_effect_word_inserted_after_word_where_ordinal_text_patch`. The inserted
