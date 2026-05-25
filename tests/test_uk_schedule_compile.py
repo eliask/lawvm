@@ -23473,6 +23473,58 @@ def test_compile_italic_heading_before_paragraph_becomes_lowers_to_heading_facet
     assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
 
 
+def test_compile_italic_heading_before_that_paragraph_becomes_lowers_to_heading_facet() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>6</Pnumber>
+          <Text>The italic heading before that paragraph accordingly becomes
+          "Reduced-rate supplies: variation of certificates under paragraph 44".</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_before_that_paragraph_becomes",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-11-01",
+        affected_uri="/id/ukpga/2000/17/schedule/6/paragraph/45",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 45 heading",
+        affecting_uri="/id/ukpga/2007/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="11",
+        affecting_provisions="Sch. 2 para. 8(6)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2007-11-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "6"), ("paragraph", "45")),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch(
+        "TEXT_ALL",
+        "Reduced-rate supplies: variation of certificates under paragraph 44",
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_full_replacement_lowered"
+        and record["reason_code"] == "explicit_heading_facet_full_replacement"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
 def test_compile_schedule_part_heading_substitute_lowers_to_full_heading_replacement() -> None:
     extracted_el = ET.fromstring(
         f"""
