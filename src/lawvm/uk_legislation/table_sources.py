@@ -1502,15 +1502,22 @@ def _uk_section_label_in_simple_range(text: str, label: str) -> bool:
         end_label = match.group("end").lower()
         if wanted_label in {start_label, end_label}:
             return True
-        if (
+        start_match = re.fullmatch(r"(?P<num>\d+)(?P<suffix>[a-z]?)", start_label)
+        end_match = re.fullmatch(r"(?P<num>\d+)(?P<suffix>[a-z]?)", end_label)
+        if wanted_label.isdigit() and start_match is not None and end_match is not None:
+            wanted = int(wanted_label)
+            start = int(start_match.group("num"))
+            end = int(end_match.group("num"))
+        elif (
             not wanted_label.isdigit()
             or not start_label.isdigit()
             or not end_label.isdigit()
         ):
             continue
-        wanted = int(wanted_label)
-        start = int(start_label)
-        end = int(end_label)
+        else:
+            wanted = int(wanted_label)
+            start = int(start_label)
+            end = int(end_label)
         low = min(start, end)
         high = max(start, end)
         if low <= wanted <= high:

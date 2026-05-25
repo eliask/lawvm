@@ -12232,9 +12232,10 @@ def test_compile_repeal_table_structural_alphanumeric_range_endpoint_repeal() ->
         source_root=source_root,
     )
 
-    assert len(ops) == 2
+    assert len(ops) == 3
     assert {op.target.path for op in ops} == {
         (("section", "3"),),
+        (("section", "4"),),
         (("section", "4a"),),
     }
     assert all(op.action is StructuralAction.REPEAL for op in ops)
@@ -12252,7 +12253,7 @@ def test_compile_repeal_table_structural_alphanumeric_range_endpoint_repeal() ->
     )
 
 
-def test_compile_repeal_table_structural_alphanumeric_range_does_not_guess_interior() -> None:
+def test_compile_repeal_table_structural_alphanumeric_range_does_not_guess_alphanumeric_interior() -> None:
     source_root = ET.fromstring(
         """
         <Legislation>
@@ -12275,16 +12276,16 @@ def test_compile_repeal_table_structural_alphanumeric_range_does_not_guess_inter
     extracted_el = source_root.find(".//Schedule")
     assert extracted_el is not None
     effect = UKEffectRecord(
-        effect_id="uk_test_repeal_table_structural_alphanumeric_range_interior",
+        effect_id="uk_test_repeal_table_structural_alphanumeric_range_alphanumeric_interior",
         effect_type="",
         applied=True,
         requires_applied=False,
         modified="2000-01-01",
-        affected_uri="/id/ukpga/1962/46/section/4",
+        affected_uri="/id/ukpga/1962/46/section/3B",
         affected_class="UnitedKingdomPublicGeneralAct",
         affected_year="1962",
         affected_number="46",
-        affected_provisions="s. 4",
+        affected_provisions="s. 3B",
         affecting_uri="/id/ukpga/2000/38",
         affecting_class="UnitedKingdomPublicGeneralAct",
         affecting_year="2000",
