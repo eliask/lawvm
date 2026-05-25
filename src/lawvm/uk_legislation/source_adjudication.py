@@ -1537,7 +1537,12 @@ def classify_uk_effect_source_pathology(
         return "broad_source_reused_as_payload"
 
     if norm_text and targets:
-        if "text_replace" in actions and _looks_like_source_carried_structured_tail_substitution(extracted_text):
+        if (
+            "text_replace" in actions
+            and _looks_like_source_carried_structured_tail_substitution(extracted_text)
+        ):
+            if "uk_effect_anchor_to_end_block_substitution_text_patch" in lowering_rules:
+                return ""
             return "source_carried_structured_tail_substitution_unsupported"
         if "uk_effect_source_carried_definition_child_text_omission_text_patch" in lowering_rules:
             return ""

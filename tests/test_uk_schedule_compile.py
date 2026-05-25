@@ -6141,7 +6141,10 @@ def test_compile_additional_frontier_text_patch_idioms(
         lowering_rejections_out=lowering_rejections,
     )
 
-    if expected_rule_id == "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch":
+    if expected_rule_id in {
+        "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_anchor_to_end_block_substitution_text_patch",
+    }:
         assert lowering_rejections
         assert all(row.get("blocking") is False for row in lowering_rejections)
         assert lowering_rejections[-1]["rule_id"] == expected_rule_id
