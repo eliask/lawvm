@@ -3013,6 +3013,27 @@ def test_classify_uk_effect_table_crossheading_target() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_table_crossheading_from_feed_table_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "for the italic cross-heading \"Installations regulated under "
+            "the Pollution Prevention and Control Regulations\" substitute "
+            "\"Installations regulated under the Environmental Permitting Regulations\""
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:6/paragraph:51/item:table"],
+        lowering_rule_ids=["uk_effect_crossheading_replace_rejected"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "table_crossheading_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_reference_only_source_fragment() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P4",

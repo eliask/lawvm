@@ -108,7 +108,10 @@ def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None
         ops=(op,),
         lowering_rejections=(
             {"rule_id": "before"},
-            {"rule_id": "uk_effect_range_to_container_substitution_rejected"},
+            {
+                "rule_id": "uk_effect_range_to_container_substitution_rejected",
+                "target_ref": "Part 2 Chapter 1",
+            },
         ),
         lowering_rejection_start_index=1,
     )
@@ -116,7 +119,7 @@ def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None
     assert facts.op_actions == ("replace",)
     assert facts.payload_kinds == ("chapter",)
     assert facts.payload_texts == ("Chapter text",)
-    assert facts.target_paths == ("part:2/chapter:1",)
+    assert facts.target_paths == ("part:2/chapter:1", "Part 2 Chapter 1")
     assert facts.lowering_rule_ids == (
         "uk_effect_range_to_container_substitution_rejected",
     )
