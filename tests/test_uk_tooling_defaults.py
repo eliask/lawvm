@@ -785,6 +785,28 @@ def test_uk_bench_diagnostic_preview_pattern_classifies_text_shapes() -> None:
         )
         == "words_following_paragraphs_omission"
     )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {
+                "extracted_text_preview": (
+                    "b at the beginning of each of paragraphs (b) and (c) "
+                    "insert \u201c a list published in accordance with regulations made under \u201d ."
+                )
+            }
+        )
+        == "beginning_each_child_insertion"
+    )
+    assert (
+        uk_bench._diagnostic_preview_pattern(
+            {
+                "extracted_text_preview": (
+                    "c in sub-paragraph (4), for the words \u201cMedical Practices "
+                    "Committee\u201d there is substituted \u201cHealth Board;"
+                )
+            }
+        )
+        == "malformed_quoted_substitution"
+    )
     assert uk_bench._diagnostic_preview_pattern({"extracted_text_preview": "..."}) == (
         "literal_ellipsis_source"
     )
