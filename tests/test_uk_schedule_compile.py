@@ -8611,6 +8611,117 @@ def test_compile_source_carried_structured_subparagraph_tail_uses_effect_target_
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_source_carried_structured_subparagraph_tail_uses_numeric_effect_row_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-17-8">
+          <Pnumber>8</Pnumber>
+          <P2para>
+            <Text>8 In sub-paragraph (3) for the words from \u201cthe Secretary of State\u201d to the end substitute\u2014 a the Secretary of State, who must lay a copy of it before each House of Parliament, and b the Scottish Ministers, who must lay a copy of it before the Scottish Parliament.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-9584c6807cc5a839c15ac45c10603000",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-29",
+        affected_uri="/id/ukpga/1990/42/schedule/19/paragraph/12/subparagraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 19 para. 12(3)",
+        affecting_uri="/id/ukpga/2012/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="11",
+        affecting_provisions="s. 17(8)",
+        affecting_title="Scotland Act 2012",
+        in_force_dates=[{"date": "2012-10-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE, StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [
+        (("schedule", "19"), ("paragraph", "12"), ("subparagraph", "3"), ("item", "a")),
+        (("schedule", "19"), ("paragraph", "12"), ("subparagraph", "3"), ("item", "b")),
+    ]
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "the Secretary of State, who must lay a copy of it before each House of Parliament",
+        "the Scottish Ministers, who must lay a copy of it before the Scottish Parliament",
+    ]
+    assert {op.witness_rule_id for op in ops} == {
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
+    }
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_structured_tail_substitution_lowered",
+    ]
+    assert lowering_records[0]["source_scope_context"] == (
+        "explicit_source_with_effect_target_context"
+    )
+    assert lowering_records[0]["affecting_row_label"] == "8"
+    assert lowering_records[0]["payload_kind"] == "item"
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_carried_structured_subparagraph_tail_rejects_numeric_row_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-17-7">
+          <Pnumber>7</Pnumber>
+          <P2para>
+            <Text>7 In sub-paragraph (3) for the words from \u201cthe Secretary of State\u201d to the end substitute\u2014 a the Secretary of State, who must lay a copy of it before each House of Parliament, and b the Scottish Ministers, who must lay a copy of it before the Scottish Parliament.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-structured-subparagraph-tail-mismatch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-29",
+        affected_uri="/id/ukpga/1990/42/schedule/19/paragraph/12/subparagraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 19 para. 12(3)",
+        affecting_uri="/id/ukpga/2012/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="11",
+        affecting_provisions="s. 17(8)",
+        affecting_title="Scotland Act 2012",
+        in_force_dates=[{"date": "2012-10-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.witness_rule_id for op in ops] != [
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
+    ]
+    assert not [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_carried_structured_tail_substitution_lowered"
+    ]
+
+
 def test_compile_source_carried_multi_subunit_repeal_from_exact_section_context() -> None:
     extracted_el = ET.fromstring(
         f"""

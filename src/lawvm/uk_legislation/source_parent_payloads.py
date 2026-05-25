@@ -130,7 +130,10 @@ _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_EFFECT_CONTEXT_TAIL_SUBSTITUTION_RE =
     r"substitute\s*[“\"'‘]?[—–-]\s*(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
     flags=re.I | re.S,
 )
-_UK_AFFECTING_CHILD_LABEL_RE = re.compile(r"\((?P<label>[a-z])\)\s*$", flags=re.I)
+_UK_AFFECTING_TERMINAL_LABEL_RE = re.compile(
+    r"\((?P<label>[0-9A-Za-z]+|[ivxlcdm]+)\)\s*$",
+    flags=re.I,
+)
 
 
 def _next_alpha_label(label: str) -> str:
@@ -157,7 +160,7 @@ def _source_carried_top_level_alpha_matches(payload_tail: str) -> list[re.Match[
     search_start = first.end()
     while expected:
         pattern = re.compile(
-            rf"[,;]\s+(?:or\s+)?(?P<label>{re.escape(expected)})\s+",
+            rf"[,;]\s+(?:(?:and|or)\s+)?(?P<label>{re.escape(expected)})\s+",
             flags=re.I,
         )
         match = pattern.search(payload_tail, search_start)
@@ -677,7 +680,9 @@ def _source_carried_structured_tail_substitution(
                 return None
             source_row_label = _source_parent_range_label(_direct_structural_num(extracted_el))
             matched_row_label = _source_parent_range_label(active_match.group("row_label"))
-            affecting_label_match = _UK_AFFECTING_CHILD_LABEL_RE.search(affecting_provisions or "")
+            affecting_label_match = _UK_AFFECTING_TERMINAL_LABEL_RE.search(
+                affecting_provisions or ""
+            )
             affecting_row_label = (
                 _source_parent_range_label(affecting_label_match.group("label"))
                 if affecting_label_match is not None
