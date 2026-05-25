@@ -3780,6 +3780,60 @@ def test_compile_words_inserted_at_end_of_that_paragraph_to_text_replace() -> No
     assert ops[0].text_patch.replacement == "or is Scottish Water,"
 
 
+def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-3">
+          <Pnumber>3</Pnumber>
+          <Text>
+            3 In section 10 (Common Services Agency), at the end of subsection (1)
+            insert— and section 15 .
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_words_inserted_at_end_unquoted_dash",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-06-29",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 10(1)",
+        affecting_uri="/id/ssi/2013/220",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="220",
+        affecting_provisions="art. 3",
+        affecting_title="National Health Service (Functions of the Common Services Agency) (Scotland) Order 2013",
+        in_force_dates=[{"date": "2013-06-29", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "10"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == "and section 15"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_unquoted_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_words_substituted_from_quoted_anchor_to_end_with_block_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
