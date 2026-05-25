@@ -700,15 +700,21 @@ def try_lower_repeal_table_effect(
             ),
         )
     if repeal_table_text_repeal.recognized:
+        reason = (
+            "UK repeal-table source names a sentence deletion for the affected target, "
+            "but UK replay does not yet have a typed sentence-delete selector for this lane."
+            if repeal_table_text_repeal.reason_code == "sentence_repeal_requires_sentence_selector"
+            else (
+                "UK repeal-table source could not be resolved to one "
+                "bounded quoted-words extent row for the affected target."
+            )
+        )
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id=f"{_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID}_unresolved",
             family="source_repeal_table_elaboration",
             reason_code=repeal_table_text_repeal.reason_code,
-            reason=(
-                "UK repeal-table source could not be resolved to one "
-                "bounded quoted-words extent row for the affected target."
-            ),
+            reason=reason,
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -716,6 +722,11 @@ def try_lower_repeal_table_effect(
                 "target_ref": t_str,
                 "target": str(target),
                 "match_count": repeal_table_text_repeal.match_count,
+                "table_index": repeal_table_text_repeal.table_index,
+                "row_text": repeal_table_text_repeal.row_text,
+                "enactment_cell": repeal_table_text_repeal.enactment_cell,
+                "extent_cell": repeal_table_text_repeal.extent_cell,
+                "enactment_match_basis": repeal_table_text_repeal.enactment_match_basis,
             },
         )
         return UKTableBatchLoweringResult(handled=True)
