@@ -2197,6 +2197,11 @@ Current payload-descendant source-ref invariant:
   `uk_effect_anchor_to_end_block_substitution_text_patch` family, not a new
   action. Current witness: `asp/2000/4` affected `s. 41(2)(a)(iii)` by
   `asp/2010/8` `sch. 2 para. 5(2)(a)`.
+- passive range substitutions may say `there shall be substituted the words
+  "Y"` after the range endpoint. The `the words` wrapper is drafting syntax
+  around the quoted replacement, not a different action family. Current
+  witness: `ukpga/1970/9` affected `s. 61(5)` by `ukpga/1989/26`
+  `s. 152(5)(c)(7)`.
 - grouped occurrence substitutions may carry the quoted anchor in a parent
   instruction and the ordinal/replacement in child rows, e.g. parent `for
   "X"-` and child `the first time it appears, substitute "Y"`. Lowering may
