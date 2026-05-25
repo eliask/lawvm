@@ -4028,6 +4028,11 @@ Current bench replay-regime invariant:
   deletion. This uses the same all-occurrences observation family and must not
   widen the effect-feed target. Current witness: `asp/2003/13` affected
   `s. 268(6)` by `asp/2015/9 s. 16(2)(d)`.
+- Explicit ordinal word repeals such as `the word "X" in the first place where
+  it occurs is repealed` lower under
+  `uk_effect_ordinal_word_repeal_text_patch` to a target-scoped deletion of
+  only that occurrence. Current witness: `asp/2003/13` affected `s. 268(1)` by
+  `asp/2015/9 s. 16(2)(a)`.
 - UK range repeal parsing preserves parenthesized ordinal start anchors. An
   instruction such as `the words from "in" (where first occurring) to "Act" are
   repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a
