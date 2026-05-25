@@ -5315,6 +5315,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_immediately_before_word_ordinal_insert_text_patch",
         ),
         (
+            "a in subsection (5), before “Health Authority” there is inserted "
+            "“Strategic Health Authority or by a”,",
+            "words inserted",
+            "s. 17C(5)(a)",
+            "Health Authority",
+            "Strategic Health Authority or by a Health Authority",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_before_quoted_anchor_insert_text_patch",
+        ),
+        (
             "2 In Part 1, after “A National Crime Agency officer” insert— "
             "A member of the Royal Navy Police.",
             "words inserted",
@@ -22052,6 +22063,64 @@ def test_compile_multi_anchor_overlap_substitution_records_unlowered_rejection()
     assert rejection["target_candidate_count"] == 2
     assert rejection["strict_disposition"] == "block"
     assert rejection["quirks_disposition"] == "record"
+
+
+def test_compile_each_paragraph_before_insert_lowers_to_each_explicit_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>
+            a in subsection (5), in each of paragraphs (a) and (b),
+            before “Health Authority” there is inserted
+            “Strategic Health Authority or by a”, and
+          </Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_each_paragraph_before_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2002-10-01",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 17C(5)(a) (b)",
+        affecting_uri="/id/ukpga/2002/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="17",
+        affecting_provisions="Sch. 3 para. 12(a)",
+        affecting_title="National Health Service Reform and Health Care Professions Act 2002",
+        in_force_dates=[{"date": "2002-10-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 2
+    assert [str(op.target) for op in ops] == [
+        "section:17c/subsection:5/paragraph:a",
+        "section:17c/subsection:5/paragraph:b",
+    ]
+    for op in ops:
+        assert op.action is StructuralAction.TEXT_REPLACE
+        assert op.text_patch is not None
+        assert op.text_patch.selector.match_text == "Health Authority"
+        assert op.text_patch.replacement == "Strategic Health Authority or by a Health Authority"
+        assert (
+            f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_quoted_anchor_insert_text_patch"
+            in op.provenance_tags
+        )
 
 
 def test_compile_word_omission_explicit_subsection_omit_reclassifies_to_repeal() -> None:

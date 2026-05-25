@@ -1707,7 +1707,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     matches_before_insert = re.finditer(
         r"before [“\"'‘](.*?)[”\"'’]"
         r"(?:,\s+in the\s+(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+place it occurs)?"
-        r",?\s+insert [“\"'‘](.*?)[”\"'’]",
+        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
@@ -1722,6 +1723,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         if m.group(2):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group(2).lower()]
             patch["rule_id"] = "uk_effect_before_quoted_anchor_ordinal_insert_text_patch"
+        else:
+            patch["rule_id"] = "uk_effect_before_quoted_anchor_insert_text_patch"
         subs.append(patch)
 
     matches_immediately_before_word_insert = re.finditer(
