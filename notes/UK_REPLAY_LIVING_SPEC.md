@@ -564,6 +564,10 @@ families,
 `uk_manual_frontier_range_to_container_candidate`. They list required
 validator checks; replay must ignore them until a separate validated claim
 ledger emits canonical operations and provenance.
+`table_repeal_or_omission` templates also carry the blocking repeal-table
+lowering rule/reason when available. For mixed structural-repeal and word-
+omission table rows, they require a claim to split the structural repeal from
+the text omission clauses instead of replaying the whole row as one mutation.
 `amendment_program_target_mutation` templates also carry the parsed lowering
 rejection fields (`source_target_address`, `source_subparagraph_label`,
 `source_item_label`, `inserted_parent_label`, `insert_direction`,
@@ -2646,13 +2650,16 @@ Current payload-descendant source-ref invariant:
   structural target, such as `Section 69(3)(b) and the word "and" immediately
   preceding it.`, remain blocked under
   `mixed_structural_and_word_repeal_requires_split` until lowering can emit both
-  source lanes without dropping either.
+  source lanes without dropping either. Manual claim templates expose that
+  reason code and require `structural_and_text_repeal_split_boundary`
+  ownership before a claim can become executable.
   Current witnesses: `asp/2000/6` / `asp/2006/8` schedule repeal of sections
   `26` to `31`; `asp/2001/8` / `asp/2010/8 sch. 14 para. 37` repeal of
   Parts `1` and `2`; `asp/2001/10` / `asp/2006/1 Sch. 7` repeal of Part `6`;
   separately named mixed-lane witness `ukpga/1992/8` /
-  `ukpga/2002/19 Sch. 2`; blocked mixed-lane witness `asp/2001/2` /
-  `asp/2008/1 Sch. 2`.
+  `ukpga/2002/19 Sch. 2`; blocked mixed-lane witnesses `asp/2001/2` /
+  `asp/2008/1 Sch. 2` and `ukpga/2000/6` /
+  `ukpga/2003/38 Sch. 2 para. 4(3)(a) Sch. 3`.
   Repeal-table elaboration may use the full affecting `source_root` when the
   extracted effect source is only a gateway provision such as `the enactments
   specified in Schedule 15 are repealed to the extent specified in the third
