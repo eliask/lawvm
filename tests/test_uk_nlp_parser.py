@@ -1813,6 +1813,31 @@ def test_parse_fragment_substitution_handles_labeled_end_range_block() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_labeled_end_range_ordinal_comma_block() -> None:
+    subs = parse_fragment_substitution(
+        "8 In subsection (1), for the words from \u201cpetition\u201d, where it first "
+        "occurs, to the end of paragraph (a), substitute debtor application is "
+        "made, the Accountant in Bankruptcy shall award sequestration forthwith "
+        "if he is satisfied\u2014 a that the application has been made in accordance "
+        "with the provisions of this Act; ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_petition_TO_END",
+            "replacement": (
+                "debtor application is made, the Accountant in Bankruptcy shall "
+                "award sequestration forthwith if he is satisfied\u2014 a that the "
+                "application has been made in accordance with the provisions of this Act;"
+            ),
+            "target_suffix_kind": "paragraph",
+            "target_suffix_label": "a",
+            "occurrence": "1",
+            "rule_id": "uk_effect_labeled_end_range_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_passive_range_with_words_wrapper() -> None:
     subs = parse_fragment_substitution(
         "c for the words from \u201ctwo or more inhabitants of the parish\u201d to "
