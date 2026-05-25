@@ -8282,6 +8282,90 @@ def test_compile_interpretation_entries_relating_repeal_preserves_each_selector(
     )
 
 
+def test_compile_metadata_carried_definition_entry_repeal_preserves_each_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-3-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in subsection (6), the definitions of “existing”, “international services” and “network”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_definition_entry_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2008-02-01",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 21(6)",
+        affecting_uri="/id/ukpga/2008/5",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="5",
+        affecting_provisions="s. 3(b)",
+        affecting_title="Consumers, Estate Agents and Redress Act 2007",
+        in_force_dates=[{"date": "2008-02-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 3
+    assert all(op.action is StructuralAction.TEXT_REPEAL for op in ops)
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "TEXT_DEFINITION_ENTRY_existing",
+        "TEXT_DEFINITION_ENTRY_international services",
+        "TEXT_DEFINITION_ENTRY_network",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_definition_entry_repeal_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_metadata_carried_definition_entry_repeal_text_patch"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1996/61",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "“existing” means existing; "
+                                "“kept term” means a retained term; "
+                                "“international services” means international services; "
+                                "“network” means a network;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    assert replayed.body.children[0].children[0].text == (
+        "“kept term” means a retained term;"
+    )
+
+
 def test_compile_entries_relating_repeal_does_not_lower_table_entries() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -96,6 +96,9 @@ UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID = (
 UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_child_qualified_range_substitution_text_patch"
 )
+UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID = (
+    "uk_effect_metadata_carried_definition_entry_repeal_text_patch"
+)
 UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -592,6 +595,33 @@ def append_basic_text_rewrite_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
+            family="effect_feed_elaboration",
+            reason_code="metadata_action_source_definition_entries_repeal",
+            reason=(
+                "The official UK effect feed supplies the word-level repeal "
+                "action and affected target, while the source row names the "
+                "same local target and lists definition terms; lowering emits "
+                "bounded definition-entry delete selectors instead of deleting "
+                "bare quoted phrases."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "definition_entry_selectors": tuple(
+                    str(fragment.get("original") or "")
+                    for fragment in fragment_subs or []
+                    if str(fragment.get("rule_id") or "")
+                    == UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID
+                ),
             },
         )
     if UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID in rule_ids:
@@ -1417,6 +1447,7 @@ def _separate_definition_repeal_fragments(
         if rule_id not in {
             "uk_effect_definition_entry_repeal_text_patch",
             UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
+            UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
         } or replacement or not original.startswith("TEXT_DEFINITION_ENTRY_"):
             return ()
         fragments.append(

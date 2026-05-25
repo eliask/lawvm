@@ -67,6 +67,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     lower_labeled_child_end_range_selector,
     UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
     UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
+    UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
 )
@@ -385,6 +386,16 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_after_ordinal_insert is not None:
             subs = [metadata_carried_after_ordinal_insert]
+    if not subs:
+        metadata_carried_definition_entry_repeals = (
+            _effect_metadata_carried_definition_entry_repeal_fragments(
+                effect=effect,
+                target=target,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_definition_entry_repeals:
+            subs = list(metadata_carried_definition_entry_repeals)
     if not subs:
         interpretation_entry_repeals = _effect_interpretation_entries_relating_repeal_fragments(
             effect=effect,
@@ -911,3 +922,51 @@ def _effect_child_qualified_range_substitution_fragment(
         "replacement": replacement,
         "rule_id": UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
     }
+
+
+def _effect_metadata_carried_definition_entry_repeal_fragments(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> tuple[dict[str, str], ...]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return ()
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return ()
+    match = re.search(
+        r"\bin\s+(?P<kind>subsection|paragraph|sub-?paragraph)\s*"
+        r"\(\s*(?P<label>[0-9A-Za-z]+)\s*\)\s*,?\s+"
+        r"(?:the\s+)?definitions?\s+of\s+(?P<terms>.+?)\s*[.;]?\s*$",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return ()
+    source_kind = match.group("kind").replace("-", "").lower()
+    source_kind = "subparagraph" if source_kind == "subparagraph" else source_kind
+    source_label = _clean_num(str(match.group("label") or ""))
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if source_kind != target_kind or not source_label or source_label != target_label:
+        return ()
+    terms = tuple(
+        " ".join((quoted.group("curly") or quoted.group("double") or "").split()).strip()
+        for quoted in re.finditer(
+            r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\")",
+            match.group("terms"),
+        )
+    )
+    terms = tuple(term for term in terms if term)
+    if not terms:
+        return ()
+    return tuple(
+        {
+            "original": f"TEXT_DEFINITION_ENTRY_{term}",
+            "replacement": "",
+            "rule_id": UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
+        }
+        for term in terms
+    )
