@@ -4315,6 +4315,64 @@ def test_compile_child_qualified_word_omission() -> None:
     assert lowering_records[-1]["source_child_label"] == "c"
 
 
+def test_compile_metadata_carried_quoted_words_repeal_from_source_fragment() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-15-paragraph-38-3-a">
+          <Pnumber>a</Pnumber>
+          <Text>a the word “both”, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_quoted_words_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 98(3)(a)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 15 para. 38(3)(a) Sch. 19(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "98"),
+        ("subsection", "3"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "both"
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+    ] == ["uk_effect_metadata_carried_quoted_words_repeal_text_patch"]
+
+
 def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None:
     extracted_el = ET.fromstring(
         f"""
