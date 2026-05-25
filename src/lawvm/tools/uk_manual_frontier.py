@@ -313,7 +313,13 @@ def _validation_report_jsonable(
         for row in rows
         if str(row.get("current_manual_compile_rule_id") or "")
     )
+    current_suggested_claim_template_status_counts = Counter(
+        str(row.get("current_suggested_claim_template_status") or "unknown")
+        for row in rows
+        if str(row.get("current_suggested_claim_template_status") or "")
+    )
     remaining_manual_rule_counts: Counter[str] = Counter()
+    remaining_suggested_claim_template_status_counts: Counter[str] = Counter()
     stale_original_manual_rule_counts: Counter[str] = Counter()
     current_blocking_lowering_rule_counts: Counter[str] = Counter()
     remaining_blocking_lowering_rule_counts: Counter[str] = Counter()
@@ -328,6 +334,13 @@ def _validation_report_jsonable(
             current_rule_id = str(row.get("current_manual_compile_rule_id") or "")
             if current_rule_id:
                 remaining_manual_rule_counts[current_rule_id] += 1
+            current_template_status = str(
+                row.get("current_suggested_claim_template_status") or ""
+            )
+            if current_template_status:
+                remaining_suggested_claim_template_status_counts[
+                    current_template_status
+                ] += 1
             remaining_blocking_lowering_rule_counts.update(blocking_rules)
         if _is_stale_manual_frontier_validation(row):
             original_rule_id = str(row.get("original_manual_compile_rule_id") or "")
@@ -351,7 +364,13 @@ def _validation_report_jsonable(
             "validator_rule_counts": dict(sorted(rule_counts.items())),
             "original_manual_rule_counts": dict(sorted(original_manual_rule_counts.items())),
             "current_manual_rule_counts": dict(sorted(current_manual_rule_counts.items())),
+            "current_suggested_claim_template_status_counts": dict(
+                sorted(current_suggested_claim_template_status_counts.items())
+            ),
             "remaining_manual_rule_counts": dict(sorted(remaining_manual_rule_counts.items())),
+            "remaining_suggested_claim_template_status_counts": dict(
+                sorted(remaining_suggested_claim_template_status_counts.items())
+            ),
             "stale_original_manual_rule_counts": dict(
                 sorted(stale_original_manual_rule_counts.items())
             ),
@@ -461,6 +480,18 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
     print(
         "Remaining manual rules: "
         + _format_count_map(summary.get("remaining_manual_rule_counts"))
+    )
+    print(
+        "Current claim templates: "
+        + _format_count_map(
+            summary.get("current_suggested_claim_template_status_counts")
+        )
+    )
+    print(
+        "Remaining claim templates: "
+        + _format_count_map(
+            summary.get("remaining_suggested_claim_template_status_counts")
+        )
     )
     print(
         "Remaining blocking lowering: "
