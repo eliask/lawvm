@@ -168,6 +168,7 @@ def test_uk_manual_frontier_validate_main_emits_json(
                 "current_blocking_lowering_rule_ids": [
                     "uk_effect_heading_only_ref_rejected"
                 ],
+                "current_source_pathology": "heading_only_ref_unsupported",
                 "current_suggested_claim_template_status": "available",
                 "current_suggested_claim_template": {
                     "required_ownership": ["fresh_current_claim"]
@@ -204,6 +205,12 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert payload["summary"]["remaining_suggested_claim_template_status_counts"] == {
         "available": 1
     }
+    assert payload["summary"]["current_source_pathology_counts"] == {
+        "heading_only_ref_unsupported": 1
+    }
+    assert payload["summary"]["remaining_source_pathology_counts"] == {
+        "heading_only_ref_unsupported": 1
+    }
     assert payload["summary"]["remaining_blocking_lowering_rule_counts"] == {
         "uk_effect_heading_only_ref_rejected": 1
     }
@@ -222,6 +229,9 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert remaining_row["effect_id"] == "eff-1"
     assert remaining_row["validator_current_manual_compile_rule_id"] == (
         "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert remaining_row["validator_current_source_pathology"] == (
+        "heading_only_ref_unsupported"
     )
     assert remaining_row["suggested_claim_template"] == {
         "required_ownership": ["fresh_current_claim"]
@@ -323,6 +333,12 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
                 },
                 "current_suggested_claim_template_status_counts": {"available": 1},
                 "remaining_suggested_claim_template_status_counts": {"available": 1},
+                "current_source_pathology_counts": {
+                    "table_entry_target_unsupported": 1
+                },
+                "remaining_source_pathology_counts": {
+                    "table_entry_target_unsupported": 1
+                },
                 "remaining_blocking_lowering_rule_counts": {
                     "uk_effect_table_entry_instruction_rejected": 1
                 },
@@ -345,6 +361,8 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
     ) in out
     assert "Current claim templates: available=1" in out
     assert "Remaining claim templates: available=1" in out
+    assert "Current source pathologies: table_entry_target_unsupported=1" in out
+    assert "Remaining source pathologies: table_entry_target_unsupported=1" in out
     assert (
         "Remaining blocking lowering: "
         "uk_effect_table_entry_instruction_rejected=1"
@@ -530,6 +548,8 @@ def test_print_text_report_summary_only_omits_row_lines(capsys) -> None:
                 "remaining_manual_rule_counts": {},
                 "current_suggested_claim_template_status_counts": {},
                 "remaining_suggested_claim_template_status_counts": {},
+                "current_source_pathology_counts": {},
+                "remaining_source_pathology_counts": {},
                 "remaining_blocking_lowering_rule_counts": {},
                 "stale_original_manual_rule_counts": {
                     "uk_manual_frontier_definition_list_end_insert_candidate": 1
