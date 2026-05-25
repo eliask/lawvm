@@ -1017,6 +1017,21 @@ def test_parse_fragment_substitution_handles_words_from_anchor_onwards_omitted()
     ]
 
 
+def test_parse_fragment_substitution_handles_words_from_anchor_onwards_passive_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "5 In subsection (8), for the words from \u201cpayable\u201d onwards there shall "
+        "be substituted \u201c the cash bid \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_payable_TO_END",
+            "replacement": "the cash bid",
+            "rule_id": "uk_effect_range_to_end_there_is_substituted_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_there_is_substituted() -> None:
     subs = parse_fragment_substitution(
         'a in subsections (1), (4) and (7), for “the Director” there is substituted “the OFT”;'
@@ -1161,6 +1176,22 @@ def test_parse_fragment_substitution_handles_range_comma_before_substitute() -> 
     ]
 
 
+def test_parse_fragment_substitution_handles_passive_range_there_shall_be_substituted() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (1), for the words from \u201cindependent\u201d to "
+        "\u201c84(1)(d), (e) or (f)\u201d there shall be substituted "
+        "\u201c relevant regulated radio service \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_independent_TO_84(1)(d), (e) or (f)",
+            "replacement": "relevant regulated radio service",
+            "rule_id": "uk_effect_range_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_same_anchor_adjacent_occurrence_range() -> None:
     subs = parse_fragment_substitution(
         "ii for the words from \u201cobjectives\u201d, where it first occurs, to "
@@ -1222,6 +1253,23 @@ def test_parse_fragment_substitution_preserves_labeled_paragraph_end_range_suffi
             "replacement": "may",
             "target_suffix_kind": "paragraph",
             "target_suffix_label": "b",
+            "rule_id": "uk_effect_labeled_end_range_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_passive_labeled_paragraph_end_range_suffix() -> None:
+    subs = parse_fragment_substitution(
+        "7 In subsection (7), for the words from \u201ca failure\u201d to the end of "
+        "paragraph (c) there shall be substituted \u201c a disqualification \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_a failure_TO_END",
+            "replacement": "a disqualification",
+            "target_suffix_kind": "paragraph",
+            "target_suffix_label": "c",
             "rule_id": "uk_effect_labeled_end_range_substitution_text_patch",
         }
     ]
