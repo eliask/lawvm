@@ -75,6 +75,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
+        "uk_manual_frontier_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_range_to_container_candidate",
@@ -2485,6 +2486,99 @@ def test_uk_manual_compile_evidence_jsonl_templates_definition_child_and_tail_su
     assert "integrated care board" in template["replacement_preview"]
     assert "post_child_tail_connector_boundary" in template["required_ownership"]
     assert "claim_splits_or_lowers_into_bounded_child_and_tail_mutations" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_definition_child_structural_substitution() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-definition-child-structural",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/1990/42/section/177/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 177(6)",
+        affecting_uri="/id/uksi/2019/224",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="224",
+        affecting_provisions="Sch. 1 para. 1",
+        affecting_title="Audiovisual Media Services Regulations 2019",
+    )
+    source_preview = (
+        "1 In section 177 of the Broadcasting Act 1990 (orders proscribing "
+        "unacceptable foreign satellite services), in subsection (6), in the "
+        "definition of “foreign satellite service”, for paragraph (a) "
+        "(including the “or” at the end) substitute— a a service which— i "
+        "consists wholly or mainly in the transmission by satellite of "
+        "television programmes."
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=source_preview,
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_definition_child_structural_substitution_candidate"
+            ),
+            manual_compile_reason=(
+                "Definition child structural substitution needs a validated boundary."
+            ),
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1990/42",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1990/42",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "definition_child_structural_substitution"
+    assert template["placement_family"] == (
+        "definition_child_structural_payload_boundary_required"
+    )
+    assert template["definition_term"] == "foreign satellite service"
+    assert template["definition_child_label"] == "a"
+    assert template["tail_connector"] == "or"
+    assert "a service which" in template["replacement_preview"]
+    assert "replacement_child_payload_shape" in template["required_ownership"]
+    assert "claim_identifies_replacement_payload_child_units" in (
         template["required_validator_checks"]
     )
     assert template["executable"] is False

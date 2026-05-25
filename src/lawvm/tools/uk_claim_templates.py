@@ -101,6 +101,32 @@ def _definition_child_and_tail_parts(source_preview: str) -> dict[str, str]:
     }
 
 
+def _definition_child_structural_substitution_parts(source_preview: str) -> dict[str, str]:
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bin\s+the\s+definition\s+of\s+[\"“](?P<term>[^\"”]{1,240})[\"”]\s*,?\s+"
+        r"for\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+        r"\(\s*including\s+the\s+[\"“]?(?P<tail_connector>or|and)[\"”]?\s+"
+        r"at\s+the\s+end\s*\)\s+substitute\s*[—–-]\s*"
+        r"(?P<replacement>.+?)\s*\.?\s*$",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {
+            "definition_term": "",
+            "definition_child_label": "",
+            "tail_connector": "",
+            "replacement_preview": source_norm[:500],
+        }
+    return {
+        "definition_term": " ".join(match.group("term").split()),
+        "definition_child_label": " ".join(match.group("label").split()),
+        "tail_connector": " ".join(match.group("tail_connector").split()).lower(),
+        "replacement_preview": " ".join(match.group("replacement").split())[:500],
+    }
+
+
 def _heading_facet_wrapper_insert_parts(source_preview: str) -> dict[str, str]:
     source_norm = " ".join(source_preview.split())
     match = re.search(
@@ -350,6 +376,48 @@ def manual_compile_suggested_claim_template(
                 "claim_preserves_unclaimed_definition_children",
                 "claim_splits_or_lowers_into_bounded_child_and_tail_mutations",
                 "changed_paths_are_within_declared_definition_child_and_tail_boundary",
+            ],
+            "executable": False,
+        }
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_definition_child_structural_substitution_candidate"
+    ):
+        source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+        parts = _definition_child_structural_substitution_parts(source_preview)
+        return {
+            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+            "claim_kind": "semantic_compile",
+            "claim_status": "template_only_not_validated",
+            "action_family": "definition_child_structural_substitution",
+            "placement_family": "definition_child_structural_payload_boundary_required",
+            "jurisdiction": "uk",
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_act_id": effect.affecting_act_id,
+            "affecting_provisions": effect.affecting_provisions,
+            "source_pathology": summary.source_pathology or "",
+            "candidate_target_surface": effect.affected_provisions,
+            "candidate_source_preview": source_preview[:500],
+            "definition_term": parts["definition_term"],
+            "definition_child_label": parts["definition_child_label"],
+            "tail_connector": parts["tail_connector"],
+            "replacement_preview": parts["replacement_preview"],
+            "required_ownership": [
+                "definition_term_scope",
+                "definition_child_identity",
+                "replacement_child_payload_shape",
+                "post_child_tail_connector_boundary",
+                "mutation_boundary",
+            ],
+            "required_validator_checks": [
+                "source_witness_names_definition_term_and_child_label",
+                "claim_identifies_exact_definition_child_node",
+                "claim_identifies_replacement_payload_child_units",
+                "claim_identifies_post_child_tail_connector_surface_when_present",
+                "claim_preserves_unclaimed_definition_children",
+                "changed_paths_are_within_declared_definition_child_boundary",
             ],
             "executable": False,
         }
