@@ -424,6 +424,30 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_claimed_insertion_boundary",
             ],
         )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_appropriate_place_index_entry_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="index_entry_insert",
+            placement_family="appropriate_place_requires_anchor_claim",
+            required_ownership=[
+                "source_named_index_entry_payload",
+                "validated_predecessor_or_successor_anchor",
+                "target_index_or_list_container_boundary",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_uses_appropriate_place_formula",
+                "payload_is_complete_index_entry",
+                "claim_supplies_exact_index_entry_anchor_or_ordering_rule",
+                "claim_identifies_target_index_or_list_surface",
+                "claim_preserves_unclaimed_index_entries",
+                "changed_paths_are_within_claimed_insertion_boundary",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_structural_sibling_insert_candidate":
         return _bounded_mutation_claim_template(
             statute_id=statute_id,

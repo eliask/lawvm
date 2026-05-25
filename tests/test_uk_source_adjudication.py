@@ -1576,6 +1576,30 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_source_path
     assert result["rule_id"] == "uk_manual_frontier_appropriate_place_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_appropriate_place_index_entry() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="appropriate_place_index_entry_insert_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "at the appropriate place insert- "
+            '"relevant register" paragraph 22B(6A).'
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_appropriate_place_insert_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_appropriate_place_index_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_appropriate_place_definition_entry() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -2273,6 +2297,24 @@ def test_classify_uk_effect_appropriate_place_definition_entry_source_pathology(
     )
 
     assert pathology == "appropriate_place_definition_entry_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_appropriate_place_index_entry_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "at the appropriate place insert- "
+            '"relevant register" paragraph 22B(6A).'
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "appropriate_place_index_entry_insert_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
