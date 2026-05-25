@@ -2742,6 +2742,96 @@ def test_uk_manual_compile_evidence_jsonl_templates_crossheading_claim() -> None
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_table_crossheading_becomes_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-crossheading",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-06",
+        affected_uri="/id/ukpga/2000/17/schedule/6/paragraph/51/6/table/crossheading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 51(6) Table cross-heading",
+        affecting_uri="/id/uksi/2010/675",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2010",
+        affecting_number="675",
+        affecting_provisions="Sch. 26 Pt. 1 para. 16",
+        affecting_title="Test Regulations 2010",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="table_crossheading_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_crossheading_replace_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                "in the table (the cross-heading preceding entry 1 of which becomes "
+                "“Installations regulated under the Environmental Permitting "
+                "(England and Wales) Regulations 2010”)— "
+                "in entry 5(1), for “the Environmental Permitting (England and Wales) "
+                "Regulations 2007” substitute “the Environmental Permitting "
+                "(England and Wales) Regulations 2010”"
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_table_crossheading_candidate",
+            manual_compile_reason="Table crossheading requires a validated carrier claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_crossheading_replace_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_crossheading_replace_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/17",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/17",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_crossheading_text_rewrite"
+    assert template["facet_family"] == "table_crossheading"
+    assert template["source_formula"] == "becomes"
+    assert template["table_crossheading_anchor"] == "entry 1"
+    assert template["text_match"] == ""
+    assert (
+        template["replacement"]
+        == "Installations regulated under the Environmental Permitting "
+        "(England and Wales) Regulations 2010"
+    )
+    assert "claim_identifies_heading_cell_or_text_prefix_boundary" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-schedule-note",
