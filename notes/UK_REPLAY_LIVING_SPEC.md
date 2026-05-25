@@ -5413,6 +5413,10 @@ Current bench replay-regime invariant:
   original source witness row and attaching the current validation summary. The
   remaining file is a pruned agent work queue; it must not include rows already
   resolved by deterministic lowering.
+- `--remaining-manual-rule RULE_ID` and `--remaining-source-pathology PATHOLOGY`
+  are export-only filters for `--remaining-jsonl`. They do not change
+  validation classification or aggregate summary counts; they only write a
+  narrower still-live work queue for one implementation family.
 - `--fail-on-stale` exits nonzero after printing/writing the report if any
   exported workqueue row is already deterministic or otherwise no longer live
   manual-frontier work. `--fail-on-validation-error` exits nonzero for malformed

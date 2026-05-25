@@ -421,13 +421,26 @@ def _is_validation_error_manual_frontier_validation(row: Mapping[str, Any]) -> b
     return str(row.get("validator_status") or "") in _VALIDATION_ERROR_STATUSES
 
 
+def _value_allowed(value: str, allowed_values: frozenset[str]) -> bool:
+    return not allowed_values or value in allowed_values
+
+
 def _remaining_workqueue_rows(
     original_rows: tuple[Mapping[str, Any], ...],
     validation_rows: tuple[Mapping[str, Any], ...],
+    *,
+    manual_rule_ids: frozenset[str] = frozenset(),
+    source_pathologies: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, Any], ...]:
     remaining: list[dict[str, Any]] = []
     for original, validation in zip(original_rows, validation_rows, strict=False):
         if not _is_remaining_manual_frontier_validation(validation):
+            continue
+        current_rule_id = str(validation.get("current_manual_compile_rule_id") or "")
+        if not _value_allowed(current_rule_id, manual_rule_ids):
+            continue
+        source_pathology = str(validation.get("current_source_pathology") or "")
+        if not _value_allowed(source_pathology, source_pathologies):
             continue
         row = dict(original)
         row["validator_status"] = str(validation.get("validator_status") or "")
@@ -536,10 +549,28 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         )
     remaining_jsonl = report.get("remaining_jsonl")
     if isinstance(remaining_jsonl, Mapping):
+        filter_parts: list[str] = []
+        manual_rule_filters = tuple(remaining_jsonl.get("manual_rule_filters") or ())
+        if manual_rule_filters:
+            filter_parts.append(
+                "manual_rules=" + ",".join(str(item) for item in manual_rule_filters)
+            )
+        source_pathology_filters = tuple(
+            remaining_jsonl.get("source_pathology_filters") or ()
+        )
+        if source_pathology_filters:
+            filter_parts.append(
+                "source_pathologies="
+                + ",".join(str(item) for item in source_pathology_filters)
+            )
+        filter_text = ""
+        if filter_parts:
+            filter_text = " filters=" + ";".join(filter_parts)
         print(
             "Remaining JSONL: "
             f"{remaining_jsonl.get('path')} rows={remaining_jsonl.get('rows')} "
             f"statuses={','.join(str(item) for item in remaining_jsonl.get('statuses') or ())}"
+            f"{filter_text}"
         )
     if summary_only:
         return
@@ -566,6 +597,16 @@ def main(args: "argparse.Namespace") -> None:
     validation_jsonl_path = Path(validation_jsonl_arg) if validation_jsonl_arg else None
     remaining_jsonl_arg = str(getattr(args, "remaining_jsonl", "") or "")
     remaining_jsonl_path = Path(remaining_jsonl_arg) if remaining_jsonl_arg else None
+    remaining_manual_rule_filters = frozenset(
+        str(item)
+        for item in (getattr(args, "remaining_manual_rule", None) or ())
+        if str(item)
+    )
+    remaining_source_pathology_filters = frozenset(
+        str(item)
+        for item in (getattr(args, "remaining_source_pathology", None) or ())
+        if str(item)
+    )
     summary_only = bool(getattr(args, "summary_only", False))
     if not input_path.exists():
         print(f"error: input JSONL not found at {input_path}", file=sys.stderr)
@@ -581,7 +622,12 @@ def main(args: "argparse.Namespace") -> None:
             "path": str(validation_jsonl_path),
             "rows": _write_jsonl_rows(validation_jsonl_path, rows),
         }
-    remaining_rows = _remaining_workqueue_rows(original_rows, rows)
+    remaining_rows = _remaining_workqueue_rows(
+        original_rows,
+        rows,
+        manual_rule_ids=remaining_manual_rule_filters,
+        source_pathologies=remaining_source_pathology_filters,
+    )
     remaining_jsonl_report = None
     if remaining_jsonl_path is not None:
         remaining_jsonl_report = {
@@ -593,6 +639,8 @@ def main(args: "argparse.Namespace") -> None:
                     for row in remaining_rows
                 }
             ),
+            "manual_rule_filters": sorted(remaining_manual_rule_filters),
+            "source_pathology_filters": sorted(remaining_source_pathology_filters),
         }
     report = _validation_report_jsonable(
         input_path=input_path,
