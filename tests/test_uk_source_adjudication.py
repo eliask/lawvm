@@ -2036,7 +2036,7 @@ def test_classify_uk_manual_compile_frontier_accepts_source_structuralized_added
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
-def test_classify_uk_manual_compile_frontier_promotes_pseudo_definition_target() -> None:
+def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="added",
         source_pathology="nonstructural_root_gap",
@@ -2053,10 +2053,34 @@ def test_classify_uk_manual_compile_frontier_promotes_pseudo_definition_target()
         structural_for_replay=False,
     )
 
+    assert result["status"] == "source_insufficient"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_structural_pseudo_definition_source_insufficient"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_keeps_pseudo_definition_payload_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="added",
+        source_pathology="nonstructural_root_gap",
+        extracted_tag="BlockAmendment",
+        extracted_text="“ the 1996 Act ” means the Broadcasting Act 1996;",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_structural_pseudo_definition_target_rejected",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+
     assert result["status"] == "deterministic_frontend_candidate"
     assert (
         result["rule_id"]
-        == "uk_manual_frontier_structural_pseudo_definition_target_candidate"
+        == "uk_manual_frontier_structural_pseudo_definition_entry_payload_candidate"
     )
 
 

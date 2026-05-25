@@ -196,7 +196,12 @@ Current UK-specific invariants:
       multi-definition rows must emit blocking
       `uk_effect_structural_pseudo_definition_target_rejected` until a
       definition-entry/list-entry compiler proves the carrier, payload
-      semantics, and placement. A narrower child-substitution lane is owned:
+      semantics, and placement. Manual-frontier triage splits this family:
+      rows whose extracted source carries a quoted definition-entry payload are
+      `uk_manual_frontier_structural_pseudo_definition_entry_payload_candidate`;
+      rows whose source is only a schedule/gateway/header fragment are
+      `uk_manual_frontier_structural_pseudo_definition_source_insufficient`.
+      A narrower child-substitution lane is owned:
       when metadata names exactly one definition term plus one child label
       and the resolved affecting source is a `BlockAmendment` or
       `InlineAmendment` containing only replacement child text, lowering
@@ -2505,6 +2510,10 @@ Current payload-descendant source-ref invariant:
   `uk_manual_frontier_instruction_header_source_insufficient` instead of a
   generic unclassified row. Current witness: `ukpga/1990/42` affected
   `s. 183A(4)` and `s. 183A(6)(b)` by `ukpga/2016/11 s. 54(1)(a)-(b)`.
+  Quoted object fragments and definition-target fragments retain their more
+  specific classifications before this header fallback:
+  `uk_manual_frontier_effect_metadata_carried_text_patch_candidate` and
+  `uk_manual_frontier_definition_target_fragment_source_insufficient`.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
   there shall be substituted "..."` are classified as
   `uk_manual_frontier_structural_child_range_substitution_candidate` while no
