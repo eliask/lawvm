@@ -2627,11 +2627,16 @@ Current payload-descendant source-ref invariant:
   words, definitions, entries, or table-entry surfaces remain outside this
   rule; non-unique or unmatched rows emit
   `uk_effect_repeal_table_structural_repeal_unresolved` rather than replaying a
-  broad repeal schedule or table row as host text. A unique section-range cell
-  such as `Sections 26 to 31.` may corroborate each feed-expanded numeric
-  section target inside that range; a unique container-list cell such as
-  `Parts 1 and 2.` may corroborate each feed-expanded part target inside that
-  list. Targets outside the source-owned list or range remain unresolved.
+  broad repeal schedule or table row as host text. Manual frontier classifies
+  unresolved repeal-table lowering records as
+  `uk_manual_frontier_repeal_table_candidate` even when the source-pathology
+  classifier did not pre-label the source, because the lowering record itself
+  carries the table row, extent cell, and target-split evidence. A unique
+  section-range cell such as `Sections 26 to 31.` may corroborate each
+  feed-expanded numeric section target inside that range; a unique
+  container-list cell such as `Parts 1 and 2.` may corroborate each
+  feed-expanded part target inside that list. Targets outside the source-owned
+  list or range remain unresolved.
   Repeal-table extent clause splitting treats `Part(s)` and `Chapter(s)` as
   structural clause starts, so a mixed cell such as `Section 92(3) and (6). In
   section 93(1) and (3), the words "...". Part 6.` can lower the `Part 6`

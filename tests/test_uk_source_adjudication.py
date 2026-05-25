@@ -1759,6 +1759,32 @@ def test_classify_uk_manual_compile_frontier_marks_repeal_schedule_table_source(
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_unresolved_repeal_table_lowering() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="repealed",
+        source_pathology="",
+        extracted_tag="Schedule",
+        extracted_text=(
+            "SCHEDULE 1 Repeals Enactment Extent of repeal Broadcasting Act 1990 "
+            "Section 128(2) to (5)."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_repeal_table_structural_repeal_unresolved",
+                "reason_code": "broad_container_repeal_requires_grouped_feed_compilation",
+                "blocking": True,
+                "row_text": "Broadcasting Act 1990 (c. 42) | Section 128(2) to (5).",
+            },
+        ),
+        compiled_op_count=2,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_as_if_application_out_of_scope() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="",
