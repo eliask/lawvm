@@ -100,6 +100,7 @@ class _UKRepealTableStructuralRepeal:
     extent_cell: str = ""
     enactment_match_basis: str = ""
     broad_container_target: str = ""
+    mixed_word_selector: str = ""
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -710,6 +711,39 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
     ) is not None
 
 
+def _uk_repeal_table_mixed_clause_word_selector(
+    extent_clause: str,
+    *,
+    target: LegalAddress,
+) -> str:
+    """Return a contextual selector for mixed structural + adjacent-word repeals."""
+    leaf_kind = target.leaf_kind().strip().lower()
+    leaf_label = target.leaf_label().strip()
+    if leaf_kind not in {"paragraph", "subparagraph", "item", "point"} or not leaf_label:
+        return ""
+    text = " ".join((extent_clause or "").split()).strip()
+    quoted = _uk_quoted_capture("word")
+    preceding_target = re.search(
+        r"(?:the\s+)?(?:preceding\s+word|word)\s+"
+        + quoted
+        + r"\s+(?:immediately\s+)?(?:before|preceding)\s+it\b",
+        text,
+        re.I,
+    )
+    preceding_bare = re.search(
+        r"(?:the\s+)?preceding\s+word\s+" + quoted,
+        text,
+        re.I,
+    )
+    match = preceding_target or preceding_bare
+    if match is None:
+        return ""
+    word = _uk_first_quote_group(match, "word_double", "word_single")
+    if not word:
+        return ""
+    return f"TEXT_WORD_{word}_IMMEDIATELY_PRECEDING_{leaf_kind}_{leaf_label}"
+
+
 def _uk_table_driven_repeal_table_structural_repeal(
     *,
     effect: UKEffectRecord,
@@ -735,7 +769,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
     if not search_roots:
         return _UKRepealTableStructuralRepeal(recognized=False)
 
-    matches: list[tuple[int, str, str, str, str, str]] = []
+    matches: list[tuple[int, str, str, str, str, str, str]] = []
     mixed_structural_word_matches: list[tuple[int, str, str, str, str]] = []
     broad_container_matches: list[tuple[int, str, str, str, str, str]] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
@@ -830,18 +864,36 @@ def _uk_table_driven_repeal_table_structural_repeal(
                                     extent_clause,
                                     enactment_match_basis,
                                     "mixed_structural_and_word_repeal_split_structural_target",
+                                    "",
                                 )
                             )
                         else:
-                            mixed_structural_word_matches.append(
-                                (
-                                    table_index,
-                                    " | ".join((enactment_cell, extent_clause)),
-                                    enactment_cell,
-                                    extent_clause,
-                                    enactment_match_basis,
-                                )
+                            mixed_word_selector = _uk_repeal_table_mixed_clause_word_selector(
+                                extent_clause,
+                                target=target,
                             )
+                            if mixed_word_selector:
+                                matches.append(
+                                    (
+                                        table_index,
+                                        " | ".join((enactment_cell, extent_clause)),
+                                        enactment_cell,
+                                        extent_clause,
+                                        enactment_match_basis,
+                                        "mixed_structural_and_word_repeal_split",
+                                        mixed_word_selector,
+                                    )
+                                )
+                            else:
+                                mixed_structural_word_matches.append(
+                                    (
+                                        table_index,
+                                        " | ".join((enactment_cell, extent_clause)),
+                                        enactment_cell,
+                                        extent_clause,
+                                        enactment_match_basis,
+                                    )
+                                )
                     continue
                 matches.append(
                     (
@@ -856,6 +908,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
                             if source_supplies_repeal_action
                             else ""
                         ),
+                        "",
                     )
                 )
 
@@ -918,6 +971,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
         extent_cell,
         enactment_match_basis,
         reason_code,
+        mixed_word_selector,
     ) = matches[0]
     return _UKRepealTableStructuralRepeal(
         recognized=True,
@@ -928,6 +982,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
         enactment_cell=enactment_cell,
         extent_cell=extent_cell,
         enactment_match_basis=enactment_match_basis,
+        mixed_word_selector=mixed_word_selector,
     )
 
 

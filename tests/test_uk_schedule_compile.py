@@ -11080,7 +11080,7 @@ def test_compile_repeal_table_structural_part_clause_after_word_clause() -> None
     )
 
 
-def test_compile_repeal_table_mixed_structural_and_word_repeal_stays_unresolved() -> None:
+def test_compile_repeal_table_mixed_structural_and_word_repeal_splits_ops() -> None:
     source_root = ET.fromstring(
         """
         <Legislation>
@@ -11129,17 +11129,69 @@ def test_compile_repeal_table_mixed_structural_and_word_repeal_stays_unresolved(
         source_root=source_root,
     )
 
-    assert ops == []
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.REPEAL,
+    ]
+    assert ops[0].target.path == (("section", "69"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_and_IMMEDIATELY_PRECEDING_paragraph_b"
+    )
+    assert ops[1].target.path == (("section", "69"), ("subsection", "3"), ("paragraph", "b"))
+    assert all(
+        op.witness_rule_id == "uk_effect_repeal_table_mixed_structural_word_repeal_split"
+        for op in ops
+    )
     assert any(
-        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
-        and record["reason_code"] == "mixed_structural_and_word_repeal_requires_split"
+        record["rule_id"] == "uk_effect_repeal_table_mixed_structural_word_repeal_split"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_split"
         and record["target"] == "section:69/subsection:3/paragraph:b"
-        and record["match_count"] == 0
+        and record["text_target"] == "section:69/subsection:3"
+        and record["text_selector"] == "TEXT_WORD_and_IMMEDIATELY_PRECEDING_paragraph_b"
         and record["extent_cell"]
         == "Section 69(3)(b) and the word “and” immediately preceding it."
-        and record["blocking"] is True
+        and record["blocking"] is False
         for record in lowering_records
     )
+
+    base = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="69",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first condition, and"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second condition"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.label for child in subsection.children] == ["a"]
+    assert subsection.children[0].text == "first condition"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_contextual_word_text_rewrite_applied",
+    ]
 
 
 def test_compile_repeal_table_structural_part_list_non_member_unresolved() -> None:

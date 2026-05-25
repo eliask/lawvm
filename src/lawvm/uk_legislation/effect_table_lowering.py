@@ -554,6 +554,66 @@ def try_lower_repeal_table_effect(
             repeal_table_structural_repeal.reason_code
             or "unique_repeal_table_extent_row_structural_repeal"
         )
+        if reason_code == "mixed_structural_and_word_repeal_split":
+            parent_target = LegalAddress(path=target.path[:-1], special=None)
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_repeal_table_mixed_structural_word_repeal_split",
+                family="source_repeal_table_elaboration",
+                reason_code=reason_code,
+                reason=(
+                    "UK repeal-table source row explicitly names both a "
+                    "structural target and an adjacent word deletion; lowering "
+                    "emits separate typed operations so each mutation boundary "
+                    "remains owned."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "text_target": str(parent_target),
+                    "text_selector": repeal_table_structural_repeal.mixed_word_selector,
+                    "table_index": repeal_table_structural_repeal.table_index,
+                    "row_text": repeal_table_structural_repeal.row_text,
+                    "enactment_cell": repeal_table_structural_repeal.enactment_cell,
+                    "extent_cell": repeal_table_structural_repeal.extent_cell,
+                    "enactment_match_basis": repeal_table_structural_repeal.enactment_match_basis,
+                },
+            )
+            return UKTableBatchLoweringResult(
+                handled=True,
+                ops=(
+                    *_build_repeal_table_text_ops(
+                        effect=effect,
+                        sequence=sequence,
+                        target=parent_target,
+                        originals=(repeal_table_structural_repeal.mixed_word_selector,),
+                        occurrence=0,
+                        end_occurrence=0,
+                        rule_id="uk_effect_repeal_table_mixed_structural_word_repeal_split",
+                        effect_witness=effect_witness,
+                        extraction_witness=extraction_witness,
+                        original_targets_str=original_targets_str,
+                        t_str=t_str,
+                        op_id_suffix="_text_repeal",
+                    ),
+                    _build_table_structural_repeal_op(
+                        effect=effect,
+                        sequence=sequence,
+                        target=target,
+                        effect_witness=effect_witness,
+                        extraction_witness=extraction_witness,
+                        original_targets_str=original_targets_str,
+                        t_str=t_str,
+                        witness_rule_id=(
+                            "uk_effect_repeal_table_mixed_structural_word_repeal_split"
+                        ),
+                        op_id_suffix="_structural_repeal",
+                    ),
+                ),
+            )
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
             rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
@@ -993,6 +1053,7 @@ def _build_table_structural_repeal_op(
     original_targets_str: list[str],
     t_str: str,
     witness_rule_id: str,
+    op_id_suffix: str = "",
 ) -> LegalOperation:
     src = OperationSource(
         statute_id=effect.affecting_act_id,
@@ -1006,7 +1067,7 @@ def _build_table_structural_repeal_op(
         original_targets_str=original_targets_str,
     )
     lowered_witness = UKLoweredOperationWitness(
-        op_id=effect.effect_id,
+        op_id=f"{effect.effect_id}{op_id_suffix}",
         sequence=sequence,
         action=StructuralAction.REPEAL,
         target=target,
@@ -1044,6 +1105,7 @@ def _build_repeal_table_text_ops(
     extraction_witness: UKProvisionExtractionWitness,
     original_targets_str: list[str],
     t_str: str,
+    op_id_suffix: str = "",
 ) -> tuple[LegalOperation, ...]:
     src = OperationSource(
         statute_id=effect.affecting_act_id,
@@ -1084,7 +1146,11 @@ def _build_repeal_table_text_ops(
             op_text_end_occurrence=end_occurrence,
         )
         lowered_witness = UKLoweredOperationWitness(
-            op_id=effect.effect_id if len(originals) == 1 else f"{effect.effect_id}_{original_index}",
+            op_id=(
+                f"{effect.effect_id}{op_id_suffix}"
+                if len(originals) == 1
+                else f"{effect.effect_id}{op_id_suffix}_{original_index}"
+            ),
             sequence=sequence,
             action=StructuralAction.TEXT_REPEAL,
             target=target,
