@@ -5847,6 +5847,68 @@ def test_compile_labeled_end_range_preserves_parent_target_with_child_endpoint_s
     assert lowering_records[0]["target_suffix_label"] == "b"
 
 
+def test_compile_labeled_end_range_block_preserves_child_endpoint_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-5-a">
+          <Pnumber>a</Pnumber>
+          <Text>a for the words from \u201ca list\u201d to the end of paragraph (a) substitute \u2014 a in relation to a list published in accordance with regulations made under paragraph (a) of section 26(2) of this Act, the first part of the list which is referred to in sub-paragraph (i) of that paragraph; ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-4980079cb81677a3351ce1fbda5ee9a3",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-13",
+        affected_uri="/id/ukpga/1978/29",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 17AA(3)",
+        affecting_uri="/id/asp/2005/13",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="13",
+        affecting_provisions="sch. 2 para. 2(5)(a)",
+        affecting_title="Smoking, Health and Social Care (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "17aa"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == f"TEXT_FROM_CHILD_END{US}paragraph{US}a{US}a list"
+    )
+    assert ops[0].text_patch.replacement.startswith(
+        "a in relation to a list published in accordance with regulations"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_labeled_end_range_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_labeled_child_end_range_text_patch"
+    ]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+    assert lowering_records[0]["target"] == "section:17aa/subsection:3"
+    assert lowering_records[0]["target_suffix_kind"] == "paragraph"
+    assert lowering_records[0]["target_suffix_label"] == "a"
+
+
 def test_compile_labeled_end_range_blocks_incompatible_child_endpoint_target() -> None:
     extracted_el = ET.fromstring(
         f"""

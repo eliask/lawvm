@@ -2178,6 +2178,12 @@ Current payload-descendant source-ref invariant:
   second occurs, to the end substitute Y` without changing action family.
   Current witness: `ukpga/1978/29` affected `s. 29(6)` by `asp/2005/13`
   `s. 26(2)(c)(ii)`.
+- labeled child-end ranges may carry an unquoted block replacement:
+  `for the words from "X" to the end of paragraph (a) substitute - Y` still
+  lowers through `uk_effect_labeled_child_end_range_text_patch`, preserving the
+  parent target and encoding the explicit child endpoint in the selector.
+  Current witness: `ukpga/1978/29` affected `s. 17AA(3)` by `asp/2005/13`
+  `sch. 2 para. 2(5)(a)`.
 - the parser may lower `for the words from "X" to the end, substitute "- Y`
   where the replacement has an opening quote before a block dash but no closing
   quote in the flattened source text to `TEXT_FROM_X_TO_END` using

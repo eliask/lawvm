@@ -52,6 +52,9 @@ UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID = (
 UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID = (
     "uk_effect_range_to_end_ordinal_block_substitution_text_patch"
 )
+UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_labeled_end_range_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -814,7 +817,33 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             "replacement": m.group("replacement").strip(),
             "target_suffix_kind": suffix_kind,
             "target_suffix_label": m.group("label").strip(),
-            "rule_id": "uk_effect_labeled_end_range_substitution_text_patch",
+            "rule_id": UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID,
+        }
+        if m.group("ordinal"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
+        subs.append(patch)
+
+    matches_labeled_end_range_block_substituted = re.finditer(
+        r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
+        r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|appears))?"
+        r" to the end of (?P<kind>sub-?paragraph|paragraph|subsection)\s*"
+        r"\((?P<label>[0-9A-Za-z]+)\),?\s+"
+        r"substitute(?:\s*[—-])?\s+(?P<replacement>.+?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_labeled_end_range_block_substituted:
+        replacement = m.group("replacement").strip()
+        if replacement.startswith(("“", '"', "'", "‘")):
+            continue
+        suffix_kind = m.group("kind").lower().replace("-", "")
+        patch = {
+            "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
+            "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
+            "target_suffix_kind": suffix_kind,
+            "target_suffix_label": m.group("label").strip(),
+            "rule_id": UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID,
         }
         if m.group("ordinal"):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
