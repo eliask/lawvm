@@ -2970,19 +2970,28 @@ Current payload-descendant source-ref invariant:
   `split_from_mixed_extent_row=true`; the word-level lanes remain separate
   source facts and are not silently replayed. The same row must not lower a
   whole repeal for `s. 142(1)`, because `in subsection (1), the words ...`
-  scopes only the word deletion. Mixed clauses without a separately named exact
-  structural target, such as `Section 69(3)(b) and the word "and" immediately
-  preceding it.`, remain blocked under
-  `mixed_structural_and_word_repeal_requires_split` until lowering can emit both
-  source lanes without dropping either. Manual claim templates expose that
-  reason code and require `structural_and_text_repeal_split_boundary`
-  ownership before a claim can become executable.
+  scopes only the word deletion. Mixed clauses that explicitly name the target
+  and a contextual adjacent-word deletion may lower both lanes under
+  `uk_effect_repeal_table_mixed_structural_word_repeal_split`. This includes
+  `Section 69(3)(b) and the word "and" immediately preceding it.` and section
+  context phrasing such as `In section 102, paragraph (a) of subsection (4),
+  the word "or" immediately following that paragraph and subsection (5).`.
+  The latter is accepted only because the parent context (`section 102` /
+  `subsection (4)`) and leaf target (`paragraph (a)`) are both source-named;
+  the sibling `subsection (5)` remains a separate source fact and is not
+  replayed for an effect row that targets only `s. 102(4)(a) and word`.
+  Mixed clauses without an exact target plus contextual word selector remain
+  blocked under `mixed_structural_and_word_repeal_requires_split`. Manual claim
+  templates expose that reason code and require
+  `structural_and_text_repeal_split_boundary` ownership before a claim can
+  become executable.
   Current witnesses: `asp/2000/6` / `asp/2006/8` schedule repeal of sections
   `26` to `31`; `asp/2001/8` / `asp/2010/8 sch. 14 para. 37` repeal of
   Parts `1` and `2`; `asp/2001/10` / `asp/2006/1 Sch. 7` repeal of Part `6`;
   separately named mixed-lane witness `ukpga/1992/8` /
-  `ukpga/2002/19 Sch. 2`; blocked mixed-lane witnesses `asp/2001/2` /
-  `asp/2008/1 Sch. 2` and `ukpga/2000/6` /
+  `ukpga/2002/19 Sch. 2`; split mixed-lane witnesses `asp/2001/2` /
+  `asp/2008/1 Sch. 2` and `ukpga/1978/29` /
+  `asp/2003/13 Sch. 5 Pt. 1`; blocked mixed-lane witness `ukpga/2000/6` /
   `ukpga/2003/38 Sch. 2 para. 4(3)(a) Sch. 3`.
   Repeal-table elaboration may use the full affecting `source_root` when the
   extracted effect source is only a gateway provision such as `the enactments
