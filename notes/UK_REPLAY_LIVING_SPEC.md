@@ -2528,7 +2528,10 @@ Current payload-descendant source-ref invariant:
   "X"` are owned by
   `uk_effect_child_qualified_word_omission_text_patch`; lowering verifies the
   source parent/child labels against the effect target before emitting a text
-  repeal.
+  repeal. The same rule may handle conjoined source rows such as `In
+  subsection (3), paragraph (a) and in paragraph (b) the words "X" shall cease
+  to have effect` for the word-repeal effect targeting paragraph `(b)`, while
+  recording the sibling label as context rather than deleting the sibling.
 - structural child-range substitutions such as `for paragraphs (a) and (b)
   there shall be substituted "..."` are classified as
   `uk_manual_frontier_structural_child_range_substitution_candidate` while no
