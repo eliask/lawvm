@@ -1831,6 +1831,13 @@ Current payload-descendant source-ref invariant:
   target-local text operation and does not authorize rewriting the host
   subsection/paragraph. Current witness: `ukpga/1990/16` affected
   `s. 40(4)(a)` by `uksi/2004/2990 reg. 4(a)`.
+- preposed at-end insertions of the form `there shall be inserted at the end
+  the words "X"` lower to the existing target-local append patch (`TEXT_END`)
+  under `uk_effect_preposed_at_end_text_insertion_patch`. The feed target must
+  remain the operation target; grouped source prose such as `in each of the
+  following` does not authorize frontend expansion beyond the explicit effect
+  row. Current witness: `ukpga/1970/9` affected `s. 8A(1A)` and `s. 8(1A)` by
+  `ukpga/1995/4 s. 104(1)`.
 - passive quoted omissions of the form `the word/words "X" shall be omitted`
   lower to target-local text deletion under
   `uk_effect_quoted_word_passive_omit_text_patch`. This rule requires an

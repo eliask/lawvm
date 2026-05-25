@@ -2167,6 +2167,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_preposed_at_end_insert = re.finditer(
+        r"(?:there is inserted|there are inserted|there shall be inserted)\s+"
+        r"at the end(?: of (?:(?:that|the) )?"
+        r"(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?"
+        r"(?:\s+\([^)]*\))?)?,?\s+"
+        r"(?:the\s+)?words?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_preposed_at_end_insert:
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": "uk_effect_preposed_at_end_text_insertion_patch",
+            }
+        )
+
     matches_at_end_unquoted_dash_insert = re.finditer(
         r"at the end(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)"
         r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?"
