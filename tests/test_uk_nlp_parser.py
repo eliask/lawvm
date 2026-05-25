@@ -1783,6 +1783,25 @@ def test_parse_fragment_substitution_handles_range_to_end_first_appears_block() 
     ]
 
 
+def test_parse_fragment_substitution_handles_comma_ordinal_range_to_end_block() -> None:
+    subs = parse_fragment_substitution(
+        "ii for the words from \u201clist\u201d, where it second occurs, to the end "
+        "substitute list\u2014 a in relation to a list referred to in subsection "
+        "(8)(a), perform; ;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_list_TO_END",
+            "replacement": (
+                "list\u2014 a in relation to a list referred to in subsection (8)(a), perform; ;"
+            ),
+            "occurrence": "2",
+            "rule_id": "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_to_end_open_quote_block() -> None:
     subs = parse_fragment_substitution(
         "in sub-paragraph (3), for the words from \u201c, any of the following "

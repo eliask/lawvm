@@ -20,6 +20,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_FROM_BEGINNING_OMISSION_RULE_ID,
+    UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
@@ -652,6 +653,29 @@ def append_basic_text_rewrite_observations(
                 "before-child text patch scoped to the affected target and "
                 "does not admit the direct child payload as a whole-parent "
                 "replacement."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_to_end_ordinal_block_substitution_text_patch",
+            reason=(
+                "UK source text substitutes a range from a quoted anchor at a "
+                "named ordinal occurrence to the end of the affected target; "
+                "lowering preserves that as a bounded range-to-end text patch "
+                "with the recorded start occurrence."
             ),
             effect=effect,
             extracted_el=extracted_el,
