@@ -62,6 +62,41 @@ source SHA-256 identities.
 The sidecar is diagnostic evidence, not legal text output. It intentionally
 stores EID identifiers and metadata rather than legal text excerpts.
 
+Long UK replay sweeps are intended to be archive-first and memory-aware. The UK
+replay parallel default is deliberately conservative, `--worker-max-tasks N`
+can recycle workers to bound long-run RSS growth, and saved rows include
+`process_maxrss_kb` as process high-water evidence so memory pressure is
+visible separately from slow wall-time rows. The full per-row diagnostic
+evidence streams to CSV/JSONL sidecars; aggregate text-report top-N rows retain
+only scalar summary fields so report generation does not keep large diagnostic
+payloads alive across the sweep. Saved history rows also record the maximum
+observed `process_maxrss_kb` and the statute row after which it was observed.
+Saved-run inspection is also memory-aware: `--show` and `--compare` use CSV
+summary fields by default and do not parse large diagnostics JSONL sidecars
+unless replay-adjudication samples are explicitly requested. In summary-only
+mode, sample output is suppressed, so diagnostics sidecars are not parsed.
+`--summary-only` is the bounded terminal-output mode for large UK runs; it
+prints headline scores and aggregate evidence counts without expanding the
+full rule histograms and top-row lists. It also bounds `--compare` output to
+headline score deltas and aggregate evidence-count deltas.
+UK saved-run compare uses replay-primary row scores when replay columns are
+available, while saved history keeps the original benchmark primary aggregate
+for compatibility. Regression guarding rejects replay-column CSVs that contain
+fallback `score`/`similarity` rows without a replay-primary score, because that
+would silently compare only a replay-scored subset. `uk-bench --compare`
+rejects the same intra-run mixed replay/raw shape instead of averaging
+incomparable row score lanes. UK regression guarding also rejects partial
+replay-regime evidence on common scored rows when regime columns are present.
+For candidate triage, `lawvm uk-candidates --json --summary-only --top 0`
+keeps the full saved-run frontier uninspected but still aggregates saved
+benchmark evidence. Add `--summary-count-limit N` when the goal is a compact
+dashboard of the largest rule/status families rather than a complete histogram.
+Add `--row-count-limit N` when emitted candidate rows also need bounded count
+maps for copy/paste triage.
+Regression guarding treats `process_maxrss_kb` as run-peak high-water evidence,
+not per-statute allocation evidence, because worker ordering and process reuse
+can carry an earlier peak forward to later rows.
+
 UK core replay averages exclude rows whose parsed effect surface is wholly
 classified as `nonstructural_root_gap`. Those rows are still saved and reported
 as `nonstructural_current_projection`, but they measure current-state or

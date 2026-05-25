@@ -5,6 +5,7 @@ import concurrent.futures
 import hashlib
 import json
 from argparse import Namespace
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -19,6 +20,13 @@ from lawvm.tools.uk_bench import _BenchResult, _BenchScoreWitnessRow, _primary_s
 def test_uk_bench_commencement_score_requires_commenced_eid_evidence() -> None:
     assert uk_bench._score_commenced_eids(set(), {"section-1"}) == -1.0
     assert uk_bench._score_commenced_eids({"section-1"}, {"section-1", "section-2"}) == 0.5
+
+
+def test_uk_bench_default_workers_are_memory_safe_for_replay() -> None:
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=1) == 1
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=4) == 2
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=32) == 4
+    assert uk_bench._default_uk_bench_workers(do_replay=False, cpu_count=32) == 8
 
 
 def test_uk_bench_residual_claim_classifies_source_backed_renumber_oracle_branch() -> None:
@@ -156,6 +164,7 @@ def test_uk_bench_report_surfaces_slowest_rows(capsys) -> None:
         oracle_source_size=3_000_000,
         comparison_class="commensurable",
         duration_s=42.25,
+        process_maxrss_kb=98_304,
     )
 
     uk_bench._print_slowest_rows([fast, slow], has_commencement=False, limit=1)
@@ -167,7 +176,192 @@ def test_uk_bench_report_surfaces_slowest_rows(capsys) -> None:
     assert "replay=80.0%" in output
     assert "ops= 1900" in output
     assert "source_mb=5.0" in output
+    assert "rss_mb=96" in output
     assert "ukpga/2000/1" not in output
+
+
+def test_uk_bench_prints_highest_rss_rows_separately(capsys) -> None:
+    low_rss_slow = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=10,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=10,
+        score=1.0,
+        status="OK",
+        duration_s=30.0,
+        process_maxrss_kb=64_000,
+    )
+    high_rss_fast = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_effect_rows=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,
+        score=0.9,
+        status="OK",
+        replay_score=0.8,
+        n_ops=1900,
+        enacted_source_size=2_000_000,
+        oracle_source_size=3_000_000,
+        comparison_class="commensurable",
+        duration_s=0.25,
+        process_maxrss_kb=196_608,
+    )
+
+    uk_bench._print_highest_rss_rows([low_rss_slow, high_rss_fast], has_commencement=False, limit=1)
+
+    output = capsys.readouterr().out
+    assert "Rows after highest 1 process max RSS observations:" in output
+    assert "ukpga/2010/4" in output
+    assert "rss_mb=192" in output
+    assert "replay=80.0%" in output
+    assert "ukpga/2000/1" not in output
+
+
+def test_uk_bench_report_summary_only_bounds_terminal_output(capsys) -> None:
+    result = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_effect_rows=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=90,
+        score=0.9,
+        status="OK",
+        replay_score=0.8,
+        n_ops=1900,
+        replay_adjudication_count=2,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 2},
+        source_parse_observation_count=3,
+        source_parse_observation_rule_counts={"uk_source_observed": 3},
+        lowering_observation_count=5,
+        lowering_observation_rule_counts={"uk_effect_lowered": 5},
+        lowering_rejection_count=5,
+        lowering_rejection_rule_counts={"uk_effect_lowered": 5},
+        blocking_lowering_rejection_count=1,
+        blocking_lowering_rejection_rule_counts={"uk_effect_blocked": 1},
+        comparison_class="commensurable",
+        process_maxrss_kb=196_608,
+    )
+
+    uk_bench._print_report([result], "summary", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "=== UK Bench: summary ===" in out
+    assert "EID score (raw, N=1): avg=90.0% median=90.0%" in out
+    assert "Replay score (N=1, ops=1900): avg=80.0%" in out
+    assert "Evidence totals:" in out
+    assert "source_parse_obs=3" in out
+    assert "lowering_rejections=5" in out
+    assert "Peak observed process RSS: 192MB after ukpga/2010/4" in out
+    assert "Replay adjudication kinds:" not in out
+    assert "Worst 1 core rows" not in out
+
+
+def test_uk_bench_report_summary_only_uses_true_even_median(capsys) -> None:
+    low = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=2,
+        score=0.2,
+        status="OK",
+        comparison_class="commensurable",
+    )
+    high = _BenchResult(
+        statute_id="ukpga/2000/2",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=10,
+        score=1.0,
+        status="OK",
+        comparison_class="commensurable",
+    )
+
+    uk_bench._print_report([low, high], "summary", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "EID score (raw, N=2): avg=60.0% median=60.0%" in out
+
+
+def test_uk_bench_accumulator_keeps_report_rows_memory_bounded() -> None:
+    diagnostic = {
+        "kind": "replay_bug",
+        "rule_id": "uk_test_rule",
+        "detail": {"target": "section-1", "payload": "x" * 4096},
+    }
+    result = _BenchResult(
+        statute_id="ukpga/2010/4",
+        act_type="ukpga",
+        year=2010,
+        n_effects=120,
+        n_effect_rows=120,
+        n_enacted_eids=100,
+        n_oracle_eids=100,
+        n_common=50,
+        score=0.5,
+        status="OK",
+        replay_score=0.4,
+        replay_adjudication_count=1,
+        replay_adjudication_kind_counts={"replay_bug": 1},
+        replay_adjudications=(diagnostic,),
+        effect_diagnostics=(diagnostic,),
+        source_parse_observations=(diagnostic,),
+        lowering_rejections=(diagnostic,),
+        score_witness_rows=(
+            _BenchScoreWitnessRow(
+                comparison_scope="raw",
+                side="only_in_left",
+                eid="section-1",
+                rank=1,
+                category_total=1,
+                sample_limit=1,
+                truncated=False,
+                left_count=1,
+                right_count=0,
+                common_count=0,
+                score_value=0.5,
+            ),
+        ),
+        comparison_class="commensurable",
+        duration_s=10.0,
+        process_maxrss_kb=512_000,
+    )
+    acc = uk_bench._BenchRunAccumulator(
+        has_commencement=False,
+        replay_adjudication_sample_kinds=("replay_bug",),
+        replay_adjudication_sample_limit=1,
+    )
+
+    acc.feed(result)
+
+    retained = acc.worst_core[0]
+    assert retained is not result
+    assert retained.statute_id == "ukpga/2010/4"
+    assert retained.score == 0.5
+    assert retained.replay_score == 0.4
+    assert retained.source_parse_observations == ()
+    assert retained.effect_diagnostics == ()
+    assert retained.lowering_rejections == ()
+    assert retained.replay_adjudications == ()
+    assert retained.score_witness_rows == ()
+    sample_result, sample_record = acc.adjudication_samples["replay_bug"][0]
+    assert sample_result.replay_adjudications == ()
+    assert sample_record is diagnostic
 
 
 def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
@@ -1035,6 +1229,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
         comparison_class="commensurable",
         core_benchmark=False,
         duration_s=12.345,
+        process_maxrss_kb=123456,
         phase_timings={
             "compile_ops": 1.25,
             "replay": 2.5,
@@ -1164,6 +1359,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert rows[0]["uk_residual_section_claim_emitted"] == "1"
     assert rows[0]["replay_commencement_score"] == "0.9000"
     assert rows[0]["duration_s"] == "12.345"
+    assert rows[0]["process_maxrss_kb"] == "123456"
     assert rows[0]["phase_total_s"] == "3.875"
     assert rows[0]["phase_compile_ops_s"] == "1.250"
     assert rows[0]["phase_replay_s"] == "2.500"
@@ -1515,6 +1711,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert loaded_result.comparison_class == "commensurable"
     assert loaded_result.core_benchmark is False
     assert loaded_result.duration_s == 12.345
+    assert loaded_result.process_maxrss_kb == 123456
     assert loaded_result.phase_timings == {
         "compile_ops": 1.25,
         "replay": 2.5,
@@ -1668,6 +1865,7 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
         n_commenced_eids=5,
         comparison_class="commensurable",
         core_benchmark=True,
+        process_maxrss_kb=98_304,
         score_witness_rows=(
             _BenchScoreWitnessRow(
                 comparison_scope="raw",
@@ -1716,6 +1914,7 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
         replay_adjudication_count=1,
         replay_adjudication_kind_counts={"uk_replay_error": 1},
         commencement_error="ValueError: commencement failed",
+        process_maxrss_kb=196_608,
     )
 
     uk_bench._save_results([ok_result, error_result], "history-demo")
@@ -1799,6 +1998,8 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
                 '"metadata_backfill=1;oracle_alignment=1;metadata_only_effects=1;'
                 'applicability=effective_date_plus_feed_applied;authority=current_mixed": 1}'
             ),
+            "max_process_maxrss_kb": "196608",
+            "max_process_maxrss_statute_id": "ukpga/2001/2",
             "timestamp": rows[0]["timestamp"],
         }
     ]
@@ -1926,6 +2127,8 @@ def test_uk_bench_show_history_formats_legacy_and_current_segments(monkeypatch, 
             "1",
             "1",
             '{"metadata_backfill=0;oracle_alignment=0;metadata_only_effects=1;applicability=effective_date_only;authority=source_text_only": 1}',
+            "196608",
+            "ukpga/2001/2",
             "2026-05-02 10:00",
         ])
 
@@ -1937,7 +2140,7 @@ def test_uk_bench_show_history_formats_legacy_and_current_segments(monkeypatch, 
     assert (
         "current: score=70.0% mode=commencement ok=1/2 core=1 perfect=0 "
         "raw=40.0% replay=80.0% commencement=70.0% witness_rows=1 "
-        "at=2026-05-02 10:00"
+        "max_rss=192MB rss_row=ukpga/2001/2 at=2026-05-02 10:00"
     ) in out
     assert (
         "evidence: source_parse_obs=1 source_parse_rejections=1 "
@@ -2051,6 +2254,8 @@ def test_uk_bench_history_reads_previous_current_header_without_adjudication_buc
             "uk_residual_claim_tiers",
             "uk_residual_claim_kinds",
             "uk_residual_section_claims",
+            "max_process_maxrss_kb",
+            "max_process_maxrss_statute_id",
         }
     ]
     previous_current_row = [
@@ -2115,6 +2320,54 @@ def test_uk_bench_history_reads_previous_current_header_without_adjudication_buc
     assert rows[0][1]["label"] == "previous-current"
     assert rows[0][1].get("effect_feed_rejection_rules", "") == ""
     assert rows[0][1].get("replay_adjudication_buckets", "") == ""
+
+
+def test_uk_bench_history_formats_incremental_current_headers(monkeypatch, tmp_path, capsys) -> None:
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    previous_current_header = [
+        field
+        for field in uk_bench._HISTORY_HEADERS
+        if field
+        not in {
+            "effect_feed_rejection_rules",
+            "max_process_maxrss_kb",
+            "max_process_maxrss_statute_id",
+        }
+    ]
+    row = {field: "" for field in previous_current_header}
+    row.update(
+        {
+            "label": "previous-current",
+            "n_total": "2",
+            "n_ok": "1",
+            "n_core_ok": "1",
+            "row_status_counts": '{"OK": 2}',
+            "enacted_source_status_counts": '{"available": 2}',
+            "oracle_source_status_counts": '{"available": 2}',
+            "score_mode": "raw",
+            "avg_score": "0.7500",
+            "n_perfect": "0",
+            "avg_raw_score": "0.7500",
+            "avg_replay_score": "0.8000",
+            "score_witness_rows": "4",
+            "replay_regimes": '{"metadata_backfill=1": 2}',
+            "timestamp": "2026-05-18 22:50",
+        }
+    )
+    with open(history_csv, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=previous_current_header)
+        writer.writeheader()
+        writer.writerow(row)
+
+    rows = uk_bench._history_rows()
+    uk_bench._show_history()
+
+    out = capsys.readouterr().out
+    assert rows[0][0] == "current"
+    assert "previous-current: score=75.0% mode=raw ok=1/2" in out
+    assert "max_rss=n/a rss_row=n/a" in out
+    assert "label=previous-current" not in out
 
 
 def test_uk_bench_corpus_csv_load_preserves_source_state(monkeypatch, tmp_path) -> None:
@@ -2357,7 +2610,11 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         n_commenced_eids=7,
     )
     runs = {"raw": [raw, raw_only], "comm": [commencement, new_only]}
-    monkeypatch.setattr(uk_bench, "_load_run", lambda label: runs[label])
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_run",
+        lambda label, *, include_diagnostics=True: runs[label],
+    )
     bench_dir = tmp_path / "runs"
     bench_dir.mkdir()
     monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
@@ -2369,6 +2626,13 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
     assert _primary_score_mode([raw]) == "raw"
     assert _primary_score_mode([commencement]) == "commencement"
     assert _primary_score_mode([raw, commencement]) == "mixed"
+    assert _primary_score_mode([raw], replay_primary=True) == "raw"
+    replay_row = replace(raw, replay_score=0.88)
+    assert _primary_score_mode([replay_row], replay_primary=True) == "replay-primary"
+    assert (
+        _primary_score_mode([raw, replay_row], replay_primary=True)
+        == "mixed replay/raw"
+    )
     out = capsys.readouterr().out
     assert "Score mode: raw -> commencement" in out
     assert "Only in raw: 1" in out
@@ -3430,6 +3694,434 @@ def test_uk_bench_show_run_reports_persisted_evidence_lanes(monkeypatch, tmp_pat
     assert "show.diagnostics.jsonl rows=1" in out
 
 
+def test_uk_bench_show_run_does_not_load_diagnostics_without_sample_request(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    bench_dir = tmp_path / "runs"
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        n_ops=1,
+        replay_score=0.7,
+        replay_adjudication_count=1,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 1},
+        replay_adjudications=(
+            {
+                "kind": "uk_replay_text_match_missing",
+                "message": "missing",
+                "source_statute": "ukpga/2001/2",
+                "op_id": "op-1",
+                "detail": {"target": "section:1"},
+            },
+        ),
+        comparison_class="commensurable",
+    )
+
+    uk_bench._save_results([result], "show-no-load")
+    capsys.readouterr()
+
+    def fail_load(_label: str) -> dict[str, dict[str, tuple[dict[str, object], ...]]]:
+        raise AssertionError("diagnostics sidecar should not be loaded")
+
+    monkeypatch.setattr(uk_bench, "_load_bench_diagnostic_rows", fail_load)
+
+    uk_bench._show_run("show-no-load")
+
+    out = capsys.readouterr().out
+    assert "Replay adjudications: 1" in out
+    assert "Replay adjudication samples:" not in out
+    assert "Bench diagnostics sidecar:" in out
+    assert "show-no-load.diagnostics.jsonl rows=1" in out
+
+
+def test_uk_bench_show_run_summary_only_does_not_count_diagnostics_rows(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    bench_dir = tmp_path / "runs"
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        replay_score=0.7,
+        replay_adjudication_count=1,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 1},
+        replay_adjudications=(
+            {
+                "kind": "uk_replay_text_match_missing",
+                "message": "missing",
+                "source_statute": "ukpga/2001/2",
+                "op_id": "op-1",
+                "detail": {"target": "section:1"},
+            },
+        ),
+        comparison_class="commensurable",
+    )
+
+    uk_bench._save_results([result], "show-summary-no-count")
+    capsys.readouterr()
+
+    def fail_count(_path: Path) -> int:
+        raise AssertionError("summary-only should not count diagnostics rows")
+
+    monkeypatch.setattr(uk_bench, "_count_jsonl_rows", fail_count)
+
+    uk_bench._show_run("show-summary-no-count", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "Bench diagnostics sidecar:" in out
+    assert "show-summary-no-count.diagnostics.jsonl" in out
+    assert "rows=not-counted" in out
+    assert "Replay adjudication kinds:" not in out
+
+
+def test_uk_bench_show_run_summary_only_ignores_sample_request_diagnostics_load(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    bench_dir = tmp_path / "runs"
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        n_ops=1,
+        replay_score=0.7,
+        replay_adjudication_count=1,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 1},
+        replay_adjudications=(
+            {
+                "kind": "uk_replay_text_match_missing",
+                "message": "missing",
+                "source_statute": "ukpga/2001/2",
+                "op_id": "op-1",
+                "detail": {"target": "section:1"},
+            },
+        ),
+        comparison_class="commensurable",
+    )
+
+    uk_bench._save_results([result], "show-summary-samples-no-load")
+    capsys.readouterr()
+
+    def fail_load(_label: str) -> dict[str, dict[str, tuple[dict[str, object], ...]]]:
+        raise AssertionError("summary-only should not load diagnostics for suppressed samples")
+
+    monkeypatch.setattr(uk_bench, "_load_bench_diagnostic_rows", fail_load)
+
+    uk_bench._show_run(
+        "show-summary-samples-no-load",
+        replay_adjudication_sample_kinds=("uk_replay_text_match_missing",),
+        summary_only=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "Replay adjudication samples:" not in out
+    assert "Replay adjudication kinds:" not in out
+    assert "rows=not-counted" in out
+
+
+def test_uk_bench_compare_does_not_load_diagnostics_sidecars(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    bench_dir = tmp_path / "runs"
+    history_csv = tmp_path / "history.csv"
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+    monkeypatch.setattr(uk_bench, "_HISTORY_CSV", history_csv)
+    before = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        n_ops=1,
+        replay_score=0.7,
+        replay_adjudication_count=1,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 1},
+        replay_adjudications=(
+            {
+                "kind": "uk_replay_text_match_missing",
+                "message": "missing",
+                "source_statute": "ukpga/2001/2",
+                "op_id": "op-1",
+                "detail": {"target": "section:1"},
+            },
+        ),
+        comparison_class="commensurable",
+    )
+    after = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=9,
+        score=0.9,
+        status="OK",
+        n_ops=1,
+        replay_score=0.8,
+        replay_adjudication_count=1,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 1},
+        replay_adjudications=before.replay_adjudications,
+        comparison_class="commensurable",
+    )
+
+    uk_bench._save_results([before], "before-no-load")
+    uk_bench._save_results([after], "after-no-load")
+    capsys.readouterr()
+
+    def fail_load(_label: str) -> dict[str, dict[str, tuple[dict[str, object], ...]]]:
+        raise AssertionError("diagnostics sidecar should not be loaded")
+
+    monkeypatch.setattr(uk_bench, "_load_bench_diagnostic_rows", fail_load)
+
+    uk_bench._compare_runs("before-no-load", "after-no-load")
+
+    out = capsys.readouterr().out
+    assert "Score mode: replay-primary -> replay-primary" in out
+    assert "Average: 70.0% -> 80.0% (+10.0%)" in out
+    assert "Replay adjudications: 1 {'uk_replay_text_match_missing': 1} -> 1" in out
+
+
+def test_uk_bench_compare_summary_only_bounds_terminal_output(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    before = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        replay_adjudication_count=5,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 5},
+        lowering_rejection_count=12,
+        blocking_lowering_rejection_count=3,
+        enacted_source_status="available",
+        oracle_source_status="available",
+        comparison_class="commensurable",
+    )
+    after = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=9,
+        score=0.9,
+        status="OK",
+        replay_adjudication_count=7,
+        replay_adjudication_kind_counts={"uk_replay_text_match_missing": 7},
+        lowering_rejection_count=10,
+        blocking_lowering_rejection_count=2,
+        enacted_source_status="available",
+        oracle_source_status="available",
+        comparison_class="commensurable",
+    )
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_run",
+        lambda label, *, include_diagnostics=True: {"before": [before], "after": [after]}[label],
+    )
+    bench_dir = tmp_path / "runs"
+    bench_dir.mkdir()
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+
+    uk_bench._compare_runs("before", "after", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "Score mode: raw -> raw" in out
+    assert "Average: 80.0% -> 90.0% (+10.0%)" in out
+    assert "Improved: 1, Regressed: 0" in out
+    assert "Evidence totals:" in out
+    assert "lowering_rejections=12->10" in out
+    assert "replay_adjudications=5->7" in out
+    assert "Replay regimes:" not in out
+    assert "Replay adjudications: 5" not in out
+    assert "Improvements (top" not in out
+
+
+def test_uk_bench_compare_prefers_replay_primary_scores_when_present(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    before = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=5,
+        score=0.5,
+        status="OK",
+        replay_score=0.8,
+        comparison_class="commensurable",
+    )
+    after = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=5,
+        score=0.5,
+        status="OK",
+        replay_score=0.9,
+        comparison_class="commensurable",
+    )
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_run",
+        lambda label, *, include_diagnostics=True: {"before": [before], "after": [after]}[label],
+    )
+    bench_dir = tmp_path / "runs"
+    bench_dir.mkdir()
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+
+    uk_bench._compare_runs("before", "after", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "Score mode: replay-primary -> replay-primary" in out
+    assert "Average: 80.0% -> 90.0% (+10.0%)" in out
+
+
+def test_uk_bench_compare_rejects_mixed_replay_and_raw_score_lanes(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    replay_row = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=5,
+        score=0.5,
+        status="OK",
+        replay_score=0.8,
+        comparison_class="commensurable",
+    )
+    raw_fallback_row = _BenchResult(
+        statute_id="ukpga/2000/2",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=5,
+        score=0.7,
+        status="OK",
+        comparison_class="commensurable",
+    )
+    after = [
+        replace(replay_row, replay_score=0.9),
+        replace(raw_fallback_row, score=0.8),
+    ]
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_run",
+        lambda label, *, include_diagnostics=True: {
+            "before": [replay_row, raw_fallback_row],
+            "after": after,
+        }[label],
+    )
+    bench_dir = tmp_path / "runs"
+    bench_dir.mkdir()
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+
+    uk_bench._compare_runs("before", "after", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "Score mode: mixed replay/raw -> mixed replay/raw" in out
+    assert "ERROR: baseline mixes replay-primary rows with fallback raw/commencement rows" in out
+    assert "ERROR: current mixes replay-primary rows with fallback raw/commencement rows" in out
+    assert "Missing baseline replay-primary examples: ukpga/2000/2" in out
+    assert "Average:" not in out
+
+
+def test_uk_bench_compare_same_label_disambiguates_only_in_lines(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    row = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=9,
+        score=0.9,
+        status="OK",
+        comparison_class="commensurable",
+    )
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_run",
+        lambda label, *, include_diagnostics=True: {"same": [row]}[label],
+    )
+    bench_dir = tmp_path / "runs"
+    bench_dir.mkdir()
+    monkeypatch.setattr(uk_bench, "_BENCH_DIR", bench_dir)
+
+    uk_bench._compare_runs("same", "same", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "Only in same (left): 0" in out
+    assert "Only in same (right): 0" in out
+    assert "Only in same: 0" not in out
+
+
 def test_uk_bench_show_run_can_print_persisted_phase_timings(
     monkeypatch,
     tmp_path,
@@ -3842,22 +4534,24 @@ def test_uk_bench_parallel_future_failure_becomes_typed_row(monkeypatch) -> None
     class FakeArchive:
         _db_path = "uk.farchive"
 
-    results = uk_bench._run_bench(
-        [
-            {
-                "statute_id": "ukpga/2000/1",
-                "type": "ukpga",
-                "year": 2000,
-                "n_effects": 0,
-            }
-        ],
-        cast(Farchive, FakeArchive()),
-        workers=2,
-        allow_metadata_backfill=False,
-        allow_oracle_alignment=False,
-        applicability_mode="effective_date_only",
-        authority_mode="source_text_only",
-        allow_metadata_only_effects=False,
+    results = list(
+        uk_bench._run_bench(
+            [
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "type": "ukpga",
+                    "year": 2000,
+                    "n_effects": 0,
+                }
+            ],
+            cast(Farchive, FakeArchive()),
+            workers=2,
+            allow_metadata_backfill=False,
+            allow_oracle_alignment=False,
+            applicability_mode="effective_date_only",
+            authority_mode="source_text_only",
+            allow_metadata_only_effects=False,
+        )
     )
 
     assert len(results) == 1
@@ -3947,14 +4641,284 @@ def test_uk_bench_parallel_submits_predicted_heavy_rows_first(monkeypatch) -> No
         },
     ]
 
-    results = uk_bench._run_bench(corpus, cast(Farchive, FakeArchive()), workers=2)
+    results = list(uk_bench._run_bench(corpus, cast(Farchive, FakeArchive()), workers=2))
 
     assert submitted == ["ukpga/2010/4", "ukpga/2020/17", "ukpga/2000/1"]
-    assert [result.statute_id for result in results] == [
+    assert sorted([result.statute_id for result in results]) == [
         "ukpga/2000/1",
         "ukpga/2010/4",
         "ukpga/2020/17",
     ]
+
+
+def test_uk_bench_parallel_releases_completed_futures_before_result(monkeypatch) -> None:
+    live_future_mapping = None
+
+    class FakeFuture:
+        def __init__(self, entry: dict[str, object]) -> None:
+            self.entry = entry
+
+        def result(self) -> _BenchResult:
+            assert live_future_mapping is not None
+            assert self not in live_future_mapping
+            statute_id = str(self.entry["statute_id"])
+            return _BenchResult(
+                statute_id=statute_id,
+                act_type=str(self.entry["type"]),
+                year=int(self.entry["year"]),
+                n_effects=int(self.entry["n_effects"]),
+                n_enacted_eids=1,
+                n_oracle_eids=1,
+                n_common=1,
+                score=1.0,
+                status="OK",
+            )
+
+    class FakePool:
+        def __init__(self, max_workers: int):
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "FakePool":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def submit(self, fn, entry):  # noqa: ANN001
+            return FakeFuture(entry)
+
+    def fake_as_completed(futures):  # noqa: ANN001
+        nonlocal live_future_mapping
+        live_future_mapping = futures
+        return list(futures)
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(concurrent.futures, "as_completed", fake_as_completed)
+
+    class FakeArchive:
+        _db_path = "uk.farchive"
+
+    results = list(
+        uk_bench._run_bench(
+            [
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "type": "ukpga",
+                    "year": 2000,
+                    "n_effects": 0,
+                }
+            ],
+            cast(Farchive, FakeArchive()),
+            workers=2,
+        )
+    )
+
+    assert [result.statute_id for result in results] == ["ukpga/2000/1"]
+
+
+def test_uk_bench_parallel_bounds_in_flight_futures(monkeypatch) -> None:
+    submitted: list[str] = []
+    submitted_at_first_wait: int | None = None
+
+    class FakeFuture:
+        def __init__(self, entry: dict[str, object]) -> None:
+            self.entry = entry
+
+        def result(self) -> _BenchResult:
+            statute_id = str(self.entry["statute_id"])
+            return _BenchResult(
+                statute_id=statute_id,
+                act_type=str(self.entry["type"]),
+                year=int(self.entry["year"]),
+                n_effects=int(self.entry["n_effects"]),
+                n_enacted_eids=1,
+                n_oracle_eids=1,
+                n_common=1,
+                score=1.0,
+                status="OK",
+            )
+
+    class FakePool:
+        def __init__(self, max_workers: int):
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "FakePool":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def submit(self, fn, entry):  # noqa: ANN001
+            submitted.append(str(entry["statute_id"]))
+            return FakeFuture(entry)
+
+    def fake_as_completed(futures):  # noqa: ANN001
+        nonlocal submitted_at_first_wait
+        if submitted_at_first_wait is None:
+            submitted_at_first_wait = len(submitted)
+        return [next(iter(futures))]
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(concurrent.futures, "as_completed", fake_as_completed)
+
+    class FakeArchive:
+        _db_path = "uk.farchive"
+
+    corpus = [
+        {
+            "statute_id": f"ukpga/2000/{idx}",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 0,
+        }
+        for idx in range(1, 6)
+    ]
+
+    results = list(uk_bench._run_bench(corpus, cast(Farchive, FakeArchive()), workers=2))
+
+    assert submitted_at_first_wait == 4
+    assert len(submitted) == 5
+    assert len(results) == 5
+
+
+def test_uk_bench_parallel_worker_recycling_sets_initializer(monkeypatch) -> None:
+    pool_kwargs_seen: dict[str, object] = {}
+
+    class FakeFuture:
+        def __init__(self, entry: dict[str, object]) -> None:
+            self.entry = entry
+
+        def result(self) -> _BenchResult:
+            statute_id = str(self.entry["statute_id"])
+            return _BenchResult(
+                statute_id=statute_id,
+                act_type=str(self.entry["type"]),
+                year=int(self.entry["year"]),
+                n_effects=int(self.entry["n_effects"]),
+                n_enacted_eids=1,
+                n_oracle_eids=1,
+                n_common=1,
+                score=1.0,
+                status="OK",
+            )
+
+    class FakePool:
+        def __init__(self, max_workers: int, **kwargs: object):
+            self.max_workers = max_workers
+            pool_kwargs_seen.update(kwargs)
+
+        def __enter__(self) -> "FakePool":
+            initializer = pool_kwargs_seen.get("initializer")
+            initargs = pool_kwargs_seen.get("initargs")
+            assert initializer is uk_bench._configure_uk_bench_worker
+            assert isinstance(initargs, tuple)
+            initializer(*initargs)
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def submit(self, fn, entry):  # noqa: ANN001
+            return FakeFuture(entry)
+
+    def fake_as_completed(futures):  # noqa: ANN001
+        return list(futures)
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(concurrent.futures, "as_completed", fake_as_completed)
+
+    class FakeArchive:
+        _db_path = "uk.farchive"
+
+    results = list(
+        uk_bench._run_bench(
+            [
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "type": "ukpga",
+                    "year": 2000,
+                    "n_effects": 0,
+                }
+            ],
+            cast(Farchive, FakeArchive()),
+            workers=2,
+            worker_max_tasks_per_child=7,
+        )
+    )
+
+    assert pool_kwargs_seen["max_tasks_per_child"] == 7
+    assert len(results) == 1
+
+
+def test_uk_bench_worker_recycling_uses_process_pool_with_one_worker(monkeypatch) -> None:
+    pool_kwargs_seen: dict[str, object] = {}
+
+    class FakeFuture:
+        def __init__(self, entry: dict[str, object]) -> None:
+            self.entry = entry
+
+        def result(self) -> _BenchResult:
+            statute_id = str(self.entry["statute_id"])
+            return _BenchResult(
+                statute_id=statute_id,
+                act_type=str(self.entry["type"]),
+                year=int(self.entry["year"]),
+                n_effects=int(self.entry["n_effects"]),
+                n_enacted_eids=1,
+                n_oracle_eids=1,
+                n_common=1,
+                score=1.0,
+                status="OK",
+            )
+
+    class FakePool:
+        def __init__(self, max_workers: int, **kwargs: object):
+            self.max_workers = max_workers
+            pool_kwargs_seen["max_workers"] = max_workers
+            pool_kwargs_seen.update(kwargs)
+
+        def __enter__(self) -> "FakePool":
+            initializer = pool_kwargs_seen.get("initializer")
+            initargs = pool_kwargs_seen.get("initargs")
+            assert initializer is uk_bench._configure_uk_bench_worker
+            assert isinstance(initargs, tuple)
+            initializer(*initargs)
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def submit(self, fn, entry):  # noqa: ANN001
+            return FakeFuture(entry)
+
+    def fake_as_completed(futures):  # noqa: ANN001
+        return list(futures)
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(concurrent.futures, "as_completed", fake_as_completed)
+
+    class FakeArchive:
+        _db_path = "uk.farchive"
+
+    results = list(
+        uk_bench._run_bench(
+            [
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "type": "ukpga",
+                    "year": 2000,
+                    "n_effects": 0,
+                }
+            ],
+            cast(Farchive, FakeArchive()),
+            workers=1,
+            worker_max_tasks_per_child=3,
+        )
+    )
+
+    assert pool_kwargs_seen["max_workers"] == 1
+    assert pool_kwargs_seen["max_tasks_per_child"] == 3
+    assert [result.statute_id for result in results] == ["ukpga/2000/1"]
 
 
 def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None:
@@ -3980,17 +4944,19 @@ def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None
     class FakeArchive:
         _db_path = "uk.farchive"
 
-    results = uk_bench._run_bench(
-        [
-            {
-                "statute_id": "ukpga/2000/1",
-                "type": "ukpga",
-                "year": 2000,
-                "n_effects": 0,
-            }
-        ],
-        cast(Farchive, FakeArchive()),
-        workers=2,
+    results = list(
+        uk_bench._run_bench(
+            [
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "type": "ukpga",
+                    "year": 2000,
+                    "n_effects": 0,
+                }
+            ],
+            cast(Farchive, FakeArchive()),
+            workers=2,
+        )
     )
 
     assert len(results) == 1
@@ -4010,22 +4976,24 @@ def test_uk_bench_sequential_scorer_failure_becomes_typed_row(monkeypatch) -> No
     class FakeArchive:
         _db_path = "uk.farchive"
 
-    results = uk_bench._run_bench(
-        [
-            {
-                "statute_id": "ukpga/2000/1",
-                "type": "ukpga",
-                "year": 2000,
-                "n_effects": 0,
-            }
-        ],
-        cast(Farchive, FakeArchive()),
-        workers=1,
-        allow_metadata_backfill=False,
-        allow_oracle_alignment=False,
-        applicability_mode="effective_date_only",
-        authority_mode="source_text_only",
-        allow_metadata_only_effects=False,
+    results = list(
+        uk_bench._run_bench(
+            [
+                {
+                    "statute_id": "ukpga/2000/1",
+                    "type": "ukpga",
+                    "year": 2000,
+                    "n_effects": 0,
+                }
+            ],
+            cast(Farchive, FakeArchive()),
+            workers=1,
+            allow_metadata_backfill=False,
+            allow_oracle_alignment=False,
+            applicability_mode="effective_date_only",
+            authority_mode="source_text_only",
+            allow_metadata_only_effects=False,
+        )
     )
 
     assert len(results) == 1

@@ -12,6 +12,7 @@ Usage (from LawVM/):
     lawvm bench -j uk --label v1
     lawvm bench -j uk --label v2 --types ukpga asp
     lawvm bench -j uk --corpus data/uk/bench_corpus_smoke.csv --replay --no-save
+    lawvm bench -j uk --label uk_full --replay --worker-max-tasks 50
     lawvm bench -j uk --statute ukpga/2000/1 --no-save
     lawvm bench -j uk --limit 1 --parallel 1 --no-save
     lawvm bench -j uk --show v1
@@ -30,10 +31,10 @@ import re
 import sys
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, cast
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Optional, Sequence, Set, Generator
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRStatute
@@ -179,6 +180,40 @@ _WORKER_ALLOW_METADATA_ONLY_EFFECTS: bool = True
 _WORKER_SCORE_TEXT: bool = True
 _WORKER_RECORD_REPLAY_SUBPHASES: bool = False
 
+
+def _configure_uk_bench_worker(
+    db_path: str,
+    do_replay: bool,
+    repo_root: str,
+    do_commencement: bool,
+    allow_metadata_backfill: bool,
+    allow_oracle_alignment: bool,
+    applicability_mode: str,
+    authority_mode: str,
+    allow_metadata_only_effects: bool,
+    score_text: bool,
+    record_replay_subphases: bool,
+) -> None:
+    """Configure module globals used by ProcessPool worker rows."""
+    global _WORKER_DB_PATH, _WORKER_DO_REPLAY, _WORKER_REPO_ROOT, _WORKER_DO_COMMENCEMENT
+    global _WORKER_ALLOW_METADATA_BACKFILL, _WORKER_ALLOW_ORACLE_ALIGNMENT
+    global _WORKER_ALLOW_METADATA_ONLY_EFFECTS, _WORKER_SCORE_TEXT
+    global _WORKER_RECORD_REPLAY_SUBPHASES
+    global _WORKER_APPLICABILITY_MODE, _WORKER_AUTHORITY_MODE
+
+    _WORKER_DB_PATH = db_path
+    _WORKER_DO_REPLAY = do_replay
+    _WORKER_REPO_ROOT = repo_root
+    _WORKER_DO_COMMENCEMENT = do_commencement
+    _WORKER_ALLOW_METADATA_BACKFILL = allow_metadata_backfill
+    _WORKER_ALLOW_ORACLE_ALIGNMENT = allow_oracle_alignment
+    _WORKER_APPLICABILITY_MODE = applicability_mode
+    _WORKER_AUTHORITY_MODE = authority_mode
+    _WORKER_ALLOW_METADATA_ONLY_EFFECTS = allow_metadata_only_effects
+    _WORKER_SCORE_TEXT = score_text
+    _WORKER_RECORD_REPLAY_SUBPHASES = record_replay_subphases
+
+
 _LEG_BASE = "https://www.legislation.gov.uk"
 
 # Primary act types to include by default
@@ -239,6 +274,8 @@ _HISTORY_HEADERS = (
     "uk_residual_section_claims",
     "score_witness_rows",
     "replay_regimes",
+    "max_process_maxrss_kb",
+    "max_process_maxrss_statute_id",
     "timestamp",
 )
 
@@ -817,7 +854,35 @@ class _BenchResult:
     comparison_class: str = ""
     core_benchmark: bool = True
     duration_s: float = 0.0
+    process_maxrss_kb: int = 0
     phase_timings: dict[str, float] = field(default_factory=dict)
+
+
+_REPORT_EVIDENCE_TUPLE_FIELDS = (
+    "effect_feed_observations",
+    "bench_exception_observations",
+    "source_parse_observations",
+    "effect_diagnostics",
+    "uk_authority_observations",
+    "lowering_rejections",
+    "replay_adjudications",
+    "score_witness_rows",
+)
+
+
+def _bench_result_report_copy(result: _BenchResult) -> _BenchResult:
+    """Return a bounded-memory row copy for aggregate text reports.
+
+    The full result is still streamed to CSV/JSONL sidecars before disposal.
+    Aggregate report lists only need scalar counts, scores, status, URLs, and
+    timings; retaining full diagnostic tuples for top-N lists can keep large
+    per-row evidence payloads alive for an entire full-corpus run.
+    """
+
+    return replace(
+        result,
+        **{field_name: () for field_name in _REPORT_EVIDENCE_TUPLE_FIELDS},
+    )
 
 
 def _bench_primary_score(result: _BenchResult, *, has_commencement: bool) -> float:
@@ -830,6 +895,44 @@ def _bench_primary_replay_score(result: _BenchResult, *, has_commencement: bool)
     if has_commencement and result.replay_commencement_score >= 0.0:
         return result.replay_commencement_score
     return result.replay_score
+
+
+def _bench_compare_primary_score(result: _BenchResult) -> float:
+    if result.replay_commencement_score >= 0.0:
+        return result.replay_commencement_score
+    if result.replay_score >= 0.0:
+        return result.replay_score
+    if result.commencement_score >= 0.0:
+        return result.commencement_score
+    return result.score
+
+
+def _default_uk_bench_workers(*, do_replay: bool, cpu_count: int | None = None) -> int:
+    """Return the memory-safe default worker count for UK bench runs.
+
+    Replay rows can materialize large trees and effect programs in each worker.
+    Keep the implicit default conservative for WSL2/full-corpus runs; callers
+    can still opt into higher throughput with ``--parallel``.
+    """
+    cpus = max(1, cpu_count or os.cpu_count() or 1)
+    if do_replay:
+        return max(1, min(4, cpus // 2 or 1))
+    return max(1, min(8, cpus))
+
+
+def _process_maxrss_kb() -> int:
+    """Return current process peak RSS in KiB where the platform exposes it."""
+    try:
+        import resource
+    except ImportError:
+        return 0
+    try:
+        maxrss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except (OSError, AttributeError, ValueError):
+        return 0
+    if sys.platform == "darwin":
+        return maxrss // 1024
+    return maxrss
 
 
 def _average_primary_ok_score(
@@ -848,6 +951,424 @@ def _average_primary_ok_score(
         _bench_primary_score(result, has_commencement=has_commencement)
         for result in ok_results
     ) / len(ok_results)
+
+
+class _BenchRunAccumulator:
+    def __init__(
+        self,
+        has_commencement: bool,
+        replay_adjudication_sample_kinds: Sequence[str] = (),
+        replay_adjudication_sample_limit: int = 5,
+    ) -> None:
+        self.has_commencement = has_commencement
+        self.replay_adjudication_sample_kinds = {
+            str(k).strip() for k in replay_adjudication_sample_kinds if str(k).strip()
+        }
+        self.replay_adjudication_sample_limit = replay_adjudication_sample_limit
+
+        self.total_count = 0
+        self.ok_count = 0
+        self.core_ok_count = 0
+        self.noncore_ok_count = 0
+        self.core_count = 0
+        self.replayed_count = 0
+
+        self.primary_scores: list[float] = []
+        self.raw_scores: list[float] = []
+        self.replay_scores: list[float] = []
+        self.replayed_enacted_scores: list[float] = []
+        self.core_replayed_enacted_scores: list[float] = []
+        self.commencement_scores: list[float] = []
+        self.core_scores: list[float] = []
+        self.core_replay_scores: list[float] = []
+        self.core_comm_scores: list[float] = []
+        self.text_scores: list[float] = []
+        self.replay_text_scores: list[float] = []
+
+        self.replay_commencement_scores: list[float] = []
+        self.replay_commencement_enacted_scores: list[float] = []
+
+        self.type_groups: dict[str, list[float]] = {}
+        self.type_replay_groups: dict[str, list[float]] = {}
+        self.type_perfect_counts: Counter[str] = Counter()
+        self.type_counts: Counter[str] = Counter()
+
+        self.row_status_counts: Counter[str] = Counter()
+        self.comparison_class_counts: Counter[str] = Counter()
+        self.noncore_comparison_class_counts: Counter[str] = Counter()
+        self.enacted_source_counts: Counter[str] = Counter()
+        self.oracle_source_counts: Counter[str] = Counter()
+
+        self.source_parse_observation_rows = 0
+        self.source_parse_observations_total = 0
+        self.source_parse_observation_rule_counts: Counter[str] = Counter()
+        self.source_parse_rejection_rows = 0
+        self.source_parse_rejections_total = 0
+        self.source_parse_rejection_rule_counts: Counter[str] = Counter()
+
+        self.bench_exception_rows = 0
+        self.bench_exceptions_total = 0
+        self.bench_exception_rule_counts: Counter[str] = Counter()
+
+        self.effect_feed_observation_rows = 0
+        self.effect_feed_observations_total = 0
+        self.effect_feed_observation_rule_counts: Counter[str] = Counter()
+        self.effect_feed_rejection_rows = 0
+        self.effect_feed_rejections_total = 0
+        self.effect_feed_rejection_rule_counts: Counter[str] = Counter()
+
+        self.authority_rejection_total = 0
+        self.authority_rejection_rule_counts: Counter[str] = Counter()
+        self.authority_observation_total = 0
+        self.authority_observation_rule_counts: Counter[str] = Counter()
+
+        self.replay_adjudication_total = 0
+        self.replay_adjudication_kind_counts: Counter[str] = Counter()
+        self.replay_adjudication_bucket_counts: Counter[str] = Counter()
+        self.effect_source_pathology_counts: Counter[str] = Counter()
+        self.manual_compile_status_counts: Counter[str] = Counter()
+        self.manual_compile_rule_counts: Counter[str] = Counter()
+
+        self.source_acquisition_observation_total = 0
+        self.source_acquisition_observation_rule_counts: Counter[str] = Counter()
+        self.source_acquisition_rejection_total = 0
+        self.source_acquisition_rejection_rule_counts: Counter[str] = Counter()
+
+        self.lowering_observation_total = 0
+        self.lowering_rejection_total = 0
+        self.blocking_lowering_rejection_total = 0
+        self.lowering_observation_rule_counts: Counter[str] = Counter()
+        self.lowering_rejection_rule_counts: Counter[str] = Counter()
+        self.blocking_lowering_rejection_rule_counts: Counter[str] = Counter()
+
+        self.residual_claim_tier_counts: Counter[str] = Counter()
+        self.residual_claim_kind_counts: Counter[str] = Counter()
+
+        self.with_effect_pages_count = 0
+        self.with_effect_rows_count = 0
+        self.avg_commenced_n_sum = 0
+        self.total_ops = 0
+        self.total_replay_adjudications = 0
+        self.total_alignment_changes = 0
+        self.total_alignment_oracle_assigned = 0
+        self.total_alignment_local_fallback = 0
+        self.total_alignment_transparent_wrapper_cleared = 0
+        self.total_alignment_before_nodes = 0
+        self.total_alignment_after_nodes = 0
+        self.alignment_node_count_mismatch_rows = 0
+        self.alignment_match_method_counts: Counter[str] = Counter()
+        self.total_authority_rejections = 0
+        self.total_authority_observations = 0
+        self.replay_effect_source_pathology_counts: Counter[str] = Counter()
+        self.replay_manual_compile_status_counts: Counter[str] = Counter()
+        self.replay_manual_compile_rule_counts: Counter[str] = Counter()
+        self.total_source_acquisition_observations = 0
+        self.total_source_acquisition_rejections = 0
+        self.total_lowering_observations = 0
+        self.total_lowering_rejections = 0
+        self.total_blocking_lowering_rejections = 0
+
+        self.uk_residual_section_claims_total = 0
+
+        self.regime_counts: Counter[tuple[bool, bool, bool, str, str]] = Counter()
+
+        self.no_oracle_rows: list[_BenchResult] = []
+        self.error_rows: list[_BenchResult] = []
+        self.effect_feed_count_error_rows: list[_BenchResult] = []
+        self.replay_errors: list[_BenchResult] = []
+        self.commencement_errors: list[_BenchResult] = []
+        self.replay_error_count = 0
+        self.commencement_error_count = 0
+
+        self.worst_core: list[_BenchResult] = []
+        self.worst_replay_core: list[_BenchResult] = []
+        self.worst_noncore: list[_BenchResult] = []
+        self.slowest: list[_BenchResult] = []
+        self.highest_rss: list[_BenchResult] = []
+        self.slowest_phase_time: list[_BenchResult] = []
+        self.regressions_comm: list[_BenchResult] = []
+        self.improvements_comm: list[_BenchResult] = []
+        self.regressions_raw: list[_BenchResult] = []
+        self.improvements_raw: list[_BenchResult] = []
+
+        self.phase_totals: Counter[str] = Counter()
+        self.measured_total = 0.0
+        self.row_total = 0.0
+        self.timed_count = 0
+        self.max_process_maxrss_kb = 0
+        self.max_process_maxrss_statute_id = ""
+
+        self.adjudication_samples_totals: Counter[str] = Counter()
+        self.adjudication_samples: dict[str, list[tuple[_BenchResult, dict[str, Any]]]] = {
+            kind: [] for kind in self.replay_adjudication_sample_kinds
+        }
+
+    def feed(self, r: _BenchResult) -> None:
+        report_row: _BenchResult | None = None
+
+        def _report_row() -> _BenchResult:
+            nonlocal report_row
+            if report_row is None:
+                report_row = _bench_result_report_copy(r)
+            return report_row
+
+        self.total_count += 1
+
+        self.row_status_counts[r.status] += 1
+        self.comparison_class_counts[r.comparison_class or "unknown"] += 1
+        if r.core_benchmark:
+            self.core_count += 1
+        self.enacted_source_counts[r.enacted_source_status] += 1
+        self.oracle_source_counts[r.oracle_source_status] += 1
+
+        if r.status in ("NO_ORACLE", "NO_ENACTED"):
+            if len(self.no_oracle_rows) < 10:
+                self.no_oracle_rows.append(_report_row())
+        elif r.status == "ERR":
+            if len(self.error_rows) < 10:
+                self.error_rows.append(_report_row())
+
+        if r.effect_feed_count_error:
+            if len(self.effect_feed_count_error_rows) < 10:
+                self.effect_feed_count_error_rows.append(_report_row())
+        if r.replay_error:
+            self.replay_error_count += 1
+            if len(self.replay_errors) < 10:
+                self.replay_errors.append(_report_row())
+        if r.commencement_error:
+            self.commencement_error_count += 1
+            if len(self.commencement_errors) < 10:
+                self.commencement_errors.append(_report_row())
+
+        if r.phase_timings:
+            self.timed_count += 1
+            self.measured_total += sum(r.phase_timings.values())
+            self.row_total += r.duration_s
+            self.phase_totals.update(r.phase_timings)
+
+            self.slowest_phase_time.append(_report_row())
+            self.slowest_phase_time.sort(key=lambda x: sum(x.phase_timings.values()), reverse=True)
+            self.slowest_phase_time = self.slowest_phase_time[:10]
+
+        if r.duration_s > 0.0:
+            self.slowest.append(_report_row())
+            self.slowest.sort(key=lambda x: x.duration_s, reverse=True)
+            self.slowest = self.slowest[:10]
+        if r.process_maxrss_kb > 0:
+            if r.process_maxrss_kb > self.max_process_maxrss_kb:
+                self.max_process_maxrss_kb = r.process_maxrss_kb
+                self.max_process_maxrss_statute_id = r.statute_id
+            self.highest_rss.append(_report_row())
+            self.highest_rss.sort(key=lambda x: x.process_maxrss_kb, reverse=True)
+            self.highest_rss = self.highest_rss[:10]
+
+        if r.source_parse_observation_count > 0:
+            self.source_parse_observation_rows += 1
+            self.source_parse_observations_total += r.source_parse_observation_count
+            self.source_parse_observation_rule_counts.update(r.source_parse_observation_rule_counts)
+        if r.source_parse_rejection_count > 0:
+            self.source_parse_rejection_rows += 1
+            self.source_parse_rejections_total += r.source_parse_rejection_count
+            self.source_parse_rejection_rule_counts.update(r.source_parse_rejection_rule_counts)
+
+        if r.bench_exception_count > 0:
+            self.bench_exception_rows += 1
+            self.bench_exceptions_total += r.bench_exception_count
+            self.bench_exception_rule_counts.update(r.bench_exception_rule_counts)
+
+        if r.effect_feed_observation_count > 0:
+            self.effect_feed_observation_rows += 1
+            self.effect_feed_observations_total += r.effect_feed_observation_count
+            self.effect_feed_observation_rule_counts.update(r.effect_feed_observation_rule_counts)
+        if r.effect_feed_rejection_count > 0:
+            self.effect_feed_rejection_rows += 1
+            self.effect_feed_rejections_total += r.effect_feed_rejection_count
+            self.effect_feed_rejection_rule_counts.update(r.effect_feed_rejection_rule_counts)
+
+        self.authority_rejection_total += r.uk_authority_rejection_count
+        self.authority_rejection_rule_counts.update(r.uk_authority_rejection_rule_counts)
+        self.authority_observation_total += r.uk_authority_observation_count
+        self.authority_observation_rule_counts.update(r.uk_authority_observation_rule_counts)
+
+        self.replay_adjudication_total += r.replay_adjudication_count
+        self.replay_adjudication_kind_counts.update(r.replay_adjudication_kind_counts)
+        self.replay_adjudication_bucket_counts.update(
+            _replay_adjudication_bucket_counts(r.replay_adjudication_kind_counts)
+        )
+
+        self.effect_source_pathology_counts.update(r.effect_source_pathology_counts)
+        self.manual_compile_status_counts.update(r.manual_compile_status_counts)
+        self.manual_compile_rule_counts.update(r.manual_compile_rule_counts)
+
+        self.source_acquisition_observation_total += r.source_acquisition_observation_count
+        self.source_acquisition_observation_rule_counts.update(
+            r.source_acquisition_observation_rule_counts
+        )
+        self.source_acquisition_rejection_total += r.source_acquisition_rejection_count
+        self.source_acquisition_rejection_rule_counts.update(
+            r.source_acquisition_rejection_rule_counts
+        )
+
+        self.lowering_observation_total += r.lowering_observation_count
+        self.lowering_rejection_total += r.lowering_rejection_count
+        self.blocking_lowering_rejection_total += r.blocking_lowering_rejection_count
+        self.lowering_observation_rule_counts.update(r.lowering_observation_rule_counts)
+        self.lowering_rejection_rule_counts.update(r.lowering_rejection_rule_counts)
+        self.blocking_lowering_rejection_rule_counts.update(
+            r.blocking_lowering_rejection_rule_counts
+        )
+
+        self.residual_claim_tier_counts[r.uk_residual_claim_tier or "UNRESOLVED"] += 1
+        self.residual_claim_kind_counts[r.uk_residual_claim_kind or "unknown"] += 1
+        self.uk_residual_section_claims_total += r.uk_residual_section_claim_count
+
+        if r.status == "OK" and r.n_oracle_eids > 0:
+            self.ok_count += 1
+
+            p_score = _bench_primary_score(r, has_commencement=self.has_commencement)
+            self.primary_scores.append(p_score)
+            self.raw_scores.append(r.score)
+
+            if r.core_benchmark:
+                self.core_ok_count += 1
+                self.core_scores.append(r.score)
+                self.worst_core.append(_report_row())
+                self.worst_core.sort(
+                    key=lambda x: _bench_primary_score(x, has_commencement=self.has_commencement)
+                )
+                self.worst_core = self.worst_core[:15]
+            else:
+                self.noncore_ok_count += 1
+                self.noncore_comparison_class_counts[r.comparison_class or "unknown"] += 1
+                self.worst_noncore.append(_report_row())
+                self.worst_noncore.sort(
+                    key=lambda x: _bench_primary_score(x, has_commencement=self.has_commencement)
+                )
+                self.worst_noncore = self.worst_noncore[:10]
+
+            if r.commencement_score >= 0.0:
+                self.commencement_scores.append(r.commencement_score)
+                if r.core_benchmark:
+                    self.core_comm_scores.append(r.commencement_score)
+
+            if r.replay_score >= 0.0:
+                self.replayed_count += 1
+                self.replay_scores.append(r.replay_score)
+                self.replayed_enacted_scores.append(r.score)
+                if r.core_benchmark:
+                    self.core_replay_scores.append(r.replay_score)
+                    self.core_replayed_enacted_scores.append(r.score)
+
+            if r.text_score >= 0.0:
+                self.text_scores.append(r.text_score)
+                if r.replay_text_score >= 0.0:
+                    self.replay_text_scores.append(r.replay_text_score)
+
+            self.type_groups.setdefault(r.act_type, []).append(r.score)
+            if r.replay_score >= 0.0:
+                self.type_replay_groups.setdefault(r.act_type, []).append(r.replay_score)
+            if r.score == 1.0:
+                self.type_perfect_counts[r.act_type] += 1
+            self.type_counts[r.act_type] += 1
+
+            if r.commencement_score >= 0.0:
+                self.avg_commenced_n_sum += r.n_commenced_eids
+
+            if (r.n_effect_feed_pages or r.n_effects) > 0:
+                self.with_effect_pages_count += 1
+            if r.n_effect_rows > 0:
+                self.with_effect_rows_count += 1
+
+        if r.replay_score >= 0.0:
+            self.total_ops += max(r.n_ops, 0)
+            self.total_replay_adjudications += r.replay_adjudication_count
+            self.total_alignment_changes += r.oracle_alignment_changed_count
+            self.total_alignment_oracle_assigned += r.oracle_alignment_oracle_assigned_count
+            self.total_alignment_local_fallback += r.oracle_alignment_local_fallback_count
+            self.total_alignment_transparent_wrapper_cleared += (
+                r.oracle_alignment_transparent_wrapper_cleared_count
+            )
+            self.total_alignment_before_nodes += r.oracle_alignment_before_node_count
+            self.total_alignment_after_nodes += r.oracle_alignment_after_node_count
+            if r.oracle_alignment_node_count_mismatch:
+                self.alignment_node_count_mismatch_rows += 1
+            self.alignment_match_method_counts.update(r.oracle_alignment_match_method_counts)
+
+            self.total_authority_rejections += r.uk_authority_rejection_count
+            self.total_authority_observations += r.uk_authority_observation_count
+            self.replay_effect_source_pathology_counts.update(r.effect_source_pathology_counts)
+            self.replay_manual_compile_status_counts.update(r.manual_compile_status_counts)
+            self.replay_manual_compile_rule_counts.update(r.manual_compile_rule_counts)
+            self.total_source_acquisition_observations += r.source_acquisition_observation_count
+            self.total_source_acquisition_rejections += r.source_acquisition_rejection_count
+            self.total_lowering_observations += r.lowering_observation_count
+            self.total_lowering_rejections += r.lowering_rejection_count
+            self.total_blocking_lowering_rejections += r.blocking_lowering_rejection_count
+
+            if (
+                r.core_benchmark
+                and _bench_primary_replay_score(r, has_commencement=self.has_commencement) >= 0.0
+            ):
+                p_rep = _bench_primary_replay_score(r, has_commencement=self.has_commencement)
+                if p_rep < 1.0:
+                    self.worst_replay_core.append(_report_row())
+                    self.worst_replay_core.sort(
+                        key=lambda x: _bench_primary_replay_score(
+                            x, has_commencement=self.has_commencement
+                        )
+                    )
+                    self.worst_replay_core = self.worst_replay_core[:15]
+
+            if r.commencement_score >= 0.0 and r.replay_commencement_score >= 0.0:
+                self.replay_commencement_scores.append(r.replay_commencement_score)
+                self.replay_commencement_enacted_scores.append(r.commencement_score)
+                delta = r.replay_commencement_score - r.commencement_score
+                if delta > 0.001:
+                    self.improvements_comm.append(_report_row())
+                    self.improvements_comm.sort(
+                        key=lambda x: x.replay_commencement_score - x.commencement_score,
+                        reverse=True,
+                    )
+                    self.improvements_comm = self.improvements_comm[:5]
+                elif delta < -0.001:
+                    self.regressions_comm.append(_report_row())
+                    self.regressions_comm.sort(
+                        key=lambda x: x.replay_commencement_score - x.commencement_score
+                    )
+                    self.regressions_comm = self.regressions_comm[:5]
+            elif r.replay_score >= 0.0 and r.score >= 0.0:
+                delta = r.replay_score - r.score
+                if delta > 0.001:
+                    self.improvements_raw.append(_report_row())
+                    self.improvements_raw.sort(
+                        key=lambda x: x.replay_score - x.score, reverse=True
+                    )
+                    self.improvements_raw = self.improvements_raw[:5]
+                elif delta < -0.001:
+                    self.regressions_raw.append(_report_row())
+                    self.regressions_raw.sort(key=lambda x: x.replay_score - x.score)
+                    self.regressions_raw = self.regressions_raw[:5]
+
+            for adjudication in r.replay_adjudications:
+                kind = str(adjudication.get("kind") or "")
+                if kind in self.replay_adjudication_sample_kinds:
+                    self.adjudication_samples_totals[kind] += 1
+                    if (
+                        len(self.adjudication_samples[kind])
+                        < self.replay_adjudication_sample_limit
+                    ):
+                        self.adjudication_samples[kind].append((_report_row(), adjudication))
+
+        self.regime_counts[
+            (
+                r.uk_metadata_backfill_enabled,
+                r.uk_oracle_alignment_enabled,
+                r.uk_metadata_only_effects_enabled,
+                r.uk_applicability_mode,
+                r.uk_authority_mode,
+            )
+        ] += 1
+
 
 
 def _normalize_uk_bench_replay_regime(args: Any) -> UKReplayRegime:
@@ -1836,7 +2357,8 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
     """Top-level picklable wrapper for parallel execution.
 
     Opens its own Farchive per worker process using module-level globals
-    set before the ProcessPoolExecutor is spawned.
+    configured before fork, or by the worker initializer when recycling uses
+    spawn-backed workers.
     """
     row_t0 = time.perf_counter()
     try:
@@ -1852,6 +2374,7 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
             allow_metadata_only_effects=_WORKER_ALLOW_METADATA_ONLY_EFFECTS,
         )
         result.duration_s = time.perf_counter() - row_t0
+        result.process_maxrss_kb = _process_maxrss_kb()
         return result
     try:
         result = _score_statute(
@@ -1881,7 +2404,499 @@ def _score_statute_worker(entry: dict) -> _BenchResult:
     finally:
         archive.close()
     result.duration_s = time.perf_counter() - row_t0
+    result.process_maxrss_kb = _process_maxrss_kb()
     return result
+
+
+_SCORE_WITNESS_HEADERS = [
+    "schema",
+    "label",
+    "statute_id",
+    "comparison_scope",
+    "score_formula",
+    "left_label",
+    "right_label",
+    "side",
+    "eid",
+    "rank",
+    "category_total",
+    "sample_limit",
+    "truncated",
+    "left_count",
+    "right_count",
+    "common_count",
+    "score_value",
+    "comparison_class",
+    "core_benchmark",
+    "enacted_source_status",
+    "oracle_source_status",
+    "enacted_source_size",
+    "oracle_source_size",
+    "enacted_source_sha256",
+    "oracle_source_sha256",
+    "enacted_source_url",
+    "oracle_source_url",
+    "uk_metadata_backfill_enabled",
+    "uk_oracle_alignment_enabled",
+    "uk_metadata_only_effects_enabled",
+    "uk_applicability_mode",
+    "uk_authority_mode",
+]
+
+
+def _get_csv_headers(
+    has_commencement: bool,
+    has_replay: bool,
+    has_text: bool,
+    has_commencement_error: bool,
+) -> list[str]:
+    if has_commencement:
+        headers = [
+            "statute_id",
+            "act_type",
+            "year",
+            "n_effects",
+            "n_effect_feed_pages",
+            "n_effect_rows",
+            "effect_feed_rejection_count",
+            "effect_feed_rejection_rule_counts",
+            "effect_feed_observation_count",
+            "effect_feed_observation_rule_counts",
+            "effect_feed_count_error",
+            "bench_exception_count",
+            "bench_exception_rule_counts",
+            "bench_exception_observations",
+            "source_parse_rejection_count",
+            "source_parse_rejection_rule_counts",
+            "source_parse_observation_count",
+            "source_parse_observation_rule_counts",
+            "effect_source_pathology_counts",
+            "manual_compile_status_counts",
+            "manual_compile_rule_counts",
+            "source_acquisition_observation_count",
+            "source_acquisition_observation_rule_counts",
+            "source_acquisition_rejection_count",
+            "source_acquisition_rejection_rule_counts",
+            "enacted_source_status",
+            "oracle_source_status",
+            "enacted_source_size",
+            "oracle_source_size",
+            "enacted_source_sha256",
+            "oracle_source_sha256",
+            "enacted_source_url",
+            "oracle_source_url",
+            "n_enacted_eids",
+            "n_oracle_eids",
+            "n_common",
+            "score",
+            "raw_score",
+            "n_commenced_eids",
+            "status",
+            "error",
+            "comparison_class",
+            "core_benchmark",
+            "duration_s",
+            "process_maxrss_kb",
+            _PHASE_TIMING_TOTAL_HEADER,
+            *_PHASE_TIMING_HEADERS,
+        ]
+    else:
+        headers = [
+            "statute_id",
+            "act_type",
+            "year",
+            "n_effects",
+            "n_effect_feed_pages",
+            "n_effect_rows",
+            "effect_feed_rejection_count",
+            "effect_feed_rejection_rule_counts",
+            "effect_feed_observation_count",
+            "effect_feed_observation_rule_counts",
+            "effect_feed_count_error",
+            "bench_exception_count",
+            "bench_exception_rule_counts",
+            "bench_exception_observations",
+            "source_parse_rejection_count",
+            "source_parse_rejection_rule_counts",
+            "source_parse_observation_count",
+            "source_parse_observation_rule_counts",
+            "effect_source_pathology_counts",
+            "manual_compile_status_counts",
+            "manual_compile_rule_counts",
+            "source_acquisition_observation_count",
+            "source_acquisition_observation_rule_counts",
+            "source_acquisition_rejection_count",
+            "source_acquisition_rejection_rule_counts",
+            "enacted_source_status",
+            "oracle_source_status",
+            "enacted_source_size",
+            "oracle_source_size",
+            "enacted_source_sha256",
+            "oracle_source_sha256",
+            "enacted_source_url",
+            "oracle_source_url",
+            "n_enacted_eids",
+            "n_oracle_eids",
+            "n_common",
+            "score",
+            "status",
+            "error",
+            "comparison_class",
+            "core_benchmark",
+            "duration_s",
+            "process_maxrss_kb",
+            _PHASE_TIMING_TOTAL_HEADER,
+            *_PHASE_TIMING_HEADERS,
+        ]
+    if has_replay:
+        if has_commencement:
+            headers += [
+                "n_replayed_eids",
+                "n_replay_common",
+                "replay_score",
+                "replay_commencement_score",
+                "n_ops",
+                "replay_error",
+                "replay_adjudication_count",
+                "replay_adjudication_kind_counts",
+                "uk_residual_claim_tier",
+                "uk_residual_claim_kind",
+                "uk_residual_claim_comparison_class",
+                "uk_residual_claim_core_comparison",
+                "uk_residual_only_in_replayed_count",
+                "uk_residual_only_in_oracle_count",
+                "uk_residual_section_claim_count",
+                "uk_residual_section_claim_emitted",
+                "oracle_alignment_changed_count",
+                "oracle_alignment_oracle_assigned_count",
+                "oracle_alignment_local_fallback_count",
+                "oracle_alignment_transparent_wrapper_cleared_count",
+                "oracle_alignment_before_node_count",
+                "oracle_alignment_after_node_count",
+                "oracle_alignment_node_count_mismatch",
+                "oracle_alignment_match_method_counts",
+                "uk_metadata_backfill_enabled",
+                "uk_oracle_alignment_enabled",
+                "uk_metadata_only_effects_enabled",
+                "uk_applicability_mode",
+                "uk_authority_mode",
+                "uk_source_purity_lane",
+                "uk_source_semantics_clean",
+                "uk_source_first_candidate",
+                "uk_source_first_candidate_reasons",
+                "uk_authority_observation_count",
+                "uk_authority_observation_rule_counts",
+                "uk_authority_rejection_count",
+                "uk_authority_rejection_rule_counts",
+                "lowering_observation_count",
+                "lowering_observation_rule_counts",
+                "lowering_rejection_count",
+                "lowering_rejection_rule_counts",
+                "blocking_lowering_rejection_count",
+                "blocking_lowering_rejection_rule_counts",
+            ]
+        else:
+            headers += [
+                "n_replayed_eids",
+                "n_replay_common",
+                "replay_score",
+                "n_ops",
+                "replay_error",
+                "replay_adjudication_count",
+                "replay_adjudication_kind_counts",
+                "uk_residual_claim_tier",
+                "uk_residual_claim_kind",
+                "uk_residual_claim_comparison_class",
+                "uk_residual_claim_core_comparison",
+                "uk_residual_only_in_replayed_count",
+                "uk_residual_only_in_oracle_count",
+                "uk_residual_section_claim_count",
+                "uk_residual_section_claim_emitted",
+                "oracle_alignment_changed_count",
+                "oracle_alignment_oracle_assigned_count",
+                "oracle_alignment_local_fallback_count",
+                "oracle_alignment_transparent_wrapper_cleared_count",
+                "oracle_alignment_before_node_count",
+                "oracle_alignment_after_node_count",
+                "oracle_alignment_node_count_mismatch",
+                "oracle_alignment_match_method_counts",
+                "uk_metadata_backfill_enabled",
+                "uk_oracle_alignment_enabled",
+                "uk_metadata_only_effects_enabled",
+                "uk_applicability_mode",
+                "uk_authority_mode",
+                "uk_source_purity_lane",
+                "uk_source_semantics_clean",
+                "uk_source_first_candidate",
+                "uk_source_first_candidate_reasons",
+                "uk_authority_observation_count",
+                "uk_authority_observation_rule_counts",
+                "uk_authority_rejection_count",
+                "uk_authority_rejection_rule_counts",
+                "lowering_observation_count",
+                "lowering_observation_rule_counts",
+                "lowering_rejection_count",
+                "lowering_rejection_rule_counts",
+                "blocking_lowering_rejection_count",
+                "blocking_lowering_rejection_rule_counts",
+            ]
+    if has_commencement_error:
+        headers += ["commencement_error"]
+    if has_text:
+        headers += ["text_score", "n_text_compared", "replay_text_score"]
+    return headers
+
+
+def _get_csv_row(
+    r: _BenchResult,
+    has_commencement: bool,
+    has_replay: bool,
+    has_text: bool,
+    has_commencement_error: bool,
+) -> list[Any]:
+    primary_score = _bench_primary_score(r, has_commencement=has_commencement)
+    if has_commencement:
+        row = [
+            r.statute_id,
+            r.act_type,
+            r.year,
+            r.n_effects,
+            r.n_effect_feed_pages or r.n_effects,
+            r.n_effect_rows,
+            r.effect_feed_rejection_count,
+            json.dumps(r.effect_feed_rejection_rule_counts, sort_keys=True),
+            r.effect_feed_observation_count,
+            json.dumps(r.effect_feed_observation_rule_counts, sort_keys=True),
+            r.effect_feed_count_error,
+            r.bench_exception_count,
+            json.dumps(r.bench_exception_rule_counts, sort_keys=True),
+            json.dumps(list(r.bench_exception_observations), sort_keys=True),
+            r.source_parse_rejection_count,
+            json.dumps(r.source_parse_rejection_rule_counts, sort_keys=True),
+            r.source_parse_observation_count,
+            json.dumps(r.source_parse_observation_rule_counts, sort_keys=True),
+            json.dumps(r.effect_source_pathology_counts, sort_keys=True),
+            json.dumps(r.manual_compile_status_counts, sort_keys=True),
+            json.dumps(r.manual_compile_rule_counts, sort_keys=True),
+            r.source_acquisition_observation_count,
+            json.dumps(r.source_acquisition_observation_rule_counts, sort_keys=True),
+            r.source_acquisition_rejection_count,
+            json.dumps(r.source_acquisition_rejection_rule_counts, sort_keys=True),
+            r.enacted_source_status,
+            r.oracle_source_status,
+            r.enacted_source_size,
+            r.oracle_source_size,
+            r.enacted_source_sha256,
+            r.oracle_source_sha256,
+            r.enacted_source_url,
+            r.oracle_source_url,
+            r.n_enacted_eids,
+            r.n_oracle_eids,
+            r.n_common,
+            f"{primary_score:.4f}",
+            f"{r.score:.4f}",
+            r.n_commenced_eids,
+            r.status,
+            r.error,
+            r.comparison_class,
+            "1" if r.core_benchmark else "0",
+            f"{r.duration_s:.3f}",
+            r.process_maxrss_kb,
+            *_phase_timing_csv_values(r),
+        ]
+    else:
+        row = [
+            r.statute_id,
+            r.act_type,
+            r.year,
+            r.n_effects,
+            r.n_effect_feed_pages or r.n_effects,
+            r.n_effect_rows,
+            r.effect_feed_rejection_count,
+            json.dumps(r.effect_feed_rejection_rule_counts, sort_keys=True),
+            r.effect_feed_observation_count,
+            json.dumps(r.effect_feed_observation_rule_counts, sort_keys=True),
+            r.effect_feed_count_error,
+            r.bench_exception_count,
+            json.dumps(r.bench_exception_rule_counts, sort_keys=True),
+            json.dumps(list(r.bench_exception_observations), sort_keys=True),
+            r.source_parse_rejection_count,
+            json.dumps(r.source_parse_rejection_rule_counts, sort_keys=True),
+            r.source_parse_observation_count,
+            json.dumps(r.source_parse_observation_rule_counts, sort_keys=True),
+            json.dumps(r.effect_source_pathology_counts, sort_keys=True),
+            json.dumps(r.manual_compile_status_counts, sort_keys=True),
+            json.dumps(r.manual_compile_rule_counts, sort_keys=True),
+            r.source_acquisition_observation_count,
+            json.dumps(r.source_acquisition_observation_rule_counts, sort_keys=True),
+            r.source_acquisition_rejection_count,
+            json.dumps(r.source_acquisition_rejection_rule_counts, sort_keys=True),
+            r.enacted_source_status,
+            r.oracle_source_status,
+            r.enacted_source_size,
+            r.oracle_source_size,
+            r.enacted_source_sha256,
+            r.oracle_source_sha256,
+            r.enacted_source_url,
+            r.oracle_source_url,
+            r.n_enacted_eids,
+            r.n_oracle_eids,
+            r.n_common,
+            f"{r.score:.4f}",
+            r.status,
+            r.error,
+            r.comparison_class,
+            "1" if r.core_benchmark else "0",
+            f"{r.duration_s:.3f}",
+            r.process_maxrss_kb,
+            *_phase_timing_csv_values(r),
+        ]
+    if has_replay:
+        if has_commencement:
+            row += [
+                r.n_replayed_eids,
+                r.n_replay_common,
+                f"{r.replay_score:.4f}" if r.replay_score >= 0.0 else "",
+                f"{r.replay_commencement_score:.4f}" if r.replay_commencement_score >= 0.0 else "",
+                r.n_ops,
+                r.replay_error,
+                r.replay_adjudication_count,
+                json.dumps(r.replay_adjudication_kind_counts, sort_keys=True),
+                r.uk_residual_claim_tier,
+                r.uk_residual_claim_kind,
+                r.uk_residual_claim_comparison_class,
+                "1" if r.uk_residual_claim_core_comparison else "0",
+                r.uk_residual_only_in_replayed_count,
+                r.uk_residual_only_in_oracle_count,
+                r.uk_residual_section_claim_count,
+                "1" if r.uk_residual_section_claim_emitted else "0",
+                r.oracle_alignment_changed_count,
+                r.oracle_alignment_oracle_assigned_count,
+                r.oracle_alignment_local_fallback_count,
+                r.oracle_alignment_transparent_wrapper_cleared_count,
+                r.oracle_alignment_before_node_count,
+                r.oracle_alignment_after_node_count,
+                "1" if r.oracle_alignment_node_count_mismatch else "0",
+                json.dumps(r.oracle_alignment_match_method_counts, sort_keys=True),
+                "1" if r.uk_metadata_backfill_enabled else "0",
+                "1" if r.uk_oracle_alignment_enabled else "0",
+                "1" if r.uk_metadata_only_effects_enabled else "0",
+                r.uk_applicability_mode,
+                r.uk_authority_mode,
+                r.uk_source_purity_lane,
+                "1" if r.uk_source_semantics_clean else "0",
+                "1" if r.uk_source_first_candidate else "0",
+                json.dumps(list(r.uk_source_first_candidate_reasons), sort_keys=True),
+                r.uk_authority_observation_count,
+                json.dumps(r.uk_authority_observation_rule_counts, sort_keys=True),
+                r.uk_authority_rejection_count,
+                json.dumps(r.uk_authority_rejection_rule_counts, sort_keys=True),
+                r.lowering_observation_count,
+                json.dumps(r.lowering_observation_rule_counts, sort_keys=True),
+                r.lowering_rejection_count,
+                json.dumps(r.lowering_rejection_rule_counts, sort_keys=True),
+                r.blocking_lowering_rejection_count,
+                json.dumps(r.blocking_lowering_rejection_rule_counts, sort_keys=True),
+            ]
+        else:
+            row += [
+                r.n_replayed_eids,
+                r.n_replay_common,
+                f"{r.replay_score:.4f}" if r.replay_score >= 0.0 else "",
+                r.n_ops,
+                r.replay_error,
+                r.replay_adjudication_count,
+                json.dumps(r.replay_adjudication_kind_counts, sort_keys=True),
+                r.uk_residual_claim_tier,
+                r.uk_residual_claim_kind,
+                r.uk_residual_claim_comparison_class,
+                "1" if r.uk_residual_claim_core_comparison else "0",
+                r.uk_residual_only_in_replayed_count,
+                r.uk_residual_only_in_oracle_count,
+                r.uk_residual_section_claim_count,
+                "1" if r.uk_residual_section_claim_emitted else "0",
+                r.oracle_alignment_changed_count,
+                r.oracle_alignment_oracle_assigned_count,
+                r.oracle_alignment_local_fallback_count,
+                r.oracle_alignment_transparent_wrapper_cleared_count,
+                r.oracle_alignment_before_node_count,
+                r.oracle_alignment_after_node_count,
+                "1" if r.oracle_alignment_node_count_mismatch else "0",
+                json.dumps(r.oracle_alignment_match_method_counts, sort_keys=True),
+                "1" if r.uk_metadata_backfill_enabled else "0",
+                "1" if r.uk_oracle_alignment_enabled else "0",
+                "1" if r.uk_metadata_only_effects_enabled else "0",
+                r.uk_applicability_mode,
+                r.uk_authority_mode,
+                r.uk_source_purity_lane,
+                "1" if r.uk_source_semantics_clean else "0",
+                "1" if r.uk_source_first_candidate else "0",
+                json.dumps(list(r.uk_source_first_candidate_reasons), sort_keys=True),
+                r.uk_authority_observation_count,
+                json.dumps(r.uk_authority_observation_rule_counts, sort_keys=True),
+                r.uk_authority_rejection_count,
+                json.dumps(r.uk_authority_rejection_rule_counts, sort_keys=True),
+                r.lowering_observation_count,
+                json.dumps(r.lowering_observation_rule_counts, sort_keys=True),
+                r.lowering_rejection_count,
+                json.dumps(r.lowering_rejection_rule_counts, sort_keys=True),
+                r.blocking_lowering_rejection_count,
+                json.dumps(r.blocking_lowering_rejection_rule_counts, sort_keys=True),
+            ]
+    if has_commencement_error:
+        row += [r.commencement_error]
+    if has_text:
+        row += [
+            f"{r.text_score:.4f}" if r.text_score >= 0.0 else "",
+            r.n_text_compared,
+            f"{r.replay_text_score:.4f}" if r.replay_text_score >= 0.0 else "",
+        ]
+    return row
+
+
+def _get_score_witness_dict_rows(r: _BenchResult, label: str) -> list[dict[str, object]]:
+    rows = []
+    for witness in r.score_witness_rows:
+        left_label, right_label = _score_witness_labels(witness.comparison_scope)
+        rows.append({
+            "schema": _SCORE_WITNESS_SCHEMA,
+            "label": label,
+            "statute_id": r.statute_id,
+            "comparison_scope": witness.comparison_scope,
+            "score_formula": _SCORE_WITNESS_FORMULA,
+            "left_label": left_label,
+            "right_label": right_label,
+            "side": witness.side,
+            "eid": witness.eid,
+            "rank": witness.rank,
+            "category_total": witness.category_total,
+            "sample_limit": witness.sample_limit,
+            "truncated": "1" if witness.truncated else "0",
+            "left_count": witness.left_count,
+            "right_count": witness.right_count,
+            "common_count": witness.common_count,
+            "score_value": f"{witness.score_value:.4f}",
+            "comparison_class": r.comparison_class,
+            "core_benchmark": "1" if r.core_benchmark else "0",
+            "enacted_source_status": r.enacted_source_status,
+            "oracle_source_status": r.oracle_source_status,
+            "enacted_source_size": r.enacted_source_size,
+            "oracle_source_size": r.oracle_source_size,
+            "enacted_source_sha256": r.enacted_source_sha256,
+            "oracle_source_sha256": r.oracle_source_sha256,
+            "enacted_source_url": r.enacted_source_url,
+            "oracle_source_url": r.oracle_source_url,
+            "uk_metadata_backfill_enabled": (
+                "1" if r.uk_metadata_backfill_enabled else "0"
+            ),
+            "uk_oracle_alignment_enabled": "1" if r.uk_oracle_alignment_enabled else "0",
+            "uk_metadata_only_effects_enabled": (
+                "1" if r.uk_metadata_only_effects_enabled else "0"
+            ),
+            "uk_applicability_mode": r.uk_applicability_mode,
+            "uk_authority_mode": r.uk_authority_mode,
+        })
+    return rows
 
 
 def _run_bench(
@@ -1898,45 +2913,56 @@ def _run_bench(
     allow_metadata_only_effects: bool = True,
     score_text: bool = True,
     record_replay_subphases: bool = False,
-) -> list[_BenchResult]:
-    total = len(corpus)
-    t0 = time.time()
-
-    if workers > 1:
+    worker_max_tasks_per_child: int | None = None,
+) -> Generator[_BenchResult, None, None]:
+    if workers > 1 or worker_max_tasks_per_child is not None:
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
-        # Communicate config to worker processes via module globals.
-        global _WORKER_DB_PATH, _WORKER_DO_REPLAY, _WORKER_REPO_ROOT, _WORKER_DO_COMMENCEMENT
-        global _WORKER_ALLOW_METADATA_BACKFILL, _WORKER_ALLOW_ORACLE_ALIGNMENT
-        global _WORKER_ALLOW_METADATA_ONLY_EFFECTS, _WORKER_SCORE_TEXT
-        global _WORKER_RECORD_REPLAY_SUBPHASES
-        global _WORKER_APPLICABILITY_MODE, _WORKER_AUTHORITY_MODE
-        _WORKER_DB_PATH = str(archive._db_path)
-        _WORKER_DO_REPLAY = do_replay
-        _WORKER_REPO_ROOT = str(repo_root) if repo_root is not None else ""
-        _WORKER_DO_COMMENCEMENT = do_commencement
-        _WORKER_ALLOW_METADATA_BACKFILL = allow_metadata_backfill
-        _WORKER_ALLOW_ORACLE_ALIGNMENT = allow_oracle_alignment
-        _WORKER_APPLICABILITY_MODE = applicability_mode
-        _WORKER_AUTHORITY_MODE = authority_mode
-        _WORKER_ALLOW_METADATA_ONLY_EFFECTS = allow_metadata_only_effects
-        _WORKER_SCORE_TEXT = score_text
-        _WORKER_RECORD_REPLAY_SUBPHASES = record_replay_subphases
+        worker_config = (
+            str(archive._db_path),
+            do_replay,
+            str(repo_root) if repo_root is not None else "",
+            do_commencement,
+            allow_metadata_backfill,
+            allow_oracle_alignment,
+            applicability_mode,
+            authority_mode,
+            allow_metadata_only_effects,
+            score_text,
+            record_replay_subphases,
+        )
+        # Fast fork-backed default: child workers inherit these globals.
+        _configure_uk_bench_worker(*worker_config)
+        pool_kwargs: dict[str, object] = {}
+        if worker_max_tasks_per_child is not None:
+            # max_tasks_per_child may use spawn; initializer makes worker config
+            # explicit instead of relying on fork-inherited module globals.
+            pool_kwargs = {
+                "initializer": _configure_uk_bench_worker,
+                "initargs": worker_config,
+                "max_tasks_per_child": worker_max_tasks_per_child,
+            }
 
-        results: list[Optional[_BenchResult]] = [None] * total
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        with ProcessPoolExecutor(max_workers=workers, **pool_kwargs) as pool:
             future_to_idx = {}
-            done = 0
             submission_order = sorted(
                 enumerate(corpus),
                 key=lambda item: (_uk_bench_parallel_submission_cost(item[1]), -item[0]),
                 reverse=True,
             )
-            for idx, entry in submission_order:
+            next_submission = 0
+            max_in_flight = max(1, workers * 2)
+
+            def _submit_next() -> _BenchResult | None:
+                nonlocal next_submission
+                if next_submission >= len(submission_order):
+                    return None
+                idx, entry = submission_order[next_submission]
+                next_submission += 1
                 try:
                     future_to_idx[pool.submit(_score_statute_worker, entry)] = idx
                 except Exception as exc:
-                    results[idx] = _bench_exception_result(
+                    return _bench_exception_result(
                         entry,
                         exc,
                         allow_metadata_backfill=allow_metadata_backfill,
@@ -1945,13 +2971,27 @@ def _run_bench(
                         authority_mode=authority_mode,
                         allow_metadata_only_effects=allow_metadata_only_effects,
                     )
-                    done += 1
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
+                return None
+
+            while next_submission < len(submission_order) and len(future_to_idx) < max_in_flight:
+                submit_error = _submit_next()
+                if submit_error is not None:
+                    yield submit_error
+
+            while future_to_idx:
+                completed_iter = iter(as_completed(future_to_idx))
                 try:
-                    results[idx] = future.result()
+                    future = next(completed_iter)
+                except StopIteration:
+                    break
+                # Pop before calling result(): completed futures retain their
+                # returned _BenchResult, so keeping them in this dict defeats
+                # streaming and can exhaust memory on full-corpus WSL2 runs.
+                idx = future_to_idx.pop(future)
+                try:
+                    r = future.result()
                 except Exception as exc:
-                    results[idx] = _bench_exception_result(
+                    r = _bench_exception_result(
                         corpus[idx],
                         exc,
                         allow_metadata_backfill=allow_metadata_backfill,
@@ -1960,26 +3000,14 @@ def _run_bench(
                         authority_mode=authority_mode,
                         allow_metadata_only_effects=allow_metadata_only_effects,
                     )
-                done += 1
-                if done % 50 == 0 or done == total:
-                    elapsed = time.time() - t0
-                    ok = sum(1 for x in results if x is not None and x.status == "OK")
-                    completed_results = [
-                        x for x in results if x is not None and x.status == "OK"
-                    ]
-                    avg = _average_primary_ok_score(
-                        completed_results,
-                        has_commencement=do_commencement,
-                    )
-                    rate = done / elapsed if elapsed > 0 else 0
-                    print(
-                        f"  [{done}/{total}] {elapsed:.0f}s  {rate:.1f}/s  ok={ok}  avg={avg:.1%}",
-                        file=sys.stderr,
-                    )
-        return cast(List[_BenchResult], results)
+                yield r
+                while next_submission < len(submission_order) and len(future_to_idx) < max_in_flight:
+                    submit_error = _submit_next()
+                    if submit_error is not None:
+                        yield submit_error
+        return
 
     # Sequential fallback.
-    results_seq = []
     for i, entry in enumerate(corpus):
         row_t0 = time.perf_counter()
         try:
@@ -2008,21 +3036,8 @@ def _run_bench(
                 allow_metadata_only_effects=allow_metadata_only_effects,
             )
         r.duration_s = time.perf_counter() - row_t0
-        results_seq.append(r)
-
-        if (i + 1) % 100 == 0:
-            elapsed = time.time() - t0
-            ok = sum(1 for x in results_seq if x.status == "OK")
-            avg = _average_primary_ok_score(
-                results_seq,
-                has_commencement=do_commencement,
-            )
-            print(
-                f"  [{i + 1}/{total}] {elapsed:.0f}s  ok={ok}  avg={avg:.1%}",
-                file=sys.stderr,
-            )
-
-    return results_seq
+        r.process_maxrss_kb = _process_maxrss_kb()
+        yield r
 
 
 # ---------------------------------------------------------------------------
@@ -2292,15 +3307,18 @@ def _print_replay_adjudication_samples(
 
 
 def _print_slowest_rows(
-    results: Sequence[_BenchResult],
+    results: Sequence[_BenchResult] | _BenchRunAccumulator,
     *,
     has_commencement: bool,
     limit: int = 10,
 ) -> None:
-    timed = [result for result in results if result.duration_s > 0.0]
-    if not timed:
-        return
-    slowest = sorted(timed, key=lambda result: result.duration_s, reverse=True)[:limit]
+    if isinstance(results, _BenchRunAccumulator):
+        slowest = results.slowest[:limit]
+    else:
+        timed = [result for result in results if result.duration_s > 0.0]
+        if not timed:
+            return
+        slowest = sorted(timed, key=lambda result: result.duration_s, reverse=True)[:limit]
     print(f"\nSlowest {len(slowest)} rows by wall time:")
     for result in slowest:
         score = _bench_primary_score(result, has_commencement=has_commencement)
@@ -2315,46 +3333,79 @@ def _print_slowest_rows(
             f"effect_rows={result.n_effect_rows:5d} "
             f"effect_pages={(result.n_effect_feed_pages or result.n_effects):5d} "
             f"source_mb={(result.enacted_source_size + result.oracle_source_size) / 1_000_000:.1f} "
+            f"rss_mb={result.process_maxrss_kb / 1024:.0f} "
+            f"class={result.comparison_class or 'unknown'} "
+            f"status={result.status}"
+        )
+
+
+def _print_highest_rss_rows(
+    results: Sequence[_BenchResult] | _BenchRunAccumulator,
+    *,
+    has_commencement: bool,
+    limit: int = 10,
+) -> None:
+    if isinstance(results, _BenchRunAccumulator):
+        rows = results.highest_rss[:limit]
+    else:
+        measured = [result for result in results if result.process_maxrss_kb > 0]
+        if not measured:
+            return
+        rows = sorted(measured, key=lambda result: result.process_maxrss_kb, reverse=True)[:limit]
+    if not rows:
+        return
+    print(f"\nRows after highest {len(rows)} process max RSS observations:")
+    for result in rows:
+        score = _bench_primary_score(result, has_commencement=has_commencement)
+        replay_score = _bench_primary_replay_score(result, has_commencement=has_commencement)
+        replay_fragment = ""
+        if replay_score >= 0.0:
+            replay_fragment = f" replay={replay_score:.1%}"
+        print(
+            f"  {result.statute_id:<30} "
+            f"rss_mb={result.process_maxrss_kb / 1024:.0f} "
+            f"score={score:.1%}{replay_fragment} "
+            f"wall={result.duration_s:.2f}s "
+            f"ops={result.n_ops:5d} "
+            f"effect_rows={result.n_effect_rows:5d} "
+            f"source_mb={(result.enacted_source_size + result.oracle_source_size) / 1_000_000:.1f} "
             f"class={result.comparison_class or 'unknown'} "
             f"status={result.status}"
         )
 
 
 def _print_phase_timing_rows(
-    results: Sequence[_BenchResult],
+    results: Sequence[_BenchResult] | _BenchRunAccumulator,
     *,
     limit: int = 10,
 ) -> None:
-    timed = [result for result in results if result.phase_timings]
-    if not timed:
+    if isinstance(results, _BenchRunAccumulator):
+        acc = results
+    else:
+        acc = _BenchRunAccumulator(has_commencement=False)
+        for r in results:
+            acc.feed(r)
+
+    if acc.timed_count == 0:
         print("\nNo measured phase timings available in this run.")
         return
-    phase_totals: Counter[str] = Counter()
-    measured_total = 0.0
-    row_total = 0.0
-    for result in timed:
-        measured_total += sum(result.phase_timings.values())
-        row_total += result.duration_s
-        phase_totals.update(result.phase_timings)
+
     top_phase_text = " ".join(
         f"{name}={seconds:.2f}s"
-        for name, seconds in phase_totals.most_common(8)
+        for name, seconds in acc.phase_totals.most_common(8)
         if seconds > 0.001
     )
     print("\nPhase timing totals:")
     print(
-        f"  rows={len(timed)} measured={measured_total:.2f}s "
-        f"row={row_total:.2f}s"
+        f"  rows={acc.timed_count} measured={acc.measured_total:.2f}s "
+        f"row={acc.row_total:.2f}s"
     )
     if top_phase_text:
         print(f"  phases: {top_phase_text}")
-    slowest = sorted(
-        timed,
-        key=lambda result: sum(result.phase_timings.values()),
-        reverse=True,
-    )[:limit]
-    print(f"\nSlowest {len(slowest)} rows by measured phase time:")
-    for result in slowest:
+
+    slowest_rows = acc.slowest_phase_time[:limit]
+    print(f"\nSlowest {len(slowest_rows)} rows by measured phase time:")
+    for result in slowest_rows:
         total = sum(result.phase_timings.values())
         phases = sorted(
             result.phase_timings.items(),
@@ -2396,12 +3447,24 @@ def _load_phase_timings(row: Mapping[str, str]) -> dict[str, float]:
 
 
 def _print_report(
-    results: list[_BenchResult],
+    results: list[_BenchResult] | _BenchRunAccumulator,
     label: str,
     *,
     replay_adjudication_sample_kinds: Sequence[str] = (),
     replay_adjudication_sample_limit: int = 5,
+    summary_only: bool = False,
 ) -> None:
+    if isinstance(results, _BenchRunAccumulator):
+        acc = results
+    else:
+        acc = _BenchRunAccumulator(
+            has_commencement=any(r.commencement_score >= 0.0 for r in results if r.status == "OK" and r.n_oracle_eids > 0),
+            replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
+            replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+        )
+        for r in results:
+            acc.feed(r)
+
     def _source_line(r: _BenchResult) -> str:
         source_hashes = ""
         if r.enacted_source_sha256 or r.oracle_source_sha256:
@@ -2417,284 +3480,216 @@ def _print_report(
             f"{source_hashes}"
         )
 
-    ok = [r for r in results if r.status == "OK" and r.n_oracle_eids > 0]
-    core = [r for r in ok if r.core_benchmark]
-    noncore = [r for r in ok if not r.core_benchmark]
-    no_oracle = [r for r in results if r.status in ("NO_ORACLE", "NO_ENACTED")]
-    errs = [r for r in results if r.status == "ERR"]
-    replayed = [r for r in ok if r.replay_score >= 0.0]
-    all_rows_are_replayed = len(replayed) == len(results)
+    all_rows_are_replayed = acc.replayed_count == acc.total_count
 
-    row_status_counts = Counter(r.status for r in results)
-    comparison_class_counts = Counter(r.comparison_class or "unknown" for r in results)
     print(f"\n=== UK Bench: {label} ===")
     print(
-        f"Total: {len(results)}, Scored OK: {len(ok)}, "
-        f"Source-unavailable: {len(no_oracle)}, Errors: {len(errs)}"
+        f"Total: {acc.total_count}, Scored OK: {acc.ok_count}, "
+        f"Source-unavailable: {len(acc.no_oracle_rows)}, Errors: {len(acc.error_rows)}"
     )
-    if row_status_counts.get("OK", 0) != len(ok):
-        print(f"Status OK rows: {row_status_counts.get('OK', 0)}")
-    print(f"Row statuses: {dict(sorted(row_status_counts.items()))}")
-    print(f"Comparison classes: {dict(sorted(comparison_class_counts.items()))}")
-    print(f"Core benchmark rows: {sum(1 for r in results if r.core_benchmark)}")
-    if replayed:
-        print(f"Score mode: enacted baseline + replay ({len(replayed)} replayed rows)")
+    if acc.row_status_counts.get("OK", 0) != acc.ok_count:
+        print(f"Status OK rows: {acc.row_status_counts.get('OK', 0)}")
+    print(f"Row statuses: {dict(sorted(acc.row_status_counts.items()))}")
+    print(f"Comparison classes: {dict(sorted(acc.comparison_class_counts.items()))}")
+    print(f"Core benchmark rows: {acc.core_count}")
+    if acc.replayed_count > 0:
+        print(f"Score mode: enacted baseline + replay ({acc.replayed_count} replayed rows)")
     else:
         print("Score mode: enacted baseline only (pass --replay for amendment replay)")
-    enacted_source_counts = Counter(r.enacted_source_status for r in results)
-    oracle_source_counts = Counter(r.oracle_source_status for r in results)
-    source_parse_observation_rows = sum(1 for r in results if r.source_parse_observation_count > 0)
-    source_parse_observations_total = sum(r.source_parse_observation_count for r in results)
-    source_parse_observation_rule_counts: Counter[str] = Counter()
-    source_parse_rejection_rows = sum(1 for r in results if r.source_parse_rejection_count > 0)
-    source_parse_rejections_total = sum(r.source_parse_rejection_count for r in results)
-    source_parse_rejection_rule_counts: Counter[str] = Counter()
-    bench_exception_rows = sum(1 for r in results if r.bench_exception_count > 0)
-    bench_exceptions_total = sum(r.bench_exception_count for r in results)
-    bench_exception_rule_counts: Counter[str] = Counter()
-    effect_feed_observation_rows = sum(1 for r in results if r.effect_feed_observation_count > 0)
-    effect_feed_observations_total = sum(r.effect_feed_observation_count for r in results)
-    effect_feed_observation_rule_counts: Counter[str] = Counter()
-    effect_feed_rejection_rows = sum(1 for r in results if r.effect_feed_rejection_count > 0)
-    effect_feed_rejections_total = sum(r.effect_feed_rejection_count for r in results)
-    effect_feed_rejection_rule_counts: Counter[str] = Counter()
-    authority_rejection_total = sum(r.uk_authority_rejection_count for r in results)
-    authority_rejection_rule_counts: Counter[str] = Counter()
-    authority_observation_total = sum(r.uk_authority_observation_count for r in results)
-    authority_observation_rule_counts: Counter[str] = Counter()
-    replay_adjudication_total = sum(r.replay_adjudication_count for r in results)
-    replay_adjudication_kind_counts: Counter[str] = Counter()
-    replay_adjudication_bucket_counts: Counter[str] = Counter()
-    effect_source_pathology_counts: Counter[str] = Counter()
-    manual_compile_status_counts: Counter[str] = Counter()
-    manual_compile_rule_counts: Counter[str] = Counter()
-    source_acquisition_observation_total = sum(
-        r.source_acquisition_observation_count for r in results
-    )
-    source_acquisition_observation_rule_counts: Counter[str] = Counter()
-    source_acquisition_rejection_total = sum(r.source_acquisition_rejection_count for r in results)
-    source_acquisition_rejection_rule_counts: Counter[str] = Counter()
-    lowering_observation_total = sum(r.lowering_observation_count for r in results)
-    lowering_rejection_total = sum(r.lowering_rejection_count for r in results)
-    blocking_lowering_rejection_total = sum(r.blocking_lowering_rejection_count for r in results)
-    lowering_observation_rule_counts: Counter[str] = Counter()
-    lowering_rejection_rule_counts: Counter[str] = Counter()
-    blocking_lowering_rejection_rule_counts: Counter[str] = Counter()
-    effect_feed_count_error_rows = [r for r in results if r.effect_feed_count_error]
-    for r in results:
-        source_parse_rejection_rule_counts.update(r.source_parse_rejection_rule_counts)
-        bench_exception_rule_counts.update(r.bench_exception_rule_counts)
-        effect_feed_observation_rule_counts.update(r.effect_feed_observation_rule_counts)
-        effect_feed_rejection_rule_counts.update(r.effect_feed_rejection_rule_counts)
-        authority_observation_rule_counts.update(r.uk_authority_observation_rule_counts)
-        authority_rejection_rule_counts.update(r.uk_authority_rejection_rule_counts)
-        replay_adjudication_kind_counts.update(r.replay_adjudication_kind_counts)
-        replay_adjudication_bucket_counts.update(
-            _replay_adjudication_bucket_counts(r.replay_adjudication_kind_counts)
-        )
-        effect_source_pathology_counts.update(r.effect_source_pathology_counts)
-        manual_compile_status_counts.update(r.manual_compile_status_counts)
-        manual_compile_rule_counts.update(r.manual_compile_rule_counts)
-        source_acquisition_observation_rule_counts.update(
-            r.source_acquisition_observation_rule_counts
-        )
-        source_acquisition_rejection_rule_counts.update(r.source_acquisition_rejection_rule_counts)
-        lowering_observation_rule_counts.update(r.lowering_observation_rule_counts)
-        lowering_rejection_rule_counts.update(r.lowering_rejection_rule_counts)
-        blocking_lowering_rejection_rule_counts.update(r.blocking_lowering_rejection_rule_counts)
     print(
         "Source status: "
-        f"enacted={dict(sorted(enacted_source_counts.items()))} "
-        f"oracle={dict(sorted(oracle_source_counts.items()))}"
+        f"enacted={dict(sorted(acc.enacted_source_counts.items()))} "
+        f"oracle={dict(sorted(acc.oracle_source_counts.items()))}"
     )
-    if source_parse_observation_rows:
+    if summary_only:
+        _print_summary_only_report(acc)
+        return
+    if acc.source_parse_observation_rows:
         print(
-            f"Source parse observations: rows={source_parse_observation_rows} "
-            f"total={source_parse_observations_total}"
+            f"Source parse observations: rows={acc.source_parse_observation_rows} "
+            f"total={acc.source_parse_observations_total}"
         )
-        for r in results:
-            source_parse_observation_rule_counts.update(r.source_parse_observation_rule_counts)
-        if source_parse_observation_rule_counts:
+        if acc.source_parse_observation_rule_counts:
             print(
                 "Source parse observation rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(source_parse_observation_rule_counts.items())
+                    for rule_id, count in sorted(acc.source_parse_observation_rule_counts.items())
                 )
             )
-    if source_parse_rejection_rows:
+    if acc.source_parse_rejection_rows:
         print(
-            f"Source parse blocking rejections: rows={source_parse_rejection_rows} "
-            f"total={source_parse_rejections_total}"
+            f"Source parse blocking rejections: rows={acc.source_parse_rejection_rows} "
+            f"total={acc.source_parse_rejections_total}"
         )
-        if source_parse_rejection_rule_counts:
+        if acc.source_parse_rejection_rule_counts:
             print(
                 "Source parse rejection rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(source_parse_rejection_rule_counts.items())
+                    for rule_id, count in sorted(acc.source_parse_rejection_rule_counts.items())
                 )
             )
-    if bench_exception_rows:
+    if acc.bench_exception_rows:
         print(
-            f"Bench exceptions: rows={bench_exception_rows} "
-            f"total={bench_exceptions_total}"
+            f"Bench exceptions: rows={acc.bench_exception_rows} "
+            f"total={acc.bench_exceptions_total}"
         )
-        if bench_exception_rule_counts:
+        if acc.bench_exception_rule_counts:
             print(
                 "Bench exception rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(bench_exception_rule_counts.items())
+                    for rule_id, count in sorted(acc.bench_exception_rule_counts.items())
                 )
             )
-    if effect_feed_count_error_rows:
-        print(f"Effect-feed count errors: rows={len(effect_feed_count_error_rows)}")
-        for r in effect_feed_count_error_rows[:10]:
+    if acc.effect_feed_count_error_rows:
+        print(f"Effect-feed count errors: rows={len(acc.effect_feed_count_error_rows)}")
+        for r in acc.effect_feed_count_error_rows[:10]:
             print(f"  {r.statute_id}: {r.effect_feed_count_error}")
-    if effect_feed_observation_rows:
+    if acc.effect_feed_observation_rows:
         print(
-            f"Effect-feed observations: rows={effect_feed_observation_rows} "
-            f"total={effect_feed_observations_total}"
+            f"Effect-feed observations: rows={acc.effect_feed_observation_rows} "
+            f"total={acc.effect_feed_observations_total}"
         )
-        if effect_feed_observation_rule_counts:
+        if acc.effect_feed_observation_rule_counts:
             print(
                 "Effect-feed observation rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(effect_feed_observation_rule_counts.items())
+                    for rule_id, count in sorted(acc.effect_feed_observation_rule_counts.items())
                 )
             )
-    if effect_feed_rejection_rows:
+    if acc.effect_feed_rejection_rows:
         print(
-            f"Effect-feed blocking rejections: rows={effect_feed_rejection_rows} "
-            f"total={effect_feed_rejections_total}"
+            f"Effect-feed blocking rejections: rows={acc.effect_feed_rejection_rows} "
+            f"total={acc.effect_feed_rejections_total}"
         )
-        if effect_feed_rejection_rule_counts:
+        if acc.effect_feed_rejection_rule_counts:
             print(
                 "Effect-feed rejection rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(effect_feed_rejection_rule_counts.items())
+                    for rule_id, count in sorted(acc.effect_feed_rejection_rule_counts.items())
                 )
             )
-    if authority_observation_total and not all_rows_are_replayed:
-        print(f"All-row authority observations: {authority_observation_total}")
-        if authority_observation_rule_counts:
+    if acc.authority_observation_total and not all_rows_are_replayed:
+        print(f"All-row authority observations: {acc.authority_observation_total}")
+        if acc.authority_observation_rule_counts:
             print(
                 "All-row authority observation rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(authority_observation_rule_counts.items())
+                    for rule_id, count in sorted(acc.authority_observation_rule_counts.items())
                 )
             )
-    if authority_rejection_total and not all_rows_are_replayed:
-        print(f"All-row blocking authority rejections: {authority_rejection_total}")
-        if authority_rejection_rule_counts:
+    if acc.authority_rejection_total and not all_rows_are_replayed:
+        print(f"All-row blocking authority rejections: {acc.authority_rejection_total}")
+        if acc.authority_rejection_rule_counts:
             print(
                 "All-row blocking authority rejection rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(authority_rejection_rule_counts.items())
+                    for rule_id, count in sorted(acc.authority_rejection_rule_counts.items())
                 )
             )
-    if replay_adjudication_total and not all_rows_are_replayed:
-        print(f"All-row replay adjudications: {replay_adjudication_total}")
-        if replay_adjudication_kind_counts:
+    if acc.replay_adjudication_total and not all_rows_are_replayed:
+        print(f"All-row replay adjudications: {acc.replay_adjudication_total}")
+        if acc.replay_adjudication_kind_counts:
             print(
                 "All-row replay adjudication kinds: "
                 + ", ".join(
                     f"{kind}={count}"
-                    for kind, count in sorted(replay_adjudication_kind_counts.items())
+                    for kind, count in sorted(acc.replay_adjudication_kind_counts.items())
                 )
             )
-        if replay_adjudication_bucket_counts:
+        if acc.replay_adjudication_bucket_counts:
             print(
                 "All-row replay adjudication buckets: "
                 + ", ".join(
                     f"{bucket}={count}"
-                    for bucket, count in sorted(replay_adjudication_bucket_counts.items())
+                    for bucket, count in sorted(acc.replay_adjudication_bucket_counts.items())
                 )
             )
-    if effect_source_pathology_counts and not all_rows_are_replayed:
+    if acc.effect_source_pathology_counts and not all_rows_are_replayed:
         print(
             "All-row effect source pathologies: "
             + ", ".join(
                 f"{pathology}={count}"
-                for pathology, count in sorted(effect_source_pathology_counts.items())
+                for pathology, count in sorted(acc.effect_source_pathology_counts.items())
             )
         )
-    if manual_compile_status_counts and not all_rows_are_replayed:
+    if acc.manual_compile_status_counts and not all_rows_are_replayed:
         print(
             "All-row manual compile frontier statuses: "
             + ", ".join(
                 f"{status}={count}"
-                for status, count in sorted(manual_compile_status_counts.items())
+                for status, count in sorted(acc.manual_compile_status_counts.items())
             )
         )
-        if manual_compile_rule_counts:
+        if acc.manual_compile_rule_counts:
             print(
                 "All-row manual compile frontier rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(manual_compile_rule_counts.items())
+                    for rule_id, count in sorted(acc.manual_compile_rule_counts.items())
                 )
             )
-    if source_acquisition_observation_total and not all_rows_are_replayed:
-        print(f"All-row source acquisition observations: {source_acquisition_observation_total}")
-        if source_acquisition_observation_rule_counts:
+    if acc.source_acquisition_observation_total and not all_rows_are_replayed:
+        print(f"All-row source acquisition observations: {acc.source_acquisition_observation_total}")
+        if acc.source_acquisition_observation_rule_counts:
             print(
                 "All-row source acquisition observation rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(source_acquisition_observation_rule_counts.items())
+                    for rule_id, count in sorted(acc.source_acquisition_observation_rule_counts.items())
                 )
             )
-    if source_acquisition_rejection_total and not all_rows_are_replayed:
-        print(f"All-row source acquisition rejections: {source_acquisition_rejection_total}")
-        if source_acquisition_rejection_rule_counts:
+    if acc.source_acquisition_rejection_total and not all_rows_are_replayed:
+        print(f"All-row source acquisition rejections: {acc.source_acquisition_rejection_total}")
+        if acc.source_acquisition_rejection_rule_counts:
             print(
                 "All-row source acquisition rejection rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(source_acquisition_rejection_rule_counts.items())
+                    for rule_id, count in sorted(acc.source_acquisition_rejection_rule_counts.items())
                 )
             )
-    if lowering_observation_total and not all_rows_are_replayed:
-        print(f"All-row lowering observations: {lowering_observation_total}")
-        if lowering_observation_rule_counts:
+    if acc.lowering_observation_total and not all_rows_are_replayed:
+        print(f"All-row lowering observations: {acc.lowering_observation_total}")
+        if acc.lowering_observation_rule_counts:
             print(
                 "All-row lowering observation rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(lowering_observation_rule_counts.items())
+                    for rule_id, count in sorted(acc.lowering_observation_rule_counts.items())
                 )
             )
-    if lowering_rejection_total and not all_rows_are_replayed:
+    if acc.lowering_rejection_total and not all_rows_are_replayed:
         print(
             "All-row lowering rejections: "
-            f"total={lowering_rejection_total} "
-            f"blocking={blocking_lowering_rejection_total}"
+            f"total={acc.lowering_rejection_total} "
+            f"blocking={acc.blocking_lowering_rejection_total}"
         )
-        if lowering_rejection_rule_counts:
+        if acc.lowering_rejection_rule_counts:
             print(
                 "All-row lowering rejection rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(lowering_rejection_rule_counts.items())
+                    for rule_id, count in sorted(acc.lowering_rejection_rule_counts.items())
                 )
             )
-        if blocking_lowering_rejection_rule_counts:
+        if acc.blocking_lowering_rejection_rule_counts:
             print(
                 "All-row blocking lowering rejection rules: "
                 + ", ".join(
                     f"{rule_id}={count}"
-                    for rule_id, count in sorted(blocking_lowering_rejection_rule_counts.items())
+                    for rule_id, count in sorted(acc.blocking_lowering_rejection_rule_counts.items())
                 )
             )
-    if no_oracle:
-        print(f"Source unavailable rows ({len(no_oracle)}):")
-        for r in no_oracle[:10]:
+    if acc.no_oracle_rows:
+        print(f"Source unavailable rows ({len(acc.no_oracle_rows)}):")
+        for r in acc.no_oracle_rows[:10]:
             print(
                 f"  {r.statute_id}: status={r.status} "
                 f"enacted={r.enacted_source_status} ({r.enacted_source_size} bytes) "
@@ -2711,9 +3706,9 @@ def _print_report(
                         else ""
                     )
                 )
-    if errs:
-        print(f"Error rows ({len(errs)}):")
-        for r in errs[:10]:
+    if acc.error_rows:
+        print(f"Error rows ({len(acc.error_rows)}):")
+        for r in acc.error_rows[:10]:
             print(
                 f"  {r.statute_id}: {r.error} "
                 f"enacted={r.enacted_source_status} ({r.enacted_source_size} bytes) "
@@ -2737,142 +3732,79 @@ def _print_report(
                     )
                 )
 
-    if not ok:
+    if not acc.ok_count:
         print("No valid results to report.")
         return
 
     # Determine whether commencement scores are available — use as primary when yes.
-    comm_scored = [r for r in ok if r.commencement_score >= 0.0]
-    has_commencement = bool(comm_scored)
+    has_commencement = len(acc.commencement_scores) > 0
 
-    avg_raw = sum(r.score for r in ok) / len(ok)
-    med_score_raw = sorted(r.score for r in ok)[len(ok) // 2]
-    perfect_raw = sum(1 for r in ok if r.score == 1.0)
-    ge90_raw = sum(1 for r in ok if r.score >= 0.9)
-    ge80_raw = sum(1 for r in ok if r.score >= 0.8)
-    with_effect_pages = sum(1 for r in ok if (r.n_effect_feed_pages or r.n_effects) > 0)
-    with_effect_rows = sum(1 for r in ok if r.n_effect_rows > 0)
-    if core:
-        core_avg_raw = sum(r.score for r in core) / len(core)
+    avg_raw = sum(acc.raw_scores) / len(acc.raw_scores)
+    med_score_raw = sorted(acc.raw_scores)[len(acc.raw_scores) // 2]
+    perfect_raw = sum(1 for score in acc.raw_scores if score == 1.0)
+    ge90_raw = sum(1 for score in acc.raw_scores if score >= 0.9)
+    ge80_raw = sum(1 for score in acc.raw_scores if score >= 0.8)
+    with_effect_pages = acc.with_effect_pages_count
+    with_effect_rows = acc.with_effect_rows_count
+    if acc.core_ok_count > 0:
+        core_avg_raw = sum(acc.core_scores) / len(acc.core_scores)
         print(f"Core raw avg: {core_avg_raw:.1%}")
-    if noncore:
-        counts = Counter(r.comparison_class for r in noncore)
-        print("Non-core classes: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    if acc.noncore_ok_count > 0:
+        print("Non-core classes: " + ", ".join(f"{k}={v}" for k, v in sorted(acc.noncore_comparison_class_counts.items())))
 
     if has_commencement:
         # Commencement scores are primary; raw scores shown as secondary.
-        avg_comm = sum(r.commencement_score for r in comm_scored) / len(comm_scored)
-        med_comm = sorted(r.commencement_score for r in comm_scored)[len(comm_scored) // 2]
-        perfect_comm = sum(1 for r in comm_scored if r.commencement_score == 1.0)
-        ge90_comm = sum(1 for r in comm_scored if r.commencement_score >= 0.9)
-        ge80_comm = sum(1 for r in comm_scored if r.commencement_score >= 0.8)
-        avg_commenced_n = sum(r.n_commenced_eids for r in comm_scored) / len(comm_scored)
-        print(f"\nEID score (commenced, N={len(comm_scored)}):")
+        avg_comm = sum(acc.commencement_scores) / len(acc.commencement_scores)
+        med_comm = sorted(acc.commencement_scores)[len(acc.commencement_scores) // 2]
+        perfect_comm = sum(1 for score in acc.commencement_scores if score == 1.0)
+        ge90_comm = sum(1 for score in acc.commencement_scores if score >= 0.9)
+        ge80_comm = sum(1 for score in acc.commencement_scores if score >= 0.8)
+        avg_commenced_n = acc.avg_commenced_n_sum / len(acc.commencement_scores)
+        print(f"\nEID score (commenced, N={len(acc.commencement_scores)}):")
         print(f"  Average:        {avg_comm:.1%}    (unfiltered: {avg_raw:.1%})")
         print(f"  Median:         {med_comm:.1%}    (unfiltered: {med_score_raw:.1%})")
         print(
-            f"  Perfect (1.0):  {perfect_comm} ({100 * perfect_comm / len(comm_scored):.0f}%)"
+            f"  Perfect (1.0):  {perfect_comm} ({100 * perfect_comm / len(acc.commencement_scores):.0f}%)"
             f"    (unfiltered: {perfect_raw})"
         )
-        print(f"  >=90%:          {ge90_comm} ({100 * ge90_comm / len(comm_scored):.0f}%)    (unfiltered: {ge90_raw})")
-        print(f"  >=80%:          {ge80_comm} ({100 * ge80_comm / len(comm_scored):.0f}%)    (unfiltered: {ge80_raw})")
+        print(f"  >=90%:          {ge90_comm} ({100 * ge90_comm / len(acc.commencement_scores):.0f}%)    (unfiltered: {ge90_raw})")
+        print(f"  >=80%:          {ge80_comm} ({100 * ge80_comm / len(acc.commencement_scores):.0f}%)    (unfiltered: {ge80_raw})")
         print(f"  Avg commenced EIDs: {avg_commenced_n:.0f}")
         print(f"  With parsed effect rows>0: {with_effect_rows}")
         print(f"  With effect-feed pages>0: {with_effect_pages}")
-        if core:
-            core_comm = [r for r in core if r.commencement_score >= 0.0]
-            if core_comm:
-                avg_core_comm = sum(r.commencement_score for r in core_comm) / len(core_comm)
-                print(f"  Core commenced avg: {avg_core_comm:.1%}")
+        if len(acc.core_comm_scores) > 0:
+            avg_core_comm = sum(acc.core_comm_scores) / len(acc.core_comm_scores)
+            print(f"  Core commenced avg: {avg_core_comm:.1%}")
     else:
         # No commencement data — show raw scores normally.
-        print(f"\nEID similarity score (N={len(ok)}):")
+        print(f"\nEID similarity score (N={acc.ok_count}):")
         print(f"  Average:        {avg_raw:.1%}")
         print(f"  Median:         {med_score_raw:.1%}")
-        print(f"  Perfect (1.0):  {perfect_raw} ({100 * perfect_raw / len(ok):.0f}%)")
-        print(f"  >=90%:          {ge90_raw} ({100 * ge90_raw / len(ok):.0f}%)")
-        print(f"  >=80%:          {ge80_raw} ({100 * ge80_raw / len(ok):.0f}%)")
+        print(f"  Perfect (1.0):  {perfect_raw} ({100 * perfect_raw / len(acc.raw_scores):.0f}%)")
+        print(f"  >=90%:          {ge90_raw} ({100 * ge90_raw / len(acc.raw_scores):.0f}%)")
+        print(f"  >=80%:          {ge80_raw} ({100 * ge80_raw / len(acc.raw_scores):.0f}%)")
         print(f"  With parsed effect rows>0: {with_effect_rows}")
         print(f"  With effect-feed pages>0: {with_effect_pages}")
 
     # Replay summary (only when --replay was active)
-    if replayed:
-        regime_counts = Counter(
-            (
-                r.uk_metadata_backfill_enabled,
-                r.uk_oracle_alignment_enabled,
-                r.uk_metadata_only_effects_enabled,
-                r.uk_applicability_mode,
-                r.uk_authority_mode,
-            )
-            for r in replayed
-        )
-        avg_replay_raw = sum(r.replay_score for r in replayed) / len(replayed)
-        avg_enacted_raw = sum(r.score for r in replayed) / len(replayed)
-        perfect_replay_raw = sum(1 for r in replayed if r.replay_score == 1.0)
-        core_replayed = [r for r in replayed if r.core_benchmark]
-        total_ops = sum(r.n_ops for r in replayed if r.n_ops >= 0)
-        total_replay_adjudications = sum(r.replay_adjudication_count for r in replayed)
-        total_alignment_changes = sum(r.oracle_alignment_changed_count for r in replayed)
-        total_alignment_oracle_assigned = sum(r.oracle_alignment_oracle_assigned_count for r in replayed)
-        total_alignment_local_fallback = sum(r.oracle_alignment_local_fallback_count for r in replayed)
-        total_alignment_transparent_wrapper_cleared = sum(
-            r.oracle_alignment_transparent_wrapper_cleared_count for r in replayed
-        )
-        total_alignment_before_nodes = sum(r.oracle_alignment_before_node_count for r in replayed)
-        total_alignment_after_nodes = sum(r.oracle_alignment_after_node_count for r in replayed)
-        alignment_node_count_mismatch_rows = sum(
-            1 for r in replayed if r.oracle_alignment_node_count_mismatch
-        )
-        alignment_match_method_counts: Counter[str] = Counter()
-        for r in replayed:
-            alignment_match_method_counts.update(r.oracle_alignment_match_method_counts)
-        total_authority_rejections = sum(r.uk_authority_rejection_count for r in replayed)
-        total_authority_observations = sum(r.uk_authority_observation_count for r in replayed)
-        replay_effect_source_pathology_counts: Counter[str] = Counter()
-        replay_manual_compile_status_counts: Counter[str] = Counter()
-        replay_manual_compile_rule_counts: Counter[str] = Counter()
-        total_source_acquisition_observations = sum(
-            r.source_acquisition_observation_count for r in replayed
-        )
-        source_acquisition_observation_rule_counts: Counter[str] = Counter()
-        total_source_acquisition_rejections = sum(r.source_acquisition_rejection_count for r in replayed)
-        source_acquisition_rejection_rule_counts: Counter[str] = Counter()
-        total_lowering_observations = sum(r.lowering_observation_count for r in replayed)
-        total_lowering_rejections = sum(r.lowering_rejection_count for r in replayed)
-        total_blocking_lowering_rejections = sum(r.blocking_lowering_rejection_count for r in replayed)
-        authority_rejection_rule_counts: Counter[str] = Counter()
-        authority_observation_rule_counts: Counter[str] = Counter()
-        replay_adjudication_kind_counts: Counter[str] = Counter()
-        replay_adjudication_bucket_counts: Counter[str] = Counter()
-        lowering_observation_rule_counts: Counter[str] = Counter()
-        lowering_rejection_rule_counts: Counter[str] = Counter()
-        blocking_lowering_rejection_rule_counts: Counter[str] = Counter()
-        for r in replayed:
-            replay_adjudication_kind_counts.update(r.replay_adjudication_kind_counts)
-            replay_adjudication_bucket_counts.update(
-                _replay_adjudication_bucket_counts(r.replay_adjudication_kind_counts)
-            )
-            authority_observation_rule_counts.update(r.uk_authority_observation_rule_counts)
-            authority_rejection_rule_counts.update(r.uk_authority_rejection_rule_counts)
-            replay_effect_source_pathology_counts.update(r.effect_source_pathology_counts)
-            replay_manual_compile_status_counts.update(r.manual_compile_status_counts)
-            replay_manual_compile_rule_counts.update(r.manual_compile_rule_counts)
-            source_acquisition_observation_rule_counts.update(
-                r.source_acquisition_observation_rule_counts
-            )
-            source_acquisition_rejection_rule_counts.update(r.source_acquisition_rejection_rule_counts)
-            lowering_observation_rule_counts.update(r.lowering_observation_rule_counts)
-            lowering_rejection_rule_counts.update(r.lowering_rejection_rule_counts)
-            blocking_lowering_rejection_rule_counts.update(r.blocking_lowering_rejection_rule_counts)
-        if len(regime_counts) == 1:
+    if acc.replayed_count > 0:
+        avg_replay_raw = sum(acc.replay_scores) / len(acc.replay_scores)
+        avg_enacted_raw = sum(acc.replayed_enacted_scores) / len(acc.replayed_enacted_scores)
+        perfect_replay_raw = sum(1 for score in acc.replay_scores if score == 1.0)
+        if len(acc.core_replay_scores) > 0:
+            core_enacted_raw = sum(acc.core_replayed_enacted_scores) / len(acc.core_replayed_enacted_scores)
+            core_replay_raw = sum(acc.core_replay_scores) / len(acc.core_replay_scores)
+        else:
+            core_enacted_raw = core_replay_raw = 0.0
+
+        if len(acc.regime_counts) == 1:
             (
                 metadata_backfill,
                 oracle_alignment,
                 metadata_only_effects,
                 applicability_mode,
                 authority_mode,
-            ), _count = next(iter(regime_counts.items()))
+            ), _count = next(iter(acc.regime_counts.items()))
             print(
                 "\nReplay regime: "
                 f"metadata_backfill={metadata_backfill} "
@@ -2889,7 +3821,7 @@ def _print_report(
                 metadata_only_effects,
                 applicability_mode,
                 authority_mode,
-            ), count in sorted(regime_counts.items(), key=lambda item: (-item[1], item[0])):
+            ), count in sorted(acc.regime_counts.items(), key=lambda item: (-item[1], item[0])):
                 print(
                     f"  N={count}: metadata_backfill={metadata_backfill} "
                     f"oracle_alignment={oracle_alignment} "
@@ -2897,294 +3829,280 @@ def _print_report(
                     f"applicability={applicability_mode} "
                     f"authority={authority_mode}"
                 )
-        if total_authority_observations:
-            print(f"  Authority observations: {total_authority_observations}")
-            if authority_observation_rule_counts:
+        if acc.total_authority_observations:
+            print(f"  Authority observations: {acc.total_authority_observations}")
+            if acc.authority_observation_rule_counts:
                 print(
                     "  Authority observation rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(authority_observation_rule_counts.items())
+                        for rule_id, count in sorted(acc.authority_observation_rule_counts.items())
                     )
                 )
-        if total_authority_rejections:
-            print(f"  Blocking authority rejections: {total_authority_rejections}")
-            if authority_rejection_rule_counts:
+        if acc.total_authority_rejections:
+            print(f"  Blocking authority rejections: {acc.total_authority_rejections}")
+            if acc.authority_rejection_rule_counts:
                 print(
                     "  Blocking authority rejection rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(authority_rejection_rule_counts.items())
+                        for rule_id, count in sorted(acc.authority_rejection_rule_counts.items())
                     )
                 )
-        if total_replay_adjudications:
-            print(f"  Replay adjudications: {total_replay_adjudications}")
-            if replay_adjudication_kind_counts:
+        if acc.total_replay_adjudications:
+            print(f"  Replay adjudications: {acc.total_replay_adjudications}")
+            if acc.replay_adjudication_kind_counts:
                 print(
                     "  Replay adjudication kinds: "
                     + ", ".join(
                         f"{kind}={count}"
-                        for kind, count in sorted(replay_adjudication_kind_counts.items())
+                        for kind, count in sorted(acc.replay_adjudication_kind_counts.items())
                     )
                 )
-            if replay_adjudication_bucket_counts:
+            if acc.replay_adjudication_bucket_counts:
                 print(
                     "  Replay adjudication buckets: "
                     + ", ".join(
                         f"{bucket}={count}"
-                        for bucket, count in sorted(replay_adjudication_bucket_counts.items())
+                        for bucket, count in sorted(acc.replay_adjudication_bucket_counts.items())
                     )
                 )
-            _print_replay_adjudication_samples(
-                replayed,
-                kinds=replay_adjudication_sample_kinds,
-                limit=replay_adjudication_sample_limit,
-            )
-        if replay_effect_source_pathology_counts:
+            if acc.adjudication_samples_totals:
+                print("  Replay adjudication samples:")
+                for kind in sorted(acc.replay_adjudication_sample_kinds):
+                    total = acc.adjudication_samples_totals.get(kind, 0)
+                    if not total:
+                        continue
+                    samples = acc.adjudication_samples[kind]
+                    omitted = max(0, total - len(samples))
+                    print(f"    {kind}: shown={len(samples)} total={total} omitted={omitted}")
+                    for result, adjudication in samples:
+                        detail = adjudication.get("detail")
+                        detail_map = detail if isinstance(detail, dict) else {}
+                        parts = [
+                            result.statute_id,
+                            f"source={adjudication.get('source_statute') or ''}",
+                            f"op={adjudication.get('op_id') or ''}",
+                        ]
+                        target = detail_map.get("target")
+                        if target:
+                            parts.append(f"target={target}")
+                        text_match = detail_map.get("text_match")
+                        if text_match:
+                            parts.append(f"text_match={_short_sample_value(text_match)}")
+                        replacement = detail_map.get("replacement_text")
+                        if replacement:
+                            parts.append(f"replacement={_short_sample_value(replacement)}")
+                        source_shape = detail_map.get("source_shape")
+                        if source_shape:
+                            parts.append(f"source_shape={source_shape}")
+                        print("      " + " ".join(parts))
+        if acc.replay_effect_source_pathology_counts:
             print(
                 "  Effect source pathologies: "
                 + ", ".join(
                     f"{pathology}={count}"
-                    for pathology, count in sorted(replay_effect_source_pathology_counts.items())
+                    for pathology, count in sorted(acc.replay_effect_source_pathology_counts.items())
                 )
             )
-        if replay_manual_compile_status_counts:
+        if acc.replay_manual_compile_status_counts:
             print(
                 "  Manual compile frontier statuses: "
                 + ", ".join(
                     f"{status}={count}"
-                    for status, count in sorted(replay_manual_compile_status_counts.items())
+                    for status, count in sorted(acc.replay_manual_compile_status_counts.items())
                 )
             )
-            if replay_manual_compile_rule_counts:
+            if acc.replay_manual_compile_rule_counts:
                 print(
                     "  Manual compile frontier rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(replay_manual_compile_rule_counts.items())
+                        for rule_id, count in sorted(acc.replay_manual_compile_rule_counts.items())
                     )
                 )
-        if total_source_acquisition_observations:
-            print(f"  Source acquisition observations: {total_source_acquisition_observations}")
-            if source_acquisition_observation_rule_counts:
+        if acc.total_source_acquisition_observations:
+            print(f"  Source acquisition observations: {acc.total_source_acquisition_observations}")
+            if acc.source_acquisition_observation_rule_counts:
                 print(
                     "  Source acquisition observation rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(source_acquisition_observation_rule_counts.items())
+                        for rule_id, count in sorted(acc.source_acquisition_observation_rule_counts.items())
                     )
                 )
-        if total_source_acquisition_rejections:
-            print(f"  Source acquisition rejections: {total_source_acquisition_rejections}")
-            if source_acquisition_rejection_rule_counts:
+        if acc.total_source_acquisition_rejections:
+            print(f"  Source acquisition rejections: {acc.total_source_acquisition_rejections}")
+            if acc.source_acquisition_rejection_rule_counts:
                 print(
                     "  Source acquisition rejection rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(source_acquisition_rejection_rule_counts.items())
+                        for rule_id, count in sorted(acc.source_acquisition_rejection_rule_counts.items())
                     )
                 )
-        if total_lowering_observations:
-            print(f"  Lowering observations: {total_lowering_observations}")
-            if lowering_observation_rule_counts:
+        if acc.total_lowering_observations:
+            print(f"  Lowering observations: {acc.total_lowering_observations}")
+            if acc.lowering_observation_rule_counts:
                 print(
                     "  Lowering observation rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(lowering_observation_rule_counts.items())
+                        for rule_id, count in sorted(acc.lowering_observation_rule_counts.items())
                     )
                 )
-        if total_lowering_rejections:
+        if acc.total_lowering_rejections:
             print(
                 "  Lowering rejections: "
-                f"total={total_lowering_rejections} "
-                f"blocking={total_blocking_lowering_rejections}"
+                f"total={acc.total_lowering_rejections} "
+                f"blocking={acc.total_blocking_lowering_rejections}"
             )
-            if lowering_rejection_rule_counts:
+            if acc.lowering_rejection_rule_counts:
                 print(
                     "  Lowering rejection rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(lowering_rejection_rule_counts.items())
+                        for rule_id, count in sorted(acc.lowering_rejection_rule_counts.items())
                     )
                 )
-            if blocking_lowering_rejection_rule_counts:
+            if acc.blocking_lowering_rejection_rule_counts:
                 print(
                     "  Blocking lowering rejection rules: "
                     + ", ".join(
                         f"{rule_id}={count}"
-                        for rule_id, count in sorted(blocking_lowering_rejection_rule_counts.items())
+                        for rule_id, count in sorted(acc.blocking_lowering_rejection_rule_counts.items())
                     )
                 )
 
         if has_commencement:
-            replay_comm_scored = [r for r in replayed if r.replay_commencement_score >= 0.0]
-            if replay_comm_scored:
-                avg_replay_comm = sum(r.replay_commencement_score for r in replay_comm_scored) / len(replay_comm_scored)
-                avg_enacted_comm = sum(
-                    r.commencement_score for r in replay_comm_scored if r.commencement_score >= 0.0
-                ) / max(sum(1 for r in replay_comm_scored if r.commencement_score >= 0.0), 1)
+            if acc.replay_commencement_scores:
+                avg_replay_comm = sum(acc.replay_commencement_scores) / len(acc.replay_commencement_scores)
+                avg_enacted_comm = sum(acc.replay_commencement_enacted_scores) / len(acc.replay_commencement_enacted_scores)
                 delta_comm = avg_replay_comm - avg_enacted_comm
-                # Use commencement scores for improved/regressed counts and delta ranking.
-                # Previously r.replay_score (raw) was compared against r.score (commencement),
-                # producing phantom regressions for recently-enacted 0-ops statutes where the
-                # raw replay score is low (many enacted EIDs not in oracle) but the commencement
-                # score is fine (only commenced EIDs compared, which match well).
-                improved_comm = sum(
-                    1
-                    for r in replay_comm_scored
-                    if r.commencement_score >= 0.0 and r.replay_commencement_score > r.commencement_score + 0.001
-                )
-                regressed_comm = sum(
-                    1
-                    for r in replay_comm_scored
-                    if r.commencement_score >= 0.0 and r.replay_commencement_score < r.commencement_score - 0.001
-                )
-                perfect_replay_comm = sum(1 for r in replay_comm_scored if r.replay_commencement_score == 1.0)
-                print(f"\nReplay (commenced, N={len(replay_comm_scored)}, {total_ops} ops total):")
+                perfect_replay_comm = sum(1 for score in acc.replay_commencement_scores if score == 1.0)
+                print(f"\nReplay (commenced, N={len(acc.replay_commencement_scores)}, {acc.total_ops} ops total):")
                 print(f"  Enacted avg:    {avg_enacted_comm:.1%}    (unfiltered: {avg_enacted_raw:.1%})")
                 print(
                     f"  Replayed avg:   {avg_replay_comm:.1%} ({delta_comm:+.1%})    (unfiltered: {avg_replay_raw:.1%})"
                 )
                 print(
-                    f"  Perfect replay: {perfect_replay_comm} ({100 * perfect_replay_comm / len(replay_comm_scored):.0f}%)"
+                    f"  Perfect replay: {perfect_replay_comm} ({100 * perfect_replay_comm / len(acc.replay_commencement_scores):.0f}%)"
                 )
-                print(f"  Improved:       {improved_comm}  Regressed: {regressed_comm}")
-                if total_alignment_changes:
+                print(f"  Improved:       {len(acc.improvements_comm)}  Regressed: {len(acc.regressions_comm)}")
+                if acc.total_alignment_changes:
                     print(
-                        f"  Oracle EID alignment: changed={total_alignment_changes} "
-                        f"oracle_assigned={total_alignment_oracle_assigned} "
-                        f"local_fallback={total_alignment_local_fallback} "
-                        f"transparent_wrapper_cleared={total_alignment_transparent_wrapper_cleared} "
-                        f"before_nodes={total_alignment_before_nodes} "
-                        f"after_nodes={total_alignment_after_nodes} "
-                        f"node_count_mismatch_rows={alignment_node_count_mismatch_rows}"
+                        f"  Oracle EID alignment: changed={acc.total_alignment_changes} "
+                        f"oracle_assigned={acc.total_alignment_oracle_assigned} "
+                        f"local_fallback={acc.total_alignment_local_fallback} "
+                        f"transparent_wrapper_cleared={acc.total_alignment_transparent_wrapper_cleared} "
+                        f"before_nodes={acc.total_alignment_before_nodes} "
+                        f"after_nodes={acc.total_alignment_after_nodes} "
+                        f"node_count_mismatch_rows={acc.alignment_node_count_mismatch_rows}"
                     )
-                    if alignment_match_method_counts:
+                    if acc.alignment_match_method_counts:
                         print(
                             "  Oracle EID alignment methods: "
                             + ", ".join(
                                 f"{method}={count}"
-                                for method, count in sorted(alignment_match_method_counts.items())
+                                for method, count in sorted(acc.alignment_match_method_counts.items())
                             )
                         )
-                # Show biggest improvements and regressions by commencement score delta.
-                by_delta = sorted(
-                    replay_comm_scored,
-                    key=lambda r: r.replay_commencement_score - r.commencement_score
-                    if r.commencement_score >= 0.0
-                    else 0.0,
-                )
-                if regressed_comm:
+                if acc.regressions_comm:
                     print("\n  Top regressions:")
-                    for r in by_delta[:5]:
-                        if r.commencement_score >= 0.0 and r.replay_commencement_score < r.commencement_score - 0.001:
-                            print(
-                                f"    {r.statute_id:<30} {r.commencement_score:.1%} -> {r.replay_commencement_score:.1%}"
-                                f"  {_bench_row_evidence_context(r)}"
-                            )
-                if improved_comm:
+                    for r in acc.regressions_comm:
+                        print(
+                            f"    {r.statute_id:<30} {r.commencement_score:.1%} -> {r.replay_commencement_score:.1%}"
+                            f"  {_bench_row_evidence_context(r)}"
+                        )
+                if acc.improvements_comm:
                     print("\n  Top improvements:")
-                    for r in reversed(by_delta[-5:]):
-                        if r.commencement_score >= 0.0 and r.replay_commencement_score > r.commencement_score + 0.001:
-                            print(
-                                f"    {r.statute_id:<30} {r.commencement_score:.1%} -> {r.replay_commencement_score:.1%}"
-                                f"  {_bench_row_evidence_context(r)}"
-                            )
+                    for r in acc.improvements_comm:
+                        print(
+                            f"    {r.statute_id:<30} {r.commencement_score:.1%} -> {r.replay_commencement_score:.1%}"
+                            f"  {_bench_row_evidence_context(r)}"
+                        )
         else:
-            improved = sum(1 for r in replayed if r.replay_score > r.score + 0.001)
-            regressed = sum(1 for r in replayed if r.replay_score < r.score - 0.001)
+            improved = len(acc.improvements_raw)
+            regressed = len(acc.regressions_raw)
             delta = avg_replay_raw - avg_enacted_raw
-            print(f"\nReplay score (N={len(replayed)}, {total_ops} ops total):")
+            print(f"\nReplay score (N={acc.replayed_count}, {acc.total_ops} ops total):")
             print(f"  Enacted avg:    {avg_enacted_raw:.1%}")
             print(f"  Replayed avg:   {avg_replay_raw:.1%} ({delta:+.1%})")
-            if core_replayed and len(core_replayed) != len(replayed):
-                core_enacted_raw = sum(r.score for r in core_replayed) / len(core_replayed)
-                core_replay_raw = sum(r.replay_score for r in core_replayed) / len(core_replayed)
+            if acc.core_count > 0 and len(acc.core_replay_scores) > 0:
                 print(
                     f"  Core replay avg: {core_replay_raw:.1%} "
-                    f"({core_replay_raw - core_enacted_raw:+.1%}, N={len(core_replayed)})"
+                    f"({core_replay_raw - core_enacted_raw:+.1%}, N={len(acc.core_replay_scores)})"
                 )
-            print(f"  Perfect replay: {perfect_replay_raw} ({100 * perfect_replay_raw / len(replayed):.0f}%)")
+            print(f"  Perfect replay: {perfect_replay_raw} ({100 * perfect_replay_raw / acc.replayed_count:.0f}%)")
             print(f"  Improved:       {improved}  Regressed: {regressed}")
-            if total_alignment_changes:
+            if acc.total_alignment_changes:
                 print(
-                    f"  Oracle EID alignment: changed={total_alignment_changes} "
-                    f"oracle_assigned={total_alignment_oracle_assigned} "
-                    f"local_fallback={total_alignment_local_fallback} "
-                    f"transparent_wrapper_cleared={total_alignment_transparent_wrapper_cleared} "
-                    f"before_nodes={total_alignment_before_nodes} "
-                    f"after_nodes={total_alignment_after_nodes} "
-                    f"node_count_mismatch_rows={alignment_node_count_mismatch_rows}"
+                    f"  Oracle EID alignment: changed={acc.total_alignment_changes} "
+                    f"oracle_assigned={acc.total_alignment_oracle_assigned} "
+                    f"local_fallback={acc.total_alignment_local_fallback} "
+                    f"transparent_wrapper_cleared={acc.total_alignment_transparent_wrapper_cleared} "
+                    f"before_nodes={acc.total_alignment_before_nodes} "
+                    f"after_nodes={acc.total_alignment_after_nodes} "
+                    f"node_count_mismatch_rows={acc.alignment_node_count_mismatch_rows}"
                 )
-                if alignment_match_method_counts:
+                if acc.alignment_match_method_counts:
                     print(
                         "  Oracle EID alignment methods: "
                         + ", ".join(
                             f"{method}={count}"
-                            for method, count in sorted(alignment_match_method_counts.items())
+                            for method, count in sorted(acc.alignment_match_method_counts.items())
                         )
                     )
-            by_delta = sorted(replayed, key=lambda r: r.replay_score - r.score)
-            if regressed:
+            if acc.regressions_raw:
                 print("\n  Top regressions:")
-                for r in by_delta[:5]:
-                    if r.replay_score < r.score - 0.001:
-                        print(
-                            f"    {r.statute_id:<30} {r.score:.1%} -> {r.replay_score:.1%}  "
-                            f"{_bench_row_evidence_context(r)}"
-                        )
-            if improved:
+                for r in acc.regressions_raw:
+                    print(
+                        f"    {r.statute_id:<30} {r.score:.1%} -> {r.replay_score:.1%}  "
+                        f"{_bench_row_evidence_context(r)}"
+                    )
+            if acc.improvements_raw:
                 print("\n  Top improvements:")
-                for r in reversed(by_delta[-5:]):
-                    if r.replay_score > r.score + 0.001:
-                        print(
-                            f"    {r.statute_id:<30} {r.score:.1%} -> {r.replay_score:.1%}  "
-                            f"{_bench_row_evidence_context(r)}"
-                        )
+                for r in acc.improvements_raw:
+                    print(
+                        f"    {r.statute_id:<30} {r.score:.1%} -> {r.replay_score:.1%}  "
+                        f"{_bench_row_evidence_context(r)}"
+                    )
 
-    replay_errors = [r for r in ok if r.replay_error]
-    if replay_errors:
-        print(f"\nReplay errors ({len(replay_errors)}):")
-        for r in replay_errors[:10]:
+    if acc.replay_errors:
+        print(f"\nReplay errors ({len(acc.replay_errors)}):")
+        for r in acc.replay_errors:
             print(f"  {r.statute_id}: {r.replay_error}")
             print(_source_line(r))
 
-    commencement_errors = [r for r in ok if r.commencement_error]
-    if commencement_errors:
-        print(f"\nCommencement errors ({len(commencement_errors)}):")
-        for r in commencement_errors[:10]:
+    if acc.commencement_errors:
+        print(f"\nCommencement errors ({len(acc.commencement_errors)}):")
+        for r in acc.commencement_errors:
             print(f"  {r.statute_id}: {r.commencement_error}")
             print(_source_line(r))
 
     # Text similarity summary
-    text_scored = [r for r in ok if r.text_score >= 0.0]
-    if text_scored:
-        n_compared_total = sum(r.n_text_compared for r in text_scored)
-        avg_text_enacted = sum(r.text_score for r in text_scored) / len(text_scored)
-        print(f"\nText similarity (common EIDs, N={n_compared_total} EIDs across {len(text_scored)} statutes):")
+    if acc.text_scores:
+        avg_text_enacted = sum(acc.text_scores) / len(acc.text_scores)
+        print(f"\nText similarity (common EIDs, N={len(acc.text_scores)} EIDs):")
         print(f"  Enacted avg:    {avg_text_enacted:.1%}")
-        replay_text_scored = [r for r in text_scored if r.replay_text_score >= 0.0]
-        if replay_text_scored:
-            avg_text_replay = sum(r.replay_text_score for r in replay_text_scored) / len(replay_text_scored)
-            avg_text_enacted_sub = sum(r.text_score for r in replay_text_scored) / len(replay_text_scored)
+        if acc.replay_text_scores:
+            avg_text_replay = sum(acc.replay_text_scores) / len(acc.replay_text_scores)
+            avg_text_enacted_sub = sum(acc.text_scores[:len(acc.replay_text_scores)]) / len(acc.replay_text_scores)
             delta_text = avg_text_replay - avg_text_enacted_sub
             print(f"  Replayed avg:   {avg_text_replay:.1%} ({delta_text:+.1%})")
 
     # By type
-    type_groups: dict[str, list[_BenchResult]] = {}
-    for r in ok:
-        type_groups.setdefault(r.act_type, []).append(r)
     print("\nBy type:")
-    for t, grp in sorted(type_groups.items()):
-        a = sum(x.score for x in grp) / len(grp)
-        p = sum(1 for x in grp if x.score == 1.0)
-        replay_grp = [x for x in grp if x.replay_score >= 0.0]
+    for t in sorted(acc.type_counts):
+        grp = acc.type_groups.get(t, [])
+        a = sum(grp) / len(grp) if grp else 0.0
+        p = acc.type_perfect_counts.get(t, 0)
+        replay_grp = acc.type_replay_groups.get(t, [])
         if replay_grp:
-            ar = sum(x.replay_score for x in replay_grp) / len(replay_grp)
-            print(f"  {t:<8} N={len(grp):5d}  enacted={a:.1%}  replay={ar:.1%}  perfect={p}")
+            ar = sum(replay_grp) / len(replay_grp)
+            print(f"  {t:<8} N={acc.type_counts[t]:5d}  enacted={a:.1%}  replay={ar:.1%}  perfect={p}")
         else:
-            print(f"  {t:<8} N={len(grp):5d}  avg={a:.1%}  perfect={p}")
+            print(f"  {t:<8} N={acc.type_counts[t]:5d}  avg={a:.1%}  perfect={p}")
 
     def _primary_score_for_row(r: _BenchResult) -> float:
         return _bench_primary_score(r, has_commencement=has_commencement)
@@ -3208,7 +4126,7 @@ def _print_report(
 
     # Worst rows: separate core replay frontier from non-core structural/no-truth rows.
     worst_score_label = "commenced EID score" if has_commencement else "EID score"
-    worst_core = sorted([r for r in core if _primary_score_for_row(r) < 1.0], key=_primary_score_for_row)[:15]
+    worst_core = [r for r in acc.worst_core if _primary_score_for_row(r) < 1.0]
     if worst_core:
         print(f"\nWorst {len(worst_core)} core rows (by {worst_score_label}):")
         for r in worst_core:
@@ -3224,14 +4142,9 @@ def _print_report(
             print(_source_line(r))
 
     worst_replay_score_label = "replay commenced EID score" if has_commencement else "replay EID score"
-    replay_core = [r for r in core if _primary_replay_score_for_row(r) >= 0.0]
-    worst_replay_core = sorted(
-        [r for r in replay_core if _primary_replay_score_for_row(r) < 1.0],
-        key=_primary_replay_score_for_row,
-    )[:15]
-    if worst_replay_core:
-        print(f"\nWorst {len(worst_replay_core)} core replay rows (by {worst_replay_score_label}):")
-        for r in worst_replay_core:
+    if acc.worst_replay_core:
+        print(f"\nWorst {len(acc.worst_replay_core)} core replay rows (by {worst_replay_score_label}):")
+        for r in acc.worst_replay_core:
             base = (
                 f"  {r.statute_id:<30} {_score_fragment_for_row(r)}  "
                 f"enacted={r.n_enacted_eids:4d} oracle={r.n_oracle_eids:4d} "
@@ -3243,10 +4156,9 @@ def _print_report(
             print(base)
             print(_source_line(r))
 
-    worst_noncore = sorted(noncore, key=_primary_score_for_row)[:10]
-    if worst_noncore:
-        print(f"\nWorst {len(worst_noncore)} non-core rows:")
-        for r in worst_noncore:
+    if acc.worst_noncore:
+        print(f"\nWorst {len(acc.worst_noncore)} non-core rows:")
+        for r in acc.worst_noncore:
             print(
                 f"  {r.statute_id:<30} {_score_fragment_for_row(r)} "
                 f"enacted={r.n_enacted_eids:4d} oracle={r.n_oracle_eids:4d} "
@@ -3255,7 +4167,56 @@ def _print_report(
             )
             print(_source_line(r))
 
-    _print_slowest_rows(results, has_commencement=has_commencement)
+    _print_slowest_rows(acc, has_commencement=has_commencement)
+    _print_highest_rss_rows(acc, has_commencement=has_commencement)
+
+
+def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
+    if not acc.ok_count:
+        print("No valid results to report.")
+        return
+    has_commencement = len(acc.commencement_scores) > 0
+    primary_scores = acc.commencement_scores if has_commencement else acc.raw_scores
+    primary_label = "commenced" if has_commencement else "raw"
+    if primary_scores:
+        average = sum(primary_scores) / len(primary_scores)
+        sorted_scores = sorted(primary_scores)
+        mid = len(sorted_scores) // 2
+        if len(sorted_scores) % 2:
+            median = sorted_scores[mid]
+        else:
+            median = (sorted_scores[mid - 1] + sorted_scores[mid]) / 2
+        print(f"EID score ({primary_label}, N={len(primary_scores)}): avg={average:.1%} median={median:.1%}")
+    if acc.replay_scores:
+        replay_average = sum(acc.replay_scores) / len(acc.replay_scores)
+        print(
+            f"Replay score (N={len(acc.replay_scores)}, ops={acc.total_ops}): "
+            f"avg={replay_average:.1%}"
+        )
+    if acc.replay_commencement_scores:
+        replay_comm_average = sum(acc.replay_commencement_scores) / len(
+            acc.replay_commencement_scores
+        )
+        print(
+            f"Replay commenced score (N={len(acc.replay_commencement_scores)}): "
+            f"avg={replay_comm_average:.1%}"
+        )
+    print(
+        "Evidence totals: "
+        f"source_parse_obs={acc.source_parse_observations_total} "
+        f"source_parse_rejections={acc.source_parse_rejections_total} "
+        f"source_acquisition_obs={acc.source_acquisition_observation_total} "
+        f"source_acquisition_rejections={acc.source_acquisition_rejection_total} "
+        f"effect_feed_obs={acc.effect_feed_observations_total} "
+        f"effect_feed_rejections={acc.effect_feed_rejections_total} "
+        f"lowering_obs={acc.lowering_observation_total} "
+        f"lowering_rejections={acc.lowering_rejection_total} "
+        f"blocking_lowering={acc.blocking_lowering_rejection_total} "
+        f"replay_adjudications={acc.replay_adjudication_total}"
+    )
+    if acc.highest_rss:
+        peak = acc.highest_rss[0]
+        print(f"Peak observed process RSS: {peak.process_maxrss_kb / 1024:.0f}MB after {peak.statute_id}")
 
 
 def _score_witness_path(label: str) -> Path:
@@ -3292,60 +4253,37 @@ def _count_jsonl_rows(path: Path) -> int:
         return sum(1 for line in handle if line.strip())
 
 
+def _format_file_size(path: Path) -> str:
+    size = path.stat().st_size
+    if size >= 1_000_000_000:
+        return f"{size / 1_000_000_000:.1f}GB"
+    if size >= 1_000_000:
+        return f"{size / 1_000_000:.1f}MB"
+    if size >= 1_000:
+        return f"{size / 1_000:.1f}KB"
+    return f"{size}B"
+
+
 def _save_score_witness_rows(results: list[_BenchResult], label: str) -> int:
     out_path = _score_witness_path(label)
-    rows: list[dict[str, object]] = []
+    handle = None
+    writer: csv.DictWriter | None = None
+    count = 0
     for result in results:
-        for witness in result.score_witness_rows:
-            left_label, right_label = _score_witness_labels(witness.comparison_scope)
-            rows.append({
-                "schema": _SCORE_WITNESS_SCHEMA,
-                "label": label,
-                "statute_id": result.statute_id,
-                "comparison_scope": witness.comparison_scope,
-                "score_formula": _SCORE_WITNESS_FORMULA,
-                "left_label": left_label,
-                "right_label": right_label,
-                "side": witness.side,
-                "eid": witness.eid,
-                "rank": witness.rank,
-                "category_total": witness.category_total,
-                "sample_limit": witness.sample_limit,
-                "truncated": "1" if witness.truncated else "0",
-                "left_count": witness.left_count,
-                "right_count": witness.right_count,
-                "common_count": witness.common_count,
-                "score_value": f"{witness.score_value:.4f}",
-                "comparison_class": result.comparison_class,
-                "core_benchmark": "1" if result.core_benchmark else "0",
-                "enacted_source_status": result.enacted_source_status,
-                "oracle_source_status": result.oracle_source_status,
-                "enacted_source_size": result.enacted_source_size,
-                "oracle_source_size": result.oracle_source_size,
-                "enacted_source_sha256": result.enacted_source_sha256,
-                "oracle_source_sha256": result.oracle_source_sha256,
-                "enacted_source_url": result.enacted_source_url,
-                "oracle_source_url": result.oracle_source_url,
-                "uk_metadata_backfill_enabled": (
-                    "1" if result.uk_metadata_backfill_enabled else "0"
-                ),
-                "uk_oracle_alignment_enabled": "1" if result.uk_oracle_alignment_enabled else "0",
-                "uk_metadata_only_effects_enabled": (
-                    "1" if result.uk_metadata_only_effects_enabled else "0"
-                ),
-                "uk_applicability_mode": result.uk_applicability_mode,
-                "uk_authority_mode": result.uk_authority_mode,
-            })
-    if not rows:
+        for row in _get_score_witness_dict_rows(result, label):
+            if writer is None:
+                handle = open(out_path, "w", newline="")
+                writer = csv.DictWriter(handle, fieldnames=_SCORE_WITNESS_HEADERS)
+                writer.writeheader()
+            writer.writerow(row)
+            count += 1
+    if handle is not None:
+        handle.close()
+    if count == 0:
         if out_path.exists():
             out_path.unlink()
         return 0
-    fieldnames = list(rows[0])
-    with open(out_path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    return len(rows)
+    return count
 
 
 def _replay_adjudication_record(adjudication: Any) -> dict[str, Any]:
@@ -3440,18 +4378,22 @@ def _bench_diagnostic_rows_for_result(result: _BenchResult, label: str) -> list[
 
 def _save_bench_diagnostic_rows(results: list[_BenchResult], label: str) -> int:
     out_path = _bench_diagnostics_path(label)
-    rows: list[dict[str, Any]] = []
+    count = 0
+    handle = None
     for result in results:
-        rows.extend(_bench_diagnostic_rows_for_result(result, label))
-    if not rows:
+        for row in _bench_diagnostic_rows_for_result(result, label):
+            if handle is None:
+                handle = open(out_path, "w", encoding="utf-8")
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+            count += 1
+    if handle is not None:
+        handle.close()
+    if count == 0:
         if out_path.exists():
             out_path.unlink()
         return 0
-    with open(out_path, "w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
-            handle.write("\n")
-    return len(rows)
+    return count
 
 
 def _format_history_average(values: list[float]) -> str:
@@ -3525,71 +4467,62 @@ def _load_bench_diagnostic_rows(label: str) -> dict[str, dict[str, tuple[dict[st
     }
 
 
-def _append_history(results: list[_BenchResult], label: str, score_witness_count: int) -> None:
-    ok = [r for r in results if r.status == "OK" and r.n_oracle_eids > 0]
-    has_commencement = any(r.commencement_score >= 0.0 for r in ok)
-    primary_scores = [
-        _bench_primary_score(r, has_commencement=has_commencement)
-        for r in ok
-    ]
-    replay_scores = [r.replay_score for r in ok if r.replay_score >= 0.0]
-    commencement_scores = [r.commencement_score for r in ok if r.commencement_score >= 0.0]
-    row_status_counts = Counter(r.status for r in results)
-    enacted_source_status_counts = Counter(r.enacted_source_status for r in results)
-    oracle_source_status_counts = Counter(r.oracle_source_status for r in results)
-    regime_counts: Counter[str] = Counter(
-        (
-            f"metadata_backfill={int(r.uk_metadata_backfill_enabled)}"
-            f";oracle_alignment={int(r.uk_oracle_alignment_enabled)}"
-            f";metadata_only_effects={int(r.uk_metadata_only_effects_enabled)}"
-            f";applicability={r.uk_applicability_mode}"
-            f";authority={r.uk_authority_mode}"
+def _append_history(
+    results: list[_BenchResult] | _BenchRunAccumulator,
+    label: str,
+    score_witness_count: int,
+) -> None:
+    if isinstance(results, _BenchRunAccumulator):
+        acc = results
+    else:
+        acc = _BenchRunAccumulator(
+            has_commencement=any(
+                r.commencement_score >= 0.0
+                for r in results
+                if r.status == "OK" and r.n_oracle_eids > 0
+            ),
         )
-        for r in results
-    )
-    observation_rule_counts: Counter[str] = Counter()
-    effect_feed_rejection_rule_counts: Counter[str] = Counter()
-    source_parse_observation_rule_counts: Counter[str] = Counter()
-    source_parse_rejection_rule_counts: Counter[str] = Counter()
-    effect_source_pathology_counts: Counter[str] = Counter()
-    manual_compile_status_counts: Counter[str] = Counter()
-    manual_compile_rule_counts: Counter[str] = Counter()
-    source_acquisition_observation_rule_counts: Counter[str] = Counter()
-    source_acquisition_rejection_rule_counts: Counter[str] = Counter()
-    bench_exception_rule_counts: Counter[str] = Counter()
-    authority_observation_rule_counts: Counter[str] = Counter()
-    authority_rule_counts: Counter[str] = Counter()
-    lowering_observation_rule_counts: Counter[str] = Counter()
-    lowering_rule_counts: Counter[str] = Counter()
-    blocking_lowering_rule_counts: Counter[str] = Counter()
-    replay_adjudication_kind_counts: Counter[str] = Counter()
-    replay_adjudication_bucket_counts: Counter[str] = Counter()
-    residual_claim_tier_counts: Counter[str] = Counter()
-    residual_claim_kind_counts: Counter[str] = Counter()
-    for r in results:
-        observation_rule_counts.update(r.effect_feed_observation_rule_counts)
-        effect_feed_rejection_rule_counts.update(r.effect_feed_rejection_rule_counts)
-        source_parse_observation_rule_counts.update(r.source_parse_observation_rule_counts)
-        source_parse_rejection_rule_counts.update(r.source_parse_rejection_rule_counts)
-        effect_source_pathology_counts.update(r.effect_source_pathology_counts)
-        manual_compile_status_counts.update(r.manual_compile_status_counts)
-        manual_compile_rule_counts.update(r.manual_compile_rule_counts)
-        source_acquisition_observation_rule_counts.update(
-            r.source_acquisition_observation_rule_counts
+        for r in results:
+            acc.feed(r)
+
+    primary_scores = acc.primary_scores
+    replay_scores = acc.replay_scores
+    commencement_scores = acc.commencement_scores
+    row_status_counts = acc.row_status_counts
+    enacted_source_status_counts = acc.enacted_source_counts
+    oracle_source_status_counts = acc.oracle_source_counts
+
+    regime_counts: Counter[str] = Counter()
+    for (mb, oa, moe, app, auth), count in acc.regime_counts.items():
+        key = (
+            f"metadata_backfill={int(mb)}"
+            f";oracle_alignment={int(oa)}"
+            f";metadata_only_effects={int(moe)}"
+            f";applicability={app}"
+            f";authority={auth}"
         )
-        source_acquisition_rejection_rule_counts.update(r.source_acquisition_rejection_rule_counts)
-        bench_exception_rule_counts.update(r.bench_exception_rule_counts)
-        authority_observation_rule_counts.update(r.uk_authority_observation_rule_counts)
-        authority_rule_counts.update(r.uk_authority_rejection_rule_counts)
-        lowering_observation_rule_counts.update(r.lowering_observation_rule_counts)
-        lowering_rule_counts.update(r.lowering_rejection_rule_counts)
-        blocking_lowering_rule_counts.update(r.blocking_lowering_rejection_rule_counts)
-        replay_adjudication_kind_counts.update(r.replay_adjudication_kind_counts)
-        replay_adjudication_bucket_counts.update(
-            _replay_adjudication_bucket_counts(r.replay_adjudication_kind_counts)
-        )
-        residual_claim_tier_counts[r.uk_residual_claim_tier or "UNRESOLVED"] += 1
-        residual_claim_kind_counts[r.uk_residual_claim_kind or "unknown"] += 1
+        regime_counts[key] = count
+
+    observation_rule_counts = acc.effect_feed_observation_rule_counts
+    effect_feed_rejection_rule_counts = acc.effect_feed_rejection_rule_counts
+    source_parse_observation_rule_counts = acc.source_parse_observation_rule_counts
+    source_parse_rejection_rule_counts = acc.source_parse_rejection_rule_counts
+    effect_source_pathology_counts = acc.effect_source_pathology_counts
+    manual_compile_status_counts = acc.manual_compile_status_counts
+    manual_compile_rule_counts = acc.manual_compile_rule_counts
+    source_acquisition_observation_rule_counts = acc.source_acquisition_observation_rule_counts
+    source_acquisition_rejection_rule_counts = acc.source_acquisition_rejection_rule_counts
+    bench_exception_rule_counts = acc.bench_exception_rule_counts
+    authority_observation_rule_counts = acc.authority_observation_rule_counts
+    authority_rule_counts = acc.authority_rejection_rule_counts
+    lowering_observation_rule_counts = acc.lowering_observation_rule_counts
+    lowering_rule_counts = acc.lowering_rejection_rule_counts
+    blocking_lowering_rule_counts = acc.blocking_lowering_rejection_rule_counts
+    replay_adjudication_kind_counts = acc.replay_adjudication_kind_counts
+    replay_adjudication_bucket_counts = acc.replay_adjudication_bucket_counts
+    residual_claim_tier_counts = acc.residual_claim_tier_counts
+    residual_claim_kind_counts = acc.residual_claim_kind_counts
+
     _HISTORY_CSV.parent.mkdir(parents=True, exist_ok=True)
     with open(_HISTORY_CSV, "a", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(_HISTORY_HEADERS))
@@ -3598,9 +4531,9 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
         writer.writerow(
             {
                 "label": label,
-                "n_total": len(results),
-                "n_ok": len(ok),
-                "n_core_ok": sum(1 for r in ok if r.core_benchmark),
+                "n_total": acc.total_count,
+                "n_ok": acc.ok_count,
+                "n_core_ok": acc.core_ok_count,
                 "row_status_counts": json.dumps(
                     dict(sorted(row_status_counts.items())),
                     sort_keys=True,
@@ -3613,22 +4546,22 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
                     dict(sorted(oracle_source_status_counts.items())),
                     sort_keys=True,
                 ),
-                "score_mode": _primary_score_mode(ok) if ok else "none",
+                "score_mode": _primary_score_mode(acc) if acc.ok_count else "none",
                 "avg_score": _format_history_average(primary_scores),
                 "n_perfect": sum(1 for score in primary_scores if score == 1.0),
-                "avg_raw_score": _format_history_average([r.score for r in ok]),
+                "avg_raw_score": _format_history_average(acc.raw_scores),
                 "avg_replay_score": _format_history_average(replay_scores),
                 "avg_commencement_score": _format_history_average(commencement_scores),
                 "n_commencement_scored": len(commencement_scores),
                 "n_replay_scored": len(replay_scores),
-                "n_replay_errors": sum(1 for r in results if r.replay_error),
-                "n_commencement_errors": sum(1 for r in results if r.commencement_error),
-                "source_parse_observations": sum(r.source_parse_observation_count for r in results),
+                "n_replay_errors": acc.replay_error_count,
+                "n_commencement_errors": acc.commencement_error_count,
+                "source_parse_observations": acc.source_parse_observations_total,
                 "source_parse_observation_rules": json.dumps(
                     dict(sorted(source_parse_observation_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "source_parse_rejections": sum(r.source_parse_rejection_count for r in results),
+                "source_parse_rejections": acc.source_parse_rejections_total,
                 "source_parse_rejection_rules": json.dumps(
                     dict(sorted(source_parse_rejection_rule_counts.items())),
                     sort_keys=True,
@@ -3645,65 +4578,57 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
                     dict(sorted(manual_compile_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "source_acquisition_observations": sum(
-                    r.source_acquisition_observation_count for r in results
-                ),
+                "source_acquisition_observations": acc.source_acquisition_observation_total,
                 "source_acquisition_observation_rules": json.dumps(
                     dict(sorted(source_acquisition_observation_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "source_acquisition_rejections": sum(
-                    r.source_acquisition_rejection_count for r in results
-                ),
+                "source_acquisition_rejections": acc.source_acquisition_rejection_total,
                 "source_acquisition_rejection_rules": json.dumps(
                     dict(sorted(source_acquisition_rejection_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "bench_exceptions": sum(r.bench_exception_count for r in results),
+                "bench_exceptions": acc.bench_exceptions_total,
                 "bench_exception_rules": json.dumps(
                     dict(sorted(bench_exception_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "effect_feed_observations": sum(r.effect_feed_observation_count for r in results),
+                "effect_feed_observations": acc.effect_feed_observations_total,
                 "effect_feed_observation_rules": json.dumps(
                     dict(sorted(observation_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "effect_feed_rejections": sum(r.effect_feed_rejection_count for r in results),
+                "effect_feed_rejections": acc.effect_feed_rejections_total,
                 "effect_feed_rejection_rules": json.dumps(
                     dict(sorted(effect_feed_rejection_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "authority_observations": sum(
-                    r.uk_authority_observation_count for r in results
-                ),
+                "authority_observations": acc.authority_observation_total,
                 "authority_observation_rules": json.dumps(
                     dict(sorted(authority_observation_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "authority_rejections": sum(r.uk_authority_rejection_count for r in results),
+                "authority_rejections": acc.authority_rejection_total,
                 "authority_rejection_rules": json.dumps(
                     dict(sorted(authority_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "lowering_observations": sum(r.lowering_observation_count for r in results),
+                "lowering_observations": acc.lowering_observation_total,
                 "lowering_observation_rules": json.dumps(
                     dict(sorted(lowering_observation_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "lowering_rejections": sum(r.lowering_rejection_count for r in results),
+                "lowering_rejections": acc.lowering_rejection_total,
                 "lowering_rejection_rules": json.dumps(
                     dict(sorted(lowering_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "blocking_lowering_rejections": sum(
-                    r.blocking_lowering_rejection_count for r in results
-                ),
+                "blocking_lowering_rejections": acc.blocking_lowering_rejection_total,
                 "blocking_lowering_rejection_rules": json.dumps(
                     dict(sorted(blocking_lowering_rule_counts.items())),
                     sort_keys=True,
                 ),
-                "replay_adjudications": sum(r.replay_adjudication_count for r in results),
+                "replay_adjudications": acc.replay_adjudication_total,
                 "replay_adjudication_kinds": json.dumps(
                     dict(sorted(replay_adjudication_kind_counts.items())),
                     sort_keys=True,
@@ -3720,11 +4645,11 @@ def _append_history(results: list[_BenchResult], label: str, score_witness_count
                     dict(sorted(residual_claim_kind_counts.items())),
                     sort_keys=True,
                 ),
-                "uk_residual_section_claims": sum(
-                    r.uk_residual_section_claim_count for r in results
-                ),
+                "uk_residual_section_claims": acc.uk_residual_section_claims_total,
                 "score_witness_rows": score_witness_count,
                 "replay_regimes": json.dumps(dict(sorted(regime_counts.items())), sort_keys=True),
+                "max_process_maxrss_kb": acc.max_process_maxrss_kb,
+                "max_process_maxrss_statute_id": acc.max_process_maxrss_statute_id,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M"),
             }
         )
@@ -3739,40 +4664,31 @@ def _format_history_percent(value: str) -> str:
         return value
 
 
+def _format_history_rss_mb(value: str) -> str:
+    if not value:
+        return "n/a"
+    try:
+        kb = int(value)
+    except ValueError:
+        return value
+    if kb <= 0:
+        return "n/a"
+    return f"{kb / 1024:.0f}MB"
+
+
 def _history_rows() -> list[tuple[str, dict[str, str]]]:
     rows: list[tuple[str, dict[str, str]]] = []
     header: list[str] = []
     schema = "unknown"
-    residual_fields = {
-        "uk_residual_claim_tiers",
-        "uk_residual_claim_kinds",
-        "uk_residual_section_claims",
-    }
-    historical_current_headers = {
-        _HISTORY_HEADERS,
-        tuple(field for field in _HISTORY_HEADERS if field != "effect_feed_rejection_rules"),
-        tuple(field for field in _HISTORY_HEADERS if field not in residual_fields),
-        tuple(
-            field
-            for field in _HISTORY_HEADERS
-            if field not in residual_fields | {"effect_feed_rejection_rules"}
-        ),
-        tuple(
-            field
-            for field in _HISTORY_HEADERS
-            if field
-            not in residual_fields | {"effect_feed_rejection_rules", "replay_adjudication_buckets"}
-        ),
-    }
     with open(_HISTORY_CSV, newline="") as handle:
         for raw_row in csv.reader(handle):
             if not raw_row:
                 continue
             if raw_row[0] == "label":
                 header = raw_row
-                if tuple(raw_row) in historical_current_headers:
+                if _is_current_history_header(raw_row):
                     schema = "current"
-                elif raw_row[:6] == ["label", "n_total", "n_ok", "avg_score", "n_perfect", "timestamp"]:
+                elif _is_legacy_history_header(raw_row):
                     schema = "legacy"
                 else:
                     schema = "unknown"
@@ -3782,6 +4698,34 @@ def _history_rows() -> list[tuple[str, dict[str, str]]]:
             padded_row = raw_row + [""] * max(len(header) - len(raw_row), 0)
             rows.append((schema, dict(zip(header, padded_row))))
     return rows
+
+
+def _is_current_history_header(header: Sequence[str]) -> bool:
+    fields = set(header)
+    required_fields = {
+        "label",
+        "n_total",
+        "n_ok",
+        "n_core_ok",
+        "row_status_counts",
+        "score_mode",
+        "avg_raw_score",
+        "score_witness_rows",
+        "replay_regimes",
+        "timestamp",
+    }
+    return header[:4] == ["label", "n_total", "n_ok", "n_core_ok"] and required_fields <= fields
+
+
+def _is_legacy_history_header(header: Sequence[str]) -> bool:
+    return header[:6] == [
+        "label",
+        "n_total",
+        "n_ok",
+        "avg_score",
+        "n_perfect",
+        "timestamp",
+    ]
 
 
 def _show_history() -> None:
@@ -3803,6 +4747,8 @@ def _show_history() -> None:
                 f"replay={_format_history_percent(row.get('avg_replay_score', ''))} "
                 f"commencement={_format_history_percent(row.get('avg_commencement_score', ''))} "
                 f"witness_rows={row.get('score_witness_rows', '0')} "
+                f"max_rss={_format_history_rss_mb(row.get('max_process_maxrss_kb', ''))} "
+                f"rss_row={row.get('max_process_maxrss_statute_id', '') or 'n/a'} "
                 f"at={row.get('timestamp', '')}"
             )
             print(
@@ -3982,6 +4928,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "comparison_class",
                 "core_benchmark",
                 "duration_s",
+                "process_maxrss_kb",
                 _PHASE_TIMING_TOTAL_HEADER,
                 *_PHASE_TIMING_HEADERS,
             ]
@@ -4029,6 +4976,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "comparison_class",
                 "core_benchmark",
                 "duration_s",
+                "process_maxrss_kb",
                 _PHASE_TIMING_TOTAL_HEADER,
                 *_PHASE_TIMING_HEADERS,
             ]
@@ -4178,6 +5126,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
                     f"{r.duration_s:.3f}",
+                    r.process_maxrss_kb,
                     *_phase_timing_csv_values(r),
                 ]
             else:
@@ -4224,6 +5173,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
                     f"{r.duration_s:.3f}",
+                    r.process_maxrss_kb,
                     *_phase_timing_csv_values(r),
                 ]
             if has_replay:
@@ -4350,7 +5300,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _load_run(label: str) -> list[_BenchResult]:
+def _load_run(label: str, *, include_diagnostics: bool = True) -> list[_BenchResult]:
     path = _BENCH_DIR / f"{label}.csv"
     if not path.exists():
         print(f"No saved run with label '{label}'. Available:", file=sys.stderr)
@@ -4358,7 +5308,9 @@ def _load_run(label: str) -> list[_BenchResult]:
             print(f"  {p.stem}", file=sys.stderr)
         sys.exit(1)
 
-    diagnostic_rows_by_statute = _load_bench_diagnostic_rows(label)
+    diagnostic_rows_by_statute = (
+        _load_bench_diagnostic_rows(label) if include_diagnostics else {}
+    )
     results = []
     with open(path) as f:
         reader = csv.DictReader(f)
@@ -4656,6 +5608,7 @@ def _load_run(label: str) -> list[_BenchResult]:
             else:
                 core_benchmark = True
             duration_s = float(row.get("duration_s", "0") or 0.0)
+            process_maxrss_kb = int(row.get("process_maxrss_kb", "0") or 0)
             phase_timings = _load_phase_timings(row)
             results.append(
                 _BenchResult(
@@ -4760,6 +5713,7 @@ def _load_run(label: str) -> list[_BenchResult]:
                     comparison_class=comparison_class,
                     core_benchmark=core_benchmark,
                     duration_s=duration_s,
+                    process_maxrss_kb=process_maxrss_kb,
                     phase_timings=phase_timings,
                 )
             )
@@ -4772,42 +5726,70 @@ def _show_run(
     phase_timings: bool = False,
     replay_adjudication_sample_kinds: Sequence[str] = (),
     replay_adjudication_sample_limit: int = 5,
+    summary_only: bool = False,
 ) -> None:
-    results = _load_run(label)
+    include_diagnostics = bool(replay_adjudication_sample_kinds) and not summary_only
+    results = _load_run(
+        label,
+        include_diagnostics=include_diagnostics,
+    )
     _print_report(
         results,
         label,
         replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
         replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+        summary_only=summary_only,
     )
-    if phase_timings:
+    if phase_timings and not summary_only:
         _print_phase_timing_rows(results)
     score_witness_path = _score_witness_path(label)
     score_witness_count = _count_csv_data_rows(score_witness_path)
     if score_witness_count:
         print(f"\nScore witness sidecar: {score_witness_path} rows={score_witness_count}")
     diagnostics_path = _bench_diagnostics_path(label)
-    diagnostics_count = _count_jsonl_rows(diagnostics_path)
-    if diagnostics_count:
-        print(f"Bench diagnostics sidecar: {diagnostics_path} rows={diagnostics_count}")
+    if diagnostics_path.exists():
+        if summary_only:
+            print(
+                f"Bench diagnostics sidecar: {diagnostics_path} "
+                f"size={_format_file_size(diagnostics_path)} rows=not-counted"
+            )
+        else:
+            diagnostics_count = _count_jsonl_rows(diagnostics_path)
+            if diagnostics_count:
+                print(f"Bench diagnostics sidecar: {diagnostics_path} rows={diagnostics_count}")
 
 
-def _primary_score_mode(results: list[_BenchResult]) -> str:
-    commencement_count = sum(1 for r in results if r.commencement_score >= 0.0)
+def _primary_score_mode(
+    results: list[_BenchResult] | _BenchRunAccumulator,
+    *,
+    replay_primary: bool = False,
+) -> str:
+    if isinstance(results, _BenchRunAccumulator):
+        commencement_count = len(results.commencement_scores)
+        ok_count = results.ok_count
+    else:
+        commencement_count = sum(1 for r in results if r.commencement_score >= 0.0)
+        ok_count = len(results)
+        if replay_primary:
+            replay_count = sum(
+                1
+                for r in results
+                if r.replay_score >= 0.0 or r.replay_commencement_score >= 0.0
+            )
+            if replay_count == ok_count and ok_count > 0:
+                return "replay-primary"
+            if replay_count > 0:
+                return "mixed replay/raw"
     if commencement_count == 0:
         return "raw"
-    if commencement_count == len(results):
+    if commencement_count == ok_count:
         return "commencement"
     return "mixed"
 
 
-def _compare_runs(label_a: str, label_b: str) -> None:
+def _compare_runs(label_a: str, label_b: str, *, summary_only: bool = False) -> None:
     def _primary_scores(results: list[_BenchResult]) -> dict[str, float]:
-        # Prefer commencement score as primary when available.
-        return {
-            r.statute_id: (r.commencement_score if r.commencement_score >= 0.0 else r.score)
-            for r in results
-        }
+        return {r.statute_id: _bench_compare_primary_score(r) for r in results}
 
     def _status_counts(results: list[_BenchResult], field: str) -> dict[str, int]:
         return dict(sorted(Counter(str(getattr(r, field) or "unknown") for r in results).items()))
@@ -4905,14 +5887,51 @@ def _compare_runs(label_a: str, label_b: str) -> None:
             for key in ranked_keys[:8]
         )
 
-    results_a = _load_run(label_a)
-    results_b = _load_run(label_b)
+    results_a = _load_run(label_a, include_diagnostics=False)
+    results_b = _load_run(label_b, include_diagnostics=False)
+    score_mode_a = _primary_score_mode(results_a, replay_primary=True)
+    score_mode_b = _primary_score_mode(results_b, replay_primary=True)
     score_witness_path_a = _score_witness_path(label_a)
     score_witness_path_b = _score_witness_path(label_b)
     score_witness_count_a = _count_csv_data_rows(score_witness_path_a)
     score_witness_count_b = _count_csv_data_rows(score_witness_path_b)
     results_by_id_a = {result.statute_id: result for result in results_a}
     results_by_id_b = {result.statute_id: result for result in results_b}
+
+    def _missing_replay_examples(results: list[_BenchResult]) -> str:
+        examples = [
+            result.statute_id
+            for result in results
+            if result.replay_commencement_score < 0.0
+            and result.replay_score < 0.0
+            and (
+                result.commencement_score >= 0.0
+                or result.score >= 0.0
+            )
+        ][:5]
+        return ", ".join(examples)
+
+    if score_mode_a == "mixed replay/raw" or score_mode_b == "mixed replay/raw":
+        print(f"\n=== UK Bench Compare: {label_a} -> {label_b} ===")
+        print(f"Score mode: {score_mode_a} -> {score_mode_b}")
+        if score_mode_a == "mixed replay/raw":
+            print(
+                "ERROR: baseline mixes replay-primary rows with fallback raw/"
+                "commencement rows; compare would silently average different score lanes"
+            )
+            examples = _missing_replay_examples(results_a)
+            if examples:
+                print(f"  Missing baseline replay-primary examples: {examples}")
+        if score_mode_b == "mixed replay/raw":
+            print(
+                "ERROR: current mixes replay-primary rows with fallback raw/"
+                "commencement rows; compare would silently average different score lanes"
+            )
+            examples = _missing_replay_examples(results_b)
+            if examples:
+                print(f"  Missing current replay-primary examples: {examples}")
+        return
+
     a = _primary_scores(results_a)
     b = _primary_scores(results_b)
     common = set(a) & set(b)
@@ -4924,17 +5943,55 @@ def _compare_runs(label_a: str, label_b: str) -> None:
 
     avg_a = sum(a[k] for k in common) / len(common) if common else 0
     avg_b = sum(b[k] for k in common) / len(common) if common else 0
+    only_label_a = f"{label_a} (left)" if label_a == label_b else label_a
+    only_label_b = f"{label_b} (right)" if label_a == label_b else label_b
 
     print(f"\n=== UK Bench Compare: {label_a} -> {label_b} ===")
-    print(f"Score mode: {_primary_score_mode(results_a)} -> {_primary_score_mode(results_b)}")
+    print(f"Score mode: {score_mode_a} -> {score_mode_b}")
     print(f"Common statutes: {len(common)}")
-    print(f"Only in {label_a}: {len(only_a)}")
-    print(f"Only in {label_b}: {len(only_b)}")
+    print(f"Only in {only_label_a}: {len(only_a)}")
+    print(f"Only in {only_label_b}: {len(only_b)}")
     print(
         "Score witness sidecars: "
         f"{label_a}={score_witness_path_a} rows={score_witness_count_a} -> "
         f"{label_b}={score_witness_path_b} rows={score_witness_count_b}"
     )
+    if summary_only:
+        print(
+            "Row statuses: "
+            f"{_status_counts(results_a, 'status')} -> {_status_counts(results_b, 'status')}"
+        )
+        print(
+            "Core benchmark rows: "
+            f"{sum(1 for r in results_a if r.core_benchmark)} -> "
+            f"{sum(1 for r in results_b if r.core_benchmark)}"
+        )
+        print(
+            "Source status enacted: "
+            f"{_status_counts(results_a, 'enacted_source_status')} -> "
+            f"{_status_counts(results_b, 'enacted_source_status')}"
+        )
+        print(
+            "Source status oracle: "
+            f"{_status_counts(results_a, 'oracle_source_status')} -> "
+            f"{_status_counts(results_b, 'oracle_source_status')}"
+        )
+        print(
+            "Evidence totals: "
+            f"source_parse_obs={_sum_field(results_a, 'source_parse_observation_count')}"
+            f"->{_sum_field(results_b, 'source_parse_observation_count')} "
+            f"source_acquisition_obs={_sum_field(results_a, 'source_acquisition_observation_count')}"
+            f"->{_sum_field(results_b, 'source_acquisition_observation_count')} "
+            f"lowering_rejections={_sum_field(results_a, 'lowering_rejection_count')}"
+            f"->{_sum_field(results_b, 'lowering_rejection_count')} "
+            f"blocking_lowering={_sum_field(results_a, 'blocking_lowering_rejection_count')}"
+            f"->{_sum_field(results_b, 'blocking_lowering_rejection_count')} "
+            f"replay_adjudications={_sum_field(results_a, 'replay_adjudication_count')}"
+            f"->{_sum_field(results_b, 'replay_adjudication_count')}"
+        )
+        print(f"Average: {avg_a:.1%} -> {avg_b:.1%} ({avg_b - avg_a:+.1%})")
+        print(f"Improved: {len(improved)}, Regressed: {len(regressed)}")
+        return
     print(f"Row statuses: {_status_counts(results_a, 'status')} -> {_status_counts(results_b, 'status')}")
     print(
         "Comparison classes: "
@@ -5454,11 +6511,16 @@ def main(args) -> None:  # noqa: ANN001
             phase_timings=getattr(args, "phase_timings", False),
             replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
             replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+            summary_only=getattr(args, "summary_only", False),
         )
         return
 
     if args.compare:
-        _compare_runs(args.compare[0], args.compare[1])
+        _compare_runs(
+            args.compare[0],
+            args.compare[1],
+            summary_only=getattr(args, "summary_only", False),
+        )
         return
 
     limit = getattr(args, "limit", None)
@@ -5472,6 +6534,10 @@ def main(args) -> None:  # noqa: ANN001
     _par = getattr(args, "parallel", None)
     if _par is not None and _par < 1:
         print("error: --parallel must be a positive integer", file=sys.stderr)
+        sys.exit(2)
+    worker_max_tasks = getattr(args, "worker_max_tasks", None)
+    if worker_max_tasks is not None and worker_max_tasks < 1:
+        print("error: --worker-max-tasks must be a positive integer", file=sys.stderr)
         sys.exit(2)
     min_year = getattr(args, "min_year", None)
     max_year = getattr(args, "max_year", None)
@@ -5595,39 +6661,149 @@ def main(args) -> None:  # noqa: ANN001
     if not score_text:
         print("Text similarity scoring disabled (--no-text-scores); EID scores and replay diagnostics still run.")
 
-    # Parallelism: None means --parallel was not passed → default to cpu_count.
-    # Pass --parallel 1 explicitly to force sequential (useful for debugging).
-    workers = _par if _par is not None else max(8, os.cpu_count() or 4)
-    print(f"Scoring {len(corpus)} statutes (workers={workers})...")
-    results = _run_bench(
-        corpus,
-        archive,
-        do_replay=do_replay,
-        repo_root=_REPO_ROOT,
-        workers=workers,
-        do_commencement=do_commencement,
-        allow_metadata_backfill=replay_regime.allow_metadata_backfill,
-        allow_oracle_alignment=replay_regime.allow_oracle_alignment,
-        applicability_mode=replay_regime.applicability_mode,
-        authority_mode=replay_regime.authority_mode,
-        allow_metadata_only_effects=replay_regime.allow_metadata_only_effects,
-        score_text=score_text,
-        record_replay_subphases=getattr(args, "phase_timings", False),
+    # Parallelism: None means --parallel was not passed → use a memory-safe
+    # default. Pass --parallel explicitly to trade RAM for throughput.
+    workers = _par if _par is not None else _default_uk_bench_workers(do_replay=do_replay)
+    do_save = not getattr(args, "no_save", False)
+
+    csv_file = None
+    csv_writer = None
+    witness_file = None
+    witness_writer = None
+    diag_file = None
+
+    score_witness_count = 0
+    diagnostic_count = 0
+
+    headers = _get_csv_headers(
+        has_commencement=do_commencement,
+        has_replay=do_replay,
+        has_text=score_text,
+        has_commencement_error=do_commencement,
     )
-    archive.close()
+    acc = _BenchRunAccumulator(
+        has_commencement=do_commencement,
+        replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
+        replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+    )
+
+    if do_save:
+        _BENCH_DIR.mkdir(parents=True, exist_ok=True)
+        csv_path = _BENCH_DIR / f"{label}.csv"
+        witness_path = _score_witness_path(label)
+        diag_path = _bench_diagnostics_path(label)
+
+        csv_file = open(csv_path, "w", newline="")
+        csv_writer = csv.writer(csv_file)
+        csv_writer.writerow(headers)
+
+        witness_file = open(witness_path, "w", newline="")
+        witness_writer = csv.DictWriter(witness_file, fieldnames=_SCORE_WITNESS_HEADERS)
+        witness_writer.writeheader()
+
+        diag_file = open(diag_path, "w", encoding="utf-8")
+
+    worker_recycling = (
+        f", worker_max_tasks={worker_max_tasks}" if worker_max_tasks is not None else ""
+    )
+    progress_total = acc.total_count + len(corpus)
+    print(f"Scoring {len(corpus)} statutes (workers={workers}{worker_recycling})...")
+    run_kwargs: dict[str, object] = {
+        "do_replay": do_replay,
+        "repo_root": _REPO_ROOT,
+        "workers": workers,
+        "do_commencement": do_commencement,
+        "allow_metadata_backfill": replay_regime.allow_metadata_backfill,
+        "allow_oracle_alignment": replay_regime.allow_oracle_alignment,
+        "applicability_mode": replay_regime.applicability_mode,
+        "authority_mode": replay_regime.authority_mode,
+        "allow_metadata_only_effects": replay_regime.allow_metadata_only_effects,
+        "score_text": score_text,
+        "record_replay_subphases": getattr(args, "phase_timings", False),
+    }
+    if worker_max_tasks is not None:
+        run_kwargs["worker_max_tasks_per_child"] = worker_max_tasks
+
+    try:
+        for r in _run_bench(corpus, archive, **run_kwargs):
+            acc.feed(r)
+
+            done = acc.total_count
+
+            primary_score = _bench_primary_score(r, has_commencement=do_commencement)
+            replay_fragment = ""
+            if do_replay and r.status == "OK":
+                rep_score = _bench_primary_replay_score(r, has_commencement=do_commencement)
+                if rep_score >= 0.0:
+                    replay_fragment = f" replay={rep_score:.1%}"
+
+            print(
+                f"  [{done}/{progress_total}] {r.statute_id:<30} "
+                f"score={primary_score:.1%}{replay_fragment} "
+                f"({r.duration_s:.2f}s) status={r.status}",
+                file=sys.stderr,
+            )
+
+            if do_save:
+                csv_row = _get_csv_row(
+                    r,
+                    has_commencement=do_commencement,
+                    has_replay=do_replay,
+                    has_text=score_text,
+                    has_commencement_error=do_commencement,
+                )
+                csv_writer.writerow(csv_row)
+
+                w_rows = _get_score_witness_dict_rows(r, label)
+                for w_row in w_rows:
+                    witness_writer.writerow(w_row)
+                    score_witness_count += 1
+
+                diag_rows = _bench_diagnostic_rows_for_result(r, label)
+                for diag_row in diag_rows:
+                    diag_file.write(json.dumps(diag_row, ensure_ascii=False, sort_keys=True) + "\n")
+                    diagnostic_count += 1
+
+            del r
+    finally:
+        archive.close()
+
+        if csv_file:
+            csv_file.close()
+        if witness_file:
+            witness_file.close()
+        if diag_file:
+            diag_file.close()
+
+    if do_save:
+        if score_witness_count == 0:
+            witness_path = _score_witness_path(label)
+            if witness_path.exists():
+                witness_path.unlink()
+        else:
+            print(f"Score witnesses saved: {_score_witness_path(label)} rows={score_witness_count}")
+
+        if diagnostic_count == 0:
+            diag_path = _bench_diagnostics_path(label)
+            if diag_path.exists():
+                diag_path.unlink()
+        else:
+            print(f"Bench diagnostics saved: {_bench_diagnostics_path(label)} rows={diagnostic_count}")
+
+        print(f"Results saved: {_BENCH_DIR / f'{label}.csv'}")
+
+        _append_history(acc, label, score_witness_count)
 
     if replay_adjudication_sample_kinds:
         _print_report(
-            results,
+            acc,
             label,
             replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
             replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+            summary_only=getattr(args, "summary_only", False),
         )
     else:
-        _print_report(results, label)
-    if getattr(args, "phase_timings", False):
-        _print_phase_timing_rows(results)
-    if getattr(args, "no_save", False):
-        print("Results not saved (--no-save).")
-    else:
-        _save_results(results, label)
+        _print_report(acc, label, summary_only=getattr(args, "summary_only", False))
+
+    if getattr(args, "phase_timings", False) and not getattr(args, "summary_only", False):
+        _print_phase_timing_rows(acc)
