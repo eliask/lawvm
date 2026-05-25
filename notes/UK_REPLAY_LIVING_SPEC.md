@@ -4239,6 +4239,14 @@ Current bench replay-regime invariant:
   uniquely bounded definition entry and otherwise emits
   `uk_replay_definition_entry_shape_gap`. Current corpus witness:
   `ukpga/1978/29` effect `key-f6d33f04bf06ca098c8def427ae6e09f`.
+- Effect/source lowering may compile metadata-carried local rows such as `in
+  subsection (6), the definitions of "X", "Y" and "Z";` under
+  `uk_effect_metadata_carried_definition_entry_repeal_text_patch` when the
+  official effect feed supplies a word-repeal action and the source child label
+  exactly matches the effect target. It emits one `TEXT_DEFINITION_ENTRY_*`
+  delete per quoted term; replay still requires a uniquely bounded definition
+  entry and must not delete bare quoted words. Current witness: `ukpga/1996/61`
+  effect `key-773ddfc3ee95ff389b3289ea024634d5`.
 - Parser lowering may also compile `for the definition of "X", substitute- ...`
   as `TEXT_DEFINITION_ENTRY_X` using
   `uk_effect_definition_entry_substitution_text_patch`; the comma after the
