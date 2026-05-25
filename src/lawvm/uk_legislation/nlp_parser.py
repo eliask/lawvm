@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import List, Dict
 
+from lawvm.uk_legislation.source_text_normalization import normalize_uk_parser_text
+
 # ASCII Unit Separator
 US = "\x1f"
 
@@ -204,8 +206,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     """
     subs = []
 
-    # Clean up newlines/extra spaces
-    text = " ".join(text.split())
+    text = normalize_uk_parser_text(text)
     respectively_spans: list[tuple[int, int]] = []
 
     matches_nested_quote_substituted = re.finditer(

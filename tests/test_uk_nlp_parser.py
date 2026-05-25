@@ -1,6 +1,25 @@
 from __future__ import annotations
 
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+from lawvm.uk_legislation.source_text_normalization import normalize_uk_parser_text
+
+
+def test_normalize_uk_parser_text_preserves_quoted_dash_payloads() -> None:
+    text = 'at the end insert\u2013 "A\u2013B"'
+
+    assert normalize_uk_parser_text(text) == 'at the end insert\u2014 "A\u2013B"'
+
+
+def test_parse_fragment_substitution_accepts_dash_variants_outside_quotes() -> None:
+    subs = parse_fragment_substitution("at the end insert\u2013 and section 15 .")
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "and section 15",
+            "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+        }
+    ]
 
 
 def test_parse_fragment_substitution_returns_fresh_fragment_dicts() -> None:
