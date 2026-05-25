@@ -5456,7 +5456,13 @@ Current bench replay-regime invariant:
   PATH` writes only still-live manual-frontier workqueue rows, preserving the
   original source witness row and attaching the current validation summary. The
   remaining file is a pruned agent work queue; it must not include rows already
-  resolved by deterministic lowering.
+  resolved by deterministic lowering. Top-level original fields such as
+  `manual_compile_rule_id` remain unchanged for provenance; current queue
+  fields are also written as `current_manual_compile_rule_id`,
+  `current_manual_compile_status`, `current_source_pathology`,
+  `current_compiled_op_count`, and `current_blocking_lowering_rule_ids` (with
+  `validator_current_*` aliases retained for compatibility). Queue consumers
+  should group by the `current_*` fields.
 - `--remaining-manual-rule RULE_ID` and `--remaining-source-pathology PATHOLOGY`
   are export-only filters for `--remaining-jsonl`. They do not change
   validation classification or aggregate summary counts; they only write a

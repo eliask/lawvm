@@ -263,9 +263,13 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert remaining_row["validator_current_manual_compile_rule_id"] == (
         "uk_manual_frontier_heading_facet_candidate"
     )
+    assert remaining_row["current_manual_compile_rule_id"] == (
+        "uk_manual_frontier_heading_facet_candidate"
+    )
     assert remaining_row["validator_current_source_pathology"] == (
         "heading_only_ref_unsupported"
     )
+    assert remaining_row["current_source_pathology"] == "heading_only_ref_unsupported"
     assert remaining_row["suggested_claim_template"] == {
         "required_ownership": ["fresh_current_claim"]
     }
@@ -339,10 +343,22 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     assert remaining[0]["validator_current_manual_compile_rule_id"] == (
         "uk_manual_frontier_table_appropriate_place_candidate"
     )
+    assert remaining[0]["current_manual_compile_rule_id"] == (
+        "uk_manual_frontier_table_appropriate_place_candidate"
+    )
+    assert remaining[0]["manual_compile_rule_id"] == (
+        "uk_manual_frontier_table_entry_candidate"
+    )
     assert remaining[0]["validator_current_source_pathology"] == (
         "table_entry_target_unsupported"
     )
+    assert remaining[0]["current_source_pathology"] == (
+        "table_entry_target_unsupported"
+    )
     assert remaining[0]["validator_current_blocking_lowering_rule_ids"] == [
+        "uk_effect_table_entry_instruction_rejected"
+    ]
+    assert remaining[0]["current_blocking_lowering_rule_ids"] == [
         "uk_effect_table_entry_instruction_rejected"
     ]
     assert remaining[0]["suggested_claim_template_status"] == "available"
