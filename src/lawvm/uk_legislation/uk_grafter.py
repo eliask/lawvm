@@ -70,6 +70,8 @@ def _local_structural_text(el: ET.Element) -> str:
         "paragraph",
         "schedule",
         "table",
+        "orderedlist",
+        "unorderedlist",
     }
     transparent_skip = {"pnumber", "number", "title", "commentaryref"}
     structural_text_skip = {tag.lower() for tag in _EDITORIAL_TAGS - _VISIBLE_INLINE_TEXT_TAGS}
@@ -119,6 +121,8 @@ def _post_child_local_text_tail(el: ET.Element) -> str:
         "paragraph",
         "schedule",
         "table",
+        "orderedlist",
+        "unorderedlist",
     }
     transparent_skip = {"pnumber", "number", "title", "commentaryref"}
     transparent_containers = {"p1para", "p2para", "p3para", "p4para"}
@@ -245,6 +249,7 @@ _UK_TABLE_CELL_TAGS = frozenset({"entry", "td", "th"})
 _UK_TABLE_HEADER_CONTAINERS = frozenset({"thead"})
 _UK_TABLE_TRANSPARENT_CONTAINERS = frozenset({"tgroup", "tbody", "tfoot"})
 _UK_SCHEDULE_LIST_ENTRY_RULE_ID = "uk_schedule_list_entry_preserved"
+_UK_NON_SCHEDULE_LIST_ENTRY_RULE_ID = "uk_non_schedule_list_entry_preserved"
 _UK_CONTAINER_NUMBER_INFERRED_RULE_ID = "uk_container_number_inferred_from_source_uri"
 _UK_SCHEDULE_ENTRY_TRANSPARENT_TAGS = frozenset(
     {
@@ -407,15 +412,17 @@ def _schedule_list_entry_node(
     source_tag: str,
     source_list_type: str = "",
     source_decoration: str = "",
+    source_context: str = "schedule_body",
+    source_rule_id: str = _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
 ) -> UKMutableNode | None:
     text = _text_content(el)
     if not text:
         return None
     attrs: dict[str, Any] = {
-        "source_rule_id": _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
+        "source_rule_id": source_rule_id,
         "source_tag": source_tag,
         "source_ordinal": str(source_ordinal),
-        "source_context": "schedule_body",
+        "source_context": source_context,
     }
     if source_list_type:
         attrs["source_list_type"] = source_list_type
@@ -443,6 +450,27 @@ def _parse_schedule_body_list_entries(el: ET.Element, *, start_ordinal: int) -> 
             source_tag="ListItem",
             source_list_type=el.get("Type", ""),
             source_decoration=el.get("Decoration", ""),
+        )
+        if node is not None:
+            nodes.append(node)
+    return nodes
+
+
+def _parse_non_schedule_list_entries(el: ET.Element, *, context: str, start_ordinal: int) -> list[UKMutableNode]:
+    if _tag(el) != "UnorderedList":
+        return []
+    nodes: list[UKMutableNode] = []
+    for child in el:
+        if _tag(child) != "ListItem":
+            continue
+        node = _schedule_list_entry_node(
+            child,
+            source_ordinal=start_ordinal + len(nodes),
+            source_tag="ListItem",
+            source_list_type=el.get("Type", ""),
+            source_decoration=el.get("Decoration", ""),
+            source_context=context,
+            source_rule_id=_UK_NON_SCHEDULE_LIST_ENTRY_RULE_ID,
         )
         if node is not None:
             nodes.append(node)
@@ -888,8 +916,16 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             if generic_children:
                 children.extend(generic_children)
                 continue
-        elif context == "schedule" and ct == "UnorderedList":
-            schedule_entries = _parse_schedule_body_list_entries(child, start_ordinal=schedule_entry_ordinal)
+        elif ct == "UnorderedList":
+            schedule_entries = (
+                _parse_schedule_body_list_entries(child, start_ordinal=schedule_entry_ordinal)
+                if context == "schedule"
+                else _parse_non_schedule_list_entries(
+                    child,
+                    context=context,
+                    start_ordinal=schedule_entry_ordinal,
+                )
+            )
             if schedule_entries:
                 schedule_entry_ordinal += len(schedule_entries)
                 children.extend(schedule_entries)
@@ -1090,6 +1126,7 @@ _SOURCE_PARSE_OBSERVATION_RULE_IDS = frozenset(
         "uk_definition_ordered_list_child_preserved",
         _UK_CONTAINER_NUMBER_INFERRED_RULE_ID,
         _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
+        _UK_NON_SCHEDULE_LIST_ENTRY_RULE_ID,
     }
 )
 
@@ -1163,11 +1200,15 @@ def _source_parse_observations(
                             "definition_child_label": str(node.attrs.get("definition_child_label") or ""),
                         }
                     )
-                elif rule_id == _UK_SCHEDULE_LIST_ENTRY_RULE_ID:
+                elif rule_id in {
+                    _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
+                    _UK_NON_SCHEDULE_LIST_ENTRY_RULE_ID,
+                }:
                     sample.update(
                         {
                             "source_tag": str(node.attrs.get("source_tag") or ""),
                             "source_ordinal": str(node.attrs.get("source_ordinal") or ""),
+                            "source_context": str(node.attrs.get("source_context") or ""),
                             "text": " ".join(node.text.split())[:160],
                         }
                     )

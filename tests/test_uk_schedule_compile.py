@@ -88,6 +88,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     parse_effects_from_feeds,
     parse_effects_from_metadata,
 )
+from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
 
 _AVAILABLE_XML_BYTES = b"<Legislation>" + (b"x" * 128) + b"</Legislation>"
 
@@ -23167,6 +23168,143 @@ def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:
         and record["reason_code"] == "explicit_schedule_entry_insert_table_payload"
         and record["blocking"] is False
         for record in lowering_records
+    )
+
+
+def test_parse_non_schedule_unordered_list_preserves_entry_children() -> None:
+    xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-115">
+          <Pnumber>115</Pnumber>
+          <P2 id="section-115-6">
+            <Pnumber>6</Pnumber>
+            <P2para>
+              <Text>The persons and bodies to which this section applies are—</Text>
+              <UnorderedList Decoration="none">
+                <ListItem><Para><Text>Healthcare Improvement Scotland,</Text></Para></ListItem>
+                <ListItem><Para><Text>Her Majesty’s inspectors of schools (that is to say, the inspectors of schools appointed by Her Majesty),</Text></Para></ListItem>
+              </UnorderedList>
+            </P2para>
+          </P2>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode()
+
+    statute = parse_uk_statute_ir_bytes(xml, statute_id="asp/2010/8")
+
+    section = statute.body.children[0]
+    subsection = section.children[0]
+    assert subsection.text == "The persons and bodies to which this section applies are—"
+    assert [child.kind for child in subsection.children] == [
+        IRNodeKind.SCHEDULE_ENTRY,
+        IRNodeKind.SCHEDULE_ENTRY,
+    ]
+    assert subsection.children[1].attrs["source_rule_id"] == "uk_non_schedule_list_entry_preserved"
+    assert subsection.children[1].attrs["source_context"] == "body"
+
+
+def test_compile_subsection_list_entry_replacement_preserves_entry_boundary() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-25-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In section 115(6) (persons required to comply with joint inspection requests), for the entry relating to Her Majesty’s inspectors of schools substitute “His Majesty’s Chief Inspector of Education in Scotland,” .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_subsection_list_entry_replace",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-02-17",
+        affected_uri="/id/asp/2010/8/section/115/6",
+        affected_class="ScottishAct",
+        affected_year="2010",
+        affected_number="8",
+        affected_provisions="s. 115(6)",
+        affecting_uri="/id/asp/2025/11",
+        affecting_class="ScottishAct",
+        affecting_year="2025",
+        affecting_number="11",
+        affecting_provisions="sch. 4 para. 25(2)",
+        affecting_title="Education (Scotland) Act 2025",
+        in_force_dates=[{"date": "2026-03-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "115"), ("subsection", "6"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert ops[0].payload.text == "His Majesty’s Chief Inspector of Education in Scotland,"
+    assert ops[0].witness_rule_id == "uk_effect_schedule_list_entry_replace"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_replace"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="asp/2010/8",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="115",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text="The persons and bodies to which this section applies are—",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="Healthcare Improvement Scotland,"),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    label=None,
+                                    text=(
+                                        "Her Majesty’s inspectors of schools (that is to say, "
+                                        "the inspectors of schools appointed by Her Majesty),"
+                                    ),
+                                ),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="Mental Welfare Commission for Scotland,"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "Healthcare Improvement Scotland,",
+        "His Majesty’s Chief Inspector of Education in Scotland,",
+        "Mental Welfare Commission for Scotland,",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_replace_resolved"
+        and adjudication.detail.get("carrier_kind") == "subsection"
+        for adjudication in adjudications
     )
 
 

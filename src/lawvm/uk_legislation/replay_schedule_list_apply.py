@@ -1085,14 +1085,21 @@ class UKReplayScheduleListApplyMixin:
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
-        schedule_node, _, _ = self._find_node_by_target(target)
-        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+        carrier_node, _, _ = self._find_node_by_target(target)
+        carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
+        if carrier_node is None or carrier_kind not in {
+            "schedule",
+            "section",
+            "subsection",
+            "paragraph",
+            "subparagraph",
+        }:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
                 message=(
                     "UK replay skipped schedule-list-entry replacement: target "
-                    "did not resolve to a schedule carrier."
+                    "did not resolve to a supported list-entry carrier."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(
@@ -1100,7 +1107,8 @@ class UKReplayScheduleListApplyMixin:
                     target,
                     selector,
                     blocking=True,
-                    reason_code="schedule_target_unresolved",
+                    reason_code="list_entry_carrier_target_unresolved",
+                    carrier_kind=carrier_kind,
                 ),
             )
             return False
@@ -1122,7 +1130,7 @@ class UKReplayScheduleListApplyMixin:
             return False
         entry_rows: list[tuple[int, UKMutableNode]] = [
             (idx, child)
-            for idx, child in enumerate(schedule_node.children)
+            for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
         anchor_norm = _compact_normalized_text(anchor)
@@ -1169,6 +1177,7 @@ class UKReplayScheduleListApplyMixin:
                     reason_code="anchor_not_unique",
                     anchor_match_count=len(matches),
                     entry_count=len(entry_rows),
+                    carrier_kind=carrier_kind,
                 ),
             )
             return False
@@ -1213,9 +1222,9 @@ class UKReplayScheduleListApplyMixin:
             )
         for key in ("eId", "id"):
             new_node.attrs.pop(key, None)
-        children = list(schedule_node.children)
+        children = list(carrier_node.children)
         children[replace_idx] = new_node
-        uk_replace_children(schedule_node, children)
+        uk_replace_children(carrier_node, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
         _append_uk_replay_adjudication(
@@ -1235,6 +1244,7 @@ class UKReplayScheduleListApplyMixin:
                 matched_index=replace_idx,
                 match_mode=match_mode,
                 entry_count=len(entry_rows),
+                carrier_kind=carrier_kind,
             ),
         )
         return True

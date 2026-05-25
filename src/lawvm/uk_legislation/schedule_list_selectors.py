@@ -363,7 +363,13 @@ def _uk_schedule_list_entry_replace_selector(
     if not text:
         return None
     target_surface = f"{target_ref} {target}".lower()
-    if "table" in target_surface or _addr_leaf_kind(target) != "schedule":
+    if "table" in target_surface or _addr_leaf_kind(target) not in {
+        "schedule",
+        "section",
+        "subsection",
+        "paragraph",
+        "subparagraph",
+    }:
         return None
     match = re.search(
         r"\bfor\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
@@ -382,7 +388,14 @@ def _uk_schedule_list_entry_replace_selector(
     if match is None:
         return None
     anchor = _strip_schedule_entry_phrase(match.group("anchor"))
-    replacement = _strip_schedule_entry_payload(match.group("payload"))
+    raw_payload = str(match.group("payload") or "")
+    replacement = _strip_schedule_entry_payload(raw_payload)
+    if (
+        replacement
+        and not replacement.endswith(",")
+        and re.search(r"[“\"]\s*[^”\"]+,\s*[”\"]", raw_payload)
+    ):
+        replacement = f"{replacement},"
     if not anchor or not replacement:
         return None
     return {
