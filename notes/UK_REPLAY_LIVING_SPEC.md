@@ -4896,6 +4896,11 @@ Current bench replay-regime invariant:
   `uk_effect_range_repeal_pre_predicate_comma_text_patch` and still emits the
   bounded `TEXT_FROM_X_TO_Y` deletion. Current witness: `ukpga/1985/66`
   affected `s. 21A(1)` by `asp/2007/3 s. 11(2)(a)`.
+  Listed word/range repeals such as `the words-- i "X", and ii from "Y" to
+  the end, are repealed` lower under
+  `uk_effect_listed_word_and_range_to_end_repeal_text_patch` to separate
+  bounded delete operations for each listed limb. Current witness:
+  `ukpga/1985/66` affected `s. 72(3)(b)` by `asp/2010/6 s. 13(1)(b)`.
 
 ## UK Effect Ordering
 
