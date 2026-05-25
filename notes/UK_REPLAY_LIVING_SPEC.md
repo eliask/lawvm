@@ -5420,10 +5420,11 @@ Current bench replay-regime invariant:
   counts and any requested JSONL exports. It is intended for dashboards and
   automation over large work queues where the JSONL artifacts, not stdout,
   carry the detailed row evidence.
-- Validator summaries include remaining/stale manual-rule count maps and
-  current blocking-lowering count maps. This makes summary-only output a usable
-  next-action selector: agents should pick from `remaining_manual_rule_counts`
-  rather than scanning stale rows by hand.
+- Validator summaries include remaining/stale manual-rule count maps, current
+  and remaining source-pathology count maps, and current blocking-lowering
+  count maps. This makes summary-only output a usable next-action selector:
+  agents should pick from `remaining_manual_rule_counts` and
+  `remaining_source_pathology_counts` rather than scanning stale rows by hand.
 
 ## UK EID Lookup Scope Discipline
 

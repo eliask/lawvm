@@ -318,8 +318,14 @@ def _validation_report_jsonable(
         for row in rows
         if str(row.get("current_suggested_claim_template_status") or "")
     )
+    current_source_pathology_counts = Counter(
+        str(row.get("current_source_pathology") or "unknown")
+        for row in rows
+        if str(row.get("current_source_pathology") or "")
+    )
     remaining_manual_rule_counts: Counter[str] = Counter()
     remaining_suggested_claim_template_status_counts: Counter[str] = Counter()
+    remaining_source_pathology_counts: Counter[str] = Counter()
     stale_original_manual_rule_counts: Counter[str] = Counter()
     current_blocking_lowering_rule_counts: Counter[str] = Counter()
     remaining_blocking_lowering_rule_counts: Counter[str] = Counter()
@@ -341,6 +347,9 @@ def _validation_report_jsonable(
                 remaining_suggested_claim_template_status_counts[
                     current_template_status
                 ] += 1
+            source_pathology = str(row.get("current_source_pathology") or "")
+            if source_pathology:
+                remaining_source_pathology_counts[source_pathology] += 1
             remaining_blocking_lowering_rule_counts.update(blocking_rules)
         if _is_stale_manual_frontier_validation(row):
             original_rule_id = str(row.get("original_manual_compile_rule_id") or "")
@@ -367,9 +376,15 @@ def _validation_report_jsonable(
             "current_suggested_claim_template_status_counts": dict(
                 sorted(current_suggested_claim_template_status_counts.items())
             ),
+            "current_source_pathology_counts": dict(
+                sorted(current_source_pathology_counts.items())
+            ),
             "remaining_manual_rule_counts": dict(sorted(remaining_manual_rule_counts.items())),
             "remaining_suggested_claim_template_status_counts": dict(
                 sorted(remaining_suggested_claim_template_status_counts.items())
+            ),
+            "remaining_source_pathology_counts": dict(
+                sorted(remaining_source_pathology_counts.items())
             ),
             "stale_original_manual_rule_counts": dict(
                 sorted(stale_original_manual_rule_counts.items())
@@ -428,6 +443,9 @@ def _remaining_workqueue_rows(
         )
         row["validator_current_blocking_lowering_rule_ids"] = list(
             validation.get("current_blocking_lowering_rule_ids") or ()
+        )
+        row["validator_current_source_pathology"] = str(
+            validation.get("current_source_pathology") or ""
         )
         current_template = validation.get("current_suggested_claim_template")
         if isinstance(current_template, Mapping) and current_template:
@@ -492,6 +510,14 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         + _format_count_map(
             summary.get("remaining_suggested_claim_template_status_counts")
         )
+    )
+    print(
+        "Current source pathologies: "
+        + _format_count_map(summary.get("current_source_pathology_counts"))
+    )
+    print(
+        "Remaining source pathologies: "
+        + _format_count_map(summary.get("remaining_source_pathology_counts"))
     )
     print(
         "Remaining blocking lowering: "
