@@ -1932,6 +1932,27 @@ def test_parse_fragment_substitution_preserves_definition_context_for_range_to_e
     }
 
 
+def test_parse_fragment_substitution_preserves_unquoted_definition_range_to_end() -> None:
+    subs = parse_fragment_substitution(
+        "in the definition of registered independent health care services, "
+        "for the words from \u201csection 2(5)\u201d to the end of the definition "
+        "substitute \u201csection 10E of the National Health Service (Scotland) "
+        "Act 1978 (c. 29)) registered under section 10P of that Act;\u201d ."
+    )
+
+    assert subs[0] == {
+        "original": (
+            "TEXT_IN_DEFINITION_registered independent health care services"
+            "\x1fFROM\x1fsection 2(5)\x1fTO_END"
+        ),
+        "replacement": (
+            "section 10E of the National Health Service (Scotland) Act 1978 "
+            "(c. 29)) registered under section 10P of that Act;"
+        ),
+        "rule_id": "uk_effect_unquoted_definition_range_to_end_substitution_text_patch",
+    }
+
+
 def test_parse_fragment_substitution_preserves_definition_range_to_end_occurrence() -> None:
     subs = parse_fragment_substitution(
         "in the definition of \u201cjoint fire board\u201d for the words from "

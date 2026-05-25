@@ -31,6 +31,7 @@ from lawvm.uk_legislation.nlp_parser import (
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
@@ -851,6 +852,29 @@ def append_basic_text_rewrite_observations(
                 "target": str(target),
                 "text_match": op_text_match,
                 "canonical_text_match": "TEXT_END",
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_unquoted_definition_range_to_end_text_patch",
+            reason=(
+                "UK source text scopes a range-to-end substitution to an "
+                "unquoted definition term; lowering preserves the definition "
+                "term as a bounded TEXT_IN_DEFINITION_* selector rather than "
+                "rewriting the whole affected provision."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "occurrence": op_text_occurrence,
             },

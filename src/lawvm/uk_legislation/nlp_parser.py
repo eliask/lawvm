@@ -70,6 +70,9 @@ UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_pa
 UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
     "uk_effect_at_end_unquoted_text_insertion_patch"
 )
+UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID = (
+    "uk_effect_unquoted_definition_range_to_end_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -679,6 +682,26 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 ),
                 "replacement": m.group(3).strip(),
                 "rule_id": "uk_effect_definition_range_to_end_substitution_text_patch",
+            }
+        )
+
+    matches_unquoted_definition_range_to_end_substituted = re.finditer(
+        r"in the definition of (?P<term>[^,“”\"'‘]+?),\s+"
+        r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’] to the end"
+        r"(?: of (?:the )?(?:definition|subsection|paragraph|sub-paragraph|section))?"
+        r",?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_unquoted_definition_range_to_end_substituted:
+        subs.append(
+            {
+                "original": (
+                    f"TEXT_IN_DEFINITION_{m.group('term').strip()}"
+                    f"{US}FROM{US}{m.group('start').strip()}{US}TO_END"
+                ),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
             }
         )
 

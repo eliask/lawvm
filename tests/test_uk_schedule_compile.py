@@ -8181,6 +8181,83 @@ def test_compile_definition_range_to_end_substitution_uses_bounded_selector() ->
     )
 
 
+def test_compile_unquoted_definition_range_to_end_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-17-paragraph-34">
+          <Pnumber>34</Pnumber>
+          <Text>
+            34 In section 13 of the Human Tissue (Scotland) Act 2006
+            (preservation for transplantation), in subsection (5), in the
+            definition of registered independent health care services, for the
+            words from \u201csection 2(5)\u201d to the end of the definition substitute
+            \u201c section 10E of the National Health Service (Scotland) Act 1978
+            (c. 29)) registered under section 10P of that Act; \u201d .
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-89c3d7da374008bb2dcd14bed974d8db",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-04-01",
+        affected_uri="/id/asp/2006/4",
+        affected_class="ScottishAct",
+        affected_year="2006",
+        affected_number="4",
+        affected_provisions="s. 13(5)",
+        affecting_uri="/id/asp/2010/8",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="sch. 17 para. 34",
+        affecting_title="Public Services Reform (Scotland) Act 2010",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "13"), ("subsection", "5"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_registered independent health care services"
+        "\x1fFROM\x1fsection 2(5)\x1fTO_END"
+    )
+    assert op.text_patch.replacement == (
+        "section 10E of the National Health Service (Scotland) Act 1978 "
+        "(c. 29)) registered under section 10P of that Act;"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}"
+        "uk_effect_unquoted_definition_range_to_end_substitution_text_patch"
+        in op.provenance_tags
+    )
+
+    observations = [
+        record
+        for record in lowering_observations
+        if record["rule_id"]
+        == "uk_effect_unquoted_definition_range_to_end_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_unquoted_definition_range_to_end_text_patch"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["target"] == "section:13/subsection:5"
+
+
 def test_compile_definition_range_to_end_substitution_preserves_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""
