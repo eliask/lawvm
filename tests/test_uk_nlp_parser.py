@@ -1800,6 +1800,39 @@ def test_parse_fragment_substitution_handles_passive_range_with_words_wrapper() 
     ]
 
 
+def test_parse_fragment_substitution_handles_unquoted_range_start_occurrence_block() -> None:
+    subs = parse_fragment_substitution(
+        "1 for the words from \u201cthe\u201d, where it second occurs, to "
+        "\u201cprescribed\u201d substitute \u2014 a the chairman of a Health Board, ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_the_TO_prescribed",
+            "replacement": "a the chairman of a Health Board,",
+            "occurrence": "2",
+            "rule_id": "uk_effect_range_where_ordinal_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_unquoted_range_independent_end_occurrence_block() -> None:
+    subs = parse_fragment_substitution(
+        "6 for the words from \u201cthe\u201d, where it first occurs, to "
+        "\u201ctrustee\u201d, where it second occurs, substitute\u2014 a a trustee is appointed ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_the_TO_trustee",
+            "replacement": "a a trustee is appointed",
+            "occurrence": "1",
+            "end_occurrence": "2",
+            "rule_id": "uk_effect_range_independent_end_occurrence_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_to_end_first_appears_block() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (6), for the words from \u201cthe\u201d where it first appears "

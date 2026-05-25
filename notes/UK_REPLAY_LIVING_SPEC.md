@@ -2202,6 +2202,11 @@ Current payload-descendant source-ref invariant:
   around the quoted replacement, not a different action family. Current
   witness: `ukpga/1970/9` affected `s. 61(5)` by `ukpga/1989/26`
   `s. 152(5)(c)(7)`.
+- unquoted range substitutions may qualify the start and end anchors as
+  `where it first/second occurs`; lowering records the start occurrence and,
+  when present, the independent end occurrence rather than collapsing the range
+  to first matches. Current witness: `ukpga/1985/66` affected `s. 2(7)` by
+  `asp/2007/3` `Sch. 1 para. 3(6)`.
 - grouped occurrence substitutions may carry the quoted anchor in a parent
   instruction and the ordinal/replacement in child rows, e.g. parent `for
   "X"-` and child `the first time it appears, substitute "Y"`. Lowering may
