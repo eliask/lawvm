@@ -3962,6 +3962,11 @@ Current bench replay-regime invariant:
   emits one all-occurrences text patch scoped to the affected provision.
   Witness: `ukpga/1970/9` affected `s. 55` by
   `ukpga/1994/9 Sch. 19 para. 18(2)`.
+- The same all-occurrences substitution family accepts compressed `in each
+  place occurring` wording, e.g. `for "X", in each place occurring, substitute
+  "Y"`. This remains target-scoped and does not search for other targets.
+  Witness: `ukpga/2008/18` affected `Sch. 17 Pt. 5` by `uksi/2012/1659`
+  `Sch. 3 para. 19(3)(b)`.
 - UK range repeal parsing preserves parenthesized ordinal start anchors. An
   instruction such as `the words from "in" (where first occurring) to "Act" are
   repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a

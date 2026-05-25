@@ -243,6 +243,20 @@ def test_parse_fragment_substitution_handles_all_occurrences_substitution() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_each_place_occurring_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "b for \u201cthe Board\u201d, in each place occurring, substitute \u201cCanal & River Trust\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "the Board",
+            "replacement": "Canal & River Trust",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_preposed_beginning_insert() -> None:
     subs = parse_fragment_substitution(
         "a in subsection (4)(a) there shall be inserted at the beginning the "

@@ -14986,6 +14986,66 @@ def test_compile_wherever_occurring_records_all_occurrences_lowering_observation
     ]
 
 
+def test_compile_each_place_occurring_records_all_occurrences_lowering_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-19-3-b">
+          <Pnumber>b</Pnumber>
+          <Text>b for \u201cthe Board\u201d, in each place occurring, substitute \u201cCanal &amp; River Trust\u201d.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-defa6f4d5d7965c6b104c6daf75bf104",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-01-05",
+        affected_uri="/id/ukpga/2008/18",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="18",
+        affected_provisions="Sch. 17 Pt. 5",
+        affecting_uri="/id/uksi/2012/1659",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2012",
+        affecting_number="1659",
+        affecting_provisions="Sch. 3 para. 19(3)(b)",
+        affecting_title="British Waterways Board (Transfer of Functions) Order 2012",
+        in_force_dates=[{"date": "2012-07-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "17"), ("part", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "the Board"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "Canal & River Trust"
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_all_occurrences_substitution_text_patch"
+    ] == ["uk_effect_all_occurrences_substitution_text_patch"]
+    all_occurrence_record = lowering_records[0]
+    assert all_occurrence_record["family"] == "text_rewrite_lowering"
+    assert all_occurrence_record["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert all_occurrence_record["blocking"] is False
+    assert all_occurrence_record["strict_disposition"] == "record"
+    assert all_occurrence_record["target"] == "schedule:17/part:5"
+    assert all_occurrence_record["text_match"] == "the Board"
+    assert all_occurrence_record["replacement"] == "Canal & River Trust"
+    assert all_occurrence_record["occurrence"] == 0
+
+
 def test_compile_both_places_there_is_substituted_records_all_occurrences_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
