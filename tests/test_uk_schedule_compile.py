@@ -21762,6 +21762,70 @@ def test_compile_first_second_occurrence_substitution_preserves_bounded_occurren
     assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
 
 
+def test_compile_quoted_word_where_multiple_ordinal_substitution_preserves_bounded_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a for the word \u201cinterim\u201d, where it first and third occurs, substitute \u201cthe\u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_quoted_word_where_multiple_ordinal_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-04-01",
+        affected_uri="/id/ukpga/1985/66",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="66",
+        affected_provisions="s. 2(2)",
+        affecting_uri="/id/asp/2007/3",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 3(4)(b)",
+        affecting_title="Bankruptcy and Diligence etc. (Scotland) Act 2007",
+        in_force_dates=[{"date": "2008-04-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.text_patch.selector.occurrence for op in ops if op.text_patch is not None] == [3, 1]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "interim",
+        "interim",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        "the",
+        "the",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "1"]
+    assert [record["rule_id"] for record in lowering_rejections] == [
+        "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
+    ]
+    assert lowering_rejections[0]["blocking"] is False
+    assert lowering_rejections[0]["occurrences"] == [3, 1]
+
+
 def test_compile_compound_lettered_text_patches_emit_one_op_per_fragment() -> None:
     extracted_el = ET.fromstring(
         f"""
