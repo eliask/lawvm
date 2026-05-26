@@ -12251,6 +12251,136 @@ def test_compile_direct_table_column_entry_omission_rejects_deictic_entry() -> N
     )
 
 
+def test_compile_source_parent_grouped_table_entry_omission_deletes_child_cell_text() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-8-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>In section 98 of the Taxes Management Act 1970,
+            in the first column, omit the entries relating to—</Text>
+            <P3 id="schedule-paragraph-8-3-h">
+              <Pnumber>h</Pnumber>
+              <P3para><Text>h regulations under section 57 of the Finance Act 1989;</Text></P3para>
+            </P3>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_grouped_table_entry_omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-08-13",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/uksi/2009/2035",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="2035",
+        affecting_provisions="Sch. para. 8(3)(h)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2009-08-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        source_root=source_root,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "regulations under section 57 of the Finance Act 1989"
+    )
+    assert ops[0].witness_rule_id == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 1
+    assert selector["match_scope"] == "full_cell"
+    assert selector["source_parent_id"] == "schedule-paragraph-8-3"
+    assert selector["source_parent_mode"] == "grouped_entries_relating_to"
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+        and record["reason_code"] == "explicit_table_column_entry_omission_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_source_parent_grouped_table_entry_omission_rejects_deictic_child() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-8-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>In section 98 of the Taxes Management Act 1970,
+            in the first column, omit the entries relating to—</Text>
+            <P3 id="schedule-paragraph-8-3-d">
+              <Pnumber>d</Pnumber>
+              <P3para><Text>d paragraph 4 of Schedule 22 to that Act;</Text></P3para>
+            </P3>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_grouped_table_entry_omission_deictic",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-08-13",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/uksi/2009/2035",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="2035",
+        affecting_provisions="Sch. para. 8(3)(d)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2009-08-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        source_root=source_root,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_payload_without_instruction_context_rejected"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_replay_direct_table_column_entry_omission_requires_full_cell_match() -> None:
     selector = {
         "rule_id": "uk_effect_table_column_entry_omission_text_patch",

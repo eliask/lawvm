@@ -2832,6 +2832,13 @@ Current payload-descendant source-ref invariant:
   host table. Grouped `entries relating to- ...` parents, repeal-table rows,
   and deictic `that Act`/`that Schedule` anchors remain blocked/manual until
   source-parent ownership or referent resolution is explicit.
+  A narrower source-parent grouped form is supported under
+  `uk_effect_source_parent_table_column_entry_omission_text_patch`: when a
+  parent explicitly says `in the first/second/... column, omit the entries
+  relating to-` and the current child row supplies one non-deictic entry, the
+  child lowers to the same full-cell table delete. Child rows containing
+  `that Act`, `that Schedule`, or similar unresolved referents stay blocked
+  rather than inheriting a guessed referent from sibling rows.
   Deictic `after that entry insert-` may also carry a single logical entry
   group encoded as multiple physical source rows, but only when the first source
   cell rowspans across every source row; replay records
