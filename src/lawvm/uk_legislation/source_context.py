@@ -45,6 +45,12 @@ from lawvm.uk_legislation.source_state import (
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
+_COMPOUND_REFERENCE_KEYWORD_RE = re.compile(r"\b(?:Sch(?:edule)?|Part|Pt)\b", re.I)
+_COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
+    r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
+    re.I,
+)
+
 
 @dataclass(frozen=True)
 class UKAffectingSourceContext:
@@ -371,16 +377,11 @@ def _extract_from_affecting_source_context(
 
 
 def _compound_reference_parts(provision_ref: str) -> tuple[str, str] | None:
-    keyword_pat = re.compile(r"\b(?:Sch(?:edule)?|Part|Pt)\b", re.I)
-    matches = list(keyword_pat.finditer(provision_ref))
+    matches = list(_COMPOUND_REFERENCE_KEYWORD_RE.finditer(provision_ref))
     if not matches:
         return None
     leading_prefix = provision_ref[: matches[0].start()]
-    if re.search(
-        r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
-        leading_prefix,
-        re.I,
-    ):
+    if _COMPOUND_REFERENCE_LEADING_BODY_RE.search(leading_prefix):
         idx = matches[0].start()
     elif len(matches) >= 2:
         idx = matches[1].start()
