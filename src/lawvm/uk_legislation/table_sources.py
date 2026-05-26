@@ -21,6 +21,9 @@ from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_quoted_words_text_repeal"
 )
+_UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+)
 _UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_sentence_text_repeal"
 )
@@ -296,6 +299,32 @@ def _uk_repeal_table_enactment_matches_effect(cell_text: str, effect: UKEffectRe
     return bool(_uk_repeal_table_enactment_match_basis(cell_text, effect))
 
 
+def _uk_flat_repeal_schedule_enactment_context(
+    text: str,
+    *,
+    clause_start: int,
+    effect: UKEffectRecord,
+) -> tuple[str, str]:
+    """Return nearby affected-enactment context for flattened repeal schedules."""
+    context = text[max(0, clause_start - 360) : clause_start]
+    citation_matches = tuple(
+        re.finditer(
+            r"\b(?:1[6-9]|20)\d{2}\s*\(\s*(?:c\.?|asp|s\.?\s*i\.?|si|uksi)\s*[^)]*\)",
+            context,
+            flags=re.I,
+        )
+    )
+    current_enactment_context = (
+        context[citation_matches[-1].start() :]
+        if citation_matches
+        else context
+    )
+    basis = _uk_repeal_table_enactment_match_basis(current_enactment_context, effect)
+    if not basis:
+        return "", ""
+    return current_enactment_context, f"flat_preceding_context_{basis}"
+
+
 def _uk_repeal_table_enactment_match_cell(
     row: Sequence[str],
     *,
@@ -392,6 +421,88 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
     if match is None:
         return "", 0, 0
     return _uk_first_quote_group(match, "quoted_double", "quoted_single"), 0, 0
+
+
+def _uk_flat_repeal_schedule_quoted_words_text_repeal(
+    *,
+    effect: UKEffectRecord,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> _UKRepealTableQuotedWordsTextRepeal:
+    """Recover quoted-word repeal rows from flattened repeal-schedule text."""
+    effect_type = str(effect.effect_type or "").strip().lower()
+    if effect_type not in {
+        "",
+        "words repealed",
+        "word repealed",
+        "words omitted",
+        "word omitted",
+    }:
+        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+    quoted = _uk_quoted_capture("quoted")
+    clause_pattern = re.compile(
+        r"\bIn\s+[^.;]{0,320}?\b(?:the\s+)?words?\s+"
+        + quoted
+        + r"[^.;]{0,80}(?:[.;]|$)",
+        flags=re.I,
+    )
+    matches: list[_UKRepealTableQuotedWordsMatch] = []
+    for match in clause_pattern.finditer(text):
+        clause = " ".join(match.group(0).split()).strip()
+        if not _uk_table_cell_mentions_target(
+            clause,
+            target=target,
+            affected_year=str(effect.affected_year or ""),
+        ):
+            continue
+        enactment_context, enactment_match_basis = _uk_flat_repeal_schedule_enactment_context(
+            text,
+            clause_start=match.start(),
+            effect=effect,
+        )
+        if not enactment_match_basis:
+            continue
+        original = _uk_first_quote_group(match, "quoted_double", "quoted_single")
+        if not original:
+            continue
+        matches.append(
+            _UKRepealTableQuotedWordsMatch(
+                table_index=-1,
+                original=original,
+                additional_originals=(),
+                occurrence=0,
+                end_occurrence=0,
+                rule_id=_UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                row_text=clause,
+                enactment_cell=" ".join(enactment_context.split())[-240:],
+                extent_cell=clause,
+                enactment_match_basis=enactment_match_basis,
+            )
+        )
+    if len(matches) != 1:
+        return _UKRepealTableQuotedWordsTextRepeal(
+            recognized=bool(matches),
+            reason_code="no_unique_matching_flat_repeal_schedule_clause",
+            match_count=len(matches),
+        )
+    flat_match = matches[0]
+    return _UKRepealTableQuotedWordsTextRepeal(
+        recognized=True,
+        original=flat_match.original,
+        additional_originals=flat_match.additional_originals,
+        rule_id=flat_match.rule_id,
+        match_count=1,
+        table_index=flat_match.table_index,
+        row_text=flat_match.row_text,
+        enactment_cell=flat_match.enactment_cell,
+        extent_cell=flat_match.extent_cell,
+        enactment_match_basis=flat_match.enactment_match_basis,
+        occurrence=flat_match.occurrence,
+        end_occurrence=flat_match.end_occurrence,
+    )
 
 
 def _uk_repeal_table_column_entry_text_selector(extent_cell: str) -> Optional[dict[str, Any]]:
@@ -732,12 +843,20 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         source_root=source_root,
     )
     if not search_roots:
-        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+        return _uk_flat_repeal_schedule_quoted_words_text_repeal(
+            effect=effect,
+            extracted_text=extracted_text,
+            target=target,
+        )
 
     matches: list[_UKRepealTableQuotedWordsMatch] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
-        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+        return _uk_flat_repeal_schedule_quoted_words_text_repeal(
+            effect=effect,
+            extracted_text=extracted_text,
+            target=target,
+        )
     unsupported_sentence_repeal: Optional[_UKRepealTableQuotedWordsTextRepeal] = None
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
@@ -870,6 +989,14 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if len(matches) != 1:
         if unsupported_sentence_repeal is not None and not matches:
             return unsupported_sentence_repeal
+        if not matches:
+            flat_repeal = _uk_flat_repeal_schedule_quoted_words_text_repeal(
+                effect=effect,
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if flat_repeal.recognized:
+                return flat_repeal
         return _UKRepealTableQuotedWordsTextRepeal(
             recognized=True,
             reason_code="no_unique_matching_repeal_table_row",
