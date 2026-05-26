@@ -12102,6 +12102,131 @@ def test_replay_table_entry_relating_text_patch_anchor_filters_descendant_tables
     assert second_table.children[0].children[0].text == "electronic compliance monitoring requirement"
 
 
+def test_compile_table_row_column_text_patch_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in row 1 of the Table, in paragraph (c) of the entry in the
+          third column, after “air forces” insert “ (but see subsection
+          (1A)) ” ;</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_row_column_text_patch",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-02",
+        affected_uri="/id/ukpga/2006/52/section/132",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 132 Table",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="s. 12(1)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "132"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "air forces"
+    assert ops[0].text_patch.replacement == "air forces (but see subsection (1A)) "
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_row_column_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["row_index"] == 1
+    assert selector["source_entry_paragraph_label"] == "c"
+    assert selector["column_index"] == 3
+    assert selector["match_text"] == "air forces"
+    assert selector["allow_unique_descendant_table"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_row_column_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for record in lowering_records
+    )
+
+
+def test_replay_table_row_column_text_patch_requires_source_row_index() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_row_column_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 3,
+        "row_index": 1,
+        "match_text": "air forces",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_row_column_text_patch",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "132"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="air forces", occurrence=0),
+            replacement="air forces (but see subsection (1A))",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="132",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="row 1"),
+                                        IRNode(kind=IRNodeKind.CELL, text="armed forces"),
+                                        IRNode(kind=IRNodeKind.CELL, text="air forces"),
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="row 2"),
+                                        IRNode(kind=IRNodeKind.CELL, text="armed forces"),
+                                        IRNode(kind=IRNodeKind.CELL, text="air forces"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0]
+    assert table.children[0].children[2].text == "air forces (but see subsection (1A))"
+    assert table.children[1].children[2].text == "air forces"
+
+
 def test_compile_table_entry_for_column_omit_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
