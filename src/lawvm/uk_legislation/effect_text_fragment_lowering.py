@@ -52,6 +52,7 @@ from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_each_other_place_from_sibling,
     _fragment_substitution_grouped_after_insert_from_parent,
     _fragment_substitution_grouped_anchor_occurrence,
+    _fragment_substitution_source_parent_at_end_text_insert,
     _fragment_substitution_source_parent_following_provisions_substitution,
     _fragment_substitution_source_parent_prefix_substitute,
     _fragment_substitution_source_parent_tail_substitution,
@@ -165,10 +166,20 @@ def lower_uk_text_fragment_rewrite(
             or heading_source_parent_full_replacement_precheck is not None
         )
     )
+    source_parent_at_end_text_insert_precheck = (
+        _fragment_substitution_source_parent_at_end_text_insert(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if curr_action == "insert"
+        else None
+    )
     if fragment_subs is not None or not (
         curr_action == "replace"
         or word_level_text_patch_required
         or heading_facet_text_patch_required
+        or source_parent_at_end_text_insert_precheck is not None
     ):
         return UKTextFragmentLowering(
             target=target,
@@ -619,6 +630,14 @@ def _extract_text_fragment_substitutions(
         )
         if source_parent_each_provision_substitution:
             subs = list(source_parent_each_provision_substitution)
+    if not subs:
+        source_parent_at_end_insert = _fragment_substitution_source_parent_at_end_text_insert(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if source_parent_at_end_insert is not None:
+            subs = [source_parent_at_end_insert]
     if not subs and source_carried_table_entry_paragraph_substitution is not None:
         subs = [
             {
