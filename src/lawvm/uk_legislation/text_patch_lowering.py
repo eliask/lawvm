@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import TextPatchSpec, TextSelector
 from lawvm.core.semantic_types import TextPatchKindEnum
@@ -18,7 +18,9 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 )
 
 
-UKTextPatchItem = tuple[Optional[TextPatchSpec], Optional[list[dict[str, Any]]]]
+class UKTextPatchItem(NamedTuple):
+    text_patch: Optional[TextPatchSpec]
+    witness_fragments: Optional[list[dict[str, Any]]]
 
 
 def build_uk_text_patch_items(
@@ -52,7 +54,7 @@ def build_uk_text_patch_items(
     if curr_action == "text_repeal" and separate_definition_repeals:
         for fragment in separate_definition_repeals:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.DELETE,
                         selector=TextSelector(
@@ -66,7 +68,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_repeal" and separate_definition_child_repeals:
         for fragment in separate_definition_child_repeals:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.DELETE,
                         selector=TextSelector(
@@ -80,7 +82,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_repeal" and separate_multi_quoted_word_repeals:
         for fragment in separate_multi_quoted_word_repeals:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.DELETE,
                         selector=TextSelector(
@@ -94,7 +96,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_repeal" and separate_listed_word_and_range_to_end_repeals:
         for fragment in separate_listed_word_and_range_to_end_repeals:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.DELETE,
                         selector=TextSelector(
@@ -108,7 +110,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_replace" and separate_occurrence_replacements:
         for fragment in separate_occurrence_replacements:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
                         selector=TextSelector(
@@ -123,7 +125,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_replace" and separate_source_range_definition_inserts:
         for fragment in separate_source_range_definition_inserts:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
                         selector=TextSelector(
@@ -138,7 +140,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_replace" and separate_all_occurrences_replacements:
         for fragment in separate_all_occurrences_replacements:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
                         selector=TextSelector(
@@ -153,7 +155,7 @@ def build_uk_text_patch_items(
     elif curr_action == "text_replace" and separate_compound_lettered_replacements:
         for fragment in separate_compound_lettered_replacements:
             text_patch_items.append(
-                (
+                UKTextPatchItem(
                     TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
                         selector=TextSelector(
@@ -167,7 +169,7 @@ def build_uk_text_patch_items(
             )
     elif curr_action == "text_repeal" and op_text_match:
         text_patch_items.append(
-            (
+            UKTextPatchItem(
                 TextPatchSpec(
                     kind=TextPatchKindEnum.DELETE,
                     selector=TextSelector(
@@ -185,7 +187,7 @@ def build_uk_text_patch_items(
         and op_text_replacement is not None
     ):
         text_patch_items.append(
-            (
+            UKTextPatchItem(
                 TextPatchSpec(
                     kind=TextPatchKindEnum.APPEND,
                     selector=TextSelector(
@@ -199,7 +201,7 @@ def build_uk_text_patch_items(
         )
     elif curr_action == "text_replace" and op_text_match and op_text_replacement is not None:
         text_patch_items.append(
-            (
+            UKTextPatchItem(
                 TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
                     selector=TextSelector(
@@ -213,5 +215,5 @@ def build_uk_text_patch_items(
             )
         )
     else:
-        text_patch_items.append((None, fragment_subs))
+        text_patch_items.append(UKTextPatchItem(None, fragment_subs))
     return text_patch_items

@@ -11932,10 +11932,19 @@ def test_compile_broad_schedule_table_column_text_patch_selector() -> None:
     )
     selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
     assert selector == {
+        "allow_unique_descendant_table": True,
         "rule_id": "uk_effect_table_column_text_patch",
         "selector_mode": "unique_column_text",
         "column_index": 4,
         "match_text": "£56,340,000",
+        "replacement_text": "£76,340,000",
+        "source_context": "metadata_target_column_only",
+        "source_names_containing_target": False,
+        "source_parent_id": "",
+        "table_carrier_recovery_rule": "uk_replay_table_carrier_anchor_filtered_descendant_table",
+        "table_column_text_action": "replace_text",
+        "table_label": "",
+        "table_marker_parent_target": "schedule:1",
         "target_ref": "Sch. 1",
         "original_target": "schedule:1",
     }
