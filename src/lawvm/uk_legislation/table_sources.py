@@ -1155,10 +1155,58 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
     else:
         label_pattern = rf"{re.escape(label)}\b"
     return re.search(
-        rf"(?:[,;]|\band\b)\s*(?:the\s+)?{kind_pattern}\s*{label_pattern}",
+        rf"(?:[,;—–-]|\band\b)\s*(?:the\s+)?{kind_pattern}\s*{label_pattern}",
         scope_text,
         flags=re.I,
-    ) is not None
+    ) is not None or _uk_repeal_table_mixed_clause_names_target_in_list_or_range(
+        scope_text,
+        kind_pattern=kind_pattern,
+        label=label,
+    )
+
+
+def _uk_repeal_table_mixed_clause_names_target_in_list_or_range(
+    scope_text: str,
+    *,
+    kind_pattern: str,
+    label: str,
+) -> bool:
+    """Match the structural half of mixed rows like `subsections (1) to (5)`."""
+    wanted = _clean_num(label)
+    if not wanted:
+        return False
+    for match in re.finditer(
+        rf"(?:[,;—–-]|\band\b)\s*(?:the\s+)?{kind_pattern}\s+(?P<body>[^.;]+)",
+        scope_text,
+        flags=re.I,
+    ):
+        body = re.split(
+            r"(?:;\s*|,\s*|\band\s+)in\s+(?:subsection|paragraph|sub-?paragraph)\b",
+            match.group("body"),
+            maxsplit=1,
+            flags=re.I,
+        )[0]
+        if _uk_container_label_body_mentions_label(body, wanted):
+            return True
+        if not wanted.isdigit():
+            continue
+        wanted_int = int(wanted)
+        for range_match in re.finditer(
+            r"\(\s*(?P<start>[0-9]+|[ivxlcdm]+)\s*\)\s*"
+            r"(?:to|-|–|—)\s*"
+            r"\(\s*(?P<end>[0-9]+|[ivxlcdm]+)\s*\)",
+            body,
+            flags=re.I,
+        ):
+            start = _clean_num(range_match.group("start"))
+            end = _clean_num(range_match.group("end"))
+            if not start.isdigit() or not end.isdigit():
+                continue
+            low = min(int(start), int(end))
+            high = max(int(start), int(end))
+            if low <= wanted_int <= high:
+                return True
+    return False
 
 
 def _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
