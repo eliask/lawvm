@@ -729,6 +729,7 @@ def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
             "manual_compile_candidate",
             "--manual-compile-rule",
             "uk_manual_frontier_heading_facet_candidate",
+            "--fast-limit",
             "--source-first-candidate",
             "--no-metadata-only-effects",
             "--evidence-jsonl",
@@ -741,6 +742,7 @@ def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
     assert args.source_acquisition_rule == "uk_affecting_act_xml_missing_rejected"
     assert args.manual_compile_status == "manual_compile_candidate"
     assert args.manual_compile_rule == "uk_manual_frontier_heading_facet_candidate"
+    assert args.fast_limit is True
     assert args.uk_source_first_candidate is True
     assert args.uk_allow_metadata_only_effects is False
     assert args.evidence_jsonl == ".tmp/uk-manual.jsonl"
