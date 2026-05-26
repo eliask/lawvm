@@ -67,6 +67,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
     _NOTE_TABLE_CELL_SELECTOR,
     _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    _NOTE_TABLE_ROW_REPLACE_SELECTOR,
     _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
     _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
@@ -22239,6 +22240,127 @@ def test_compile_table_entry_label_row_insert_blocks_without_source_row_payload(
     )
 
 
+def test_compile_table_entry_relating_rows_replace_preserves_source_table_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" xmlns:html="http://www.w3.org/1999/xhtml">
+          <Pnumber>147</Pnumber>
+          <P1para>
+            <Text>In section 1, in the table in subsection (1), for the entries relating to English Nature and the Countryside Agency substitute\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <html:table cols="2">
+                  <html:tbody>
+                    <html:tr>
+                      <html:td>Nature conservation or conservation of the natural beauty or amenity of the countryside</html:td>
+                      <html:td>Natural England.</html:td>
+                    </html:tr>
+                  </html:tbody>
+                </html:table>
+              </Tabular>
+            </BlockAmendment>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_rows_replace",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-10-01",
+        affected_uri="/id/ukpga/1996/61/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 1(1) Table",
+        affecting_uri="/id/ukpga/2006/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2006",
+        affecting_number="16",
+        affecting_provisions="Sch. 11 para. 147",
+        affecting_title="Natural Environment and Rural Communities Act 2006",
+        in_force_dates=[{"date": "2006-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "1"), ("subsection", "1"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [child.text for child in ops[0].payload.children[0].children] == [
+        "Nature conservation or conservation of the natural beauty or amenity of the countryside",
+        "Natural England.",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_REPLACE_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_REPLACE_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_row_replace"
+    assert selector["selector_mode"] == "relating_entries"
+    assert selector["relating_texts"] == ["English Nature", "Countryside Agency"]
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_replace"
+        and record["reason_code"] == "explicit_table_entry_row_replace_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_table_entry_relating_rows_replace_blocks_without_source_table_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>147</Pnumber>
+          <P1para>
+            <Text>In section 1, in the table in subsection (1), for the entries relating to English Nature and the Countryside Agency substitute\u2014 flattened table row text</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_rows_replace_without_payload",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-10-01",
+        affected_uri="/id/ukpga/1996/61/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 1(1) Table",
+        affecting_uri="/id/ukpga/2006/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2006",
+        affecting_number="16",
+        affecting_provisions="Sch. 11 para. 147",
+        affecting_title="Natural Environment and Rural Communities Act 2006",
+        in_force_dates=[{"date": "2006-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_replace"
+        and record["reason_code"] == "table_entry_replace_without_table_payload"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_target_table_numbered_entry_insert_preserves_source_table_rows() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -22833,6 +22955,167 @@ def test_replay_table_entry_relating_row_insert_mutates_unique_row_table_only() 
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["selector"]["selector_mode"] == "relating_entry"
+
+
+def test_replay_table_entry_relating_rows_replace_mutates_only_resolved_row_span() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_replace",
+        "selector_mode": "relating_entries",
+        "relating_texts": ("English Nature", "Countryside Agency"),
+        "source_payload_mode": "table_rows",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_rows_replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CELL,
+                            text="Nature conservation or conservation of the natural beauty or amenity of the countryside",
+                        ),
+                        IRNode(kind=IRNodeKind.CELL, text="Natural England."),
+                    ),
+                ),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_REPLACE_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1996/61",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Nature conservation."),
+                                                IRNode(kind=IRNodeKind.CELL, text="English Nature."),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="Conservation of the natural beauty or amenity of the countryside.",
+                                                ),
+                                                IRNode(kind=IRNodeKind.CELL, text="Countryside Agency."),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Sites of archaeological interest."),
+                                                IRNode(kind=IRNodeKind.CELL, text="Historic England."),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert [[cell.text for cell in row.children] for row in table.children] == [
+        [
+            "Nature conservation or conservation of the natural beauty or amenity of the countryside",
+            "Natural England.",
+        ],
+        ["Sites of archaeological interest.", "Historic England."],
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_replace"
+    ]
+    assert adjudications[0].detail["replaced_row_count"] == 2
+    assert adjudications[0].detail["replacement_row_count"] == 1
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_entry_relating_rows_replace_blocks_ambiguous_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_replace",
+        "selector_mode": "relating_entries",
+        "relating_texts": ("English Nature", "Countryside Agency"),
+        "source_payload_mode": "table_rows",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_rows_replace_ambiguous",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="Natural England"),)),),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_REPLACE_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1996/61",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="English Nature"),)),
+                                IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="English Nature"),)),
+                                IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="Countryside Agency"),)),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "English Nature",
+        "English Nature",
+        "Countryside Agency",
+    ]
+    unresolved = next(
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_table_entry_row_replace_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "entry_not_unique"
+    assert unresolved.detail["blocking"] is True
 
 
 def test_replay_table_entry_relating_row_insert_uses_source_sibling_anchor_alternates() -> None:

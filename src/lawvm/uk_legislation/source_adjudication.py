@@ -309,6 +309,7 @@ UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_table_shape_gap",
         "uk_replay_table_column_insert_unresolved",
         "uk_replay_table_entry_row_insert_unresolved",
+        "uk_replay_table_entry_row_replace_unresolved",
         "uk_replay_table_entry_inline_text_insertion_unresolved",
         "uk_replay_table_entry_inline_text_preimage_gap",
         "uk_replay_schedule_list_entry_table_rows_insert_unresolved",
@@ -404,6 +405,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_body_root_fallback_insert_resolved",
         "uk_effect_table_column_insert",
         "uk_effect_table_entry_row_insert",
+        "uk_effect_table_entry_row_replace",
         "uk_replay_text_match_replacement_normalized_present",
         "uk_replay_text_fragment_substitution_fallback_applied",
         "uk_replay_fragment_substitution_child_range_deleted",
@@ -583,6 +585,7 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_ADJUDICATION_KINDS = frozenset(
         "uk_replay_table_entry_inline_text_insertion_unresolved",
         "uk_replay_table_entry_inline_text_preimage_gap",
         "uk_replay_table_entry_row_insert_unresolved",
+        "uk_replay_table_entry_row_replace_unresolved",
     }
 )
 
@@ -1413,6 +1416,8 @@ def classify_uk_effect_source_pathology(
         if "uk_effect_table_entry_instruction_rejected" in lowering_rules:
             return "table_entry_target_unsupported"
         if "uk_effect_table_entry_row_insert" in lowering_rules:
+            return "table_entry_target_unsupported"
+        if "uk_effect_table_entry_row_replace" in lowering_rules:
             return "table_entry_target_unsupported"
         if "uk_effect_amendment_program_inserted_parent_structural_insert_rejected" in lowering_rules:
             return "amendment_text_target_unsupported"

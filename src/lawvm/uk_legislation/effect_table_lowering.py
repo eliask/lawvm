@@ -18,6 +18,7 @@ from lawvm.uk_legislation.lowering_records import (
 from lawvm.uk_legislation.provenance_notes import (
     NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    NOTE_TABLE_ROW_REPLACE_SELECTOR as _NOTE_TABLE_ROW_REPLACE_SELECTOR,
 )
 from lawvm.uk_legislation.source_table_entry_paragraph import (
     _source_carried_table_entry_paragraph_substitution,
@@ -29,6 +30,7 @@ from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
     UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID as _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+    UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID as _UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
     _uk_broad_table_entry_instruction,
     _uk_embedded_table_payload_structural_insertion,
     _uk_embedded_table_payload_structural_substitution,
@@ -41,6 +43,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_table_column_text_patch_selector,
     _uk_table_entry_inline_text_selector,
     _uk_table_entry_row_insert_selector,
+    _uk_table_entry_row_replace_selector,
 )
 from lawvm.uk_legislation.table_sources import (
     _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID,
@@ -435,6 +438,114 @@ def try_lower_table_row_insert(
                 f"{json.dumps(table_row_insert_selector, ensure_ascii=False)}"
             ),
             witness_rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+        ),
+    )
+
+
+def try_lower_table_row_replace(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTableLoweringResult:
+    table_row_replace_selector = (
+        _uk_table_entry_row_replace_selector(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if action == "replace"
+        else None
+    )
+    if table_row_replace_selector is None:
+        return UKTableLoweringResult(handled=False)
+
+    table_marker_parent = _uk_parent_target_before_table_marker(target)
+    parent_target = table_marker_parent
+    if (
+        parent_target is None
+        and table_row_replace_selector.get("source_names_table")
+        and _addr_leaf_kind(target)
+        in {"section", "subsection", "paragraph", "schedule", "part", "chapter"}
+    ):
+        parent_target = target
+    source_table_payload = _uk_schedule_list_entry_table_payload(extracted_el)
+    if parent_target is None or source_table_payload is None:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=_UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
+            family="source_table_elaboration",
+            reason_code=(
+                "table_marker_parent_missing"
+                if parent_target is None
+                else "table_entry_replace_without_table_payload"
+            ),
+            reason=(
+                "UK table-entry replacement needs both a containing table "
+                "target and a BlockAmendment table payload; lowering blocks "
+                "instead of inventing replacement rows from flattened text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target": str(target), **table_row_replace_selector},
+        )
+        return UKTableLoweringResult(handled=True)
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
+        family="source_table_elaboration",
+        reason_code="explicit_table_entry_row_replace_selector",
+        reason=(
+            "UK table-entry replacement lowered as a typed row-span replace; "
+            "replay must resolve every named relating entry uniquely before "
+            "mutating table structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "original_target": str(target),
+            "containing_target": str(parent_target),
+            "replacement_row_count": len(source_table_payload.children),
+            **table_row_replace_selector,
+        },
+    )
+    payload_node = dc_replace(
+        source_table_payload,
+        attrs={
+            **dict(source_table_payload.attrs or {}),
+            "source_rule_id": "uk_table_entry_row_replace_payload",
+            "relating_texts": tuple(table_row_replace_selector["relating_texts"]),
+        },
+    )
+    return UKTableLoweringResult(
+        handled=True,
+        op=_build_table_payload_op(
+            effect=effect,
+            sequence=sequence,
+            target=parent_target,
+            payload=payload_node,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            t_str=t_str,
+            provenance_note=(
+                f"{_NOTE_TABLE_ROW_REPLACE_SELECTOR}"
+                f"{json.dumps(table_row_replace_selector, ensure_ascii=False)}"
+            ),
+            witness_rule_id=_UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
+            action=StructuralAction.REPLACE,
         ),
     )
 
@@ -1231,6 +1342,7 @@ def _build_table_payload_op(
     t_str: str,
     provenance_note: str,
     witness_rule_id: str,
+    action: StructuralAction = StructuralAction.INSERT,
 ) -> LegalOperation:
     src = OperationSource(
         statute_id=effect.affecting_act_id,
@@ -1246,7 +1358,7 @@ def _build_table_payload_op(
     lowered_witness = UKLoweredOperationWitness(
         op_id=effect.effect_id,
         sequence=sequence,
-        action=StructuralAction.INSERT,
+        action=action,
         target=target,
         payload=payload,
         source=src,
@@ -1259,7 +1371,7 @@ def _build_table_payload_op(
     return LegalOperation(
         op_id=lowered_witness.op_id,
         sequence=lowered_witness.sequence,
-        action=StructuralAction.INSERT,
+        action=action,
         target=target,
         payload=_payload_with_rewrite_witness(payload, lowered_witness),
         source=src,

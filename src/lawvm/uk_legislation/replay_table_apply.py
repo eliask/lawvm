@@ -13,6 +13,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_blocking_action_target_detail,
 )
 from lawvm.uk_legislation.replay_table_geometry import (
+    resolve_uk_table_entry_row_replace_span,
     resolve_uk_table_entry_row_insert_index,
     strip_uk_identity_attrs_recursive,
     uk_table_column_insert_plans,
@@ -25,12 +26,16 @@ from lawvm.uk_legislation.source_table_entry_paragraph import (
 from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+    UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID as _UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
 _UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID = (
     "uk_replay_table_entry_row_insert_unresolved"
+)
+_UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID = (
+    "uk_replay_table_entry_row_replace_unresolved"
 )
 _UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID = (
     "uk_replay_table_column_insert_unresolved"
@@ -298,6 +303,98 @@ class UKReplayTableApplyMixin:
                 selector=dict(selector),
                 insert_index=insert_index,
                 inserted_row_count=len(inserted_rows),
+                **detail,
+                family="source_table_elaboration",
+            ),
+        )
+        return True
+
+    def _replace_table_entry_rows(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        node, _, _ = self._find_node_by_target(target)
+        if node is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve the table-row replacement containing target.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="target_not_found",
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        table, start, end, reason, detail = resolve_uk_table_entry_row_replace_span(node, selector)
+        if table is None or start is None or end is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay could not resolve a unique source-owned table-row "
+                    "span for table-entry replacement."
+                ),
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code=reason,
+                    **detail,
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        payload_kind = _uk_kind_value(new_node.kind).lower()
+        replacement_rows = [new_node] if payload_kind == "row" else [
+            child for child in new_node.children if _uk_kind_value(child.kind).lower() == "row"
+        ]
+        if payload_kind not in {"row", "table"} or not replacement_rows:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID,
+                message="UK replay table-row replacement payload had no table rows.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="payload_has_no_rows",
+                    payload_kind=_uk_kind_value(new_node.kind),
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        for row in replacement_rows:
+            strip_uk_identity_attrs_recursive(row)
+        children = list(table.children)
+        replaced_row_count = end - start
+        children[start:end] = replacement_rows
+        uk_replace_children(table, children)
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
+            message=(
+                "UK replay replaced table rows after resolving explicit "
+                "table-entry relating selectors."
+            ),
+            op=op,
+            detail=uk_replay_action_target_detail(
+                op,
+                target,
+                blocking=False,
+                selector=dict(selector),
+                replaced_row_count=replaced_row_count,
+                replacement_row_count=len(replacement_rows),
                 **detail,
                 family="source_table_elaboration",
             ),

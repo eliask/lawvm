@@ -36,6 +36,7 @@ UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patc
 UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
 UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
+UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID = "uk_effect_table_entry_row_replace"
 UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
 UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID = (
     "uk_effect_embedded_table_payload_structural_substitution_preserved"
@@ -465,6 +466,46 @@ def _uk_table_entry_row_insert_selector(
         "inserted_text": inserted_text,
         "table_label": table_match.group(1) if table_match is not None else "",
         "source_names_table": source_names_table,
+        "original_target": str(target),
+        "target_ref": target_ref,
+    }
+
+
+def _uk_table_entry_row_replace_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract a source-owned table-entry replacement selector."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" not in target_surface and "table" not in text.lower():
+        return None
+    match = re.search(
+        r"\bfor\s+the\s+entries\s+relating\s+to\s+(?:the\s+)?(?P<anchors>.+?)\s+"
+        r"substitut(?:e|ed)\s*[—–-]?",
+        text,
+        re.I,
+    )
+    if match is None:
+        return None
+    anchors_text = " ".join(match.group("anchors").split()).strip(" ,;.")
+    relating_texts = tuple(
+        re.sub(r"^the\s+", "", part.strip(" ,;."), flags=re.I)
+        for part in re.split(r"\s+and\s+|,\s*", anchors_text)
+        if part.strip(" ,;.")
+    )
+    if len(relating_texts) < 2:
+        return None
+    return {
+        "rule_id": UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
+        "selector_mode": "relating_entries",
+        "relating_texts": relating_texts,
+        "source_payload_mode": "table_rows",
+        "source_names_table": "table" in text.lower(),
         "original_target": str(target),
         "target_ref": target_ref,
     }
