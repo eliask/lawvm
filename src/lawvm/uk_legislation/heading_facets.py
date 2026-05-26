@@ -6,6 +6,7 @@ patch fragments. They do not resolve targets against live state or mutate IR.
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -13,6 +14,11 @@ from lawvm.core.semantic_types import FacetKind
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+from lawvm.uk_legislation.source_context import (
+    _source_ancestor_chain,
+    _source_text_before_extracted_child,
+    _unique_source_ancestor_chain_by_tag_text,
+)
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -179,11 +185,31 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return None
+    parenthetical_match = re.search(
+        r"\b(?:heading|title|sidenote)\s+to\s+which\s+becomes\s+"
+        r"(?:[“\"'‘](?P<quoted>.*?)[”\"'’]|(?P<bare>[^).;]+))",
+        text,
+        flags=re.I | re.S,
+    )
+    if parenthetical_match is not None:
+        replacement = (
+            parenthetical_match.group("quoted")
+            if parenthetical_match.group("quoted") is not None
+            else parenthetical_match.group("bare")
+        )
+        replacement = " ".join(str(replacement or "").split()).strip(" “”\"'‘’")
+        if replacement:
+            return {
+                "original": "TEXT_ALL",
+                "replacement": replacement,
+                "rule_id": "uk_effect_heading_facet_full_replacement_text_patch",
+            }
     match = re.search(
         r"\b(?:the\s+)?(?:italic\s+)?(?:section\s+)?(?:heading|title|sidenote)"
         r"(?:\s+before\s+(?:(?:paragraph|section|article)\s+[0-9A-Za-z().]+|that\s+paragraph))?"
         r"(?:\s+(?:to\s+the\s+section|of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)\s+[0-9A-Za-z]+"
         r"(?:\s+of\s+(?:the\s+)?(?:[0-9]{4}\s+)?Act)?))?"
+        r"(?:\s+to\s+which)?"
         r"(?:\s+accordingly)?\s+becomes\s+(?P<replacement>.+)$",
         text,
         flags=re.I | re.S,
@@ -213,11 +239,46 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
     }
 
 
-def _is_heading_facet_word_patch_supported(effect_type: str, extracted_text: Optional[str] = None) -> bool:
+def _heading_facet_source_parent_full_replacement_fragment(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> Optional[dict[str, Any]]:
+    """Return a heading replacement carried by the parent source instruction."""
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor in ancestors:
+        lead_text = _source_text_before_extracted_child(ancestor, extracted_el)
+        fragment = _heading_facet_full_replacement_fragment(lead_text)
+        if fragment is None:
+            continue
+        return {
+            **fragment,
+            "rule_id": "uk_effect_heading_facet_source_parent_full_replacement_text_patch",
+            "source_parent_id": str(ancestor.get("id") or ancestor.get("eId") or ""),
+        }
+    return None
+
+
+def _is_heading_facet_word_patch_supported(
+    effect_type: str,
+    extracted_text: Optional[str] = None,
+    *,
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
+) -> bool:
     """Return whether a UK heading-facet effect can carry an explicit text patch."""
     normalized = " ".join((effect_type or "").lower().split())
     if normalized in {"substituted", "replaced"}:
-        return _heading_facet_full_replacement_fragment(extracted_text) is not None
+        return (
+            _heading_facet_full_replacement_fragment(extracted_text) is not None
+            or _heading_facet_source_parent_full_replacement_fragment(
+                extracted_el=extracted_el,
+                source_root=source_root,
+            )
+            is not None
+        )
     if normalized in {
         "words substituted",
         "word substituted",

@@ -215,6 +215,36 @@ def append_source_fragment_context_observations(
                 "replacement": op_text_replacement,
             },
         )
+    for heading_source_parent_fragment in fragment_subs or []:
+        if (
+            str(heading_source_parent_fragment.get("rule_id") or "")
+            != "uk_effect_heading_facet_source_parent_full_replacement_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_heading_facet_source_parent_full_replacement_text_patch",
+            family="source_context_elaboration",
+            reason_code="heading_replacement_resolved_from_source_parent",
+            reason=(
+                "UK source payload carries only the inserted body provisions, "
+                "while its parent instruction carries the heading/title "
+                "replacement. Lowering combines those source-local facts for "
+                "the heading facet target instead of mutating the host body."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(
+                    heading_source_parent_fragment.get("source_parent_id") or ""
+                ),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
     for each_other_fragment in fragment_subs or []:
         each_other_rule_id = str(each_other_fragment.get("rule_id") or "")
         if each_other_rule_id not in {

@@ -171,6 +171,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         target_candidate_count=len(ctx.targets_str),
         extracted_el=extracted_el,
         extracted_text=extracted_text,
+        source_root=ctx.source_root,
         lowering_rejections_out=lowering_rejections_out,
     ):
         return unchanged
@@ -432,6 +433,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         crossheading_replacement_reason=crossheading_context.replacement_reason,
         crossheading_text_patch_fragment=crossheading_text_patch_fragment,
         extracted_el=extracted_el,
+        source_root=ctx.source_root,
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,
     )

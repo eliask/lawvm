@@ -261,6 +261,7 @@ def reject_unsupported_target_facet(
     target_candidate_count: int,
     extracted_el: Optional[ET.Element],
     extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
     if _is_schedule_note_ref(t_str):
@@ -283,6 +284,8 @@ def reject_unsupported_target_facet(
     if _is_heading_only_ref(t_str) and not _is_heading_facet_word_patch_supported(
         effect.effect_type,
         extracted_text,
+        extracted_el=extracted_el,
+        source_root=source_root,
     ):
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,

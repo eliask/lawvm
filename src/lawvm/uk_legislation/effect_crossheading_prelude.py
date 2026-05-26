@@ -23,6 +23,7 @@ from lawvm.uk_legislation.heading_facets import (
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
+    _heading_facet_source_parent_full_replacement_fragment,
     _is_crossheading_ref,
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
@@ -233,6 +234,7 @@ def refine_crossheading_or_heading_facet_target(
     crossheading_replacement_reason: Optional[str],
     crossheading_text_patch_fragment: Optional[dict[str, str]],
     extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:
@@ -320,6 +322,12 @@ def refine_crossheading_or_heading_facet_target(
     heading_full_replacement_fragment = _heading_facet_full_replacement_fragment(
         extracted_text
     )
+    heading_source_parent_full_replacement_fragment = (
+        _heading_facet_source_parent_full_replacement_fragment(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+    )
     if heading_append_fragment is not None:
         heading_observation_rule = "uk_effect_heading_facet_append_lowered"
         heading_reason_code = "explicit_heading_facet_append"
@@ -341,6 +349,16 @@ def refine_crossheading_or_heading_facet_target(
         heading_reason = (
             "UK heading/title/sidenote target lowered as a full facet "
             "replacement; replay must mutate only the heading carrier."
+        )
+    elif heading_source_parent_full_replacement_fragment is not None:
+        heading_observation_rule = (
+            "uk_effect_heading_facet_source_parent_full_replacement_lowered"
+        )
+        heading_reason_code = "heading_replacement_resolved_from_source_parent"
+        heading_reason = (
+            "UK source payload carries only inserted body provisions, while "
+            "its parent instruction carries the heading/title replacement; "
+            "lowering mutates only the heading carrier."
         )
     else:
         heading_observation_rule = "uk_effect_heading_facet_word_patch_lowered"

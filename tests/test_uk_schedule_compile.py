@@ -29232,6 +29232,85 @@ def test_compile_skips_heading_only_ref_without_creating_section_replace() -> No
     assert lowering_rejections[0]["reason_code"] == "heading_only_ref_unsupported"
 
 
+def test_compile_heading_title_replacement_from_source_parent_instruction() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <P1 id="section-14">
+            <Pnumber>14</Pnumber>
+            <P1para>
+              <Text>At the end of section 35A of the Registered Designs Act 1949
+              (the title to which becomes <InlineAmendment>“
+              Offence by body corporate or partnership: liability of officers or partners
+              ”</InlineAmendment>) insert—</Text>
+              <BlockAmendment>
+                <P2><Pnumber>3</Pnumber><P2para><Text>Inserted body text.</Text></P2para></P2>
+              </BlockAmendment>
+            </P1para>
+          </P1>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//{*}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_title_replacement_from_source_parent",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-10-01",
+        affected_uri="/id/ukpga/1949/88/section/35A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="s. 35A title",
+        affecting_uri="/id/ukpga/2014/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="18",
+        affecting_provisions="s. 14",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("section", "35a"),),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch(
+        "TEXT_ALL",
+        "Offence by body corporate or partnership: liability of officers or partners",
+    )
+    assert ops[0].payload is None
+    assert any(
+        record["rule_id"]
+        == "uk_effect_heading_facet_source_parent_full_replacement_lowered"
+        and record["reason_code"] == "heading_replacement_resolved_from_source_parent"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"]
+        == "uk_effect_heading_facet_source_parent_full_replacement_text_patch"
+        and record["replacement"]
+        == "Offence by body corporate or partnership: liability of officers or partners"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
 def test_compile_heading_facet_word_substitution_targets_heading_special() -> None:
     extracted_el = ET.fromstring(
         f"""
