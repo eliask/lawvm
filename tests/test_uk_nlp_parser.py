@@ -1362,6 +1362,22 @@ def test_parse_fragment_substitution_handles_preposed_at_end_insert() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_insert_with_carried_parent_context() -> None:
+    subs = parse_fragment_substitution(
+        "1 At the end of subsection (1) of section 9 of the Taxes Management Act "
+        "1970 (as substituted by section 121(4) above) there shall be inserted "
+        "the words \u201c but nothing in this subsection shall enable a self-assessment\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "but nothing in this subsection shall enable a self-assessment",
+            "rule_id": "uk_effect_at_end_carried_parent_context_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_entry_for_of_insert() -> None:
     subs = parse_fragment_substitution(
         "Schedule 3 is amended by the insertion, after the entry for "
