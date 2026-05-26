@@ -24,6 +24,9 @@ _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
 _UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
 )
+_UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_REPEAL_RULE_ID = (
+    "uk_effect_flat_repeal_schedule_structural_repeal"
+)
 _UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_sentence_text_repeal"
 )
@@ -135,6 +138,7 @@ class _UKRepealTableQuotedWordsMatch:
 @dataclass(frozen=True)
 class _UKRepealTableStructuralRepeal:
     recognized: bool
+    rule_id: str = _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID
     reason_code: str = ""
     match_count: int = 0
     table_index: int = -1
@@ -179,6 +183,7 @@ class _UKRepealTableStructuralMatch:
     enactment_cell: str
     extent_cell: str
     enactment_match_basis: str
+    rule_id: str = _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID
     reason_code: str = ""
     mixed_word_selector: str = ""
 
@@ -306,7 +311,7 @@ def _uk_flat_repeal_schedule_enactment_context(
     effect: UKEffectRecord,
 ) -> tuple[str, str]:
     """Return nearby affected-enactment context for flattened repeal schedules."""
-    context = text[max(0, clause_start - 360) : clause_start]
+    context = text[:clause_start]
     citation_matches = tuple(
         re.finditer(
             r"\b(?:1[6-9]|20)\d{2}\s*\(\s*(?:c\.?|asp|s\.?\s*i\.?|si|uksi)\s*[^)]*\)",
@@ -502,6 +507,90 @@ def _uk_flat_repeal_schedule_quoted_words_text_repeal(
         enactment_match_basis=flat_match.enactment_match_basis,
         occurrence=flat_match.occurrence,
         end_occurrence=flat_match.end_occurrence,
+    )
+
+
+def _uk_flat_repeal_schedule_structural_repeal(
+    *,
+    effect: UKEffectRecord,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> _UKRepealTableStructuralRepeal:
+    """Recover whole-provision repeal rows from flattened repeal-schedule text."""
+    effect_type = str(effect.effect_type or "").strip().lower()
+    source_supplies_repeal_action = (
+        not effect_type and _uk_repeal_schedule_source_text(extracted_text)
+    )
+    if effect_type not in {"repealed", "omitted", "revoked"} and not source_supplies_repeal_action:
+        return _UKRepealTableStructuralRepeal(recognized=False)
+    if str(target.special or "") == "whole_act":
+        return _UKRepealTableStructuralRepeal(recognized=False)
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return _UKRepealTableStructuralRepeal(recognized=False)
+
+    clause_pattern = re.compile(
+        r"\b(?:In\s+)?(?:part|parts|chapter|chapters|section|sections|schedule|schedules|"
+        r"paragraph|paragraphs|subsection|subsections|sub-?paragraph|sub-?paragraphs)"
+        r"\b[^.;]{0,260}(?:[.;]|$)",
+        flags=re.I,
+    )
+    matches: list[_UKRepealTableStructuralMatch] = []
+    for match in clause_pattern.finditer(text):
+        clause = " ".join(match.group(0).split()).strip()
+        if _uk_table_cell_explicitly_excepts_target(
+            clause,
+            target=target,
+            affected_year=str(effect.affected_year or ""),
+        ):
+            continue
+        if not _uk_repeal_table_clause_is_structural_repeal(clause):
+            continue
+        if not _uk_table_cell_mentions_target(
+            clause,
+            target=target,
+            affected_year=str(effect.affected_year or ""),
+        ):
+            continue
+        enactment_context, enactment_match_basis = _uk_flat_repeal_schedule_enactment_context(
+            text,
+            clause_start=match.start(),
+            effect=effect,
+        )
+        if not enactment_match_basis:
+            continue
+        matches.append(
+            _UKRepealTableStructuralMatch(
+                table_index=-1,
+                row_text=clause,
+                enactment_cell=" ".join(enactment_context.split())[-240:],
+                extent_cell=clause,
+                enactment_match_basis=enactment_match_basis,
+                rule_id=_UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_REPEAL_RULE_ID,
+                reason_code="unique_flat_repeal_schedule_structural_repeal",
+            )
+        )
+
+    if len(matches) != 1:
+        if not matches:
+            return _UKRepealTableStructuralRepeal(recognized=False)
+        return _UKRepealTableStructuralRepeal(
+            recognized=True,
+            rule_id=_UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_REPEAL_RULE_ID,
+            reason_code="no_unique_matching_flat_repeal_schedule_structural_clause",
+            match_count=len(matches),
+        )
+    flat_match = matches[0]
+    return _UKRepealTableStructuralRepeal(
+        recognized=True,
+        rule_id=flat_match.rule_id,
+        reason_code=flat_match.reason_code,
+        match_count=1,
+        table_index=flat_match.table_index,
+        row_text=flat_match.row_text,
+        enactment_cell=flat_match.enactment_cell,
+        extent_cell=flat_match.extent_cell,
+        enactment_match_basis=flat_match.enactment_match_basis,
     )
 
 
@@ -1360,14 +1449,22 @@ def _uk_table_driven_repeal_table_structural_repeal(
         source_root=source_root,
     )
     if not search_roots:
-        return _UKRepealTableStructuralRepeal(recognized=False)
+        return _uk_flat_repeal_schedule_structural_repeal(
+            effect=effect,
+            extracted_text=extracted_text,
+            target=target,
+        )
 
     matches: list[_UKRepealTableStructuralMatch] = []
     mixed_structural_word_matches: list[_UKRepealTableMixedStructuralWordMatch] = []
     broad_container_matches: list[_UKRepealTableBroadContainerMatch] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
-        return _UKRepealTableStructuralRepeal(recognized=False)
+        return _uk_flat_repeal_schedule_structural_repeal(
+            effect=effect,
+            extracted_text=extracted_text,
+            target=target,
+        )
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         last_enactment_cell = ""
@@ -1561,6 +1658,14 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 enactment_match_basis=broad_match.enactment_match_basis,
                 broad_container_target=broad_match.broad_container_target,
             )
+        if not matches and not mixed_structural_word_matches and not broad_container_matches:
+            flat_repeal = _uk_flat_repeal_schedule_structural_repeal(
+                effect=effect,
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if flat_repeal.recognized:
+                return flat_repeal
         return _UKRepealTableStructuralRepeal(
             recognized=True,
             reason_code="no_unique_matching_repeal_table_structural_row",
@@ -1570,6 +1675,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
     match = matches[0]
     return _UKRepealTableStructuralRepeal(
         recognized=True,
+        rule_id=match.rule_id,
         reason_code=match.reason_code,
         match_count=1,
         table_index=match.table_index,
