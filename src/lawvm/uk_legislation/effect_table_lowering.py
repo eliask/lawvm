@@ -37,6 +37,7 @@ from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
     UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID as _UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
     _uk_broad_table_entry_instruction,
+    _uk_column_entry_list_row_payload,
     _uk_embedded_table_payload_structural_insertion,
     _uk_embedded_table_payload_structural_substitution,
     _uk_parent_target_before_table_marker,
@@ -375,6 +376,16 @@ def try_lower_table_row_insert(
         if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
         else None
     )
+    source_column_entry_list_payload = (
+        _uk_column_entry_list_row_payload(
+            extracted_el,
+            source_root=source_root,
+            column_index=int(table_row_insert_selector.get("column_index") or 0),
+        )
+        if str(table_row_insert_selector.get("source_payload_mode") or "")
+        == "column_entry_list_rows"
+        else None
+    )
     source_logical_entry_group_payload = (
         _uk_single_logical_table_entry_group_payload(extracted_el)
         if logical_entry_group_payload
@@ -462,6 +473,33 @@ def try_lower_table_row_insert(
             },
         )
         return UKTableLoweringResult(handled=True)
+    if (
+        str(table_row_insert_selector.get("source_payload_mode") or "")
+        == "column_entry_list_rows"
+        and source_column_entry_list_payload is None
+    ):
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+            family="source_table_elaboration",
+            reason_code="column_entry_list_insert_without_owned_list_payload",
+            reason=(
+                "UK column-scoped table-row insertion resolved a parent "
+                "column and child list payload, but the source no longer "
+                "carries exactly one owned UnorderedList; lowering blocks "
+                "instead of flattening list entries into one table cell."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "original_target": str(target),
+                "containing_target": str(parent_target),
+                **table_row_insert_selector,
+            },
+        )
+        return UKTableLoweringResult(handled=True)
 
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
@@ -487,6 +525,7 @@ def try_lower_table_row_insert(
         selector=table_row_insert_selector,
         source_row_payload=source_row_payload,
         source_table_payload=source_table_payload,
+        source_column_entry_list_payload=source_column_entry_list_payload,
         source_logical_entry_group_payload=source_logical_entry_group_payload,
         logical_entry_group_payload=logical_entry_group_payload,
     )
@@ -1279,6 +1318,7 @@ def _table_row_insert_payload(
     selector: dict[str, Any],
     source_row_payload: Optional[IRNode],
     source_table_payload: Optional[IRNode],
+    source_column_entry_list_payload: Optional[IRNode],
     source_logical_entry_group_payload: Optional[IRNode],
     logical_entry_group_payload: bool,
 ) -> IRNode:
@@ -1301,6 +1341,17 @@ def _table_row_insert_payload(
                         "anchor_entry_label": str(selector["anchor_entry_label"]),
                     }
                 ),
+            },
+        )
+    if str(selector.get("source_payload_mode") or "") == "column_entry_list_rows":
+        assert source_column_entry_list_payload is not None
+        return dc_replace(
+            source_column_entry_list_payload,
+            attrs={
+                **dict(source_column_entry_list_payload.attrs or {}),
+                "source_rule_id": "uk_table_column_entry_list_rows_payload",
+                "anchor_direction": str(selector["direction"]),
+                "relating_text": str(selector["relating_text"]),
             },
         )
     if logical_entry_group_payload:
