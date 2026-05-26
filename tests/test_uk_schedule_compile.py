@@ -27,6 +27,10 @@ from lawvm.uk_legislation.source_adjudication import (
 )
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.effect_temporal import (
+    UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
+    resolve_uk_effective_date_overrides_for_replay,
+)
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
@@ -273,6 +277,42 @@ def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
         ("second", "x" * 95),
         ("too-short", "x" * 90),
     ]
+
+
+def test_uk_amended_effect_type_can_require_source_for_text_patch_replay() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_amended_source_text_patch",
+        effect_type="amended",
+        applied=True,
+        requires_applied=False,
+        modified="1999-02-20",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="Sch. 14",
+        affecting_uri="/id/uksi/1999/416",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1999",
+        affecting_number="416",
+        affecting_provisions="Sch. 1 para. 18(3)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "1999-02-20", "prospective": "false"}],
+    )
+    op = LegalOperation(
+        op_id="uk_test_amended_source_text_patch",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "14"),)),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="Countryside Commission", occurrence=0),
+            replacement="Countryside Agency",
+        ),
+    )
+
+    assert uk_replay_mod.uk_effect_requires_affecting_source_for_replay(effect) is True
+    assert should_replay_nonstructural_ops(effect, [op]) is True
 
 
 def _minimal_uk_effect(
@@ -23099,7 +23139,7 @@ def test_replay_table_entry_relating_rows_replace_mutates_only_resolved_row_span
                                                     kind=IRNodeKind.CELL,
                                                     text="Conservation of the natural beauty or amenity of the countryside.",
                                                 ),
-                                                IRNode(kind=IRNodeKind.CELL, text="Countryside Agency."),
+                                                IRNode(kind=IRNodeKind.CELL, text="The Countryside Agency."),
                                             ),
                                         ),
                                         IRNode(
@@ -34860,6 +34900,125 @@ def test_pipeline_compile_ops_records_pit_date_filtered_effects(monkeypatch) -> 
             "strict_disposition": "record",
             "quirks_disposition": "record",
         }
+    ]
+
+
+def test_uk_effective_date_override_uses_single_si_commencement_metadata() -> None:
+    class Archive:
+        def get(self, locator: str) -> bytes:
+            assert locator == "https://www.legislation.gov.uk/uksi/1999/416/data.xml"
+            return b"""
+            <Legislation xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+              <ukm:SecondaryMetadata>
+                <ukm:Made Date="1999-02-19"/>
+                <ukm:ComingIntoForce>
+                  <ukm:DateTime Date="1999-02-20"/>
+                </ukm:ComingIntoForce>
+              </ukm:SecondaryMetadata>
+            </Legislation>
+            """
+
+    effect = UKEffectRecord(
+        effect_id="uk_test_undated_applied_si",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2016-06-02",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="Sch. 6 Pt. 4",
+        affecting_uri="/id/uksi/1999/416",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1999",
+        affecting_number="416",
+        affecting_provisions="Sch. 1 para. 18(2)",
+        affecting_title="Test Order",
+        in_force_dates=[],
+    )
+
+    diagnostics: list[dict[str, Any]] = []
+    overrides = resolve_uk_effective_date_overrides_for_replay(
+        [effect],
+        Archive(),
+        diagnostics_out=diagnostics,
+    )
+
+    assert overrides == {"uk_test_undated_applied_si": "1999-02-20"}
+    assert diagnostics == [
+        {
+            "rule_id": UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
+            "family": "temporal_recovery",
+            "phase": "lowering",
+            "effect_id": "uk_test_undated_applied_si",
+            "affecting_act_id": "uksi/1999/416",
+            "affected_provisions": "Sch. 6 Pt. 4",
+            "affecting_provisions": "Sch. 1 para. 18(2)",
+            "effect_type": "words substituted",
+            "effective_date": "1999-02-20",
+            "source_locator": "https://www.legislation.gov.uk/uksi/1999/416/data.xml",
+            "authority_layer": "AFFECTING_ACT_METADATA",
+            "reason": (
+                "UK effect feed marked this statutory-instrument effect as applied "
+                "but omitted an effect-level in-force date; LawVM used the single "
+                "official instrument commencement date from affecting-act metadata."
+            ),
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_uk_effect_ordering_uses_source_backed_effective_date_override() -> None:
+    undated_1999 = UKEffectRecord(
+        effect_id="uk_test_undated_1999",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2016-06-02",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="Sch. 6 Pt. 4",
+        affecting_uri="/id/uksi/1999/416",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1999",
+        affecting_number="416",
+        affecting_provisions="Sch. 1 para. 18(2)",
+        affecting_title="1999 Order",
+        in_force_dates=[],
+    )
+    dated_2006 = UKEffectRecord(
+        effect_id="uk_test_dated_2006",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2006-10-02",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="Sch. 6 Pt. 4",
+        affecting_uri="/id/ukpga/2006/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2006",
+        affecting_number="16",
+        affecting_provisions="Sch. 11 para. 147",
+        affecting_title="2006 Act",
+        in_force_dates=[{"date": "2006-10-01", "prospective": "false"}],
+    )
+
+    ordered = _order_uk_effects_for_replay(
+        [dated_2006, undated_1999],
+        effective_date_overrides={"uk_test_undated_1999": "1999-02-20"},
+    )
+
+    assert [effect.effect_id for effect in ordered] == [
+        "uk_test_undated_1999",
+        "uk_test_dated_2006",
     ]
 
 
