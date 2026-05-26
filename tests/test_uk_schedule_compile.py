@@ -30047,6 +30047,51 @@ def test_compile_omit_words_after_anchor_to_tail_delete() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_definition_child_tail_after_anchor_to_end_preserves_source_scope() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>a in the definition of “extended sentence”, in the words following paragraph (b), for the words following “Scotland” substitute “ or Northern Ireland ” ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_tail_after_anchor_to_end",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/2020/17/section/273/12",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 273(12)",
+        affecting_uri="/id/ukpga/2020/17/schedule/22/paragraph/88/1/a",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 22 para. 88(1)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2020-12-31", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "273"), ("subsection", "12")))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == f"TEXT_IN_DEFINITION_CHILD_TAIL{US}extended sentence{US}paragraph{US}b{US}AFTER{US}Scotland{US}TO_END"
+    )
+    assert ops[0].text_patch.replacement == "or Northern Ireland"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_definition_child_tail_after_anchor_to_end_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_quoted_words_anchor_to_end_substitution() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -30863,6 +30908,141 @@ def test_replay_heading_facet_after_anchor_tail_replace_mutates_heading_only() -
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
     assert adjudications[0].detail["source_shape"] == "after_anchor_to_end_selector"
+
+
+def test_replay_definition_child_tail_after_anchor_to_end_scopes_by_definition() -> None:
+    base_text = (
+        "\u201cextended sentence\u201d means sentence under paragraph (a); sentence under paragraph (b); "
+        "and any sentence imposed under the law of Scotland, Northern Ireland or a member State "
+        "(other than the United Kingdom); \u201clife sentence\u201d means sentence under paragraph (a); "
+        "sentence under paragraph (b); sentence under paragraph (c); and any sentence imposed under "
+        "the law of Scotland, Northern Ireland or a member State (other than the United Kingdom)."
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="273",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="12",
+                            text=base_text,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    target = LegalAddress(path=(("section", "273"), ("subsection", "12")))
+    ops = [
+        LegalOperation(
+            op_id="uk_test_definition_child_tail_after_anchor_extended",
+            sequence=0,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        f"TEXT_IN_DEFINITION_CHILD_TAIL{US}extended sentence{US}paragraph"
+                        f"{US}b{US}AFTER{US}Scotland{US}TO_END"
+                    )
+                ),
+                replacement="or Northern Ireland",
+            ),
+        ),
+        LegalOperation(
+            op_id="uk_test_definition_child_tail_after_anchor_life",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        f"TEXT_IN_DEFINITION_CHILD_TAIL{US}life sentence{US}paragraph"
+                        f"{US}c{US}AFTER{US}Scotland{US}TO_END"
+                    )
+                ),
+                replacement="or Northern Ireland",
+            ),
+        ),
+    ]
+    adjudications: list[CompileAdjudication] = []
+
+    result = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = result.body.children[0].children[0]
+    assert subsection.text.count("Scotland or Northern Ireland") == 2
+    assert "member State" not in subsection.text
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied",
+        "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied",
+    ]
+    assert all(row.detail["blocking"] is False for row in adjudications)
+    assert all(row.detail["strict_disposition"] == "record" for row in adjudications)
+
+
+def test_replay_definition_child_tail_after_anchor_records_flat_boundary_recovery() -> None:
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="273",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="12",
+                            text=(
+                                "\u201cextended sentence\u201d means\u2014 a sentence under A, "
+                                "or a sentence under B, or an equivalent sentence under "
+                                "the law of Scotland, Northern Ireland or a member State;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk_test_definition_child_tail_after_anchor_flat_boundary",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "273"), ("subsection", "12"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(
+                match_text=(
+                    f"TEXT_IN_DEFINITION_CHILD_TAIL{US}extended sentence{US}paragraph"
+                    f"{US}b{US}AFTER{US}Scotland{US}TO_END"
+                )
+            ),
+            replacement="or Northern Ireland",
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    subsection = result.body.children[0].children[0]
+    assert subsection.text.endswith("Scotland or Northern Ireland ;")
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique",
+        "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied",
+    ]
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[1].detail["strict_disposition"] == "record"
 
 
 def test_replay_heading_facet_patch_uses_direct_section_heading_carrier() -> None:

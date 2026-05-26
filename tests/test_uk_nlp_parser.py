@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+from lawvm.uk_legislation.nlp_parser import US, parse_fragment_substitution
 from lawvm.uk_legislation.source_text_normalization import normalize_uk_parser_text
 
 
@@ -1429,6 +1429,25 @@ def test_parse_fragment_substitution_handles_words_following_anchor_substitution
             "original": "TEXT_AFTER_Scotland_TO_END",
             "replacement": "or Northern Ireland.",
             "rule_id": "uk_effect_after_anchor_to_end_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_scopes_definition_child_tail_anchor_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a in the definition of \u201cextended sentence\u201d, in the words following "
+        "paragraph (b), for the words following \u201cScotland\u201d substitute "
+        "\u201c or Northern Ireland \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": (
+                f"TEXT_IN_DEFINITION_CHILD_TAIL{US}extended sentence{US}paragraph"
+                f"{US}b{US}AFTER{US}Scotland{US}TO_END"
+            ),
+            "replacement": "or Northern Ireland",
+            "rule_id": "uk_effect_definition_child_tail_after_anchor_to_end_text_patch",
         }
     ]
 

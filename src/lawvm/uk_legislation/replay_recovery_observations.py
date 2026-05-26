@@ -242,6 +242,25 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="flat_in_definition_child_ordinal_selector",
     ),
+    "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a definition-child tail rewrite after proving "
+            "the source-scoped definition entry, child segment, and tail anchor."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="definition_child_tail_after_anchor_to_end_selector",
+    ),
+    "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a definition-child tail rewrite where source "
+            "parse preserved the definition entry and a unique tail anchor, "
+            "but not the cited child paragraph boundary."
+        ),
+        family="source_shape_recovery",
+        strict_disposition="block",
+        source_shape="flat_definition_child_boundary_unavailable_anchor_unique",
+    ),
     "uk_replay_text_range_anchor_word_boundary_normalized": UKReplayRecoveryObservation(
         message=(
             "UK replay applied range text op after matching a quoted "

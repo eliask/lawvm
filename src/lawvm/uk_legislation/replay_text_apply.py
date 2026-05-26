@@ -888,6 +888,96 @@ def _rewrite_after_anchor_to_end_text(
     return " ".join(f"{text[: anchor_match.end()]}{joiner}{replacement}".split()).strip(), True
 
 
+def _rewrite_definition_child_tail_after_anchor_to_end_text(
+    text: str,
+    *,
+    term: str,
+    child_label: str,
+    anchor: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool, tuple[str, ...]]:
+    bounds = _flat_definition_child_bounds(
+        text,
+        term=term,
+        child_label=child_label,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    fallback_recovery_rule_ids: tuple[str, ...] = ()
+    if bounds is None:
+        definition_pattern = _compile_definition_entry_range_pattern(
+            term,
+            allow_punctuation_spacing=allow_punctuation_spacing,
+            allow_word_punctuation_elision=allow_word_punctuation_elision,
+            prefix_pattern=r"(?:^|[;\.]\s*)",
+            predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
+        )
+        definition_matches = list(definition_pattern.finditer(text))
+        if len(definition_matches) != 1:
+            return text, False, ()
+        definition_match = definition_matches[0]
+        tail_start = definition_match.end(0) - len(definition_match.group(0))
+        entry_end = definition_match.end()
+        fallback_recovery_rule_ids = (
+            "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique",
+        )
+    else:
+        ordinal, body_start, entry_end, semicolons = bounds
+        tail_start = body_start + semicolons[ordinal - 1].end()
+    tail_text = text[tail_start:entry_end]
+
+    literal_matches = list(re.finditer(re.escape(anchor), tail_text))
+    if len(literal_matches) == 1:
+        anchor_match = literal_matches[0]
+    else:
+        pattern = _text_patch_pattern(
+            anchor,
+            allow_punctuation_spacing=allow_punctuation_spacing,
+            allow_word_punctuation_elision=allow_word_punctuation_elision,
+        )
+        matches = list(re.finditer(pattern, tail_text, flags=re.I | re.S))
+        if len(matches) != 1:
+            return text, False, ()
+        anchor_match = matches[0]
+
+    anchor_end = tail_start + anchor_match.end()
+    terminator = ""
+    if entry_end > anchor_end and text[entry_end - 1] in ";,.":
+        terminator = text[entry_end - 1]
+    replacement_text = replacement.strip()
+    if terminator and not replacement_text.endswith(terminator):
+        replacement_text = f"{replacement_text} {terminator}".strip()
+    joiner = (
+        ""
+        if text[:anchor_end].endswith((" ", "\t", "\n", "\r"))
+        or replacement_text.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    rewritten = " ".join(f"{text[:anchor_end]}{joiner}{replacement_text}{text[entry_end:]}".split()).strip()
+    return rewritten, True, fallback_recovery_rule_ids
+
+
+def _definition_child_tail_after_anchor_selector_parts(
+    match: str,
+) -> tuple[str, str, str] | None:
+    if not match.startswith(f"TEXT_IN_DEFINITION_CHILD_TAIL{US}"):
+        return None
+    parts = match.split(US)
+    if len(parts) != 7 or parts[4] != "AFTER" or parts[6] != "TO_END":
+        return None
+    _, term, child_kind, child_label, _, anchor, _ = parts
+    if child_kind not in {"paragraph", "subparagraph", "subsection"}:
+        return None
+    term = term.strip()
+    child_label = child_label.strip()
+    anchor = anchor.strip()
+    if not term or not child_label or not anchor:
+        return None
+    return term, child_label, anchor
+
+
 def _find_text_range_start_index(
     full_text: str,
     start_text: str,
@@ -1130,6 +1220,31 @@ class UKReplayTextApplyMixin:
                     "uk_replay_each_other_place_substitution_applied"
                 )
             return rebuilt, True
+        if match.startswith(f"TEXT_IN_DEFINITION_CHILD_TAIL{US}"):
+            selector_parts = _definition_child_tail_after_anchor_selector_parts(match)
+            if selector_parts is None:
+                return node, False
+            term, child_label, anchor = selector_parts
+            new_text, changed, fallback_recovery_rule_ids = _rewrite_definition_child_tail_after_anchor_to_end_text(
+                text,
+                term=term,
+                child_label=child_label,
+                anchor=anchor,
+                replacement=replacement,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            if not changed:
+                return node, False
+            rebuilt = dc_replace(node, text=new_text)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.extend(fallback_recovery_rule_ids)
+                recovery_rule_ids_out.append(
+                    "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied"
+                )
+            return rebuilt, True
+
         if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
             anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
             if not anchor:
@@ -2337,6 +2452,34 @@ class UKReplayTextApplyMixin:
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append(
                     "uk_replay_definition_child_flat_ordinal_text_rewrite_applied"
+                )
+            return rebuilt, True
+
+        if match.startswith(f"TEXT_IN_DEFINITION_CHILD_TAIL{US}"):
+            selector_parts = _definition_child_tail_after_anchor_selector_parts(match)
+            if selector_parts is None:
+                return node, False
+            term, child_label, anchor = selector_parts
+
+            rebuilt, applied, fallback_recovery_rule_ids = self._apply_unique_text_node_rewrite_with_metadata(
+                node,
+                text_nodes,
+                lambda text: _rewrite_definition_child_tail_after_anchor_to_end_text(
+                    text,
+                    term=term,
+                    child_label=child_label,
+                    anchor=anchor,
+                    replacement=replacement,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                ),
+            )
+            if not applied:
+                return node, False
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.extend(fallback_recovery_rule_ids or ())
+                recovery_rule_ids_out.append(
+                    "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied"
                 )
             return rebuilt, True
 

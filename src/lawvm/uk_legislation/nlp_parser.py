@@ -66,6 +66,9 @@ UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID = (
 UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID = (
     "uk_effect_anchor_to_end_block_substitution_text_patch"
 )
+UK_DEFINITION_CHILD_TAIL_AFTER_ANCHOR_TO_END_RULE_ID = (
+    "uk_effect_definition_child_tail_after_anchor_to_end_text_patch"
+)
 UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_patch"
 UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
     "uk_effect_at_end_unquoted_text_insertion_patch"
@@ -1097,6 +1100,36 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         }
         subs.append(patch)
 
+    definition_child_tail_after_anchor_spans: list[tuple[int, int]] = []
+    matches_definition_child_tail_after_anchor_substituted = re.finditer(
+        r"in the definition of\s+(?:the\s+)?[“\"'‘](?P<term>.*?)[”\"'’]"
+        r"\s*,?\s+in the words following\s+"
+        r"(?P<child_kind>paragraph|sub-paragraph|subsection)\s+\((?P<child_label>[0-9A-Za-z]+)\)"
+        r"\s*,?\s+for (?:the )?words? (?:after|following) [“\"'‘](?P<anchor>.*?)[”\"'’]"
+        r"\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_definition_child_tail_after_anchor_substituted:
+        term = m.group("term").strip()
+        child_kind = m.group("child_kind").strip().lower().replace("-", "")
+        child_label = m.group("child_label").strip()
+        anchor = m.group("anchor").strip()
+        replacement = m.group("replacement").strip()
+        if not term or not child_kind or not child_label or not anchor:
+            continue
+        definition_child_tail_after_anchor_spans.append(m.span())
+        subs.append(
+            {
+                "original": (
+                    f"TEXT_IN_DEFINITION_CHILD_TAIL{US}{term}{US}{child_kind}"
+                    f"{US}{child_label}{US}AFTER{US}{anchor}{US}TO_END"
+                ),
+                "replacement": replacement,
+                "rule_id": UK_DEFINITION_CHILD_TAIL_AFTER_ANCHOR_TO_END_RULE_ID,
+            }
+        )
+
     matches_after_anchor_substituted = re.finditer(
         r"for (?:the )?words? (?:after|following) [“\"'‘](.*?)[”\"'’]"
         r"\s+substitute\s+[“\"'‘](.*?)[”\"'’]",
@@ -1104,6 +1137,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_after_anchor_substituted:
+        if any(start <= m.start() and m.end() <= end for start, end in definition_child_tail_after_anchor_spans):
+            continue
         subs.append(
             {
                 "original": f"TEXT_AFTER_{m.group(1).strip()}_TO_END",
