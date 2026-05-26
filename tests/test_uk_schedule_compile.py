@@ -13771,6 +13771,201 @@ def test_compile_repeal_table_mixed_structural_and_word_repeal_splits_ops() -> N
     ]
 
 
+def test_compile_repeal_table_parent_child_text_repeal_splits_ops() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Registered Designs Act 1949 (c. 88)</td>
+                  <td>In section 11A(3), paragraph (b) and the word “or” immediately preceding it, and the words from “or may, instead” to the end of the subsection.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_parent_child_text_repeal",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2018-01-19",
+        affected_uri="/id/ukpga/1949/88/section/11A/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="s. 11A(3)",
+        affecting_uri="/id/uksi/2001/3949",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="3949",
+        affecting_provisions="sch. 2",
+        affecting_title="Test Repeal Regulations",
+        in_force_dates=[{"date": "2001-12-09", "prospective": "false"}],
+        affected_title="Registered Designs Act 1949",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.REPEAL,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "11a"), ("subsection", "3")),
+        (("section", "11a"), ("subsection", "3")),
+        (("section", "11a"), ("subsection", "3"), ("paragraph", "b")),
+    ]
+    assert ops[0].text_patch is not None
+    assert ops[1].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_b"
+    )
+    assert ops[1].text_patch.selector.match_text == "TEXT_FROM_or may, instead_TO_END"
+    assert all(
+        op.witness_rule_id
+        == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        and record["reason_code"] == "parent_target_child_structural_and_text_repeal_split"
+        and record["target"] == "section:11a/subsection:3"
+        and record["text_target"] == "section:11a/subsection:3"
+        and record["structural_target"] == "section:11a/subsection:3/paragraph:b"
+        and record["text_selectors"]
+        == (
+            "TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_b",
+            "TEXT_FROM_or may, instead_TO_END",
+        )
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1949/88",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="11a",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text=(
+                                "If the report includes paragraph claims "
+                                "or may, instead, cancel the registration."
+                            ),
+                            attrs={
+                                "uk_post_child_text_tail": (
+                                    "or may, instead, cancel the registration."
+                                )
+                            },
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first condition, or"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second condition"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == "If the report includes paragraph claims"
+    assert [child.label for child in subsection.children] == ["a"]
+    assert subsection.children[0].text == "first condition"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_contextual_word_text_rewrite_applied",
+        "uk_replay_node_local_range_to_end_text_rewrite_applied",
+    ]
+
+
+def test_compile_repeal_table_parent_child_text_repeal_ambiguous_child_blocks() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Registered Designs Act 1949 (c. 88)</td>
+                  <td>In section 11A(3), paragraphs (a) and (b) and the word “or” immediately preceding it.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_parent_child_text_repeal_ambiguous",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2018-01-19",
+        affected_uri="/id/ukpga/1949/88/section/11A/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="s. 11A(3)",
+        affecting_uri="/id/uksi/2001/3949",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="3949",
+        affecting_provisions="sch. 2",
+        affecting_title="Test Repeal Regulations",
+        in_force_dates=[{"date": "2001-12-09", "prospective": "false"}],
+        affected_title="Registered Designs Act 1949",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert not any(
+        op.witness_rule_id == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        for op in ops
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_mixed_following_word_repeal_with_section_context() -> None:
     source_root = ET.fromstring(
         """
