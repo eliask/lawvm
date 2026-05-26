@@ -3043,6 +3043,20 @@ Current payload-descendant source-ref invariant:
   `subsection (4)`) and leaf target (`paragraph (a)`) are both source-named;
   the sibling `subsection (5)` remains a separate source fact and is not
   replayed for an effect row that targets only `s. 102(4)(a) and word`.
+  If the effect feed target stops at the parent provision but the same
+  source-owned repeal-table clause names that parent, explicitly names one child
+  structural target, and supplies bounded text deletions for that child/parent
+  boundary, the compiler may split the row under
+  `uk_effect_repeal_table_parent_child_text_repeal_split`. The split emits
+  parent-scoped `TEXT_REPEAL` operations for selectors such as
+  `TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_b` and
+  `TEXT_FROM_or may, instead_TO_END`, plus a child-scoped `REPEAL` for the
+  explicitly named child. This is not broad parent repeal authority: it requires
+  one unique affected-Act row, one unique child target, and bounded selectors
+  from the same extent clause. Current witness: `ukpga/1949/88` affected
+  `s. 11A(3)` / `uksi/2001/3949 Sch. 2`, where the source says `In section
+  11A(3), paragraph (b) and the word "or" immediately preceding it, and the
+  words from "or may, instead" to the end of the subsection.`
   Mixed clauses without an exact target plus contextual word selector remain
   blocked under `mixed_structural_and_word_repeal_requires_split`. Manual claim
   templates expose that reason code and require

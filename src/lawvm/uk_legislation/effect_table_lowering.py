@@ -48,9 +48,11 @@ from lawvm.uk_legislation.table_selectors import (
 from lawvm.uk_legislation.table_sources import (
     _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
+    _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
     _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+    _uk_table_driven_repeal_table_parent_child_text_repeal_split,
     _uk_table_driven_repeal_table_quoted_words_text_repeal,
     _uk_table_driven_repeal_table_structural_repeal,
 )
@@ -655,6 +657,102 @@ def try_lower_repeal_table_effect(
                 },
             )
             return UKTableBatchLoweringResult(handled=True)
+
+    parent_child_text_split = _uk_table_driven_repeal_table_parent_child_text_repeal_split(
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+        target=target,
+    )
+    if (
+        parent_child_text_split.recognized
+        and parent_child_text_split.match_count == 1
+        and parent_child_text_split.parent_target is not None
+        and parent_child_text_split.structural_target is not None
+        and parent_child_text_split.text_selectors
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
+            family="source_repeal_table_elaboration",
+            reason_code=parent_child_text_split.reason_code,
+            reason=(
+                "UK repeal-table source row matched the affected parent "
+                "provision, explicitly named a child structural repeal, "
+                "and supplied bounded local text deletions; lowering emits "
+                "separate typed operations so the parent feed target is not "
+                "silently escalated or ignored."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "text_target": str(parent_child_text_split.parent_target),
+                "structural_target": str(parent_child_text_split.structural_target),
+                "text_selectors": parent_child_text_split.text_selectors,
+                "table_index": parent_child_text_split.table_index,
+                "row_text": parent_child_text_split.row_text,
+                "enactment_cell": parent_child_text_split.enactment_cell,
+                "extent_cell": parent_child_text_split.extent_cell,
+                "enactment_match_basis": (
+                    parent_child_text_split.enactment_match_basis
+                ),
+            },
+        )
+        return UKTableBatchLoweringResult(
+            handled=True,
+            ops=(
+                *_build_repeal_table_text_ops(
+                    effect=effect,
+                    sequence=sequence,
+                    target=parent_child_text_split.parent_target,
+                    originals=parent_child_text_split.text_selectors,
+                    occurrence=0,
+                    end_occurrence=0,
+                    rule_id=_UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    t_str=t_str,
+                    op_id_suffix="_text_repeal",
+                ),
+                _build_table_structural_repeal_op(
+                    effect=effect,
+                    sequence=sequence,
+                    target=parent_child_text_split.structural_target,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    t_str=t_str,
+                    witness_rule_id=_UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
+                    op_id_suffix="_structural_repeal",
+                ),
+            ),
+        )
+    if parent_child_text_split.recognized:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=f"{_UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID}_unresolved",
+            family="source_repeal_table_elaboration",
+            reason_code=parent_child_text_split.reason_code,
+            reason=(
+                "UK repeal-table source appeared to name child and text "
+                "repeals under a parent feed target, but did not resolve "
+                "to one bounded row."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "match_count": parent_child_text_split.match_count,
+            },
+        )
+        return UKTableBatchLoweringResult(handled=True)
 
     repeal_table_structural_repeal = _uk_table_driven_repeal_table_structural_repeal(
         effect=effect,
