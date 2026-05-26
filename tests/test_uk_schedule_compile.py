@@ -12062,6 +12062,108 @@ def test_compile_table_entry_label_text_patch_uses_owned_cell_selector() -> None
     assert "allow_implicit_subsection_one_table" not in selector
 
 
+def test_compile_table_column_entry_substitution_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b in the first column of the Table for the entry
+          “section 605(1), (2), (3)(b) and (4);” there shall be substituted
+          the entry “section 605(3)(b) and (4);”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-05-03",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="s. 105(4)(b)(5)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1994-05-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "section 605(1), (2), (3)(b) and (4);"
+    assert ops[0].text_patch.replacement == "section 605(3)(b) and (4);"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_entry_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 1
+    assert selector["match_text"] == "section 605(1), (2), (3)(b) and (4);"
+    assert selector["table_column_entry_action"] == "replace_entry"
+    assert selector["replacement_text"] == "section 605(3)(b) and (4);"
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_entry_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_table_column_after_entry_insert_remains_blocked_without_row_model() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in the first column of the Table after the entry
+          “regulations under section 602;” there shall be inserted the entry
+          “regulations under section 605(1A)(b) to (d);”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_after_entry_insert_without_row_model",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-05-03",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="s. 105(4)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1994-05-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert all(
+        record["rule_id"] != "uk_effect_table_column_entry_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        and record["reason_code"] == "table_entry_instruction_without_cell_target"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_column_append_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""

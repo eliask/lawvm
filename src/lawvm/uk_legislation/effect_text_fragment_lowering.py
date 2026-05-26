@@ -63,6 +63,7 @@ from lawvm.uk_legislation.source_text_reclassifications import lower_quote_only_
 from lawvm.uk_legislation.table_sources import (
     lower_uk_table_driven_corresponding_entry_word_substitution,
 )
+from lawvm.uk_legislation.table_selectors import _uk_table_column_entry_text_patch_claim
 from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_rule_ids,
     _multi_quoted_word_repeal_fragments,
@@ -234,6 +235,7 @@ def lower_uk_text_fragment_rewrite(
             source_carried_table_entry_paragraph_substitution
         ),
         target=target,
+        target_ref=target_ref,
         extracted_el=extracted_el,
         source_root=source_root,
         extracted_text=extracted_text,
@@ -355,6 +357,7 @@ def _extract_text_fragment_substitutions(
     source_carried_definition_child_text_omission_precheck: Optional[dict[str, Any]],
     source_carried_table_entry_paragraph_substitution: Optional[dict[str, Any]],
     target: LegalAddress,
+    target_ref: str,
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],
     extracted_text: str,
@@ -397,6 +400,25 @@ def _extract_text_fragment_substitutions(
         and _multi_fragment_text_selector(str(subs[0].get("original") or ""))
     ):
         subs = list(multi_quoted_word_repeals)
+    if not subs:
+        table_column_entry_text_patch = _uk_table_column_entry_text_patch_claim(
+            target_ref=target_ref,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if table_column_entry_text_patch is not None:
+            subs = [
+                {
+                    "original": str(table_column_entry_text_patch["text_patch_original"]),
+                    "replacement": str(table_column_entry_text_patch["text_patch_replacement"]),
+                    "rule_id": str(table_column_entry_text_patch["rule_id"]),
+                    "column_index": str(table_column_entry_text_patch["column_index"]),
+                    "match_text": str(table_column_entry_text_patch["match_text"]),
+                    "table_column_entry_action": str(
+                        table_column_entry_text_patch["table_column_entry_action"]
+                    ),
+                }
+            ]
     if not subs:
         metadata_carried_word_repeal = _effect_metadata_carried_quoted_words_repeal_fragment(
             effect_type=effect.effect_type,
