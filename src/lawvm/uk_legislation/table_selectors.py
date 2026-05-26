@@ -81,6 +81,12 @@ def _source_names_containing_target_for_table_cell(text: str, target: LegalAddre
         return False
     leaf_kind = _addr_leaf_kind(target)
     leaf_label = _addr_leaf_label(target)
+    if leaf_kind == "subsection" and str(leaf_label or "").lower() == "table":
+        for kind, label in reversed(target.path[:-1]):
+            if kind == "section" and label:
+                leaf_kind = kind
+                leaf_label = label
+                break
     if leaf_kind != "section" or not leaf_label:
         return False
     return (
@@ -185,7 +191,7 @@ def _uk_table_entry_inline_text_selector(
         r"(?:\s+in\s+section\s+[0-9A-Za-z]+)?"
         r",?\s+in\s+the\s+entry\s+"
         r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<relating>.*?),\s+"
-        r"(?:after|for|omit|insert)\b",
+        r"(?:after|for|omit|insert|[“\"'‘])\b",
         text,
         re.I,
     )
@@ -196,6 +202,12 @@ def _uk_table_entry_inline_text_selector(
         column_index = _uk_ordinal_to_int(
             source_table_relating_column_match.group("column_ordinal")
         )
+        if not original_text:
+            quoted_match = re.search(r"[“\"'‘](?P<original>.*?)[”\"'’]", text)
+            if quoted_match is not None:
+                original_text = " ".join(
+                    (quoted_match.group("original") or "").split()
+                ).strip()
         if original_text and relating_text and column_index is not None and column_index >= 1:
             return {
                 "rule_id": UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,

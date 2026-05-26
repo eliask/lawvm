@@ -11670,6 +11670,59 @@ def test_compile_source_named_section_table_entry_column_omit_uses_owned_cell_se
     )
 
 
+def test_compile_table_entry_column_metadata_omission_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in section 98 of TMA 1970, in the second column of the table,
+          in the entry relating to requirements imposed by CAA 2001,
+          “43(5) and (6),”,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_column_metadata_omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-07-21",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 table",
+        affecting_uri="/id/ukpga/2008/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="9",
+        affecting_provisions="s. 76(6)(a)",
+        affecting_title="Finance Act 2008",
+        in_force_dates=[{"date": "2008-07-21", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "43(5) and (6),"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+    assert selector["selector_mode"] == "unique_relating_cell"
+    assert selector["relating_text"] == "requirements imposed by CAA 2001"
+    assert selector["column_index"] == 2
+    assert selector["source_names_containing_target"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_source_named_section_table_entry_column_insert_blocks_wrong_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""

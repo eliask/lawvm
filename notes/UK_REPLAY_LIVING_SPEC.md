@@ -2945,6 +2945,12 @@ Current payload-descendant source-ref invariant:
     instruction lower as separate text deletes; accepting only the first quote
     would silently drop operative source text. Current witness: `ukpga/1970/9`
     `s. 98` by `ukpga/2019/1 s. 33(2)(a)`.
+    If the source row has the same table/column/relation scope and a single
+    quoted preimage but omits an explicit `omit` verb, `words omitted` effect
+    metadata may supply the action; lowering still records the
+    `uk_effect_metadata_carried_quoted_words_repeal_text_patch` rule and keeps
+    replay scoped to the resolved table cell. Current witness: `ukpga/1970/9`
+    `s. 98 Table` by `ukpga/2008/9 s. 76(6)(a)`.
   - Quoted entry substitutions inside one named table column, e.g. `in the
     first column of the Table for the entry "X" there shall be substituted the
     entry "Y"`, lower under `uk_effect_table_column_entry_text_patch` as a
