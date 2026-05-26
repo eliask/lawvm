@@ -444,6 +444,44 @@ def _crossheading_before_anchor_text_patch_fragment(extracted_text: Optional[str
     }
 
 
+def _crossheading_metadata_target_deictic_text_patch_fragment(
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Return a crossheading text patch for ``before that paragraph`` shapes.
+
+    The deictic anchor is admissible only because the effect metadata already
+    targets the corresponding cross-heading facet.
+    """
+    if _addr_leaf_kind(target) not in {"paragraph", "section", "article"}:
+        return None
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\b(?:heading|cross-heading|cross heading)\s+before\s+that\s+"
+        r"(?:paragraph|section|article)\b(?P<tail>.*)$",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    fragments = parse_fragment_substitution(match.group("tail"))
+    if len(fragments) != 1:
+        return None
+    fragment = dict(fragments[0])
+    original = str(fragment.get("original") or "").strip()
+    replacement = str(fragment.get("replacement") or "").strip()
+    if not original or replacement == "":
+        return None
+    return {
+        "original": original,
+        "replacement": replacement,
+        "rule_id": _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
+        "source_context": "metadata_target_deictic_anchor",
+    }
+
+
 def _crossheading_and_structural_repeal_selector(
     *,
     affected_ref: str,
