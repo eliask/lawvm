@@ -1726,7 +1726,15 @@ def _separate_multi_quoted_word_repeal_fragments(
         original = str(item.get("original") or "")
         replacement = str(item.get("replacement") or "")
         rule_id = str(item.get("rule_id") or "")
-        if rule_id != UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID or replacement or not original:
+        if (
+            rule_id
+            not in {
+                UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+                UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
+            }
+            or replacement
+            or not original
+        ):
             return ()
         fragments.append(
             {
