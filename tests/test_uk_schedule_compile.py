@@ -4860,6 +4860,145 @@ def test_compile_metadata_carried_quoted_words_repeal_from_source_fragment() -> 
     ] == ["uk_effect_metadata_carried_quoted_words_repeal_text_patch"]
 
 
+def test_compile_metadata_carried_scoped_quoted_words_repeal_splits_fragments() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-130-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in paragraph (a), “62A,” and “401,”; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_scoped_quoted_words_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1996-07-24",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(7)(a)",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="s. 130(2)(a) Sch. 41 Pt. 5(7)",
+        affecting_title="Finance Act 1996",
+        in_force_dates=[{"date": "1996-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.TEXT_REPEAL]
+    assert [op.target.path for op in ops] == [
+        (("section", "42"), ("subsection", "7"), ("paragraph", "a")),
+        (("section", "42"), ("subsection", "7"), ("paragraph", "a")),
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "62A,",
+        "401,",
+    ]
+    assert all(op.text_patch is not None and op.text_patch.kind is TextPatchKindEnum.DELETE for op in ops)
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["blocking"] is False
+    assert rows[0]["target"] == "section:42/subsection:7/paragraph:a"
+
+
+def test_compile_metadata_carried_scoped_quoted_words_repeal_requires_matching_scope() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-130-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in paragraph (b), “62A,” and “401,”; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_scoped_quoted_words_repeal_scope_mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1996-07-24",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(7)(a)",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="s. 130(2)(a) Sch. 41 Pt. 5(7)",
+        affecting_title="Finance Act 1996",
+        in_force_dates=[{"date": "1996-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert all(
+        row["rule_id"] != "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+        for row in lowering_records
+    )
+
+
+def test_compile_metadata_carried_scoped_quoted_words_repeal_accepts_full_section_path() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-1-paragraph-6-a-iii">
+          <Pnumber>iii</Pnumber>
+          <Text>iii in section 43A(2A)(a), “section 257BA of the principal Act or”,</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_section_path_quoted_words_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-06",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 43A(2A)(a)",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 6(a)(iii)",
+        affecting_title="Income Tax Act 2007",
+        in_force_dates=[{"date": "2007-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "43a"), ("subsection", "2a"), ("paragraph", "a"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "section 257BA of the principal Act or"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_quoted_words_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_section_qualified_quote_only_word_omission_for_subsection() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -2820,6 +2820,15 @@ Current payload-descendant source-ref invariant:
   target, source supplies the quoted preimage. It must not override more
   specific child-qualified omission rules where the quoted phrase is followed
   by `in paragraph ...` / `in sub-paragraph ...`.
+  A narrower scope-owned variant also covers source rows that carry no explicit
+  repeal verb but do carry an exact local scope plus one or more quoted
+  fragments, e.g. `in paragraph (a), "62A," and "401,"`; lowering emits one
+  bounded `TEXT_REPEAL` per quoted fragment only if that local scope matches
+  the effect target leaf or the full section/subsection/paragraph path. Scope
+  mismatch remains unlowered rather than deleting from the affected target.
+  Current witnesses: `ukpga/1970/9` `s. 42(7)(a)` and `s. 42(7)(c)` by
+  `ukpga/1996/8 s. 130(2)(a)-(b)`, plus `s. 43A(2A)(a)` by
+  `ukpga/2009/10 Sch. 1 para. 6(a)(iii)`.
   Prefix target forms such as `in subsection (1)(a), the words "X"` and
   `in sub-paragraph (1)(a), the words "X"` / `in sub-paragraph (2), the words
   "X"` are owned by

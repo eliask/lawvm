@@ -474,6 +474,16 @@ def _extract_text_fragment_substitutions(
         if metadata_carried_word_repeal is not None:
             subs = [metadata_carried_word_repeal]
     if not subs:
+        scoped_metadata_carried_word_repeals = (
+            _effect_metadata_carried_scoped_quoted_words_repeal_fragments(
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+                target=target,
+            )
+        )
+        if scoped_metadata_carried_word_repeals:
+            subs = list(scoped_metadata_carried_word_repeals)
+    if not subs:
         metadata_carried_after_ordinal_insert = (
             _effect_metadata_carried_after_ordinal_insert_fragment(
                 effect_type=effect.effect_type,
@@ -946,6 +956,81 @@ def _effect_metadata_carried_quoted_words_repeal_fragment(
         "replacement": "",
         "rule_id": UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
     }
+
+
+def _target_section_ref_pattern(target: LegalAddress) -> Optional[re.Pattern[str]]:
+    if len(target.path) < 3 or target.path[0][0] != "section":
+        return None
+    section_label = _clean_num(target.path[0][1])
+    if not section_label:
+        return None
+    pieces = [rf"section\s+{re.escape(section_label)}"]
+    for kind, label in target.path[1:]:
+        if kind not in {"subsection", "paragraph", "subparagraph", "item"}:
+            continue
+        clean_label = _clean_num(label)
+        if not clean_label:
+            continue
+        pieces.append(rf"\s*\(\s*{re.escape(clean_label)}\s*\)")
+    if len(pieces) == 1:
+        return None
+    return re.compile("".join(pieces), flags=re.I)
+
+
+def _metadata_carried_quote_scope_matches_target(text: str, target: LegalAddress) -> bool:
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if target_kind in {"paragraph", "subparagraph", "subsection"} and target_label:
+        source_kind_pattern = {
+            "paragraph": r"paragraph",
+            "subparagraph": r"sub-?paragraph",
+            "subsection": r"subsection",
+        }[target_kind]
+        if re.search(
+            rf"\bin\s+(?:the\s+)?{source_kind_pattern}\s*\(\s*{re.escape(target_label)}\s*\)",
+            text,
+            flags=re.I,
+        ):
+            return True
+    section_ref_pattern = _target_section_ref_pattern(target)
+    if section_ref_pattern is not None and section_ref_pattern.search(text):
+        return True
+    return False
+
+
+def _effect_metadata_carried_scoped_quoted_words_repeal_fragments(
+    *,
+    effect_type: str,
+    extracted_text: str,
+    target: LegalAddress,
+) -> tuple[dict[str, str], ...]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return ()
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return ()
+    if re.search(r"\b(?:table|column|entry|definition)\b", text, flags=re.I):
+        return ()
+    if re.search(r"\b(?:omit|omitted|repeal|repealed|insert|inserted|substitute|substituted)\b", text, flags=re.I):
+        return ()
+    if not _metadata_carried_quote_scope_matches_target(text, target):
+        return ()
+    quoted = tuple(
+        " ".join((match.group("curly") or match.group("double") or "").split()).strip()
+        for match in re.finditer(r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\")", text)
+    )
+    quoted = tuple(fragment for fragment in quoted if fragment)
+    if not quoted:
+        return ()
+    return tuple(
+        {
+            "original": fragment,
+            "replacement": "",
+            "rule_id": UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
+        }
+        for fragment in quoted
+    )
 
 
 def _effect_metadata_carried_after_ordinal_insert_fragment(
