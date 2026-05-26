@@ -2974,6 +2974,17 @@ Current payload-descendant source-ref invariant:
     `after entry X insert entry Y`, because that is row/cell placement, not a
     safe append to the existing cell; those rows remain a table compiler
     frontier until a source-owned row insertion model can prove them.
+  - Quoted entry substitutions on an affected target that itself names a table,
+    e.g. `for the entry "X" substitute "Y"`, lower under
+    `uk_effect_table_entry_text_patch` only as a bounded table-cell text patch.
+    Replay must resolve exactly one table in the target carrier and exactly one
+    whole cell whose normalized text is `X`; missing or duplicate cell matches
+    remain blocking `uk_replay_table_entry_inline_text_insertion_unresolved`
+    records. This rule
+    does not fabricate replacement rows from flat text and does not apply when
+    a column is named, because column-scoped entry patches have their own
+    selector. Current witness: `ukpga/1970/9` `s. 98 Table` by `ukpga/2001/9`
+    `Sch. 28 para. 20(a)-(b)`.
   - Column-only quoted word substitutions on a table target, e.g. `for the
     words "X" in column 2 of the Table there shall be substituted "Y"`, lower
     under `uk_effect_table_column_text_patch` with a `unique_column_text`

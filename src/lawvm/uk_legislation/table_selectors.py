@@ -36,6 +36,7 @@ UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID = (
 UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
 UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 UK_TABLE_COLUMN_ENTRY_TEXT_RULE_ID = "uk_effect_table_column_entry_text_patch"
+UK_TABLE_ENTRY_TEXT_RULE_ID = "uk_effect_table_entry_text_patch"
 UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
 UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
 UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID = "uk_effect_table_entry_row_replace"
@@ -147,6 +148,17 @@ def _uk_table_entry_inline_text_selector(
         return {
             key: value
             for key, value in column_entry_patch.items()
+            if key not in {"text_patch_original", "text_patch_replacement"}
+        }
+    table_entry_patch = _uk_table_entry_text_patch_claim(
+        target_ref=target_ref,
+        target=target,
+        extracted_text=text,
+    )
+    if table_entry_patch is not None:
+        return {
+            key: value
+            for key, value in table_entry_patch.items()
             if key not in {"text_patch_original", "text_patch_replacement"}
         }
     table_target_column_patch = _uk_table_target_column_text_patch_claim(
@@ -449,6 +461,49 @@ def _uk_table_column_entry_text_patch_claim(
                 "text_patch_replacement": replacement,
             }
     return None
+
+
+def _uk_table_entry_text_patch_claim(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract a quoted table-entry replacement without assuming a column."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_names_table = "table" in " ".join((target_ref, str(target))).lower()
+    if not target_names_table:
+        return None
+    if re.search(r"\bcolumn\b", text, re.I) is not None:
+        return None
+    quoted = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
+    substitution_match = re.search(
+        r"\bfor\s+(?:the\s+)?entry\s+"
+        + quoted.format(name="original")
+        + r"\s+(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute[ds]?)\s+"
+        + quoted.format(name="replacement"),
+        text,
+        re.I,
+    )
+    if substitution_match is None:
+        return None
+    original = " ".join(substitution_match.group("original").split()).strip()
+    replacement = " ".join(substitution_match.group("replacement").split()).strip()
+    if not original or not replacement:
+        return None
+    return {
+        "rule_id": UK_TABLE_ENTRY_TEXT_RULE_ID,
+        "selector_mode": "unique_table_text",
+        "match_text": original,
+        "replacement_text": replacement,
+        "table_entry_action": "replace_entry_text",
+        "original_target": str(target),
+        "target_ref": target_ref,
+        "text_patch_original": original,
+        "text_patch_replacement": replacement,
+    }
 
 
 def _uk_table_target_column_text_patch_claim(

@@ -592,7 +592,11 @@ def resolve_unique_uk_table_entry_text_cell(
         ):
             continue
         for cell in row_cells.values():
-            if _compact_normalized_text(cell.text or "").find(match_norm) < 0:
+            cell_norm = _compact_normalized_text(cell.text or "")
+            if selector_mode == "unique_table_text":
+                if cell_norm != match_norm:
+                    continue
+            elif cell_norm.find(match_norm) < 0:
                 continue
             if not matching_cells or matching_cells[-1] is not cell:
                 matching_cells.append(cell)
@@ -720,6 +724,8 @@ def resolve_uk_table_entry_inline_cell(
     if selector_mode == "unique_relating_cell":
         return resolve_unique_uk_table_relating_cell(node, selector)
     if selector_mode in {"unique_relating_text", "unique_entry_text"}:
+        return resolve_unique_uk_table_entry_text_cell(node, selector)
+    if selector_mode == "unique_table_text":
         return resolve_unique_uk_table_entry_text_cell(node, selector)
     if selector_mode == "unique_entry_cell":
         return resolve_unique_uk_table_entry_cell(node, selector)
