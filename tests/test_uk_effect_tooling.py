@@ -3522,6 +3522,16 @@ def test_uk_manual_compile_evidence_jsonl_table_appropriate_place_template_carri
                     "target_ref": "s. 379(1) table",
                     "target": "section:379/subsection:1/paragraph:table",
                     "entry_shape": "appropriate_place_table_entry",
+                    "inserted_table_rows": (
+                        (
+                            "Northern Ireland Troubles (Legacy and Reconciliation) Act 2023",
+                        ),
+                        (
+                            "section 26",
+                            "revocation of immunity under that Act",
+                            "making of false statements",
+                        ),
+                    ),
                 },
             ),
             replay_applicable=True,
@@ -3574,6 +3584,14 @@ def test_uk_manual_compile_evidence_jsonl_table_appropriate_place_template_carri
     assert template["source_target_surface"] == "s. 379(1) table"
     assert template["source_target_address"] == "section:379/subsection:1/paragraph:table"
     assert template["table_entry_shape"] == "appropriate_place_table_entry"
+    assert template["inserted_table_rows"] == [
+        ["Northern Ireland Troubles (Legacy and Reconciliation) Act 2023"],
+        [
+            "section 26",
+            "revocation of immunity under that Act",
+            "making of false statements",
+        ],
+    ]
     assert "table_ordering_rule_or_anchor_claim" in template["required_ownership"]
     assert "claim_identifies_table_ordering_rule_or_anchor" in (
         template["required_validator_checks"]

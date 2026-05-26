@@ -1102,6 +1102,7 @@ def prepare_table_cell_text_patch_context(
             target_ref=t_str,
             target=target,
             extracted_text=extracted_text,
+            extracted_el=extracted_el,
             effect_type=effect.effect_type,
         )
         if table_entry_instruction:

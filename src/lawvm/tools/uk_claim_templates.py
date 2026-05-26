@@ -577,6 +577,9 @@ def manual_compile_suggested_claim_template(
                 ),
                 "source_target_address": detail.get("target", ""),
                 "table_entry_shape": detail.get("entry_shape", ""),
+                "inserted_table_rows": [
+                    list(row) for row in detail.get("inserted_table_rows", ())
+                ],
             }
         )
         if (

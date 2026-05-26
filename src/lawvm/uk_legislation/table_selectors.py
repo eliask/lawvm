@@ -47,6 +47,32 @@ UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID = (
 UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 
 
+def _normalized_element_text(el: ET.Element) -> str:
+    return " ".join(" ".join(el.itertext()).split()).strip()
+
+
+def _inserted_table_payload_rows(extracted_el: Optional[ET.Element]) -> tuple[tuple[str, ...], ...]:
+    """Return row/cell text from a source-carried inserted table payload."""
+    if extracted_el is None:
+        return ()
+    rows: list[tuple[str, ...]] = []
+    for row in extracted_el.iter():
+        if _tag(row) != "tr":
+            continue
+        cells = tuple(
+            text
+            for text in (
+                _normalized_element_text(cell)
+                for cell in list(row)
+                if _tag(cell) in {"td", "th"}
+            )
+            if text
+        )
+        if cells:
+            rows.append(cells)
+    return tuple(rows)
+
+
 def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
     """Return true when source text explicitly names the broad table carrier."""
     if not text or not target.path:
@@ -559,6 +585,7 @@ def _uk_broad_table_entry_instruction(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element] = None,
     effect_type: str = "",
 ) -> dict[str, Any] | None:
     """Detect table-entry instructions that are unsafe as broad host mutations."""
@@ -636,6 +663,7 @@ def _uk_broad_table_entry_instruction(
         "target_ref": target_ref,
         "target": str(target),
         "entry_shape": entry_shape,
+        "inserted_table_rows": _inserted_table_payload_rows(extracted_el),
         "source_action": (
             "source_text"
             if source_supplies_action
