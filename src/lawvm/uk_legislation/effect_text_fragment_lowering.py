@@ -56,6 +56,7 @@ from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_source_parent_following_provisions_substitution,
     _fragment_substitution_source_parent_prefix_substitute,
     _fragment_substitution_source_parent_tail_substitution,
+    _fragment_substitution_source_parent_word_range_substitution,
     _fragment_substitutions_source_parent_each_provision_substitution,
     append_source_fragment_context_observations,
 )
@@ -273,6 +274,9 @@ def lower_uk_text_fragment_rewrite(
         allow_source_parent_at_end_text_insert=(
             word_level_text_patch_required and curr_action == "insert"
         ),
+        allow_source_parent_word_range_substitution=(
+            word_level_text_patch_required and curr_action == "replace"
+        ),
     )
     if subs:
         return _promote_text_fragment_substitutions(
@@ -396,6 +400,7 @@ def _extract_text_fragment_substitutions(
     extracted_text: str,
     allow_heading_source_parent_full_replacement: bool = True,
     allow_source_parent_at_end_text_insert: bool = False,
+    allow_source_parent_word_range_substitution: bool = False,
 ) -> list[dict[str, Any]]:
     heading_after_anchor_insert = (
         _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
@@ -642,6 +647,16 @@ def _extract_text_fragment_substitutions(
         )
         if source_parent_at_end_insert is not None:
             subs = [source_parent_at_end_insert]
+    if not subs and allow_source_parent_word_range_substitution:
+        source_parent_word_range_substitution = (
+            _fragment_substitution_source_parent_word_range_substitution(
+                extracted_el=extracted_el,
+                source_root=source_root,
+                extracted_text=extracted_text,
+            )
+        )
+        if source_parent_word_range_substitution is not None:
+            subs = [source_parent_word_range_substitution]
     if not subs and source_carried_table_entry_paragraph_substitution is not None:
         subs = [
             {

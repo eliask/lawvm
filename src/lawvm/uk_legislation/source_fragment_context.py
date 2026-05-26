@@ -130,6 +130,16 @@ _SOURCE_PARENT_AT_END_TEXT_INSERT_RULE_ID = "uk_effect_source_parent_at_end_text
 _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
     "uk_effect_source_parent_at_end_quoted_list_text_insertion_patch"
 )
+_SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_parent_word_range_substitution_text_patch"
+)
+_SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]\s+"
+    r"to\s+[“\"'‘](?P<end>.*?)[”\"'’]\s+"
+    r"(?:there\s+(?:is|are|shall\s+be)\s+)?substitut(?:ed|e)\s+"
+    r"(?:(?:the\s+)?words?)?\s*[—–-]?\s*$",
+    flags=re.I,
+)
 _SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 _SOURCE_TAIL_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 
@@ -377,6 +387,41 @@ def append_source_fragment_context_observations(
                 "replacement": op_text_replacement,
             },
         )
+    for source_parent_word_range_fragment in fragment_subs or []:
+        if (
+            str(source_parent_word_range_fragment.get("rule_id") or "")
+            != _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID,
+            family="source_context_elaboration",
+            reason_code="word_range_substitution_resolved_from_source_parent",
+            reason=(
+                "UK source payload carries only the replacement words while "
+                "its local parent instruction explicitly names the word range "
+                "to be substituted. Lowering combines those source-local facts "
+                "into a typed range text patch instead of treating the payload "
+                "as a standalone broad text rewrite."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(
+                    source_parent_word_range_fragment.get("source_parent_id") or ""
+                ),
+                "source_parent_instruction": str(
+                    source_parent_word_range_fragment.get("source_parent_instruction") or ""
+                ),
+                "payload_shape": str(source_parent_word_range_fragment.get("payload_shape") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
     for each_other_fragment in fragment_subs or []:
         each_other_rule_id = str(each_other_fragment.get("rule_id") or "")
         if each_other_rule_id not in {
@@ -591,6 +636,27 @@ def _is_flat_source_list_item_quote(row: ET.Element) -> bool:
     return bool(_text_content(para_children[0]).strip())
 
 
+def _source_payload_has_disallowed_text_flattening_descendant(el: ET.Element) -> bool:
+    for descendant in el.iter():
+        if descendant is el:
+            continue
+        descendant_tag = _tag(descendant)
+        if descendant_tag in {
+            "BlockAmendment",
+            "InlineAmendment",
+            "Table",
+            "Tabular",
+            "Section",
+            "Subsection",
+            "Paragraph",
+            "Part",
+            "Chapter",
+            "Schedule",
+        }:
+            return True
+    return False
+
+
 def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET.Element) -> str:
     """Classify source payload shapes that can safely become word-level appends."""
     direct_children = list(extracted_el)
@@ -598,6 +664,8 @@ def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET.Element) ->
         child for child in direct_children if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS
     ]
     if not subordinate_rows:
+        if _source_payload_has_disallowed_text_flattening_descendant(extracted_el):
+            return ""
         return "plain_text"
     if len(subordinate_rows) != 1:
         return ""
@@ -611,6 +679,23 @@ def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET.Element) ->
     if not _is_flat_source_list_item_quote(subordinate_rows[0]):
         return ""
     return "quoted_list_item_flattened_text"
+
+
+def _source_parent_word_range_payload_shape(extracted_el: ET.Element) -> str:
+    """Classify replacement payloads safe to flatten for word-range substitution."""
+    direct_children = list(extracted_el)
+    subordinate_rows = [
+        child for child in direct_children if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS
+    ]
+    if not subordinate_rows:
+        if _source_payload_has_disallowed_text_flattening_descendant(extracted_el):
+            return ""
+        return "plain_text"
+    if any(_tag(child) not in {"Text"} | _SOURCE_SUBORDINATE_ROW_TAGS for child in direct_children):
+        return ""
+    if any(not _is_flat_source_list_item_quote(row) for row in subordinate_rows):
+        return ""
+    return "flat_numbered_rows_text"
 
 
 def _fragment_substitution_grouped_anchor_occurrence(
@@ -947,6 +1032,52 @@ def _fragment_substitution_source_parent_prefix_substitute(
             "replacement": replacement,
             "source_parent_id": source_parent_id,
             "rule_id": "uk_effect_source_parent_prefix_substitute_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_source_parent_word_range_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve payload-only replacements governed by a local word-range parent."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or extracted_el is None or _tag(extracted_el) not in {
+        "BlockAmendment",
+        "InlineAmendment",
+    }:
+        return None
+    payload_shape = _source_parent_word_range_payload_shape(extracted_el)
+    if not payload_shape:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        if not instruction_text:
+            instruction_text = _source_local_instruction_text_for_carried_payload(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        match = _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE.search(instruction_text)
+        if match is None:
+            continue
+        start = " ".join(match.group("start").split()).strip()
+        end = " ".join(match.group("end").split()).strip()
+        if not start or not end:
+            return None
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return {
+            "original": f"TEXT_FROM_{start}_TO_{end}",
+            "replacement": payload_text,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+            "payload_shape": payload_shape,
+            "rule_id": _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID,
         }
     return None
 

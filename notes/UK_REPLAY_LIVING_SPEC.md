@@ -1814,6 +1814,14 @@ Current block-substitution context invariant:
   does not fire without a source parent, does not apply to table/column/entry
   placement parents, and does not apply to standalone structured payload
   children; those remain structural/payload questions, not text appends.
+- A similar source-parent recovery is allowed for word-range substitutions when
+  the extracted `BlockAmendment`/`InlineAmendment` contains only replacement
+  words, but the local parent instruction explicitly says `for the words from
+  "X" to "Y" ... substituted the words-`. Lowering emits
+  `uk_effect_source_parent_word_range_substitution_text_patch`, with selector
+  `TEXT_FROM_X_TO_Y`, records the source-parent id and instruction, and may
+  flatten only plain text or flat numbered source rows. It does not apply to
+  table/tabular payloads or other nested amendment containers.
 - mixed instructions that combine a structural repeal and a text rewrite, such
   as `Omit subsections ... and in subsection ... the words from ... to the
   end`, record `uk_effect_mixed_structural_text_rewrite_rejected`. They need an
