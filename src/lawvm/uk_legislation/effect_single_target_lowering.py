@@ -13,6 +13,7 @@ from lawvm.uk_legislation.effect_crossheading_prelude import (
     build_crossheading_compound_heading_op,
     build_crossheading_context,
     refine_crossheading_or_heading_facet_target,
+    reject_crossheading_source_without_crossheading_target,
     reject_unsupported_crossheading_replace,
 )
 from lawvm.uk_legislation.effect_payload_normalization import (
@@ -267,6 +268,15 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         action=action,
         t_str=t_str,
         context=crossheading_context,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return unchanged
+    if reject_crossheading_source_without_crossheading_target(
+        effect=effect,
+        action=action,
+        t_str=t_str,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,

@@ -39136,6 +39136,105 @@ def test_compile_crossheading_before_section_word_substitution_lowers_to_heading
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_before_that_paragraph_uses_metadata_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>k</Pnumber>
+          <Text>k in paragraph 9, for \u201cDirector\u201d and \u201chis\u201d
+          (in each place) there is substituted \u201cOFT\u201d and \u201cits\u201d
+          respectively, and, in the cross-heading before that paragraph,
+          for \u201c Director \u201d there is substituted \u201c OFT \u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_before_that_paragraph",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-06-20",
+        affected_uri="/id/ukpga/1990/42/schedule/4/paragraph/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 4 para. 9 cross-heading",
+        affecting_uri="/id/ukpga/2002/40",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="40",
+        affecting_provisions="Sch. 25 para. 24(9)(k)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2003-06-20", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "4"), ("paragraph", "9")),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch("Director", "OFT")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_crossheading_before_anchor_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_crossheading_before_anchor_text_patch_lowered"
+    ]
+    assert observations[0]["source_context"] == "metadata_target_deictic_anchor"
+    assert observations[0]["blocking"] is False
+
+
+def test_compile_crossheading_before_that_paragraph_rejects_without_crossheading_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>k</Pnumber>
+          <Text>k in paragraph 9, and, in the cross-heading before that paragraph,
+          for \u201c Director \u201d there is substituted \u201c OFT \u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_before_that_paragraph_without_facet",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-06-20",
+        affected_uri="/id/ukpga/1990/42/schedule/4/paragraph/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 4 para. 9",
+        affecting_uri="/id/ukpga/2002/40",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="40",
+        affecting_provisions="Sch. 25 para. 24(9)(k)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2003-06-20", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_source_target_mismatch_rejected"
+        and record["reason_code"] == "crossheading_source_requires_crossheading_target"
+        and record["blocking"] is True
+        for record in observations
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_crossheading_before_anchor_text_patch_lowered"
+        for record in observations
+    )
+
+
 def test_replay_crossheading_before_anchor_replace_mutates_crossheading_parent_only() -> None:
     base = IRStatute(
         statute_id="ukpga/2004/12",

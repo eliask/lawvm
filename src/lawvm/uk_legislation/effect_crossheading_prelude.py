@@ -19,6 +19,7 @@ from lawvm.uk_legislation.heading_facets import (
     _crossheading_and_structural_repeal_selector,
     _crossheading_before_anchor_replacement_text,
     _crossheading_before_anchor_text_patch_fragment,
+    _crossheading_metadata_target_deictic_text_patch_fragment,
     _crossheading_target_replacement_text,
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_append_fragment,
@@ -109,6 +110,11 @@ def build_crossheading_context(
         if action == "replace" and is_crossheading
         else None
     )
+    if text_patch_fragment is None and action == "replace" and is_crossheading:
+        text_patch_fragment = _crossheading_metadata_target_deictic_text_patch_fragment(
+            extracted_text,
+            target,
+        )
     if text_patch_fragment is None and action == "replace" and is_crossheading:
         text_patch_fragment = _crossheading_source_parent_reference_text_patch_fragment(
             extracted_el=extracted_el,
@@ -222,6 +228,44 @@ def reject_unsupported_crossheading_replace(
     return True
 
 
+def reject_crossheading_source_without_crossheading_target(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Block generic text lowering for source text that names a cross-heading facet."""
+    if action != "replace" or _is_crossheading_ref(t_str):
+        return False
+    text = " ".join((extracted_text or "").split())
+    if not re.search(
+        r"\b(?:in\s+the\s+)?(?:cross-heading|cross heading|heading)\s+before\s+"
+        r"(?:that\s+)?(?:paragraph|section|article)\b",
+        text,
+        flags=re.I,
+    ):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_crossheading_source_target_mismatch_rejected",
+        family="unsupported_target_facet",
+        reason_code="crossheading_source_requires_crossheading_target",
+        reason=(
+            "UK source text names a cross-heading facet, but effect metadata "
+            "does not target a cross-heading; lowering must not apply the "
+            "quoted substitution to the host provision body."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"target_ref": t_str},
+    )
+    return True
+
+
 def refine_crossheading_or_heading_facet_target(
     *,
     effect: UKEffectRecord,
@@ -305,6 +349,7 @@ def refine_crossheading_or_heading_facet_target(
                 "target_ref": t_str,
                 "target": str(refined_target),
                 "source_parent_id": str(crossheading_text_patch_fragment.get("source_parent_id") or ""),
+                "source_context": str(crossheading_text_patch_fragment.get("source_context") or ""),
                 "match_text": str(crossheading_text_patch_fragment["original"]),
                 "replacement_text_preview": str(
                     crossheading_text_patch_fragment["replacement"]
