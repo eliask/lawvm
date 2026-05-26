@@ -24288,6 +24288,68 @@ def test_compile_table_column_entry_row_insert_from_entry_for_anchor() -> None:
     )
 
 
+def test_compile_table_column_final_entry_row_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <P3para>
+            <Text>In section 98 of the Taxes Management Act 1970, in the
+            second column of the Table, after the final entry insert\u2014
+            paragraph 42 of Schedule 16 to the Finance Act 2002.</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_final_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2002-07-24",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2002/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="23",
+        affecting_provisions="Sch. 17 para. 1",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2002-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_final_entry"
+    assert selector["column_index"] == 2
+    assert selector["relating_text"] == "final entry"
+    assert selector["inserted_text"] == "paragraph 42 of Schedule 16 to the Finance Act 2002"
+    assert selector["allow_unique_descendant_table"] is True
+    assert ops[0].payload is not None
+    assert [child.text for child in ops[0].payload.children] == [
+        "",
+        "paragraph 42 of Schedule 16 to the Finance Act 2002",
+    ]
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -25404,6 +25466,91 @@ def test_replay_table_column_entry_row_insert_blocks_multiple_descendant_tables(
     assert unresolved.detail["reason_code"] == "table_not_unique"
     assert unresolved.detail["table_count"] == 2
     assert unresolved.detail["blocking"] is True
+
+
+def test_replay_table_column_final_entry_row_insert_appends_after_last_column_cell() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_final_entry",
+        "direction": "after",
+        "column_index": 2,
+        "entry_index": 1,
+        "inserted_text": "paragraph 42 of Schedule 16 to the Finance Act 2002",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_final_entry_row_insert_apply",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CELL,
+                    text="paragraph 42 of Schedule 16 to the Finance Act 2002",
+                ),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="entry A"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 2"),
+                                                IRNode(kind=IRNodeKind.CELL, text="entry B"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert [row.children[-1].text for row in table.children] == [
+        "entry A",
+        "entry B",
+        "paragraph 42 of Schedule 16 to the Finance Act 2002",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["selector"]["selector_mode"] == "column_final_entry"
+    assert adjudications[0].detail["insert_index"] == 2
+    assert adjudications[0].detail["table_carrier"] == "unique_descendant_table"
 
 
 def test_replay_table_entry_relating_rows_replace_mutates_only_resolved_row_span() -> None:

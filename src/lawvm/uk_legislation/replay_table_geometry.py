@@ -272,6 +272,9 @@ def resolve_uk_table_entry_row_insert_index(
     elif selector_mode == "column_entry":
         if column_index < 1 or not relating_norm:
             return None, None, "invalid_selector", {}
+    elif selector_mode == "column_final_entry":
+        if column_index < 1:
+            return None, None, "invalid_selector", {}
     elif entry_index < 1 or not relating_norm:
         return None, None, "invalid_selector", {}
     if selector_mode == "ordinal_column" and column_index < 2:
@@ -284,6 +287,7 @@ def resolve_uk_table_entry_row_insert_index(
         "entry_label",
         "entry_group_heading",
         "column_entry",
+        "column_final_entry",
     }:
         return None, None, "invalid_selector", {}
 
@@ -352,6 +356,10 @@ def resolve_uk_table_entry_row_insert_index(
                 continue
             if _compact_normalized_text(target_cell.text or "").find(relating_norm) < 0:
                 continue
+        elif selector_mode == "column_final_entry":
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
         else:
             target_cell = row_cells.get(column_index)
             if target_cell is None:
@@ -383,6 +391,19 @@ def resolve_uk_table_entry_row_insert_index(
                 )[:240],
             )
         )
+    if selector_mode == "column_final_entry":
+        row_index, _preview = matching_rows[-1] if matching_rows else (None, "")
+        if row_index is None:
+            return None, None, "entry_not_found", {
+                "matching_entry_count": 0,
+                **carrier_detail,
+            }
+        insert_index = min(row_index + 1, len(table.children))
+        return table, insert_index, "", {
+            "matching_entry_count": len(matching_rows),
+            "matching_rows": tuple(row[1] for row in matching_rows[-5:]),
+            **carrier_detail,
+        }
     required_entry_index = 1 if selector_mode in {"entry_label", "column_entry"} else entry_index
     if len(matching_rows) < required_entry_index:
         return None, None, "entry_not_found", {
