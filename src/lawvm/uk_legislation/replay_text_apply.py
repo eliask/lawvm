@@ -64,6 +64,20 @@ _UK_NEXT_DEFINITION_PATTERN_WITHOUT_SHALL = re.compile(
     flags=re.I | re.S | re.X,
 )
 
+_UK_FEE_SUM_PATTERN = re.compile(
+    r"£\d+(?:,\d{3})*(?:[\.·]\d{2})?\b"
+    r"|\bNIL\b"
+    r"|\bsixpence\b"
+    r"|\btwo\s+pence\b"
+    r"|\bone\s+shilling\b"
+    r"|\bthree\s+pounds\b"
+    r"|\bfive\s+shillings\b"
+    r"|\btwenty\s+shillings\b"
+    r"|\btwo\s+shillings\s+and\s+sixpence\b"
+    r"|\bten\s+shillings\b",
+    flags=re.I,
+)
+
 
 def _uk_amendment_program_line_label_matches(text: str, label: str) -> list[re.Match[str]]:
     label_pattern = re.escape(str(label or "").strip().strip("()").lower().strip("."))
@@ -1096,8 +1110,7 @@ class UKReplayTextApplyMixin:
                 )
                 found_matches = list(re.finditer(pattern, text, flags=re.I))
             if not found_matches:
-                fee_regex = r"£\d+(?:,\d{3})*(?:[\.·]\d{2})?\b|\bNIL\b|\bsixpence\b|\btwo\s+pence\b|\bone\s+shilling\b|\bthree\s+pounds\b|\bfive\s+shillings\b|\btwenty\s+shillings\b|\btwo\s+shillings\s+and\s+sixpence\b|\bten\s+shillings\b"
-                found_matches = list(re.finditer(fee_regex, text, flags=re.I))
+                found_matches = list(_UK_FEE_SUM_PATTERN.finditer(text))
             if not found_matches:
                 return node, False
 
@@ -1702,8 +1715,7 @@ class UKReplayTextApplyMixin:
                     )
                     found_matches = list(re.finditer(pattern, text, flags=re.I))
                 if not found_matches:
-                    fee_regex = r"£\d+(?:,\d{3})*(?:[\.·]\d{2})?\b|\bNIL\b|\bsixpence\b|\btwo\s+pence\b|\bone\s+shilling\b|\bthree\s+pounds\b|\bfive\s+shillings\b|\btwenty\s+shillings\b|\btwo\s+shillings\s+and\s+sixpence\b|\bten\s+shillings\b"
-                    found_matches = list(re.finditer(fee_regex, text, flags=re.I))
+                    found_matches = list(_UK_FEE_SUM_PATTERN.finditer(text))
                 for m in found_matches:
                     all_matches.append((path, tn, m))
 
