@@ -11745,6 +11745,93 @@ def test_replay_broad_schedule_table_column_text_patch_blocks_ambiguous_cell() -
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_table_column_text_patch_anchor_filters_descendant_tables() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_column_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 1,
+        "match_text": "section 669 and 680 of the Taxes Act 1988",
+        "target_ref": "s. 98 Table",
+        "original_target": "section:98/table:Table",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_text_patch_anchor_filtered_descendant",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "98"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="section 669 and 680 of the Taxes Act 1988", occurrence=0),
+            replacement="section 660F",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 124(3)"),
+                                                IRNode(kind=IRNodeKind.CELL, text="old penalty"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="section 669 and 680 of the Taxes Act 1988",
+                                                ),
+                                                IRNode(kind=IRNodeKind.CELL, text="old penalty"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    first_table = replayed.body.children[0].children[0].children[0]
+    second_table = replayed.body.children[0].children[1].children[0]
+    assert first_table.children[0].children[0].text == "section 124(3)"
+    assert second_table.children[0].children[0].text == "section 660F"
+
+
 def test_compile_table_entry_relating_text_patch_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -12030,6 +12117,91 @@ def test_replay_table_entry_for_column_after_anchor_insert_mutates_one_cell() ->
     table = replayed.body.children[0].children[0]
     assert table.children[0].children[1].text == "section 310(1) and (2), (2A)."
     assert table.children[1].children[1].text == "section 311(2)."
+
+
+def test_replay_table_entry_for_column_patch_anchor_filters_descendant_tables() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_for_column_text_patch",
+        "selector_mode": "unique_relating_cell",
+        "relating_text": "section 310(1), (2) and (3) of the Taxes Act 1988",
+        "column_index": 2,
+        "target_ref": "s. 98 Table",
+        "original_target": "section:98/table:Table",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_for_column_patch_anchor_filtered_descendant",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "98"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="(2)", occurrence=0),
+            replacement="(2), (2A)",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 311"),
+                                                IRNode(kind=IRNodeKind.CELL, text="section 311(2)."),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="section 310(1), (2) and (3) of the Taxes Act 1988",
+                                                ),
+                                                IRNode(kind=IRNodeKind.CELL, text="section 310(1) and (2)."),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    replayed = replay_uk_ops(base, [op])
+
+    first_table = replayed.body.children[0].children[0].children[0]
+    second_table = replayed.body.children[0].children[1].children[0]
+    assert first_table.children[0].children[1].text == "section 311(2)."
+    assert second_table.children[0].children[1].text == "section 310(1) and (2), (2A)."
 
 
 def test_compile_table_entry_for_column_after_anchor_requires_entry_scope() -> None:

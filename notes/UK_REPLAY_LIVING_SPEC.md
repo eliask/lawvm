@@ -2782,6 +2782,10 @@ Current payload-descendant source-ref invariant:
   `table_carrier=anchor_filtered_descendant_table`. Zero or multiple matching
   candidate tables remain unresolved, so table ambiguity is not resolved by
   Python list order.
+  The same anchor-filtered carrier rule applies to source-owned table-cell text
+  patches for `unique_column_text` and `unique_relating_cell`: replay may choose
+  among multiple descendant tables only when the explicit preimage/relating
+  selector resolves exactly one candidate table and one target cell.
   Deictic `after that entry insert-` may also carry a single logical entry
   group encoded as multiple physical source rows, but only when the first source
   cell rowspans across every source row; replay records
