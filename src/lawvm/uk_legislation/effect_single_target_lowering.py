@@ -63,6 +63,7 @@ from lawvm.uk_legislation.source_amendment_program_fragments import (
     reject_amendment_program_inserted_parent_structural_insert,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
+    lower_metadata_pseudo_definition_entry_insertions,
     lower_metadata_pseudo_definition_entry_range_insertions,
     lower_metadata_pseudo_definition_child_substitution,
     lower_source_carried_definition_child_at_end_insert,
@@ -227,6 +228,18 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     if metadata_pseudo_definition_child is not None:
         target = metadata_pseudo_definition_child.target
         payload_match_target = target
+    metadata_pseudo_definition_entry = lower_metadata_pseudo_definition_entry_insertions(
+        effect=effect,
+        action=action,
+        target=target,
+        target_ref=t_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if metadata_pseudo_definition_entry is not None:
+        target = metadata_pseudo_definition_entry.target
+        payload_match_target = target
     metadata_pseudo_definition_range = lower_metadata_pseudo_definition_entry_range_insertions(
         effect=effect,
         action=action,
@@ -293,14 +306,18 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         lowering_rejections_out=lowering_rejections_out,
     ):
         return unchanged
-    if metadata_pseudo_definition_range is None and reject_structural_pseudo_definition_target(
-        effect=effect,
-        action=action,
-        t_str=t_str,
-        target=target,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        lowering_rejections_out=lowering_rejections_out,
+    if (
+        metadata_pseudo_definition_entry is None
+        and metadata_pseudo_definition_range is None
+        and reject_structural_pseudo_definition_target(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
     ):
         return unchanged
     if crossheading_compound_heading_text is not None:
@@ -600,6 +617,12 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         fragment_subs = [metadata_pseudo_definition_child.fragment]
         op_text_match = metadata_pseudo_definition_child.op_text_match
         op_text_replacement = metadata_pseudo_definition_child.op_text_replacement
+    elif metadata_pseudo_definition_entry is not None:
+        curr_action = "text_replace"
+        content_ir = None
+        fragment_subs = list(metadata_pseudo_definition_entry.fragments)
+        op_text_match = fragment_subs[0]["original"]
+        op_text_replacement = fragment_subs[0]["replacement"]
     elif metadata_pseudo_definition_range is not None:
         if metadata_pseudo_definition_range.fragments:
             curr_action = "text_replace"
