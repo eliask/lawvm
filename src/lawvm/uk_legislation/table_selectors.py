@@ -16,6 +16,7 @@ from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.schedule_list_selectors import _strip_schedule_entry_payload
 from lawvm.uk_legislation.source_context import (
     _first_amendment_container,
+    _source_ancestor_chain,
     _source_previous_table_entry_label_context,
     _source_previous_table_entry_relating_context,
 )
@@ -92,6 +93,26 @@ def _source_names_containing_target_for_table_cell(text: str, target: LegalAddre
     )
 
 
+def _source_or_parent_names_containing_target_for_table_cell(
+    *,
+    text: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> tuple[bool, str]:
+    if _source_names_containing_target_for_table_cell(text, target):
+        return True, ""
+    matched_parent_without_id = False
+    for ancestor in _source_ancestor_chain(source_root, extracted_el):
+        ancestor_text = _normalized_element_text(ancestor)
+        if _source_names_containing_target_for_table_cell(ancestor_text, target):
+            source_parent_id = str(ancestor.get("id") or "")
+            if source_parent_id:
+                return True, source_parent_id
+            matched_parent_without_id = True
+    return matched_parent_without_id, ""
+
+
 def _uk_table_entry_inline_text_selector(
     *,
     target_ref: str,
@@ -106,13 +127,15 @@ def _uk_table_entry_inline_text_selector(
     source_names_containing_target = _source_names_containing_target_for_table_cell(text, target)
     if not text or (
         not target_names_table
-        and not ("table" in text.lower() and source_names_containing_target)
+        and "table" not in text.lower()
     ):
         return None
     column_entry_patch = _uk_table_column_entry_text_patch_claim(
         target_ref=target_ref,
         target=target,
         extracted_text=text,
+        extracted_el=extracted_el,
+        source_root=source_root,
     )
     if column_entry_patch is not None:
         return {
@@ -124,6 +147,8 @@ def _uk_table_entry_inline_text_selector(
         target_ref=target_ref,
         target=target,
         extracted_text=text,
+        extracted_el=extracted_el,
+        source_root=source_root,
     )
     if table_target_column_patch is not None:
         return {
@@ -347,13 +372,24 @@ def _uk_table_column_entry_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
 ) -> dict[str, Any] | None:
     """Extract quoted table-column entry text patches without inventing rows."""
     text = " ".join((extracted_text or "").split())
     if not text:
         return None
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
-    source_names_containing_target = _source_names_containing_target_for_table_cell(text, target)
+    if not target_names_table and "table" not in text.lower():
+        return None
+    source_names_containing_target, source_parent_id = (
+        _source_or_parent_names_containing_target_for_table_cell(
+            text=text,
+            target=target,
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+    )
     if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
         return None
     column_match = re.search(
@@ -392,6 +428,7 @@ def _uk_table_column_entry_text_patch_claim(
                 "original_target": str(target),
                 "target_ref": target_ref,
                 "source_names_containing_target": source_names_containing_target,
+                "source_parent_id": source_parent_id,
                 "table_column_entry_action": "replace_entry",
                 "replacement_text": replacement,
                 "text_patch_original": original,
@@ -405,13 +442,24 @@ def _uk_table_target_column_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
 ) -> dict[str, Any] | None:
     """Extract quoted text patches scoped only to one named table column."""
     text = " ".join((extracted_text or "").split())
     if not text:
         return None
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
-    source_names_containing_target = _source_names_containing_target_for_table_cell(text, target)
+    if not target_names_table and "table" not in text.lower():
+        return None
+    source_names_containing_target, source_parent_id = (
+        _source_or_parent_names_containing_target_for_table_cell(
+            text=text,
+            target=target,
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+    )
     if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
         return None
     if re.search(r"\b(?:entry|entries)\b", text, re.I):
@@ -432,6 +480,13 @@ def _uk_table_target_column_text_patch_claim(
     fragments = parse_fragment_substitution(text)
     original = str(fragments[0].get("original") or "").strip() if len(fragments) == 1 else ""
     replacement = str(fragments[0].get("replacement") or "").strip() if len(fragments) == 1 else ""
+    table_column_text_action = (
+        "delete_text"
+        if original
+        and replacement == ""
+        and re.search(r"\b(?:omit|omitted|delete|deleted)\b", text, re.I)
+        else "replace_text"
+    )
     if not original:
         quoted = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
         words_before_column_match = re.search(
@@ -458,7 +513,26 @@ def _uk_table_target_column_text_patch_claim(
         if references_match is not None:
             original = " ".join(references_match.group("original").split()).strip(" ,;.")
             replacement = " ".join(references_match.group("replacement").split()).strip()
-    if not original or not replacement:
+    if not original:
+        quoted_omission_match = re.search(
+            r"\b(?:omit|delete)\s+[“\"'‘](?P<original>.*?)[”\"'’]",
+            text,
+            re.I,
+        )
+        passive_omission_match = re.search(
+            r"[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+            r"(?:is|are|shall\s+be)\s+(?:omitted|deleted)",
+            text,
+            re.I,
+        )
+        omit_match = quoted_omission_match or passive_omission_match
+        if omit_match is not None:
+            original = " ".join(
+                (omit_match.group("original") or "").split()
+            ).strip()
+            replacement = ""
+            table_column_text_action = "delete_text"
+    if not original or (not replacement and table_column_text_action != "delete_text"):
         return None
     return {
         "rule_id": UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
@@ -469,7 +543,8 @@ def _uk_table_target_column_text_patch_claim(
         "original_target": str(target),
         "target_ref": target_ref,
         "source_names_containing_target": source_names_containing_target,
-        "table_column_text_action": "replace_text",
+        "source_parent_id": source_parent_id,
+        "table_column_text_action": table_column_text_action,
         "replacement_text": replacement,
         "text_patch_original": original,
         "text_patch_replacement": replacement,

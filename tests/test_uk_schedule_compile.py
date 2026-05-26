@@ -12272,6 +12272,118 @@ def test_compile_table_target_column_reference_substitution_uses_owned_cell_sele
     )
 
 
+def test_compile_table_target_column_quoted_omission_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b in the first column of the Table, omit
+          “section 765A(2)(b);”, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_target_column_quoted_omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-07-21",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2009/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="10",
+        affecting_provisions="Sch. 17 para. 2(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2009-07-21", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "section 765A(2)(b);"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 1
+    assert selector["match_text"] == "section 765A(2)(b);"
+    assert selector["table_column_text_action"] == "delete_text"
+    assert selector["replacement_text"] == ""
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_table_column_omission_uses_parent_carrier_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-17-paragraph-2">
+          <Pnumber>2</Pnumber>
+          <P1para>In section 98 of TMA 1970 (special returns etc)—
+            <P3 id="schedule-17-paragraph-2-b">
+              <Pnumber>b</Pnumber>
+              <Text>b in the first column of the Table, omit
+              “section 765A(2)(b);”, and</Text>
+            </P3>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_omission_parent_context",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-07-21",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98",
+        affecting_uri="/id/ukpga/2009/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="10",
+        affecting_provisions="Sch. 17 para. 2(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2009-07-21", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "section 765A(2)(b);"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_text_patch"
+    assert selector["source_parent_id"] == "schedule-17-paragraph-2"
+    assert selector["source_names_containing_target"] is True
+    assert selector["table_column_text_action"] == "delete_text"
+
+
 def test_compile_table_entry_label_column_append_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
