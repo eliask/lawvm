@@ -38,6 +38,7 @@ from lawvm.uk_legislation.lowering_actions import (
     _uk_effect_type_action,
 )
 from lawvm.uk_legislation.metadata_rewrites import (
+    _uk_affected_target_corrected_renumber_targets,
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
 )
@@ -196,7 +197,13 @@ def compile_effect_to_ir_ops(
         phase_t0 = now
 
     effect_type = (effect.effect_type or "").strip().lower()
+    extracted_text = _text_content(extracted_el) if extracted_el is not None else None
     metadata_renumber_targets = _uk_metadata_renumber_targets(effect)
+    if metadata_renumber_targets is None:
+        metadata_renumber_targets = _uk_affected_target_corrected_renumber_targets(
+            effect,
+            extracted_text,
+        )
 
     if effect_type in _COMMENCEMENT_EFFECT_TYPES:
         _mark_lower_phase("compile_lower_prepare")
@@ -207,7 +214,6 @@ def compile_effect_to_ir_ops(
         effect_type,
         has_metadata_renumber_targets=metadata_renumber_targets is not None,
     )
-    extracted_text = _text_content(extracted_el) if extracted_el is not None else None
     metadata_renumber_targets = _uk_source_text_corrected_renumber_targets(
         metadata_renumber_targets,
         extracted_text,

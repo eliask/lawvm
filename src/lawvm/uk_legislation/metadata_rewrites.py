@@ -198,6 +198,53 @@ def _uk_source_text_corrected_renumber_targets(
     )
 
 
+def _uk_affected_target_corrected_renumber_targets(
+    effect: UKEffectRecord,
+    extracted_text: Optional[str],
+) -> Optional[UKMetadataRenumberTargets]:
+    """Correct apparent effect-type destination drift using source text plus affected target.
+
+    Some UK effect rows display a renumber destination that disagrees with the
+    operative source instruction and the affected target.  This correction is
+    deliberately narrow: the source must say the existing provision becomes an
+    immediate descendant, and the effect affected-provisions surface must name
+    exactly that descendant under the parsed source provision.
+    """
+    unsupported = _uk_unsupported_metadata_renumber_rejection(effect)
+    if unsupported is None:
+        return None
+    text = " ".join(str(extracted_text or "").replace("\u00a0", " ").split())
+    match = re.search(
+        r"\bbecomes?\s+(?:paragraph|sub-?paragraph|subsection|section)\s+\(?(?P<label>[0-9A-Za-z]+)\)?",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    descendant_label = _clean_num(match.group("label"))
+    if not descendant_label:
+        return None
+    affected_target = canonicalize_uk_address(_parse_affected_target(effect.affected_provisions))
+    if affected_target.path[:-1] != unsupported.source_target.path:
+        return None
+    if _clean_num(_addr_leaf_label(affected_target)) != descendant_label:
+        return None
+    return UKMetadataRenumberTargets(
+        source_target=unsupported.source_target,
+        destination=affected_target,
+        rule_id="uk_effect_source_text_and_affected_target_renumber_corrected",
+        reason_code="source_text_and_affected_target_override_effect_metadata_destination",
+        reason=(
+            "UK effect-type metadata supplies a cross-container renumber "
+            "destination, but the extracted source text and affected-provisions "
+            "surface agree on a same-provision descendant renumber; lowering "
+            "uses the source/affected target and records the metadata "
+            "destination as a corrected witness."
+        ),
+        metadata_destination=unsupported.destination,
+    )
+
+
 def _select_whole_schedule_element(
     extracted_el: Optional[ET.Element],
     target: LegalAddress,

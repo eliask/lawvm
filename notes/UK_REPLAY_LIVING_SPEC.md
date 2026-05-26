@@ -5448,6 +5448,14 @@ Current bench replay-regime invariant:
   source and destination targets. Manual-frontier triage classifies these as
   `uk_manual_frontier_cross_container_renumber_candidate`. They must remain
   blocking until LawVM owns cross-container lineage semantics.
+- A narrow correction exists for apparent effect-type destination drift: when
+  the extracted source says the existing provision becomes an immediate
+  descendant and the effect `affected_provisions` surface names exactly that
+  descendant under the parsed source provision, LawVM lowers the same-provision
+  descendant renumber with
+  `uk_effect_source_text_and_affected_target_renumber_corrected` and records
+  the conflicting metadata destination. This is not a general cross-container
+  migration rule; it requires source text plus affected-target agreement.
 - Other broader renumbers, moves, or destination collisions remain unsupported
   replay actions until LawVM owns their lineage semantics explicitly. They must
   not be coerced into inserts, replaces, or parent rewrites.
