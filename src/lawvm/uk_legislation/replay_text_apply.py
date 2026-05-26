@@ -1053,6 +1053,83 @@ class UKReplayTextApplyMixin:
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_words_in_brackets_text_rewrite_applied")
             return rebuilt, True
+        if match.startswith("TEXT_AFTER_EACH_OTHER_OCCURRENCE\x1f"):
+            anchor = match.split("\x1f", 1)[1].strip()
+            if not anchor:
+                return node, False
+            matches = list(re.finditer(re.escape(anchor), text))
+            if not matches:
+                pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I))
+            if len(matches) <= 1:
+                return node, False
+            new_text = text
+            for anchor_match in reversed(matches[1:]):
+                joiner = (
+                    ""
+                    if new_text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
+                    or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                    else " "
+                )
+                new_text = (
+                    new_text[: anchor_match.end()]
+                    + joiner
+                    + replacement
+                    + new_text[anchor_match.end() :]
+                )
+            rebuilt = dc_replace(node, text=new_text)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_each_other_place_after_anchor_insert_applied")
+            return rebuilt, True
+        if match.startswith("TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING\x1f"):
+            parts = match.split("\x1f", 2)
+            if len(parts) != 3:
+                return node, False
+            sibling_replacement = parts[1].strip()
+            anchor = parts[2].strip()
+            if not anchor:
+                return node, False
+            matches = list(re.finditer(re.escape(anchor), text))
+            if not matches:
+                pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I))
+            if not matches:
+                return node, False
+            prefix = text[: matches[0].start()]
+            sibling_seen = bool(sibling_replacement and re.search(re.escape(sibling_replacement), prefix, flags=re.I))
+            if not sibling_seen and sibling_replacement:
+                sibling_pattern = _text_patch_pattern(
+                    sibling_replacement,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                sibling_seen = bool(re.search(sibling_pattern, prefix, flags=re.I))
+            selected_matches = matches if sibling_seen else matches[1:]
+            if not selected_matches:
+                return node, False
+            new_text = text
+            for anchor_match in reversed(selected_matches):
+                new_text = (
+                    new_text[: anchor_match.start()]
+                    + replacement
+                    + new_text[anchor_match.end() :]
+                )
+            rebuilt = dc_replace(node, text=new_text)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_each_other_place_substitution_applied"
+                )
+            return rebuilt, True
         if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
             anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
             if not anchor:
@@ -1585,6 +1662,129 @@ class UKReplayTextApplyMixin:
             self._replace_node_in_statute(node, rebuilt)
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_words_in_brackets_text_rewrite_applied")
+            return rebuilt, True
+        if match.startswith("TEXT_AFTER_EACH_OTHER_OCCURRENCE\x1f"):
+            anchor = match.split("\x1f", 1)[1].strip()
+            if not anchor:
+                return node, False
+            all_matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+            for path, text_node in text_nodes:
+                text = text_node.text or ""
+                node_matches = list(re.finditer(re.escape(anchor), text))
+                if not node_matches:
+                    pattern = _text_patch_pattern(
+                        anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    node_matches = list(re.finditer(pattern, text, flags=re.I))
+                for anchor_match in node_matches:
+                    all_matches.append((path, text_node, anchor_match))
+            if len(all_matches) <= 1:
+                return node, False
+            rebuilt = node
+            by_path: dict[tuple[int, ...], tuple[UKMutableNode, list[re.Match[str]]]] = {}
+            for path, text_node, anchor_match in all_matches[1:]:
+                existing = by_path.get(path)
+                if existing is None:
+                    by_path[path] = (text_node, [anchor_match])
+                else:
+                    existing[1].append(anchor_match)
+            for path, (text_node, path_matches) in by_path.items():
+                new_text = text_node.text or ""
+                for anchor_match in reversed(path_matches):
+                    joiner = (
+                        ""
+                        if new_text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
+                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    new_text = (
+                        new_text[: anchor_match.end()]
+                        + joiner
+                        + replacement
+                        + new_text[anchor_match.end() :]
+                    )
+                rebuilt = self._replace_descendant_at_path(
+                    rebuilt,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_each_other_place_after_anchor_insert_applied")
+            return rebuilt, True
+        if match.startswith("TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING\x1f"):
+            parts = match.split("\x1f", 2)
+            if len(parts) != 3:
+                return node, False
+            sibling_replacement = parts[1].strip()
+            anchor = parts[2].strip()
+            if not anchor:
+                return node, False
+            all_matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+            prefix_parts: list[str] = []
+            prefix_before_first_match = ""
+            for path, text_node in text_nodes:
+                text = text_node.text or ""
+                node_matches = list(re.finditer(re.escape(anchor), text))
+                if not node_matches:
+                    pattern = _text_patch_pattern(
+                        anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    node_matches = list(re.finditer(pattern, text, flags=re.I))
+                if node_matches and not all_matches:
+                    prefix_before_first_match = " ".join(
+                        part for part in (*prefix_parts, text[: node_matches[0].start()]) if part
+                    )
+                for anchor_match in node_matches:
+                    all_matches.append((path, text_node, anchor_match))
+                if not all_matches:
+                    prefix_parts.append(text)
+            if not all_matches:
+                return node, False
+            sibling_seen = bool(
+                sibling_replacement
+                and re.search(re.escape(sibling_replacement), prefix_before_first_match, flags=re.I)
+            )
+            if not sibling_seen and sibling_replacement:
+                sibling_pattern = _text_patch_pattern(
+                    sibling_replacement,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                sibling_seen = bool(re.search(sibling_pattern, prefix_before_first_match, flags=re.I))
+            selected_matches = all_matches if sibling_seen else all_matches[1:]
+            if not selected_matches:
+                return node, False
+            rebuilt = node
+            by_path: dict[tuple[int, ...], tuple[UKMutableNode, list[re.Match[str]]]] = {}
+            for path, text_node, anchor_match in selected_matches:
+                existing = by_path.get(path)
+                if existing is None:
+                    by_path[path] = (text_node, [anchor_match])
+                else:
+                    existing[1].append(anchor_match)
+            for path, (text_node, path_matches) in by_path.items():
+                new_text = text_node.text or ""
+                for anchor_match in reversed(path_matches):
+                    new_text = (
+                        new_text[: anchor_match.start()]
+                        + replacement
+                        + new_text[anchor_match.end() :]
+                    )
+                rebuilt = self._replace_descendant_at_path(
+                    rebuilt,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_each_other_place_substitution_applied"
+                )
             return rebuilt, True
 
         if match == "TEXT_OPENING_WORDS":

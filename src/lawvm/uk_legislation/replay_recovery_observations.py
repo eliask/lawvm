@@ -137,6 +137,25 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="words_in_brackets_selector",
     ),
+    "uk_replay_each_other_place_after_anchor_insert_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a relative each-other-place insertion after "
+            "skipping the first source-claimed occurrence of the quoted anchor."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="each_other_place_after_anchor_selector",
+    ),
+    "uk_replay_each_other_place_substitution_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a relative each-other-place substitution, using "
+            "the preceding first-occurrence sibling replacement when visible and "
+            "otherwise skipping the first current occurrence."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="each_other_place_substitution_selector",
+    ),
     "uk_replay_subtree_range_text_rewrite_flattened": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a bounded range text rewrite over the "

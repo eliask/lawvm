@@ -9,6 +9,11 @@ from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+from lawvm.uk_legislation.nlp_parser import (
+    UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID,
+    UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
+    US,
+)
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
 from lawvm.uk_legislation.source_context import (
@@ -55,6 +60,24 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<original_a>.*?)[”\"'’]\s+or,\s+as\s+the\s+case\s+may\s+be,\s+"
     r"[“\"'‘](?P<original_b>.*?)[”\"'’]\s+there\s+is\s+substituted\s+"
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    flags=re.I,
+)
+
+_EACH_OTHER_PLACE_AFTER_INSERT_RE = re.compile(
+    r"\bafter\s+(?:the\s+words?\s+)?[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+    r"in\s+each\s+other\s+place(?:\s+(?:where\s+)?(?:it|they|those\s+words?)?\s*"
+    r"(?:occurs?|occurring|appears?|appear))?,?\s+"
+    r"(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)\s+"
+    r"(?:the\s+words?\s+)?[“\"'‘](?P<inserted>.*?)[”\"'’]",
+    flags=re.I,
+)
+
+_EACH_OTHER_PLACE_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
+    r"in\s+each\s+other\s+place(?:\s+(?:where\s+)?(?:it|they|those\s+words?)?\s*"
+    r"(?:occurs?|occurring|appears?|appear))?,?\s+"
+    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+    r"(?:the\s+words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
 
@@ -190,6 +213,36 @@ def append_source_fragment_context_observations(
                 "source_parent_id": str(parent_substitution_fragment.get("source_parent_id") or ""),
                 "text_match": str(parent_substitution_fragment.get("original") or ""),
                 "replacement": op_text_replacement,
+            },
+        )
+    for each_other_fragment in fragment_subs or []:
+        each_other_rule_id = str(each_other_fragment.get("rule_id") or "")
+        if each_other_rule_id not in {
+            UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID,
+            UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
+        }:
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=each_other_rule_id,
+            family="source_context_elaboration",
+            reason_code="relative_each_other_place_resolved_from_first_occurrence_sibling",
+            reason=(
+                "UK source uses a relative 'each other place' occurrence selector; "
+                "lowering proceeds only because a preceding source sibling explicitly "
+                "claims the first occurrence of the same quoted anchor."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_sibling_label": str(each_other_fragment.get("source_sibling_label") or ""),
+                "source_sibling_rule_id": str(each_other_fragment.get("source_sibling_rule_id") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "selector_mode": str(each_other_fragment.get("selector_mode") or ""),
             },
         )
 
@@ -342,6 +395,90 @@ def _fragment_substitution_grouped_anchor_occurrence(
             ),
             "rule_id": "uk_effect_grouped_anchor_occurrence_substitution_text_patch",
         }
+    return None
+
+
+def _previous_source_sibling_first_occurrence_rule(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    anchor: str,
+) -> Optional[dict[str, str]]:
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    if not ancestors or extracted_el is None:
+        return None
+    parent = ancestors[0]
+    normalized_anchor = " ".join(anchor.split()).strip()
+    for child in parent:
+        if child is extracted_el or child.get("id") == extracted_el.get("id"):
+            break
+        sibling_label = _clean_num(_direct_structural_num(child))
+        for sibling_fragment in parse_fragment_substitution(_text_content(child)):
+            if " ".join(str(sibling_fragment.get("original") or "").split()).strip() != normalized_anchor:
+                continue
+            if str(sibling_fragment.get("occurrence") or "") != "1":
+                continue
+            return {
+                "source_sibling_label": sibling_label,
+                "source_sibling_rule_id": str(sibling_fragment.get("rule_id") or "fragment_substitution"),
+                "source_sibling_replacement": " ".join(
+                    str(sibling_fragment.get("replacement") or "").split()
+                ).strip(),
+            }
+    return None
+
+
+def _fragment_substitution_each_other_place_from_sibling(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve relative `each other place` only when a sibling owns the first occurrence."""
+    text = " ".join((extracted_text or "").split())
+    insert_match = _EACH_OTHER_PLACE_AFTER_INSERT_RE.search(text)
+    if insert_match is not None:
+        anchor = " ".join(insert_match.group("anchor").split()).strip()
+        inserted = " ".join(insert_match.group("inserted").split()).strip()
+        sibling = _previous_source_sibling_first_occurrence_rule(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            anchor=anchor,
+        )
+        if not anchor or not inserted or sibling is None:
+            return None
+        return {
+            "original": f"TEXT_AFTER_EACH_OTHER_OCCURRENCE{US}{anchor}",
+            "replacement": inserted,
+            "selector_mode": "after_each_other_occurrence_except_first",
+            **sibling,
+            "rule_id": UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID,
+        }
+
+    substitution_match = _EACH_OTHER_PLACE_SUBSTITUTION_RE.search(text)
+    if substitution_match is not None:
+        original = " ".join(substitution_match.group("original").split()).strip()
+        replacement = " ".join(substitution_match.group("replacement").split()).strip()
+        sibling = _previous_source_sibling_first_occurrence_rule(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            anchor=original,
+        )
+        if not original or not replacement or sibling is None:
+            return None
+        return {
+            "original": (
+                f"TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
+                f"{US}{str(sibling.get('source_sibling_replacement') or '')}{US}{original}"
+            ),
+            "replacement": replacement,
+            "selector_mode": "all_remaining_after_first_occurrence_sibling",
+            **sibling,
+            "rule_id": UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
+        }
+
     return None
 
 

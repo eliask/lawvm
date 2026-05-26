@@ -25777,6 +25777,345 @@ def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> N
     assert _fragment_substitution(op)[0]["occurrence"] == "1"
 
 
+def test_compile_after_anchor_each_other_place_insert_requires_first_occurrence_sibling() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-22-2">
+          <Text>In subsection (1)-</Text>
+          <P3 id="schedule-2-paragraph-22-2-a">
+            <Pnumber>a</Pnumber>
+            <Text>after \u201cthe British Waterways Board\u201d, where first occurring, insert \u201cor Canal &amp; River Trust\u201d;</Text>
+          </P3>
+          <P3 id="schedule-2-paragraph-22-2-b">
+            <Pnumber>b</Pnumber>
+            <Text>after \u201cthe British Waterways Board\u201d, in each other place occurring, insert \u201cor, as the case may be, Canal &amp; River Trust\u201d.</Text>
+          </P3>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-2-paragraph-22-2-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_each_other_place_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-02",
+        affected_uri="/id/ukpga/1962/46",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 62(1)",
+        affecting_uri="/id/uksi/2012/1659",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2012",
+        affecting_number="1659",
+        affecting_provisions="Sch. 2 para. 22(2)(b)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2012-07-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "62"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == (
+        f"TEXT_AFTER_EACH_OTHER_OCCURRENCE{US}the British Waterways Board"
+    )
+    assert op.text_patch.replacement == "or, as the case may be, Canal & River Trust"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_each_other_place_insert_text_patch"
+        in op.provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_each_other_place_insert_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["source_sibling_label"] == "a"
+
+
+def test_replay_after_anchor_each_other_place_insert_skips_first_occurrence() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/1962/46",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="62",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "the British Waterways Board may consult the British "
+                                "Waterways Board and the British Waterways Board."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    op = LegalOperation(
+        op_id="uk_test_each_other_place_insert_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "62"), ("subsection", "1"))),
+        text_patch=_replace_patch(
+            f"TEXT_AFTER_EACH_OTHER_OCCURRENCE{US}the British Waterways Board",
+            "or, as the case may be, Canal & River Trust",
+        ),
+    )
+
+    replayed = replay_uk_ops(statute, [op])
+
+    assert replayed.body.children[0].children[0].text == (
+        "the British Waterways Board may consult the British Waterways Board "
+        "or, as the case may be, Canal & River Trust and the British Waterways "
+        "Board or, as the case may be, Canal & River Trust."
+    )
+
+
+def test_compile_each_other_place_substitution_uses_preceding_first_occurrence_sibling() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-17-paragraph-139-4">
+          <Text>In paragraph 5-</Text>
+          <P3 id="schedule-17-paragraph-139-4-b">
+            <Pnumber>b</Pnumber>
+            <Text>for \u201ctelecommunications operator\u201d, where first occurring, there shall be substituted \u201c operator of an electronic communications code network \u201d;</Text>
+          </P3>
+          <P3 id="schedule-17-paragraph-139-4-c">
+            <Pnumber>c</Pnumber>
+            <Text>for \u201ctelecommunications operator\u201d, in each other place where it occurs, there shall be substituted \u201c operator \u201d.</Text>
+          </P3>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-17-paragraph-139-4-c']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_each_other_place_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-25",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="Sch. 15 Pt. 4 para. 5",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 17 para. 139(4)(c)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-07-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("schedule", "15"), ("part", "4"), ("paragraph", "5"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == (
+        "TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
+        f"{US}operator of an electronic communications code network"
+        f"{US}telecommunications operator"
+    )
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement == "operator"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_sibling_first_then_each_other_place_substitution_text_patch"
+        in op.provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_sibling_first_then_each_other_place_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source_sibling_label"] == "b"
+
+
+def test_replay_each_other_place_substitution_skips_first_when_sibling_not_applied() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/1996/61",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="15",
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="4",
+                        text="",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="5",
+                                text=(
+                                    "telecommunications operator, telecommunications operator, "
+                                    "telecommunications operator"
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk_test_each_other_place_substitution_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "15"), ("part", "4"), ("paragraph", "5"))),
+        text_patch=_replace_patch(
+            "TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
+            f"{US}operator of an electronic communications code network"
+            f"{US}telecommunications operator",
+            "operator",
+        ),
+    )
+
+    replayed = replay_uk_ops(statute, [op])
+
+    assert replayed.supplements[0].children[0].children[0].text == (
+        "telecommunications operator, operator, operator"
+    )
+
+
+def test_replay_each_other_place_substitution_replaces_all_remaining_after_sibling() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/1996/61",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="15",
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="4",
+                        text="",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="5",
+                                text=(
+                                    "operator of an electronic communications code network, "
+                                    "telecommunications operator, telecommunications operator"
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk_test_each_other_place_substitution_after_sibling_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "15"), ("part", "4"), ("paragraph", "5"))),
+        text_patch=_replace_patch(
+            "TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
+            f"{US}operator of an electronic communications code network"
+            f"{US}telecommunications operator",
+            "operator",
+        ),
+    )
+
+    replayed = replay_uk_ops(statute, [op])
+
+    assert replayed.supplements[0].children[0].children[0].text == (
+        "operator of an electronic communications code network, operator, operator"
+    )
+
+
+def test_compile_each_other_place_without_first_occurrence_sibling_remains_unlowered() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-22-2">
+          <Text>In subsection (1)-</Text>
+          <P3 id="schedule-2-paragraph-22-2-b">
+            <Pnumber>b</Pnumber>
+            <Text>after \u201cthe British Waterways Board\u201d, in each other place occurring, insert \u201cor, as the case may be, Canal &amp; River Trust\u201d.</Text>
+          </P3>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-2-paragraph-22-2-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_each_other_place_insert_without_sibling",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-02",
+        affected_uri="/id/ukpga/1962/46",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 62(1)",
+        affecting_uri="/id/uksi/2012/1659",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2012",
+        affecting_number="1659",
+        affecting_provisions="Sch. 2 para. 22(2)(b)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2012-07-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert "uk_effect_after_quoted_anchor_each_other_place_insert_text_patch" not in {
+        record["rule_id"] for record in lowering_records
+    }
+
+
 def test_compile_after_anchor_ordinal_places_insert_preserves_bounded_occurrences() -> None:
     extracted_el = ET.fromstring(
         f"""
