@@ -19,6 +19,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_parenthesized_range_source_extracted",
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
         "uk_affecting_act_article_schedule_payload_source_extracted",
+        "uk_affecting_act_compound_payload_only_block_amendment_selected",
         "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
         "uk_affecting_act_compound_reference_split_fallback",
         "uk_affecting_act_schedule_part_standalone_split_rejected",
@@ -408,6 +409,45 @@ def uk_affecting_act_enacted_schedule_table_row_source_extracted(
             "first cell exactly names the added schedule paragraph; LawVM extracted "
             "only that row as a synthetic paragraph payload instead of admitting the "
             "whole schedule source."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_compound_payload_only_block_amendment_selected(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    source_row_tag: str,
+    source_row_id: str,
+    source_row_label: str,
+    payload_container_tag: str,
+    payload_text_preview: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_compound_payload_only_block_amendment_selected",
+        "family": "source_lane_selection",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "source_row_tag": source_row_tag,
+        "source_row_id": source_row_id,
+        "source_row_label": source_row_label,
+        "payload_container_tag": payload_container_tag,
+        "payload_text_preview": payload_text_preview,
+        "reason": (
+            "UK compound affecting-source metadata selected a numbered source row whose "
+            "only substantive content is a BlockAmendment/InlineAmendment payload. "
+            "LawVM uses the amendment payload container rather than smuggling the "
+            "source row label into payload text."
         ),
         "blocking": False,
         "strict_disposition": "record",
