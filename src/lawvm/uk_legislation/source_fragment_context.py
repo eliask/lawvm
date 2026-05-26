@@ -63,10 +63,16 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     flags=re.I,
 )
 _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
-    r"\bIn\s+the\s+following\s+provisions\b.+?\bfor\s+"
+    r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bfor\s+"
     r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
     r"(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute)\s+"
     r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    flags=re.I,
+)
+_SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_REVERSED_RE = re.compile(
+    r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bsubstitute\s+"
+    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]\s+"
+    r"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]",
     flags=re.I,
 )
 _SOURCE_PARENT_TAIL_SUBSTITUTION_RE = re.compile(
@@ -90,7 +96,7 @@ _SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
 )
 _SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
-    r"(?:(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
+    r"(?:(?:[A-Z][A-Za-z0-9.]*,\s*)?(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
     flags=re.I,
 )
 _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
@@ -935,6 +941,10 @@ def _fragment_substitution_source_parent_following_provisions_substitution(
     for ancestor_index, ancestor in enumerate(ancestors):
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         match = _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE.search(candidate_text)
+        if match is None:
+            match = _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_REVERSED_RE.search(
+                candidate_text
+            )
         if match is None:
             continue
         original = " ".join(match.group("original").split()).strip()

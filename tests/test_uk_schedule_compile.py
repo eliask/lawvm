@@ -6817,6 +6817,70 @@ def test_compile_source_parent_following_provisions_substitution_from_child_targ
     )
 
 
+def test_compile_source_parent_following_enactments_reversed_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Article xmlns="{_LEG_NS}" id="article-3-3">
+          <Pnumber>3</Pnumber>
+          <Text>In the following enactments, substitute \u201cany\u201d for
+          \u201cthe Companies Act 1985 or any other\u201d:\u2014</Text>
+          <P3 id="article-3-3-c">
+            <Pnumber>c</Pnumber>
+            <Text>TMA, section 108(2) (responsibility of company officers).</Text>
+          </P3>
+        </Article>
+        """
+    )
+    extracted_el = source_root.find(f"./{{{_LEG_NS}}}P3[@id='article-3-3-c']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_following_enactments_reversed_substitution",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-07-01",
+        affected_uri="/id/ukpga/1970/9/section/108/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 108(2)",
+        affecting_uri="/id/uksi/2009/1890",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="1890",
+        affecting_provisions="art. 3(3)(c)",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2009-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "108"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "the Companies Act 1985 or any other"
+    assert ops[0].text_patch.replacement == "any"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_following_provisions_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_following_provisions_substitution_text_patch"
+        and record["reason_code"] == "text_substitution_resolved_from_following_provisions_parent"
+        and record["source_parent_id"] == "article-3-3"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_following_provisions_substitution_does_not_invent_without_parent() -> None:
     extracted_el = ET.fromstring(
         f"""
