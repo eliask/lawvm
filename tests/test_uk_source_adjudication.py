@@ -935,6 +935,26 @@ def test_classify_uk_effect_source_pathology_marks_definition_child_and_tail_sub
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_definition_child_structural_insert() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "37 In section 374, in the definition of “custodial sentence”, "
+            "after paragraph (e) (but before the “or” at the end of that "
+            "paragraph) insert— ea a sentence of detention under section 226B; ."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_overlap_substitution_unlowered"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "definition_child_structural_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_marks_structured_tail_substitution() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",
@@ -2380,6 +2400,31 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_s
 
     assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_substitution_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_insert() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "37 In section 374, in the definition of “custodial sentence”, "
+            "after paragraph (e) (but before the “or” at the end of that "
+            "paragraph) insert— ea a sentence of detention under section 226B; ."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_insert_candidate"
 
 
 def test_classify_uk_effect_compare_shape_marks_table_cell_surface_gap() -> None:

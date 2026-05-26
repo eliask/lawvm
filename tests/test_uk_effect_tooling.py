@@ -77,6 +77,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
+        "uk_manual_frontier_definition_child_structural_insert_candidate",
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_heading_facet_candidate",
@@ -2933,6 +2934,98 @@ def test_uk_manual_compile_evidence_jsonl_templates_definition_child_structural_
     assert "a service which" in template["replacement_preview"]
     assert "replacement_child_payload_shape" in template["required_ownership"]
     assert "claim_identifies_replacement_payload_child_units" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_definition_child_structural_insert() -> None:
+    effect = UKEffectRecord(
+        effect_id="key-c22952a1d51f5424f15e181282571ec0",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/374",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 374",
+        affecting_uri="/id/ukpga/2012/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="10",
+        affecting_provisions="Sch. 22 para. 37",
+        affecting_title="Legal Aid, Sentencing and Punishment of Offenders Act 2012",
+    )
+    source_preview = (
+        "37 In section 374 (definitions applying for purposes of the whole Act), "
+        "in the definition of “custodial sentence”, after paragraph (e) "
+        "(but before the “or” at the end of that paragraph) insert— ea a "
+        "sentence of detention under section 226B of that Act passed as a "
+        "result of section 221A of this Act; ."
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="definition_child_structural_insert_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=source_preview,
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_definition_child_structural_insert_candidate"
+            ),
+            manual_compile_reason=(
+                "Definition child structural insert needs a validated connector boundary."
+            ),
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2006/52",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2006/52",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "definition_child_structural_insert"
+    assert template["placement_family"] == (
+        "definition_child_insert_before_existing_tail_connector"
+    )
+    assert template["definition_term"] == "custodial sentence"
+    assert template["anchor_child_label"] == "e"
+    assert template["tail_connector"] == "or"
+    assert "sentence of detention" in template["inserted_payload_preview"]
+    assert "connector_migration_or_preservation_rule" in template["required_ownership"]
+    assert "claim_identifies_existing_tail_connector_surface" in (
         template["required_validator_checks"]
     )
     assert template["executable"] is False
