@@ -748,12 +748,68 @@ def resolve_unique_uk_table_entry_text_cell(
         return None, "invalid_selector", {}
 
     tables, carrier_detail = uk_table_selector_tables(node, selector)
-    if len(tables) != 1:
-        return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+    candidate_tables = tables
+    if len(candidate_tables) != 1:
+        filtered_tables: list[UKMutableNode] = []
+        filtered_rows: list[str] = []
+        for candidate_table in candidate_tables:
+            candidate_cells, candidate_rows = _matching_uk_table_entry_text_cells(
+                candidate_table,
+                selector_mode=selector_mode,
+                match_norm=match_norm,
+                relating_norm=relating_norm,
+                entry_label_norm=entry_label_norm,
+            )
+            if len(candidate_cells) == 1:
+                filtered_tables.append(candidate_table)
+                filtered_rows.extend(candidate_rows[:1])
+        if len(filtered_tables) != 1:
+            return None, "table_not_unique", {
+                "table_count": len(candidate_tables),
+                "anchor_filtered_table_count": len(filtered_tables),
+                "anchor_filtered_rows": tuple(filtered_rows[:5]),
+                **carrier_detail,
+            }
+        candidate_tables = filtered_tables
+        carrier_detail = {
+            **carrier_detail,
+            "table_carrier": "anchor_filtered_descendant_table",
+            "candidate_table_count": len(tables),
+            "anchor_filtered_table_count": 1,
+        }
 
+    matching_cells, matching_rows = _matching_uk_table_entry_text_cells(
+        candidate_tables[0],
+        selector_mode=selector_mode,
+        match_norm=match_norm,
+        relating_norm=relating_norm,
+        entry_label_norm=entry_label_norm,
+    )
+    if len(matching_cells) == 1:
+        return matching_cells[0], "", {
+            "matching_cell_count": 1,
+            "matched_row": matching_rows[0] if matching_rows else "",
+            **carrier_detail,
+        }
+    reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
+    return None, reason, {
+        "matching_cell_count": len(matching_cells),
+        "matching_rows": tuple(matching_rows[:5]),
+        **carrier_detail,
+    }
+
+
+def _matching_uk_table_entry_text_cells(
+    table: UKMutableNode,
+    *,
+    selector_mode: str,
+    match_norm: str,
+    relating_norm: str,
+    entry_label_norm: str,
+) -> tuple[list[UKMutableNode], list[str]]:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
-    for row_cells in expanded_uk_table_rows(tables[0]):
+    for row_cells in expanded_uk_table_rows(table):
         row_texts = [
             str(row_cells[col].text or "")
             for col in sorted(row_cells)
@@ -779,18 +835,7 @@ def resolve_unique_uk_table_entry_text_cell(
             if not matching_cells or matching_cells[-1] is not cell:
                 matching_cells.append(cell)
                 matching_rows.append(" | ".join(row_texts)[:240])
-    if len(matching_cells) == 1:
-        return matching_cells[0], "", {
-            "matching_cell_count": 1,
-            "matched_row": matching_rows[0] if matching_rows else "",
-            **carrier_detail,
-        }
-    reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
-    return None, reason, {
-        "matching_cell_count": len(matching_cells),
-        "matching_rows": tuple(matching_rows[:5]),
-        **carrier_detail,
-    }
+    return matching_cells, matching_rows
 
 
 def resolve_unique_uk_table_entry_cell(
