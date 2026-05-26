@@ -58,19 +58,33 @@ class NZHttpResponse:
 
 
 class NZTransport(Protocol):
-    def get(self, url: str, *, api_key: str, accept: str) -> NZHttpResponse: ...
+    def get(
+        self,
+        url: str,
+        *,
+        api_key: str,
+        accept: str,
+        timeout_s: float,
+    ) -> NZHttpResponse: ...
 
 
 class UrllibNZTransport:
     """Small URL opener boundary that keeps API-key handling out of URLs."""
 
-    def get(self, url: str, *, api_key: str, accept: str) -> NZHttpResponse:
+    def get(
+        self,
+        url: str,
+        *,
+        api_key: str,
+        accept: str,
+        timeout_s: float,
+    ) -> NZHttpResponse:
         request = Request(url)
         request.add_header("User-Agent", _USER_AGENT)
         request.add_header("Accept", accept)
         request.add_header("X-Api-Key", api_key)
         try:
-            with urlopen(request, timeout=60) as response:
+            with urlopen(request, timeout=timeout_s) as response:
                 headers = {key: value for key, value in response.headers.items()}
                 return NZHttpResponse(
                     status_code=response.getcode(),
@@ -86,8 +100,9 @@ class UrllibNZTransport:
                 headers=headers,
                 content_type=exc.headers.get("Content-Type", ""),
             )
-        except URLError as exc:
-            reason = str(exc.reason).encode("utf-8", "replace")
+        except (URLError, TimeoutError, OSError) as exc:
+            reason_text = str(getattr(exc, "reason", exc))
+            reason = reason_text.encode("utf-8", "replace")
             return NZHttpResponse(
                 status_code=0,
                 body=reason,
@@ -148,6 +163,9 @@ class NZSyncOptions:
     sleep_on_rate_limit: bool = False
     max_sleep_seconds: int | None = None
     rate_limit_retry_attempts: int = 3
+    request_timeout_seconds: float = 60.0
+    progress: bool = False
+    progress_interval: int = 25
     diagnostics_jsonl: Path | None = None
     verbose: bool = False
 
@@ -176,6 +194,45 @@ class NZSyncStats:
             "diagnostics": len(self.diagnostics),
             "stopped_reason": self.stopped_reason,
         }
+
+
+class NZProgressReporter:
+    """Small stderr progress reporter for long-running NZ acquisition syncs."""
+
+    def __init__(self, *, enabled: bool, interval: int) -> None:
+        self.enabled = enabled
+        self.interval = max(interval, 1)
+        self._events = 0
+
+    def event(
+        self,
+        phase: str,
+        stats: NZSyncStats,
+        *,
+        detail: str = "",
+        force: bool = False,
+    ) -> None:
+        if not self.enabled:
+            return
+        self._events += 1
+        if not force and self._events % self.interval != 0:
+            return
+        parts = [
+            "nz-sync",
+            f"phase={phase}",
+            f"requests={stats.requests}",
+            f"cached={stats.cached}",
+            f"json={stats.stored_json}",
+            f"xml={stats.stored_xml}",
+            f"works={stats.works_seen}",
+            f"versions={stats.versions_seen}",
+            f"diagnostics={len(stats.diagnostics)}",
+        ]
+        if stats.stopped_reason:
+            parts.append(f"stopped={stats.stopped_reason}")
+        if detail:
+            parts.append(detail)
+        print(" ".join(parts), file=sys.stderr)
 
 
 class NZRateLimitGate:
@@ -253,19 +310,26 @@ class NZApiClient:
         api_key: str,
         transport: NZTransport | None = None,
         rate_gate: NZRateLimitGate,
+        timeout_s: float = 60.0,
     ) -> None:
         if not api_key:
             raise ValueError("NZ_API_KEY is required")
         self._api_key = api_key
         self._transport = transport or UrllibNZTransport()
         self._rate_gate = rate_gate
+        self._timeout_s = max(float(timeout_s), 0.001)
 
     def get_json(self, url: str) -> tuple[NZHttpResponse | None, dict[str, Any], str]:
         ok, reason = self._rate_gate.can_request()
         if not ok:
             return None, {}, reason
         self._rate_gate.before_request()
-        response = self._transport.get(url, api_key=self._api_key, accept="application/json")
+        response = self._transport.get(
+            url,
+            api_key=self._api_key,
+            accept="application/json",
+            timeout_s=self._timeout_s,
+        )
         rate_headers = self._rate_gate.observe(response.headers)
         return response, rate_headers, ""
 
@@ -274,12 +338,21 @@ class NZApiClient:
         if not ok:
             return None, {}, reason
         self._rate_gate.before_request()
-        response = self._transport.get(url, api_key=self._api_key, accept="application/xml, text/xml, */*")
+        response = self._transport.get(
+            url,
+            api_key=self._api_key,
+            accept="application/xml, text/xml, */*",
+            timeout_s=self._timeout_s,
+        )
         rate_headers = self._rate_gate.observe(response.headers)
         return response, rate_headers, ""
 
     def seconds_until_reset(self) -> int:
         return self._rate_gate.seconds_until_reset()
+
+    @property
+    def requests(self) -> int:
+        return self._rate_gate.requests
 
 
 def nz_api_key_from_env() -> str:
@@ -301,7 +374,17 @@ def sync_nz_corpus(
         request_budget=options.request_budget,
         reserve_remaining=options.reserve_remaining,
     )
-    client = NZApiClient(api_key=api_key, transport=transport, rate_gate=gate)
+    client = NZApiClient(
+        api_key=api_key,
+        transport=transport,
+        rate_gate=gate,
+        timeout_s=options.request_timeout_seconds,
+    )
+    progress = NZProgressReporter(
+        enabled=options.progress,
+        interval=options.progress_interval,
+    )
+    progress.event("start", stats, detail="sync=begin", force=True)
     seen_work_ids: set[str] = set()
     version_ids: list[str] = list(dict.fromkeys(options.version_ids))
 
@@ -309,7 +392,7 @@ def sync_nz_corpus(
         seen_work_ids.add(work_id)
 
     if not options.work_ids and not options.version_ids:
-        for work in _iter_search_works(archive, client, options, stats):
+        for work in _iter_search_works(archive, client, options, stats, progress):
             work_id = _string_field(work, "work_id")
             if not work_id or work_id in seen_work_ids:
                 continue
@@ -319,7 +402,14 @@ def sync_nz_corpus(
 
     for work_id in sorted(seen_work_ids):
         work_versions_seen = 0
-        for version in _fetch_work_versions(archive, client, work_id, options, stats):
+        for version in _fetch_work_versions(
+            archive,
+            client,
+            work_id,
+            options,
+            stats,
+            progress,
+        ):
             version_id = _string_field(version, "version_id")
             if version_id and version_id not in version_ids:
                 version_ids.append(version_id)
@@ -337,13 +427,16 @@ def sync_nz_corpus(
     for version_id in version_ids:
         detail = _fetch_version_detail(archive, client, version_id, options, stats)
         if detail is None:
+            progress.event("version_detail_missing", stats, detail=f"version_id={version_id}")
             continue
         stats.versions_seen += 1
+        progress.event("version_detail", stats, detail=f"version_id={version_id}")
         if options.include_xml:
-            _fetch_xml_formats(archive, client, detail, options, stats)
+            _fetch_xml_formats(archive, client, detail, options, stats, progress)
 
     stats.requests = gate.requests
     _write_diagnostics(options.diagnostics_jsonl, stats.diagnostics)
+    progress.event("done", stats, detail="sync=end", force=True)
     return stats
 
 
@@ -352,6 +445,7 @@ def _iter_search_works(
     client: NZApiClient,
     options: NZSyncOptions,
     stats: NZSyncStats,
+    progress: NZProgressReporter,
 ) -> list[Mapping[str, Any]]:
     results: list[Mapping[str, Any]] = []
     page = 1
@@ -378,6 +472,11 @@ def _iter_search_works(
             if isinstance(row, Mapping):
                 results.append(row)
         stats.works_seen += len(page_results)
+        progress.event(
+            "works_page",
+            stats,
+            detail=f"page={page} rows={len(page_results)}",
+        )
         total = _int_field(payload, "total")
         per_page = _int_field(payload, "per_page") or min(max(options.per_page, 1), 100)
         if not page_results or total is None or page * per_page >= total:
@@ -392,6 +491,7 @@ def _fetch_work_versions(
     work_id: str,
     options: NZSyncOptions,
     stats: NZSyncStats,
+    progress: NZProgressReporter,
 ) -> list[Mapping[str, Any]]:
     sort = "asc" if options.version_sort == "asc" else "desc"
     versions: list[Mapping[str, Any]] = []
@@ -417,6 +517,11 @@ def _fetch_work_versions(
             break
         page_results = _list_field(payload, "results")
         versions.extend(row for row in page_results if isinstance(row, Mapping))
+        progress.event(
+            "work_versions_page",
+            stats,
+            detail=f"work_id={work_id} page={page} rows={len(page_results)}",
+        )
         total = _int_field(payload, "total")
         per_page = _int_field(payload, "per_page") or min(max(options.per_page, 1), 100)
         if not page_results or total is None or page * per_page >= total:
@@ -451,6 +556,7 @@ def _fetch_xml_formats(
     version_detail: Mapping[str, Any],
     options: NZSyncOptions,
     stats: NZSyncStats,
+    progress: NZProgressReporter,
 ) -> None:
     version_id = _string_field(version_detail, "version_id")
     formats = _list_field(version_detail, "formats")
@@ -468,12 +574,13 @@ def _fetch_xml_formats(
                 metadata={"version_id": version_id},
             )
         )
+        progress.event("xml_missing", stats, detail=f"version_id={version_id}")
         return
     for url in xml_urls:
         if not url:
             continue
         canonical_url = _canonicalize_version_format_url(url, version_id)
-        _get_or_fetch_bytes(
+        data = _get_or_fetch_bytes(
             archive,
             client,
             canonical_url,
@@ -487,6 +594,11 @@ def _fetch_xml_formats(
                 "version_id": version_id,
                 "api_format_url": url,
             },
+        )
+        progress.event(
+            "xml",
+            stats,
+            detail=f"version_id={version_id} fetched={data is not None}",
         )
 
 
@@ -599,6 +711,7 @@ def _request_with_rate_limit_recovery(
             response, rate_headers, stopped_reason = client.get_json(url)
         else:
             response, rate_headers, stopped_reason = client.get_bytes(url)
+        stats.requests = client.requests
 
         if stopped_reason:
             if _should_sleep_for_stop(stopped_reason) and _sleep_for_rate_limit(
@@ -618,7 +731,7 @@ def _request_with_rate_limit_recovery(
             attempts += 1
             if attempts <= max(options.rate_limit_retry_attempts, 0):
                 retry_sleep = _retry_after_seconds(response.headers) or min(2 ** attempts, 30)
-                if options.verbose:
+                if options.verbose or options.progress:
                     print(
                         f"NZ API {response.status_code}; retrying {rule_id} after {retry_sleep}s",
                         file=sys.stderr,
@@ -682,7 +795,7 @@ def _sleep_for_rate_limit(
         sleep_seconds = 60
     if options.max_sleep_seconds is not None and sleep_seconds > options.max_sleep_seconds:
         return False
-    if options.verbose:
+    if options.verbose or options.progress:
         code = f" status={status_code}" if status_code is not None else ""
         print(
             f"NZ API rate-limit wait: reason={reason}{code} sleep_seconds={sleep_seconds} url={url}",
@@ -895,6 +1008,9 @@ def main(args: Any) -> None:
         sleep_on_rate_limit=args.sleep_on_rate_limit,
         max_sleep_seconds=args.max_sleep_seconds,
         rate_limit_retry_attempts=args.rate_limit_retry_attempts,
+        request_timeout_seconds=args.timeout,
+        progress=not args.quiet,
+        progress_interval=args.progress_interval,
         diagnostics_jsonl=Path(args.diagnostics_jsonl) if args.diagnostics_jsonl else None,
         verbose=args.verbose,
     )
