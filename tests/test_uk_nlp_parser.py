@@ -1701,6 +1701,36 @@ def test_parse_fragment_substitution_handles_joined_be_omitted_quoted_range_repe
     ]
 
 
+def test_parse_fragment_substitution_handles_cease_effect_quoted_word_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (3), the words \u201cthe following provisions of\u201d "
+        "shall cease to have effect."
+    )
+
+    assert subs == [
+        {
+            "original": "the following provisions of",
+            "replacement": "",
+            "rule_id": "uk_effect_cease_effect_quoted_word_repeal_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_cease_effect_range_to_end_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (3), the words from \u201cand the references\u201d to the end "
+        "shall cease to have effect."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_and the references_TO_END",
+            "replacement": "",
+            "rule_id": "uk_effect_cease_effect_range_to_end_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_there_is_substituted() -> None:
     subs = parse_fragment_substitution(
         'a in subsections (1), (4) and (7), for “the Director” there is substituted “the OFT”;'

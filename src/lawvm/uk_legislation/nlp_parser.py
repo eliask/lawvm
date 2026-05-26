@@ -84,6 +84,12 @@ UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID = (
     "uk_effect_range_repeal_pre_predicate_comma_text_patch"
 )
 UK_RANGE_REPEAL_RULE_ID = "uk_effect_range_repeal_text_patch"
+UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID = (
+    "uk_effect_cease_effect_quoted_word_repeal_text_patch"
+)
+UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID = (
+    "uk_effect_cease_effect_range_to_end_repeal_text_patch"
+)
 UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
     "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
 )
@@ -2497,6 +2503,21 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_cease_effect_quoted_words = re.finditer(
+        r"(?:the\s+)?words?\s+[“\"'‘](?P<words>.*?)[”\"'’]\s+"
+        r"shall\s+cease\s+to\s+have\s+effect",
+        text,
+        re.I,
+    )
+    for m in matches_cease_effect_quoted_words:
+        subs.append(
+            {
+                "original": m.group("words").strip(),
+                "replacement": "",
+                "rule_id": UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID,
+            }
+        )
+
     matches_repeal_range = re.finditer(
         r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:\s+\(\s*where\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+occurring\s*\))?"
@@ -2556,6 +2577,23 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
             patch["rule_id"] = "uk_effect_range_to_end_passive_ordinal_repeal_text_patch"
         subs.append(patch)
+
+    matches_cease_effect_range_to_end = re.finditer(
+        r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]\s+"
+        r"to\s+the\s+end"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+        r"\s+shall\s+cease\s+to\s+have\s+effect",
+        text,
+        re.I,
+    )
+    for m in matches_cease_effect_range_to_end:
+        subs.append(
+            {
+                "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
+                "replacement": "",
+                "rule_id": UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID,
+            }
+        )
 
     matches_passive_repeal_onwards = re.finditer(
         r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]\s+"
