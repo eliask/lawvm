@@ -427,6 +427,17 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
         re.I,
     )
     if match is None:
+        bare_matches = list(re.finditer(_uk_quoted_capture("bare"), text, re.I))
+        if (
+            len(bare_matches) == 1
+            and re.match(r"\s*In\s+", text, flags=re.I) is not None
+            and re.search(r"\b(?:insert|substitute|substituted|for)\b", text, re.I) is None
+        ):
+            return _uk_first_quote_group(
+                bare_matches[0],
+                "bare_double",
+                "bare_single",
+            ), 0, 0
         return "", 0, 0
     return _uk_first_quote_group(match, "quoted_double", "quoted_single"), 0, 0
 
