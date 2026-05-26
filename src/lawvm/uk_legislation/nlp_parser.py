@@ -39,6 +39,10 @@ _UK_CARRIED_PARENT_CONTEXT_RE = (
     r"(?:\s+of\s+(?:that|the)\s+Schedule)?"
 )
 _UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
+_UK_AT_END_TARGET_QUALIFIER_RE = (
+    r"(?: of (?:(?:that|the) )?"
+    r"(?:paragraph|sub-paragraph|subsection|section)(?:\s*\([^)]+\))*)?"
+)
 _UK_CARRIED_ENACTMENT_CONTEXT_RE = (
     r"(?:\s+of\s+(?:that\s+Act|(?:the\s+)?[A-Z][^,;“”]*?\bAct\s+\d{4}))?"
     rf"{_UK_SOURCE_ASIDE_RE}"
@@ -2329,7 +2333,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     matches_at_end_insert = re.finditer(
-        r"at the end(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?,?\s+"
+        rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE},?\s+"
         r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
@@ -2347,9 +2351,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_preposed_at_end_insert = re.finditer(
         r"(?:there is inserted|there are inserted|there shall be inserted)\s+"
-        r"at the end(?: of (?:(?:that|the) )?"
-        r"(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?"
-        r"(?:\s+\([^)]*\))?)?,?\s+"
+        rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE},?\s+"
         r"(?:the\s+)?words?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
         text,
         re.I,
@@ -2364,8 +2366,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     matches_at_end_unquoted_dash_insert = re.finditer(
-        r"at the end(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)"
-        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?"
+        rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE}"
         r"(?:\s+\([^)]*\))?,?\s+"
         r"insert\s*[—-]\s+(?P<inserted>[^.;]+?)\s*\.?\s*$",
         text,

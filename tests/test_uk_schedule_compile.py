@@ -4083,6 +4083,58 @@ def test_compile_words_inserted_at_end_of_that_paragraph_to_text_replace() -> No
     assert ops[0].text_patch.replacement == "or is Scottish Water,"
 
 
+def test_compile_words_inserted_at_end_of_nested_target_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-17-paragraph-11-a">
+          <Pnumber>a</Pnumber>
+          <Text>a at the end of subsection (2)(b) insert “ , or sentenced to detention by a court in any other member State or for a member State service offence ” , and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f05939dc5409ae98e3c1eb267c81cd95",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/263/2/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 263(2)(b)",
+        affecting_uri="/id/ukpga/2009/25",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="25",
+        affecting_provisions="Sch. 17 para. 11(a)",
+        affecting_title="Coroners and Justice Act 2009",
+        in_force_dates=[{"date": "2010-08-15", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].payload is None
+    assert ops[0].target.path == (
+        ("section", "263"),
+        ("subsection", "2"),
+        ("paragraph", "b"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == (
+        ", or sentenced to detention by a court in any other member State or "
+        "for a member State service offence"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_preposed_words_inserted_at_end_to_text_append() -> None:
     extracted_el = ET.fromstring(
         f"""
