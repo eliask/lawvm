@@ -66,6 +66,8 @@ def uk_nonstructural_replay_candidate_family_for_effect_type(effect_type: str) -
         return "ceases_to_have_effect_repeal"
     if effect_type == "added":
         return "added_source_structural_insert"
+    if effect_type == "amended":
+        return "amended_source_text_patch"
     return ""
 
 

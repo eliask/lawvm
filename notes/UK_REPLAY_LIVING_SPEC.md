@@ -190,6 +190,12 @@ Current UK-specific invariants:
       compiles to source-owned structural inserts; this emits
       `uk_effect_added_type_source_structuralized` and does not permit
       metadata-only backfill
+    - generic `amended` rows only when the exact affecting source is
+      extractable and compiles entirely to text-patch operations. This owns
+      older SI rows whose feed type is broad but whose source text says, for
+      example, `for the words X there shall be substituted the words Y`; generic
+      `amended` rows that compile to no ops remain nonblocking unsupported
+      lanes rather than inferred structure.
     - metadata pseudo-definition targets such as
       `Sch. 2 Pt. 1 para. 1(1) (defn. of "the 1996 Act")` are not ordinary
       structural paths. Whole-entry replacements and unanchored
@@ -977,6 +983,14 @@ Current tooling-consistency invariant:
     effective date, PIT date, target/source provision strings, and
     strict/quirks disposition. Future effects are expected to be excluded, but
     they are still source lanes that must not disappear silently.
+  - Applied statutory-instrument effects with no effect-level in-force date may
+    use an official instrument commencement date only when the affecting
+    instrument metadata exposes exactly one `ComingIntoForce/DateTime/@Date`.
+    This source-backed temporal recovery emits nonblocking
+    `uk_effect_undated_applied_si_commencement_date` diagnostics and feeds both
+    PIT-date filtering and replay ordering. It must not fall back to the feed
+    `Modified` timestamp, instrument year, made date, or a multi-date
+    commencement surface.
   - Source-pathology filters that block already-compiled operations must run
     before manual-frontier classification for that row. In particular,
     `instruction_text_reused_as_payload` plus a blocking
@@ -2672,7 +2686,12 @@ Current payload-descendant source-ref invariant:
   when the source carries a `BlockAmendment` table payload. The selector stores
   every named relating entry, replay requires each anchor to resolve to exactly
   one physical row in exactly one table, and the matched rows must form a
-  contiguous span before they are replaced by the source-owned table rows. Flat
+  contiguous span before they are replaced by the source-owned table rows.
+  Anchor matching is article-tolerant for a leading `the`, because UK table
+  effect text often says `relating to A and the B` while the compiler stores
+  `B` as the canonical anchor and the live table row may still read `The B`
+  after an earlier all-occurrences name substitution. This tolerance is limited
+  to row-anchor resolution and still requires a unique physical row. Flat
   replacement text remains blocked as
   `table_entry_replace_without_table_payload`; ambiguous or non-contiguous live
   anchors emit `uk_replay_table_entry_row_replace_unresolved`. Current

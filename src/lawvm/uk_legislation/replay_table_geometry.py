@@ -196,6 +196,19 @@ def _is_entry_group_heading(row_cells: dict[int, UKMutableNode]) -> bool:
     return bool(texts and texts[0] and all(not text for text in texts[1:]))
 
 
+def _table_entry_article_tolerant_anchor_variants(text: str) -> tuple[str, ...]:
+    raw = " ".join(str(text or "").split())
+    norm = _compact_normalized_text(raw)
+    if not norm:
+        return ()
+    variants = [norm]
+    if raw.lower().startswith("the "):
+        variants.append(_compact_normalized_text(raw[4:]))
+    else:
+        variants.append(f"the{norm}")
+    return tuple(dict.fromkeys(variant for variant in variants if variant))
+
+
 def resolve_uk_table_entry_row_insert_index(
     node: UKMutableNode,
     selector: dict[str, Any],
@@ -361,13 +374,13 @@ def resolve_uk_table_entry_row_replace_span(
     selector_mode = str(selector.get("selector_mode") or "")
     if selector_mode != "relating_entries":
         return None, None, None, "invalid_selector", {}
-    relating_norms = tuple(
-        norm
-        for text in selector.get("relating_texts") or ()
-        for norm in (_compact_normalized_text(str(text or "")),)
-        if norm
-    )
-    if len(relating_norms) < 2:
+    relating_anchor_variants: list[tuple[str, tuple[str, ...]]] = []
+    for text in selector.get("relating_texts") or ():
+        primary_norm = _compact_normalized_text(str(text or ""))
+        variants = _table_entry_article_tolerant_anchor_variants(str(text or ""))
+        if primary_norm and variants:
+            relating_anchor_variants.append((primary_norm, variants))
+    if len(relating_anchor_variants) < 2:
         return None, None, None, "invalid_selector", {}
 
     tables, carrier_detail = uk_table_selector_tables(node, selector)
@@ -377,7 +390,7 @@ def resolve_uk_table_entry_row_replace_span(
     table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
     matches_by_anchor: list[tuple[str, list[tuple[int, str]]]] = []
-    for relating_norm in relating_norms:
+    for relating_norm, relating_variants in relating_anchor_variants:
         anchor_matches: list[tuple[int, str]] = []
         for row_index, row_cells in expanded_rows:
             row_preview = " | ".join(
@@ -388,7 +401,10 @@ def resolve_uk_table_entry_row_replace_span(
             if not row_preview:
                 continue
             if any(
-                _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
+                any(
+                    variant and _compact_normalized_text(cell.text or "").find(variant) >= 0
+                    for variant in relating_variants
+                )
                 for cell in _unique_row_cells(row_cells)
             ):
                 anchor_matches.append((row_index, row_preview))

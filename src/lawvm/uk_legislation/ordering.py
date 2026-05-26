@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
@@ -75,16 +76,21 @@ def _uk_source_provision_order_key(ref: str) -> tuple[Any, ...]:
 def _order_uk_effects_for_replay(
     effects: Sequence[UKEffectRecord],
     *,
+    effective_date_overrides: Optional[Mapping[str, str]] = None,
     diagnostics_out: Optional[list[dict[str, Any]]] = None,
     lowering_observations_out: Optional[list[dict[str, Any]]] = None,
 ) -> list[UKEffectRecord]:
     """Order UK effects by legal time and affecting-source citation order."""
 
     original = list(effects)
+    date_overrides = effective_date_overrides or {}
+
+    def _effective_date(effect: UKEffectRecord) -> str:
+        return date_overrides.get(effect.effect_id) or effect.effective_date
 
     def _sort_key(e: UKEffectRecord) -> tuple[Any, ...]:
         return (
-            e.effective_date or "9999-99-99",
+            _effective_date(e) or "9999-99-99",
             str(e.modified or ""),
             e.affecting_act_id,
             _uk_source_provision_order_key(e.affecting_provisions),
@@ -98,7 +104,7 @@ def _order_uk_effects_for_replay(
     groups: dict[tuple[str, str, str], list[UKEffectRecord]] = {}
     for effect in original:
         group_key = (
-            effect.effective_date or "9999-99-99",
+            _effective_date(effect) or "9999-99-99",
             str(effect.modified or ""),
             effect.affecting_act_id,
         )

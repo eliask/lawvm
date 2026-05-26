@@ -42,6 +42,9 @@ from lawvm.uk_legislation.effects import (
     load_effects_for_statute_from_archive,
     uk_effect_requires_affecting_source_for_replay,  # noqa: F401
 )
+from lawvm.uk_legislation.effect_temporal import (
+    resolve_uk_effective_date_overrides_for_replay,
+)
 from lawvm.uk_legislation.addressing import (
     _order_schedule_materialization_ops,
 )
@@ -226,11 +229,26 @@ class UKReplayPipeline:
             )
         _mark_compile_phase("compile_load_effects")
 
+        temporal_observations: list[dict[str, Any]] = []
+        effective_date_overrides = resolve_uk_effective_date_overrides_for_replay(
+            effects,
+            archive,
+            diagnostics_out=temporal_observations,
+        )
+        if effect_diagnostics_out is not None:
+            effect_diagnostics_out.extend(temporal_observations)
+        if lowering_rejections_out is not None:
+            lowering_rejections_out.extend(dict(row) for row in temporal_observations)
+
         replayable = list(effects)
         if pit_date:
             pit_replayable: list[UKEffectRecord] = []
             for e in replayable:
-                effective_date = e.effective_date or "9999-99-99"
+                effective_date = (
+                    effective_date_overrides.get(e.effect_id)
+                    or e.effective_date
+                    or "9999-99-99"
+                )
                 if effective_date <= pit_date:
                     pit_replayable.append(e)
                     continue
@@ -244,6 +262,7 @@ class UKReplayPipeline:
 
         replayable = _order_uk_effects_for_replay(
             replayable,
+            effective_date_overrides=effective_date_overrides,
             diagnostics_out=effect_diagnostics_out,
             lowering_observations_out=lowering_rejections_out,
         )

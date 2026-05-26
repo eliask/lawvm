@@ -39,6 +39,11 @@ def should_replay_nonstructural_ops(
             _action_name(op.action) == "insert" and op.payload is not None
             for op in compiled_ops
         )
+    if effect_type == "amended":
+        return bool(compiled_ops) and all(
+            _action_name(op.action) in {"text_replace", "text_repeal"}
+            for op in compiled_ops
+        )
     return False
 
 
