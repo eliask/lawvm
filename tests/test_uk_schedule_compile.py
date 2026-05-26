@@ -24226,6 +24226,68 @@ def test_compile_table_column_entry_row_insert_from_quoted_anchor() -> None:
     )
 
 
+def test_compile_table_column_entry_row_insert_from_entry_for_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <P3para>
+            <Text>In column 1 of the Table, after the entry for sections
+            257GG and 257GH(1) and (2) of ITA 2007, insert\u2014 sections
+            257SG and 257SH(1) and (2) of ITA 2007;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_for_row_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-03-26",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2015/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="11",
+        affecting_provisions="Sch. 11 para. 2(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2015-03-26", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].payload is not None
+    assert [child.text for child in ops[0].payload.children] == [
+        "sections 257SG and 257SH(1) and (2) of ITA 2007",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_entry"
+    assert selector["column_index"] == 1
+    assert selector["relating_text"] == "sections 257GG and 257GH(1) and (2) of ITA 2007"
+    assert selector["allow_unique_descendant_table"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> None:
     extracted_el = ET.fromstring(
         f"""
