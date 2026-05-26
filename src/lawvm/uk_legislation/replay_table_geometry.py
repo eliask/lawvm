@@ -159,8 +159,14 @@ def uk_table_selector_tables(
         for child in node.children
         if _uk_kind_value(child.kind).lower() == "table"
     ]
-    if tables or not bool(selector.get("allow_implicit_subsection_one_table")):
+    if tables:
         return tables, {"table_carrier": "target"}
+    if bool(selector.get("allow_unique_descendant_table")):
+        descendant_tables, descendant_detail = _unique_descendant_uk_tables(node)
+        if descendant_tables:
+            return descendant_tables, descendant_detail
+    if not bool(selector.get("allow_implicit_subsection_one_table")):
+        return [], {"table_carrier": "target"}
     subsection_ones = [
         child
         for child in node.children
@@ -209,6 +215,33 @@ def _table_entry_article_tolerant_anchor_variants(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(variant for variant in variants if variant))
 
 
+def _unique_descendant_uk_tables(
+    node: UKMutableNode,
+) -> tuple[list[UKMutableNode], dict[str, Any]]:
+    matches: list[tuple[UKMutableNode, tuple[str, ...]]] = []
+
+    def _walk(candidate: UKMutableNode, path: tuple[str, ...]) -> None:
+        for child_index, child in enumerate(candidate.children):
+            child_kind = _uk_kind_value(child.kind).lower()
+            child_label = str(child.label or "")
+            child_token = (
+                f"{child_kind}:{child_label}"
+                if child_label
+                else f"{child_kind}[{child_index}]"
+            )
+            child_path = (*path, child_token)
+            if child_kind == "table":
+                matches.append((child, child_path))
+                continue
+            _walk(child, child_path)
+
+    _walk(node, ())
+    return [table for table, _path in matches], {
+        "table_carrier": "unique_descendant_table",
+        "descendant_table_paths": tuple("/".join(path) for _table, path in matches[:5]),
+    }
+
+
 def resolve_uk_table_entry_row_insert_index(
     node: UKMutableNode,
     selector: dict[str, Any],
@@ -236,6 +269,9 @@ def resolve_uk_table_entry_row_insert_index(
     elif selector_mode == "entry_group_heading":
         if not relating_norm:
             return None, None, "invalid_selector", {}
+    elif selector_mode == "column_entry":
+        if column_index < 1 or not relating_norm:
+            return None, None, "invalid_selector", {}
     elif entry_index < 1 or not relating_norm:
         return None, None, "invalid_selector", {}
     if selector_mode == "ordinal_column" and column_index < 2:
@@ -247,6 +283,7 @@ def resolve_uk_table_entry_row_insert_index(
         "relating_entry",
         "entry_label",
         "entry_group_heading",
+        "column_entry",
     }:
         return None, None, "invalid_selector", {}
 
@@ -309,6 +346,12 @@ def resolve_uk_table_entry_row_insert_index(
                 continue
             if _clean_num(target_cell.text or "") != anchor_entry_label:
                 continue
+        elif selector_mode == "column_entry":
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
+            if _compact_normalized_text(target_cell.text or "").find(relating_norm) < 0:
+                continue
         else:
             target_cell = row_cells.get(column_index)
             if target_cell is None:
@@ -340,14 +383,14 @@ def resolve_uk_table_entry_row_insert_index(
                 )[:240],
             )
         )
-    required_entry_index = 1 if selector_mode == "entry_label" else entry_index
+    required_entry_index = 1 if selector_mode in {"entry_label", "column_entry"} else entry_index
     if len(matching_rows) < required_entry_index:
         return None, None, "entry_not_found", {
             "matching_entry_count": len(matching_rows),
             "matching_rows": tuple(row[1] for row in matching_rows[:5]),
             **carrier_detail,
         }
-    if selector_mode == "entry_label" and len(matching_rows) > 1:
+    if selector_mode in {"entry_label", "column_entry"} and len(matching_rows) > 1:
         return None, None, "entry_not_unique", {
             "matching_entry_count": len(matching_rows),
             "matching_rows": tuple(row[1] for row in matching_rows[:5]),
