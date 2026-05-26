@@ -2948,7 +2948,8 @@ Current payload-descendant source-ref invariant:
     words "X" in column 2 of the Table there shall be substituted "Y"`, lower
     under `uk_effect_table_column_text_patch` with a `unique_column_text`
     selector. This is limited to explicit quoted preimage/replacement text and
-    explicit `references to X substitute "Y"` forms; it does not absorb
+    explicit `references to X substitute "Y"` forms, and quoted omissions such
+    as `in the first column of the Table, omit "X"`; it does not absorb
     entry/row placement language.
   - current witnesses: `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32
     Sch. 17 para. 4(3)(a)`, `s. 122(1) Table` by `ukpga/2022/32 Sch. 21

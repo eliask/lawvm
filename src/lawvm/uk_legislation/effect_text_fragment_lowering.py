@@ -408,6 +408,8 @@ def _extract_text_fragment_substitutions(
             target_ref=target_ref,
             target=target,
             extracted_text=extracted_text,
+            extracted_el=extracted_el,
+            source_root=source_root,
         )
         if table_column_entry_text_patch is not None:
             subs = [
@@ -427,6 +429,8 @@ def _extract_text_fragment_substitutions(
             target_ref=target_ref,
             target=target,
             extracted_text=extracted_text,
+            extracted_el=extracted_el,
+            source_root=source_root,
         )
         if table_target_column_text_patch is not None:
             subs = [
