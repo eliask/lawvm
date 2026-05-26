@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, Optional, TypeAlias, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.semantic_types import StructuralAction
@@ -14,32 +14,24 @@ _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
 )
 
+NodeIndexEntry: TypeAlias = tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]
+NodeLookupResult: TypeAlias = tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]
+VersionedNodeLookup: TypeAlias = tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]
+TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
+
 
 class UKReplayStateMixin:
     statute: UKMutableStatute
     lo_ops_out: Optional[list[LegalOperation]]
     _repealed_target_prefixes: set[str]
     _structure_mutation_serial: int
-    _eid_lookup_index: Optional[
-        dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]
-    ]
+    _eid_lookup_index: Optional[dict[str, NodeIndexEntry]]
     _eid_lookup_ambiguous: set[str]
-    _eid_suffix_lookup_index: Optional[
-        dict[tuple[str, str], tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]
-    ]
+    _eid_suffix_lookup_index: Optional[dict[tuple[str, str], NodeIndexEntry]]
     _eid_suffix_lookup_ambiguous: set[tuple[str, str]]
-    _eid_search_cache: dict[
-        tuple[str, bool],
-        tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
-    ]
-    _target_lookup_cache: dict[
-        tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
-        tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
-    ]
-    _recursive_match_cache: dict[
-        tuple[int, str, str],
-        tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
-    ]
+    _eid_search_cache: dict[tuple[str, bool], VersionedNodeLookup]
+    _target_lookup_cache: dict[TargetLookupKey, VersionedNodeLookup]
+    _recursive_match_cache: dict[tuple[int, str, str], VersionedNodeLookup]
 
     def _note_structure_mutation(self) -> None:
         self._structure_mutation_serial += 1
@@ -98,7 +90,7 @@ class UKReplayStateMixin:
         eid: str,
         *,
         allow_sequence_match: bool,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
+    ) -> NodeLookupResult | None:
         cached = self._eid_search_cache.get((eid, bool(allow_sequence_match)))
         if cached is None:
             return None
@@ -145,7 +137,7 @@ class UKReplayStateMixin:
         eid: str,
         *,
         allow_sequence_match: bool,
-        result: tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+        result: NodeLookupResult,
     ) -> None:
         node, parent, idx = result
         self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
@@ -172,7 +164,7 @@ class UKReplayStateMixin:
         *,
         allow_compound_subsection_alias: bool,
         allow_recursive_match: bool,
-    ) -> tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]:
+    ) -> TargetLookupKey:
         return (
             tuple((str(kind), label) for kind, label in target.path),
             bool(allow_compound_subsection_alias),
@@ -181,8 +173,8 @@ class UKReplayStateMixin:
 
     def _cached_target_lookup(
         self,
-        key: tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
+        key: TargetLookupKey,
+    ) -> NodeLookupResult | None:
         cached = self._target_lookup_cache.get(key)
         if cached is None:
             return None
@@ -226,8 +218,8 @@ class UKReplayStateMixin:
 
     def _store_target_lookup_cache(
         self,
-        key: tuple[tuple[tuple[str, Optional[str]], ...], bool, bool],
-        result: tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+        key: TargetLookupKey,
+        result: NodeLookupResult,
     ) -> None:
         node, parent, idx = result
         self._target_lookup_cache[key] = (
@@ -249,7 +241,7 @@ class UKReplayStateMixin:
     def _cached_recursive_match(
         self,
         key: tuple[int, str, str],
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]] | None:
+    ) -> NodeLookupResult | None:
         if key not in self._recursive_match_cache:
             return None
         cached = self._recursive_match_cache[key]
@@ -280,7 +272,7 @@ class UKReplayStateMixin:
     def _store_recursive_match_cache(
         self,
         key: tuple[int, str, str],
-        result: tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]],
+        result: NodeLookupResult,
     ) -> None:
         node, parent, idx = result
         self._recursive_match_cache[key] = (
@@ -295,9 +287,9 @@ class UKReplayStateMixin:
         node: UKMutableNode,
         parent: Optional[UKMutableNode],
         idx: Optional[int],
-        index: dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]],
+        index: dict[str, NodeIndexEntry],
         ambiguous: set[str],
-        suffix_index: dict[tuple[str, str], tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]],
+        suffix_index: dict[tuple[str, str], NodeIndexEntry],
         suffix_ambiguous: set[tuple[str, str]],
     ) -> None:
         for eid in self._node_eid_values(node):
@@ -329,12 +321,12 @@ class UKReplayStateMixin:
 
     def _ensure_eid_lookup_index(
         self,
-    ) -> dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]]:
+    ) -> dict[str, NodeIndexEntry]:
         if self._eid_lookup_index is not None:
             return self._eid_lookup_index
-        index: dict[str, tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]] = {}
+        index: dict[str, NodeIndexEntry] = {}
         ambiguous: set[str] = set()
-        suffix_index: dict[tuple[str, str], tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]] = {}
+        suffix_index: dict[tuple[str, str], NodeIndexEntry] = {}
         suffix_ambiguous: set[tuple[str, str]] = set()
         for child_idx, child in enumerate(self.statute.body.children):
             self._index_eid_subtree(
@@ -365,7 +357,7 @@ class UKReplayStateMixin:
     def _cached_exact_eid_lookup(
         self,
         eid: str,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         if not eid or eid in self._eid_lookup_ambiguous:
             return None, None, None
         entry = self._ensure_eid_lookup_index().get(eid)
@@ -395,7 +387,7 @@ class UKReplayStateMixin:
     def _cached_suffix_eid_lookup(
         self,
         eid: str,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         if not eid:
             return None, None, None
         self._ensure_eid_lookup_index()
