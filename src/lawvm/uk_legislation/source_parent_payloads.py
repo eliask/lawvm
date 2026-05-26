@@ -55,7 +55,10 @@ SOURCE_PARENT_TABLE_ENTRY_INSERT_RE = re.compile(
     r"entry\s+[“\"'‘].*?[”\"'’]\s+"
     r"(?:shall\s+be|is|are)\s+inserted\b.*?"
     r"(?:before|after)\s+(?:the\s+)?entry\s+"
-    r"(?:relating\s+to|relation\s+to|for)\b)",
+    r"(?:relating\s+to|relation\s+to|for)\b|"
+    r"words\s+[“\"'‘].*?[”\"'’]\s+"
+    r"(?:shall\s+be|is|are)\s+inserted\b.*?"
+    r"(?:before|after)\s+[“\"'‘].*?[”\"'’])",
     flags=re.I | re.S,
 )
 
