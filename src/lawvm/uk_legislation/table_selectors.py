@@ -771,6 +771,43 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    entry_in_column_relating_insert_match = re.search(
+        r"\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+in\s+(?:the\s+)?"
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\s+"
+        r"(?:for|relating\s+to|relation\s+to)\s+(?:the\s+)?(?P<anchor>.+?)\s+"
+        r"(?:there\s+(?:shall\s+be|is|are)\s+inserted|insert(?:ed)?)\s*[—–-]?\s*"
+        r"(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if entry_in_column_relating_insert_match is not None:
+        column_token = (
+            entry_in_column_relating_insert_match.group("column_ordinal")
+            or entry_in_column_relating_insert_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        relating_text = " ".join(
+            entry_in_column_relating_insert_match.group("anchor").split()
+        ).strip(" ,;.“”\"'‘’")
+        inserted_text = _strip_schedule_entry_payload(
+            entry_in_column_relating_insert_match.group("payload")
+        )
+        if column_index is not None and column_index >= 1 and relating_text and inserted_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "column_entry",
+                "direction": entry_in_column_relating_insert_match.group("direction").lower(),
+                "column_index": column_index,
+                "entry_index": 1,
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "source_payload_mode": "column_entry_text",
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     numbered_target_table_match = re.search(
         r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
         r"insert(?:ed)?\s*[—–-]?",
