@@ -287,6 +287,18 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="source_carried_child_tail_selector",
     ),
+    "uk_replay_source_carried_child_list_tail_text_rewrite_applied": (
+        UKReplayRecoveryObservation(
+            message=(
+                "UK replay applied a source-carried child-list-tail text "
+                "rewrite against the collapsed parent text after proving the "
+                "plural child list is final."
+            ),
+            family="text_rewrite_recovery",
+            strict_disposition="record",
+            source_shape="source_carried_child_list_tail_selector",
+        )
+    ),
     "uk_replay_source_carried_before_child_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a source-carried before-child text rewrite "

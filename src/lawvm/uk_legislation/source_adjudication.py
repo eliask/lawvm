@@ -400,6 +400,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_source_carried_after_child_text_rewrite_applied",
         "uk_replay_source_carried_before_child_text_rewrite_applied",
         "uk_replay_source_carried_labeled_child_text_substitution_recovered",
+        "uk_replay_source_carried_child_list_tail_text_rewrite_applied",
         "uk_replay_source_carried_child_tail_text_rewrite_applied",
         "uk_replay_source_carried_multi_child_text_rewrite_applied",
         "uk_replay_source_carried_structured_tail_substitution_recovered",

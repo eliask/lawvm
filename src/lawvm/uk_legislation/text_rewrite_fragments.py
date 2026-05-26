@@ -72,6 +72,9 @@ UK_RANGE_INDEPENDENT_END_OCCURRENCE_REPEAL_RULE_ID = (
     "uk_effect_range_independent_end_occurrence_repeal_text_patch"
 )
 UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID = "uk_effect_source_carried_child_tail_repeal_text_patch"
+UK_SOURCE_CARRIED_CHILD_LIST_TAIL_REPEAL_RULE_ID = (
+    "uk_effect_source_carried_child_list_tail_repeal_text_patch"
+)
 UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID = (
     "uk_effect_source_carried_following_words_repeal_text_patch"
 )
@@ -1250,6 +1253,28 @@ def append_source_carried_tail_rewrite_observations(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_SOURCE_CARRIED_CHILD_LIST_TAIL_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_CHILD_LIST_TAIL_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_child_list_tail_repeal_lowered",
+            reason=(
+                "UK source text explicitly repeals the words following "
+                "the child paragraphs inside the affected subsection; lowering "
+                "preserves that as a bounded child-list-tail selector instead "
+                "of deleting from the whole parent."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_anchor_child_kind": str(primary.get("source_anchor_child_kind") or ""),
+            },
+        )
     if UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID in rule_ids:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,

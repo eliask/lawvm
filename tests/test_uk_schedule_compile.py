@@ -10357,6 +10357,153 @@ def test_compile_source_carried_child_tail_repeal_from_exact_subsection_context(
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_source_carried_child_list_tail_repeal_from_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-29-paragraph-1-1">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In section 9(3) of the Taxes Management Act 1970 omit the words following the paragraphs.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-list-tail",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9(3)",
+        affecting_uri="/id/ukpga/2001/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="9",
+        affecting_provisions="Sch. 29 para. 1(1)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "9"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_LIST_TAIL_paragraph"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_list_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_list_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_carried_child_list_tail_repeal_rejects_broad_section_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-29-paragraph-1-1">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In section 9(3) of the Taxes Management Act 1970 omit the words following the paragraphs.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-list-tail-broad",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9",
+        affecting_uri="/id/ukpga/2001/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="9",
+        affecting_provisions="Sch. 29 para. 1(1)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
+def test_compile_source_carried_child_list_tail_repeal_rejects_mismatched_source_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-29-paragraph-1-1">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>1 In section 9(4) of the Taxes Management Act 1970 omit the words following the paragraphs.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-list-tail-source-mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9(3)",
+        affecting_uri="/id/ukpga/2001/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="9",
+        affecting_provisions="Sch. 29 para. 1(1)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_source_carried_child_tail_repeal_rejects_mismatched_subsection_context() -> None:
     extracted_el = ET.fromstring(
         f"""

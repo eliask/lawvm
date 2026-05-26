@@ -3362,6 +3362,15 @@ Current payload-descendant source-ref invariant:
   paragraph (b)` lowers through the same rule and selector, with the same exact
   containing-subsection check. Current witness: `ukpga/1990/42` affected
   `s. 56(1)` by `ukpga/2024/15 Sch. 4 para. 3(2)`.
+- Source text such as `omit the words following the paragraphs` lowers through
+  `uk_effect_source_carried_child_list_tail_repeal_text_patch` only when the
+  official feed target already names an exact subsection. Replay uses
+  `TEXT_AFTER_CHILD_LIST_TAIL_paragraph` and may trim only collapsed parent
+  tail text after proving there are at least two direct paragraph children and
+  the final direct child is a paragraph. It must not use a broad section target,
+  infer a missing subsection from source prose, or treat hyphenated words inside
+  the tail as a dash boundary. Current witness: `ukpga/1970/9` affected
+  `s. 9(3)` by `ukpga/2001/9 Sch. 29 para. 1(1)`.
 - Source text such as `in paragraph (a), the words following sub-paragraph
   (ii) are repealed` lowers through
   `uk_effect_source_carried_subparagraph_tail_repeal_text_patch` when the feed
