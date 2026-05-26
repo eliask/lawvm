@@ -34751,6 +34751,133 @@ def test_compile_source_parent_insert_at_end_text_payload_lowers_append() -> Non
     )
 
 
+def test_compile_source_parent_insert_at_end_quoted_list_payload_lowers_append() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-119-1-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>insert at the end</Text>
+            <BlockAmendment>
+              <Text>, and</Text>
+              <P3>
+                <Pnumber>b</Pnumber>
+                <P3para>
+                  <Text>anything else in the return that the officer has
+                  reason to believe is incorrect in the light of information
+                  available to the officer.</Text>
+                </P3para>
+              </P3>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_insert_at_end_quoted_list_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-11-16",
+        affected_uri="/id/ukpga/1970/9/section/9ZB/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9ZB(1)",
+        affecting_uri="/id/ukpga/2017/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="s. 119(1)(b)",
+        affecting_title="Finance (No. 2) Act 2017",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "9zb"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.replacement.startswith(", and b anything else")
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_parent_at_end_quoted_list_text_insertion_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == (
+        "quoted_list_text_insert_end_resolved_from_source_parent"
+    )
+    assert observations[0]["payload_shape"] == "quoted_list_item_flattened_text"
+    assert observations[0]["source_parent_id"] == "section-119-1-b"
+
+
+def test_compile_source_parent_insert_at_end_structural_list_payload_stays_blocked() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-119-1-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>insert at the end</Text>
+            <BlockAmendment>
+              <P3>
+                <Pnumber>b</Pnumber>
+                <P3para><Text>new standalone paragraph.</Text></P3para>
+              </P3>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_insert_at_end_structural_list_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-11-16",
+        affected_uri="/id/ukpga/1970/9/section/9ZB/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9ZB(1)",
+        affecting_uri="/id/ukpga/2017/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="s. 119(1)(b)",
+        affecting_title="Finance (No. 2) Act 2017",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert all(
+        record["rule_id"]
+        != "uk_effect_source_parent_at_end_quoted_list_text_insertion_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_table_insert_at_end_text_payload_stays_blocked() -> None:
     source_root = ET.fromstring(
         f"""
