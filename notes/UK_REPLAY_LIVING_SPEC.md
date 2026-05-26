@@ -3374,8 +3374,14 @@ Current payload-descendant source-ref invariant:
   `uk_effect_heading_facet_source_parent_full_replacement_text_patch`; the
   inserted body payload must not be smuggled into the heading operation.
   Current witness: `ukpga/1949/88` affected `s. 35A title` by
-  `ukpga/2014/18 s. 14`. Replay then
-  mutates only the heading carrier: direct heading text on title-bearing nodes, an
+  `ukpga/2014/18 s. 14`.
+  Source-parent full-heading replacement is deliberately lower precedence than
+  direct word-level heading instructions. If the extracted child says
+  `in the heading, for "X" substitute "Y"`, lowering must emit a bounded
+  heading word patch, not a parent-derived `TEXT_ALL` replacement.
+  Current witness: `ukpga/2020/17` affected `s. 252A heading` by
+  `ukpga/2026/2 s. 7(3)(a)`.
+  Replay then mutates only the heading carrier: direct heading text on title-bearing nodes, an
   explicit `heading` child under the target section, a unique `P1group`
   heading that wraps the target section, or a subordinate source `P2group` /
   `P3group` / `P4group` preserved as `pgroup` under
