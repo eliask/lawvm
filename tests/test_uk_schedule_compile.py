@@ -10725,6 +10725,105 @@ def test_compile_source_carried_child_tail_omit_after_paragraph_from_exact_subse
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_child_tail_omit_uses_exact_feed_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-4-1-b">
+          <Pnumber>b</Pnumber>
+          <Text>b omit the words following paragraph (b).</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-964d0da42f9a09486e9b226128a6ea01",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/120/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 120(5)",
+        affecting_uri="/id/ukpga/2016/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="21",
+        affecting_provisions="s. 4(1)(b)",
+        affecting_title="Armed Forces Act 2016",
+        in_force_dates=[{"date": "2019-05-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "120"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_b"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["target_supplied_subsection_context"] == "true"
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
+def test_compile_child_tail_omit_rejects_broad_feed_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-4-1-b">
+          <Pnumber>b</Pnumber>
+          <Text>b omit the words following paragraph (b).</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-tail-omit-broad-feed",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/120",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 120",
+        affecting_uri="/id/ukpga/2016/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="21",
+        affecting_provisions="s. 4(1)(b)",
+        affecting_title="Armed Forces Act 2016",
+        in_force_dates=[{"date": "2019-05-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_source_carried_child_tail_omit_after_paragraph_rejects_mismatched_subsection_context() -> None:
     extracted_el = ET.fromstring(
         f"""
