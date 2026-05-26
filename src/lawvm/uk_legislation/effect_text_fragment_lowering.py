@@ -46,6 +46,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
 )
 from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_after_words_inserted_by_sibling,
+    _fragment_substitution_each_other_place_from_sibling,
     _fragment_substitution_grouped_after_insert_from_parent,
     _fragment_substitution_grouped_anchor_occurrence,
     _fragment_substitutions_source_parent_each_provision_substitution,
@@ -421,6 +422,14 @@ def _extract_text_fragment_substitutions(
         )
         if after_inserted_by_sibling is not None:
             subs = [after_inserted_by_sibling]
+    if not subs:
+        each_other_place_from_sibling = _fragment_substitution_each_other_place_from_sibling(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if each_other_place_from_sibling is not None:
+            subs = [each_other_place_from_sibling]
     if not subs:
         grouped_anchor_occurrence = _fragment_substitution_grouped_anchor_occurrence(
             extracted_el=extracted_el,

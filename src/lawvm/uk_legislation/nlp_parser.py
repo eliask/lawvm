@@ -89,6 +89,12 @@ UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID = (
 UK_DANGLING_ACTIVE_SUBSTITUTION_QUOTE_RULE_ID = (
     "uk_effect_dangling_active_substitution_quote_text_patch"
 )
+UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_each_other_place_insert_text_patch"
+)
+UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_sibling_first_then_each_other_place_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:

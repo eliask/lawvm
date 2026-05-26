@@ -2313,13 +2313,20 @@ Current payload-descendant source-ref invariant:
   `s. 28(2)-(4)` by `uksi/2012/1659 Sch. 2 paras. 17(3), 18`.
 - `in each other place occurring` is not the same as all-occurrences. It is
   relative to sibling source rows such as a preceding `where first occurring`
-  insertion. Until LawVM owns a sibling-aware occurrence selector such as
-  "all target occurrences except those already claimed by the paired row",
-  source rows in this family remain
-  `relative_other_place_occurrence_unsupported` /
-  `uk_manual_frontier_relative_other_place_occurrence_candidate`. Current
-  witness: `ukpga/1962/46` affected `s. 62(1)` by `uksi/2012/1659`
-  `Sch. 2 para. 36(b)`.
+  row. Lowering may proceed only when a preceding source sibling explicitly
+  claims the first occurrence of the same quoted anchor. For insertions, LawVM
+  emits `uk_effect_after_quoted_anchor_each_other_place_insert_text_patch` and
+  replay uses a named `TEXT_AFTER_EACH_OTHER_OCCURRENCE` selector that inserts
+  after every matched occurrence except the first. For substitutions, LawVM
+  emits `uk_effect_sibling_first_then_each_other_place_substitution_text_patch`
+  and replay uses a named `TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING`
+  selector: if the sibling's first-occurrence replacement is already visible
+  before the remaining anchor, replay replaces all current anchors; otherwise
+  it skips the first current anchor. If the sibling evidence is absent, the
+  family remains unsupported rather than widening to all occurrences. Current
+  witnesses: `ukpga/1962/46` affected `s. 62(1)` by `uksi/2012/1659 Sch. 2
+  para. 22(2)(b)` and `ukpga/1996/61` affected
+  `Sch. 15 Pt. 4 para. 5` by `ukpga/2003/21 Sch. 17 para. 139(4)(c)`.
 - `after each occurrence of "X" insert "Y"` also lowers through
   `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`. It is a
   quoted-anchor text rewrite over every target occurrence, not a structural
