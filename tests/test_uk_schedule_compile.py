@@ -30468,6 +30468,63 @@ def test_compile_beginning_insert_with_carried_parent_context() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_at_end_insert_with_carried_parent_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>1 At the end of subsection (1) of section 9 of the Taxes Management Act 1970 (as substituted by section 121(4) above) there shall be inserted the words \u201c but nothing in this subsection shall enable a self-assessment to show as repayable any income tax treated as deducted or paid \u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_at_end_insert_with_carried_parent_context",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1996-04-29",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9(1)",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="s. 122(1)",
+        affecting_title="Finance Act 1996",
+        in_force_dates=[{"date": "1996-04-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "9"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement.startswith(
+        "but nothing in this subsection shall enable a self-assessment"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_carried_parent_context_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_at_end_carried_parent_context_text_insertion_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_at_end_carried_parent_context_insert"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_dangling_passive_substitution_quote() -> None:
     extracted_el = ET.fromstring(
         f"""

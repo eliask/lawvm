@@ -4330,6 +4330,12 @@ Current bench replay-regime invariant:
   `uk_effect_beginning_carried_parent_context_text_insertion_patch`; it does
   not retarget from parser text alone. Witness: `ukpga/1970/9 Sch. 1A para.
   4(1)` affected by `ukpga/1995/4 Sch. 20 para. 4(1)`.
+- End inserts may likewise carry parent enactment context after the immediate
+  child target, e.g. `At the end of subsection (1) of section 9 of the Taxes
+  Management Act 1970 ...`. Effects metadata still owns the concrete target;
+  lowering emits `uk_effect_at_end_carried_parent_context_text_insertion_patch`
+  and appends at `TEXT_END`. Witness: `ukpga/1970/9 s. 9(1)` affected by
+  `ukpga/1996/8 s. 122(1)`.
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.

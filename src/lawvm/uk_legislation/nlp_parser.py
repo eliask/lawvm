@@ -38,6 +38,11 @@ _UK_CARRIED_PARENT_CONTEXT_RE = (
     r"(?:\s+\([^)]+\)|\s+[0-9A-Za-z]+)?"
     r"(?:\s+of\s+(?:that|the)\s+Schedule)?"
 )
+_UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
+_UK_CARRIED_ENACTMENT_CONTEXT_RE = (
+    r"(?:\s+of\s+(?:that\s+Act|(?:the\s+)?[A-Z][^,;“”]*?\bAct\s+\d{4}))?"
+    rf"{_UK_SOURCE_ASIDE_RE}"
+)
 _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
     "uk_effect_compound_lettered_text_patch_instruction"
 )
@@ -98,6 +103,9 @@ UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID = (
 )
 UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID = (
     "uk_effect_beginning_carried_parent_context_text_insertion_patch"
+)
+UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID = (
+    "uk_effect_at_end_carried_parent_context_text_insertion_patch"
 )
 UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
     "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
@@ -2252,7 +2260,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"at the beginning(?: of (?:(?:that|the) )?"
         r"(?:paragraph|sub-paragraph|subsection|section)"
         r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?"
-        rf"{_UK_CARRIED_PARENT_CONTEXT_RE}(?:\s+\([^)]*\))?),?\s+"
+        rf"{_UK_CARRIED_PARENT_CONTEXT_RE}{_UK_SOURCE_ASIDE_RE}),?\s+"
         r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
         text,
@@ -2298,6 +2306,25 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "original": "TEXT_BEGINNING",
                 "replacement": m.group("inserted").strip(),
                 "rule_id": "uk_effect_preposed_beginning_text_insertion_patch",
+            }
+        )
+
+    matches_at_end_carried_parent_insert = re.finditer(
+        r"at the end(?: of (?:(?:that|the) )?"
+        r"(?:paragraph|sub-paragraph|subsection|section)"
+        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?"
+        rf"{_UK_CARRIED_PARENT_CONTEXT_RE}{_UK_CARRIED_ENACTMENT_CONTEXT_RE}),?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_at_end_carried_parent_insert:
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
             }
         )
 

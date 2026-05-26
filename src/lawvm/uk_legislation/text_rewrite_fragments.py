@@ -20,6 +20,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
+    UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
@@ -530,6 +531,29 @@ def append_basic_text_rewrite_observations(
                 "provision while carrying parent context after the child "
                 "reference; effects metadata owns the concrete target and "
                 "lowering preserves the bounded TEXT_BEGINNING insertion."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_at_end_carried_parent_context_insert",
+            reason=(
+                "UK source text inserts words at the end of a child provision "
+                "while carrying parent enactment context after the child "
+                "reference; effects metadata owns the concrete target and "
+                "lowering preserves the bounded TEXT_FROM__TO_END append."
             ),
             effect=effect,
             extracted_el=extracted_el,
