@@ -544,7 +544,16 @@ def _uk_flat_repeal_schedule_structural_repeal(
             affected_year=str(effect.affected_year or ""),
         ):
             continue
+        reason_code = "unique_flat_repeal_schedule_structural_repeal"
         if not _uk_repeal_table_clause_is_structural_repeal(clause):
+            if not _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
+                clause,
+                target=target,
+                affected_year=str(effect.affected_year or ""),
+            ):
+                continue
+            reason_code = "flat_mixed_structural_and_word_repeal_split_structural_target"
+        if re.search(r"\b(?:definition|entry|entries)\b", clause, flags=re.I):
             continue
         if not _uk_table_cell_mentions_target(
             clause,
@@ -567,7 +576,7 @@ def _uk_flat_repeal_schedule_structural_repeal(
                 extent_cell=clause,
                 enactment_match_basis=enactment_match_basis,
                 rule_id=_UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_REPEAL_RULE_ID,
-                reason_code="unique_flat_repeal_schedule_structural_repeal",
+                reason_code=reason_code,
             )
         )
 
@@ -1176,12 +1185,13 @@ def _uk_repeal_table_mixed_clause_names_target_in_list_or_range(
     if not wanted:
         return False
     for match in re.finditer(
-        rf"(?:[,;—–-]|\band\b)\s*(?:the\s+)?{kind_pattern}\s+(?P<body>[^.;]+)",
+        rf"(?:[,;—–-]|\band\b)\s*(?:\([a-z]\)\s*)?(?:the\s+)?{kind_pattern}\s+(?P<body>[^.;]+)",
         scope_text,
         flags=re.I,
     ):
         body = re.split(
-            r"(?:;\s*|,\s*|\band\s+)in\s+(?:subsection|paragraph|sub-?paragraph)\b",
+            r"(?:;\s*|,\s*(?:and\s+)?|\band\s+)"
+            r"(?:\([a-z]\)\s*)?in\s+(?:subsection|paragraph|sub-?paragraph)\b",
             match.group("body"),
             maxsplit=1,
             flags=re.I,
@@ -1694,6 +1704,13 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 enactment_match_basis=mixed_match.enactment_match_basis,
             )
         if not matches and len(broad_container_matches) == 1:
+            flat_repeal = _uk_flat_repeal_schedule_structural_repeal(
+                effect=effect,
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if flat_repeal.recognized:
+                return flat_repeal
             broad_match = broad_container_matches[0]
             return _UKRepealTableStructuralRepeal(
                 recognized=True,
