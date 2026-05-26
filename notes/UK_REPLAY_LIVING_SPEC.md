@@ -3401,6 +3401,17 @@ Current payload-descendant source-ref invariant:
   witnesses: `ukpga/1970/9` affected `s. 15 sidenote` by `ukpga/2003/1 Sch. 6
   para. 126(2)`, and affected `s. 59A heading` by `ukpga/1998/36 Sch. 19
   para. 29(1)`.
+  Additional explicit heading-facet text idioms use the same facet lane when
+  they are already representable as bounded text selectors: `for the heading to
+  that section substitute "X"` becomes a `TEXT_ALL` replacement; `in the
+  heading, for "X" insert "Y"` uses the parser's explicit `for/insert` text
+  patch; `in the heading, at end insert "X"` becomes a `TEXT_END` append; and
+  `in the heading, at the beginning insert "X"` becomes a `TEXT_BEGINNING`
+  patch. Current witnesses: `ukpga/1970/9` affected `s. 105 heading` by
+  `ukpga/2003/14 s. 206(2)`, `s. 46D heading` by `uksi/2009/1307 Sch. 1
+  para. 96(a)`, `s. 59B heading` by `ukpga/2016/24 Sch. 23 para. 7(2)`,
+  `s. 12A heading` by `uksi/2019/689 reg. 2(3)(a)`, and `s. 98B heading` by
+  `uksi/2019/689 reg. 2(4)(a)`.
   Source-parent full-heading replacement is deliberately lower precedence than
   direct word-level heading instructions. If the extracted child says
   `in the heading, for "X" substitute "Y"`, lowering must emit a bounded

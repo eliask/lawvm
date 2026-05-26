@@ -151,6 +151,20 @@ def _heading_facet_append_fragment(extracted_text: Optional[str]) -> Optional[di
             replacement = str(fragment.get("replacement") or "")
             if replacement:
                 return fragment
+    text = " ".join((extracted_text or "").split()).strip()
+    match = re.search(
+        r"\bat\s+end,?\s+insert\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is not None:
+        replacement = match.group("replacement").strip()
+        if replacement:
+            return {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": replacement,
+                "rule_id": "uk_effect_heading_facet_at_end_insert_text_patch",
+            }
     return None
 
 
@@ -178,6 +192,28 @@ def _heading_facet_after_anchor_insert_fragment(extracted_text: Optional[str]) -
         "replacement": f"{anchor}{joiner}{inserted}",
         "rule_id": "uk_effect_heading_facet_after_anchor_insert_text_patch",
     }
+
+
+def _heading_facet_insert_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    """Return supported heading/title/sidenote insertion fragments."""
+    append_fragment = _heading_facet_append_fragment(extracted_text)
+    if append_fragment is not None:
+        return append_fragment
+    after_anchor_fragment = _heading_facet_after_anchor_insert_fragment(extracted_text)
+    if after_anchor_fragment is not None:
+        return after_anchor_fragment
+    supported_parser_rules = {
+        "uk_effect_beginning_text_insertion_patch",
+        "uk_effect_preposed_beginning_text_insertion_patch",
+        "uk_effect_for_insert_text_insertion_patch",
+    }
+    for fragment in parse_fragment_substitution(extracted_text or ""):
+        if str(fragment.get("rule_id") or "") in supported_parser_rules:
+            original = str(fragment.get("original") or "")
+            replacement = str(fragment.get("replacement") or "")
+            if original and replacement:
+                return fragment
+    return None
 
 
 def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
@@ -220,7 +256,7 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
             r"(?:heading|title|sidenote)"
             r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
             r"\s+[0-9A-Za-z]+)?"
-            r"(?:\s+to\s+(?:the\s+)?section)?"
+            r"(?:\s+to\s+(?:the|that)\s+section)?"
             r"\s+substitute\s*[—–-]?\s*(?P<replacement>.+)$",
             text,
             flags=re.I | re.S,
@@ -299,10 +335,7 @@ def _is_heading_facet_word_patch_supported(
     }:
         return True
     if normalized in {"words inserted", "word inserted"}:
-        return (
-            _heading_facet_append_fragment(extracted_text) is not None
-            or _heading_facet_after_anchor_insert_fragment(extracted_text) is not None
-        )
+        return _heading_facet_insert_fragment(extracted_text) is not None
     return False
 
 
