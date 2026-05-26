@@ -16284,6 +16284,132 @@ def test_compile_repeal_table_mixed_structural_and_word_repeal_splits_ops() -> N
     ]
 
 
+def test_compile_repeal_table_mixed_structural_subsection_range_member() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Chapter</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>1970 c. 9.</td>
+                  <td>In section 50— subsections (1) to (5); in subsection (6) the word “lawful”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_structural_range_member",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1994-09-01",
+        affected_uri="/id/ukpga/1970/9/section/50/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 50(3)",
+        affecting_uri="/id/uksi/1994/1813",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1994",
+        affecting_number="1813",
+        affecting_provisions="Sch. 1 para. 6(a) Sch. 2 Pt. 1",
+        affecting_title="Test Repeal Order",
+        in_force_dates=[{"date": "1994-09-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "50"), ("subsection", "3"))
+    assert ops[0].text_patch is None
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_split_structural_target"
+        and record["target"] == "section:50/subsection:3"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_mixed_structural_subsection_alphanumeric_list_member() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Chapter</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>1970 c. 9.</td>
+                  <td>In section 42, subsections (4) and (4A) and in subsection (5), the words from “and the reference” onwards.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_structural_alphanumeric_list_member",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2001-03-22",
+        affected_uri="/id/ukpga/1970/9/section/42/subsection/4A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(4A)",
+        affecting_uri="/id/ukpga/2001/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="2",
+        affecting_provisions="Sch. 8 Pt. 2",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2001-03-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "42"), ("subsection", "4a"))
+    assert ops[0].text_patch is None
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_split_structural_target"
+        and record["target"] == "section:42/subsection:4a"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_parent_child_text_repeal_splits_ops() -> None:
     source_root = ET.fromstring(
         """

@@ -3288,6 +3288,13 @@ Current payload-descendant source-ref invariant:
   source facts and are not silently replayed. The same row must not lower a
   whole repeal for `s. 142(1)`, because `in subsection (1), the words ...`
   scopes only the word deletion. Mixed clauses that explicitly name the target
+  via a simple subsection/paragraph list or range may also lower only the
+  structural half, for example `subsections (1) to (5); in subsection (6) the
+  word "lawful"` or `subsections (4) and (4A) and in subsection (5), the words
+  ...`. The matcher truncates before the later `in subsection/paragraph`
+  word-deletion clause and must not treat that later clause as authority to
+  repeal its host subsection.
+  Mixed clauses that explicitly name the target
   and a contextual adjacent-word deletion may lower both lanes under
   `uk_effect_repeal_table_mixed_structural_word_repeal_split`. This includes
   `Section 69(3)(b) and the word "and" immediately preceding it.` and section
