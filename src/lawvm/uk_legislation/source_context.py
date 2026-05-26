@@ -34,6 +34,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_implicit_first_subparagraph_context_ignored,
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
+    uk_affecting_act_outdented_child_source_selected,
     uk_affecting_act_parenthesized_range_source_extracted,
     uk_affecting_act_schedule_part_standalone_split_rejection,
     uk_affecting_act_xml_missing_rejection,
@@ -758,6 +759,57 @@ def _extract_parenthesized_range_source(
     )
 
 
+def _outdented_child_source_ref(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    provision_ref: str,
+) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    if context.parent_map is None:
+        return None, ()
+    match = re.fullmatch(
+        r"\s*s(?:ection)?\.?\s*(?P<section>[0-9]+[A-Za-z]?)"
+        r"\s*\(\s*(?P<parent>[0-9]+[A-Za-z]?)\s*\)"
+        r"\s*\(\s*(?P<child>[A-Za-z]+)\s*\)\s*",
+        provision_ref,
+        flags=re.I,
+    )
+    if match is None:
+        return None, ()
+    section_label = match.group("section")
+    parent_label = match.group("parent")
+    child_label = match.group("child")
+    requested_parent_id = f"section-{section_label}-{parent_label}"
+    selected_child_id = f"section-{section_label}-{child_label.lower()}"
+    requested_parent = context.sequence_map.get(_get_id_sequence(requested_parent_id))
+    selected_child = context.sequence_map.get(_get_id_sequence(selected_child_id))
+    if requested_parent is None or selected_child is None:
+        return None, ()
+    if context.parent_map.get(requested_parent) is not context.parent_map.get(selected_child):
+        return None, ()
+    if _clean_num(_direct_structural_num(selected_child)).lower() != child_label.lower():
+        return None, ()
+    selected_text = _text_content(selected_child)
+    parent_pattern = re.compile(
+        rf"\bsubsection\s*\(?\s*{re.escape(parent_label)}\s*\)?",
+        flags=re.I,
+    )
+    if parent_pattern.search(selected_text) is None:
+        return None, ()
+    observation = uk_affecting_act_outdented_child_source_selected(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        requested_parent_id=requested_parent_id,
+        selected_child_id=selected_child_id,
+        selected_child_label=_clean_num(_direct_structural_num(selected_child)),
+        selected_child_text_preview=_source_preview(selected_text),
+        carried_parent_label=parent_label,
+    )
+    return selected_child, (observation,)
+
+
 def _extract_parenthesized_range_source_ref(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
@@ -1010,6 +1062,13 @@ def _extract_from_affecting_source_context_with_observations(
             el,
         )
         if payload_descendant_rejection is not None:
+            outdented_el, outdented_observations = _outdented_child_source_ref(
+                context,
+                effect,
+                provision_ref,
+            )
+            if outdented_el is not None:
+                return outdented_el, outdented_observations
             return None, (payload_descendant_rejection,)
         return el, ()
 
