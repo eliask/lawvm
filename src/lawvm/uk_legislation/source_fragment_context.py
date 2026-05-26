@@ -69,6 +69,12 @@ _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
     r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
+_SOURCE_PARENT_TAIL_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    flags=re.I,
+)
 _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*"
     r"(?:Substitute|For)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*$",
@@ -76,7 +82,7 @@ _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
 )
 _SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
-    r"(?:(?:section|subsection|paragraph|sub-paragraph|Schedule|Part)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
+    r"(?:(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
     flags=re.I,
 )
 _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
@@ -84,6 +90,14 @@ _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
     r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+in\s+",
     flags=re.I,
 )
+
+
+def _source_parent_opens_target_list(lead_text: str) -> bool:
+    normalized = " ".join((lead_text or "").split()).strip()
+    if not normalized.endswith(("—", "-")):
+        return False
+    lowered = normalized.lower()
+    return lowered.startswith(("in ", "for ")) or " in " in lowered or " for " in lowered
 
 _EACH_OTHER_PLACE_AFTER_INSERT_RE = re.compile(
     r"\bafter\s+(?:the\s+words?\s+)?[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
@@ -289,6 +303,34 @@ def append_source_fragment_context_observations(
                 "target_ref": target_ref,
                 "target": str(target),
                 "source_parent_id": str(following_provisions_fragment.get("source_parent_id") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    for tail_substitution_fragment in fragment_subs or []:
+        if (
+            str(tail_substitution_fragment.get("rule_id") or "")
+            != "uk_effect_source_parent_tail_substitution_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_parent_tail_substitution_text_patch",
+            family="source_context_elaboration",
+            reason_code="text_substitution_resolved_from_source_parent_tail",
+            reason=(
+                "UK source child row enumerates a target provision while its "
+                "parent opens a target list and carries the quoted substitution "
+                "after the child rows. Lowering combines those source-local "
+                "facts and leaves target selection to effects metadata."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(tail_substitution_fragment.get("source_parent_id") or ""),
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
             },
@@ -718,6 +760,50 @@ def _fragment_substitution_source_parent_following_provisions_substitution(
             "replacement": replacement,
             "source_parent_id": source_parent_id,
             "rule_id": "uk_effect_source_parent_following_provisions_substitution_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_source_parent_tail_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve target-list child rows governed by a substitution in the parent tail."""
+    child_text = " ".join((extracted_text or "").split())
+    if not child_text or re.search(
+        r"\b(?:for|substitut(?:e|ed)|insert(?:ed)?|omit(?:ted)?|repeal(?:ed)?)\b",
+        child_text,
+        flags=re.I,
+    ):
+        return None
+    if _SOURCE_CHILD_TARGET_ONLY_RE.match(child_text) is None:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        lead_text = _source_lead_text_before_subordinate_rows(ancestor).strip()
+        if not _source_parent_opens_target_list(lead_text):
+            continue
+        tail_text = _source_tail_text_after_subordinate_rows(ancestor)
+        match = _SOURCE_PARENT_TAIL_SUBSTITUTION_RE.search(tail_text)
+        if match is None:
+            continue
+        original = " ".join(match.group("original").split()).strip()
+        replacement = " ".join(match.group("replacement").split()).strip()
+        if not original or not replacement:
+            return None
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return {
+            "original": original,
+            "replacement": replacement,
+            "source_parent_id": source_parent_id,
+            "rule_id": "uk_effect_source_parent_tail_substitution_text_patch",
         }
     return None
 

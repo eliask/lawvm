@@ -6638,6 +6638,121 @@ def test_compile_source_parent_following_provisions_substitution_does_not_invent
     )
 
 
+def test_compile_source_parent_tail_substitution_from_child_target_row() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-19-paragraph-9">
+          <Pnumber>9</Pnumber>
+          <Text>In TMA 1970, in\u2014</Text>
+          <P3 id="schedule-19-paragraph-9-a">
+            <Pnumber>a</Pnumber>
+            <Text>sections 8(1AA)(b) and 8A(1AA)(b) (personal return and trustee return: amount payable by way of income tax),</Text>
+          </P3>
+          <Text>for \u201c397A(2)\u201d substitute \u201c397A(1)\u201d</Text>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f"./{{{_LEG_NS}}}P3[@id='schedule-19-paragraph-9-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_tail_substitution",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-07-21",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 8(1AA)(b)",
+        affecting_uri="/id/ukpga/2009/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="10",
+        affecting_provisions="Sch. 19 para. 9(a)",
+        affecting_title="Finance Act 2009",
+        in_force_dates=[{"date": "2009-07-21", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "8"), ("subsection", "1aa"), ("paragraph", "b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "397A(2)"
+    assert ops[0].text_patch.replacement == "397A(1)"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_tail_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_tail_substitution_text_patch"
+        and record["reason_code"] == "text_substitution_resolved_from_source_parent_tail"
+        and record["source_parent_id"] == "schedule-19-paragraph-9"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_source_parent_tail_substitution_does_not_invent_without_tail() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-19-paragraph-9">
+          <Pnumber>9</Pnumber>
+          <Text>In TMA 1970, in\u2014</Text>
+          <P3 id="schedule-19-paragraph-9-a">
+            <Pnumber>a</Pnumber>
+            <Text>sections 8(1AA)(b) and 8A(1AA)(b) (personal return and trustee return: amount payable by way of income tax),</Text>
+          </P3>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f"./{{{_LEG_NS}}}P3[@id='schedule-19-paragraph-9-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_tail_substitution_without_tail",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-07-21",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 8(1AA)(b)",
+        affecting_uri="/id/ukpga/2009/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="10",
+        affecting_provisions="Sch. 19 para. 9(a)",
+        affecting_title="Finance Act 2009",
+        in_force_dates=[{"date": "2009-07-21", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert all(
+        record["rule_id"] != "uk_effect_source_parent_tail_substitution_text_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_grouped_anchor_occurrence_substitution_does_not_invent_anchor_without_parent() -> None:
     extracted_el = ET.fromstring(
         f"""
