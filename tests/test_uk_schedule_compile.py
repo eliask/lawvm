@@ -6300,6 +6300,88 @@ def test_compile_grouped_anchor_occurrence_substitution_uses_parent_source_conte
     ) == "schedule-1-paragraph-8-4-a"
 
 
+def test_compile_source_parent_each_provision_substitution_from_child_target_row() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <P1para>
+            <Text>In each provision specified in relation to each of the Acts set out below,
+            for \u201cthe Nature Conservancy Council for England\u201d or, as the case may be,
+            \u201cNature Conservancy Council for England\u201d there is substituted \u201cEnglish Nature\u201d\u2014</Text>
+            <P3 id="schedule-8-paragraph-1-u">
+              <Pnumber>u</Pnumber>
+              <P3para>
+                <Text>the Channel Tunnel Rail Link Act 1996\u2014</Text>
+                <P4 id="schedule-8-paragraph-1-u-i">
+                  <Pnumber>i</Pnumber>
+                  <P4para>
+                    <Text>in Schedule 6 (planning conditions), paragraph 27(4), and</Text>
+                  </P4para>
+                </P4>
+              </P3para>
+            </P3>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = next(
+        el for el in source_root.iter() if el.get("id") == "schedule-8-paragraph-1-u-i"
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_each_provision_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2001-01-30",
+        affected_uri="/id/ukpga/1996/61",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="Sch. 6 para. 27(4)",
+        affecting_uri="/id/ukpga/2000/37",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="37",
+        affecting_provisions="Sch. 8 para. 1(u)(i)",
+        affecting_title="Countryside and Rights of Way Act 2000",
+        in_force_dates=[{"date": "2001-01-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("schedule", "6"), ("paragraph", "27"), ("subparagraph", "4")),
+        (("schedule", "6"), ("paragraph", "27"), ("subparagraph", "4")),
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "the Nature Conservancy Council for England",
+        "Nature Conservancy Council for England",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        "English Nature",
+        "English Nature",
+    ]
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_each_provision_substitution_text_patch"
+        and record["reason_code"] == "text_substitution_resolved_from_each_provision_parent"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_grouped_anchor_occurrence_substitution_does_not_invent_anchor_without_parent() -> None:
     extracted_el = ET.fromstring(
         f"""

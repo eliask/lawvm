@@ -50,6 +50,14 @@ _GROUPED_AFTER_INSERT_PARENT_TAIL_RE = re.compile(
     flags=re.I,
 )
 
+_SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
+    r"\bIn\s+each\s+provision\s+specified\b.+?\bfor\s+"
+    r"[“\"'‘](?P<original_a>.*?)[”\"'’]\s+or,\s+as\s+the\s+case\s+may\s+be,\s+"
+    r"[“\"'‘](?P<original_b>.*?)[”\"'’]\s+there\s+is\s+substituted\s+"
+    r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    flags=re.I,
+)
+
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
 _SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 _SOURCE_TAIL_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
@@ -154,6 +162,34 @@ def append_source_fragment_context_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "all_occurrences": bool(grouped_after_insert_fragment.get("all_occurrences")),
+            },
+        )
+    for parent_substitution_fragment in fragment_subs or []:
+        if (
+            str(parent_substitution_fragment.get("rule_id") or "")
+            != "uk_effect_source_parent_each_provision_substitution_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_parent_each_provision_substitution_text_patch",
+            family="source_context_elaboration",
+            reason_code="text_substitution_resolved_from_each_provision_parent",
+            reason=(
+                "UK source child row identifies a target provision while its "
+                "parent list instruction carries the quoted substitution; "
+                "lowering combines those source-local facts instead of treating "
+                "the child row as an unsupported fragment."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(parent_substitution_fragment.get("source_parent_id") or ""),
+                "text_match": str(parent_substitution_fragment.get("original") or ""),
+                "replacement": op_text_replacement,
             },
         )
 
@@ -353,3 +389,48 @@ def _fragment_substitution_grouped_after_insert_from_parent(
             ),
         }
     return None
+
+
+def _fragment_substitutions_source_parent_each_provision_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> tuple[dict[str, str], ...]:
+    """Resolve child target rows governed by a parent `In each provision ...` substitution."""
+    child_text = " ".join((extracted_text or "").split())
+    if not child_text or re.search(r"\bsubstitut(?:e|ed)\b", child_text, flags=re.I):
+        return ()
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        match = _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE.search(candidate_text)
+        if match is None:
+            continue
+        originals = tuple(
+            original
+            for original in (
+                " ".join(match.group("original_a").split()).strip(),
+                " ".join(match.group("original_b").split()).strip(),
+            )
+            if original
+        )
+        replacement = " ".join(match.group("replacement").split()).strip()
+        if len(originals) < 2 or not replacement:
+            return ()
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return tuple(
+            {
+                "original": original,
+                "replacement": replacement,
+                "source_parent_id": source_parent_id,
+                "rule_id": "uk_effect_source_parent_each_provision_substitution_text_patch",
+            }
+            for original in originals
+        )
+    return ()
