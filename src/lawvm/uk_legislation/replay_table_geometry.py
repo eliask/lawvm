@@ -274,6 +274,9 @@ def resolve_uk_table_entry_row_insert_index(
     elif selector_mode == "column_entry":
         if column_index < 1 or not relating_norm:
             return None, None, "invalid_selector", {}
+    elif selector_mode == "each_column_entry":
+        if not relating_norm:
+            return None, None, "invalid_selector", {}
     elif selector_mode == "column_final_entry":
         if column_index < 1:
             return None, None, "invalid_selector", {}
@@ -291,6 +294,7 @@ def resolve_uk_table_entry_row_insert_index(
         "entry_label",
         "entry_group_heading",
         "column_entry",
+        "each_column_entry",
         "column_final_entry",
         "each_column_final_entry",
     }:
@@ -370,6 +374,48 @@ def resolve_uk_table_entry_row_insert_index(
                 )[:240]
                 for _row_index, row_cells in expanded_rows[-5:]
             ),
+            **carrier_detail,
+        }
+    if selector_mode == "each_column_entry":
+        column_count = max((max(row_cells) for _row_index, row_cells in expanded_rows if row_cells), default=0)
+        if column_count < 1:
+            return None, None, "entry_not_found", {
+                "matching_entry_count": 0,
+                "table_column_count": column_count,
+                **carrier_detail,
+            }
+        matching_each_column_rows: list[tuple[int, str]] = []
+        for row_index, row_cells in expanded_rows:
+            if not row_cells:
+                continue
+            if not all(
+                column in row_cells
+                and _compact_normalized_text(row_cells[column].text or "").find(relating_norm) >= 0
+                for column in range(1, column_count + 1)
+            ):
+                continue
+            matching_each_column_rows.append(
+                (
+                    row_index if direction == "before" else row_index + 1,
+                    " | ".join(
+                        str(row_cells[col].text or "")
+                        for col in sorted(row_cells)
+                        if str(row_cells[col].text or "")
+                    )[:240],
+                )
+            )
+        if len(matching_each_column_rows) != 1:
+            return None, None, "entry_not_unique", {
+                "matching_entry_count": len(matching_each_column_rows),
+                "table_column_count": column_count,
+                "matching_rows": tuple(row for _index, row in matching_each_column_rows[:5]),
+                **carrier_detail,
+            }
+        insert_index, row_preview = matching_each_column_rows[0]
+        return table, insert_index, "", {
+            "matching_entry_count": 1,
+            "matched_row": row_preview,
+            "table_column_count": column_count,
             **carrier_detail,
         }
     if selector_mode == "entry_group_heading":
