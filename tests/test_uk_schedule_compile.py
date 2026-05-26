@@ -22108,6 +22108,57 @@ def test_compile_after_child_insert_with_comma_appends_to_named_child() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_insert_after_child_appends_to_named_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-6-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a insert \u201c or \u201d after paragraph (a); and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-bf8b2bc894826d64c891277a21959015",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/125/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 125(3)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 3 para. 6(2)(a)",
+        affecting_title="Armed Forces Act 2011",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "125"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_paragraph_a"
+    assert ops[0].text_patch.replacement == "or"
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_after_child_text_insertion_patch",
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_after_child_text_insertion_patch"
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_compile_words_inserted_insert_at_end_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -1942,6 +1942,22 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_insert_after_child = re.finditer(
+        r"insert\s+[“\"'‘](.*?)[”\"'’]\s+after\s+"
+        r"(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\)",
+        text,
+        re.I,
+    )
+    for m in matches_insert_after_child:
+        unit_kind = m.group(2).lower().replace("-", "")
+        subs.append(
+            {
+                "original": f"TEXT_AFTER_CHILD_{unit_kind}_{m.group(3).strip()}",
+                "replacement": m.group(1).strip(),
+                "rule_id": UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+            }
+        )
+
     matches_after_compound_subsection_child_insert = re.finditer(
         r"after\s+subsection\s+\([0-9A-Za-z]+\)\([a-z]\)\(([ivxlcdm0-9A-Za-z]+)\),?\s+"
         r"insert\s+[“\"'‘](.+?)[”\"'’]",
