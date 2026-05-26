@@ -1144,6 +1144,7 @@ def try_lower_table_column_entry_omission(
     )
     if selector is None:
         return UKTableBatchLoweringResult(handled=False)
+    rule_id = str(selector.get("rule_id") or _UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID)
     table_marker_parent = _uk_parent_target_before_table_marker(target)
     parent_target = (
         table_marker_parent
@@ -1158,7 +1159,7 @@ def try_lower_table_column_entry_omission(
     if parent_target is None:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
-            rule_id=_UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+            rule_id=rule_id,
             family="source_table_elaboration",
             reason_code="table_marker_parent_missing",
             reason=(
@@ -1185,7 +1186,7 @@ def try_lower_table_column_entry_omission(
         }
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
-        rule_id=_UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+        rule_id=rule_id,
         family="source_table_elaboration",
         reason_code="explicit_table_column_entry_omission_selector",
         reason=(
@@ -1212,7 +1213,7 @@ def try_lower_table_column_entry_omission(
             originals=(str(selector["match_text"]),),
             occurrence=0,
             end_occurrence=0,
-            rule_id=_UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+            rule_id=rule_id,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
             original_targets_str=original_targets_str,

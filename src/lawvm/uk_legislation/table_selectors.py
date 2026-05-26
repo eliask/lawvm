@@ -20,9 +20,13 @@ from lawvm.uk_legislation.source_context import (
     _source_ancestor_chain,
     _source_previous_table_entry_label_context,
     _source_previous_table_entry_relating_context,
+    _source_text_before_extracted_child,
+)
+from lawvm.uk_legislation.source_fragment_context import (
+    _source_local_instruction_text_for_carried_payload,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num, _parse_table as _parse_uk_table_payload
-from lawvm.uk_legislation.xml_helpers import _tag
+from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 
 UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
@@ -40,6 +44,9 @@ UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 UK_TABLE_COLUMN_ENTRY_TEXT_RULE_ID = "uk_effect_table_column_entry_text_patch"
 UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID = (
     "uk_effect_table_column_entry_omission_text_patch"
+)
+UK_SOURCE_PARENT_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID = (
+    "uk_effect_source_parent_table_column_entry_omission_text_patch"
 )
 UK_TABLE_ENTRY_TEXT_RULE_ID = "uk_effect_table_entry_text_patch"
 UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
@@ -520,12 +527,6 @@ def _uk_table_column_entry_omission_text_patch_claim(
     )
     if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
         return None
-    if re.search(r"\bthat\s+(?:act|schedule|column)\b", text, flags=re.I):
-        return None
-    if re.search(r"\bentries\b", text, flags=re.I):
-        return None
-    if not re.search(r"\b(?:omit|omitted|repeal|repealed)\b", text, flags=re.I):
-        return None
     column = (
         r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
         r"\s+column|column\s+(?P<column_number>\d+))"
@@ -543,6 +544,21 @@ def _uk_table_column_entry_omission_text_patch_claim(
         if match is not None:
             break
     if match is None:
+        return _uk_source_parent_table_column_entry_omission_text_patch_claim(
+            target_ref=target_ref,
+            target=target,
+            extracted_text=text,
+            extracted_el=extracted_el,
+            source_root=source_root,
+            target_names_table=target_names_table,
+            source_names_containing_target=source_names_containing_target,
+            source_parent_id=source_parent_id,
+        )
+    if re.search(r"\bthat\s+(?:act|schedule|column)\b", text, flags=re.I):
+        return None
+    if re.search(r"\bentries\b", text, flags=re.I):
+        return None
+    if not re.search(r"\b(?:omit|omitted|repeal|repealed)\b", text, flags=re.I):
         return None
     column_token = match.group("column_ordinal") or match.group("column_number")
     column_index = _uk_ordinal_to_int(column_token or "")
@@ -569,6 +585,98 @@ def _uk_table_column_entry_omission_text_patch_claim(
         "text_patch_original": entry_text,
         "text_patch_replacement": "",
     }
+
+
+def _uk_source_parent_table_column_entry_omission_text_patch_claim(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    target_names_table: bool,
+    source_names_containing_target: bool,
+    source_parent_id: str,
+) -> dict[str, Any] | None:
+    """Extract one child row from a parent `omit the entries relating to-` group."""
+    if extracted_el is None or re.search(r"\bthat\s+(?:act|schedule|column)\b", extracted_text, flags=re.I):
+        return None
+    entry_text = _strip_source_row_leading_label(extracted_text, extracted_el).strip(" ,;.")
+    if (
+        not entry_text
+        or re.search(r"\b(?:omit|omitted|repeal|repealed|insert|substitut)\b", entry_text, flags=re.I)
+        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+    ):
+        return None
+    for ancestor in _source_ancestor_chain(source_root, extracted_el):
+        lead_text = " ".join(
+            (
+                _source_local_instruction_text_for_carried_payload(ancestor)
+                or _source_text_before_extracted_child(ancestor, extracted_el)
+            ).split()
+        ).strip()
+        if not lead_text:
+            continue
+        parent_names_target = _source_names_containing_target_for_table_cell(
+            _normalized_element_text(ancestor),
+            target,
+        )
+        if not target_names_table and not parent_names_target:
+            continue
+        match = re.search(
+            r"\bin\s+(?:the\s+)?"
+            r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+            r"\s+column|column\s+(?P<column_number>\d+))\b"
+            r".*?\bomit\s+(?:the\s+)?entries\s+relating\s+to\s*[—–-]?\s*$",
+            lead_text,
+            flags=re.I,
+        )
+        if match is None:
+            continue
+        column_token = match.group("column_ordinal") or match.group("column_number")
+        column_index = _uk_ordinal_to_int(column_token or "")
+        if column_index is None or column_index < 1:
+            continue
+        resolved_parent_id = str(ancestor.get("id") or ancestor.get("eId") or source_parent_id)
+        return {
+            "rule_id": UK_SOURCE_PARENT_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+            "selector_mode": "unique_column_text",
+            "column_index": column_index,
+            "match_text": entry_text,
+            "match_scope": "full_cell",
+            "table_label": "",
+            "original_target": str(target),
+            "target_ref": target_ref,
+            "source_names_containing_target": source_names_containing_target or parent_names_target,
+            "source_parent_id": resolved_parent_id,
+            "source_parent_instruction": lead_text,
+            "source_parent_mode": "grouped_entries_relating_to",
+            "table_column_entry_action": "delete_entry_text",
+            "text_patch_original": entry_text,
+            "text_patch_replacement": "",
+        }
+    return None
+
+
+def _strip_source_row_leading_label(text: str, extracted_el: ET.Element) -> str:
+    label = ""
+    for child in extracted_el:
+        if _tag(child) == "Pnumber":
+            label = " ".join(_text_content(child).split()).strip()
+            break
+    stripped = " ".join(text.split()).strip()
+    if label:
+        while stripped.lower().startswith(label.lower()):
+            remainder = stripped[len(label) :]
+            if remainder and not remainder[0].isspace():
+                break
+            next_stripped = remainder.strip()
+            if next_stripped == stripped:
+                break
+            stripped = next_stripped
+        if stripped:
+            return stripped
+    return re.sub(r"^\s*(?:[a-z]|[ivxlcdm]+|\d+)\s+", "", stripped, count=1, flags=re.I)
 
 
 def _uk_table_entry_text_patch_claim(
