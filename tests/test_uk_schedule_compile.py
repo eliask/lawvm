@@ -34878,6 +34878,137 @@ def test_compile_source_parent_insert_at_end_structural_list_payload_stays_block
     )
 
 
+def test_compile_source_parent_word_range_list_payload_lowers_text_patch() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-19-paragraph-8-1-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>for the words from “six years” to “made” there shall be
+            substituted the words—</Text>
+            <BlockAmendment>
+              <P3>
+                <Pnumber>a</Pnumber>
+                <P3para>
+                  <Text>in the case of an assessment to income tax or capital
+                  gains tax, five years after the 31st January next following
+                  the year of assessment to which the return relates; and</Text>
+                </P3para>
+              </P3>
+              <P3>
+                <Pnumber>b</Pnumber>
+                <P3para>
+                  <Text>in the case of an assessment to corporation tax, six
+                  years after the end of the accounting period to which the
+                  return relates,</Text>
+                </P3para>
+              </P3>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_word_range_list_payload",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-05-03",
+        affected_uri="/id/ukpga/1970/9/section/33/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 33(1)",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="Sch. 19 para. 8(1)(b)",
+        affecting_title="Finance Act 1994",
+        in_force_dates=[{"date": "1994-05-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "33"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_six years_TO_made"
+    assert ops[0].text_patch.replacement.startswith("a in the case of an assessment")
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_parent_word_range_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "word_range_substitution_resolved_from_source_parent"
+    assert observations[0]["payload_shape"] == "flat_numbered_rows_text"
+    assert observations[0]["source_parent_id"] == "schedule-19-paragraph-8-1-b"
+    assert observations[0]["text_match"] == "TEXT_FROM_six years_TO_made"
+
+
+def test_compile_source_parent_word_range_table_payload_does_not_use_parent_rule() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-19-paragraph-8-1-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>for the words from “six years” to “made” there shall be
+            substituted the words—</Text>
+            <BlockAmendment>
+              <Tabular><table><tbody><tr><td>unsafe table payload</td></tr></tbody></table></Tabular>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_word_range_table_payload",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-05-03",
+        affected_uri="/id/ukpga/1970/9/section/33/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 33(1)",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="Sch. 19 para. 8(1)(b)",
+        affecting_title="Finance Act 1994",
+        in_force_dates=[{"date": "1994-05-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert all(
+        record["rule_id"] != "uk_effect_source_parent_word_range_substitution_text_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_table_insert_at_end_text_payload_stays_blocked() -> None:
     source_root = ET.fromstring(
         f"""
