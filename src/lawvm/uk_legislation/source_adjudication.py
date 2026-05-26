@@ -1949,6 +1949,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The row depends on an unresolved repeal schedule/table source; a claim or future grouped repeal-table compiler must prove the exact extent row, target split, and target coverage before replay.",
         }
 
+    if "uk_effect_source_payload_without_instruction_context_rejected" in blocking_rules:
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_source_payload_without_instruction_context",
+            "reason": "The extracted source is a payload fragment without the owning operative instruction; replay requires exact source-context recovery before lowering.",
+        }
+
+    if "uk_effect_mixed_structural_text_rewrite_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_mixed_structural_text_rewrite_split",
+            "reason": "The source combines structural and text mutations; a future compiler must split and witness each canonical operation before replay.",
+        }
+
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and any(

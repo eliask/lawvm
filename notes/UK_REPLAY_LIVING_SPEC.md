@@ -1781,6 +1781,21 @@ Current block-substitution context invariant:
     `fragment_context_missing` / `uk_effect_overlap_substitution_unlowered`
   - preserving the exact `P2 id="regulation-46-2"` provision lets lowering
     emit a bounded `text_replace` at `section:25/subsection:2`
+- when extraction returns a naked payload fragment with no operative action
+  word, lowering now records
+  `uk_effect_source_payload_without_instruction_context_rejected` rather than
+  the generic overlap parser blocker. This is a source-context failure, not a
+  safe replay opportunity; strict mode blocks until the owning instruction is
+  recovered. Current witnesses include `ukpga/1970/9` `s. 98 Table` rows where
+  the extracted source is only `section 246H;` or a single schedule/table
+  payload entry.
+- mixed instructions that combine a structural repeal and a text rewrite, such
+  as `Omit subsections ... and in subsection ... the words from ... to the
+  end`, record `uk_effect_mixed_structural_text_rewrite_rejected`. They need an
+  owned split into separate canonical operations; replay must not silently
+  choose one action family or flatten the parent to make progress. Current
+  witness: `ukpga/1970/9` `s. 42(5)` by `ukpga/1998/36`
+  `Sch. 19 para. 20(3)`.
 - secondary legislation references like `reg.` / `regs.` must preserve
   `regulation` identity during affecting-source extraction; normalizing them to
   `section` is a target-kind mutation, not a harmless parser shortcut
