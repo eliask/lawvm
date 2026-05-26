@@ -820,6 +820,41 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    column_final_entry_insert_match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?table)?\b"
+        r".*?\bafter\s+(?:the\s+)?final\s+entry\s+"
+        r"(?:insert(?:ed)?|there\s+(?:shall\s+be|is|are)\s+inserted)\s*[—–-]?\s*"
+        r"(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if column_final_entry_insert_match is not None:
+        column_token = (
+            column_final_entry_insert_match.group("column_ordinal")
+            or column_final_entry_insert_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        inserted_text = _strip_schedule_entry_payload(
+            column_final_entry_insert_match.group("payload")
+        )
+        if column_index is not None and column_index >= 1 and inserted_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "column_final_entry",
+                "direction": "after",
+                "column_index": column_index,
+                "entry_index": 1,
+                "relating_text": "final entry",
+                "inserted_text": inserted_text,
+                "source_payload_mode": "column_entry_text",
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     if implicit_subsection_entry_group is not None and not source_names_table:
         relating_text = " ".join(implicit_subsection_entry_group.group("relating").split()).strip(" ,;.")
         inserted_text = _strip_schedule_entry_payload(implicit_subsection_entry_group.group("payload"))
