@@ -27,6 +27,7 @@ from lawvm.uk_legislation.xml_helpers import _tag
 UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
 UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_relating_column_text_patch"
+UK_TABLE_ENTRY_FOR_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_for_column_text_patch"
 UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
 UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
 UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_labels_column_text_patch"
@@ -263,6 +264,35 @@ def _uk_table_entry_inline_text_selector(
         if relating_text and column_index is not None and column_index >= 1:
             return {
                 "rule_id": UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_relating_cell",
+                "relating_text": relating_text,
+                "column_index": column_index,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+                "source_names_containing_target": source_names_containing_target,
+            }
+    column_first_entry_for_match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\s+of\s+(?:the\s+)?table\b"
+        r".*?\bin\s+the\s+entry\s+for\s+(?:the\s+)?"
+        r"(?P<relating>.*?)(?:,\s*)?\s+(?:after|omit|insert|for\s+[“\"'‘])\b",
+        text,
+        re.I,
+    )
+    if column_first_entry_for_match is not None:
+        relating_text = " ".join(
+            column_first_entry_for_match.group("relating").split()
+        ).strip(" ,;.")
+        column_token = (
+            column_first_entry_for_match.group("column_ordinal")
+            or column_first_entry_for_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        if relating_text and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": UK_TABLE_ENTRY_FOR_COLUMN_TEXT_RULE_ID,
                 "selector_mode": "unique_relating_cell",
                 "relating_text": relating_text,
                 "column_index": column_index,
