@@ -142,7 +142,30 @@ def lower_uk_text_fragment_rewrite(
         and curr_action != "repeal"
         and structural_sibling_insert_detail is None
     )
-    if fragment_subs is not None or not (curr_action == "replace" or word_level_text_patch_required):
+    heading_full_replacement_precheck = (
+        _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
+    )
+    heading_source_parent_full_replacement_precheck = (
+        _heading_facet_source_parent_full_replacement_fragment(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        if heading_facet_target and not is_word_level
+        else None
+    )
+    heading_facet_text_patch_required = (
+        heading_facet_target
+        and not is_word_level
+        and (
+            heading_full_replacement_precheck is not None
+            or heading_source_parent_full_replacement_precheck is not None
+        )
+    )
+    if fragment_subs is not None or not (
+        curr_action == "replace"
+        or word_level_text_patch_required
+        or heading_facet_text_patch_required
+    ):
         return UKTextFragmentLowering(
             target=target,
             curr_action=curr_action,
@@ -158,17 +181,6 @@ def lower_uk_text_fragment_rewrite(
         curr_action == "replace"
         and not is_word_level
         and source_structural_payload_matches_target
-    )
-    heading_full_replacement_precheck = (
-        _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
-    )
-    heading_source_parent_full_replacement_precheck = (
-        _heading_facet_source_parent_full_replacement_fragment(
-            extracted_el=extracted_el,
-            source_root=source_root,
-        )
-        if heading_facet_target and not is_word_level
-        else None
     )
     source_carried_definition_child_text_omission_precheck = (
         _fragment_substitution_source_carried_definition_child_text_omission(

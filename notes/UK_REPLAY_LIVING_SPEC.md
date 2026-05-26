@@ -3393,6 +3393,14 @@ Current payload-descendant source-ref invariant:
   inserted body payload must not be smuggled into the heading operation.
   Current witness: `ukpga/1949/88` affected `s. 35A title` by
   `ukpga/2014/18 s. 14`.
+  Sidenote replacements such as `For the sidenote to the section substitute
+  "X"` use the same facet-only full-replacement lane. Heading/title/sidenote
+  insertions such as `before section N insert the heading "X"` also lower as
+  full facet replacements when the effect metadata target is the corresponding
+  heading facet; they do not create or replace the host provision body. Current
+  witnesses: `ukpga/1970/9` affected `s. 15 sidenote` by `ukpga/2003/1 Sch. 6
+  para. 126(2)`, and affected `s. 59A heading` by `ukpga/1998/36 Sch. 19
+  para. 29(1)`.
   Source-parent full-heading replacement is deliberately lower precedence than
   direct word-level heading instructions. If the extracted child says
   `in the heading, for "X" substitute "Y"`, lowering must emit a bounded

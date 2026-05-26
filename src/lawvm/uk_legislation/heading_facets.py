@@ -217,10 +217,20 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
     if match is None:
         match = re.search(
             r"\bfor\s+the\s+(?:(?:section|part|chapter|schedule|article|rule|regulation)\s+)?"
-            r"(?:heading|title)"
+            r"(?:heading|title|sidenote)"
             r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
             r"\s+[0-9A-Za-z]+)?"
+            r"(?:\s+to\s+(?:the\s+)?section)?"
             r"\s+substitute\s*[—–-]?\s*(?P<replacement>.+)$",
+            text,
+            flags=re.I | re.S,
+        )
+    if match is None:
+        match = re.search(
+            r"\b(?:before|after)\s+"
+            r"(?:(?:section|paragraph|article|rule|regulation)\s+[0-9A-Za-z().]+|that\s+paragraph)\s+"
+            r"insert\s+(?:the\s+)?(?:italic\s+)?(?:heading|title|sidenote)\s+"
+            r"(?P<replacement>[“\"'‘].*?[”\"'’]|[^.;]+)",
             text,
             flags=re.I | re.S,
         )
@@ -270,7 +280,7 @@ def _is_heading_facet_word_patch_supported(
 ) -> bool:
     """Return whether a UK heading-facet effect can carry an explicit text patch."""
     normalized = " ".join((effect_type or "").lower().split())
-    if normalized in {"substituted", "replaced"}:
+    if normalized in {"substituted", "replaced", "inserted"}:
         return (
             _heading_facet_full_replacement_fragment(extracted_text) is not None
             or _heading_facet_source_parent_full_replacement_fragment(
