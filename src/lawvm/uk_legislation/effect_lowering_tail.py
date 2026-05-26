@@ -178,6 +178,83 @@ def _unlowered_overlap_source_shape_classification(
                 "canonical operations before replay."
             ),
         )
+    if (
+        re.search(r"\bomit\s+subsections?\b", lowered)
+        and re.search(r"\bdefinition\s+in\s+subsection\b", lowered)
+    ):
+        return (
+            "uk_effect_mixed_structural_definition_repeal_rejected",
+            "source_payload_elaboration",
+            "mixed_structural_and_definition_repeal_requires_split",
+            (
+                "UK source combines a structural subsection repeal with a "
+                "definition-entry repeal in one instruction; lowering requires "
+                "an owned split into separate canonical operations before replay."
+            ),
+        )
+    if source_or_target_names_table and re.search(
+        r"\bthis\s+subsection\s+inserted\s+at\s+the\s+end\s+of\s+the\s+"
+        r"(?:first|second)\s+column\s+of\s+the\s+table\b",
+        lowered,
+    ):
+        return (
+            "uk_effect_table_deictic_this_subsection_insert_rejected",
+            "source_table_elaboration",
+            "table_deictic_this_subsection_insert_requires_source_context",
+            (
+                "UK source inserts a deictic reference to 'this subsection' "
+                "into a table column; lowering requires source-section context "
+                "and owned row/cell placement rather than a broad table text patch."
+            ),
+        )
+    if re.search(r"\bin\s+the\s+specified\s+provisions\b", lowered) and re.search(
+        r"\bfor\s+[“\"'‘][^”\"'’]+[”\"'’]\s+\(or\s+[“\"'‘][^”\"'’]+[”\"'’]\)\s+"
+        r"substitute\s+[“\"'‘][^”\"'’]+[”\"'’]",
+        text,
+        re.I,
+    ):
+        return (
+            "uk_effect_multi_enactment_specified_provisions_text_patch_rejected",
+            "source_payload_elaboration",
+            "multi_enactment_specified_provisions_text_patch_requires_target_row_claim",
+            (
+                "UK source applies one text substitution across a table/list of "
+                "specified provisions and supplies alternate preimages; lowering "
+                "requires proving the affected provision is one listed row and "
+                "selecting the matching preimage before replay."
+            ),
+        )
+    if re.search(
+        r"\bwhere\s+it\s+occurs\s+without\b.*\bsubstitute\b.*\bbut\s+this\s+"
+        r"does\s+not\s+apply\b",
+        lowered,
+    ):
+        return (
+            "uk_effect_scoped_occurrence_substitution_with_exclusions_rejected",
+            "text_rewrite_lowering",
+            "scoped_occurrence_substitution_with_exclusions_requires_selector_model",
+            (
+                "UK source substitutes occurrences only when a negative "
+                "left-context condition holds and excludes named provisions; "
+                "lowering requires an owned scoped-occurrence selector rather "
+                "than all-occurrences replay."
+            ),
+        )
+    if re.match(
+        r"^(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*part\s+\d+\s+amendments?\s+of\b"
+        r".*\bcolumn\s+1\b.*\bcolumn\s+2\b",
+        lowered,
+    ):
+        return (
+            "uk_effect_amendment_table_payload_without_row_context_rejected",
+            "source_extraction_context",
+            "amendment_table_payload_without_row_context",
+            (
+                "UK extracted source is an amendment table payload rather than "
+                "the specific row for the affected target; lowering blocks "
+                "until acquisition/extraction supplies row-level context."
+            ),
+        )
     if text and _UK_OVERLAP_ACTION_WORD_RE.search(text) is None:
         return (
             "uk_effect_source_payload_without_instruction_context_rejected",

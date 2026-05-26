@@ -23349,6 +23349,99 @@ def test_compile_table_entry_placement_insert_records_specific_rejection() -> No
     assert rejection["strict_disposition"] == "block"
 
 
+@pytest.mark.parametrize(
+    ("source_text", "affected_provisions", "expected_rule", "expected_reason_code"),
+    [
+        (
+            "1 In section 12AB of the Taxes Management Act 1970 omit subsections "
+            "(2) to (4) and the definition in subsection (5) of “filing date”.",
+            "s. 12AB(5)",
+            "uk_effect_mixed_structural_definition_repeal_rejected",
+            "mixed_structural_and_definition_repeal_requires_split",
+        ),
+        (
+            "12 Section 98 of the Management Act shall have effect with a reference "
+            "to this subsection inserted at the end of the first column of the Table.",
+            "s. 98 Table",
+            "uk_effect_table_deictic_this_subsection_insert_rejected",
+            "table_deictic_this_subsection_insert_requires_source_context",
+        ),
+        (
+            "1 In the specified provisions of the following enactments, for “seven” "
+            "(or “7”) substitute “14” — TMA 1970 Section 106A(2)(b).",
+            "s. 106A(2)(b)",
+            "uk_effect_multi_enactment_specified_provisions_text_patch_rejected",
+            "multi_enactment_specified_provisions_text_patch_requires_target_row_claim",
+        ),
+        (
+            "b for “exit charge payment plan”, in each case where it occurs without "
+            "“an” before it, substitute “CT exit charge payment plan” (but this does "
+            "not apply to paragraph 10(2A)).",
+            "Sch. 3ZB",
+            "uk_effect_scoped_occurrence_substitution_with_exclusions_rejected",
+            "scoped_occurrence_substitution_with_exclusions_requires_selector_model",
+        ),
+        (
+            "PART 1 Amendments of primary legislation Column 1 Column 2 Section "
+            "106A(3)(a) “old words” “new words”",
+            "s. 106A(3)(a)",
+            "uk_effect_amendment_table_payload_without_row_context_rejected",
+            "amendment_table_payload_without_row_context",
+        ),
+    ],
+)
+def test_compile_overlap_frontier_records_specific_rejection_families(
+    source_text: str,
+    affected_provisions: str,
+    expected_rule: str,
+    expected_reason_code: str,
+) -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>{source_text}</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id=f"uk_test_{expected_rule}",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions=affected_provisions,
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == expected_rule
+    assert rejection["reason_code"] == expected_reason_code
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["blocking"] is True
+
+
 def test_compile_appropriate_place_definition_entry_records_specific_rejection() -> None:
     extracted_el = ET.fromstring(
         f"""
