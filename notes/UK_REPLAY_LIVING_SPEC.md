@@ -4350,6 +4350,13 @@ Current bench replay-regime invariant:
   emitting `uk_effect_source_parent_following_provisions_substitution_text_patch`.
   Without the parent instruction it remains blocked. Witness: `ukpga/1970/9 s.
   7(6)` affected by `ukpga/1999/16 s. 22(11)(a)`.
+- Some grouped target-list parents split the instruction around the child rows:
+  lead text opens the list, e.g. `In TMA 1970, in-`, child rows enumerate
+  targets, and tail text carries `for "X" substitute "Y"`. Lowering combines
+  the parent tail preimage/replacement with a reference-only child row and emits
+  `uk_effect_source_parent_tail_substitution_text_patch`; without the tail
+  instruction it remains blocked. Witness: `ukpga/1970/9 s. 8(1AA)(b)`
+  affected by `ukpga/2009/10 Sch. 19 para. 9(a)`.
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.
