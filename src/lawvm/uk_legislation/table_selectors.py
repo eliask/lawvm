@@ -1070,6 +1070,17 @@ def _uk_table_entry_row_insert_selector(
             text,
             re.I,
         )
+    if column_end_entry_insert_match is None:
+        column_end_entry_insert_match = re.search(
+            r"\bin\s+(?:the\s+)?"
+            r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+            r"column\s+(?P<column_number>\d+))"
+            r"(?:\s+of\s+(?:(?:the|that)\s+)?table)?\b"
+            r".*?\binsert(?:ed)?\s+at\s+the\s+end\s*[—–-]?\s*"
+            r"(?P<payload>.+)$",
+            text,
+            re.I,
+        )
     if column_end_entry_insert_match is not None:
         column_token = (
             column_end_entry_insert_match.group("column_ordinal")
