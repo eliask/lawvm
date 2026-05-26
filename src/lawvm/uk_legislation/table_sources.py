@@ -39,6 +39,9 @@ _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID = (
 _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_column_entry_text_repeal"
 )
+_UK_REPEAL_TABLE_REFERENCE_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_repeal_table_reference_text_repeal"
+)
 _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID = "uk_effect_repeal_table_structural_repeal"
 _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID = (
     "uk_effect_repeal_table_parent_child_text_repeal_split"
@@ -767,6 +770,36 @@ def _uk_repeal_table_sentence_selector(extent_cell: str) -> str:
     return f"TEXT_SENTENCE_{ordinal}"
 
 
+def _uk_repeal_table_reference_selector(extent_cell: str) -> str:
+    """Extract singular `the reference to X` repeal-table selectors."""
+    text = " ".join((extent_cell or "").split()).strip()
+    if not text:
+        return ""
+    if len(re.findall(r"\bthe\s+reference\s+to\b", text, flags=re.I)) != 1:
+        return ""
+    if re.search(r"\breferences\s+to\b", text, flags=re.I):
+        return ""
+    match = re.search(
+        r"\bthe\s+reference\s+to\s+(?P<reference>.+?)\s*\.?$",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return ""
+    reference = " ".join(match.group("reference").split()).strip(" ,;.")
+    if not reference:
+        return ""
+    if not re.search(
+        r"\b(?:section|schedule|paragraph|regulations?|article|part|chapter)\b",
+        reference,
+        flags=re.I,
+    ):
+        return ""
+    if re.search(r"\b(?:and|or)\b", reference, flags=re.I):
+        return ""
+    return reference
+
+
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
@@ -1033,6 +1066,14 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                     if table_cell_selector:
                         original = str(table_cell_selector["match_text"])
                         rule_id = _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID
+                if (
+                    not original
+                    and not structural_definition_entry_effect
+                ):
+                    reference_original = _uk_repeal_table_reference_selector(extent_clause)
+                    if reference_original:
+                        original = reference_original
+                        rule_id = _UK_REPEAL_TABLE_REFERENCE_TEXT_REPEAL_RULE_ID
                 if (
                     not original
                     and not structural_definition_entry_effect
@@ -2172,11 +2213,18 @@ def _uk_table_cell_target_scope_text(text: str) -> str:
     such as `(as it has effect by virtue of section 196 of the Finance Act
     1994)`. That qualifier is source context for the named target, not an
     alternate target and not affected-Act identity. Preserve short address
-    parentheticals like `(7)(a)`.
+    parentheticals like `(7)(a)`. Singular reference selectors after the target
+    are likewise payload/preimage text, not target scope.
     """
-    return re.sub(
+    text = re.sub(
         r"\((?=[^)]*\s)[^)]*\b(?:act|article|effect|instrument|order|regulations?|section|virtue)\b[^)]*\)",
         "",
+        text,
+        flags=re.I,
+    )
+    return re.sub(
+        r"\bthe\s+references?\s+to\s+.+$",
+        "the reference to",
         text,
         flags=re.I,
     )

@@ -61,6 +61,7 @@ from lawvm.uk_legislation.table_sources import (
     _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
     _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+    _UK_REPEAL_TABLE_REFERENCE_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID,
     _uk_table_driven_repeal_table_parent_child_text_repeal_split,
     _uk_table_driven_repeal_table_quoted_words_text_repeal,
@@ -1044,6 +1045,14 @@ def try_lower_repeal_table_effect(
                 "provision exactly, and its extent cell names one table-column "
                 "entry repeal; lowering emits a table-cell text delete instead "
                 "of replaying the broad repeal schedule."
+            )
+        elif repeal_table_rule_id == _UK_REPEAL_TABLE_REFERENCE_TEXT_REPEAL_RULE_ID:
+            reason_code = "unique_repeal_table_extent_row_reference"
+            reason = (
+                "UK repeal-table source row matched the affected Act and "
+                "provision exactly, and its extent cell names one singular "
+                "reference repeal; lowering emits a text delete for the named "
+                "reference instead of replaying the broad repeal schedule."
             )
         elif repeal_table_rule_id == _UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID:
             reason_code = "unique_flat_repeal_schedule_quoted_words"
