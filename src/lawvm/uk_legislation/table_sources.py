@@ -2073,6 +2073,7 @@ def _uk_table_cell_mentions_target(
     text = " ".join(cell_text.split()).lower()
     if not text:
         return False
+    text = _uk_table_cell_target_scope_text(text)
     scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
     labels = {kind: label for kind, label in target.path}
     section = labels.get("section", "")
@@ -2162,6 +2163,23 @@ def _uk_table_cell_mentions_target(
         return True
 
     return False
+
+
+def _uk_table_cell_target_scope_text(text: str) -> str:
+    """Drop descriptive target qualifiers without dropping address labels.
+
+    Repeal schedules sometimes qualify an explicit target with a parenthetical
+    such as `(as it has effect by virtue of section 196 of the Finance Act
+    1994)`. That qualifier is source context for the named target, not an
+    alternate target and not affected-Act identity. Preserve short address
+    parentheticals like `(7)(a)`.
+    """
+    return re.sub(
+        r"\((?=[^)]*\s)[^)]*\b(?:act|article|effect|instrument|order|regulations?|section|virtue)\b[^)]*\)",
+        "",
+        text,
+        flags=re.I,
+    )
 
 
 def _uk_table_cell_mentions_container_label(

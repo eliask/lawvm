@@ -14672,6 +14672,130 @@ def test_compile_flat_repeal_schedule_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_flat_repeal_schedule_quoted_words_ignores_target_qualifier() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-18">
+            <Title>Repeals</Title>
+            <Text>
+              Part 6 Wayleaves 1970 c. 9. The Taxes Management Act 1970.
+              In section 42(7)(a) (as it has effect by virtue of section 196
+              of the Finance Act 1994), the words “120(2),”.
+            </Text>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_repeal_schedule_qualified_quoted_words",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1997-03-19",
+        affected_uri="/id/ukpga/1970/9/section/42/subsection/7/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(7)(a)",
+        affected_title="Taxes Management Act 1970",
+        affecting_uri="/id/ukpga/1997/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1997",
+        affecting_number="16",
+        affecting_provisions="Sch. 18 Pt. 6(2)",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "1997-03-19", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "42"),
+        ("subsection", "7"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "120(2),"
+    assert ops[0].witness_rule_id == "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+        and record["reason_code"] == "unique_flat_repeal_schedule_quoted_words"
+        and "section 196" in record["extent_cell"]
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_flat_repeal_schedule_quoted_words_qualifier_is_not_target() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-18">
+            <Title>Repeals</Title>
+            <Text>
+              Part 6 Wayleaves 1970 c. 9. The Taxes Management Act 1970.
+              In section 42(7)(a) (as it has effect by virtue of section 196
+              of the Finance Act 1994), the words “120(2),”.
+            </Text>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_repeal_schedule_qualified_quoted_words_no_hijack",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1997-03-19",
+        affected_uri="/id/ukpga/1970/9/section/196",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 196",
+        affected_title="Taxes Management Act 1970",
+        affecting_uri="/id/ukpga/1997/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1997",
+        affecting_number="16",
+        affecting_provisions="Sch. 18 Pt. 6(2)",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "1997-03-19", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert not any(
+        op.witness_rule_id == "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+        for op in ops
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+        for record in lowering_records
+    )
+
+
 def test_compile_flat_repeal_schedule_quoted_words_requires_affected_context() -> None:
     source_root = ET.fromstring(
         """
