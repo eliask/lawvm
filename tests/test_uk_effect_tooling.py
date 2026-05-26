@@ -37,6 +37,7 @@ from lawvm.tools.uk_effects import (
     _EffectReportRow,
     _EffectSummary,
     _EffectSummaryContext,
+    _clear_context_resolver_lookup_caches,
     _effect_context_source_jsonable,
     _effect_report_row_jsonable,
     _effect_row_matches_filters,
@@ -1043,6 +1044,126 @@ def test_summarize_uk_effect_reuses_affecting_source_context_cache(monkeypatch) 
     assert build_calls == ["https://www.legislation.gov.uk/ukpga/2025/1/data.xml"]
     assert len(set(enacted_cache_ids)) == 1
     assert "sentinel" in context.affecting_enacted_context_cache
+
+
+def test_summarize_uk_effect_bounds_affecting_source_caches(monkeypatch) -> None:
+    from lawvm.uk_legislation.source_context import UKAffectingSourceContext
+
+    def make_effect(number: int) -> UKEffectRecord:
+        return UKEffectRecord(
+            effect_id=f"eff-cache-bound-{number}",
+            effect_type="inserted",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri=f"/id/ukpga/2000/1/section/{number}",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions=f"s. {number}",
+            affecting_uri=f"/id/ukpga/2025/{number}/section/2",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2025",
+            affecting_number=str(number),
+            affecting_provisions="s. 2",
+            affecting_title="Test Act",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        )
+
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+        affecting_source_cache_limit=2,
+    )
+
+    def fake_build_affecting_source_context(**kwargs):  # noqa: ANN001
+        return (
+            UKAffectingSourceContext(
+                xml_bytes=kwargs["xml_bytes"],
+                root=None,
+                parent_map=None,
+                exact_id_map={},
+                sequence_map={},
+                source_status="available",
+                source_size=len(kwargs["xml_bytes"] or b""),
+                locator=kwargs["locator"],
+                authority_layer=kwargs["authority_layer"],
+            ),
+            None,
+        )
+
+    def fake_select_enacted_source_for_current_shell(**kwargs):  # noqa: ANN001
+        effect = kwargs["effect"]
+        kwargs["enacted_context_cache"][effect.affecting_act_id] = kwargs["current_context"]
+        return kwargs["current_context"], kwargs["current_el"], ()
+
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
+        lambda affecting_act_id, _archive: (
+            f"<Legislation>{affecting_act_id}</Legislation>".encode()
+        ),
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._build_affecting_source_context",
+        fake_build_affecting_source_context,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay._select_enacted_source_for_current_shell",
+        fake_select_enacted_source_for_current_shell,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.compile_effect_to_ir_ops",
+        lambda *_args, **_kwargs: [],
+    )
+
+    for number in (1, 2, 3):
+        summarize_uk_effect(make_effect(number), archive=object(), context=context)
+
+    assert set(context.affecting_xml_cache) == {"ukpga/2025/2", "ukpga/2025/3"}
+    assert set(context.affecting_source_context_cache) == {
+        ("ukpga/2025/2", "AFFECTING_ACT_TEXT"),
+        ("ukpga/2025/3", "AFFECTING_ACT_TEXT"),
+    }
+    assert set(context.affecting_enacted_context_cache) == {
+        "ukpga/2025/2",
+        "ukpga/2025/3",
+    }
+
+
+def test_clear_context_resolver_lookup_caches() -> None:
+    class FakeResolver:
+        def __init__(self) -> None:
+            self._eid_search_cache = {"a": object()}
+            self._target_lookup_cache = {"b": object()}
+            self._recursive_match_cache = {"c": object()}
+
+    resolver = FakeResolver()
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=resolver,
+        affecting_xml_cache={},
+    )
+
+    _clear_context_resolver_lookup_caches(context)
+
+    assert resolver._eid_search_cache == {}
+    assert resolver._target_lookup_cache == {}
+    assert resolver._recursive_match_cache == {}
 
 
 def test_summarize_uk_effect_uses_observed_source_extraction(monkeypatch) -> None:

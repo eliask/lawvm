@@ -26,7 +26,51 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _DEFAULT_APPLICABILITY_MODE = "effective_date_plus_feed_applied"
+_DEFAULT_AFFECTING_SOURCE_CACHE_LIMIT = 8
 UK_CLAIM_TEMPLATE_RULE_IDS = _UK_CLAIM_TEMPLATE_RULE_IDS
+
+
+def _bounded_cache_lookup(cache: dict[Any, Any], key: Any) -> tuple[bool, Any]:
+    """Return cached value and refresh insertion order for cheap LRU eviction."""
+    if key not in cache:
+        return False, None
+    value = cache.pop(key)
+    cache[key] = value
+    return True, value
+
+
+def _bounded_cache_store(
+    cache: dict[Any, Any],
+    key: Any,
+    value: Any,
+    *,
+    limit: int,
+) -> None:
+    if limit <= 0:
+        return
+    if key in cache:
+        cache.pop(key)
+    while len(cache) >= limit:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
+
+
+def _trim_cache(cache: dict[Any, Any], *, limit: int) -> None:
+    if limit <= 0:
+        cache.clear()
+        return
+    while len(cache) > limit:
+        cache.pop(next(iter(cache)))
+
+
+def _clear_context_resolver_lookup_caches(context: "_EffectSummaryContext") -> None:
+    """Discard per-row oracle lookup caches during fast diagnostic scans."""
+    resolver = context.resolver
+    if resolver is None:
+        return
+    resolver._eid_search_cache.clear()
+    resolver._target_lookup_cache.clear()
+    resolver._recursive_match_cache.clear()
 
 
 @dataclass
@@ -60,6 +104,7 @@ class _EffectSummaryContext:
         tuple[Any, BaseException | None],
     ] = field(default_factory=dict)
     affecting_enacted_context_cache: dict[str, Any] = field(default_factory=dict)
+    affecting_source_cache_limit: int = _DEFAULT_AFFECTING_SOURCE_CACHE_LIMIT
 
 
 @dataclass
@@ -295,10 +340,18 @@ def summarize_uk_effect(
     affecting_xml = None
     affecting_act_id = str(effect.affecting_act_id or "")
     if source_required_for_replay:
-        affecting_xml = context.affecting_xml_cache.get(affecting_act_id)
-        if affecting_act_id not in context.affecting_xml_cache:
+        xml_cache_hit, affecting_xml = _bounded_cache_lookup(
+            context.affecting_xml_cache,
+            affecting_act_id,
+        )
+        if not xml_cache_hit:
             affecting_xml = get_affecting_act_xml_from_archive(affecting_act_id, archive)
-            context.affecting_xml_cache[affecting_act_id] = affecting_xml
+            _bounded_cache_store(
+                context.affecting_xml_cache,
+                affecting_act_id,
+                affecting_xml,
+                limit=context.affecting_source_cache_limit,
+            )
     current_locator = (
         f"https://www.legislation.gov.uk/{affecting_act_id}/data.xml"
         if affecting_act_id
@@ -306,16 +359,21 @@ def summarize_uk_effect(
     )
     authority_layer = "AFFECTING_ACT_TEXT" if source_required_for_replay else "EFFECT_FEED_INDEX"
     source_context_cache_key = (affecting_act_id, authority_layer)
-    cached_source_context = context.affecting_source_context_cache.get(source_context_cache_key)
-    if cached_source_context is None:
+    source_cache_hit, cached_source_context = _bounded_cache_lookup(
+        context.affecting_source_context_cache,
+        source_context_cache_key,
+    )
+    if not source_cache_hit:
         source_context, parse_error = _build_affecting_source_context(
             xml_bytes=affecting_xml,
             locator=current_locator,
             authority_layer=authority_layer,
         )
-        context.affecting_source_context_cache[source_context_cache_key] = (
-            source_context,
-            parse_error,
+        _bounded_cache_store(
+            context.affecting_source_context_cache,
+            source_context_cache_key,
+            (source_context, parse_error),
+            limit=context.affecting_source_cache_limit,
         )
     else:
         source_context, parse_error = cached_source_context
@@ -351,6 +409,10 @@ def summarize_uk_effect(
         current_context=source_context,
         current_el=extracted,
         enacted_context_cache=context.affecting_enacted_context_cache,
+    )
+    _trim_cache(
+        context.affecting_enacted_context_cache,
+        limit=context.affecting_source_cache_limit,
     )
     source_acquisition_rejections = (
         *source_acquisition_rejections,
@@ -1556,8 +1618,10 @@ def main(args: "argparse.Namespace") -> None:
                 )
                 row = _EffectReportRow(effect=effect, summary=summary)
                 if candidate_only and not row.summary.candidate:
+                    _clear_context_resolver_lookup_caches(context)
                     continue
                 if non_candidate_only and row.summary.candidate:
+                    _clear_context_resolver_lookup_caches(context)
                     continue
                 if not _effect_row_matches_filters(
                     row,
@@ -1570,6 +1634,7 @@ def main(args: "argparse.Namespace") -> None:
                     manual_compile_rule=manual_compile_rule_filter,
                     claim_template_status=claim_template_status_filter,
                 ):
+                    _clear_context_resolver_lookup_caches(context)
                     continue
                 report_row_list.append(row)
                 if len(report_row_list) >= limit:
