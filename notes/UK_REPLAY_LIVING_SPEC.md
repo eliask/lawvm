@@ -420,9 +420,10 @@ frontend cannot yet lower them safely:
   their structural carrier is `Sch. N`.
 - cross-heading replacements lower only when the source gives an explicit
   `heading before paragraph/section/article X substitute ...` whole-heading
-  shape, the same shape with a plural range anchor such as `heading before
-  sections 24A to 28`, a quoted text patch against the cross-heading before
-  a named paragraph/section/article, or a child list row identifying a
+  shape, the synonymous `heading preceding section X substitute ...` shape,
+  the same shape with a plural range anchor such as `heading before sections
+  24A to 28`, a quoted text patch against the cross-heading before a named
+  paragraph/section/article, or a child list row identifying a
   cross-heading while its parent instruction explicitly carries a reference
   substitution. The owned lanes are
   `uk_effect_crossheading_before_anchor_replacement_lowered` for whole-heading
