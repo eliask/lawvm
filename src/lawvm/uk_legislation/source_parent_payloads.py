@@ -43,6 +43,15 @@ SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE = re.compile(
     r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)",
     flags=re.I | re.S,
 )
+SOURCE_PARENT_TABLE_ENTRY_INSERT_RE = re.compile(
+    r"\b(?:(?:before|after)\s+(?:the\s+)?entry\s+"
+    r"(?:relating\s+to|relation\s+to|for)\s+.+?"
+    r"(?:,?\s+there\s+(?:is|are|shall\s+be)\s+inserted|\s+insert\b)|"
+    r"(?:following\s+)?entry\s+(?:shall\s+be|is|are)\s+inserted\s+"
+    r"(?:before|after)\s+(?:the\s+)?entry\s+"
+    r"(?:relating\s+to|relation\s+to|for)\b)",
+    flags=re.I | re.S,
+)
 
 _SOURCE_PARENT_SUBSTITUTION_RANGE_RE = re.compile(
     r"\bfor\s+(?P<kind>sub-?paragraphs?|paragraphs?|subsections?)\s+"

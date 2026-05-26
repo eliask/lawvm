@@ -24333,6 +24333,84 @@ def test_compile_table_column_entry_row_insert_before_entry_for_anchor() -> None
     assert selector["inserted_text"] == "section 312A of ITA 2007"
 
 
+def test_compile_source_parent_table_column_entry_insert_from_block_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <Schedule id="schedule-16">
+              <ScheduleBody>
+                <P1 id="schedule-16-paragraph-10">
+                  <Pnumber>10</Pnumber>
+                  <P1para>
+                    <Text>In the first column of the Table in section 98 of the
+                    Taxes Management Act 1970 the following entry shall be
+                    inserted after the entry relating to section 234 of the
+                    principal Act\u2014</Text>
+                    <BlockAmendment>
+                      <Para><Text>section 246H;</Text></Para>
+                    </BlockAmendment>
+                    <AppendText>.</AppendText>
+                  </P1para>
+                </P1>
+              </ScheduleBody>
+            </Schedule>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_table_column_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-05-03",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="Sch. 16 para. 10",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1994-05-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].payload is not None
+    assert [child.text for child in ops[0].payload.children] == ["section 246H"]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_entry"
+    assert selector["direction"] == "after"
+    assert selector["column_index"] == 1
+    assert selector["relating_text"] == "section 234 of the principal Act"
+    assert selector["source_parent_id"] == "schedule-16-paragraph-10"
+    assert "following entry shall be inserted" in selector["source_parent_instruction"]
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        and record["source_parent_id"] == "schedule-16-paragraph-10"
+        for record in lowering_records
+    )
+
+
 def test_compile_table_column_final_entry_row_insert() -> None:
     extracted_el = ET.fromstring(
         f"""
