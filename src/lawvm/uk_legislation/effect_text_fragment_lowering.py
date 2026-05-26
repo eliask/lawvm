@@ -910,7 +910,17 @@ def _effect_metadata_carried_quoted_words_repeal_fragment(
     if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
         return None
     text = " ".join(str(extracted_text or "").split()).strip()
-    if not text or not re.search(r"\bthe\s+words?\b", text, flags=re.I):
+    table_entry_scoped_quote = (
+        re.search(r"\btable\b", text, flags=re.I) is not None
+        and re.search(r"\bentry\s+relating\s+to\b", text, flags=re.I) is not None
+    )
+    if (
+        not text
+        or (
+            not table_entry_scoped_quote
+            and not re.search(r"\bthe\s+words?\b", text, flags=re.I)
+        )
+    ):
         return None
     if re.search(r"\bwhere\s+they\s+occur\b", text, flags=re.I):
         return None
