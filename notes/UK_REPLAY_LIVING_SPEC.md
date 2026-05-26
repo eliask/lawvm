@@ -4343,6 +4343,13 @@ Current bench replay-regime invariant:
   facts and emits `uk_effect_source_parent_prefix_substitute_text_patch`;
   without the parent prefix it remains blocked. Witness: `ukpga/1970/9 s.
   59A(8)` affected by `ukpga/2003/14 s. 145(7)(a)`.
+- Grouped `In the following provisions ... for "X" there shall be substituted
+  "Y"` source parents may have child rows that enumerate only target
+  provisions. Lowering combines the parent preimage/replacement with the child
+  row only when the child is reference-only and effects metadata owns the target,
+  emitting `uk_effect_source_parent_following_provisions_substitution_text_patch`.
+  Without the parent instruction it remains blocked. Witness: `ukpga/1970/9 s.
+  7(6)` affected by `ukpga/1999/16 s. 22(11)(a)`.
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.

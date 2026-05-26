@@ -62,9 +62,21 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
+_SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
+    r"\bIn\s+the\s+following\s+provisions\b.+?\bfor\s+"
+    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+    r"(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute)\s+"
+    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    flags=re.I,
+)
 _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*"
     r"(?:Substitute|For)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*$",
+    flags=re.I,
+)
+_SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
+    r"(?:(?:section|subsection|paragraph|sub-paragraph|Schedule|Part)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
     flags=re.I,
 )
 _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
@@ -249,6 +261,34 @@ def append_source_fragment_context_observations(
                 "target_ref": target_ref,
                 "target": str(target),
                 "source_parent_id": str(parent_prefix_substitution_fragment.get("source_parent_id") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    for following_provisions_fragment in fragment_subs or []:
+        if (
+            str(following_provisions_fragment.get("rule_id") or "")
+            != "uk_effect_source_parent_following_provisions_substitution_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_parent_following_provisions_substitution_text_patch",
+            family="source_context_elaboration",
+            reason_code="text_substitution_resolved_from_following_provisions_parent",
+            reason=(
+                "UK source child row enumerates a target provision while its "
+                "parent instruction carries the quoted substitution for the "
+                "following provisions. Lowering combines those source-local "
+                "facts and leaves target selection to effects metadata."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(following_provisions_fragment.get("source_parent_id") or ""),
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
             },
@@ -639,6 +679,47 @@ def _fragment_substitutions_source_parent_each_provision_substitution(
             for original in originals
         )
     return ()
+
+
+def _fragment_substitution_source_parent_following_provisions_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve child target rows governed by a parent `In the following provisions` substitution."""
+    child_text = " ".join((extracted_text or "").split())
+    if not child_text or re.search(
+        r"\b(?:for|substitut(?:e|ed)|insert(?:ed)?|omit(?:ted)?|repeal(?:ed)?)\b",
+        child_text,
+        flags=re.I,
+    ):
+        return None
+    if _SOURCE_CHILD_TARGET_ONLY_RE.match(child_text) is None:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        match = _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE.search(candidate_text)
+        if match is None:
+            continue
+        original = " ".join(match.group("original").split()).strip()
+        replacement = " ".join(match.group("replacement").split()).strip()
+        if not original or not replacement:
+            return None
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return {
+            "original": original,
+            "replacement": replacement,
+            "source_parent_id": source_parent_id,
+            "rule_id": "uk_effect_source_parent_following_provisions_substitution_text_patch",
+        }
+    return None
 
 
 def _fragment_substitution_source_parent_prefix_substitute(
