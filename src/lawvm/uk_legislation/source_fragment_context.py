@@ -81,11 +81,11 @@ _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
     flags=re.I,
 )
 _SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
-    r"\bat\s+the\s+end(?:\s+of\s+(?:(?:that|the)\s+)?"
+    r"(?:\bat\s+the\s+end(?:\s+of\s+(?:(?:that|the)\s+)?"
     r"(?:paragraph|sub-?paragraph|subsection|section)(?:\s+\([^)]+\))?"
-    r"(?:\s+\([^)]*\))?)?,?\s+"
+    r"(?:\s+\([^)]*\))?(?:\s+of\s+(?:that|the)\s+section)?)?,?\s+"
     r"(?:(?:there\s+(?:is|are|shall\s+be)\s+)?insert(?:ed)?|"
-    r"(?:there\s+(?:is|are)\s+)?added)\s*[—–-]?\s*$",
+    r"(?:there\s+(?:is|are)\s+)?added)|\binsert(?:ed)?\s+at\s+the\s+end)\s*[—–-]?\s*$",
     flags=re.I,
 )
 _SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
@@ -909,6 +909,8 @@ def _fragment_substitution_source_parent_at_end_text_insert(
         if not instruction_text:
             instruction_text = _source_local_instruction_text_for_carried_payload(ancestor)
         instruction_text = " ".join(instruction_text.split()).strip()
+        if re.search(r"\b(?:table|column|columns?|entry|entries)\b", instruction_text, flags=re.I):
+            continue
         if not instruction_text or not _SOURCE_PARENT_AT_END_TEXT_INSERT_RE.search(instruction_text):
             continue
         source_parent_id = str(
