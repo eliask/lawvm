@@ -27,6 +27,25 @@ def _quoted_for_substitute_pair(source_preview: str) -> tuple[str, str]:
     )
 
 
+def _definition_entry_terms(payload: str) -> tuple[str, ...]:
+    """Return quoted terms that appear to introduce definition entries."""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(
+        r"[\"“]\s*(?P<term>[^\"”]{1,160}?)\s*[\"”]\s+"
+        r"(?:means|includes|has\s+the\s+(?:same\s+)?meaning\b|is\s+to\s+be\s+construed\b)",
+        payload,
+        flags=re.I,
+    ):
+        term = " ".join(match.group("term").split()).strip()
+        key = term.casefold()
+        if not term or key in seen:
+            continue
+        seen.add(key)
+        terms.append(term)
+    return tuple(terms)
+
+
 def _range_to_container_replacement_sections(
     payload_roots: Any,
 ) -> tuple[dict[str, str], ...]:
@@ -999,8 +1018,8 @@ def manual_compile_suggested_claim_template(
             if match is not None
             else source_norm
         )
-        term_match = re.search(r"[\"“]\s*(?P<term>[^\"”]{1,160}?)\s*[\"”]", payload)
-        term = " ".join(str(term_match.group("term") if term_match else "").split()).strip()
+        terms = _definition_entry_terms(payload)
+        term = terms[0] if terms else ""
         return {
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
@@ -1020,6 +1039,7 @@ def manual_compile_suggested_claim_template(
                 else ""
             ),
             "inserted_definition_term": term,
+            "inserted_definition_terms": list(terms),
             "inserted_definition_entry_preview": payload[:500],
             "candidate_target_surface": effect.affected_provisions,
             "required_validator_checks": [
@@ -1049,13 +1069,24 @@ def manual_compile_suggested_claim_template(
         source_norm,
         flags=re.I | re.S,
     )
+    if (
+        match is None
+        and summary.manual_compile_rule_id
+        == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
+    ):
+        match = re.search(
+            r"\b(?:after|before)\s+the\s+definition\s+of\s+[\"“][^\"”]{1,200}[\"”]\s+"
+            r"(?:there\s+is\s+)?inserted\s*[—–-]\s*(?P<payload>.+)$",
+            source_norm,
+            flags=re.I | re.S,
+        )
     payload = (
         " ".join(match.group("payload").split()).strip()
         if match is not None
         else source_norm
     )
-    term_match = re.search(r"[\"“]\s*(?P<term>[^\"”]{1,160}?)\s*[\"”]", payload)
-    term = " ".join(str(term_match.group("term") if term_match else "").split()).strip()
+    terms = _definition_entry_terms(payload)
+    term = terms[0] if terms else ""
     return {
         "schema": "lawvm.uk_semantic_compile_claim_template.v1",
         "claim_kind": "semantic_compile",
@@ -1080,6 +1111,7 @@ def manual_compile_suggested_claim_template(
             else ""
         ),
         "inserted_definition_term": term,
+        "inserted_definition_terms": list(terms),
         "inserted_definition_entry_preview": payload[:500],
         "candidate_target_surface": effect.affected_provisions,
         "required_validator_checks": [

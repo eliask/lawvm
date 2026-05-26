@@ -2189,6 +2189,33 @@ def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_payload_pla
     )
 
 
+def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_instruction_payload() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="added",
+        source_pathology="nonstructural_root_gap",
+        extracted_tag="P3",
+        extracted_text=(
+            "b after the definition of “S4C” there is inserted— "
+            "“satellite television service” has the meaning given by section 43(1); ."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_structural_pseudo_definition_target_rejected",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_promotes_definition_list_end_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="added",

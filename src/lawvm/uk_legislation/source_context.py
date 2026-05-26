@@ -367,7 +367,11 @@ def _compound_reference_parts(provision_ref: str) -> tuple[str, str] | None:
     if not matches:
         return None
     leading_prefix = provision_ref[: matches[0].start()]
-    if re.search(r"\b(?:s|section|art|article|rule|regulation)\.?\s*[0-9A-Za-z]+", leading_prefix, re.I):
+    if re.search(
+        r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
+        leading_prefix,
+        re.I,
+    ):
         idx = matches[0].start()
     elif len(matches) >= 2:
         idx = matches[1].start()
@@ -452,7 +456,7 @@ def _extract_compound_reference_component(
 ) -> Optional[ET.Element]:
     component_el = _extract_from_affecting_source_context(context, component_ref)
     if component_el is not None:
-        return component_el
+        return _source_range_child_with_context(context, component_el)
     normalized = _schedule_part_context_normalized_ref(component_ref)
     if normalized is None:
         return None
@@ -464,7 +468,7 @@ def _extract_compound_reference_component(
         requested_part_label,
     ):
         return None
-    return normalized_el
+    return _source_range_child_with_context(context, normalized_el)
 
 
 def _extract_source_ref_with_schedule_part_context(
