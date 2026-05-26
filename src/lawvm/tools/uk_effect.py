@@ -181,7 +181,11 @@ def _manual_compile_claim_template_for_effect_report(
 
     status = str(manual_frontier.get("status") or "")
     rule_id = str(manual_frontier.get("rule_id") or "")
-    if status not in {"manual_compile_candidate", "source_insufficient"} or not rule_id:
+    if status not in {
+        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
+        "source_insufficient",
+    } or not rule_id:
         return {}
     summary = SimpleNamespace(
         source_pathology=source_pathology or "",

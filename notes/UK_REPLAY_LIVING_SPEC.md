@@ -570,6 +570,8 @@ families,
 `uk_manual_frontier_repeal_table_candidate`,
 `amendment_program_target_mutation` for
 `uk_manual_frontier_amendment_program_target_candidate`,
+`referent_qualified_text_substitution` for
+`uk_manual_frontier_referent_qualified_text_substitution_candidate`,
 `source_carried_multi_subunit_text_rewrite` for
 `uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate`,
 `source_carried_child_tail_text_rewrite` for
