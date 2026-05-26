@@ -258,6 +258,9 @@ def _is_schedule_note_ref(ref: str) -> bool:
 _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
 _CROSSHEADING_TARGET_REPLACEMENT_RULE = "uk_effect_crossheading_target_replacement_text_patch"
 _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anchor_text_patch"
+_CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE = (
+    "uk_effect_crossheading_source_parent_reference_substitution_text_patch"
+)
 _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE = (
     "uk_effect_crossheading_and_structural_replacement_split_lowered"
 )

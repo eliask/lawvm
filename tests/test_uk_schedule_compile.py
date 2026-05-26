@@ -30914,6 +30914,73 @@ def test_compile_crossheading_before_section_range_replace_lowers_to_heading_pat
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_child_row_uses_source_parent_reference_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-paragraph-4">
+          <Text>In the following enactments and in the headings referred to, for a reference to the Office of Rail Regulation substitute a reference to the Office of Rail and Road-</Text>
+          <P2 id="schedule-paragraph-4-l">
+            <Pnumber>l</Pnumber>
+            <Text>in the Railways Act 1996-</Text>
+            <P3 id="schedule-paragraph-4-l-ii">
+              <Pnumber>ii</Pnumber>
+              <Text>the cross-heading before section 21,</Text>
+            </P3>
+          </P2>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-paragraph-4-l-ii']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-e6531201069b266901fbaae2fb73e35d",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-10-16",
+        affected_uri="/id/ukpga/1996/61/section/21/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 21 cross-heading",
+        affecting_uri="/id/uksi/2015/1682",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2015",
+        affecting_number="1682",
+        affecting_provisions="Sch. para. 4(l)(ii)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2015-10-16", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "21"),), special=FacetKind.HEADING)
+    assert op.text_patch == _replace_patch("Office of Rail Regulation", "Office of Rail and Road")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_crossheading_source_parent_reference_substitution_text_patch"
+        in op.provenance_tags
+    )
+    matching_observations = [
+        record
+        for record in observations
+        if record["rule_id"] == "uk_effect_crossheading_source_parent_reference_substitution_text_patch"
+    ]
+    assert len(matching_observations) == 1
+    assert matching_observations[0]["source_parent_id"] == "schedule-paragraph-4"
+    assert matching_observations[0]["strict_disposition"] == "record"
+    assert not any(record["rule_id"] == "uk_effect_crossheading_replace_rejected" for record in observations)
+
+
 def test_compile_crossheading_target_replace_lowers_to_owned_heading_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
