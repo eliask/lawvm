@@ -24592,6 +24592,91 @@ def test_compile_source_parent_table_column_entry_insert_from_block_payload() ->
     )
 
 
+def test_compile_source_parent_table_entry_in_column_relating_block_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-71">
+              <Pnumber>71</Pnumber>
+              <P1para>
+                <P2 id="section-71-3">
+                  <Pnumber>3</Pnumber>
+                  <P2para>
+                    <Text>In section 98 of the Taxes Management Act 1970, in the Table\u2014</Text>
+                    <P3 id="section-71-3-a">
+                      <Pnumber>a</Pnumber>
+                      <P3para>
+                        <Text>after the entry in the first column relating to
+                        paragraph 14(5) of Schedule 15 to the Taxes Act 1988
+                        there shall be inserted the following entry\u2014</Text>
+                        <BlockAmendment>
+                          <Para><Text>Schedule 15B, paragraph 5(2);</Text></Para>
+                        </BlockAmendment>
+                      </P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_table_entry_in_column_relating",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1993-07-27",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1993/34",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1993",
+        affecting_number="34",
+        affecting_provisions="s. 71(3)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1993-07-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].payload is not None
+    assert [child.text for child in ops[0].payload.children] == [
+        "Schedule 15B, paragraph 5(2)"
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_entry"
+    assert selector["direction"] == "after"
+    assert selector["column_index"] == 1
+    assert selector["relating_text"] == "paragraph 14(5) of Schedule 15 to the Taxes Act 1988"
+    assert selector["inserted_text"] == "Schedule 15B, paragraph 5(2)"
+    assert selector["source_parent_id"] == "section-71-3-a"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["source_parent_id"] == "section-71-3-a"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_distributed_table_column_entry_insert() -> None:
     source_root = ET.fromstring(
         f"""
