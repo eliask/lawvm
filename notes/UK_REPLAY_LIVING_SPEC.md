@@ -1788,7 +1788,15 @@ Current block-substitution context invariant:
   safe replay opportunity; strict mode blocks until the owning instruction is
   recovered. Current witnesses include `ukpga/1970/9` `s. 98 Table` rows where
   the extracted source is only `section 246H;` or a single schedule/table
-  payload entry.
+  payload entry. Rejections now carry the nearest source-parent instruction
+  preview when the source tree exposes one, so manual/deterministic follow-up
+  can distinguish table row/cell payloads, target-list rows, and carried
+  at-end/substitution parents without replaying the fragment as a broad patch.
+  This evidence is non-mutating: examples such as `ukpga/2000/17`
+  `s. 145(2)(b)` still block because the parent says `In subsection (5) ...`
+  and the block carries an unnumbered `Para`; lowering must first prove whether
+  the operation is a child insertion, text append, or some other structural
+  mutation.
 - mixed instructions that combine a structural repeal and a text rewrite, such
   as `Omit subsections ... and in subsection ... the words from ... to the
   end`, record `uk_effect_mixed_structural_text_rewrite_rejected`. They need an
