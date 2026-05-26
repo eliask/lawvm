@@ -142,9 +142,28 @@ _UK_OVERLAP_ACTION_WORD_RE = re.compile(
 
 def _unlowered_overlap_source_shape_classification(
     extracted_text: Optional[str],
+    original_targets_str: list[str],
 ) -> tuple[str, str, str, str]:
     text = " ".join(str(extracted_text or "").split()).strip()
     lowered = text.lower()
+    target_surface = " ".join(str(target or "") for target in original_targets_str).lower()
+    source_or_target_names_table = "table" in lowered or "table" in target_surface
+    if source_or_target_names_table and re.search(
+        r"\b(?:at\s+the\s+end|after\s+the\s+final\s+entry|before\s+the\s+entry\s+for|"
+        r"after\s+the\s+paragraph\s+at\s+the\s+end\s+of\s+the\s+table)\b"
+        r".*\binsert(?:ed)?\b",
+        lowered,
+    ):
+        return (
+            "uk_effect_table_entry_placement_insert_rejected",
+            "source_table_elaboration",
+            "table_entry_insert_requires_row_or_cell_placement_model",
+            (
+                "UK source inserts material into a table entry/list position; "
+                "lowering requires an owned row/cell placement model and must "
+                "not append the payload to the broad table carrier."
+            ),
+        )
     if (
         re.search(r"\bomit\s+subsections?\b", lowered)
         and re.search(r"\bwords?\s+from\b", lowered)
@@ -233,7 +252,10 @@ def append_unlowered_overlap_substitution_rejection(
             family,
             reason_code,
             reason,
-        ) = _unlowered_overlap_source_shape_classification(extracted_text)
+        ) = _unlowered_overlap_source_shape_classification(
+            extracted_text,
+            original_targets_str,
+        )
         if lowering_rule_id == "uk_effect_overlap_substitution_unlowered":
             reason_code = unlowered_overlap_substitution_reason
     _append_uk_effect_lowering_rejection(
