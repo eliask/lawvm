@@ -13,6 +13,7 @@ from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
     _heading_facet_after_anchor_insert_fragment,
     _heading_facet_full_replacement_fragment,
+    _heading_facet_source_parent_full_replacement_fragment,
 )
 from lawvm.uk_legislation.nlp_parser import (
     _ORDINAL_OCCURRENCES,
@@ -154,6 +155,14 @@ def lower_uk_text_fragment_rewrite(
     heading_full_replacement_precheck = (
         _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
     )
+    heading_source_parent_full_replacement_precheck = (
+        _heading_facet_source_parent_full_replacement_fragment(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        if heading_facet_target
+        else None
+    )
     source_carried_definition_child_text_omission_precheck = (
         _fragment_substitution_source_carried_definition_child_text_omission(
             extracted_el=extracted_el,
@@ -162,9 +171,10 @@ def lower_uk_text_fragment_rewrite(
         )
     )
     if treat_as_source_structural_replace or (
-        source_carried_definition_child_text_omission_precheck is None
-        and heading_full_replacement_precheck is None
-        and is_whole_node_replacement(extracted_text, effect.effect_type)
+            source_carried_definition_child_text_omission_precheck is None
+            and heading_full_replacement_precheck is None
+            and heading_source_parent_full_replacement_precheck is None
+            and is_whole_node_replacement(extracted_text, effect.effect_type)
     ):
         return UKTextFragmentLowering(
             target=target,
@@ -351,6 +361,14 @@ def _extract_text_fragment_substitutions(
     heading_full_replacement = (
         _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
     )
+    heading_source_parent_full_replacement = (
+        _heading_facet_source_parent_full_replacement_fragment(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        if heading_facet_target
+        else None
+    )
     subs = (
         fragment_subs
         if table_substitution_recognized
@@ -360,6 +378,8 @@ def _extract_text_fragment_substitutions(
         if heading_after_anchor_insert is not None
         else [heading_full_replacement]
         if heading_full_replacement is not None
+        else [heading_source_parent_full_replacement]
+        if heading_source_parent_full_replacement is not None
         else parse_fragment_substitution(extracted_text)
     )
     multi_quoted_word_repeals = _multi_quoted_word_repeal_fragments(

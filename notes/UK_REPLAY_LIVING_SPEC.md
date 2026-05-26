@@ -396,14 +396,18 @@ frontend cannot yet lower them safely:
 
 - heading/title/sidenote targets that are not explicit word substitutions,
   omissions, `at the end insert ...` appends, or `after "X" insert "Y"`
-  insertions against a quoted heading anchor. Explicit word-level heading
-  patches can lower to `section:.../heading`; append lowers as a typed
+  insertions against a quoted heading anchor, explicit full-facet replacements,
+  or source-parent full-facet replacements. Explicit word-level heading patches
+  can lower to `section:.../heading`; append lowers as a typed
   `TextPatchKindEnum.APPEND` patch; quoted-anchor heading insertion lowers via
-  `uk_effect_heading_facet_after_anchor_insert_text_patch`. Other heading
-  inserts still need a typed placement/compiler lane rather than a whole-body
-  or synthetic text replacement. Schedule heading/title/sidenote refs are
-  heading facets too; they must not be lowered through schedule-list-entry
-  insertion just because their structural carrier is `Sch. N`.
+  `uk_effect_heading_facet_after_anchor_insert_text_patch`. Source-parent
+  forms such as `the title to which becomes "X"` may lower only when the
+  affected target itself is a heading/title/sidenote facet and the extracted
+  body payload is not reused as heading text. Other heading inserts still need
+  a typed placement/compiler lane rather than a whole-body or synthetic text
+  replacement. Schedule heading/title/sidenote refs are heading facets too;
+  they must not be lowered through schedule-list-entry insertion just because
+  their structural carrier is `Sch. N`.
 - cross-heading replacements lower only when the source gives an explicit
   `heading before paragraph/section/article X substitute ...` whole-heading
   shape, the same shape with a plural range anchor such as `heading before
@@ -3334,7 +3338,15 @@ Current payload-descendant source-ref invariant:
   `for the heading of Part N substitute "X"` lower as
   `uk_effect_heading_facet_full_replacement_lowered` with a `TEXT_ALL` selector
   only when the affected target itself is a heading/title/sidenote facet; this
-  is not a fallback for ordinary section replacement. Replay then
+  is not a fallback for ordinary section replacement. When the extracted source
+  payload is a `BlockAmendment` body and the replacement is carried by its
+  parent instruction, e.g. `the title to which becomes "X"`, lowering uses
+  `uk_effect_heading_facet_source_parent_full_replacement_lowered` plus a
+  source-context observation
+  `uk_effect_heading_facet_source_parent_full_replacement_text_patch`; the
+  inserted body payload must not be smuggled into the heading operation.
+  Current witness: `ukpga/1949/88` affected `s. 35A title` by
+  `ukpga/2014/18 s. 14`. Replay then
   mutates only the heading carrier: direct heading text on title-bearing nodes, an
   explicit `heading` child under the target section, a unique `P1group`
   heading that wraps the target section, or a subordinate source `P2group` /
