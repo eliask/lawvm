@@ -79,6 +79,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_range_to_container_candidate",
+        "uk_manual_frontier_referent_qualified_text_substitution_candidate",
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
@@ -245,6 +246,86 @@ def test_uk_claim_template_rule_ids_all_render_nonempty_templates(rule_id: str) 
         "lawvm.uk_semantic_compile_claim_template.v1"
     )
     assert payload["suggested_claim_template"]["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_referent_qualified_substitution() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-referent-qualified",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-01",
+        affected_uri="/id/ukpga/1996/61/section/21",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 21",
+        affecting_uri="/id/ukpga/2003/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="20",
+        affecting_provisions="Sch. 2 para. 22(a)",
+        affecting_title="Railways and Transport Safety Act 2003",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="referent_qualified_text_substitution_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=("section-21",),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P4",
+            source_extracted_text_preview=(
+                'for "he" and "him", where they refer to the Rail Regulator, '
+                'substitute "it"'
+            ),
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_referent_qualified_text_substitution_candidate"
+            ),
+            manual_compile_reason="Referent-sensitive substitution needs a coreference claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1996/61",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1996/61",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "referent_qualified_text_substitution"
+    assert template["placement_family"] == "referent_sensitive_occurrence_claim_required"
+    assert template["text_preimages"] == ["he", "him"]
+    assert template["referent_entity"] == "the Rail Regulator"
+    assert template["replacement"] == "it"
+    assert "claim_proves_each_mutated_occurrence_refers_to_the_named_entity" in (
+        template["required_validator_checks"]
+    )
 
 
 def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
@@ -1925,6 +2006,58 @@ def test_single_uk_effect_report_includes_manual_claim_template() -> None:
     assert report["suggested_claim_template"]["inserted_heading_text"] == (
         "Income tax and other related relief"
     )
+
+
+def test_single_uk_effect_report_includes_deterministic_frontier_claim_template() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-referent-qualified",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-01",
+        affected_uri="/id/ukpga/1996/61/section/21",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1996",
+        affected_number="61",
+        affected_provisions="s. 21",
+        affecting_uri="/id/ukpga/2003/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="20",
+        affecting_provisions="Sch. 2 para. 22(a)",
+        affecting_title="Railways and Transport Safety Act 2003",
+    )
+    extracted = ET.fromstring(
+        """
+        <P3 id="schedule-2-paragraph-22-a">
+          <Pnumber>a</Pnumber>
+          <Text>for "he" and "him", where they refer to the Rail Regulator, substitute "it"</Text>
+        </P3>
+        """
+    )
+
+    report = uk_effect_report_jsonable(
+        statute_id="ukpga/1996/61",
+        effect=effect,
+        source_pathology="referent_qualified_text_substitution_unsupported",
+        extracted=extracted,
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            }
+        ],
+        compare_shape="",
+        candidate=False,
+        op_rows=[],
+    )
+
+    assert report["manual_compile_frontier"]["status"] == "deterministic_frontend_candidate"
+    assert report["suggested_claim_template_status"] == "available"
+    assert report["suggested_claim_template"]["action_family"] == (
+        "referent_qualified_text_substitution"
+    )
+    assert report["suggested_claim_template"]["text_preimages"] == ["he", "him"]
 
 
 def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) -> None:

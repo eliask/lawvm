@@ -176,6 +176,34 @@ def _table_crossheading_rewrite_parts(source_preview: str) -> dict[str, str]:
     }
 
 
+def _referent_qualified_substitution_parts(source_preview: str) -> dict[str, Any]:
+    """Return source-local evidence for referent-qualified substitutions."""
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bfor\s+(?P<preimages>.+?)\s*,?\s+where\s+"
+        r"(?P<pronoun>it|they|he|him|his|those\s+words?)\s+refers?\s+to\s+"
+        r"(?P<referent>.+?)\s*,?\s+substitute\s+[\"“](?P<replacement>[^\"”]{1,240})[\"”]",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {
+            "text_preimages": [],
+            "referent_entity": "",
+            "replacement": "",
+            "referent_pronoun": "",
+        }
+    return {
+        "text_preimages": [
+            " ".join(item.split())
+            for item in re.findall(r"[\"“]([^\"”]{1,120})[\"”]", match.group("preimages"))
+        ],
+        "referent_entity": " ".join(match.group("referent").split()),
+        "replacement": " ".join(match.group("replacement").split()),
+        "referent_pronoun": " ".join(match.group("pronoun").split()).lower(),
+    }
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -718,6 +746,36 @@ def manual_compile_suggested_claim_template(
                     effect.affected_provisions,
                 ),
             }
+        )
+        return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_referent_qualified_text_substitution_candidate"
+    ):
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="referent_qualified_text_substitution",
+            placement_family="referent_sensitive_occurrence_claim_required",
+            required_ownership=[
+                "source_qualified_referent_entity",
+                "quoted_preimage_terms",
+                "replacement_text",
+                "per_occurrence_coreference_decision",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_qualifies_substitution_by_referent",
+                "claim_identifies_each_mutated_occurrence_and_target_surface",
+                "claim_proves_each_mutated_occurrence_refers_to_the_named_entity",
+                "claim_preserves_same_word_occurrences_referring_to_other_entities",
+                "changed_paths_are_within_declared_referent_occurrence_boundaries",
+            ],
+        )
+        template.update(
+            _referent_qualified_substitution_parts(
+                row.summary.source_extracted_text_preview or ""
+            )
         )
         return template
     if (
