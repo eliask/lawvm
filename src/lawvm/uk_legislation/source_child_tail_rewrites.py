@@ -22,6 +22,12 @@ _SOURCE_CARRIED_CHILD_TAIL_OMIT_RE = re.compile(
     r"paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_TARGET_CHILD_TAIL_OMIT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?:omit|repeal)\s+the\s+words\s+(?:following|after)\s+"
+    r"paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_CHILD_LIST_TAIL_OMIT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
@@ -70,6 +76,22 @@ def _fragment_substitution_source_carried_child_tail_repeal(
     if match is None:
         match = _SOURCE_CARRIED_CHILD_TAIL_OMIT_RE.match(text)
     if match is None:
+        target_match = _SOURCE_CARRIED_TARGET_CHILD_TAIL_OMIT_RE.match(text)
+        if target_match is not None:
+            if _addr_leaf_kind(target) != "subsection":
+                return None
+            target_subsection = _clean_num(_addr_field(target, "subsection") or "")
+            anchor_label = _clean_num(target_match.group("label"))
+            if not target_subsection or not anchor_label:
+                return None
+            return {
+                "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",
+                "replacement": "",
+                "source_subsection_label": "",
+                "target_supplied_subsection_context": "true",
+                "source_anchor_child_label": anchor_label,
+                "rule_id": "uk_effect_source_carried_child_tail_repeal_text_patch",
+            }
         subparagraph_match = _SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE.match(text)
         if subparagraph_match is None:
             return None

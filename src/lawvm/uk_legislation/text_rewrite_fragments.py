@@ -1296,6 +1296,9 @@ def append_source_carried_tail_rewrite_observations(
                 "text_match": op_text_match,
                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+                "target_supplied_subsection_context": str(
+                    primary.get("target_supplied_subsection_context") or ""
+                ),
             },
         )
 
