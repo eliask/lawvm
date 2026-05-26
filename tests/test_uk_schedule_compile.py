@@ -30199,6 +30199,113 @@ def test_compile_missing_space_before_there_is_substituted() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_joined_there_shall_range_to_end_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>2 In subsection (1), for the words \u201cthe collector shall\u201d onwards thereshall be substituted the words \u201cthe collector may distrain upon the personcharged\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_joined_there_shall_range_to_end_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="1989-07-27",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 61(1)",
+        affecting_uri="/id/ukpga/1989/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1989",
+        affecting_number="26",
+        affecting_provisions="s. 152(2)(7)",
+        affecting_title="Finance Act 1989",
+        in_force_dates=[{"date": "1989-07-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "61"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_the collector shall_TO_END"
+    assert ops[0].text_patch.replacement == "the collector may distrain upon the personcharged"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_to_end_there_is_substituted_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_range_to_end_there_is_substituted_text_patch"
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_joined_be_omitted_quoted_range_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>d</Pnumber>
+          <Text>d the words from \u201cThe costs\u201d to \u201cthe collector, and\u201d shall beomitted.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_joined_be_omitted_quoted_range_repeal",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="1989-07-27",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 61(5)",
+        affecting_uri="/id/ukpga/1989/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1989",
+        affecting_number="26",
+        affecting_provisions="s. 152(5)(d)(7)",
+        affecting_title="Finance Act 1989",
+        in_force_dates=[{"date": "1989-07-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "61"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_The costs_TO_the collector, and"
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_range_repeal_text_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_range_repeal_text_patch"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_dangling_passive_substitution_quote() -> None:
     extracted_el = ET.fromstring(
         f"""

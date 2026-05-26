@@ -83,6 +83,7 @@ UK_ORDINAL_WORD_REPEAL_RULE_ID = "uk_effect_ordinal_word_repeal_text_patch"
 UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID = (
     "uk_effect_range_repeal_pre_predicate_comma_text_patch"
 )
+UK_RANGE_REPEAL_RULE_ID = "uk_effect_range_repeal_text_patch"
 UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
     "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
 )
@@ -969,11 +970,12 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         subs.append(patch)
 
     matches_range_to_end_substituted = re.finditer(
-        r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
+        r"for (?:the )?words?(?:\s+from)?\s+[“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
         r" (?:to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
         r"(?P<verb>substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+        r"(?:(?:the\s+)?words?\s+)?"
         r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
         re.I,
@@ -2499,7 +2501,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:\s+\(\s*where\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+occurring\s*\))?"
         r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’](?P<pre_predicate_comma>,)?\s+"
-        r"(?:are|is)\s+(?:omitted|repealed)",
+        r"(?:are|is|shall\s+be)\s+(?:omitted|repealed)",
         text,
         re.I,
     )
@@ -2507,7 +2509,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         patch = {
             "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
             "replacement": "",
-            "rule_id": "uk_effect_range_repeal_text_patch",
+            "rule_id": UK_RANGE_REPEAL_RULE_ID,
         }
         if m.group("pre_predicate_comma"):
             patch["rule_id"] = UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID

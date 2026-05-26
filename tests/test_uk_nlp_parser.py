@@ -22,6 +22,18 @@ def test_normalize_uk_parser_text_keeps_single_quoted_payload_dash_and_apostroph
     assert normalize_uk_parser_text(text) == "at the end insert\u2014 'tenant's A\u2013B'"
 
 
+def test_normalize_uk_parser_text_repairs_instruction_token_joins_outside_quotes() -> None:
+    text = (
+        'for the words "X" onwards thereshall be substituted '
+        '"personcharged"; the words from "Y" onwards shall beomitted'
+    )
+
+    assert normalize_uk_parser_text(text) == (
+        'for the words "X" onwards there shall be substituted '
+        '"personcharged"; the words from "Y" onwards shall be omitted'
+    )
+
+
 def test_parse_fragment_substitution_accepts_dash_variants_outside_quotes() -> None:
     subs = parse_fragment_substitution("at the end insert\u2013 and section 15 .")
 
@@ -1642,6 +1654,49 @@ def test_parse_fragment_substitution_handles_words_from_anchor_onwards_passive_s
             "original": "TEXT_FROM_payable_TO_END",
             "replacement": "the cash bid",
             "rule_id": "uk_effect_range_to_end_there_is_substituted_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_joined_there_shall_range_to_end_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (1), for the words \u201cthe collector shall\u201d onwards "
+        "thereshall be substituted the words \u201cthe collector may distrain\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_the collector shall_TO_END",
+            "replacement": "the collector may distrain",
+            "rule_id": "uk_effect_range_to_end_there_is_substituted_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_joined_be_omitted_range_to_end_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "d the words from \u201cThe costs\u201d onwards shall beomitted."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_The costs_TO_END",
+            "replacement": "",
+            "rule_id": "uk_effect_range_to_end_passive_repeal_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_joined_be_omitted_quoted_range_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "d the words from \u201cThe costs\u201d to \u201cthe collector, and\u201d shall beomitted."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_The costs_TO_the collector, and",
+            "replacement": "",
+            "rule_id": "uk_effect_range_repeal_text_patch",
         }
     ]
 

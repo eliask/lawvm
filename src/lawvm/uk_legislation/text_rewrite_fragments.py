@@ -26,6 +26,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID,
     UK_FROM_BEGINNING_OMISSION_RULE_ID,
     UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID,
+    UK_RANGE_REPEAL_RULE_ID,
     UK_RANGE_SUBSTITUTION_RULE_ID,
     UK_RANGE_UNQUOTED_SUBSTITUTION_RULE_ID,
     UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
@@ -935,6 +936,28 @@ def append_basic_text_rewrite_observations(
                 "comma before the passive predicate; lowering treats the comma "
                 "as source punctuation around the instruction while preserving "
                 "the bounded TEXT_FROM_*_TO_* selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_RANGE_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_repeal_text_patch",
+            reason=(
+                "UK source text repeals a quoted word range; lowering "
+                "preserves the bounded TEXT_FROM_*_TO_* selector scoped to "
+                "the affected target."
             ),
             effect=effect,
             extracted_el=extracted_el,
