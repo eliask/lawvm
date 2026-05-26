@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 import weakref
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
@@ -69,6 +70,23 @@ _NORMALIZED_ELEMENT_TEXT_CACHE: weakref.WeakKeyDictionary[
     ET.Element,
     str,
 ] = weakref.WeakKeyDictionary()
+
+
+@dataclass(frozen=True, slots=True)
+class UKSourcePreviousTableColumnContext:
+    column_index: int
+    source_sibling_label: str
+    source_sibling_id: str
+    rule_id: str
+
+    def selector_fields(self) -> dict[str, str | int]:
+        return {
+            "column_index": self.column_index,
+            "source_context_rule_id": self.rule_id,
+            "source_context": "previous_source_sibling_table_column",
+            "source_sibling_label": self.source_sibling_label,
+            "source_sibling_id": self.source_sibling_id,
+        }
 
 
 def _normalized_element_text(el: ET.Element) -> str:
@@ -666,13 +684,12 @@ def _uk_source_previous_table_column_entry_omission_text_patch_claim(
         source_root=source_root,
         rule_id=UK_SOURCE_PREVIOUS_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
     )
-    column_index = int(column_context.get("column_index") or 0)
-    if column_index < 1:
+    if column_context is None:
         return None
     return {
         "rule_id": UK_SOURCE_PREVIOUS_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
         "selector_mode": "unique_column_text",
-        "column_index": column_index,
+        "column_index": column_context.column_index,
         "match_text": entry_text,
         "match_scope": "full_cell",
         "table_label": "",
@@ -683,7 +700,7 @@ def _uk_source_previous_table_column_entry_omission_text_patch_claim(
         "table_column_entry_action": "delete_entry_text",
         "text_patch_original": entry_text,
         "text_patch_replacement": "",
-        **column_context,
+        **column_context.selector_fields(),
     }
 
 
@@ -692,11 +709,11 @@ def _source_previous_table_column_context(
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],
     rule_id: str,
-) -> dict[str, str | int]:
+) -> UKSourcePreviousTableColumnContext | None:
     """Return an explicit table column from a previous sibling source row."""
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     if extracted_el is None or not ancestors:
-        return {}
+        return None
     parent = ancestors[0]
     children = list(parent)
     extracted_id = extracted_el.get("id") or extracted_el.get("Id")
@@ -706,7 +723,7 @@ def _source_previous_table_column_context(
             extracted_index = index
             break
     if extracted_index <= 0:
-        return {}
+        return None
     for sibling in reversed(children[:extracted_index]):
         sibling_text = " ".join(_text_content(sibling).split())
         match = re.search(
@@ -722,14 +739,13 @@ def _source_previous_table_column_context(
         column_index = _uk_ordinal_to_int(column_token or "")
         if column_index is None or column_index < 1:
             continue
-        return {
-            "column_index": column_index,
-            "source_context_rule_id": rule_id,
-            "source_context": "previous_source_sibling_table_column",
-            "source_sibling_label": _clean_num(_direct_structural_num(sibling)),
-            "source_sibling_id": str(sibling.get("id") or sibling.get("Id") or ""),
-        }
-    return {}
+        return UKSourcePreviousTableColumnContext(
+            column_index=column_index,
+            source_sibling_label=_clean_num(_direct_structural_num(sibling)),
+            source_sibling_id=str(sibling.get("id") or sibling.get("Id") or ""),
+            rule_id=rule_id,
+        )
+    return None
 
 
 def _uk_source_parent_table_column_entry_omission_text_patch_claim(
