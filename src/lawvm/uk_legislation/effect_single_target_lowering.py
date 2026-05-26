@@ -253,6 +253,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         target=target,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
+        source_root=ctx.source_root,
     )
     crossheading_replacement_text = crossheading_context.replacement_text
     crossheading_replacement_rule_id = crossheading_context.replacement_rule_id

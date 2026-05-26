@@ -407,12 +407,18 @@ frontend cannot yet lower them safely:
 - cross-heading replacements lower only when the source gives an explicit
   `heading before paragraph/section/article X substitute ...` whole-heading
   shape, the same shape with a plural range anchor such as `heading before
-  sections 24A to 28`, or a quoted text patch against the cross-heading before
-  a named paragraph/section/article. The owned lanes are
+  sections 24A to 28`, a quoted text patch against the cross-heading before
+  a named paragraph/section/article, or a child list row identifying a
+  cross-heading while its parent instruction explicitly carries a reference
+  substitution. The owned lanes are
   `uk_effect_crossheading_before_anchor_replacement_lowered` for whole-heading
   replacement and `uk_effect_crossheading_before_anchor_text_patch_lowered` for
-  quoted text patches; both target `X/heading`, use named text rewrite rules,
-  and replay may mutate the crossheading parent only when `X` is the first
+  quoted text patches. Source-parent reference rows lower through
+  `uk_effect_crossheading_source_parent_reference_substitution_text_patch`,
+  combining the child target row with the parent `for a reference to ...`
+  instruction instead of treating the child row as a standalone unsupported
+  fragment. These lanes target `X/heading`, use named text rewrite rules, and
+  replay may mutate the crossheading parent only when `X` is the first
   structural child under that parent. A compound `paragraph X and cross-heading`
   replacement may also lower through
   `uk_effect_crossheading_and_structural_replacement_split_lowered` when the
@@ -3434,11 +3440,12 @@ Current payload-descendant source-ref invariant:
   bounded parent text-span replacement. Current witness: `ukpga/1949/88`
   affected `s. 24G(5)` by `uksi/2023/1287 reg. 2(a)`.
 - source text that targets `cross-heading` facets lowers only through explicit
-  before-anchor whole-heading replacement, quoted text-patch, titled replacement
-  split, or guarded heading-wrapper repeal lanes. Other crossheading rows are
-  classified as `crossheading_target_unsupported` while UK lacks a safe facet
-  replay lane for the claimed shape. These remain manual/future-compiler
-  candidates, not section body replacements.
+  before-anchor whole-heading replacement, quoted text-patch, source-parent
+  reference substitution, titled replacement split, or guarded heading-wrapper
+  repeal lanes. Other crossheading rows are classified as
+  `crossheading_target_unsupported` while UK lacks a safe facet replay lane for
+  the claimed shape. These remain manual/future-compiler candidates, not
+  section body replacements.
 - alphabetic suffix labels such as `aa`, `ba`, or `ga` are part of the same
   local letter sequence as their base label. Replay insertion order must place
   `ga` after `g` and before later single-letter siblings such as `h` or `i`;
