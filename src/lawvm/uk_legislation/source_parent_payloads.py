@@ -56,6 +56,11 @@ SOURCE_PARENT_TABLE_ENTRY_INSERT_RE = re.compile(
     r"(?:shall\s+be|is|are)\s+inserted\b.*?"
     r"(?:before|after)\s+(?:the\s+)?entry\s+"
     r"(?:relating\s+to|relation\s+to|for)\b|"
+    r"in\s+(?:the\s+)?"
+    r"(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+    r"column\s+\d+)"
+    r"(?:\s+of\s+(?:(?:the|that)\s+)?table)?\b.*?"
+    r"\bat\s+the\s+end\b.*?\binsert\b|"
     r"words\s+[“\"'‘].*?[”\"'’]\s+"
     r"(?:shall\s+be|is|are)\s+inserted\b.*?"
     r"(?:before|after)\s+[“\"'‘].*?[”\"'’])",

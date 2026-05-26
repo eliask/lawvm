@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import (
     _addr_container,
     _addr_leaf_kind,
@@ -1011,6 +1012,21 @@ def _uk_table_entry_row_insert_selector(
             column_end_entry_insert_match.group("payload")
         )
         if column_index is not None and column_index >= 1 and inserted_text:
+            source_list_payload = _uk_column_entry_list_row_payload(
+                extracted_el,
+                source_root=source_root,
+                column_index=column_index,
+            )
+            if (
+                source_list_payload is None
+                and _column_end_payload_needs_owned_list(inserted_text)
+            ):
+                return None
+            source_payload_mode = (
+                "column_entry_list_rows"
+                if source_list_payload is not None
+                else "column_entry_text"
+            )
             return {
                 "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 "selector_mode": "column_final_entry",
@@ -1019,7 +1035,7 @@ def _uk_table_entry_row_insert_selector(
                 "entry_index": 1,
                 "relating_text": "final entry",
                 "inserted_text": inserted_text,
-                "source_payload_mode": "column_entry_text",
+                "source_payload_mode": source_payload_mode,
                 "table_label": table_match.group(1) if table_match is not None else "",
                 "source_names_table": source_names_table,
                 "original_target": str(target),
@@ -1459,6 +1475,93 @@ def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET.Element]) ->
     if not row_children:
         return None
     return table_node.to_irnode()
+
+
+def _source_root_element_by_id(
+    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET.Element],
+) -> Optional[ET.Element]:
+    if source_root is None or extracted_el is None:
+        return extracted_el
+    extracted_id = str(extracted_el.get("id") or "")
+    if not extracted_id:
+        return extracted_el
+    for candidate in source_root.iter():
+        if str(candidate.get("id") or "") == extracted_id:
+            return candidate
+    return extracted_el
+
+
+def _uk_column_entry_list_row_payload(
+    extracted_el: Optional[ET.Element],
+    *,
+    source_root: Optional[ET.Element] = None,
+    column_index: int,
+) -> IRNode | None:
+    extracted_el = _source_root_element_by_id(source_root, extracted_el)
+    amendment = _first_amendment_container(extracted_el)
+    if amendment is None or _tag(amendment) != "BlockAmendment" or column_index < 1:
+        return None
+    lists = [
+        el
+        for el in amendment.iter()
+        if el is not amendment and _tag(el) == "UnorderedList"
+    ]
+    if len(lists) != 1:
+        return None
+    rows: list[IRNode] = []
+    for item in list(lists[0]):
+        if _tag(item) != "ListItem":
+            continue
+        text = _strip_schedule_entry_payload(_normalized_element_text(item))
+        if not text:
+            continue
+        rows.append(
+            IRNode(
+                kind=IRNodeKind.ROW,
+                label=None,
+                attrs={"source_rule_id": "uk_table_column_entry_list_row"},
+                children=tuple(
+                    IRNode(
+                        kind=IRNodeKind.CELL,
+                        label=None,
+                        text=text if cell_index == column_index else "",
+                        attrs={
+                            "source_rule_id": "uk_table_column_entry_list_cell",
+                            "column_index": str(cell_index),
+                        },
+                    )
+                    for cell_index in range(1, column_index + 1)
+                ),
+            )
+        )
+    if not rows:
+        return None
+    return IRNode(
+        kind=IRNodeKind.TABLE,
+        label=None,
+        attrs={
+            "source_rule_id": "uk_table_column_entry_list_rows_payload",
+            "target_column_index": str(column_index),
+        },
+        children=tuple(rows),
+    )
+
+
+def _column_end_payload_needs_owned_list(inserted_text: str) -> bool:
+    text = " ".join(inserted_text.split()).strip()
+    return bool(
+        re.search(
+            r";\s+(?:section|sections|regulations|paragraph|paragraphs|chapter)\b",
+            text,
+            re.I,
+        )
+        or re.search(
+            r"\.\s+(?:Section|Sections|Regulations|Paragraph|Paragraphs|Chapter)\b",
+            text,
+            re.I,
+        )
+    )
 
 
 def _uk_single_table_row_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
