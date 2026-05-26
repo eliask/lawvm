@@ -366,6 +366,27 @@ def _uk_repeal_table_column_entry_text_selector(extent_cell: str) -> Optional[di
     }
 
 
+def _uk_repeal_table_column_entry_clause_mentions_target(
+    extent_cell: str,
+    *,
+    target: LegalAddress,
+) -> bool:
+    """Match table-column entry selectors without broadening quoted-word rows."""
+    text = " ".join((extent_cell or "").split()).lower()
+    labels = {kind: label for kind, label in target.path}
+    section = labels.get("section", "").strip().lower()
+    subsection = labels.get("subsection", "").strip().lower()
+    if not section or subsection != "table" or "table" not in text:
+        return False
+    return (
+        re.search(
+            rf"\b(?:section|sections|s)\.?\s*{re.escape(section)}\b",
+            text,
+        )
+        is not None
+    )
+
+
 def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, ...]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
@@ -698,11 +719,20 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             if not enactment_match_basis:
                 continue
             for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
-                if not _uk_table_cell_mentions_target(
+                mentions_target = _uk_table_cell_mentions_target(
                     extent_clause,
                     target=target,
                     affected_year=str(effect.affected_year or ""),
-                ):
+                )
+                table_cell_selector = _uk_repeal_table_column_entry_text_selector(extent_clause)
+                column_entry_mentions_target = (
+                    table_cell_selector is not None
+                    and _uk_repeal_table_column_entry_clause_mentions_target(
+                        extent_clause,
+                        target=target,
+                    )
+                )
+                if not mentions_target and not column_entry_mentions_target:
                     continue
                 additional_originals: tuple[str, ...] = ()
                 rule_id = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
@@ -721,12 +751,11 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         original = definition_originals[0]
                         additional_originals = definition_originals[1:]
                         rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
-                table_cell_selector: Optional[dict[str, Any]] = None
                 if (
                     not original
                     and not structural_definition_entry_effect
+                    and column_entry_mentions_target
                 ):
-                    table_cell_selector = _uk_repeal_table_column_entry_text_selector(extent_clause)
                     if table_cell_selector:
                         original = str(table_cell_selector["match_text"])
                         rule_id = _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID
@@ -1744,14 +1773,7 @@ def _uk_table_cell_mentions_target(
     part = labels.get("part", "")
     chapter = labels.get("chapter", "")
     years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
-    section_table_extent = (
-        bool(section)
-        and subsection.lower() == "table"
-        and "table" in scope_text
-        and re.search(rf"\b(?:section|sections|s)\.?\s*{re.escape(section.lower())}\b", scope_text)
-        is not None
-    )
-    if years and affected_year and affected_year not in years and not section_table_extent:
+    if years and affected_year and affected_year not in years:
         return False
 
     if part:

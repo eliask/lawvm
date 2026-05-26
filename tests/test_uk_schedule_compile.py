@@ -57,6 +57,10 @@ from lawvm.uk_legislation.source_definition_fragments import (
     _fragment_substitution_source_carried_quoted_text_substitution,
 )
 from lawvm.uk_legislation.substitution_metadata import _expand_sibling_targets_from_text
+from lawvm.uk_legislation.table_sources import (
+    _uk_repeal_table_column_entry_clause_mentions_target,
+    _uk_table_cell_mentions_target,
+)
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -16494,6 +16498,24 @@ def test_compile_repeal_table_column_entry_text_repeal_uses_owned_cell_selector(
         and record["blocking"] is False
         and record["table_cell_selector"]["match_text"] == "section 86(4) of FA 1999"
         for record in lowering_records
+    )
+
+
+def test_repeal_table_column_entry_target_match_is_not_global_year_bypass() -> None:
+    target = LegalAddress((("section", "98"), ("subsection", "table")))
+    extent_clause = (
+        "In the second column of the Table in section 98, "
+        "the entry for section 86(4) of FA 1999."
+    )
+
+    assert not _uk_table_cell_mentions_target(
+        extent_clause,
+        target=target,
+        affected_year="1970",
+    )
+    assert _uk_repeal_table_column_entry_clause_mentions_target(
+        extent_clause,
+        target=target,
     )
 
 
