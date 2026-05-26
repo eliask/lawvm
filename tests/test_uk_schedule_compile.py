@@ -24780,7 +24780,23 @@ def test_compile_direct_table_appropriate_place_instruction_rejects_row_insert()
         f"""
         <P2 xmlns="{_LEG_NS}">
           <Pnumber>11</Pnumber>
-          <Text>In section 379, in the table in subsection (1), at the appropriate place insert\u2014 Northern Ireland Troubles (Legacy and Reconciliation) Act 2023.</Text>
+          <P2para>
+            <Text>In section 379, in the table in subsection (1), at the appropriate place insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <table>
+                  <tbody>
+                    <tr><td>Northern Ireland Troubles (Legacy and Reconciliation) Act 2023</td></tr>
+                    <tr>
+                      <td>section 26</td>
+                      <td>revocation of immunity under that Act</td>
+                      <td>making of false statements</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </BlockAmendment>
+          </P2para>
         </P2>
         """
     )
@@ -24819,6 +24835,14 @@ def test_compile_direct_table_appropriate_place_instruction_rejects_row_insert()
     rejection = lowering_rejections[0]
     assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
     assert rejection["entry_shape"] == "appropriate_place_table_entry"
+    assert rejection["inserted_table_rows"] == (
+        ("Northern Ireland Troubles (Legacy and Reconciliation) Act 2023",),
+        (
+            "section 26",
+            "revocation of immunity under that Act",
+            "making of false statements",
+        ),
+    )
     assert rejection["blocking"] is True
 
 

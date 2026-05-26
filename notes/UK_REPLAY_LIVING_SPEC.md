@@ -632,6 +632,9 @@ post-child-tail boundary.
 a table-entry or column instruction but blocked replay for lack of a cell, row,
 column, or ordering claim. In particular, `appropriate_place_table_entry`
 requires an external ordering/anchor claim before it can become executable.
+When the source XML carries an inserted table payload, templates also preserve
+the extracted row/cell text as `inserted_table_rows` so placement review does
+not depend on flattened preview text.
 `uk-effects` summary output also aggregates
 `suggested_claim_template_status_counts` for actionable frontier rows
 (`manual_compile_candidate` and `deterministic_frontend_candidate`) so review
