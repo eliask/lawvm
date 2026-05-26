@@ -2797,8 +2797,11 @@ Current payload-descendant source-ref invariant:
   physical row. Payload-only source fragments are admitted for the same typed
   row-insert path when the local parent instruction names the table column and
   says `after the final entry ... inserted`, with the `BlockAmendment` providing
-  only the inserted entry text; the selector records the source-parent id and
-  instruction. In all cases lowering emits
+  only the inserted entry text; the same applies to `each of the columns` after
+  a source-named relating entry, where replay requires the anchor to resolve in
+  every live column before expanding the single source cell across the table
+  width. The selector records the source-parent id and instruction. In all
+  cases lowering emits
   `uk_effect_table_entry_row_insert`, carries a table-row selector, and replay
   must resolve exactly one table, expand rowspans, and insert a row payload
   after the selected physical row. Ordinal-column selectors count only entries

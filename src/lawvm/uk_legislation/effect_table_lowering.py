@@ -312,7 +312,7 @@ def try_lower_table_row_insert(
     if (
         parent_target is not None
         and str(table_row_insert_selector.get("selector_mode") or "")
-        in {"column_entry", "column_final_entry", "each_column_final_entry"}
+        in {"column_entry", "column_final_entry", "each_column_entry", "each_column_final_entry"}
         and bool(table_row_insert_selector.get("source_names_table"))
     ):
         table_row_insert_selector = {

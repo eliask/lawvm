@@ -771,6 +771,37 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    each_column_entry_for_insert_match = re.search(
+        r"\beach\s+(?:of\s+the\s+)?columns?\b.*?"
+        r"\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+"
+        r"(?:for|relating\s+to|relation\s+to)\s+(?:the\s+)?(?P<anchor>.+?)\s+"
+        r"(?:there\s+(?:shall\s+be|is|are)\s+inserted|insert(?:ed)?)\s*"
+        r"(?:the\s+following\s+entry)?\s*[—–-]?\s*(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if each_column_entry_for_insert_match is not None:
+        relating_text = " ".join(
+            each_column_entry_for_insert_match.group("anchor").split()
+        ).strip(" ,;.“”\"'‘’")
+        inserted_text = _strip_schedule_entry_payload(
+            each_column_entry_for_insert_match.group("payload")
+        )
+        if relating_text and inserted_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "each_column_entry",
+                "direction": each_column_entry_for_insert_match.group("direction").lower(),
+                "column_index": 1,
+                "entry_index": 1,
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "source_payload_mode": "each_column_entry_text",
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     entry_in_column_relating_insert_match = re.search(
         r"\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+in\s+(?:the\s+)?"
         r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
