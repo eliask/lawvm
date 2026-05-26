@@ -263,7 +263,7 @@ def resolve_uk_table_entry_row_insert_index(
     selector_mode = str(selector.get("selector_mode") or "ordinal_column")
     if direction not in {"after", "before"}:
         return None, None, "invalid_selector", {}
-    if selector_mode == "column_final_entry" and direction != "after":
+    if selector_mode in {"column_final_entry", "each_column_final_entry"} and direction != "after":
         return None, None, "invalid_selector", {}
     if selector_mode == "entry_label":
         if not anchor_entry_label:
@@ -277,6 +277,8 @@ def resolve_uk_table_entry_row_insert_index(
     elif selector_mode == "column_final_entry":
         if column_index < 1:
             return None, None, "invalid_selector", {}
+    elif selector_mode == "each_column_final_entry":
+        pass
     elif entry_index < 1 or not relating_norm:
         return None, None, "invalid_selector", {}
     if selector_mode == "ordinal_column" and column_index < 2:
@@ -290,6 +292,7 @@ def resolve_uk_table_entry_row_insert_index(
         "entry_group_heading",
         "column_entry",
         "column_final_entry",
+        "each_column_final_entry",
     }:
         return None, None, "invalid_selector", {}
 
@@ -299,6 +302,27 @@ def resolve_uk_table_entry_row_insert_index(
 
     table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
+    if selector_mode == "each_column_final_entry":
+        column_count = max((max(row_cells) for _row_index, row_cells in expanded_rows if row_cells), default=0)
+        if column_count < 1:
+            return None, None, "entry_not_found", {
+                "matching_entry_count": 0,
+                "table_column_count": column_count,
+                **carrier_detail,
+            }
+        return table, len(table.children), "", {
+            "matching_entry_count": len(expanded_rows),
+            "table_column_count": column_count,
+            "matching_rows": tuple(
+                " | ".join(
+                    str(row_cells[col].text or "")
+                    for col in sorted(row_cells)
+                    if str(row_cells[col].text or "")
+                )[:240]
+                for _row_index, row_cells in expanded_rows[-5:]
+            ),
+            **carrier_detail,
+        }
     if selector_mode == "entry_group_heading":
         matching_groups: list[tuple[int, str]] = []
         for row_position, (row_index, row_cells) in enumerate(expanded_rows):
