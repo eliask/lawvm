@@ -94,6 +94,9 @@ class UKPseudoDefinitionEntryRangeTextPatches:
 UK_SOURCE_RANGE_DEFINITION_ENTRY_INSERT_RULE_ID = (
     "uk_effect_source_range_definition_entry_insert_text_patch"
 )
+UK_METADATA_PSEUDO_DEFINITION_ENTRY_INSERT_RULE_ID = (
+    "uk_effect_metadata_pseudo_definition_entry_insert_text_patch"
+)
 UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID = (
     "uk_effect_source_range_definition_entry_list_end_schedule_entry_insert"
 )
@@ -105,6 +108,13 @@ UK_SOURCE_RANGE_DEFINITION_ENTRY_AT_END_REJECTION_RULE_ID = (
 _SOURCE_RANGE_AFTER_DEFINITION_INSERT_RE = re.compile(
     r"^\s*(?:and\s+)?(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
     r"after\s+the\s+definition\s+of\s+(?:the\s+)?[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+    r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)"
+    r"\s*[—–-]?\s*(?P<inserted>.+?)\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_PSEUDO_DEFINITION_ENTRY_INSERT_RE = re.compile(
+    r"\b(?P<direction>before|after)\s+the\s+definition\s+of\s+(?:the\s+)?"
+    r"[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
     r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)"
     r"\s*[—–-]?\s*(?P<inserted>.+?)\s*\.?\s*$",
     flags=re.I | re.S,
@@ -247,6 +257,113 @@ def _source_range_definition_entry_list_end_fragment(
         "source_row_text": normalized[:500],
         "rule_id": UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
     }
+
+
+def _metadata_pseudo_definition_entry_insert_fragment(
+    row_text: str,
+    *,
+    metadata_terms: tuple[str, ...],
+) -> Optional[dict[str, str]]:
+    normalized = " ".join(str(row_text or "").split()).strip()
+    if not normalized:
+        return None
+    match = _PSEUDO_DEFINITION_ENTRY_INSERT_RE.search(normalized)
+    if match is None:
+        return None
+    anchor = " ".join(match.group("anchor").split()).strip()
+    inserted = " ".join(match.group("inserted").split()).strip()
+    inserted = re.sub(r"(?<=;)\s*,\s*(?:and\s*)?$", "", inserted).strip()
+    if not anchor or not inserted or not _looks_like_definition_entry_payload(inserted):
+        return None
+    direction = match.group("direction").lower()
+    selector = "TEXT_BEFORE_DEFINITION" if direction == "before" else "TEXT_AFTER_DEFINITION"
+    inserted_terms = _quoted_terms(inserted)
+    extra_terms = tuple(term for term in inserted_terms if term not in metadata_terms)
+    return {
+        "original": f"{selector}_{anchor}",
+        "replacement": inserted,
+        "source_anchor_definition_term": anchor,
+        "source_inserted_definition_terms": US.join(inserted_terms),
+        "source_payload_additional_definition_terms": US.join(extra_terms),
+        "source_definition_insert_direction": direction,
+        "rule_id": UK_METADATA_PSEUDO_DEFINITION_ENTRY_INSERT_RULE_ID,
+    }
+
+
+def lower_metadata_pseudo_definition_entry_insertions(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKPseudoDefinitionEntryRangeTextPatches]:
+    """Lower one pseudo-definition entry target with an explicit source anchor."""
+    if action != "insert":
+        return None
+    if not _target_ref_names_pseudo_definition_entries(target_ref):
+        return None
+    if extracted_el is None or _tag(extracted_el) == "SourceRange":
+        return None
+    base_target = _pseudo_definition_base_target(target)
+    if base_target is None:
+        return None
+    metadata_terms = _quoted_terms(target_ref)
+    fragment = _metadata_pseudo_definition_entry_insert_fragment(
+        extracted_text or _text_content(extracted_el),
+        metadata_terms=metadata_terms,
+    )
+    if fragment is None:
+        return None
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=UK_METADATA_PSEUDO_DEFINITION_ENTRY_INSERT_RULE_ID,
+        family="definition_entry_elaboration",
+        reason_code="metadata_definition_insert_anchor_resolved_from_source",
+        reason=(
+            "UK effect metadata encodes a definition entry as a pseudo "
+            "structural target path, while the affecting source gives an "
+            "explicit before/after-definition placement anchor and a "
+            "definition-entry payload. Lowering strips the pseudo metadata "
+            "path and emits a bounded definition-entry text insertion."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "original_target": str(target),
+            "target": str(base_target),
+            "text_match": str(fragment.get("original") or ""),
+            "replacement": str(fragment.get("replacement") or ""),
+            "source_anchor_definition_term": str(
+                fragment.get("source_anchor_definition_term") or ""
+            ),
+            "source_definition_insert_direction": str(
+                fragment.get("source_definition_insert_direction") or ""
+            ),
+            "source_inserted_definition_terms": tuple(
+                term
+                for term in str(
+                    fragment.get("source_inserted_definition_terms") or ""
+                ).split(US)
+                if term
+            ),
+            "source_payload_additional_definition_terms": tuple(
+                term
+                for term in str(
+                    fragment.get("source_payload_additional_definition_terms") or ""
+                ).split(US)
+                if term
+            ),
+        },
+    )
+    return UKPseudoDefinitionEntryRangeTextPatches(
+        target=base_target,
+        fragments=(fragment,),
+    )
 
 
 def lower_metadata_pseudo_definition_entry_range_insertions(

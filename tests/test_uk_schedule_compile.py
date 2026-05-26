@@ -18939,6 +18939,81 @@ def test_compile_blocks_structural_added_pseudo_definition_target() -> None:
     )
 
 
+def test_compile_pseudo_definition_entry_insert_uses_source_definition_anchor() -> None:
+    extracted_el = ET.fromstring(
+        """
+        <P3para>
+          <Text>
+            a before the definition of “ advertising agency ” there is inserted—
+            “ the 1996 Act ” means the Broadcasting Act 1996; ,
+          </Text>
+        </P3para>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_pseudo_definition_entry_insert",
+        effect_type="added",
+        applied=True,
+        requires_applied=True,
+        modified="2022-04-20",
+        affected_uri="/id/ukpga/1990/42/schedule/2/paragraph/1/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions='Sch. 2 Pt. 1 para. 1(1) (defn. of "the 1996 Act")',
+        affecting_uri="/id/ukpga/1996/55",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="55",
+        affecting_provisions="s. 73 Sch. 2 Pt. 1 para. 1(2)(a)",
+        affecting_title="Broadcasting Act 1996",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "2"),
+        ("part", "1"),
+        ("paragraph", "1"),
+        ("subparagraph", "1"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_BEFORE_DEFINITION_advertising agency"
+    )
+    assert ops[0].text_patch.replacement == (
+        "“ the 1996 Act ” means the Broadcasting Act 1996;"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_pseudo_definition_entry_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    definition_record = next(
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_metadata_pseudo_definition_entry_insert_text_patch"
+    )
+    assert definition_record["blocking"] is False
+    assert definition_record["strict_disposition"] == "record"
+    assert definition_record["target"] == "schedule:2/part:1/paragraph:1/subparagraph:1"
+    assert definition_record["text_match"] == "TEXT_BEFORE_DEFINITION_advertising agency"
+    assert definition_record["source_anchor_definition_term"] == "advertising agency"
+    assert definition_record["source_definition_insert_direction"] == "before"
+    assert definition_record["source_inserted_definition_terms"] == ("the 1996 Act",)
+    assert not any(
+        record["rule_id"] == "uk_effect_structural_pseudo_definition_target_rejected"
+        for record in lowering_records
+    )
+
+
 def test_compile_pseudo_definition_child_substitution_uses_bounded_selector() -> None:
     extracted_el = ET.fromstring(
         """
