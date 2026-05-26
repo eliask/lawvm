@@ -1176,10 +1176,11 @@ def append_basic_text_rewrite_observations(
             family="text_rewrite_lowering",
             reason_code="explicit_at_end_unquoted_text_insertion_patch",
             reason=(
-                "UK source text inserts an unquoted dash payload at the end "
-                "of the affected target; lowering preserves that as a bounded "
-                "TEXT_END append and treats parenthetical new-line wording as "
-                "presentation, not legal text."
+                "UK source text inserts an unquoted payload at the end of the "
+                "affected target; lowering preserves that as a bounded TEXT_END "
+                "append and treats parenthetical new-line wording or carried "
+                "sibling source rows as presentation/source-boundary context, "
+                "not inserted legal text."
             ),
             effect=effect,
             extracted_el=extracted_el,

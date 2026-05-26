@@ -4252,6 +4252,61 @@ def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -
     )
 
 
+def test_compile_sentence_bounded_at_end_insert_ignores_following_source_row() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-25-paragraph-29-3">
+          <Pnumber>3</Pnumber>
+          <Text>
+            3 At the end of subsection (3) insert before the end of the period
+            of 2 years beginning with the date on which the conviction of the
+            person concerned is reversed or he is pardoned. 3A But the Secretary
+            of State may direct that an application for compensation made after
+            the end of that period is to be treated as if it had been made
+            within that period.
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-b0177c8f6a5b99b589864eddccdcc030",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-12-23",
+        affected_uri="/id/ukpga/2006/52/section/276/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 276(3)",
+        affecting_uri="/id/ukpga/2008/4",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="4",
+        affecting_provisions="Sch. 25 para. 29(3)",
+        affecting_title="Criminal Justice and Immigration Act 2008",
+        in_force_dates=[{"date": "2009-10-31", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "276"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == (
+        "before the end of the period of 2 years beginning with the date on which "
+        "the conviction of the person concerned is reversed or he is pardoned"
+    )
+    assert "3A But" not in ops[0].text_patch.replacement
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_unquoted_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_at_end_new_line_unquoted_insert_to_text_append() -> None:
     extracted_el = ET.fromstring(
         f"""
