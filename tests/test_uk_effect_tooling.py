@@ -30,6 +30,7 @@ from lawvm.tools.uk_effect import (
     lowering_rejection_rule_counts,
     uk_effect_report_jsonable,
 )
+from lawvm.tools.uk_claim_templates import _definition_entry_terms
 from lawvm.tools.uk_effects import (
     UK_CLAIM_TEMPLATE_RULE_IDS,
     _EffectFilters,
@@ -99,6 +100,16 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
     }
     assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
     assert UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
+
+
+def test_uk_claim_template_definition_entry_terms_extracts_multiple_entries() -> None:
+    terms = _definition_entry_terms(
+        "“EEA Agreement” means the Agreement on the European Economic Area; "
+        "“EEA State” means a State which is a contracting party to that Agreement; "
+        "“EEA Agreement” means duplicate publisher text."
+    )
+
+    assert terms == ("EEA Agreement", "EEA State")
 
 
 def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None:
@@ -2614,6 +2625,7 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     assert template["placement_family"] == "appropriate_place_requires_anchor_claim"
     assert template["statute_id"] == "asp/2001/2"
     assert template["inserted_definition_term"] == "operational service standard"
+    assert template["inserted_definition_terms"] == ["operational service standard"]
     assert template["candidate_target_surface"] == "s. 48(1)"
     assert template["executable"] is False
     assert "claim_supplies_exact_definition_entry_anchor_or_insertion_index" in (
@@ -2970,9 +2982,98 @@ def test_uk_manual_compile_evidence_jsonl_definition_template_survives_unparsed_
     assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"
     assert template["action_family"] == "definition_entry_insert"
     assert template["inserted_definition_term"] == ""
+    assert template["inserted_definition_terms"] == []
     assert (
         template["inserted_definition_entry_preview"]
         == "Definition entry payload with unusual publisher punctuation."
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_pseudo_definition_instruction_payload() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-pseudo-definition-instruction",
+        effect_type="added",
+        applied=True,
+        requires_applied=True,
+        modified="1997-07-01",
+        affected_uri="/id/ukpga/1990/42/section/71/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions='s. 71(1) (defn. of "satellite television service")',
+        affecting_uri="/id/uksi/1997/1682",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1997",
+        affecting_number="1682",
+        affecting_provisions="reg. 2 Sch. para. 10(b)",
+        affecting_title="Satellite Television Service Regulations 1997",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="nonstructural_root_gap",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_structural_pseudo_definition_target_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=False,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "b after the definition of “S4C” there is inserted— "
+                "“satellite television service” has the meaning given by section 43(1); ."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
+            ),
+            manual_compile_reason="Pseudo definition target needs a validated anchor.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_structural_pseudo_definition_target_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_structural_pseudo_definition_target_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1990/42",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1990/42",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "definition_entry_insert"
+    assert template["placement_family"] == "pseudo_definition_target_requires_anchor_claim"
+    assert template["inserted_definition_term"] == "satellite television service"
+    assert template["inserted_definition_terms"] == ["satellite television service"]
+    assert template["inserted_definition_entry_preview"].startswith(
+        "“satellite television service” has the meaning given by section 43(1)"
     )
     assert template["executable"] is False
 

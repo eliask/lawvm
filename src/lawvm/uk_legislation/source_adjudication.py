@@ -1015,6 +1015,14 @@ def _looks_like_definition_entry_payload(text: str) -> bool:
     return bool(
         re.search(r"^[\"“][^\"”]{1,200}[\"”]\s+(?:means|includes|has\b)", norm)
         or re.search(r"^[\"“][^\"”]{1,200}[\"”]\s+means[—-]", norm)
+        or (
+            re.search(r"\b(?:inserted|insert)\s*[—-]?\s*[\"“]", norm)
+            and re.search(
+                r"[\"“][^\"”]{1,200}[\"”]\s+"
+                r"(?:means|includes|has\s+the\s+(?:same\s+)?meaning\b)",
+                norm,
+            )
+        )
     )
 
 
@@ -1761,7 +1769,7 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             return {
                 "status": "manual_compile_candidate",
                 "rule_id": "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate",
-                "reason": "The effect feed encodes a definition entry as a pseudo structural path and the source carries a quoted definition-entry payload, but no source-owned insertion anchor or ordering rule is available; a claim or future definition-entry compiler must prove the carrier, insertion/replacement semantics, and placement before replay.",
+                "reason": "The effect feed encodes a definition entry as a pseudo structural path and the source carries a quoted definition-entry payload or instruction; a claim or future definition-entry compiler must prove the carrier, insertion/replacement semantics, and placement before replay.",
             }
         return {
             "status": "source_insufficient",

@@ -207,6 +207,16 @@ Current UK-specific invariants:
       `uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate`;
       rows whose source is only a schedule/gateway/header fragment are
       `uk_manual_frontier_structural_pseudo_definition_source_insufficient`.
+      Compound affecting references that name a gateway regulation plus a
+      schedule child, such as `reg. 2 Sch. para. 10(b)`, must prefer the
+      explicit schedule child instruction over the gateway regulation header.
+      If the schedule child contains a `BlockAmendment`, extraction selects
+      the source instruction row carrying both anchor and payload, not the
+      anonymous payload container alone. Current witness: `ukpga/1990/42`
+      affected `s. 71(1)` by `uksi/1997/1682 reg. 2 Sch. para. 10(b)`.
+      Non-executable claim templates preserve all quoted definition-entry
+      terms detected in the payload; the legacy singular term field remains
+      only as the first term for compatibility.
       A narrower child-substitution lane is owned:
       when metadata names exactly one definition term plus one child label
       and the resolved affecting source is a `BlockAmendment` or

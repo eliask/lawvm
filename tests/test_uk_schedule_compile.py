@@ -37991,6 +37991,89 @@ def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> No
     )
 
 
+def test_regulation_schedule_compound_source_ref_selects_schedule_child_instruction() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_regulation_schedule_compound",
+        effect_type="added",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/1990/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions='s. 71(1) (defn. of "satellite television service")',
+        affecting_uri="/id/uksi/1997/1682",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1997",
+        affecting_number="1682",
+        affecting_provisions="reg. 2 Sch. para. 10(b)",
+        affecting_title="Satellite Television Service Regulations 1997",
+    )
+    xml_bytes = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="regulation-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <Text>The Broadcasting Act 1990 is amended in accordance with the Schedule to these Regulations.</Text>
+          </P1para>
+        </P1>
+      </Body>
+      <Schedules>
+        <Schedule id="schedule">
+          <ScheduleBody>
+            <P1 id="schedule-paragraph-10">
+              <Pnumber>10</Pnumber>
+              <P1para>
+                <Text>In section 71 (interpretation of Part I), in subsection (1)—</Text>
+                <P3 id="schedule-paragraph-10-b">
+                  <Pnumber>b</Pnumber>
+                  <P3para>
+                    <Text>after the definition of “S4C” there is inserted—</Text>
+                    <BlockAmendment>
+                      <UnorderedList Decoration="none">
+                        <ListItem>
+                          <Para>
+                            <Text>“satellite television service” has the meaning given by section 43(1);</Text>
+                          </Para>
+                        </ListItem>
+                      </UnorderedList>
+                    </BlockAmendment>
+                    <AppendText>.</AppendText>
+                  </P3para>
+                </P3>
+              </P1para>
+            </P1>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    context, parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=xml_bytes,
+        locator="https://www.legislation.gov.uk/uksi/1997/1682/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+    )
+    assert parse_error is None
+
+    extracted, observations = uk_replay_mod._extract_from_affecting_source_context_with_observations(
+        context,
+        effect,
+    )
+
+    assert extracted is not None
+    assert uk_replay_mod._tag(extracted) == "P3"
+    assert extracted.get("id") == "schedule-paragraph-10-b"
+    assert "after the definition of" in uk_replay_mod._text_content(extracted)
+    assert "satellite television service" in uk_replay_mod._text_content(extracted)
+    assert observations[0]["rule_id"] == "uk_affecting_act_compound_reference_split_fallback"
+    assert observations[0]["split_first_part"] == "reg. 2"
+    assert observations[0]["split_second_part"] == "Sch. para. 10(b)"
+    assert observations[0]["split_selected_part"] == "second"
+    assert observations[0]["extracted_element_id"] == "schedule-paragraph-10-b"
+
+
 def test_pipeline_compile_ops_extracts_compound_payload_range_source_ref(
     monkeypatch,
 ) -> None:
