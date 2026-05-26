@@ -4336,6 +4336,13 @@ Current bench replay-regime invariant:
   lowering emits `uk_effect_at_end_carried_parent_context_text_insertion_patch`
   and appends at `TEXT_END`. Witness: `ukpga/1970/9 s. 9(1)` affected by
   `ukpga/1996/8 s. 122(1)`.
+- Grouped source-parent prefix substitutions may put the replacement in the
+  parent row and the preimage/target in child rows, e.g. parent `Substitute
+  "PAYE regulations"` followed by child `for "the said section 203" in
+  subsection (8) of section 59A ...`. Lowering combines only those source-local
+  facts and emits `uk_effect_source_parent_prefix_substitute_text_patch`;
+  without the parent prefix it remains blocked. Witness: `ukpga/1970/9 s.
+  59A(8)` affected by `ukpga/2003/14 s. 145(7)(a)`.
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.

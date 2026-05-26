@@ -62,6 +62,16 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
+_SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*"
+    r"(?:Substitute|For)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*$",
+    flags=re.I,
+)
+_SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+for\s+"
+    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+in\s+",
+    flags=re.I,
+)
 
 _EACH_OTHER_PLACE_AFTER_INSERT_RE = re.compile(
     r"\bafter\s+(?:the\s+words?\s+)?[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
@@ -212,6 +222,34 @@ def append_source_fragment_context_observations(
                 "target": str(target),
                 "source_parent_id": str(parent_substitution_fragment.get("source_parent_id") or ""),
                 "text_match": str(parent_substitution_fragment.get("original") or ""),
+                "replacement": op_text_replacement,
+            },
+        )
+    for parent_prefix_substitution_fragment in fragment_subs or []:
+        if (
+            str(parent_prefix_substitution_fragment.get("rule_id") or "")
+            != "uk_effect_source_parent_prefix_substitute_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_parent_prefix_substitute_text_patch",
+            family="source_context_elaboration",
+            reason_code="text_substitution_replacement_resolved_from_source_parent_prefix",
+            reason=(
+                "UK source child row carries the quoted preimage and target "
+                "context while its parent prefix carries the replacement. "
+                "Lowering combines those source-local facts instead of "
+                "treating the child as a standalone incomplete instruction."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(parent_prefix_substitution_fragment.get("source_parent_id") or ""),
+                "text_match": op_text_match,
                 "replacement": op_text_replacement,
             },
         )
@@ -601,3 +639,41 @@ def _fragment_substitutions_source_parent_each_provision_substitution(
             for original in originals
         )
     return ()
+
+
+def _fragment_substitution_source_parent_prefix_substitute(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve child rows governed by a parent `Substitute "X"` prefix."""
+    child_text = " ".join((extracted_text or "").split())
+    child_match = _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE.match(child_text)
+    if child_match is None or re.search(r"\bsubstitut(?:e|ed)\b", child_text, flags=re.I):
+        return None
+    original = " ".join(child_match.group("original").split()).strip()
+    if not original:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor).strip()
+        parent_match = _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE.match(candidate_text)
+        if parent_match is None:
+            continue
+        replacement = " ".join(parent_match.group("replacement").split()).strip()
+        if not replacement:
+            return None
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return {
+            "original": original,
+            "replacement": replacement,
+            "source_parent_id": source_parent_id,
+            "rule_id": "uk_effect_source_parent_prefix_substitute_text_patch",
+        }
+    return None
