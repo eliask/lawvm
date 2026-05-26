@@ -40,6 +40,13 @@ _UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID = (
 _UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID = (
     "uk_replay_table_column_insert_unresolved"
 )
+_UNSIGNED_INT_RE = re.compile(r"[0-9]+")
+_TABLE_CELL_PARAGRAPH_SPLIT_RE = re.compile(r"(\n{6,})")
+_TABLE_CELL_FIRST_SUBPARAGRAPH_RE = re.compile(
+    r"(?P<prefix>[—-]\s*\n+)(?P<old>.*?)(?=\n{4,}|$)",
+    re.S,
+)
+_TABLE_CELL_SUBPARAGRAPH_SPLIT_RE = re.compile(r"(\n{4,})")
 
 
 class UKReplayTableApplyMixin:
@@ -123,7 +130,7 @@ class UKReplayTableApplyMixin:
                     break
                 spanner = owned_spanners[0].cell
                 old_colspan_raw = str(spanner.attrs.get("colspan") or "1")
-                if not re.fullmatch(r"[0-9]+", old_colspan_raw):
+                if not _UNSIGNED_INT_RE.fullmatch(old_colspan_raw):
                     reason = "unsupported_colspan_value"
                     break
                 old_colspan = int(old_colspan_raw)
@@ -456,7 +463,7 @@ class UKReplayTableApplyMixin:
             paragraph_index = int(paragraph_label) - 1
         except ValueError:
             return cell, False, "invalid_paragraph_label", {"source_paragraph_label": paragraph_label}
-        parts = re.split(r"(\n{6,})", text)
+        parts = _TABLE_CELL_PARAGRAPH_SPLIT_RE.split(text)
         paragraph_slots = [index for index in range(0, len(parts), 2)]
         if paragraph_index < 0 or paragraph_index >= len(paragraph_slots):
             return cell, False, "paragraph_not_found", {
@@ -481,7 +488,7 @@ class UKReplayTableApplyMixin:
                     "source_subparagraph_label": subparagraph_label,
                 }
             if sub_index == 0:
-                sub_match = re.search(r"(?P<prefix>[—-]\s*\n+)(?P<old>.*?)(?=\n{4,}|$)", old_paragraph, re.S)
+                sub_match = _TABLE_CELL_FIRST_SUBPARAGRAPH_RE.search(old_paragraph)
                 if sub_match is None:
                     return cell, False, "subparagraph_not_found", {
                         "source_paragraph_label": paragraph_label,
@@ -494,7 +501,7 @@ class UKReplayTableApplyMixin:
                     + old_paragraph[sub_match.end("old") :]
                 )
             else:
-                subparts = re.split(r"(\n{4,})", old_paragraph)
+                subparts = _TABLE_CELL_SUBPARAGRAPH_SPLIT_RE.split(old_paragraph)
                 sub_slots = [index for index in range(2, len(subparts), 2)]
                 if sub_index - 1 < 0 or sub_index - 1 >= len(sub_slots):
                     return cell, False, "subparagraph_not_found", {
