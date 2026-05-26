@@ -95,6 +95,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_table_crossheading_candidate",
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
+        "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
     }
     assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
     assert UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
@@ -324,6 +325,93 @@ def test_uk_manual_compile_evidence_jsonl_templates_referent_qualified_substitut
     assert template["referent_entity"] == "the Rail Regulator"
     assert template["replacement"] == "it"
     assert "claim_proves_each_mutated_occurrence_refers_to_the_named_entity" in (
+        template["required_validator_checks"]
+    )
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_whole_act_word_patch() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-whole-act-word-patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-10-01",
+        affected_uri="/id/ukpga/1949/88",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1949",
+        affected_number="88",
+        affected_provisions="Act",
+        affecting_uri="/id/ukpga/2005/4",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="4",
+        affecting_provisions="Sch. 11 para. 4",
+        affecting_title="Constitutional Reform Act 2005",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="whole_act_word_level_text_patch_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=("/whole_act",),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_whole_act_word_level_text_patch_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                'In each of the enactments listed in sub-paragraph (3) for '
+                '"Supreme Court" or "Supreme Court of Judicature" in each place '
+                'substitute "Senior Courts". This paragraph does not apply to '
+                'those words in the short title or title of any enactment.'
+            ),
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id="uk_manual_frontier_whole_act_word_level_text_patch_candidate",
+            manual_compile_reason="Whole-Act text patch needs a listed-enactment compiler.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_whole_act_word_level_text_patch_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_whole_act_word_level_text_patch_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1949/88",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1949/88",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "whole_act_listed_enactments_text_patch"
+    assert template["placement_family"] == "listed_enactment_whole_act_scope_with_exclusions"
+    assert template["text_preimages"] == [
+        "Supreme Court of Judicature",
+        "Supreme Court",
+    ]
+    assert template["replacement"] == "Senior Courts"
+    assert "claim_excludes_title_and_short_title_surfaces" in (
         template["required_validator_checks"]
     )
 

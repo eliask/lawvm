@@ -572,6 +572,8 @@ families,
 `uk_manual_frontier_amendment_program_target_candidate`,
 `referent_qualified_text_substitution` for
 `uk_manual_frontier_referent_qualified_text_substitution_candidate`,
+`whole_act_listed_enactments_text_patch` for
+`uk_manual_frontier_whole_act_word_level_text_patch_candidate`,
 `source_carried_multi_subunit_text_rewrite` for
 `uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate`,
 `source_carried_child_tail_text_rewrite` for

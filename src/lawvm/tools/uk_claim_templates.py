@@ -204,6 +204,40 @@ def _referent_qualified_substitution_parts(source_preview: str) -> dict[str, Any
     }
 
 
+def _whole_act_word_patch_parts(source_preview: str) -> dict[str, Any]:
+    """Return source-local evidence for whole-Act word-level patch candidates."""
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bfor\s+(?P<preimages>.+?)\s+in\s+each\s+place\s+substitute\s+"
+        r"[\"“](?P<replacement>[^\"”]{1,240})[\"”]",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {
+            "text_preimages": [],
+            "replacement": "",
+            "required_exclusions": [
+                "short_title_or_title_surfaces",
+                "words_amended_by_same_schedule_exceptions",
+                "words_inserted_by_same_act_unless_otherwise_provided",
+            ],
+        }
+    preimages = [
+        " ".join(item.split())
+        for item in re.findall(r"[\"“]([^\"”]{1,160})[\"”]", match.group("preimages"))
+    ]
+    return {
+        "text_preimages": sorted(preimages, key=len, reverse=True),
+        "replacement": " ".join(match.group("replacement").split()),
+        "required_exclusions": [
+            "short_title_or_title_surfaces",
+            "words_amended_by_same_schedule_exceptions",
+            "words_inserted_by_same_act_unless_otherwise_provided",
+        ],
+    }
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -776,6 +810,36 @@ def manual_compile_suggested_claim_template(
             _referent_qualified_substitution_parts(
                 row.summary.source_extracted_text_preview or ""
             )
+        )
+        return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
+    ):
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="whole_act_listed_enactments_text_patch",
+            placement_family="listed_enactment_whole_act_scope_with_exclusions",
+            required_ownership=[
+                "source_list_membership_for_affected_act",
+                "quoted_preimage_terms",
+                "replacement_text",
+                "whole_act_text_carrier_set",
+                "same_schedule_and_same_act_exclusions",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_lists_the_affected_act_or_short_citation",
+                "claim_uses_longest_preimage_first_for_overlapping_phrases",
+                "claim_excludes_title_and_short_title_surfaces",
+                "claim_excludes_words_amended_by_named_same_schedule_paragraphs",
+                "claim_excludes_words_inserted_by_same_act_unless_otherwise_provided",
+                "changed_paths_are_within_declared_whole_act_text_carriers",
+            ],
+        )
+        template.update(
+            _whole_act_word_patch_parts(row.summary.source_extracted_text_preview or "")
         )
         return template
     if (
