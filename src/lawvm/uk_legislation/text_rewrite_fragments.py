@@ -23,6 +23,8 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID,
+    UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID,
     UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID,
     UK_FROM_BEGINNING_OMISSION_RULE_ID,
     UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID,
@@ -470,6 +472,50 @@ def append_basic_text_rewrite_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "end_occurrence": op_text_end_occurrence,
+            },
+        )
+    if UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_cease_effect_quoted_word_repeal",
+            reason=(
+                "UK source text says quoted words shall cease to have effect; "
+                "lowering treats that source verb as an explicit quoted-word "
+                "text repeal scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_cease_effect_range_to_end_repeal",
+            reason=(
+                "UK source text says a quoted range ending at the end of the "
+                "target shall cease to have effect; lowering preserves that as "
+                "a bounded TEXT_FROM_*_TO_END text repeal."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
             },
         )
     if UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID in rule_ids:

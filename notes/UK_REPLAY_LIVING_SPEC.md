@@ -4313,6 +4313,16 @@ Current bench replay-regime invariant:
 - Passive quoted-range repeals accept the same predicate form, e.g. `the words
   from "X" to "Y" shall beomitted`, lowering under
   `uk_effect_range_repeal_text_patch` after parser-only token-join cleanup.
+- UK repeal language may say quoted words or a quoted range `shall cease to
+  have effect`. Lowering treats this as an explicit text repeal only when the
+  affected effect type is a word/words repeal/omission and the selector is
+  bounded:
+  - quoted-word witness: `ukpga/1970/9` affected `s. 9(3)` by
+    `ukpga/1995/4 Sch. 29 Pt. 8 para. 14(2)`, emitting
+    `uk_effect_cease_effect_quoted_word_repeal_text_patch`
+  - range-to-end witness: `ukpga/1970/9` affected `s. 95(3)` by
+    `ukpga/1994/9 Sch. 19 para. 27(2)`, emitting
+    `uk_effect_cease_effect_range_to_end_repeal_text_patch`
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.
