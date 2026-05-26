@@ -22,6 +22,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
     UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
     UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
 )
+from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.source_definition_fragments import (
     _looks_like_appropriate_place_definition_entry_insert_text,
     _source_parent_appropriate_place_definition_entry_insert_context,
@@ -138,6 +139,43 @@ _UK_OVERLAP_ACTION_WORD_RE = re.compile(
     r"amend|amended|amending|change|changed|changing)\b",
     re.I,
 )
+
+
+def _source_payload_parent_instruction_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> dict[str, str]:
+    """Return nearest source parent instruction context for payload-only failures."""
+    payload_text = " ".join(str(extracted_text or "").split()).strip()
+    if extracted_el is None or source_root is None or not payload_text:
+        return {}
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = " ".join(
+            _instruction_text_before_amendment_container(ancestor).split()
+        ).strip()
+        context_text = instruction_text or " ".join(" ".join(ancestor.itertext()).split()).strip()
+        if not context_text or context_text == payload_text:
+            continue
+        if _UK_OVERLAP_ACTION_WORD_RE.search(context_text) is None:
+            continue
+        source_parent_id = str(ancestor.get("id") or ancestor.get("eId") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (
+                    str(candidate.get("id") or candidate.get("eId"))
+                    for candidate in ancestors[ancestor_index + 1 :]
+                    if candidate.get("id") or candidate.get("eId")
+                ),
+                "",
+            )
+        return {
+            "source_parent_id": source_parent_id,
+            "source_parent_context_preview": context_text[:500],
+        }
+    return {}
 
 
 def _unlowered_overlap_source_shape_classification(
@@ -335,6 +373,18 @@ def append_unlowered_overlap_substitution_rejection(
         )
         if lowering_rule_id == "uk_effect_overlap_substitution_unlowered":
             reason_code = unlowered_overlap_substitution_reason
+    source_payload_parent_context = (
+        _source_payload_parent_instruction_context(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if (
+            lowering_rule_id
+            == "uk_effect_source_payload_without_instruction_context_rejected"
+        )
+        else {}
+    )
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id=lowering_rule_id,
@@ -361,14 +411,14 @@ def append_unlowered_overlap_substitution_rejection(
             "source_parent_id": (
                 source_parent_appropriate_place_definition_entry.get("source_parent_id", "")
                 if source_parent_appropriate_place_definition_entry is not None
-                else ""
+                else source_payload_parent_context.get("source_parent_id", "")
             ),
             "source_parent_context_preview": (
                 source_parent_appropriate_place_definition_entry.get(
                     "source_parent_context_preview", ""
                 )
                 if source_parent_appropriate_place_definition_entry is not None
-                else ""
+                else source_payload_parent_context.get("source_parent_context_preview", "")
             ),
         },
     )
