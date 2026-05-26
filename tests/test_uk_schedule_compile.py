@@ -12385,6 +12385,148 @@ def test_compile_source_parent_grouped_table_entry_omission_rejects_deictic_chil
     )
 
 
+def test_compile_source_parent_omitted_table_entry_child_fragment() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-7-paragraph-29">
+          <Pnumber>29</Pnumber>
+          <P1para>
+            <Text>In the Table in section 98 of the Taxes Management Act 1970
+            (penalties in respect of certain information provisions)—</Text>
+            <P3 id="schedule-7-paragraph-29-a">
+              <Pnumber>a</Pnumber>
+              <P3para>
+                <Text>a in the first column, the entry relating to paragraph
+                13(1) of Schedule 3 to the Taxes Act 1988, and</Text>
+              </P3para>
+            </P3>
+            <P3 id="schedule-7-paragraph-29-b">
+              <Pnumber>b</Pnumber>
+              <P3para>
+                <Text>b in the second column, the entry relating to paragraph
+                6C of that Schedule,</Text>
+              </P3para>
+            </P3>
+            <Text>shall be omitted.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-7-paragraph-29-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_omitted_table_entry_child_fragment",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1996-04-29",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="Sch. 7 para. 29(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1996-04-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        source_root=source_root,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "paragraph 13(1) of Schedule 3 to the Taxes Act 1988"
+    )
+    assert ops[0].witness_rule_id == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+    assert selector["column_index"] == 1
+    assert selector["source_parent_id"] == "schedule-7-paragraph-29"
+    assert selector["source_parent_mode"] == "omitted_child_fragment"
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+        and record["reason_code"] == "explicit_table_column_entry_omission_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_source_parent_omitted_table_entry_child_fragment_rejects_deictic() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-7-paragraph-29">
+          <Pnumber>29</Pnumber>
+          <P1para>
+            <Text>In the Table in section 98 of the Taxes Management Act 1970
+            (penalties in respect of certain information provisions)—</Text>
+            <P3 id="schedule-7-paragraph-29-b">
+              <Pnumber>b</Pnumber>
+              <P3para>
+                <Text>b in the second column, the entry relating to paragraph
+                6C of that Schedule,</Text>
+              </P3para>
+            </P3>
+            <Text>shall be omitted.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_omitted_table_entry_child_fragment_deictic",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="1996-04-29",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="Sch. 7 para. 29(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1996-04-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        source_root=source_root,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_replay_direct_table_column_entry_omission_requires_full_cell_match() -> None:
     selector = {
         "rule_id": "uk_effect_table_column_entry_omission_text_patch",

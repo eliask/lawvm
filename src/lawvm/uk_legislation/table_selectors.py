@@ -555,7 +555,19 @@ def _uk_table_column_entry_omission_text_patch_claim(
         if match is not None:
             break
     if match is None:
-        return _uk_source_parent_table_column_entry_omission_text_patch_claim(
+        source_parent_claim = _uk_source_parent_table_column_entry_omission_text_patch_claim(
+            target_ref=target_ref,
+            target=target,
+            extracted_text=text,
+            extracted_el=extracted_el,
+            source_root=source_root,
+            target_names_table=target_names_table,
+            source_names_containing_target=source_names_containing_target,
+            source_parent_id=source_parent_id,
+        )
+        if source_parent_claim is not None:
+            return source_parent_claim
+        return _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
             target_ref=target_ref,
             target=target,
             extracted_text=text,
@@ -573,7 +585,12 @@ def _uk_table_column_entry_omission_text_patch_claim(
         return None
     column_token = match.group("column_ordinal") or match.group("column_number")
     column_index = _uk_ordinal_to_int(column_token or "")
-    entry_text = " ".join((match.group("entry") or "").split()).strip(" ,;.")
+    entry_text = re.sub(
+        r",?\s+and\s*$",
+        "",
+        " ".join((match.group("entry") or "").split()).strip(" ,;."),
+        flags=re.I,
+    ).strip(" ,;.")
     if (
         column_index is None
         or column_index < 1
@@ -662,6 +679,87 @@ def _uk_source_parent_table_column_entry_omission_text_patch_claim(
             "source_parent_id": resolved_parent_id,
             "source_parent_instruction": lead_text,
             "source_parent_mode": "grouped_entries_relating_to",
+            "table_column_entry_action": "delete_entry_text",
+            "text_patch_original": entry_text,
+            "text_patch_replacement": "",
+        }
+    return None
+
+
+def _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    target_names_table: bool,
+    source_names_containing_target: bool,
+    source_parent_id: str,
+) -> dict[str, Any] | None:
+    """Extract child fragments governed by a parent `shall be omitted` sentence."""
+    if extracted_el is None or re.search(r"\bthat\s+(?:act|schedule|column)\b", extracted_text, flags=re.I):
+        return None
+    child_text = _strip_source_row_leading_label(extracted_text, extracted_el).strip(" ,;.")
+    if (
+        not child_text
+        or re.search(r"\b(?:omit|omitted|repeal|repealed|insert|substitut)\b", child_text, flags=re.I)
+        or re.search(r"\bthat\s+(?:act|schedule|column)\b", child_text, flags=re.I)
+    ):
+        return None
+    column = (
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+        r"\s+column|column\s+(?P<column_number>\d+))"
+    )
+    match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        + column
+        + r"\b,\s*(?:the\s+)?entry\s+(?:relating\s+to|for)\s+(?P<entry>.+)$",
+        child_text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    column_token = match.group("column_ordinal") or match.group("column_number")
+    column_index = _uk_ordinal_to_int(column_token or "")
+    entry_text = re.sub(
+        r",?\s+and\s*$",
+        "",
+        " ".join((match.group("entry") or "").split()).strip(" ,;."),
+        flags=re.I,
+    ).strip(" ,;.")
+    if (
+        column_index is None
+        or column_index < 1
+        or not entry_text
+        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+    ):
+        return None
+    for ancestor in _source_ancestor_chain(source_root, extracted_el):
+        parent_text = _normalized_element_text(ancestor)
+        parent_names_target = _source_names_containing_target_for_table_cell(parent_text, target)
+        if not target_names_table and not parent_names_target:
+            continue
+        child_index = parent_text.find(child_text)
+        if child_index < 0:
+            continue
+        suffix = parent_text[child_index : child_index + 1000]
+        if re.search(r"\bshall\s+be\s+omitted\b|\bare\s+omitted\b|\bis\s+omitted\b", suffix, re.I) is None:
+            continue
+        resolved_parent_id = str(ancestor.get("id") or ancestor.get("eId") or source_parent_id)
+        return {
+            "rule_id": UK_SOURCE_PARENT_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+            "selector_mode": "unique_column_text",
+            "column_index": column_index,
+            "match_text": entry_text,
+            "match_scope": "full_cell",
+            "table_label": "",
+            "original_target": str(target),
+            "target_ref": target_ref,
+            "source_names_containing_target": source_names_containing_target or parent_names_target,
+            "source_parent_id": resolved_parent_id,
+            "source_parent_instruction": parent_text[:500],
+            "source_parent_mode": "omitted_child_fragment",
             "table_column_entry_action": "delete_entry_text",
             "text_patch_original": entry_text,
             "text_patch_replacement": "",

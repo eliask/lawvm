@@ -2839,6 +2839,13 @@ Current payload-descendant source-ref invariant:
   child lowers to the same full-cell table delete. Child rows containing
   `that Act`, `that Schedule`, or similar unresolved referents stay blocked
   rather than inheriting a guessed referent from sibling rows.
+  The same source-parent rule also covers child fragments in a parent sentence
+  like `In the Table in section 98 ... (a) in the first column, the entry
+  relating to X, and ... shall be omitted`, but only when the child itself names
+  the column, the parent names the table target, and the omitted action appears
+  after that child in the same parent source sentence. This recovery is recorded
+  with `source_parent_mode=omitted_child_fragment`; deictic child entries still
+  block.
   Repeal-table extent rows may also lower singular non-deictic column entries
   under `uk_effect_repeal_table_column_entry_text_repeal`, for example
   `In the second column of the Table in section 98, the entry for X`. The source
