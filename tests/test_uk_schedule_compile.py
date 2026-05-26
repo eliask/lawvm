@@ -34633,6 +34633,177 @@ def test_compile_source_parent_at_end_text_payload_lowers_append() -> None:
     assert observations[0]["blocking"] is False
 
 
+def test_compile_source_parent_at_end_that_section_text_payload_lowers_append() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-145-7">
+          <Pnumber>7</Pnumber>
+          <P2para>
+            <Text>At the end of subsection (3B) of that section there shall be inserted—</Text>
+            <BlockAmendment>
+              <Text>The further information required as mentioned in paragraph
+              (a) above may include, in prescribed cases, the name and address
+              of the person beneficially entitled to the interest paid or
+              received.</Text>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_at_end_that_section_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1996-04-29",
+        affected_uri="/id/ukpga/1970/9/section/18/subsection/3B",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 18(3B)",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="s. 145(7)",
+        affecting_title="Finance Act 1996",
+        in_force_dates=[{"date": "1996-04-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "18"), ("subsection", "3b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_at_end_text_insertion_patch"
+        and record["source_parent_id"] == "section-145-7"
+        for record in lowering_records
+    )
+
+
+def test_compile_source_parent_insert_at_end_text_payload_lowers_append() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-119-1-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>insert at the end</Text>
+            <BlockAmendment>
+              <Text>, and b anything else in the return that the officer has
+              reason to believe is incorrect in the light of information
+              available to the officer.</Text>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_insert_at_end_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-11-16",
+        affected_uri="/id/ukpga/1970/9/section/9ZB/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 9ZB(1)",
+        affecting_uri="/id/ukpga/2017/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="s. 119(1)(b)",
+        affecting_title="Finance (No. 2) Act 2017",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "9zb"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.replacement.startswith(", and b anything else")
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_at_end_text_insertion_patch"
+        and record["source_parent_instruction"] == "insert at the end"
+        for record in lowering_records
+    )
+
+
+def test_compile_source_parent_table_insert_at_end_text_payload_stays_blocked() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-15-paragraph-95">
+          <Pnumber>95</Pnumber>
+          <P3para>
+            <Text>In section 98 of TMA 1970, in the first column of the Table,
+            insert at the end—</Text>
+            <BlockAmendment>
+              <Text>regulations under paragraph 24 of Schedule 15 to FA 2009.</Text>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_table_insert_at_end_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-07-21",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98",
+        affecting_uri="/id/ukpga/2009/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="10",
+        affecting_provisions="Sch. 15 para. 95",
+        affecting_title="Finance Act 2009",
+        in_force_dates=[{"date": "2009-07-21", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert all(
+        record["rule_id"] != "uk_effect_source_parent_at_end_text_insertion_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_at_end_text_payload_does_not_invent_without_parent() -> None:
     extracted_el = ET.fromstring(
         f"""
