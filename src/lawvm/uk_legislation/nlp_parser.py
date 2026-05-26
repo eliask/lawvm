@@ -2418,6 +2418,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_at_end_unquoted_sentence_insert = re.finditer(
+        rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE},?\s+"
+        r"insert(?:\s+(?:the\s+)?words?)?\s+"
+        r"(?P<inserted>[A-Za-z][^.;]+?)\s*\."
+        r"(?=\s+(?:[0-9]+[A-Z]?|[a-z])\s+[A-Z]|\s*$)",
+        text,
+        re.I,
+    )
+    for m in matches_at_end_unquoted_sentence_insert:
+        inserted = m.group("inserted").strip()
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": inserted,
+                "rule_id": UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
+            }
+        )
+
     matches_insert_at_end = re.finditer(
         r"insert at the end [“\"'‘](.*?)[”\"'’]",
         text,

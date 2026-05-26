@@ -1180,6 +1180,9 @@ Current bench replay-regime invariant:
 - At-end text insertion source qualifiers may carry adjacent nested labels, such as `subsection (2)(b)`.
   Lowering treats those labels as source confirmation only; the executable target remains the explicit effect-feed target.
   Current witness: `ukpga/2006/52` affected `s. 263(2)(b)` by `ukpga/2009/25` `Sch. 17 para. 11(a)`.
+- Undashed at-end unquoted text insertions may lower under `uk_effect_at_end_unquoted_text_insertion_patch` only when the inserted sentence is bounded by an explicit source boundary, such as a following source row label.
+  The carried sibling row is not admitted into the text patch.
+  Current witness: `ukpga/2006/52` affected `s. 276(3)` by `ukpga/2008/4` `Sch. 25 para. 29(3)`.
 
 ## UK Effect Ordering
 

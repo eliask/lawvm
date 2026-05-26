@@ -46,6 +46,26 @@ def test_parse_fragment_substitution_accepts_dash_variants_outside_quotes() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_sentence_bounded_at_end_insert() -> None:
+    subs = parse_fragment_substitution(
+        "3 At the end of subsection (3) insert before the end of the period of "
+        "2 years beginning with the date on which the conviction of the person "
+        "concerned is reversed or he is pardoned. 3A But the Secretary of State "
+        "may direct that an application is late."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "before the end of the period of 2 years beginning with the date "
+                "on which the conviction of the person concerned is reversed or he is pardoned"
+            ),
+            "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_returns_fresh_fragment_dicts() -> None:
     text = 'for "old words" substitute "new words"'
     first = parse_fragment_substitution(text)
