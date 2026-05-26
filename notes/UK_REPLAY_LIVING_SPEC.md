@@ -3231,7 +3231,11 @@ Current payload-descendant source-ref invariant:
   effect by virtue of section 196 of the Finance Act 1994)`, are likewise
   ignored for affected-year and target matching; the explicit target remains the
   address before the qualifier, and the qualifier cannot authorize a different
-  target. Non-unique
+  target. Singular `the reference to X` rows lower under the sibling rule
+  `uk_effect_repeal_table_reference_text_repeal` only when the row explicitly
+  names the affected provision and exactly one reference selector; plural
+  `references to`, joined references, table-entry referents, and unresolved
+  selector shapes remain manual/frontier cases. Non-unique
   rows, whole-provision repeal clauses, entry/table structural repeals, and
   multi-action clauses remain blocking
   `uk_effect_repeal_table_quoted_words_text_repeal_unresolved` / manual
