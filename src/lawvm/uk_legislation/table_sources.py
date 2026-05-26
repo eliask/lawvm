@@ -100,6 +100,21 @@ class _UKRepealTableQuotedWordsTextRepeal:
 
 
 @dataclass(frozen=True)
+class _UKRepealTableQuotedWordsMatch:
+    table_index: int
+    original: str
+    additional_originals: tuple[str, ...]
+    occurrence: int
+    end_occurrence: int
+    rule_id: str
+    row_text: str
+    enactment_cell: str
+    extent_cell: str
+    enactment_match_basis: str
+    table_cell_selector: Optional[dict[str, Any]] = None
+
+
+@dataclass(frozen=True)
 class _UKRepealTableStructuralRepeal:
     recognized: bool
     reason_code: str = ""
@@ -663,21 +678,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
-    matches: list[
-        tuple[
-            int,
-            str,
-            tuple[str, ...],
-            int,
-            int,
-            str,
-            str,
-            str,
-            str,
-            str,
-            Optional[dict[str, Any]],
-        ]
-    ] = []
+    matches: list[_UKRepealTableQuotedWordsMatch] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
@@ -795,18 +796,18 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         )
                     continue
                 matches.append(
-                    (
-                        table_index,
-                        original,
-                        additional_originals,
-                        occurrence,
-                        end_occurrence,
-                        rule_id,
-                        " | ".join((enactment_cell, extent_clause)),
-                        enactment_cell,
-                        extent_clause,
-                        enactment_match_basis,
-                        table_cell_selector,
+                    _UKRepealTableQuotedWordsMatch(
+                        table_index=table_index,
+                        original=original,
+                        additional_originals=additional_originals,
+                        occurrence=occurrence,
+                        end_occurrence=end_occurrence,
+                        rule_id=rule_id,
+                        row_text=" | ".join((enactment_cell, extent_clause)),
+                        enactment_cell=enactment_cell,
+                        extent_cell=extent_clause,
+                        enactment_match_basis=enactment_match_basis,
+                        table_cell_selector=table_cell_selector,
                     )
                 )
 
@@ -819,34 +820,22 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             match_count=len(matches),
         )
 
-    (
-        table_index,
-        original,
-        additional_originals,
-        occurrence,
-        end_occurrence,
-        rule_id,
-        row_text,
-        enactment_cell,
-        extent_cell,
-        enactment_match_basis,
-        table_cell_selector,
-    ) = matches[0]
+    match = matches[0]
     return _UKRepealTableQuotedWordsTextRepeal(
         recognized=True,
-        original=original,
-        additional_originals=additional_originals,
-        rule_id=rule_id,
+        original=match.original,
+        additional_originals=match.additional_originals,
+        rule_id=match.rule_id,
         reason_code="",
         match_count=1,
-        table_index=table_index,
-        row_text=row_text,
-        enactment_cell=enactment_cell,
-        extent_cell=extent_cell,
-        enactment_match_basis=enactment_match_basis,
-        occurrence=occurrence,
-        end_occurrence=end_occurrence,
-        table_cell_selector=table_cell_selector,
+        table_index=match.table_index,
+        row_text=match.row_text,
+        enactment_cell=match.enactment_cell,
+        extent_cell=match.extent_cell,
+        enactment_match_basis=match.enactment_match_basis,
+        occurrence=match.occurrence,
+        end_occurrence=match.end_occurrence,
+        table_cell_selector=match.table_cell_selector,
     )
 
 
