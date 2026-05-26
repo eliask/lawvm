@@ -28,6 +28,7 @@ from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_article_schedule_payload_source_extracted,
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
+    uk_affecting_act_compound_payload_only_block_amendment_selected,
     uk_affecting_act_compound_reference_split_fallback,
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
@@ -514,6 +515,50 @@ def _source_range_child_with_context(
             return parent
         parent = context.parent_map.get(parent)
     return el
+
+
+def _compound_payload_only_amendment_container(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    el: ET.Element,
+) -> tuple[ET.Element, tuple[dict[str, Any], ...]]:
+    """Select a nested amendment payload when the source row is only a carrier label."""
+    if _tag(el) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}:
+        return el, ()
+    amendment_containers: list[ET.Element] = []
+    outside_text: list[str] = []
+
+    def _walk(node: ET.Element, *, inside_amendment: bool) -> None:
+        tag = _tag(node)
+        next_inside_amendment = inside_amendment or tag in {"BlockAmendment", "InlineAmendment"}
+        if tag in {"BlockAmendment", "InlineAmendment"}:
+            amendment_containers.append(node)
+        if not next_inside_amendment and tag not in {"Pnumber", "Number"} and node.text:
+            outside_text.append(node.text)
+        for child in node:
+            _walk(child, inside_amendment=next_inside_amendment)
+            if not next_inside_amendment and child.tail:
+                outside_text.append(child.tail)
+
+    _walk(el, inside_amendment=False)
+    if len(amendment_containers) != 1:
+        return el, ()
+    if re.search(r"[0-9A-Za-z]", " ".join(outside_text)):
+        return el, ()
+    payload = amendment_containers[0]
+    observation = uk_affecting_act_compound_payload_only_block_amendment_selected(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        source_row_tag=_tag(el),
+        source_row_id=str(el.get("id") or el.get("Id") or ""),
+        source_row_label=_clean_num(_direct_structural_num(el)),
+        payload_container_tag=_tag(payload),
+        payload_text_preview=_source_preview(_text_content(payload)),
+    )
+    return payload, (observation,)
 
 
 def _payload_source_instruction_ancestor(
@@ -1054,6 +1099,11 @@ def _extract_from_affecting_source_context_with_observations(
                         second_part,
                     )
                 if second_el is not None and second_el is not el:
+                    second_el, payload_only_observations = _compound_payload_only_amendment_container(
+                        context,
+                        effect,
+                        second_el,
+                    )
                     payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
                         context,
                         effect,
@@ -1071,6 +1121,7 @@ def _extract_from_affecting_source_context_with_observations(
                             split_el=second_el,
                         ),
                         *second_observations,
+                        *payload_only_observations,
                     )
         payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
             context,
@@ -1152,6 +1203,11 @@ def _extract_from_affecting_source_context_with_observations(
                 split_selected_part = "first"
 
         if split_el is not None:
+            split_el, payload_only_observations = _compound_payload_only_amendment_container(
+                context,
+                effect,
+                split_el,
+            )
             payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
                 context,
                 effect,
@@ -1167,7 +1223,7 @@ def _extract_from_affecting_source_context_with_observations(
                 selected_part=split_selected_part,
                 split_el=split_el,
             )
-            return split_el, (observation, *split_observations)
+            return split_el, (observation, *split_observations, *payload_only_observations)
 
     implicit_first_ref = _implicit_first_subparagraph_context_normalized_ref(provision_ref)
     if implicit_first_ref is not None:

@@ -46407,6 +46407,15 @@ def test_pipeline_compile_ops_prefers_payload_half_of_compound_source_ref(
         and row.get("split_selected_part") == "second"
         for row in diagnostics
     )
+    assert any(
+        row.get("rule_id")
+        == "uk_affecting_act_compound_payload_only_block_amendment_selected"
+        and row.get("source_row_tag") == "P3"
+        and row.get("source_row_id") == "schedule-2-paragraph-1-2-a"
+        and row.get("source_row_label") == "a"
+        and row.get("payload_container_tag") == "BlockAmendment"
+        for row in diagnostics
+    )
 
 
 def test_schedule_part_source_ref_does_not_split_to_standalone_main_part() -> None:
