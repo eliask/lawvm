@@ -32665,6 +32665,56 @@ def test_compile_crossheading_before_paragraph_replace_lowers_to_heading_patch()
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_preceding_section_replace_lowers_to_heading_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>26</Pnumber>
+          <Text>For the heading preceding section 48 substitute “Appeals”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_preceding_section_replace",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-04-01",
+        affected_uri="/id/ukpga/1970/9/section/48",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 48 cross-heading",
+        affecting_uri="/id/uksi/2009/56",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="56",
+        affecting_provisions="Sch. 1 para. 26",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2009-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "48"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
+    assert ops[0].text_patch.replacement == "Appeals"
+    assert any(
+        note == "text_rewrite_rule:uk_effect_crossheading_before_anchor_replacement_text_patch"
+        for note in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_before_anchor_replacement_lowered"
+        and record["reason_code"] == "explicit_crossheading_before_anchor_replacement"
+        and record["blocking"] is False
+        for record in observations
+    )
+
+
 def test_compile_crossheading_before_section_range_replace_lowers_to_heading_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
