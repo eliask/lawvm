@@ -4323,6 +4323,13 @@ Current bench replay-regime invariant:
   - range-to-end witness: `ukpga/1970/9` affected `s. 95(3)` by
     `ukpga/1994/9 Sch. 19 para. 27(2)`, emitting
     `uk_effect_cease_effect_range_to_end_repeal_text_patch`
+- Beginning inserts may carry parent context after the immediate child target,
+  e.g. `At the beginning of sub-paragraph (1) of paragraph 4 of that Schedule`.
+  When effects metadata already names the concrete child target, the parser
+  treats the carried parent words as source context and emits the bounded
+  `uk_effect_beginning_carried_parent_context_text_insertion_patch`; it does
+  not retarget from parser text alone. Witness: `ukpga/1970/9 Sch. 1A para.
+  4(1)` affected by `ukpga/1995/4 Sch. 20 para. 4(1)`.
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.

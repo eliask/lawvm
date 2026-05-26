@@ -6186,6 +6186,8 @@ def test_compile_additional_frontier_text_patch_idioms(
     if expected_rule_id in {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_anchor_to_end_block_substitution_text_patch",
+        "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
+        "uk_effect_range_unquoted_substitution_text_patch",
     }:
         assert lowering_rejections
         assert all(row.get("blocking") is False for row in lowering_rejections)
@@ -30409,6 +30411,60 @@ def test_compile_cease_effect_quoted_word_repeal() -> None:
         "uk_effect_cease_effect_quoted_word_repeal_text_patch"
     ]
     assert lowering_records[0]["reason_code"] == "explicit_cease_effect_quoted_word_repeal"
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_beginning_insert_with_carried_parent_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>1 At the beginning of sub-paragraph (1) of paragraph 4 of that Schedule (giving effect to claims and amendments) there shall be inserted the words \u201c Subject to sub-paragraphs (1A) and (3) below, \u201d .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_beginning_insert_with_carried_parent_context",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1995-05-01",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="Sch. 1A para. 4(1)",
+        affecting_uri="/id/ukpga/1995/4",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1995",
+        affecting_number="4",
+        affecting_provisions="Sch. 20 para. 4(1)",
+        affecting_title="Finance Act 1995",
+        in_force_dates=[{"date": "1995-05-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "1a"), ("paragraph", "4"), ("subparagraph", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_BEGINNING"
+    assert ops[0].text_patch.replacement == "Subject to sub-paragraphs (1A) and (3) below,"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_beginning_carried_parent_context_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_beginning_carried_parent_context_text_insertion_patch"
+    ]
+    assert lowering_records[0]["reason_code"] == "explicit_beginning_carried_parent_context_insert"
     assert lowering_records[0]["blocking"] is False
 
 

@@ -1331,6 +1331,22 @@ def test_parse_fragment_substitution_handles_beginning_of_subsection_insert() ->
     ]
 
 
+def test_parse_fragment_substitution_handles_beginning_insert_with_carried_parent_context() -> None:
+    subs = parse_fragment_substitution(
+        "1 At the beginning of sub-paragraph (1) of paragraph 4 of that Schedule "
+        "(giving effect to claims and amendments) there shall be inserted the "
+        "words \u201c Subject to sub-paragraphs (1A) and (3) below, \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEGINNING",
+            "replacement": "Subject to sub-paragraphs (1A) and (3) below,",
+            "rule_id": "uk_effect_beginning_carried_parent_context_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_preposed_at_end_insert() -> None:
     subs = parse_fragment_substitution(
         "1 In subsection (1A), there shall be inserted at the end the words "
