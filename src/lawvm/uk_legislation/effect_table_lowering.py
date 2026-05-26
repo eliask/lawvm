@@ -1246,6 +1246,17 @@ def prepare_table_cell_text_patch_context(
     )
     if (
         parent_target is not None
+        and selector_mode in {"unique_column_text", "unique_relating_cell"}
+        and "table" in t_str.lower()
+    ):
+        table_cell_selector = {
+            **table_cell_selector,
+            "allow_unique_descendant_table": True,
+            "table_marker_parent_target": str(parent_target),
+            "table_carrier_recovery_rule": "uk_replay_table_carrier_anchor_filtered_descendant_table",
+        }
+    if (
+        parent_target is not None
         and len(parent_target.path) >= 2
         and parent_target.path[-1] == ("subsection", "1")
         and parent_target.path[-2][0] == "section"
