@@ -484,6 +484,36 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    all_occurrences_multi_spans: list[tuple[int, int]] = []
+    matches_multi_all_occurrences_substituted = re.finditer(
+        r"for\s+(?:(?:the\s+)?words?\s+)?"
+        r"(?P<originals>[“”\"'‘].*?[”\"'’](?:\s*(?:,|and|or)\s*[“”\"'‘].*?[”\"'’])*)"
+        r",?\s+in\s+(?:each|both)\s+places?"
+        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+        r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
+        r"(?:\s*\))?,?\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+        r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_multi_all_occurrences_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
+        originals = _quoted_terms(m.group("originals"))
+        if len(originals) < 2:
+            continue
+        all_occurrences_multi_spans.append(m.span())
+        replacement = m.group("replacement")
+        for original in originals:
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+                }
+            )
+
     matches_all_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"(?:\(\s*)?in (?:each|both) places?"
@@ -496,6 +526,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         re.I,
     )
     for m in matches_all_occurrences_substituted:
+        if _span_overlaps(m.span(), all_occurrences_multi_spans):
+            continue
         subs.append(
             {
                 "original": m.group(1),
