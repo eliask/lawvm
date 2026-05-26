@@ -90,7 +90,8 @@ _SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
     r"(?:\bat\s+the\s+end(?:\s+of\s+(?:(?:that|the)\s+)?"
     r"(?:paragraph|sub-?paragraph|subsection|section)(?:\s+\([^)]+\))?"
     r"(?:\s+\([^)]*\))?(?:\s+of\s+(?:that|the)\s+section)?)?,?\s+"
-    r"(?:(?:there\s+(?:is|are|shall\s+be)\s+)?insert(?:ed)?|"
+    r"(?:(?:there\s+(?:is|are|shall\s+be)\s+)?insert(?:ed)?"
+    r"(?:\s+the\s+following\s+definition)?|"
     r"(?:there\s+(?:is|are)\s+)?added)|\binsert(?:ed)?\s+at\s+the\s+end)\s*[—–-]?\s*$",
     flags=re.I,
 )
