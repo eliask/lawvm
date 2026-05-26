@@ -140,9 +140,12 @@ def _multi_quoted_word_repeal_fragments(
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return ()
-    if not re.search(r"\bthe\s+words?\b", text, flags=re.I):
-        return ()
-    if not re.search(r"\b(?:are|is)\s+(?:repealed|omitted)\b", text, flags=re.I):
+    passive_omission = (
+        re.search(r"\bthe\s+words?\b", text, flags=re.I) is not None
+        and re.search(r"\b(?:are|is)\s+(?:repealed|omitted)\b", text, flags=re.I) is not None
+    )
+    imperative_omission = re.search(r"\b(?:omit|repeal)\s+[“\"]", text, flags=re.I) is not None
+    if not passive_omission and not imperative_omission:
         return ()
     quoted = tuple(
         match.group("curly") if match.group("curly") is not None else match.group("double")

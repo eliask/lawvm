@@ -2937,6 +2937,14 @@ Current payload-descendant source-ref invariant:
     98`) and the selector also names the table column, row relation, and text
     preimage. Otherwise table-entry wording remains a blocking
     `uk_effect_table_entry_instruction_rejected` manual-frontier row.
+  - Source-named broad section table carriers may include the carrier after the
+    table name, e.g. `in the second column of the Table in section 98, in the
+    entry relating to X, omit "Y" and "Z"`. This lowers as a
+    `uk_effect_table_entry_relating_column_text_patch` selector, preserving the
+    explicit column and relation. Multiple quoted omissions in the same
+    instruction lower as separate text deletes; accepting only the first quote
+    would silently drop operative source text. Current witness: `ukpga/1970/9`
+    `s. 98` by `ukpga/2019/1 s. 33(2)(a)`.
   - Quoted entry substitutions inside one named table column, e.g. `in the
     first column of the Table for the entry "X" there shall be substituted the
     entry "Y"`, lower under `uk_effect_table_column_entry_text_patch` as a

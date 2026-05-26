@@ -11602,6 +11602,74 @@ def test_compile_source_named_section_table_entry_column_insert_uses_owned_cell_
     )
 
 
+def test_compile_source_named_section_table_entry_column_omit_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in TMA 1970, in the second column of the Table in section 98,
+          in the entry relating to requirements imposed by provisions of CAA
+          2001, omit “45B(5) and (6),” and “, 45I(5) and (6)”,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_named_section_table_entry_column_omit",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-02-12",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98",
+        affecting_uri="/id/ukpga/2019/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2019",
+        affecting_number="1",
+        affecting_provisions="s. 33(2)(a)",
+        affecting_title="Finance Act 2019",
+        in_force_dates=[{"date": "2019-02-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 2
+    assert [op.target.path for op in ops] == [(("section", "98"),), (("section", "98"),)]
+    assert [op.text_patch.kind for op in ops if op.text_patch is not None] == [
+        TextPatchKindEnum.DELETE,
+        TextPatchKindEnum.DELETE,
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "45B(5) and (6),",
+        ", 45I(5) and (6)",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+    assert selector["selector_mode"] == "unique_relating_cell"
+    assert selector["relating_text"] == "requirements imposed by provisions of CAA 2001"
+    assert selector["column_index"] == 2
+    assert selector["source_names_containing_target"] is True
+    assert all(
+        any(tag == selector_tag for tag in op.provenance_tags)
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+        and record["reason_code"] == "explicit_table_entry_column_selector"
+        and record["containing_target"] == "section:98"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_multi_quoted_word_repeal_text_patches"
+        for record in lowering_records
+    )
+
+
 def test_compile_source_named_section_table_entry_column_insert_blocks_wrong_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -11641,8 +11709,8 @@ def test_compile_source_named_section_table_entry_column_insert_blocks_wrong_car
 
     assert ops == []
     assert any(
-        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
-        and record["reason_code"] == "table_entry_instruction_without_cell_target"
+        record["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+        and record["reason_code"] == "table_marker_parent_missing"
         and record["target_ref"] == "s. 99"
         and record["blocking"] is True
         for record in lowering_records
