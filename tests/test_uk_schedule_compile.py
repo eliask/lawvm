@@ -23061,6 +23061,98 @@ def test_compile_malformed_overlap_substitution_records_unlowered_rejection() ->
     assert "relevant words are changed" in rejection["extracted_text_preview"]
 
 
+def test_compile_payload_fragment_overlap_records_source_context_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>section 246H;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_payload_fragment_without_instruction_context",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_source_payload_without_instruction_context_rejected"
+    assert rejection["family"] == "source_extraction_context"
+    assert rejection["reason_code"] == "source_payload_without_instruction_context"
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["parser"] == "parse_fragment_substitution"
+
+
+def test_compile_mixed_structural_text_rewrite_records_split_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <Text>3 Omit subsections (4) and (4A), and in subsection (5)
+          the words from “and the reference in subsection (4)” to the end.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_structural_text_rewrite_split",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1970/9/section/42",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 42(5)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_mixed_structural_text_rewrite_rejected"
+    assert rejection["family"] == "source_payload_elaboration"
+    assert rejection["reason_code"] == "mixed_structural_and_text_rewrite_requires_split"
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_appropriate_place_definition_entry_records_specific_rejection() -> None:
     extracted_el = ET.fromstring(
         f"""

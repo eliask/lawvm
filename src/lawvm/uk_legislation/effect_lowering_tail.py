@@ -132,6 +132,55 @@ def resolve_uk_insertion_anchor_context(
     )
 
 
+_UK_OVERLAP_ACTION_WORD_RE = re.compile(
+    r"\b(?:insert|inserted|inserting|omit|omitted|omitting|repeal|repealed|"
+    r"substitute|substituted|substituting|replace|replaced|replacing|"
+    r"amend|amended|amending|change|changed|changing)\b",
+    re.I,
+)
+
+
+def _unlowered_overlap_source_shape_classification(
+    extracted_text: Optional[str],
+) -> tuple[str, str, str, str]:
+    text = " ".join(str(extracted_text or "").split()).strip()
+    lowered = text.lower()
+    if (
+        re.search(r"\bomit\s+subsections?\b", lowered)
+        and re.search(r"\bwords?\s+from\b", lowered)
+    ):
+        return (
+            "uk_effect_mixed_structural_text_rewrite_rejected",
+            "source_payload_elaboration",
+            "mixed_structural_and_text_rewrite_requires_split",
+            (
+                "UK source combines a structural repeal with a text rewrite in "
+                "one instruction; lowering requires an owned split into separate "
+                "canonical operations before replay."
+            ),
+        )
+    if text and _UK_OVERLAP_ACTION_WORD_RE.search(text) is None:
+        return (
+            "uk_effect_source_payload_without_instruction_context_rejected",
+            "source_extraction_context",
+            "source_payload_without_instruction_context",
+            (
+                "UK extracted source appears to be a payload fragment rather "
+                "than a complete operative instruction; lowering blocks instead "
+                "of replaying the fragment as a broad text patch."
+            ),
+        )
+    return (
+        "uk_effect_overlap_substitution_unlowered",
+        "lowering_filter",
+        "overlap_substitution_parse_failed",
+        (
+            "UK word-level overlap substitution lowered to no replay operations "
+            "because the source instruction could not be parsed into a safe text patch"
+        ),
+    )
+
+
 def append_unlowered_overlap_substitution_rejection(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
     *,
@@ -162,6 +211,7 @@ def append_unlowered_overlap_substitution_rejection(
     )
     if appropriate_place_definition_entry:
         lowering_rule_id = "uk_effect_appropriate_place_definition_entry_insert_rejected"
+        family = "lowering_filter"
         reason_code = "appropriate_place_definition_entry_requires_anchor_claim"
         reason = (
             "UK source inserts a definition entry at an appropriate place without "
@@ -170,6 +220,7 @@ def append_unlowered_overlap_substitution_rejection(
         )
     elif appropriate_place_insert:
         lowering_rule_id = "uk_effect_appropriate_place_insert_rejected"
+        family = "lowering_filter"
         reason_code = "appropriate_place_insert_requires_anchor_claim"
         reason = (
             "UK source inserts material at an appropriate place without naming "
@@ -177,16 +228,18 @@ def append_unlowered_overlap_substitution_rejection(
             "claim and must not infer the insertion point from live text or oracle order."
         )
     else:
-        lowering_rule_id = "uk_effect_overlap_substitution_unlowered"
-        reason_code = unlowered_overlap_substitution_reason
-        reason = (
-            "UK word-level overlap substitution lowered to no replay operations "
-            "because the source instruction could not be parsed into a safe text patch"
-        )
+        (
+            lowering_rule_id,
+            family,
+            reason_code,
+            reason,
+        ) = _unlowered_overlap_source_shape_classification(extracted_text)
+        if lowering_rule_id == "uk_effect_overlap_substitution_unlowered":
+            reason_code = unlowered_overlap_substitution_reason
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id=lowering_rule_id,
-        family="lowering_filter",
+        family=family,
         reason_code=reason_code,
         reason=reason,
         effect=effect,
