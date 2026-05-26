@@ -1852,6 +1852,44 @@ def test_classify_uk_manual_compile_frontier_marks_unresolved_repeal_table_lower
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_repeal_table_feed_source_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="",
+        extracted_tag="Part",
+        extracted_text=(
+            "Part IV Railways Reference Short title or title Extent of repeal "
+            "Transport Act 1962 In the Seventh Schedule, paragraphs 23 and 24."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_repeal_table_structural_repeal",
+                "blocking": False,
+                "extent_cell": "In the Seventh Schedule, paragraphs 23 and 24.",
+                "row_text": (
+                    "10 & 11 Eliz.2 c. 46. | Transport Act 1962. | "
+                    "In the Seventh Schedule, paragraphs 23 and 24."
+                ),
+                "target_ref": "Sch. 7 para. 23",
+            },
+            {
+                "rule_id": "uk_effect_repeal_table_quoted_words_text_repeal_unresolved",
+                "blocking": True,
+                "reason_code": "no_unique_matching_repeal_table_row",
+                "extent_cell": "",
+                "row_text": "",
+                "target_ref": "Sch. 7 para. 34",
+            },
+        ),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_repeal_table_feed_source_target_gap"
+
+
 def test_classify_uk_manual_compile_frontier_marks_as_if_application_out_of_scope() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="",

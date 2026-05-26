@@ -2981,6 +2981,17 @@ Current payload-descendant source-ref invariant:
   Repeal-table source pathology is keyed by the explicit table header, so rows
   with blank effect types still classify as repeal-table source rather than
   generic parser/extraction misses.
+  If the compiler can lower one feed-expanded target from a source-owned
+  repeal-table row but another feed-expanded target has no unique matching
+  source row, manual frontier must classify the row as
+  `uk_manual_frontier_repeal_table_feed_source_target_gap` with
+  `source_insufficient` status rather than as an executable manual lowering
+  candidate. A manual or LLM claim may not silently correct the feed target;
+  replay needs either a source-feed target correction rule or a missing-source
+  witness that owns the extra target. Current witness: `ukpga/1962/46`
+  `Sch. 7 para. 23 34` affected by `ukpga/2000/38 Sch. 31 Pt. 4`, where the
+  source row says `In the Seventh Schedule, paragraphs 23 and 24.` but the
+  effect feed expands to paragraph `23` plus paragraph `34`.
 - bounded repeal-table quoted-words rows are now owned by
   `uk_effect_repeal_table_quoted_words_text_repeal`: the compiler must match a
   unique repeal table row by affected Act identity, split only explicit extent
