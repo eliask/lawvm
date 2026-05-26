@@ -66,6 +66,7 @@ from lawvm.uk_legislation.table_sources import (
 )
 from lawvm.uk_legislation.table_selectors import (
     _uk_table_column_entry_text_patch_claim,
+    _uk_table_entry_text_patch_claim,
     _uk_table_target_column_text_patch_claim,
 )
 from lawvm.uk_legislation.text_rewrite_fragments import (
@@ -444,6 +445,22 @@ def _extract_text_fragment_substitutions(
                     "table_column_entry_action": str(
                         table_column_entry_text_patch["table_column_entry_action"]
                     ),
+                }
+            ]
+    if not subs:
+        table_entry_text_patch = _uk_table_entry_text_patch_claim(
+            target_ref=target_ref,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if table_entry_text_patch is not None:
+            subs = [
+                {
+                    "original": str(table_entry_text_patch["text_patch_original"]),
+                    "replacement": str(table_entry_text_patch["text_patch_replacement"]),
+                    "rule_id": str(table_entry_text_patch["rule_id"]),
+                    "match_text": str(table_entry_text_patch["match_text"]),
+                    "table_entry_action": str(table_entry_text_patch["table_entry_action"]),
                 }
             ]
     if not subs:

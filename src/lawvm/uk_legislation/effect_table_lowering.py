@@ -1130,7 +1130,7 @@ def prepare_table_cell_text_patch_context(
     parent_target = (
         target
         if (
-            selector_mode in {"unique_column_text", "unique_entry_cell"}
+            selector_mode in {"unique_column_text", "unique_entry_cell", "unique_table_text"}
             or (
                 selector_mode == "unique_relating_cell"
                 and bool(table_cell_selector.get("source_names_containing_target"))
@@ -1176,6 +1176,8 @@ def prepare_table_cell_text_patch_context(
         reason_code=(
             "explicit_table_column_preimage_selector"
             if selector_mode == "unique_column_text"
+            else "explicit_table_entry_preimage_selector"
+            if selector_mode == "unique_table_text"
             else "source_parent_table_entry_paragraph_selector"
             if selector_mode == "unique_entry_cell"
             else "explicit_table_entry_column_selector"

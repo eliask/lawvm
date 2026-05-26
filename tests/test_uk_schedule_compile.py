@@ -12461,6 +12461,184 @@ def test_compile_table_column_entry_substitution_uses_owned_cell_selector() -> N
     )
 
 
+def test_compile_table_entry_substitution_uses_unique_table_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a for the entry “section 552(1) to (4);”
+          substitute “ section 552; ” ; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_text_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2001/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="9",
+        affecting_provisions="Sch. 28 para. 20(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "section 552(1) to (4);"
+    assert ops[0].text_patch.replacement == "section 552;"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_text_patch"
+    assert selector["selector_mode"] == "unique_table_text"
+    assert selector["match_text"] == "section 552(1) to (4);"
+    assert selector["table_entry_action"] == "replace_entry_text"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_text_patch"
+        and record["reason_code"] == "explicit_table_entry_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_table_entry_text_patch_mutates_unique_cell() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_text_patch",
+        "selector_mode": "unique_table_text",
+        "match_text": "section 552(1) to (4);",
+        "target_ref": "s. 98 Table",
+        "original_target": "section:98/table:Table",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_text_patch",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "98"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="section 552(1) to (4);", occurrence=0),
+            replacement="section 552;",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="section 552(1) to (4);"),
+                                        IRNode(kind=IRNodeKind.CELL, text="first row extent"),
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="regulations under section 552(4A)"),
+                                        IRNode(kind=IRNodeKind.CELL, text="second row extent"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0]
+    assert table.children[0].children[0].text == "section 552;"
+    assert table.children[1].children[0].text == "regulations under section 552(4A)"
+
+
+def test_replay_table_entry_text_patch_requires_whole_cell_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_text_patch",
+        "selector_mode": "unique_table_text",
+        "match_text": "section 552(1) to (4);",
+        "target_ref": "s. 98 Table",
+        "original_target": "section:98/table:Table",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_text_patch_partial_cell",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "98"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="section 552(1) to (4);", occurrence=0),
+            replacement="section 552;",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.CELL,
+                                            text="see section 552(1) to (4); and section 553;",
+                                        ),
+                                        IRNode(kind=IRNodeKind.CELL, text="extent"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0]
+    assert table.children[0].children[0].text == "see section 552(1) to (4); and section 553;"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_table_entry_inline_text_insertion_unresolved"
+    ]
+    assert adjudications[0].detail["reason_code"] == "cell_text_not_found"
+
+
 def test_compile_table_column_after_entry_insert_remains_blocked_without_row_model() -> None:
     extracted_el = ET.fromstring(
         f"""
