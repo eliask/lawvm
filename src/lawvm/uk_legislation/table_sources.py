@@ -143,6 +143,47 @@ class _UKRepealTableParentChildTextRepealSplit:
     enactment_match_basis: str = ""
 
 
+@dataclass(frozen=True)
+class _UKRepealTableParentChildTextRepealMatch:
+    table_index: int
+    row_text: str
+    enactment_cell: str
+    extent_cell: str
+    enactment_match_basis: str
+    structural_target: LegalAddress
+    text_selectors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _UKRepealTableStructuralMatch:
+    table_index: int
+    row_text: str
+    enactment_cell: str
+    extent_cell: str
+    enactment_match_basis: str
+    reason_code: str = ""
+    mixed_word_selector: str = ""
+
+
+@dataclass(frozen=True)
+class _UKRepealTableMixedStructuralWordMatch:
+    table_index: int
+    row_text: str
+    enactment_cell: str
+    extent_cell: str
+    enactment_match_basis: str
+
+
+@dataclass(frozen=True)
+class _UKRepealTableBroadContainerMatch:
+    table_index: int
+    row_text: str
+    enactment_cell: str
+    extent_cell: str
+    enactment_match_basis: str
+    broad_container_target: str
+
+
 def _strip_outer_uk_quotes(text: str) -> str:
     stripped = " ".join(text.split()).strip()
     quote_pairs = (("\u201c", "\u201d"), ("\u2018", "\u2019"), ('"', '"'), ("'", "'"))
@@ -1053,9 +1094,7 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
     if not tables:
         return _UKRepealTableParentChildTextRepealSplit(recognized=False)
 
-    matches: list[
-        tuple[int, str, str, str, str, LegalAddress, tuple[str, ...]]
-    ] = []
+    matches: list[_UKRepealTableParentChildTextRepealMatch] = []
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
         last_enactment_cell = ""
@@ -1121,14 +1160,14 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
                 if not text_selectors:
                     continue
                 matches.append(
-                    (
-                        table_index,
-                        " | ".join((enactment_cell, extent_clause)),
-                        enactment_cell,
-                        extent_clause,
-                        enactment_match_basis,
-                        structural_target,
-                        tuple(text_selectors),
+                    _UKRepealTableParentChildTextRepealMatch(
+                        table_index=table_index,
+                        row_text=" | ".join((enactment_cell, extent_clause)),
+                        enactment_cell=enactment_cell,
+                        extent_cell=extent_clause,
+                        enactment_match_basis=enactment_match_basis,
+                        structural_target=structural_target,
+                        text_selectors=tuple(text_selectors),
                     )
                 )
 
@@ -1140,27 +1179,19 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
             reason_code="no_unique_parent_child_text_repeal_row",
             match_count=len(matches),
         )
-    (
-        table_index,
-        row_text,
-        enactment_cell,
-        extent_cell,
-        enactment_match_basis,
-        structural_target,
-        text_selectors,
-    ) = matches[0]
+    match = matches[0]
     return _UKRepealTableParentChildTextRepealSplit(
         recognized=True,
         parent_target=target,
-        structural_target=structural_target,
-        text_selectors=text_selectors,
+        structural_target=match.structural_target,
+        text_selectors=match.text_selectors,
         reason_code="parent_target_child_structural_and_text_repeal_split",
         match_count=1,
-        table_index=table_index,
-        row_text=row_text,
-        enactment_cell=enactment_cell,
-        extent_cell=extent_cell,
-        enactment_match_basis=enactment_match_basis,
+        table_index=match.table_index,
+        row_text=match.row_text,
+        enactment_cell=match.enactment_cell,
+        extent_cell=match.extent_cell,
+        enactment_match_basis=match.enactment_match_basis,
     )
 
 
@@ -1189,9 +1220,9 @@ def _uk_table_driven_repeal_table_structural_repeal(
     if not search_roots:
         return _UKRepealTableStructuralRepeal(recognized=False)
 
-    matches: list[tuple[int, str, str, str, str, str, str]] = []
-    mixed_structural_word_matches: list[tuple[int, str, str, str, str]] = []
-    broad_container_matches: list[tuple[int, str, str, str, str, str]] = []
+    matches: list[_UKRepealTableStructuralMatch] = []
+    mixed_structural_word_matches: list[_UKRepealTableMixedStructuralWordMatch] = []
+    broad_container_matches: list[_UKRepealTableBroadContainerMatch] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
         return _UKRepealTableStructuralRepeal(recognized=False)
@@ -1276,13 +1307,13 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         extent_clause
                     ) and broad_container_target:
                         broad_container_matches.append(
-                            (
-                                table_index,
-                                " | ".join((enactment_cell, extent_clause)),
-                                enactment_cell,
-                                extent_clause,
-                                enactment_match_basis,
-                                broad_container_target,
+                            _UKRepealTableBroadContainerMatch(
+                                table_index=table_index,
+                                row_text=" | ".join((enactment_cell, extent_clause)),
+                                enactment_cell=enactment_cell,
+                                extent_cell=extent_clause,
+                                enactment_match_basis=enactment_match_basis,
+                                broad_container_target=broad_container_target,
                             )
                         )
                     continue
@@ -1304,14 +1335,14 @@ def _uk_table_driven_repeal_table_structural_repeal(
                         )
                         if mixed_word_selector:
                             matches.append(
-                                (
-                                    table_index,
-                                    " | ".join((enactment_cell, extent_clause)),
-                                    enactment_cell,
-                                    extent_clause,
-                                    enactment_match_basis,
-                                    "mixed_structural_and_word_repeal_split",
-                                    mixed_word_selector,
+                                _UKRepealTableStructuralMatch(
+                                    table_index=table_index,
+                                    row_text=" | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell=enactment_cell,
+                                    extent_cell=extent_clause,
+                                    enactment_match_basis=enactment_match_basis,
+                                    reason_code="mixed_structural_and_word_repeal_split",
+                                    mixed_word_selector=mixed_word_selector,
                                 )
                             )
                         elif _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
@@ -1319,41 +1350,39 @@ def _uk_table_driven_repeal_table_structural_repeal(
                             target=target,
                         ):
                             matches.append(
-                                (
-                                    table_index,
-                                    " | ".join((enactment_cell, extent_clause)),
-                                    enactment_cell,
-                                    extent_clause,
-                                    enactment_match_basis,
-                                    "mixed_structural_and_word_repeal_split_structural_target",
-                                    "",
+                                _UKRepealTableStructuralMatch(
+                                    table_index=table_index,
+                                    row_text=" | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell=enactment_cell,
+                                    extent_cell=extent_clause,
+                                    enactment_match_basis=enactment_match_basis,
+                                    reason_code="mixed_structural_and_word_repeal_split_structural_target",
                                 )
                             )
                         else:
                             mixed_structural_word_matches.append(
-                                (
-                                    table_index,
-                                    " | ".join((enactment_cell, extent_clause)),
-                                    enactment_cell,
-                                    extent_clause,
-                                    enactment_match_basis,
+                                _UKRepealTableMixedStructuralWordMatch(
+                                    table_index=table_index,
+                                    row_text=" | ".join((enactment_cell, extent_clause)),
+                                    enactment_cell=enactment_cell,
+                                    extent_cell=extent_clause,
+                                    enactment_match_basis=enactment_match_basis,
                                 )
                             )
                     continue
                 matches.append(
-                    (
-                        table_index,
-                        " | ".join((enactment_cell, extent_clause)),
-                        enactment_cell,
-                        extent_clause,
-                        enactment_match_basis,
-                        container_except_reason_code
+                    _UKRepealTableStructuralMatch(
+                        table_index=table_index,
+                        row_text=" | ".join((enactment_cell, extent_clause)),
+                        enactment_cell=enactment_cell,
+                        extent_cell=extent_clause,
+                        enactment_match_basis=enactment_match_basis,
+                        reason_code=container_except_reason_code
                         or (
                             "source_repeal_schedule_structural_repeal"
                             if source_supplies_repeal_action
                             else ""
                         ),
-                        "",
                     )
                 )
 
@@ -1366,42 +1395,29 @@ def _uk_table_driven_repeal_table_structural_repeal(
         ):
             return _UKRepealTableStructuralRepeal(recognized=False)
         if not matches and len(mixed_structural_word_matches) == 1:
-            (
-                table_index,
-                row_text,
-                enactment_cell,
-                extent_cell,
-                enactment_match_basis,
-            ) = mixed_structural_word_matches[0]
+            mixed_match = mixed_structural_word_matches[0]
             return _UKRepealTableStructuralRepeal(
                 recognized=True,
                 reason_code="mixed_structural_and_word_repeal_requires_split",
                 match_count=0,
-                table_index=table_index,
-                row_text=row_text,
-                enactment_cell=enactment_cell,
-                extent_cell=extent_cell,
-                enactment_match_basis=enactment_match_basis,
+                table_index=mixed_match.table_index,
+                row_text=mixed_match.row_text,
+                enactment_cell=mixed_match.enactment_cell,
+                extent_cell=mixed_match.extent_cell,
+                enactment_match_basis=mixed_match.enactment_match_basis,
             )
         if not matches and len(broad_container_matches) == 1:
-            (
-                table_index,
-                row_text,
-                enactment_cell,
-                extent_cell,
-                enactment_match_basis,
-                broad_container_target,
-            ) = broad_container_matches[0]
+            broad_match = broad_container_matches[0]
             return _UKRepealTableStructuralRepeal(
                 recognized=True,
                 reason_code="broad_container_repeal_requires_grouped_feed_compilation",
                 match_count=0,
-                table_index=table_index,
-                row_text=row_text,
-                enactment_cell=enactment_cell,
-                extent_cell=extent_cell,
-                enactment_match_basis=enactment_match_basis,
-                broad_container_target=broad_container_target,
+                table_index=broad_match.table_index,
+                row_text=broad_match.row_text,
+                enactment_cell=broad_match.enactment_cell,
+                extent_cell=broad_match.extent_cell,
+                enactment_match_basis=broad_match.enactment_match_basis,
+                broad_container_target=broad_match.broad_container_target,
             )
         return _UKRepealTableStructuralRepeal(
             recognized=True,
@@ -1409,25 +1425,17 @@ def _uk_table_driven_repeal_table_structural_repeal(
             match_count=len(matches),
         )
 
-    (
-        table_index,
-        row_text,
-        enactment_cell,
-        extent_cell,
-        enactment_match_basis,
-        reason_code,
-        mixed_word_selector,
-    ) = matches[0]
+    match = matches[0]
     return _UKRepealTableStructuralRepeal(
         recognized=True,
-        reason_code=reason_code,
+        reason_code=match.reason_code,
         match_count=1,
-        table_index=table_index,
-        row_text=row_text,
-        enactment_cell=enactment_cell,
-        extent_cell=extent_cell,
-        enactment_match_basis=enactment_match_basis,
-        mixed_word_selector=mixed_word_selector,
+        table_index=match.table_index,
+        row_text=match.row_text,
+        enactment_cell=match.enactment_cell,
+        extent_cell=match.extent_cell,
+        enactment_match_basis=match.enactment_match_basis,
+        mixed_word_selector=match.mixed_word_selector,
     )
 
 
