@@ -1796,6 +1796,13 @@ Current block-substitution context invariant:
   choose one action family or flatten the parent to make progress. Current
   witness: `ukpga/1970/9` `s. 42(5)` by `ukpga/1998/36`
   `Sch. 19 para. 20(3)`.
+- table-entry/list placement inserts such as `at the end insert`, `after the
+  final entry insert`, and `before the entry for X insert` record
+  `uk_effect_table_entry_placement_insert_rejected` unless a table compiler
+  owns the row/cell placement. This preserves the canonical insertion action
+  without fabricating rows or appending entry text to the broad table carrier.
+  Current witnesses include `ukpga/1970/9` `s. 98 Table` by `ukpga/2002/23`
+  `Sch. 33 para. 15` and by `ukpga/2010/8` `Sch. 7 para. 18(3)`.
 - secondary legislation references like `reg.` / `regs.` must preserve
   `regulation` identity during affecting-source extraction; normalizing them to
   `section` is a target-kind mutation, not a harmless parser shortcut

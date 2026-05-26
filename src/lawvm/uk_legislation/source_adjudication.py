@@ -1963,6 +1963,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source combines structural and text mutations; a future compiler must split and witness each canonical operation before replay.",
         }
 
+    if "uk_effect_table_entry_placement_insert_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_entry_placement_insert",
+            "reason": "The source inserts material into a table entry/list position; a claim or future table compiler must prove the row/cell placement and preserve unclaimed table structure.",
+        }
+
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and any(

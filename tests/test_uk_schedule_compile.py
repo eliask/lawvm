@@ -23153,6 +23153,55 @@ def test_compile_mixed_structural_text_rewrite_records_split_rejection() -> None
     assert rejection["strict_disposition"] == "block"
 
 
+def test_compile_table_entry_placement_insert_records_specific_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>15</Pnumber>
+          <P1para>
+            <Text>15 In each column of the Table in section 98 of the Taxes
+            Management Act 1970 (c. 9), after the final entry insert
+            “Regulations under Schedule 33 to the Finance Act 2002.”.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_placement_insert_rejected",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_placement_insert_rejected"
+    assert rejection["family"] == "source_table_elaboration"
+    assert rejection["reason_code"] == "table_entry_insert_requires_row_or_cell_placement_model"
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_appropriate_place_definition_entry_records_specific_rejection() -> None:
     extracted_el = ET.fromstring(
         f"""
