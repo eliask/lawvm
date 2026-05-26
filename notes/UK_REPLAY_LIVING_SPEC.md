@@ -2266,6 +2266,16 @@ Current payload-descendant source-ref invariant:
   using `uk_effect_grouped_anchor_occurrence_substitution_text_patch`, with a
   `source_context_elaboration` observation. Current witnesses: `asp/2000/4`
   affected `Sch. 1 para. 1` by `ssi/2011/211` `Sch. 1 para. 8(4)(a)(i)-(ii)`.
+- parent-list substitutions may also carry the quoted old/new names in a parent
+  instruction while child rows identify only the target provisions. The form
+  `In each provision specified ... for "A" or, as the case may be, "B" there is
+  substituted "C"` lowers under
+  `uk_effect_source_parent_each_provision_substitution_text_patch` as one
+  all-occurrences text patch per quoted preimage, scoped to the effect-feed
+  target. It must not expand to sibling target rows on its own; each effect row
+  still supplies its own target. Current witnesses: `ukpga/1996/61` Schedule 6
+  paragraph 27(4) and Schedule 14 paragraph 7(4), affected by `ukpga/2000/37`
+  Schedule 8 paragraph 1(u)(i)-(ii).
 - `after "X", on each occasion where it appears, insert "Y"` is an explicit
   all-occurrences insertion and lowers to the same target-scoped all-occurrences
   text-patch semantics as `in each place it occurs`, using

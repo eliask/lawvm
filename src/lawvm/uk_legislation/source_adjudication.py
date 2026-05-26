@@ -392,6 +392,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved",
         "uk_replay_source_anchored_order_observed",
         "uk_replay_source_carried_table_entry_paragraph_substitution_resolved",
+        "uk_effect_source_parent_each_provision_substitution_text_patch",
         "uk_replay_table_entry_multi_cell_text_patch_resolved",
         "uk_replay_source_label_changing_substitution_resolved",
         "uk_replay_source_carried_after_child_text_rewrite_applied",

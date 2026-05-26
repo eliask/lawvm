@@ -111,6 +111,7 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_source_parent_each_provision_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
 )
