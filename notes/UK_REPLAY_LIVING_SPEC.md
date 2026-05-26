@@ -3226,6 +3226,17 @@ Current payload-descendant source-ref invariant:
   frontier cases. This is a source-table elaboration rule, not a replay
   fallback, and its observation records the enactment cell, extent clause, and
   selected quoted/range preimage plus occurrence metadata.
+  A narrower flattened-source variant is owned by
+  `uk_effect_flat_repeal_schedule_quoted_words_text_repeal`: when publisher XML
+  has lost the table row shape but the schedule text still contains exactly one
+  target-matching clause like `In section 98 ... Table the words "..."`, the
+  compiler may lower the quoted delete only if nearby preceding text names the
+  affected enactment by exact short citation/title. The observation records
+  `enactment_match_basis=flat_preceding_context_*`. If the affected enactment
+  context is absent, multiple clauses match, or the clause is only a table-entry
+  placement/referent problem, the row remains unresolved/manual; the rule must
+  not treat flattened schedule text as authority to delete a whole row, host
+  table, or unrelated provision.
 - bounded repeal-table whole-provision rows are owned by
   `uk_effect_repeal_table_structural_repeal`: the compiler must match the same
   unique affected-Act row and an extent clause that explicitly names the exact
