@@ -24885,6 +24885,76 @@ def test_compile_table_column_at_end_row_insert() -> None:
     )
 
 
+def test_compile_source_parent_table_column_at_end_block_payload_inserted() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-5-paragraph-1">
+              <Pnumber>1</Pnumber>
+              <P1para>
+                <Text>In the Table in section 98 of the Taxes Management Act
+                1970, at the end of the second column there is inserted\u2014</Text>
+                <BlockAmendment id="schedule-5-paragraph-1-block">
+                  <Para><Text>Section 110ZA of the Social Security Administration Act 1992.</Text></Para>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_table_column_at_end_block_inserted",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1999-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/uksi/1999/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1999",
+        affecting_number="1",
+        affecting_provisions="Sch. 5 para. 1",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "1999-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert [cell.text for cell in ops[0].payload.children] == [
+        "",
+        "Section 110ZA of the Social Security Administration Act 1992",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_final_entry"
+    assert selector["column_index"] == 2
+    assert selector["source_parent_id"] == "schedule-5-paragraph-1"
+    assert selector["source_parent_instruction"].endswith("there is inserted\u2014")
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["source_parent_id"] == "schedule-5-paragraph-1"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_column_at_end_list_rows_insert() -> None:
     source_root = ET.fromstring(
         f"""
