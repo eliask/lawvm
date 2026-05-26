@@ -31857,6 +31857,50 @@ def test_compile_where_occurs_ordinal_substitution_preserves_bounded_occurrence(
     )
 
 
+def test_compile_parenthesized_where_ordinal_substitution_preserves_bounded_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-21-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in subsection (1), for \u201cofficers\u201d (where it first occurs) substitute \u201c persons \u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-38cfa3c9c827410aeafd7d463511d221",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/365/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 365(1)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="s. 21(a)",
+        affecting_title="Armed Forces Act 2011",
+        in_force_dates=[{"date": "2016-12-23", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "365"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "officers"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "persons"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_where_ordinal_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_the_ordinal_substitution_preserves_bounded_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -614,6 +614,22 @@ def test_parse_fragment_substitution_handles_where_occurs_ordinal_substitution()
     ]
 
 
+def test_parse_fragment_substitution_handles_parenthesized_where_ordinal_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (1), for \u201cofficers\u201d (where it first occurs) "
+        "substitute \u201c persons \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "officers",
+            "replacement": "persons",
+            "occurrence": "1",
+            "rule_id": "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_passive_ordinal_place_substitution_with_words_wrapper() -> None:
     subs = parse_fragment_substitution(
         "b for the words \u201cthe trustee\u201d, in the first place where they occur, "

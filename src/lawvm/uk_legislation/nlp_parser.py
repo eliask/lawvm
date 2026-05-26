@@ -681,6 +681,26 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_parenthesized_post_quoted_where_ordinal_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’]\s+"
+        r"\(\s*where\s+(?:(?:it|they|those words?)\s+)?"
+        r"(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs?|occurring|appears?)\s*\)\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+        r"\s+[“”\"'‘](.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_parenthesized_post_quoted_where_ordinal_substituted:
+        subs.append(
+            {
+                "original": m.group(1).strip(),
+                "replacement": m.group(3).strip(),
+                "occurrence": _ORDINAL_OCCURRENCES[m.group(2).lower()],
+                "rule_id": "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+            }
+        )
+
     matches_post_quoted_where_ordinal_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](?P<original>.*?)[”\"'’],?\s+"
         r"where\s+(?:(?:it|they|those words?)\s+)?"
