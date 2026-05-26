@@ -728,6 +728,48 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    entry_for_insert_match = re.search(
+        r"\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+"
+        r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<anchor>.+?)\s+"
+        r"insert(?:ed)?\s*[—–-]?\s*(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    entry_for_source_names_column = re.search(
+        r"\b(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|column\s+\d+)\b",
+        text,
+        re.I,
+    )
+    entry_for_source_names_each_column = re.search(
+        r"\beach\s+(?:of\s+the\s+)?columns?\b",
+        text,
+        re.I,
+    )
+    if (
+        entry_for_insert_match is not None
+        and entry_for_source_names_column is None
+        and entry_for_source_names_each_column is None
+    ):
+        relating_text = " ".join(entry_for_insert_match.group("anchor").split()).strip(
+            " ,;.“”\"'‘’"
+        )
+        inserted_text = _strip_schedule_entry_payload(
+            entry_for_insert_match.group("payload")
+        )
+        if relating_text and inserted_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "relating_entry",
+                "direction": entry_for_insert_match.group("direction").lower(),
+                "column_index": 1,
+                "entry_index": 1,
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     numbered_target_table_match = re.search(
         r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
         r"insert(?:ed)?\s*[—–-]?",
