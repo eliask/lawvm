@@ -2776,6 +2776,12 @@ Current payload-descendant source-ref invariant:
   in the named column whose earlier columns match `X`; relating-entry selectors
   require exactly one row whose cell text matches `X`; entry-label selectors
   require exactly one row whose first logical cell is the explicit anchor label.
+  If the containing provision has multiple descendant tables, a `column_entry`
+  selector may recover the carrier only when exactly one candidate table
+  contains exactly one row matching the source-named column anchor; this records
+  `table_carrier=anchor_filtered_descendant_table`. Zero or multiple matching
+  candidate tables remain unresolved, so table ambiguity is not resolved by
+  Python list order.
   Deictic `after that entry insert-` may also carry a single logical entry
   group encoded as multiple physical source rows, but only when the first source
   cell rowspans across every source row; replay records

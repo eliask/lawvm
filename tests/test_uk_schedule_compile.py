@@ -26382,6 +26382,103 @@ def test_replay_table_column_entry_row_insert_blocks_multiple_descendant_tables(
     assert unresolved.detail["blocking"] is True
 
 
+def test_replay_table_column_entry_row_insert_anchor_filters_descendant_tables() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_entry",
+        "direction": "after",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "Schedule 15B, paragraph 5(2);",
+        "inserted_text": "Schedule 15B, paragraph 5(3);",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_entry_row_insert_anchor_filtered_descendant",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(IRNode(kind=IRNodeKind.CELL, text="Schedule 15B, paragraph 5(3);"),),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="section 124(3);",
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="Schedule 15B, paragraph 5(2);",
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    first_table = replayed.body.children[0].children[0].children[0]
+    second_table = replayed.body.children[0].children[1].children[0]
+    assert [row.children[0].text for row in first_table.children] == ["section 124(3);"]
+    assert [row.children[0].text for row in second_table.children] == [
+        "Schedule 15B, paragraph 5(2);",
+        "Schedule 15B, paragraph 5(3);",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["table_carrier"] == "anchor_filtered_descendant_table"
+    assert adjudications[0].detail["candidate_table_count"] == 2
+    assert adjudications[0].detail["blocking"] is False
+
+
 def test_replay_table_column_final_entry_row_insert_appends_after_last_column_cell() -> None:
     selector = {
         "rule_id": "uk_effect_table_entry_row_insert",

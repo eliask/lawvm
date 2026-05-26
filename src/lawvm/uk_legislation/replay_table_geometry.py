@@ -298,9 +298,58 @@ def resolve_uk_table_entry_row_insert_index(
 
     tables, carrier_detail = uk_table_selector_tables(node, selector)
     if len(tables) != 1:
-        return None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-    table = tables[0]
+        if selector_mode == "column_entry":
+            anchor_table_matches: list[tuple[UKMutableNode, tuple[tuple[int, str], ...]]] = []
+            for candidate_table in tables:
+                candidate_rows = expanded_uk_table_rows_with_physical_index(candidate_table)
+                candidate_matches: list[tuple[int, str]] = []
+                last_candidate_cell: UKMutableNode | None = None
+                for row_index, row_cells in candidate_rows:
+                    target_cell = row_cells.get(column_index)
+                    if target_cell is None:
+                        continue
+                    if _compact_normalized_text(target_cell.text or "").find(relating_norm) < 0:
+                        continue
+                    if target_cell is last_candidate_cell:
+                        continue
+                    last_candidate_cell = target_cell
+                    candidate_matches.append(
+                        (
+                            row_index if direction == "before" else row_index + 1,
+                            " | ".join(
+                                str(row_cells[col].text or "")
+                                for col in sorted(row_cells)
+                                if str(row_cells[col].text or "")
+                            )[:240],
+                        )
+                    )
+                if candidate_matches:
+                    anchor_table_matches.append((candidate_table, tuple(candidate_matches)))
+            if len(anchor_table_matches) == 1 and len(anchor_table_matches[0][1]) == 1:
+                table = anchor_table_matches[0][0]
+                carrier_detail = {
+                    **carrier_detail,
+                    "table_carrier": "anchor_filtered_descendant_table",
+                    "candidate_table_count": len(tables),
+                    "anchor_filtered_table_count": 1,
+                }
+            else:
+                return None, None, "table_not_unique", {
+                    "table_count": len(tables),
+                    "anchor_filtered_table_count": len(anchor_table_matches),
+                    "anchor_filtered_matches": tuple(
+                        {
+                            "matching_entry_count": len(matches),
+                            "matching_rows": tuple(row for _index, row in matches[:5]),
+                        }
+                        for _table, matches in anchor_table_matches[:5]
+                    ),
+                    **carrier_detail,
+                }
+        else:
+            return None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+    else:
+        table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
     if selector_mode == "each_column_final_entry":
         column_count = max((max(row_cells) for _row_index, row_cells in expanded_rows if row_cells), default=0)
