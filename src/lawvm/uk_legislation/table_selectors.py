@@ -1076,6 +1076,33 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    each_column_final_entry_insert_match = re.search(
+        r"\bin\s+each\s+column\s+of\s+(?:the\s+)?table\b"
+        r".*?\bafter\s+(?:the\s+)?final\s+entry\s+"
+        r"(?:insert(?:ed)?|there\s+(?:shall\s+be|is|are)\s+inserted)\s*[—–-]?\s*"
+        r"(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if each_column_final_entry_insert_match is not None:
+        inserted_text = _strip_schedule_entry_payload(
+            each_column_final_entry_insert_match.group("payload")
+        )
+        if inserted_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "each_column_final_entry",
+                "direction": "after",
+                "column_index": 1,
+                "entry_index": 1,
+                "relating_text": "final entry",
+                "inserted_text": inserted_text,
+                "source_payload_mode": "each_column_entry_text",
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     if implicit_subsection_entry_group is not None and not source_names_table:
         relating_text = " ".join(implicit_subsection_entry_group.group("relating").split()).strip(" ,;.")
         inserted_text = _strip_schedule_entry_payload(implicit_subsection_entry_group.group("payload"))

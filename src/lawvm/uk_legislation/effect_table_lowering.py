@@ -312,7 +312,7 @@ def try_lower_table_row_insert(
     if (
         parent_target is not None
         and str(table_row_insert_selector.get("selector_mode") or "")
-        in {"column_entry", "column_final_entry"}
+        in {"column_entry", "column_final_entry", "each_column_final_entry"}
         and bool(table_row_insert_selector.get("source_names_table"))
     ):
         table_row_insert_selector = {
@@ -1386,6 +1386,28 @@ def _table_row_insert_payload(
                     }
                 ),
             },
+        )
+
+    if str(selector.get("source_payload_mode") or "") == "each_column_entry_text":
+        return IRNode(
+            kind=IRNodeKind.ROW,
+            label=None,
+            attrs={
+                "source_rule_id": "uk_table_entry_row_insert_payload",
+                "target_column_scope": "each_column",
+                "relating_text": str(selector["relating_text"]),
+            },
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CELL,
+                    label=None,
+                    text=str(selector["inserted_text"]),
+                    attrs={
+                        "source_rule_id": "uk_table_entry_row_insert_cell",
+                        "column_scope": "each_column",
+                    },
+                ),
+            ),
         )
 
     column_index = int(selector["column_index"])

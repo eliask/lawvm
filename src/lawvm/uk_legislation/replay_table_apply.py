@@ -281,6 +281,44 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
+        if str(selector.get("source_payload_mode") or "") == "each_column_entry_text":
+            table_column_count = int(detail.get("table_column_count") or 0)
+            if table_column_count < 1 or len(inserted_rows) != 1 or len(inserted_rows[0].children) != 1:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay could not expand an each-column table-row "
+                        "insertion from a single source-owned cell."
+                    ),
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(
+                        op,
+                        target,
+                        selector=dict(selector),
+                        reason_code="each_column_payload_not_single_cell",
+                        table_column_count=table_column_count,
+                        payload_row_count=len(inserted_rows),
+                        payload_cell_count=len(inserted_rows[0].children) if inserted_rows else 0,
+                        family="source_table_elaboration",
+                    ),
+                )
+                return False
+            source_cell = inserted_rows[0].children[0]
+            expanded_cells: list[UKMutableNode] = []
+            for column_index in range(1, table_column_count + 1):
+                cell = UKMutableNode.from_irnode(source_cell.to_irnode())
+                cell.attrs = {**dict(cell.attrs), "column_index": str(column_index)}
+                expanded_cells.append(cell)
+            inserted_rows = [
+                UKMutableNode(
+                    kind=inserted_rows[0].kind,
+                    label=inserted_rows[0].label,
+                    text=inserted_rows[0].text,
+                    attrs={**dict(inserted_rows[0].attrs), "expanded_column_count": str(table_column_count)},
+                    children=expanded_cells,
+                )
+            ]
         for row in inserted_rows:
             strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
