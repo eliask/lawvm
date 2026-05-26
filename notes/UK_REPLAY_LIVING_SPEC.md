@@ -2823,6 +2823,15 @@ Current payload-descendant source-ref invariant:
   `unique_table_text`, and `unique_relating_text`: replay may choose among
   multiple descendant tables only when the explicit preimage/relating selector
   resolves exactly one candidate table and one target cell.
+  Direct single-entry omissions such as `in the first column of the Table,
+  omit the entry relating to X` may lower under
+  `uk_effect_table_column_entry_omission_text_patch`, but only when the source
+  explicitly names a column and a non-deictic singular entry. Replay resolves
+  by normalized full-cell equality in the named column and deletes only that
+  cell text; it must not delete the row, adjacent cells, sibling entries, or the
+  host table. Grouped `entries relating to- ...` parents, repeal-table rows,
+  and deictic `that Act`/`that Schedule` anchors remain blocked/manual until
+  source-parent ownership or referent resolution is explicit.
   Deictic `after that entry insert-` may also carry a single logical entry
   group encoded as multiple physical source rows, but only when the first source
   cell rowspans across every source row; replay records

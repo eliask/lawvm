@@ -12151,6 +12151,171 @@ def test_compile_table_entry_for_column_omit_uses_owned_cell_selector() -> None:
     )
 
 
+def test_compile_direct_table_column_entry_omission_deletes_owned_cell_text() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>2 In the first column of the Table, omit the entry relating to
+          section 561(8) of the Taxes Act 1988.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_column_entry_omission",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2004-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2004/12",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="12",
+        affecting_provisions="Sch. 12 para. 7(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2004-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "section 561(8) of the Taxes Act 1988"
+    assert ops[0].witness_rule_id == "uk_effect_table_column_entry_omission_text_patch"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_entry_omission_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 1
+    assert selector["match_scope"] == "full_cell"
+    assert selector["allow_unique_descendant_table"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_entry_omission_text_patch"
+        and record["reason_code"] == "explicit_table_column_entry_omission_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_direct_table_column_entry_omission_rejects_deictic_entry() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <Text>3 In the second column of the Table, omit the entry relating to
+          regulations under section 566(1), (2) or (2A) of that Act.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_column_entry_omission_deictic",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2004-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2004/12",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="12",
+        affecting_provisions="Sch. 12 para. 7(3)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2004-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_table_column_entry_omission_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_replay_direct_table_column_entry_omission_requires_full_cell_match() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_column_entry_omission_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 1,
+        "match_text": "section 561(8) of the Taxes Act 1988",
+        "match_scope": "full_cell",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_direct_table_column_entry_omission_replay",
+        sequence=1,
+        action=StructuralAction.TEXT_REPEAL,
+        target=LegalAddress(path=(("section", "98"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text="section 561(8) of the Taxes Act 1988", occurrence=0),
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="prefix section 561(8) of the Taxes Act 1988"),
+                                        IRNode(kind=IRNodeKind.CELL, text="unchanged row"),
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="section 561(8) of the Taxes Act 1988"),
+                                        IRNode(kind=IRNodeKind.CELL, text="selected row sibling"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0]
+    assert table.children[0].children[0].text == "prefix section 561(8) of the Taxes Act 1988"
+    assert table.children[0].children[1].text == "unchanged row"
+    assert table.children[1].children[0].text == ""
+    assert table.children[1].children[1].text == "selected row sibling"
+
+
 def test_compile_table_entry_for_column_after_anchor_insert_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""

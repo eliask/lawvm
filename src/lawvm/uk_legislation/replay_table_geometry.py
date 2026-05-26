@@ -943,6 +943,7 @@ def resolve_unique_uk_table_column_text_cell(
     except (TypeError, ValueError):
         return None, "invalid_selector", {}
     match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
+    full_cell_match = str(selector.get("match_scope") or "") == "full_cell"
     if column_index < 1 or not match_norm:
         return None, "invalid_selector", {}
 
@@ -956,6 +957,7 @@ def resolve_unique_uk_table_column_text_cell(
                 candidate_table,
                 column_index=column_index,
                 match_norm=match_norm,
+                full_cell_match=full_cell_match,
             )
             if len(candidate_cells) == 1:
                 filtered_tables.append(candidate_table)
@@ -979,6 +981,7 @@ def resolve_unique_uk_table_column_text_cell(
         candidate_tables[0],
         column_index=column_index,
         match_norm=match_norm,
+        full_cell_match=full_cell_match,
     )
     if len(matching_cells) == 1:
         return matching_cells[0], "", {
@@ -999,6 +1002,7 @@ def _matching_uk_table_column_text_cells(
     *,
     column_index: int,
     match_norm: str,
+    full_cell_match: bool = False,
 ) -> tuple[list[UKMutableNode], list[str]]:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
@@ -1006,7 +1010,10 @@ def _matching_uk_table_column_text_cells(
         target_cell = row_cells.get(column_index)
         if target_cell is None:
             continue
-        if _compact_normalized_text(target_cell.text or "").find(match_norm) < 0:
+        cell_norm = _compact_normalized_text(target_cell.text or "")
+        if full_cell_match and cell_norm != match_norm:
+            continue
+        if not full_cell_match and cell_norm.find(match_norm) < 0:
             continue
         if not matching_cells or matching_cells[-1] is not target_cell:
             matching_cells.append(target_cell)

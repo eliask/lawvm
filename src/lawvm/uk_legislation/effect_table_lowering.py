@@ -16,6 +16,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.provenance_notes import (
+    NOTE_TABLE_CELL_SELECTOR as _NOTE_TABLE_CELL_SELECTOR,
     NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
     NOTE_TABLE_ROW_REPLACE_SELECTOR as _NOTE_TABLE_ROW_REPLACE_SELECTOR,
@@ -32,6 +33,7 @@ from lawvm.uk_legislation.table_selectors import (
     UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID as _UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID,
     UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID as _UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID,
     UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
+    UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID as _UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
     UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
     UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID as _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
@@ -45,6 +47,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_single_logical_table_entry_group_payload,
     _uk_single_table_column_payload,
     _uk_single_table_row_payload,
+    _uk_table_column_entry_omission_text_patch_claim,
     _uk_table_column_insert_selector,
     _uk_table_column_text_patch_selector,
     _uk_table_entry_inline_text_selector,
@@ -1118,6 +1121,109 @@ def try_lower_repeal_table_effect(
     return UKTableBatchLoweringResult(handled=False)
 
 
+def try_lower_table_column_entry_omission(
+    *,
+    effect: UKEffectRecord,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTableBatchLoweringResult:
+    selector = _uk_table_column_entry_omission_text_patch_claim(
+        target_ref=t_str,
+        target=target,
+        extracted_text=extracted_text,
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+    if selector is None:
+        return UKTableBatchLoweringResult(handled=False)
+    table_marker_parent = _uk_parent_target_before_table_marker(target)
+    parent_target = (
+        table_marker_parent
+        if table_marker_parent is not None
+        else (
+            target
+            if bool(selector.get("source_names_containing_target"))
+            or "table" in " ".join((t_str, str(target))).lower()
+            else None
+        )
+    )
+    if parent_target is None:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=_UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+            family="source_table_elaboration",
+            reason_code="table_marker_parent_missing",
+            reason=(
+                "UK source explicitly omits a single table-column entry, but "
+                "the affected target could not be reduced to a containing "
+                "provision for table-cell replay."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target": str(target), **selector},
+        )
+        return UKTableBatchLoweringResult(handled=True)
+    if (
+        table_marker_parent is not None
+        or "table" in t_str.lower()
+        or bool(selector.get("source_names_containing_target"))
+    ):
+        selector = {
+            **selector,
+            "allow_unique_descendant_table": True,
+            "table_marker_parent_target": str(parent_target),
+            "table_carrier_recovery_rule": "uk_replay_table_carrier_anchor_filtered_descendant_table",
+        }
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+        family="source_table_elaboration",
+        reason_code="explicit_table_column_entry_omission_selector",
+        reason=(
+            "UK source explicitly omits a single entry in a named table column. "
+            "Lowering emits a table-cell text delete and replay must resolve "
+            "one full-cell preimage before mutating text."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "original_target": str(target),
+            "containing_target": str(parent_target),
+            **selector,
+        },
+    )
+    return UKTableBatchLoweringResult(
+        handled=True,
+        ops=_build_repeal_table_text_ops(
+            effect=effect,
+            sequence=sequence,
+            target=parent_target,
+            originals=(str(selector["match_text"]),),
+            occurrence=0,
+            end_occurrence=0,
+            rule_id=_UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            t_str=t_str,
+            provenance_note=(
+                f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector, ensure_ascii=False)}"
+            ),
+        ),
+    )
+
+
 def prepare_table_cell_text_patch_context(
     *,
     effect: UKEffectRecord,
@@ -1509,6 +1615,7 @@ def _build_repeal_table_text_ops(
     original_targets_str: list[str],
     t_str: str,
     op_id_suffix: str = "",
+    provenance_note: str = "",
 ) -> tuple[LegalOperation, ...]:
     src = OperationSource(
         statute_id=effect.affecting_act_id,
@@ -1574,7 +1681,10 @@ def _build_repeal_table_text_ops(
                 payload=None,
                 source=src,
                 group_id=_uk_temporal_group_id(effect),
-                provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                provenance_tags=(
+                    *_uk_lowered_op_provenance_tags(lowered_witness),
+                    *((provenance_note,) if provenance_note else ()),
+                ),
                 text_patch=text_patch,
                 witness_rule_id=rule_id,
             )

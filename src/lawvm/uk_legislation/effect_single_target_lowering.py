@@ -37,6 +37,7 @@ from lawvm.uk_legislation.effect_operation_finalization import (
 from lawvm.uk_legislation.effect_table_lowering import (
     prepare_table_cell_text_patch_context,
     try_lower_repeal_table_effect,
+    try_lower_table_column_entry_omission,
     try_lower_table_column_insert,
     try_lower_table_row_insert,
     try_lower_table_row_replace,
@@ -402,6 +403,21 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         lowering_rejections_out=lowering_rejections_out,
     )
     if _extend_handled_lowering_ops(target_ops, repeal_table_effect):
+        return unchanged
+    table_column_entry_omission = try_lower_table_column_entry_omission(
+        effect=effect,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=ctx.source_root,
+        sequence=ctx.sequence,
+        effect_witness=ctx.effect_witness,
+        extraction_witness=ctx.extraction_witness,
+        original_targets_str=ctx.original_targets_str,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if _extend_handled_lowering_ops(target_ops, table_column_entry_omission):
         return unchanged
     table_cell_context = prepare_table_cell_text_patch_context(
         effect=effect,

@@ -38,6 +38,9 @@ UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID = (
 UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
 UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 UK_TABLE_COLUMN_ENTRY_TEXT_RULE_ID = "uk_effect_table_column_entry_text_patch"
+UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID = (
+    "uk_effect_table_column_entry_omission_text_patch"
+)
 UK_TABLE_ENTRY_TEXT_RULE_ID = "uk_effect_table_entry_text_patch"
 UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
 UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
@@ -492,6 +495,80 @@ def _uk_table_column_entry_text_patch_claim(
                 "text_patch_replacement": replacement,
             }
     return None
+
+
+def _uk_table_column_entry_omission_text_patch_claim(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
+) -> dict[str, Any] | None:
+    """Extract direct single-cell table-entry omissions without deleting rows."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_names_table = "table" in " ".join((target_ref, str(target))).lower()
+    source_names_containing_target, source_parent_id = (
+        _source_or_parent_names_containing_target_for_table_cell(
+            text=text,
+            target=target,
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+    )
+    if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
+        return None
+    if re.search(r"\bthat\s+(?:act|schedule|column)\b", text, flags=re.I):
+        return None
+    if re.search(r"\bentries\b", text, flags=re.I):
+        return None
+    if not re.search(r"\b(?:omit|omitted|repeal|repealed)\b", text, flags=re.I):
+        return None
+    column = (
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+        r"\s+column|column\s+(?P<column_number>\d+))"
+    )
+    entry = r"(?:entry\s+(?:relating\s+to|for)\s+(?P<entry>.*?))"
+    patterns = (
+        r"\bin\s+(?:the\s+)?" + column + r"(?:\s+of\s+(?:the\s+)?table)?\b"
+        r".*?\b(?:omit|repeal)\s+(?:the\s+)?" + entry + r"\s*(?:[.;,]|$)",
+        r"\bin\s+(?:the\s+)?" + column + r"(?:\s+of\s+(?:the\s+)?table)?\b"
+        r".*?\b(?:the\s+)?" + entry + r"\s+(?:is|shall\s+be)\s+(?:omitted|repealed)\b",
+    )
+    match: re.Match[str] | None = None
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match is not None:
+            break
+    if match is None:
+        return None
+    column_token = match.group("column_ordinal") or match.group("column_number")
+    column_index = _uk_ordinal_to_int(column_token or "")
+    entry_text = " ".join((match.group("entry") or "").split()).strip(" ,;.")
+    if (
+        column_index is None
+        or column_index < 1
+        or not entry_text
+        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+    ):
+        return None
+    return {
+        "rule_id": UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+        "selector_mode": "unique_column_text",
+        "column_index": column_index,
+        "match_text": entry_text,
+        "match_scope": "full_cell",
+        "table_label": "",
+        "original_target": str(target),
+        "target_ref": target_ref,
+        "source_names_containing_target": source_names_containing_target,
+        "source_parent_id": source_parent_id,
+        "table_column_entry_action": "delete_entry_text",
+        "text_patch_original": entry_text,
+        "text_patch_replacement": "",
+    }
 
 
 def _uk_table_entry_text_patch_claim(
