@@ -32,6 +32,12 @@ _ORDINAL_OCCURRENCE_WORDS = (
 )
 
 _QUOTE_CHARS = "\"'\u201c\u201d\u2018\u2019"
+_UK_CARRIED_PARENT_CONTEXT_RE = (
+    r"\s+of\s+(?:(?:that|the)\s+)?"
+    r"(?:paragraph|sub-paragraph|subsection|section)"
+    r"(?:\s+\([^)]+\)|\s+[0-9A-Za-z]+)?"
+    r"(?:\s+of\s+(?:that|the)\s+Schedule)?"
+)
 _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
     "uk_effect_compound_lettered_text_patch_instruction"
 )
@@ -89,6 +95,9 @@ UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID = (
 )
 UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID = (
     "uk_effect_cease_effect_range_to_end_repeal_text_patch"
+)
+UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID = (
+    "uk_effect_beginning_carried_parent_context_text_insertion_patch"
 )
 UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
     "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
@@ -2238,6 +2247,25 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
             patch["rule_id"] = "uk_effect_immediately_before_word_ordinal_insert_text_patch"
         subs.append(patch)
+
+    matches_at_beginning_carried_parent_insert = re.finditer(
+        r"at the beginning(?: of (?:(?:that|the) )?"
+        r"(?:paragraph|sub-paragraph|subsection|section)"
+        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?"
+        rf"{_UK_CARRIED_PARENT_CONTEXT_RE}(?:\s+\([^)]*\))?),?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_at_beginning_carried_parent_insert:
+        subs.append(
+            {
+                "original": "TEXT_BEGINNING",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
+            }
+        )
 
     matches_at_beginning_insert = re.finditer(
         r"at the beginning(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?,?\s+"

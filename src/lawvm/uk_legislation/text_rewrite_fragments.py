@@ -22,6 +22,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
+    UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
     UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_CEASE_EFFECT_QUOTED_WORD_REPEAL_RULE_ID,
     UK_CEASE_EFFECT_RANGE_TO_END_REPEAL_RULE_ID,
@@ -506,6 +507,29 @@ def append_basic_text_rewrite_observations(
                 "UK source text says a quoted range ending at the end of the "
                 "target shall cease to have effect; lowering preserves that as "
                 "a bounded TEXT_FROM_*_TO_END text repeal."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_BEGINNING_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_beginning_carried_parent_context_insert",
+            reason=(
+                "UK source text inserts words at the beginning of a child "
+                "provision while carrying parent context after the child "
+                "reference; effects metadata owns the concrete target and "
+                "lowering preserves the bounded TEXT_BEGINNING insertion."
             ),
             effect=effect,
             extracted_el=extracted_el,
