@@ -12,6 +12,12 @@ from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
+_UK_SOURCE_PROVISION_ORDER_TOKEN_RE = re.compile(
+    r"\b(?:regs?|regulations?|rules?|articles?|arts?|sections?|ss?|s|"
+    r"schedules?|schs?|sch|paragraphs?|paras?|para)\.?\s*(?P<label>[0-9]+[A-Za-z]*)"
+    r"|\((?P<paren>[0-9A-Za-z]+)\)"
+)
+
 
 def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
     """Return a deterministic natural sort key for UK structural labels."""
@@ -58,14 +64,9 @@ def _uk_source_provision_order_key(ref: str) -> tuple[Any, ...]:
     defensible execution order.
     """
     text = " ".join(str(ref or "").replace("\u00a0", " ").split()).lower()
-    token_re = re.compile(
-        r"\b(?:regs?|regulations?|rules?|articles?|arts?|sections?|ss?|s|"
-        r"schedules?|schs?|sch|paragraphs?|paras?|para)\.?\s*(?P<label>[0-9]+[A-Za-z]*)"
-        r"|\((?P<paren>[0-9A-Za-z]+)\)"
-    )
     tokens: list[tuple[Any, ...]] = []
     previous_alpha = False
-    for match in token_re.finditer(text):
+    for match in _UK_SOURCE_PROVISION_ORDER_TOKEN_RE.finditer(text):
         raw_label = match.group("label") or match.group("paren") or ""
         key = _uk_source_provision_label_sort_key(raw_label, previous_alpha=previous_alpha)
         tokens.append(key)
