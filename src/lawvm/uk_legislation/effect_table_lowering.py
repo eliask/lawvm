@@ -1392,7 +1392,10 @@ def prepare_table_cell_text_patch_context(
         parent_target is not None
         and selector_mode
         in {"unique_column_text", "unique_relating_cell", "unique_table_text", "unique_relating_text"}
-        and "table" in t_str.lower()
+        and (
+            "table" in t_str.lower()
+            or table_cell_selector.get("source_context") == "metadata_target_column_only"
+        )
     ):
         table_cell_selector = {
             **table_cell_selector,

@@ -144,6 +144,19 @@ def _source_names_containing_target_for_table_cell(text: str, target: LegalAddre
     )
 
 
+def _source_names_table_column(text: str) -> bool:
+    return (
+        re.search(
+            r"\bin\s+(?:the\s+)?"
+            r"(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+            r"\s+column|column\s+\d+)\b",
+            text,
+            flags=re.I,
+        )
+        is not None
+    )
+
+
 def _source_or_parent_names_containing_target_for_table_cell(
     *,
     text: str,
@@ -176,9 +189,11 @@ def _uk_table_entry_inline_text_selector(
     text = " ".join((extracted_text or "").split())
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
     source_names_containing_target = _source_names_containing_target_for_table_cell(text, target)
+    source_names_column = _source_names_table_column(text)
     if not text or (
         not target_names_table
         and "table" not in text.lower()
+        and not source_names_column
     ):
         return None
     column_entry_patch = _uk_table_column_entry_text_patch_claim(
@@ -977,7 +992,12 @@ def _uk_table_target_column_text_patch_claim(
     if not text:
         return None
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
-    if not target_names_table and "table" not in text.lower():
+    source_names_column = _source_names_table_column(text)
+    column_only_metadata_target = (
+        source_names_column
+        and _addr_leaf_kind(target) in {"section", "subsection", "paragraph", "schedule", "part"}
+    )
+    if not target_names_table and "table" not in text.lower() and not column_only_metadata_target:
         return None
     source_names_containing_target, source_parent_id = (
         _source_or_parent_names_containing_target_for_table_cell(
@@ -987,7 +1007,10 @@ def _uk_table_target_column_text_patch_claim(
             source_root=source_root,
         )
     )
-    if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
+    if not target_names_table and not (
+        ("table" in text.lower() and source_names_containing_target)
+        or column_only_metadata_target
+    ):
         return None
     if re.search(r"\b(?:entry|entries)\b", text, re.I):
         return None
@@ -1071,6 +1094,13 @@ def _uk_table_target_column_text_patch_claim(
         "target_ref": target_ref,
         "source_names_containing_target": source_names_containing_target,
         "source_parent_id": source_parent_id,
+        **(
+            {
+                "source_context": "metadata_target_column_only",
+            }
+            if column_only_metadata_target and "table" not in text.lower()
+            else {}
+        ),
         "table_column_text_action": table_column_text_action,
         "replacement_text": replacement,
         "text_patch_original": original,
