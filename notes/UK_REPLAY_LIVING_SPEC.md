@@ -2829,6 +2829,12 @@ Current payload-descendant source-ref invariant:
   Current witnesses: `ukpga/1970/9` `s. 42(7)(a)` and `s. 42(7)(c)` by
   `ukpga/1996/8 s. 130(2)(a)-(b)`, plus `s. 43A(2A)(a)` by
   `ukpga/2009/10 Sch. 1 para. 6(a)(iii)`.
+  Definition-scoped quote-only repeals are owned separately: `in the definition
+  of "tax" in section 118 the word ", 20C"` lowers to
+  `uk_effect_metadata_carried_definition_quoted_word_repeal_text_patch` and a
+  `TEXT_IN_DEFINITION_<term>/DELETE/<fragment>` selector. Replay must prove a
+  unique definition entry and unique quoted fragment before deleting. Current
+  witness: `ukpga/1970/9` `s. 118(1)` by `ukpga/2007/11 Sch. 22 para. 4(b)`.
   Prefix target forms such as `in subsection (1)(a), the words "X"` and
   `in sub-paragraph (1)(a), the words "X"` / `in sub-paragraph (2), the words
   "X"` are owned by

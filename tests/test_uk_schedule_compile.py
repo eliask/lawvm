@@ -4999,6 +4999,90 @@ def test_compile_metadata_carried_scoped_quoted_words_repeal_accepts_full_sectio
     )
 
 
+def test_compile_metadata_carried_definition_quoted_word_repeal_scopes_to_definition() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-22-paragraph-4-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in the definition of “tax” in section 118 the word “, 20C”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_metadata_carried_definition_quoted_word_repeal",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2007-11-08",
+        affected_uri="/id/ukpga/1970/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 118(1)",
+        affecting_uri="/id/ukpga/2007/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="11",
+        affecting_provisions="Sch. 22 para. 4(b)",
+        affecting_title="Finance Act 2007",
+        in_force_dates=[{"date": "2007-11-08", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "118"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == f"TEXT_IN_DEFINITION_tax{US}DELETE{US}, 20C"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_metadata_carried_definition_quoted_word_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_metadata_carried_definition_quoted_word_repeal_text_patch"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["blocking"] is False
+
+    statute = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="118",
+                    attrs={"eId": "section-118"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            attrs={"eId": "section-118-1"},
+                            text='“tax” means income tax, capital gains tax, corporation tax, 20C; “year” means a year of assessment;',
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    executor.apply_op(ops[0])
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "“tax” means income tax, capital gains tax, corporation tax; "
+        "“year” means a year of assessment;"
+    )
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_quoted_word_delete_applied"
+    ]
+
+
 def test_compile_section_qualified_quote_only_word_omission_for_subsection() -> None:
     extracted_el = ET.fromstring(
         f"""

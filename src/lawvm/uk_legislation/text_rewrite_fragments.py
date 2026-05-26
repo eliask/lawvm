@@ -105,6 +105,9 @@ UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID = (
 UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID = (
     "uk_effect_metadata_carried_definition_entry_repeal_text_patch"
 )
+UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID = (
+    "uk_effect_metadata_carried_definition_quoted_word_repeal_text_patch"
+)
 UK_COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -744,6 +747,28 @@ def append_basic_text_rewrite_observations(
                     if str(fragment.get("rule_id") or "")
                     == UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID
                 ),
+            },
+        )
+    if UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
+            family="effect_feed_elaboration",
+            reason_code="metadata_action_source_definition_quoted_word_repeal",
+            reason=(
+                "The official UK effect feed supplies the word-level repeal "
+                "action while the source row scopes the quoted preimage to a "
+                "named definition entry; lowering preserves that definition "
+                "scope rather than deleting from the whole affected provision."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
             },
         )
     if UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID in rule_ids:

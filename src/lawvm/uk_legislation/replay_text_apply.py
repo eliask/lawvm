@@ -2265,6 +2265,32 @@ class UKReplayTextApplyMixin:
                     recovery_rule_ids_out.append("uk_replay_in_definition_at_end_text_rewrite_applied")
                 return rebuilt, True
 
+            if len(parts) == 3 and parts[1] == "DELETE":
+                term = parts[0].strip()
+                anchor = parts[2].strip()
+                if not term or not anchor:
+                    return node, False
+
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
+                    node,
+                    text_nodes,
+                    lambda text: _rewrite_anchor_in_definition_entry_text(
+                        text,
+                        term=term,
+                        anchor=anchor,
+                        replacement="",
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
+                )
+                if not applied:
+                    return node, False
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_in_definition_quoted_word_delete_applied"
+                    )
+                return rebuilt, True
+
             if len(parts) == 4 and parts[1] == "FROM" and parts[3] == "TO_END":
                 term = parts[0].strip()
                 start_anchor = parts[2].strip()
