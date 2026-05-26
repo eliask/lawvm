@@ -62,6 +62,30 @@ def test_uk_bench_replay_heavy_rows_are_partitioned_for_isolated_lane() -> None:
     assert uk_bench._uk_bench_replay_heavy_reasons(source_heavy) == ("source_mb>=12",)
 
 
+def test_uk_bench_row_start_message_surfaces_straggler_inputs() -> None:
+    entry = {
+        "statute_id": "ukpga/1970/9",
+        "n_effects": "66",
+        "n_effect_feed_pages": "66",
+        "enacted_source_size": str(5 * 1024 * 1024),
+        "oracle_source_size": str(8 * 1024 * 1024),
+    }
+
+    message = uk_bench._format_uk_bench_row_start(
+        index=12,
+        total=21,
+        entry=entry,
+        do_replay=True,
+    )
+
+    assert "[start 12/21] ukpga/1970/9" in message
+    assert "replay" in message
+    assert "effects=66" in message
+    assert "pages=66" in message
+    assert "source_mb=13.0" in message
+    assert "heavy=effects>=50,source_mb>=12" in message
+
+
 def test_uk_bench_residual_claim_classifies_source_backed_renumber_oracle_branch() -> None:
     tier, kind, section_claim_count = uk_bench._classify_uk_residual_claim_for_bench(
         comparison_class="commensurable",

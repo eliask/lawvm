@@ -34,7 +34,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Optional, Sequence, Set, Generator
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Set, Generator
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRStatute
@@ -323,6 +323,31 @@ def _uk_bench_replay_heavy_reasons(entry: dict[str, object]) -> tuple[str, ...]:
     if source_size >= _UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD:
         reasons.append(f"source_mb>={_UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD // (1024 * 1024)}")
     return tuple(reasons)
+
+
+def _format_uk_bench_row_start(
+    *,
+    index: int,
+    total: int,
+    entry: Mapping[str, object],
+    do_replay: bool,
+) -> str:
+    entry_dict = dict(entry)
+    statute_id = str(entry.get("statute_id") or "")
+    n_effects = _uk_bench_row_int(entry_dict, "n_effects")
+    n_pages = _uk_bench_row_int(entry_dict, "n_effect_feed_pages")
+    source_bytes = _uk_bench_row_int(entry_dict, "enacted_source_size") + _uk_bench_row_int(
+        entry_dict,
+        "oracle_source_size",
+    )
+    source_mb = source_bytes / (1024 * 1024)
+    replay_text = " replay" if do_replay else ""
+    heavy_reasons = _uk_bench_replay_heavy_reasons(entry_dict) if do_replay else ()
+    heavy_text = f" heavy={','.join(heavy_reasons)}" if heavy_reasons else ""
+    return (
+        f"  [start {index}/{total}] {statute_id:<30}{replay_text} "
+        f"effects={n_effects} pages={n_pages} source_mb={source_mb:.1f}{heavy_text}"
+    )
 
 
 def _partition_uk_replay_heavy_entries(
@@ -3057,6 +3082,7 @@ def _run_bench(
     score_text: bool = True,
     record_replay_subphases: bool = False,
     worker_max_tasks_per_child: int | None = None,
+    progress_start: Callable[[int, int, Mapping[str, object]], None] | None = None,
 ) -> Generator[_BenchResult, None, None]:
     if workers > 1 or worker_max_tasks_per_child is not None:
         ordinary_corpus = list(corpus)
@@ -3100,7 +3126,10 @@ def _run_bench(
         return
 
     # Sequential fallback.
-    for i, entry in enumerate(corpus):
+    total = len(corpus)
+    for i, entry in enumerate(corpus, start=1):
+        if progress_start is not None:
+            progress_start(i, total, entry)
         row_t0 = time.perf_counter()
         try:
             r = _score_statute(
@@ -7282,6 +7311,20 @@ def main(args) -> None:  # noqa: ANN001
     }
     if worker_max_tasks is not None:
         run_kwargs["worker_max_tasks_per_child"] = worker_max_tasks
+    if workers == 1:
+        def _print_row_start(index: int, total: int, entry: Mapping[str, object]) -> None:
+            print(
+                _format_uk_bench_row_start(
+                    index=index,
+                    total=total,
+                    entry=entry,
+                    do_replay=do_replay,
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+
+        run_kwargs["progress_start"] = _print_row_start
 
     try:
         for r in _run_bench(corpus, archive, **run_kwargs):
