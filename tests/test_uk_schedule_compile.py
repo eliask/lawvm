@@ -34984,6 +34984,72 @@ def test_compile_source_parent_at_end_text_payload_lowers_append() -> None:
     assert observations[0]["blocking"] is False
 
 
+def test_compile_source_parent_at_end_following_definition_payload_lowers_append() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Article xmlns="{_LEG_NS}" id="article-5-f">
+          <Pnumber>5</Pnumber>
+          <P1para>
+            <Text>in subsection (6), at the end insert the following definition\u2014</Text>
+            <BlockAmendment>
+              <Text>\u201csmall-scale radio multiplex service\u201d has the same meaning
+              as in section 258A of the Communications Act 2003.</Text>
+            </BlockAmendment>
+          </P1para>
+        </Article>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_at_end_following_definition_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-18",
+        affected_uri="/id/ukpga/1990/42/section/104AA/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 104AA(6)",
+        affecting_uri="/id/uksi/2020/1526",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2020",
+        affecting_number="1526",
+        affecting_provisions="art. 5(f)",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2020-12-18", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "104aa"), ("subsection", "6"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement.startswith("“small-scale radio multiplex service”")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_at_end_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_at_end_text_insertion_patch"
+        and record["source_parent_id"] == "article-5-f"
+        and record["source_parent_instruction"].endswith("the following definition—")
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_at_end_that_section_text_payload_lowers_append() -> None:
     source_root = ET.fromstring(
         f"""

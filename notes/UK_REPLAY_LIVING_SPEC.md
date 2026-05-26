@@ -1801,7 +1801,8 @@ Current block-substitution context invariant:
   `BlockAmendment`/`InlineAmendment` text whose local parent instruction
   explicitly says `at the end ... inserted`/`added`, including carried forms
   such as `At the end of subsection (3B) of that section there shall be
-  inserted-`. In that case lowering emits
+  inserted-` and definition payload phrasing such as `at the end insert the
+  following definition-`. In that case lowering emits
   `uk_effect_source_parent_at_end_text_insertion_patch`, a typed append patch
   (`TEXT_END`) against the effect target, and records the source-parent id and
   instruction. A separate word-level variant,
