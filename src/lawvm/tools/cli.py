@@ -3786,6 +3786,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="maximum number of rows to print after filtering",
     )
     uk_effects_p.add_argument(
+        "--fast-limit",
+        action="store_true",
+        help=(
+            "with diagnostic filters and --limit, stop after enough matching "
+            "post-summary rows are found instead of counting all matches"
+        ),
+    )
+    uk_effects_p.add_argument(
         "--db",
         metavar="PATH",
         help="Farchive DB path (default: data/uk_legislation.farchive)",

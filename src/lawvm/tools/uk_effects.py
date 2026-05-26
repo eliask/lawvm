@@ -116,6 +116,7 @@ class _EffectFilters:
     candidate_only: bool = False
     non_candidate_only: bool = False
     limit: int | None = None
+    fast_limit: bool = False
     applicability_mode: str = _DEFAULT_APPLICABILITY_MODE
 
 
@@ -822,6 +823,12 @@ def uk_effects_report_jsonable(
     }
     if source is not None:
         payload["source"] = source
+    if filters.fast_limit:
+        payload["fast_limit"] = {
+            "applied": True,
+            "matched_effect_count_exact": False,
+            "summary_scope": "emitted_fast_limit_rows",
+        }
     if not summary_only:
         payload["rows"] = [_effect_report_row_jsonable(row) for row in rows]
     return payload
@@ -876,6 +883,7 @@ def _effect_filters_jsonable(filters: _EffectFilters) -> dict[str, Any]:
         "candidate_only": filters.candidate_only,
         "non_candidate_only": filters.non_candidate_only,
         "limit": filters.limit,
+        "fast_limit": filters.fast_limit,
         "applicability_mode": filters.applicability_mode,
     }
 
@@ -1437,6 +1445,7 @@ def main(args: "argparse.Namespace") -> None:
     non_candidate_only: bool = bool(getattr(args, "non_candidate_only", False))
     json_output: bool = bool(getattr(args, "json", False))
     summary_only: bool = bool(getattr(args, "summary_only", False))
+    fast_limit: bool = bool(getattr(args, "fast_limit", False))
     evidence_jsonl_arg: str = getattr(args, "evidence_jsonl", "") or ""
     applicability_mode: str = replay_regime.applicability_mode
     if candidate_only and non_candidate_only:
@@ -1444,6 +1453,15 @@ def main(args: "argparse.Namespace") -> None:
         sys.exit(2)
     if limit is not None and limit < 0:
         print("error: --limit must be zero or a positive integer", file=sys.stderr)
+        sys.exit(2)
+    if fast_limit and (limit is None or limit <= 0):
+        print("error: --fast-limit requires a positive --limit", file=sys.stderr)
+        sys.exit(2)
+    if fast_limit and summary_only:
+        print("error: --fast-limit cannot be combined with --summary-only", file=sys.stderr)
+        sys.exit(2)
+    if fast_limit and evidence_jsonl_arg:
+        print("error: --fast-limit cannot be combined with --evidence-jsonl", file=sys.stderr)
         sys.exit(2)
     if evidence_jsonl_arg and not (
         manual_compile_status_filter
@@ -1474,6 +1492,7 @@ def main(args: "argparse.Namespace") -> None:
         candidate_only=candidate_only,
         non_candidate_only=non_candidate_only,
         limit=limit,
+        fast_limit=fast_limit,
         applicability_mode=applicability_mode,
     )
 
@@ -1506,37 +1525,7 @@ def main(args: "argparse.Namespace") -> None:
 
         rows = [effect for effect in effects if _matches(effect)]
         rows.sort(key=lambda effect: (effect.effective_date or "9999-99-99", effect.modified, effect.effect_id))
-        rows_to_summarize = _effect_rows_to_summarize(
-            rows,
-            limit=limit,
-            candidate_only=candidate_only,
-            non_candidate_only=non_candidate_only,
-            post_summary_filter=bool(
-                source_pathology_filter
-                or lowering_rule_filter
-                or lowering_reason_code_filter
-                or source_acquisition_rule_filter
-                or manual_compile_status_filter
-                or manual_compile_rule_filter
-            ),
-        )
-        report_rows = tuple(
-            _EffectReportRow(
-                effect=effect,
-                summary=summarize_uk_effect(
-                    effect,
-                    archive=archive,
-                    context=context,
-                    applicability_mode=applicability_mode,
-                ),
-            )
-            for effect in rows_to_summarize
-        )
-        if candidate_only:
-            report_rows = tuple(row for row in report_rows if row.summary.candidate)
-        if non_candidate_only:
-            report_rows = tuple(row for row in report_rows if not row.summary.candidate)
-        if (
+        post_summary_filter = bool(
             source_pathology_filter
             or lowering_rule_filter
             or lowering_reason_code_filter
@@ -1544,11 +1533,33 @@ def main(args: "argparse.Namespace") -> None:
             or manual_compile_status_filter
             or manual_compile_rule_filter
             or claim_template_status_filter
-        ):
-            report_rows = tuple(
-                row
-                for row in report_rows
-                if _effect_row_matches_filters(
+        )
+        fast_limit_active = bool(fast_limit and post_summary_filter and limit is not None)
+        if fast_limit and not post_summary_filter:
+            print("error: --fast-limit requires a diagnostic post-summary filter", file=sys.stderr)
+            sys.exit(2)
+        rows_to_summarize = _effect_rows_to_summarize(
+            rows,
+            limit=limit,
+            candidate_only=candidate_only,
+            non_candidate_only=non_candidate_only,
+            post_summary_filter=post_summary_filter,
+        )
+        report_row_list: list[_EffectReportRow] = []
+        if fast_limit_active:
+            for effect in rows_to_summarize:
+                summary = summarize_uk_effect(
+                    effect,
+                    archive=archive,
+                    context=context,
+                    applicability_mode=applicability_mode,
+                )
+                row = _EffectReportRow(effect=effect, summary=summary)
+                if candidate_only and not row.summary.candidate:
+                    continue
+                if non_candidate_only and row.summary.candidate:
+                    continue
+                if not _effect_row_matches_filters(
                     row,
                     statute_id=statute_id,
                     source_pathology=source_pathology_filter,
@@ -1558,24 +1569,55 @@ def main(args: "argparse.Namespace") -> None:
                     manual_compile_status=manual_compile_status_filter,
                     manual_compile_rule=manual_compile_rule_filter,
                     claim_template_status=claim_template_status_filter,
+                ):
+                    continue
+                report_row_list.append(row)
+                if len(report_row_list) >= limit:
+                    break
+            report_rows = tuple(report_row_list)
+        else:
+            report_rows = tuple(
+                _EffectReportRow(
+                    effect=effect,
+                    summary=summarize_uk_effect(
+                        effect,
+                        archive=archive,
+                        context=context,
+                        applicability_mode=applicability_mode,
+                    ),
                 )
+                for effect in rows_to_summarize
             )
+            if candidate_only:
+                report_rows = tuple(row for row in report_rows if row.summary.candidate)
+            if non_candidate_only:
+                report_rows = tuple(row for row in report_rows if not row.summary.candidate)
+            if post_summary_filter:
+                report_rows = tuple(
+                    row
+                    for row in report_rows
+                    if _effect_row_matches_filters(
+                        row,
+                        statute_id=statute_id,
+                        source_pathology=source_pathology_filter,
+                        lowering_rule=lowering_rule_filter,
+                        lowering_reason_code=lowering_reason_code_filter,
+                        source_acquisition_rule=source_acquisition_rule_filter,
+                        manual_compile_status=manual_compile_status_filter,
+                        manual_compile_rule=manual_compile_rule_filter,
+                        claim_template_status=claim_template_status_filter,
+                    )
+                )
         matched_effect_count_before_limit = (
             len(report_rows)
             if (
                 candidate_only
                 or non_candidate_only
-                or source_pathology_filter
-                or lowering_rule_filter
-                or lowering_reason_code_filter
-                or source_acquisition_rule_filter
-                or manual_compile_status_filter
-                or manual_compile_rule_filter
-                or claim_template_status_filter
+                or post_summary_filter
             )
             else len(rows)
         )
-        if limit is not None:
+        if limit is not None and not fast_limit_active:
             report_rows = report_rows[:limit]
 
         evidence_jsonl_path = Path(evidence_jsonl_arg) if evidence_jsonl_arg else None
@@ -1626,6 +1668,11 @@ def main(args: "argparse.Namespace") -> None:
             matched_effect_count_before_limit=matched_effect_count_before_limit,
         )
         _print_uk_effects_summary(summary_counts)
+        if fast_limit_active:
+            print(
+                "Fast limit: exact post-summary match count skipped; "
+                "summary covers emitted rows only."
+            )
         if evidence_jsonl_path is not None:
             print(
                 "Manual compile evidence JSONL: "

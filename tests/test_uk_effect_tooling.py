@@ -5540,6 +5540,125 @@ def test_uk_effects_main_lowering_rule_filter_classifies_before_limit(
     assert [row["effect_id"] for row in payload["rows"]] == ["eff-1"]
 
 
+def test_uk_effects_main_fast_limit_stops_after_matching_diagnostic_rows(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    effects = [
+        UKEffectRecord(
+            effect_id=f"eff-{index}",
+            effect_type="words inserted",
+            applied=True,
+            requires_applied=False,
+            modified=f"2025-01-0{index}",
+            affected_uri="/id/ukpga/2000/1",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions=f"s. {index}",
+            affecting_uri=f"/id/ukpga/2025/{index}",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2025",
+            affecting_number=str(index),
+            affecting_provisions=f"s. {index + 10}",
+            affecting_title="Test Act",
+            in_force_dates=[{"date": f"2025-01-0{index}", "prospective": "false"}],
+        )
+        for index in (1, 2, 3)
+    ]
+    summarized: list[str] = []
+
+    class FakeArchive:
+        def __init__(self, path):
+            self.path = path
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    def fake_summary(effect, archive, context, **kwargs):
+        summarized.append(effect.effect_id)
+        lowering_rejections = (
+            {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+        ) if effect.effect_id != "eff-2" else ()
+        return _EffectSummary(
+            source_pathology="instruction_text_reused_as_payload" if lowering_rejections else "",
+            compare_shape="",
+            n_ops=0 if lowering_rejections else 1,
+            candidate=not lowering_rejections,
+            resolver_eids=(),
+            lowering_rejections=lowering_rejections,
+            replay_applicable=True,
+            structural_for_replay=True,
+            applicability_mode=kwargs.get(
+                "applicability_mode",
+                "effective_date_plus_feed_applied",
+            ),
+        )
+
+    monkeypatch.setattr(farchive, "Farchive", FakeArchive)
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
+        lambda statute_id, archive, **kwargs: effects,
+    )
+    monkeypatch.setattr(
+        uk_effects,
+        "build_uk_effect_summary_context",
+        lambda statute_id, archive: _EffectSummaryContext(
+            statute_id=statute_id,
+            enacted_ir=None,
+            oracle_ir=None,
+            base_eids=set(),
+            oracle_eids=set(),
+            base_text_map={},
+            oracle_eid_map={},
+            oracle_text_map={},
+            resolver=None,
+            affecting_xml_cache={},
+        ),
+    )
+    monkeypatch.setattr(uk_effects, "summarize_uk_effect", fake_summary)
+
+    uk_effects.main(
+        Namespace(
+            statute_id="ukpga/2000/1",
+            db=str(db_path),
+            affected_contains="",
+            affecting_contains="",
+            effect_type_contains="",
+            source_pathology="",
+            lowering_rule="uk_effect_overlap_substitution_unlowered",
+            lowering_reason_code="",
+            source_acquisition_rule="",
+            limit=1,
+            fast_limit=True,
+            applied_only=False,
+            structural_only=False,
+            candidate_only=False,
+            non_candidate_only=False,
+            json=True,
+            summary_only=False,
+            evidence_jsonl="",
+            uk_applicability_mode="effective_date_plus_feed_applied",
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert summarized == ["eff-1"]
+    assert payload["filters"]["fast_limit"] is True
+    assert payload["fast_limit"]["matched_effect_count_exact"] is False
+    assert payload["summary"]["matched_effects"] == 1
+    assert payload["summary"]["emitted_effect_count"] == 1
+    assert [row["effect_id"] for row in payload["rows"]] == ["eff-1"]
+
+
 def test_uk_effects_report_rows_expose_replay_applicability() -> None:
     from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 
@@ -6015,6 +6134,7 @@ def test_uk_effects_report_jsonable_can_omit_rows_for_summary_only() -> None:
         "candidate_only": True,
         "non_candidate_only": False,
         "limit": 10,
+        "fast_limit": False,
         "applicability_mode": "effective_date_plus_feed_applied",
     }
     assert report["summary"]["matched_effects"] == 0

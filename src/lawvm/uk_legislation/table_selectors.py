@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+import weakref
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
@@ -61,9 +62,19 @@ UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID = (
 )
 UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 
+_NORMALIZED_ELEMENT_TEXT_CACHE: weakref.WeakKeyDictionary[
+    ET.Element,
+    str,
+] = weakref.WeakKeyDictionary()
+
 
 def _normalized_element_text(el: ET.Element) -> str:
-    return " ".join(" ".join(el.itertext()).split()).strip()
+    try:
+        return _NORMALIZED_ELEMENT_TEXT_CACHE[el]
+    except KeyError:
+        text = " ".join(" ".join(el.itertext()).split()).strip()
+        _NORMALIZED_ELEMENT_TEXT_CACHE[el] = text
+        return text
 
 
 def _inserted_table_payload_rows(extracted_el: Optional[ET.Element]) -> tuple[tuple[str, ...], ...]:
