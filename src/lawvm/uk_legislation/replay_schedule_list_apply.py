@@ -8,6 +8,7 @@ executor implementation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -69,6 +70,16 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_END_POSITION_RULE_ID = (
     "uk_replay_schedule_list_entry_end_position_resolved"
 )
+
+
+@dataclass(frozen=True)
+class _GroupedScheduleEntryRow:
+    group_index: int
+    group: UKMutableNode
+    child_index: int
+    child: UKMutableNode
+
+
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_table_rows_insert_resolved"
 )
@@ -648,8 +659,13 @@ class UKReplayScheduleListApplyMixin:
                 matches = [matches[ordinal_index]]
                 ordinal_resolved = True
         if not matches:
-            grouped_entry_rows: list[tuple[int, UKMutableNode, int, UKMutableNode]] = [
-                (group_idx, group, child_idx, child)
+            grouped_entry_rows: list[_GroupedScheduleEntryRow] = [
+                _GroupedScheduleEntryRow(
+                    group_index=group_idx,
+                    group=group,
+                    child_index=child_idx,
+                    child=child,
+                )
                 for group_idx, group in enumerate(carrier_node.children)
                 if _uk_kind_value(group.kind) == "p1group"
                 for child_idx, child in enumerate(group.children)
@@ -657,16 +673,18 @@ class UKReplayScheduleListApplyMixin:
             ]
             grouped_entry_count = len(grouped_entry_rows)
 
-            def _matches_in_group(mode: str) -> list[tuple[int, UKMutableNode, int, UKMutableNode]]:
+            def _matches_in_group(mode: str) -> list[_GroupedScheduleEntryRow]:
                 if mode == "exact":
                     return [
-                        row for row in grouped_entry_rows if _compact_normalized_text(row[3].text) == anchor_norm
+                        row
+                        for row in grouped_entry_rows
+                        if _compact_normalized_text(row.child.text) == anchor_norm
                     ]
                 if mode == "prefix":
                     return [
                         row
                         for row in grouped_entry_rows
-                        if _compact_normalized_text(row[3].text).startswith(anchor_norm)
+                        if _compact_normalized_text(row.child.text).startswith(anchor_norm)
                     ]
                 article_anchor_norm = _compact_schedule_entry_anchor_without_article(
                     str(selector.get("anchor_text") or "")
@@ -676,12 +694,12 @@ class UKReplayScheduleListApplyMixin:
                     for row in grouped_entry_rows
                     if article_anchor_norm
                     and (
-                        _compact_schedule_entry_anchor_without_article(row[3].text) == article_anchor_norm
-                        or _compact_schedule_entry_anchor_without_article(row[3].text).startswith(article_anchor_norm)
+                        _compact_schedule_entry_anchor_without_article(row.child.text) == article_anchor_norm
+                        or _compact_schedule_entry_anchor_without_article(row.child.text).startswith(article_anchor_norm)
                     )
                 ]
 
-            grouped_matches: list[tuple[int, UKMutableNode, int, UKMutableNode]] = []
+            grouped_matches: list[_GroupedScheduleEntryRow] = []
             grouped_match_mode = ""
             for mode in ("exact", "prefix", "article"):
                 grouped_matches = _matches_in_group(mode)
@@ -689,8 +707,12 @@ class UKReplayScheduleListApplyMixin:
                     grouped_match_mode = mode
                     break
             if len(grouped_matches) == 1:
-                group_idx, group_node, child_idx, _child = grouped_matches[0]
-                insert_index = child_idx if direction == "before" else child_idx + 1
+                grouped_match = grouped_matches[0]
+                insert_index = (
+                    grouped_match.child_index
+                    if direction == "before"
+                    else grouped_match.child_index + 1
+                )
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_GROUP_ANCHOR_RULE_ID,
@@ -705,11 +727,11 @@ class UKReplayScheduleListApplyMixin:
                         selector,
                         blocking=False,
                         reason_code="anchor_unique_in_schedule_child_group",
-                        group_index=group_idx,
-                        group_kind=_uk_kind_value(group_node.kind),
-                        group_label=group_node.label or "",
-                        group_text=(group_node.text or "")[:200],
-                        group_entry_index=child_idx,
+                        group_index=grouped_match.group_index,
+                        group_kind=_uk_kind_value(grouped_match.group.kind),
+                        group_label=grouped_match.group.label or "",
+                        group_text=(grouped_match.group.text or "")[:200],
+                        group_entry_index=grouped_match.child_index,
                         group_insert_index=insert_index,
                         grouped_entry_count=grouped_entry_count,
                         match_mode=grouped_match_mode,
@@ -717,9 +739,9 @@ class UKReplayScheduleListApplyMixin:
                 )
                 for key in ("eId", "id"):
                     new_node.attrs.pop(key, None)
-                group_children = list(group_node.children)
+                group_children = list(grouped_match.group.children)
                 group_children.insert(insert_index, new_node)
-                group_node.children = group_children
+                grouped_match.group.children = group_children
                 self._clear_eid_lookup_index()
                 self._note_structure_mutation()
                 return True
