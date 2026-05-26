@@ -23254,6 +23254,65 @@ def test_compile_payload_fragment_overlap_records_source_context_rejection() -> 
     assert rejection["parser"] == "parse_fragment_substitution"
 
 
+def test_compile_payload_fragment_rejection_records_source_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-57-3">
+              <Pnumber>3</Pnumber>
+              <P1para>
+                <Text>In section 98, in the Table, for the entry relating to section 552 substitute\u2014</Text>
+                <BlockAmendment id="section-57-3-block">
+                  <Text>section 552(1) to (4); regulations under section 552(4A);</Text>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_payload_fragment_parent_context",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_source_payload_without_instruction_context_rejected"
+    assert rejection["source_parent_id"] == "section-57-3"
+    assert (
+        "for the entry relating to section 552 substitute"
+        in rejection["source_parent_context_preview"]
+    )
+
+
 def test_compile_mixed_structural_text_rewrite_records_split_rejection() -> None:
     extracted_el = ET.fromstring(
         f"""
