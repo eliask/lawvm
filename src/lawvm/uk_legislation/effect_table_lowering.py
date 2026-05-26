@@ -62,7 +62,6 @@ from lawvm.uk_legislation.table_sources import (
     _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
     _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_SENTENCE_TEXT_REPEAL_RULE_ID,
-    _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
     _uk_table_driven_repeal_table_parent_child_text_repeal_split,
     _uk_table_driven_repeal_table_quoted_words_text_repeal,
     _uk_table_driven_repeal_table_structural_repeal,
@@ -938,7 +937,7 @@ def try_lower_repeal_table_effect(
             )
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
-            rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+            rule_id=repeal_table_structural_repeal.rule_id,
             family="source_repeal_table_elaboration",
             reason_code=reason_code,
             reason=(
@@ -974,14 +973,14 @@ def try_lower_repeal_table_effect(
                     extraction_witness=extraction_witness,
                     original_targets_str=original_targets_str,
                     t_str=t_str,
-                    witness_rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+                    witness_rule_id=repeal_table_structural_repeal.rule_id,
                 ),
             ),
         )
     if repeal_table_structural_repeal.recognized:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
-            rule_id=f"{_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID}_unresolved",
+            rule_id=f"{repeal_table_structural_repeal.rule_id}_unresolved",
             family="source_repeal_table_elaboration",
             reason_code=repeal_table_structural_repeal.reason_code,
             reason=(

@@ -3231,7 +3231,10 @@ Current payload-descendant source-ref invariant:
   has lost the table row shape but the schedule text still contains exactly one
   target-matching clause like `In section 98 ... Table the words "..."`, the
   compiler may lower the quoted delete only if nearby preceding text names the
-  affected enactment by exact short citation/title. The observation records
+  affected enactment by exact short citation/title. Context is the current
+  citation-style enactment heading before the clause, not an arbitrary lookback
+  window; a later heading for another Act blocks stale-context recovery. The
+  observation records
   `enactment_match_basis=flat_preceding_context_*`. If the affected enactment
   context is absent, multiple clauses match, or the clause is only a table-entry
   placement/referent problem, the row remains unresolved/manual; the rule must
@@ -3266,6 +3269,14 @@ Current payload-descendant source-ref invariant:
   structural clause starts, so a mixed cell such as `Section 92(3) and (6). In
   section 93(1) and (3), the words "...". Part 6.` can lower the `Part 6`
   repeal without being swallowed into the preceding word-level clause.
+  A narrower flattened-source variant is owned by
+  `uk_effect_flat_repeal_schedule_structural_repeal`: if publisher XML has lost
+  the table row shape but the flattened repeal schedule text contains exactly
+  one current-enactment, exact-target, whole-provision clause such as
+  `Section 98(4C).`, the compiler may lower that single target to `REPEAL`.
+  Clauses that mention words, definitions, entries, or table surfaces remain
+  unresolved/manual, and structured table matches, mixed rows, and broad
+  container rows take precedence over the flat fallback.
   A single extent clause that combines word-level repeals with a separately
   named structural target may lower only the exact structural target when the
   structural mention is grammatically separate after punctuation or `and`, for

@@ -14643,6 +14643,129 @@ def test_compile_flat_repeal_schedule_quoted_words_uses_current_enactment_headin
     )
 
 
+def test_compile_flat_repeal_schedule_structural_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-3">
+            <Title>Repeals</Title>
+            <Text>
+              Part 1 Repeals and revocations: general Reference Extent of repeal
+              or revocation Taxes Management Act 1970 (c. 9)
+              In section 12AB(1)(a), sub-paragraph (iv).
+              Section 98(4C).
+              In the first column of the Table in section 98 the entry relating
+              to regulations under section 42A.
+            </Text>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_repeal_schedule_structural",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98/subsection/4C",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98(4C)",
+        affected_title="Taxes Management Act 1970",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 260(4) Sch. 3 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2007-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "98"), ("subsection", "4c"))
+    assert ops[0].payload is None
+    assert ops[0].witness_rule_id == "uk_effect_flat_repeal_schedule_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_flat_repeal_schedule_structural_repeal"
+        and record["reason_code"] == "unique_flat_repeal_schedule_structural_repeal"
+        and record["enactment_match_basis"] == "flat_preceding_context_explicit_short_citation"
+        and record["extent_cell"] == "Section 98(4C)."
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_flat_repeal_schedule_structural_uses_current_enactment_heading() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-3">
+            <Title>Repeals</Title>
+            <Text>
+              Part 1 Repeals and revocations: general Reference Extent of repeal
+              or revocation Taxes Management Act 1970 (c. 9)
+              Section 12. Other Act 1982 (c. 39)
+              Section 98(4C).
+            </Text>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_repeal_schedule_structural_stale_context",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98/subsection/4C",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98(4C)",
+        affected_title="Taxes Management Act 1970",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 260(4) Sch. 3 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2007-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert not any(
+        op.witness_rule_id == "uk_effect_flat_repeal_schedule_structural_repeal"
+        for op in ops
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_flat_repeal_schedule_structural_repeal"
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_quoted_words_matches_ordinal_schedule_name() -> None:
     source_root = ET.fromstring(
         """
