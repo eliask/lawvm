@@ -255,6 +255,27 @@ def test_parse_fragment_substitution_handles_all_occurrences_substitution() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_all_occurrences_alternative_preimages() -> None:
+    subs = parse_fragment_substitution(
+        "In each of the enactments listed in sub-paragraph (3) for "
+        "\u201cSupreme Court\u201d or \u201cSupreme Court of Judicature\u201d "
+        "in each place substitute \u201cSenior Courts\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "Supreme Court",
+            "replacement": "Senior Courts",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "Supreme Court of Judicature",
+            "replacement": "Senior Courts",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_each_case_occurs_substitution() -> None:
     subs = parse_fragment_substitution(
         "a for \u201can exit charge payment plan\u201d, in each case it occurs, "

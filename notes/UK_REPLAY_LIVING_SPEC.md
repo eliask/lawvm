@@ -4278,6 +4278,13 @@ Current bench replay-regime invariant:
   "Y"`. This remains target-scoped and does not search for other targets.
   Witness: `ukpga/2008/18` affected `Sch. 17 Pt. 5` by `uksi/2012/1659`
   `Sch. 3 para. 19(3)(b)`.
+- Alternative quoted preimages in the same all-occurrences formula, e.g.
+  `for "A" or "B" in each place substitute "C"`, are parsed as separate
+  all-occurrences text patches with the same replacement. The parser must not
+  collapse the quoted alternatives into one malformed preimage such as
+  `A" or "B`. This is a parse ownership rule only: broad targets such as `Act`
+  still remain blocked by the whole-Act text-patch guard until a separate
+  compiler owns list membership, exclusions, and carrier scope.
 - The same all-occurrences substitution family accepts `in each case it
   occurs`, e.g. `for "X", in each case it occurs, substitute "Y"`. This remains
   an all-occurrences patch scoped to the affected target. Current witnesses:
