@@ -24288,6 +24288,51 @@ def test_compile_table_column_entry_row_insert_from_entry_for_anchor() -> None:
     )
 
 
+def test_compile_table_column_entry_row_insert_before_entry_for_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>17</Pnumber>
+          <P1para>
+            <Text>In section 98 of TMA 1970, in the first column of the Table,
+            before the entry for regulations under Chapter 5 of Part 6 of ITA
+            2007 insert\u2014 section 312A of ITA 2007;</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_before_row_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-17",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2012/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="14",
+        affecting_provisions="Sch. 8 para. 17",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-07-17", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el)
+
+    assert len(ops) == 1
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_entry"
+    assert selector["direction"] == "before"
+    assert selector["column_index"] == 1
+    assert selector["relating_text"] == "regulations under Chapter 5 of Part 6 of ITA 2007"
+    assert selector["inserted_text"] == "section 312A of ITA 2007"
+
+
 def test_compile_table_column_final_entry_row_insert() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -25259,6 +25304,78 @@ def test_replay_table_column_entry_row_insert_mutates_unique_column_anchor() -> 
     ]
     assert adjudications[0].detail["selector"]["selector_mode"] == "column_entry"
     assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_column_entry_row_insert_before_unique_column_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_entry",
+        "direction": "before",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "regulations under Chapter 5 of Part 6 of ITA 2007",
+        "inserted_text": "section 312A of ITA 2007",
+        "source_payload_mode": "column_entry_text",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_entry_before_row_insert_apply",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(IRNode(kind=IRNodeKind.CELL, text="section 312A of ITA 2007"),),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(IRNode(kind=IRNodeKind.CELL, text="section 250"),),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.CELL,
+                                            text="regulations under Chapter 5 of Part 6 of ITA 2007",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "section 250",
+        "section 312A of ITA 2007",
+        "regulations under Chapter 5 of Part 6 of ITA 2007",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["insert_index"] == 1
 
 
 def test_replay_table_column_entry_row_insert_blocks_ambiguous_column_anchor() -> None:

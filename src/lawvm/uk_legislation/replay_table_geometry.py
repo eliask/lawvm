@@ -261,7 +261,9 @@ def resolve_uk_table_entry_row_insert_index(
     anchor_entry_label = _clean_num(str(selector.get("anchor_entry_label") or ""))
     direction = str(selector.get("direction") or "")
     selector_mode = str(selector.get("selector_mode") or "ordinal_column")
-    if direction != "after":
+    if direction not in {"after", "before"}:
+        return None, None, "invalid_selector", {}
+    if selector_mode == "column_final_entry" and direction != "after":
         return None, None, "invalid_selector", {}
     if selector_mode == "entry_label":
         if not anchor_entry_label:
@@ -374,7 +376,7 @@ def resolve_uk_table_entry_row_insert_index(
         if target_cell is last_target_cell:
             continue
         last_target_cell = target_cell
-        insert_index = row_index + 1
+        insert_index = row_index if direction == "before" else row_index + 1
         if (
             selector_mode == "relating_entry"
             and str(selector.get("source_payload_mode") or "") == "logical_table_entry_group"
@@ -398,7 +400,7 @@ def resolve_uk_table_entry_row_insert_index(
                 "matching_entry_count": 0,
                 **carrier_detail,
             }
-        insert_index = min(row_index + 1, len(table.children))
+        insert_index = min(row_index, len(table.children))
         return table, insert_index, "", {
             "matching_entry_count": len(matching_rows),
             "matching_rows": tuple(row[1] for row in matching_rows[-5:]),

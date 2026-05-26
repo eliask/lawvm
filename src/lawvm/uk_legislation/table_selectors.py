@@ -752,7 +752,7 @@ def _uk_table_entry_row_insert_selector(
         r"\bin\s+(?:the\s+)?"
         r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
         r"column\s+(?P<column_number>\d+))\s+of\s+(?:the\s+)?table\b"
-        r".*?\bafter\s+(?:the\s+)?entry\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+        r".*?\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
         r"(?:there\s+(?:shall\s+be|is|are)\s+inserted\s+|insert(?:ed)?\s+)"
         r"(?:the\s+)?entry\s+[“\"'‘](?P<payload>.*?)[”\"'’]",
         text,
@@ -770,7 +770,7 @@ def _uk_table_entry_row_insert_selector(
             return {
                 "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 "selector_mode": "column_entry",
-                "direction": "after",
+                "direction": column_entry_insert_match.group("direction").lower(),
                 "column_index": column_index,
                 "entry_index": 1,
                 "relating_text": relating_text,
@@ -786,7 +786,7 @@ def _uk_table_entry_row_insert_selector(
         r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
         r"column\s+(?P<column_number>\d+))"
         r"(?:\s+of\s+(?:(?:the|that)\s+)?table)?\b"
-        r".*?\bafter\s+(?:the\s+)?entry\s+"
+        r".*?\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+"
         r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<anchor>.+?)\s+"
         r"(?:insert(?:ed)?|there\s+(?:shall\s+be|is|are)\s+inserted)\s*[—–-]?\s*"
         r"(?P<payload>.+)$",
@@ -809,7 +809,7 @@ def _uk_table_entry_row_insert_selector(
             return {
                 "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 "selector_mode": "column_entry",
-                "direction": "after",
+                "direction": column_relating_entry_insert_match.group("direction").lower(),
                 "column_index": column_index,
                 "entry_index": 1,
                 "relating_text": relating_text,
