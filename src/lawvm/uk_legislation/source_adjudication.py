@@ -1862,6 +1862,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The row already lowers to replay operations without blocking lowering rejections.",
         }
 
+    if "uk_effect_table_deictic_this_subsection_insert_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_deictic_this_subsection_insert",
+            "reason": "The source inserts a deictic reference to this subsection into a table column; a claim or future table compiler must prove source-section context, rendered row text, and row/cell placement.",
+        }
+
+    if "uk_effect_amendment_table_payload_without_row_context_rejected" in blocking_rules:
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_amendment_table_payload_without_row_context",
+            "reason": "The extracted source is an amendment table payload without the specific row for the affected target; acquisition or extraction must recover row-level context before lowering.",
+        }
+
     if source_pathology_norm == "table_entry_target_unsupported":
         entry_shapes = {
             str(rejection.get("entry_shape") or "")
@@ -1964,11 +1978,32 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source combines structural and text mutations; a future compiler must split and witness each canonical operation before replay.",
         }
 
+    if "uk_effect_mixed_structural_definition_repeal_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_mixed_structural_definition_repeal_split",
+            "reason": "The source combines structural subsection repeal and definition-entry repeal; a future compiler must split and witness each canonical operation before replay.",
+        }
+
     if "uk_effect_table_entry_placement_insert_rejected" in blocking_rules:
         return {
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_table_entry_placement_insert",
             "reason": "The source inserts material into a table entry/list position; a claim or future table compiler must prove the row/cell placement and preserve unclaimed table structure.",
+        }
+
+    if "uk_effect_multi_enactment_specified_provisions_text_patch_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_multi_enactment_specified_provisions_text_patch",
+            "reason": "The source applies one substitution across a list of specified provisions with alternate preimages; a future compiler must prove the affected provision is listed and choose the matching preimage.",
+        }
+
+    if "uk_effect_scoped_occurrence_substitution_with_exclusions_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",
+            "reason": "The source has a negative context condition plus explicit target exclusions; a future text compiler needs an owned scoped-occurrence selector, not all-occurrences replay.",
         }
 
     if (

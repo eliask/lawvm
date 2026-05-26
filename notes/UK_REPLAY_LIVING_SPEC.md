@@ -1796,6 +1796,12 @@ Current block-substitution context invariant:
   choose one action family or flatten the parent to make progress. Current
   witness: `ukpga/1970/9` `s. 42(5)` by `ukpga/1998/36`
   `Sch. 19 para. 20(3)`.
+- mixed instructions that combine a structural repeal and a definition-entry
+  repeal, such as `omit subsections (2) to (4) and the definition in subsection
+  (5) of "filing date"`, record
+  `uk_effect_mixed_structural_definition_repeal_rejected`. They need the same
+  split-compiler ownership before replay. Current witness: `ukpga/1970/9`
+  `s. 12AB(5)` by `ukpga/2001/9 Sch. 29 para. 3(1)`.
 - table-entry/list placement inserts such as `at the end insert`, `after the
   final entry insert`, and `before the entry for X insert` record
   `uk_effect_table_entry_placement_insert_rejected` unless a table compiler
@@ -1803,6 +1809,30 @@ Current block-substitution context invariant:
   without fabricating rows or appending entry text to the broad table carrier.
   Current witnesses include `ukpga/1970/9` `s. 98 Table` by `ukpga/2002/23`
   `Sch. 33 para. 15` and by `ukpga/2010/8` `Sch. 7 para. 18(3)`.
+- table instructions that insert a deictic reference to `this subsection`,
+  such as a section body saying section 98 has effect with a reference to this
+  subsection inserted at the end of a table column, record
+  `uk_effect_table_deictic_this_subsection_insert_rejected`. They require both
+  source-section context and row/cell placement ownership. Current witness:
+  `ukpga/1970/9` `s. 98 Table` by `ukpga/1995/4 s. 86(12)`.
+- multi-enactment instructions such as `In the specified provisions of the
+  following enactments, for "seven" (or "7") substitute "14"` record
+  `uk_effect_multi_enactment_specified_provisions_text_patch_rejected`. A
+  future compiler must prove the affected provision is one listed row and pick
+  the matching preimage before replay. Current witness: `ukpga/1970/9`
+  `s. 106A(2)(b)` by `ukpga/2024/3 s. 32(1)`.
+- scoped occurrence substitutions with negative context and explicit
+  exclusions, such as `in each case where it occurs without "an" before it ...
+  (but this does not apply to ...)`, record
+  `uk_effect_scoped_occurrence_substitution_with_exclusions_rejected`. They
+  need an owned scoped-occurrence selector; all-occurrences replay would be
+  legally overbroad. Current witness: `ukpga/1970/9` `Sch. 3ZB` by
+  `ukpga/2019/1 Sch. 7 para. 6(1)(b)`.
+- amendment table payloads that expose only `PART ... Column 1 Column 2 ...`
+  without the row-level instruction for the affected target record
+  `uk_effect_amendment_table_payload_without_row_context_rejected`. This is an
+  extraction/source-context problem, not a text-patch opportunity. Current
+  witness: `ukpga/1970/9` `s. 106A(3)(a)` by `uksi/2022/500 reg. 5(1)`.
 - secondary legislation references like `reg.` / `regs.` must preserve
   `regulation` identity during affecting-source extraction; normalizing them to
   `section` is a target-kind mutation, not a harmless parser shortcut
