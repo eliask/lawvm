@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeAlias
 
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
@@ -24,6 +24,22 @@ class UKTableColumnInsertPlan:
     row: UKMutableNode
     row_cells: dict[int, UKMutableNode]
     owned_ranges: list[UKTableOwnedColumnRange]
+
+ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
+ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
+TablePayloadCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, object]]
+TableSelectorTablesResult: TypeAlias = tuple[list[UKMutableNode], dict[str, Any]]
+TableRowInsertResult: TypeAlias = tuple[UKMutableNode | None, int | None, str, dict[str, Any]]
+TableRowReplaceSpanResult: TypeAlias = tuple[
+    UKMutableNode | None,
+    int | None,
+    int | None,
+    str,
+    dict[str, Any],
+]
+TableCellResult: TypeAlias = tuple[UKMutableNode | None, str, dict[str, Any]]
+TableCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, Any]]
+TableCellMatches: TypeAlias = tuple[list[UKMutableNode], list[str]]
 
 
 def strip_uk_identity_attrs_recursive(node: UKMutableNode) -> None:
@@ -51,13 +67,13 @@ def uk_table_cell_span(cell: UKMutableNode) -> tuple[int, int]:
     return max(rowspan, 1), max(colspan, 1)
 
 
-def expanded_uk_table_rows(table: UKMutableNode) -> list[dict[int, UKMutableNode]]:
+def expanded_uk_table_rows(table: UKMutableNode) -> ExpandedTableRows:
     return [row_cells for _, row_cells in expanded_uk_table_rows_with_physical_index(table)]
 
 
 def expanded_uk_table_rows_with_physical_index(
     table: UKMutableNode,
-) -> list[tuple[int, dict[int, UKMutableNode]]]:
+) -> ExpandedTableRowsWithPhysicalIndex:
     rows: list[tuple[int, dict[int, UKMutableNode]]] = []
     active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
     for row_index, row in enumerate(table.children):
@@ -93,7 +109,7 @@ def expanded_uk_table_rows_with_physical_index(
 
 def uk_table_column_payload_cells(
     new_node: UKMutableNode,
-) -> tuple[list[UKMutableNode], str, dict[str, object]]:
+) -> TablePayloadCellsResult:
     if _uk_kind_value(new_node.kind).lower() != "table":
         return [], "payload_not_table", {"payload_kind": _uk_kind_value(new_node.kind)}
     payload_rows = [
@@ -177,7 +193,7 @@ def uk_table_column_insert_plans(
 def uk_table_selector_tables(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[list[UKMutableNode], dict[str, Any]]:
+) -> TableSelectorTablesResult:
     tables = [
         child
         for child in node.children
@@ -241,7 +257,7 @@ def _table_entry_article_tolerant_anchor_variants(text: str) -> tuple[str, ...]:
 
 def _unique_descendant_uk_tables(
     node: UKMutableNode,
-) -> tuple[list[UKMutableNode], dict[str, Any]]:
+) -> TableSelectorTablesResult:
     matches: list[tuple[UKMutableNode, tuple[str, ...]]] = []
 
     def _walk(candidate: UKMutableNode, path: tuple[str, ...]) -> None:
@@ -269,7 +285,7 @@ def _unique_descendant_uk_tables(
 def resolve_uk_table_entry_row_insert_index(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, int | None, str, dict[str, Any]]:
+) -> TableRowInsertResult:
     try:
         column_index = int(selector.get("column_index") or 0)
         entry_index = int(selector.get("entry_index") or 0)
@@ -573,7 +589,7 @@ def resolve_uk_table_entry_row_insert_index(
 def resolve_uk_table_entry_row_replace_span(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, int | None, int | None, str, dict[str, Any]]:
+) -> TableRowReplaceSpanResult:
     """Resolve rows named by a table-entry replacement selector.
 
     Replacement is intentionally stricter than insertion: every named relating
@@ -666,7 +682,7 @@ def resolve_uk_table_entry_row_replace_span(
 def resolve_unique_uk_table_relating_cell(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+) -> TableCellResult:
     try:
         column_index = int(selector.get("column_index") or 0)
     except (TypeError, ValueError):
@@ -728,7 +744,7 @@ def _matching_uk_table_relating_cells(
     *,
     column_index: int,
     relating_norm: str,
-) -> tuple[list[UKMutableNode], list[str]]:
+) -> TableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(table):
@@ -751,7 +767,7 @@ def _matching_uk_table_relating_cells(
 def resolve_unique_uk_table_entry_cells(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[list[UKMutableNode], str, dict[str, Any]]:
+) -> TableCellsResult:
     try:
         column_index = int(selector.get("column_index") or 0)
     except (TypeError, ValueError):
@@ -807,7 +823,7 @@ def resolve_unique_uk_table_entry_cells(
 def resolve_unique_uk_table_entry_text_cell(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+) -> TableCellResult:
     match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
     selector_mode = str(selector.get("selector_mode") or "")
     relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
@@ -876,7 +892,7 @@ def _matching_uk_table_entry_text_cells(
     match_norm: str,
     relating_norm: str,
     entry_label_norm: str,
-) -> tuple[list[UKMutableNode], list[str]]:
+) -> TableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(table):
@@ -911,7 +927,7 @@ def _matching_uk_table_entry_text_cells(
 def resolve_unique_uk_table_entry_cell(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+) -> TableCellResult:
     try:
         column_index = int(selector.get("column_index") or 0)
     except (TypeError, ValueError):
@@ -961,7 +977,7 @@ def resolve_unique_uk_table_entry_cell(
 def resolve_unique_uk_table_column_text_cell(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+) -> TableCellResult:
     try:
         column_index = int(selector.get("column_index") or 0)
         row_index = int(selector.get("row_index") or 0)
@@ -1031,7 +1047,7 @@ def _matching_uk_table_column_text_cells(
     row_index: int = 0,
     match_norm: str,
     full_cell_match: bool = False,
-) -> tuple[list[UKMutableNode], list[str]]:
+) -> TableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
@@ -1060,7 +1076,7 @@ def _matching_uk_table_column_text_cells(
 def resolve_uk_table_entry_inline_cell(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+) -> TableCellResult:
     """Resolve a source-owned "nth entry in column N relating to X" table cell."""
     selector_mode = str(selector.get("selector_mode") or "")
     if selector_mode == "unique_column_text":
