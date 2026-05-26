@@ -12044,6 +12044,12 @@ def test_compile_table_entry_for_column_after_anchor_insert_uses_owned_cell_sele
     assert selector["selector_mode"] == "unique_relating_cell"
     assert selector["column_index"] == 2
     assert selector["relating_text"] == "section 310(1), (2) and (3) of the Taxes Act 1988"
+    assert selector["allow_unique_descendant_table"] is True
+    assert selector["table_marker_parent_target"] == "section:98"
+    assert (
+        selector["table_carrier_recovery_rule"]
+        == "uk_replay_table_carrier_anchor_filtered_descendant_table"
+    )
     assert any(
         record["rule_id"] == "uk_effect_table_entry_for_column_text_patch"
         and record["reason_code"] == "explicit_table_entry_column_selector"
@@ -13216,6 +13222,12 @@ def test_compile_table_target_column_words_substitution_uses_owned_cell_selector
     assert selector["match_text"] == "section 124(3)"
     assert selector["table_column_text_action"] == "replace_text"
     assert selector["replacement_text"] == "regulations under section 124(3)"
+    assert selector["allow_unique_descendant_table"] is True
+    assert selector["table_marker_parent_target"] == "section:98"
+    assert (
+        selector["table_carrier_recovery_rule"]
+        == "uk_replay_table_carrier_anchor_filtered_descendant_table"
+    )
     assert any(
         record["rule_id"] == "uk_effect_table_column_text_patch"
         and record["reason_code"] == "explicit_table_column_preimage_selector"
