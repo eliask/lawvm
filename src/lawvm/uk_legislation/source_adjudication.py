@@ -1661,6 +1661,39 @@ def _uk_manual_frontier_classification(
     return {"status": status, "rule_id": rule_id, "reason": reason}
 
 
+def _has_repeal_table_feed_source_target_gap(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    has_source_owned_structural_row = False
+    has_unmatched_feed_target = False
+    for row in lowering_rows:
+        rule_id = str(row.get("rule_id") or "")
+        if (
+            rule_id == "uk_effect_repeal_table_structural_repeal"
+            and not is_blocking_compile_record(row)
+            and str(row.get("extent_cell") or "").strip()
+            and str(row.get("row_text") or "").strip()
+            and str(row.get("target_ref") or "").strip()
+        ):
+            has_source_owned_structural_row = True
+            continue
+        if (
+            rule_id
+            in {
+                "uk_effect_repeal_table_quoted_words_text_repeal_unresolved",
+                "uk_effect_repeal_table_structural_repeal_unresolved",
+            }
+            and is_blocking_compile_record(row)
+            and str(row.get("reason_code") or "")
+            == "no_unique_matching_repeal_table_row"
+            and str(row.get("target_ref") or "").strip()
+            and not str(row.get("extent_cell") or "").strip()
+            and not str(row.get("row_text") or "").strip()
+        ):
+            has_unmatched_feed_target = True
+    return has_source_owned_structural_row and has_unmatched_feed_target
+
+
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     *,
     effect_type: str,
@@ -1887,6 +1920,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "non_textual_or_out_of_scope",
             "rule_id": "uk_manual_frontier_external_act_target_out_of_scope",
             "reason": "The affecting source names a different Act as the mutation target; the row is not a manual compilation opportunity for the current statute.",
+        }
+
+    if _has_repeal_table_feed_source_target_gap(lowering_rows):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_repeal_table_feed_source_target_gap",
+            "reason": "The repeal-table source proves at least one feed-expanded target but leaves another feed-expanded target without a unique source row; replay needs an explicit source-feed target correction or missing-source witness rather than a manual lowering guess.",
         }
 
     if blocking_rules & {
