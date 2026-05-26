@@ -446,6 +446,18 @@ def _uk_table_target_column_text_patch_claim(
         if words_before_column_match is not None:
             original = " ".join(words_before_column_match.group("original").split()).strip()
             replacement = " ".join(words_before_column_match.group("replacement").split()).strip()
+    if not original:
+        quoted = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
+        references_match = re.search(
+            r"\bfor\s+(?:the\s+)?references?\s+to\s+(?P<original>.+?)\s+"
+            r"substitute[ds]?\s+"
+            + quoted.format(name="replacement"),
+            text,
+            re.I,
+        )
+        if references_match is not None:
+            original = " ".join(references_match.group("original").split()).strip(" ,;.")
+            replacement = " ".join(references_match.group("replacement").split()).strip()
     if not original or not replacement:
         return None
     return {
