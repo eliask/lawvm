@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Any, cast
+from typing import Any
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import _uk_kind_value
@@ -106,21 +106,22 @@ class UKReplayTableApplyMixin:
         matched_rows: list[str] = []
         plans = uk_table_column_insert_plans(table)
         for plan in plans:
-            row = cast(UKMutableNode, plan["row"])
-            row_cells = cast(dict[int, UKMutableNode], plan["row_cells"])
-            owned_ranges = cast(list[tuple[int, int, UKMutableNode, int]], plan["owned_ranges"])
+            row = plan.row
+            row_cells = plan.row_cells
+            owned_ranges = plan.owned_ranges
             before_cell = row_cells.get(before_column_index)
             after_cell = row_cells.get(after_column_index)
             owned_spanners = [
-                (start, end, cell, physical_index)
-                for start, end, cell, physical_index in owned_ranges
-                if start <= after_column_index and end >= before_column_index
+                owned_range
+                for owned_range in owned_ranges
+                if owned_range.start_col <= after_column_index
+                and owned_range.end_col >= before_column_index
             ]
             if owned_spanners:
                 if len(owned_spanners) != 1:
                     reason = "column_boundary_span_ambiguous"
                     break
-                _start, _end, spanner, _physical_index = owned_spanners[0]
+                spanner = owned_spanners[0].cell
                 old_colspan_raw = str(spanner.attrs.get("colspan") or "1")
                 if not re.fullmatch(r"[0-9]+", old_colspan_raw):
                     reason = "unsupported_colspan_value"
@@ -137,9 +138,9 @@ class UKReplayTableApplyMixin:
                 reason = "payload_row_count_too_small"
                 break
             insertion_candidates = [
-                physical_index
-                for start, _end, _cell, physical_index in owned_ranges
-                if start >= before_column_index
+                owned_range.physical_index
+                for owned_range in owned_ranges
+                if owned_range.start_col >= before_column_index
             ]
             if insertion_candidates:
                 insert_index = min(insertion_candidates)

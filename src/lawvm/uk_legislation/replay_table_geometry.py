@@ -1,12 +1,29 @@
 """UK replay table geometry helpers."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_text import _compact_normalized_text
 from lawvm.uk_legislation.uk_grafter import _clean_num
+
+
+@dataclass(frozen=True, slots=True)
+class UKTableOwnedColumnRange:
+    start_col: int
+    end_col: int
+    cell: UKMutableNode
+    physical_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class UKTableColumnInsertPlan:
+    row_index: int
+    row: UKMutableNode
+    row_cells: dict[int, UKMutableNode]
+    owned_ranges: list[UKTableOwnedColumnRange]
 
 
 def strip_uk_identity_attrs_recursive(node: UKMutableNode) -> None:
@@ -105,8 +122,8 @@ def uk_table_column_payload_cells(
 
 def uk_table_column_insert_plans(
     table: UKMutableNode,
-) -> list[dict[str, object]]:
-    plans: list[dict[str, object]] = []
+) -> list[UKTableColumnInsertPlan]:
+    plans: list[UKTableColumnInsertPlan] = []
     active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
     for row_index, row in enumerate(table.children):
         if _uk_kind_value(row.kind).lower() != "row":
@@ -120,7 +137,7 @@ def uk_table_column_insert_plans(
             if remaining > 1
         }
         col = 1
-        owned_ranges: list[tuple[int, int, UKMutableNode, int]] = []
+        owned_ranges: list[UKTableOwnedColumnRange] = []
         for physical_index, cell in enumerate(row.children):
             cell_kind = _uk_kind_value(cell.kind).lower()
             if cell_kind not in {"cell", "header_cell"}:
@@ -130,7 +147,14 @@ def uk_table_column_insert_plans(
             rowspan, colspan = uk_table_cell_span(cell)
             start_col = col
             end_col = col + colspan - 1
-            owned_ranges.append((start_col, end_col, cell, physical_index))
+            owned_ranges.append(
+                UKTableOwnedColumnRange(
+                    start_col=start_col,
+                    end_col=end_col,
+                    cell=cell,
+                    physical_index=physical_index,
+                )
+            )
             for offset in range(colspan):
                 current_col = col + offset
                 row_cells[current_col] = cell
@@ -139,12 +163,12 @@ def uk_table_column_insert_plans(
             col += colspan
         if row_cells:
             plans.append(
-                {
-                    "row_index": row_index,
-                    "row": row,
-                    "row_cells": row_cells,
-                    "owned_ranges": owned_ranges,
-                }
+                UKTableColumnInsertPlan(
+                    row_index=row_index,
+                    row=row,
+                    row_cells=row_cells,
+                    owned_ranges=owned_ranges,
+                )
             )
         active_rowspans = next_rowspans
     return plans
