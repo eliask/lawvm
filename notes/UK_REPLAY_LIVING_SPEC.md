@@ -2657,6 +2657,22 @@ Current payload-descendant source-ref invariant:
   `source_payload_mode=logical_table_entry_group` and inserts after the matched
   anchor cell's whole rowspanned group rather than after its first physical row.
   Ambiguous tables/rows emit `uk_replay_table_entry_row_insert_unresolved`.
+  Explicit table-entry replacements of the form `for the entries relating to A
+  and B substitute-` may lower under `uk_effect_table_entry_row_replace` only
+  when the source carries a `BlockAmendment` table payload. The selector stores
+  every named relating entry, replay requires each anchor to resolve to exactly
+  one physical row in exactly one table, and the matched rows must form a
+  contiguous span before they are replaced by the source-owned table rows. Flat
+  replacement text remains blocked as
+  `table_entry_replace_without_table_payload`; ambiguous or non-contiguous live
+  anchors emit `uk_replay_table_entry_row_replace_unresolved`. Current
+  witnesses: `ukpga/1996/61` Schedule 6 paragraph 27(4) Table and Schedule 14
+  paragraph 7(4) Table, amended by `ukpga/2006/16` Schedule 11 paragraphs 147
+  and 148. In source-only replay these rows can still block as
+  `entry_not_found` if the earlier `ukpga/2000/37` Schedule 8 paragraph 1(u)
+  name-substitution preimage chain has not been lowered first; the table-row
+  replacement rule must report that gap rather than matching historical
+  predecessor body names.
   Source-owned between-column insertions such as `between the second and third
   columns, insert-` may lower under `uk_effect_table_column_insert` only when
   the source carries exactly one inserted table column. Replay resolves exactly

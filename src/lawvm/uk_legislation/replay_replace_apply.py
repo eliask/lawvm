@@ -6,7 +6,10 @@ from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_text
-from lawvm.uk_legislation.provenance_notes import _schedule_list_entry_replace_selector
+from lawvm.uk_legislation.provenance_notes import (
+    _schedule_list_entry_replace_selector,
+    _table_row_replace_selector,
+)
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -80,6 +83,36 @@ class UKReplayReplaceApplyMixin:
                 new_node,
                 op,
                 schedule_list_entry_replace_selector,
+            ):
+                self._record_invariant_violations(op)
+                self._emit_top_section_snapshot(op)
+            return
+        table_row_replace_selector = _table_row_replace_selector(op)
+        if table_row_replace_selector is not None:
+            if op.payload is None:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_table_entry_row_replace_unresolved",
+                    message=(
+                        "UK replay skipped table-entry row replacement: "
+                        "replacement payload was missing."
+                    ),
+                    op=op,
+                    detail=uk_replay_blocking_action_target_detail(
+                        op,
+                        target,
+                        selector=dict(table_row_replace_selector),
+                        reason_code="payload_missing",
+                        family="source_table_elaboration",
+                    ),
+                )
+                return
+            new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
+            if self._replace_table_entry_rows(
+                target,
+                new_node,
+                op,
+                table_row_replace_selector,
             ):
                 self._record_invariant_violations(op)
                 self._emit_top_section_snapshot(op)

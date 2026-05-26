@@ -39,6 +39,7 @@ from lawvm.uk_legislation.effect_table_lowering import (
     try_lower_repeal_table_effect,
     try_lower_table_column_insert,
     try_lower_table_row_insert,
+    try_lower_table_row_replace,
 )
 from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
@@ -369,6 +370,21 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         lowering_rejections_out=lowering_rejections_out,
     )
     if _append_handled_lowering_op(target_ops, table_row_insert):
+        return unchanged
+    table_row_replace = try_lower_table_row_replace(
+        effect=effect,
+        action=action,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        sequence=ctx.sequence,
+        effect_witness=ctx.effect_witness,
+        extraction_witness=ctx.extraction_witness,
+        original_targets_str=ctx.original_targets_str,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if _append_handled_lowering_op(target_ops, table_row_replace):
         return unchanged
     repeal_table_effect = try_lower_repeal_table_effect(
         effect=effect,

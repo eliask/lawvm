@@ -18,6 +18,7 @@ NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
 NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR = "crossheading_group_repeal_selector:"
 NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
 NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
+NOTE_TABLE_ROW_REPLACE_SELECTOR = "table_row_replace_selector:"
 NOTE_TABLE_COLUMN_INSERT_SELECTOR = "table_column_insert_selector:"
 NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
 NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR = "schedule_list_entry_table_rows_selector:"
@@ -54,6 +55,11 @@ def _crossheading_group_repeal_selector(op: LegalOperation) -> dict[str, Any] | 
 def _table_row_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
     """Return UK table-row insertion selector data carried on a lowered insert op."""
     return _json_dict_note(op, NOTE_TABLE_ROW_INSERT_SELECTOR)
+
+
+def _table_row_replace_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK table-row replacement selector data carried on a lowered replace op."""
+    return _json_dict_note(op, NOTE_TABLE_ROW_REPLACE_SELECTOR)
 
 
 def _table_column_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
