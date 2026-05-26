@@ -79,6 +79,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_CHILD_QUALIFIED_RANGE_SUBSTITUTION_RULE_ID,
     UK_INTERPRETATION_ENTRIES_RELATING_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
+    UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
 )
@@ -502,6 +503,16 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_definition_entry_repeals:
             subs = list(metadata_carried_definition_entry_repeals)
+    if not subs:
+        metadata_carried_definition_quoted_word_repeal = (
+            _effect_metadata_carried_definition_quoted_word_repeal_fragment(
+                effect=effect,
+                target=target,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_definition_quoted_word_repeal is not None:
+            subs = [metadata_carried_definition_quoted_word_repeal]
     if not subs:
         interpretation_entry_repeals = _effect_interpretation_entries_relating_repeal_fragments(
             effect=effect,
@@ -1209,3 +1220,43 @@ def _effect_metadata_carried_definition_entry_repeal_fragments(
         }
         for term in terms
     )
+
+
+def _effect_metadata_carried_definition_quoted_word_repeal_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word repealed", "words repealed", "word omitted", "words omitted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    if re.search(r"\b(?:table|column|entry)\b", text, flags=re.I):
+        return None
+    match = re.search(
+        r"\bin\s+the\s+definition\s+of\s+[“\"](?P<term>.*?)[”\"]\s+"
+        r"in\s+section\s+(?P<section>[0-9]+[A-Za-z]?)\s+"
+        r"(?:the\s+)?words?\s+[“\"](?P<fragment>.*?)[”\"]",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return None
+    if not target.path or target.path[0][0] != "section":
+        return None
+    source_section = _clean_num(match.group("section"))
+    target_section = _clean_num(target.path[0][1])
+    if not source_section or source_section != target_section:
+        return None
+    term = " ".join(match.group("term").split()).strip()
+    fragment = " ".join(match.group("fragment").split()).strip()
+    if not term or not fragment:
+        return None
+    return {
+        "original": f"TEXT_IN_DEFINITION_{term}\x1fDELETE\x1f{fragment}",
+        "replacement": "",
+        "rule_id": UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
+    }

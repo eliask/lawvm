@@ -387,6 +387,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="definition_after_anchor_selector",
     ),
+    "uk_replay_in_definition_quoted_word_delete_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a definition-scoped quoted-word delete after "
+            "proving a unique definition surface and unique quoted fragment."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="definition_quoted_word_delete_selector",
+    ),
     "uk_replay_proviso_child_structured_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay replaced the text of a proviso child paragraph "
