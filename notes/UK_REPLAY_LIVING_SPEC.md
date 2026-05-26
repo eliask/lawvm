@@ -3226,7 +3226,12 @@ Current payload-descendant source-ref invariant:
   any explicit ordinal occurrence such as `where they thirdly occur`.
   Parenthetical labels and years inside quoted payload/preimage text are
   ignored for target-scope matching; they are payload evidence, not authority to
-  retarget the clause or reject the row as the wrong affected Act. Non-unique
+  retarget the clause or reject the row as the wrong affected Act. Descriptive
+  parenthetical qualifiers after the explicit target, such as `(as it has
+  effect by virtue of section 196 of the Finance Act 1994)`, are likewise
+  ignored for affected-year and target matching; the explicit target remains the
+  address before the qualifier, and the qualifier cannot authorize a different
+  target. Non-unique
   rows, whole-provision repeal clauses, entry/table structural repeals, and
   multi-action clauses remain blocking
   `uk_effect_repeal_table_quoted_words_text_repeal_unresolved` / manual
@@ -3241,6 +3246,12 @@ Current payload-descendant source-ref invariant:
   affected enactment by exact short citation/title. Context is the current
   citation-style enactment heading before the clause, not an arbitrary lookback
   window; a later heading for another Act blocks stale-context recovery. The
+  target matcher may ignore a descriptive parenthetical qualifier after the
+  explicit target, such as `(as it has effect by virtue of section 196 of the
+  Finance Act 1994)`, for affected-year and target matching, but that
+  parenthetical is not authority to retarget the operation to the referenced
+  section or Act. Short label parentheticals such as `(7)(a)` remain part of the
+  explicit target. The
   observation records
   `enactment_match_basis=flat_preceding_context_*`. If the affected enactment
   context is absent, multiple clauses match, or the clause is only a table-entry
