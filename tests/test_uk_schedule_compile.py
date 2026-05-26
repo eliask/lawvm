@@ -16426,6 +16426,199 @@ def test_compile_repeal_table_entry_surface_remains_unresolved() -> None:
     )
 
 
+def test_compile_repeal_table_column_entry_text_repeal_uses_owned_cell_selector() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal or revocation</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Taxes Management Act 1970 (c. 9)</td>
+                  <td>In the second column of the Table in section 98, the entry for section 86(4) of FA 1999.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_column_entry_text_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2010/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="Sch. 8 para. 108(2) Sch. 10 Pt. 2",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "98"), ("subsection", "table"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "section 86(4) of FA 1999"
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_column_entry_text_repeal"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_repeal_table_column_entry_text_repeal"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 2
+    assert selector["match_scope"] == "full_cell"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_column_entry_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_column_entry"
+        and record["blocking"] is False
+        and record["table_cell_selector"]["match_text"] == "section 86(4) of FA 1999"
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_column_entry_text_repeal_blocks_deictic_entry() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal or revocation</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Taxes Management Act 1970 (c. 9)</td>
+                  <td>In the first column of the Table in section 98, the entry for paragraph 6 of Schedule 9 to that Act.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_column_entry_text_repeal_deictic",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2010/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="Sch. 7 para. 18(2) Sch. 10 Pt. 12",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_column_entry_text_repeal"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_column_entry_text_repeal_blocks_multiple_entries() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal or revocation</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Taxes Management Act 1970 (c. 9)</td>
+                  <td>In the first column of the Table in section 98— the entry for paragraph 2 of Schedule 15 to FA 1973, the entry for section 42 of ICTA, and the entry for regulations under section 199 of FA 2003.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_column_entry_text_repeal_multiple",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2010/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="Sch. 7 para. 18(2) Sch. 10 Pt. 12",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_column_entry_text_repeal"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_definition_entry_text_repeal() -> None:
     source_root = ET.fromstring(
         """

@@ -2839,6 +2839,12 @@ Current payload-descendant source-ref invariant:
   child lowers to the same full-cell table delete. Child rows containing
   `that Act`, `that Schedule`, or similar unresolved referents stay blocked
   rather than inheriting a guessed referent from sibling rows.
+  Repeal-table extent rows may also lower singular non-deictic column entries
+  under `uk_effect_repeal_table_column_entry_text_repeal`, for example
+  `In the second column of the Table in section 98, the entry for X`. The source
+  repeal table must match the affected enactment and provision exactly, and the
+  emitted replay operation carries a table-cell selector with `match_scope =
+  full_cell`; it deletes only that cell text and does not delete the table row.
   Deictic `after that entry insert-` may also carry a single logical entry
   group encoded as multiple physical source rows, but only when the first source
   cell rowspans across every source row; replay records
