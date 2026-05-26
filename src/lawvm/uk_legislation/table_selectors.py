@@ -181,7 +181,9 @@ def _uk_table_entry_inline_text_selector(
     source_table_relating_column_match = re.search(
         r"\bin\s+(?:the\s+)?"
         r"(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
-        r"\s+column\s+of\s+(?:the\s+)?table,?\s+in\s+the\s+entry\s+"
+        r"\s+column\s+of\s+(?:the\s+)?table"
+        r"(?:\s+in\s+section\s+[0-9A-Za-z]+)?"
+        r",?\s+in\s+the\s+entry\s+"
         r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<relating>.*?),\s+"
         r"(?:after|for|omit|insert)\b",
         text,

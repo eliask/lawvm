@@ -418,7 +418,10 @@ def _extract_text_fragment_substitutions(
     if (
         multi_quoted_word_repeals
         and len(subs) == 1
-        and _multi_fragment_text_selector(str(subs[0].get("original") or ""))
+        and (
+            _multi_fragment_text_selector(str(subs[0].get("original") or ""))
+            or str(subs[0].get("replacement") or "") == ""
+        )
     ):
         subs = list(multi_quoted_word_repeals)
     if not subs:
