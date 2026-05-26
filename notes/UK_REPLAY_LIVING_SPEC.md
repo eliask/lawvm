@@ -5164,6 +5164,22 @@ Current bench replay-regime invariant:
   `TEXT_AFTER_X_TO_END`: replay retains the explicit anchor and rewrites only
   the target node's own tail, or a uniquely matching descendant text node. It
   must not flatten a target subtree just to make the tail replacement apply.
+  When the source additionally scopes the tail with a definition entry and a
+  child paragraph, e.g. `in the definition of "D", in the words following
+  paragraph (b), for the words following "X" substitute "Y"`, lowering must
+  preserve that scope as
+  `TEXT_IN_DEFINITION_CHILD_TAIL<US>D<US>paragraph<US>b<US>AFTER<US>X<US>TO_END`
+  under `uk_effect_definition_child_tail_after_anchor_to_end_text_patch`.
+  Replay may then rewrite only the tail after the cited child paragraph inside
+  that one definition entry, emitting
+  `uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied`.
+  If source parse has preserved the definition entry and a unique tail anchor
+  but not the cited child paragraph boundary, quirks replay may proceed only
+  with the additional observation
+  `uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique`;
+  strict disposition is `block` for that boundary-loss recovery.
+  Current witnesses: `ukpga/2020/17` affected `s. 273(12)` and `s. 283(12)`
+  by `ukpga/2020/17 Sch. 22 para. 88(1)(a)-(b)` and `para. 89(1)(a)-(b)`.
   `omit the words after "X"` lowers to the same tail selector with an empty
   replacement under `uk_effect_after_anchor_to_end_omission_text_patch`; this
   is a bounded text deletion scoped to the effect-feed target, not permission
