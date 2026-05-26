@@ -27,7 +27,7 @@ from lawvm.uk_legislation.source_fragment_context import (
     _source_local_instruction_text_for_carried_payload,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num, _parse_table as _parse_uk_table_payload
-from lawvm.uk_legislation.xml_helpers import _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
 
 UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
@@ -1065,6 +1065,50 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    prior_inserted_words_match = re.search(
+        r"\bwords\s+[“\"'‘](?P<payload>.*?)[”\"'’]\s+"
+        r"(?:shall\s+be|is|are)\s+inserted\s+in\s+(?:the\s+)?"
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))"
+        r"(?:\s+of\s+(?:the\s+)?table)?\s+"
+        r"after\s+the\s+words\s+inserted\s+by\s+sub-?paragraph\s+"
+        r"\((?P<source_parent_label>[^)]*)\)\((?P<source_label>[A-Za-z]+)\)\s+above\b",
+        text,
+        re.I,
+    )
+    if target_names_table and prior_inserted_words_match is not None:
+        column_token = (
+            prior_inserted_words_match.group("column_ordinal")
+            or prior_inserted_words_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        inserted_text = _strip_schedule_entry_payload(
+            prior_inserted_words_match.group("payload")
+        )
+        source_context = _source_prior_inserted_words_anchor_context(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            source_parent_label=prior_inserted_words_match.group("source_parent_label"),
+            source_label=prior_inserted_words_match.group("source_label"),
+            rule_id=UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+        )
+        relating_text = " ".join(str(source_context.get("relating_text") or "").split()).strip(" ,;.")
+        if column_index is not None and column_index >= 1 and inserted_text and relating_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "column_entry",
+                "direction": "after",
+                "column_index": column_index,
+                "entry_index": 1,
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "source_payload_mode": "column_entry_text",
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+                **source_context,
+            }
     each_column_entry_for_insert_match = re.search(
         r"\beach\s+(?:of\s+the\s+)?columns?\b.*?"
         r"\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+"
@@ -1554,6 +1598,96 @@ def _uk_table_entry_row_insert_selector(
         "original_target": str(target),
         "target_ref": target_ref,
     }
+
+
+def _source_prior_inserted_words_anchor_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    source_parent_label: str,
+    source_label: str,
+    rule_id: str,
+) -> dict[str, str]:
+    """Resolve "words inserted by sub-paragraph ... above" to a prior source row."""
+    if source_root is None or extracted_el is None:
+        return {}
+    wanted_label = _clean_num(source_label)
+    wanted_parent_label = _clean_num(source_parent_label)
+    if not wanted_label or not wanted_parent_label:
+        return {}
+    extracted_id = extracted_el.get("id") or extracted_el.get("Id")
+    current_ancestors = frozenset(_source_ancestor_chain(source_root, extracted_el))
+    prior: list[ET.Element] = []
+
+    def _walk(node: ET.Element) -> bool:
+        if node is extracted_el or (extracted_id and node.get("id") == extracted_id):
+            return True
+        prior.append(node)
+        for child in node:
+            if _walk(child):
+                return True
+        return False
+
+    if not _walk(source_root):
+        return {}
+    for candidate in reversed(prior):
+        if _clean_num(_direct_structural_num(candidate)) != wanted_label:
+            continue
+        candidate_ancestors = _source_ancestor_chain(source_root, candidate)
+        source_parent_index = next(
+            (
+                index
+                for index, ancestor in enumerate(candidate_ancestors)
+                if _clean_num(_direct_structural_num(ancestor)) == wanted_parent_label
+            ),
+            None,
+        )
+        if source_parent_index is None or source_parent_index + 1 >= len(candidate_ancestors):
+            continue
+        if candidate_ancestors[source_parent_index + 1] not in current_ancestors:
+            continue
+        candidate_text = " ".join(_text_content(candidate).split())
+        parent_preamble = (
+            _source_text_before_extracted_child(candidate_ancestors[0], candidate)
+            if candidate_ancestors
+            else ""
+        )
+        candidate_surfaces = (candidate_text, parent_preamble)
+        if not any("insert" in surface.lower() for surface in candidate_surfaces):
+            continue
+        inserted_match = next(
+            (
+                match
+                for surface in candidate_surfaces
+                for match in (
+                    re.search(
+                        r"\b(?:words?|entry)\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+                        r"(?:shall\s+be|is|are)\s+inserted\b",
+                        surface,
+                        re.I,
+                    ),
+                )
+                if match is not None
+            ),
+            None,
+        )
+        if inserted_match is not None:
+            anchor = _strip_schedule_entry_payload(inserted_match.group("anchor"))
+        else:
+            quoted = re.findall(r"[“\"'‘](.*?)[”\"'’]", candidate_text)
+            if len(quoted) != 1:
+                continue
+            anchor = _strip_schedule_entry_payload(quoted[0])
+        if not anchor:
+            continue
+        return {
+            "relating_text": anchor,
+            "source_context_rule_id": rule_id,
+            "source_context": "prior_source_inserted_words_anchor",
+            "source_anchor_label": wanted_label,
+            "source_anchor_id": str(candidate.get("id") or candidate.get("Id") or ""),
+        }
+    return {}
 
 
 def _uk_table_entry_row_replace_selector(
