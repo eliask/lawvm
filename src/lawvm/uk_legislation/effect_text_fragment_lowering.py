@@ -12,6 +12,7 @@ from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
     _heading_facet_after_anchor_insert_fragment,
+    _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
     _heading_facet_source_parent_full_replacement_fragment,
 )
@@ -381,6 +382,9 @@ def _extract_text_fragment_substitutions(
     heading_after_anchor_insert = (
         _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
     )
+    heading_append = (
+        _heading_facet_append_fragment(extracted_text) if heading_facet_target else None
+    )
     heading_full_replacement = (
         _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
     )
@@ -397,6 +401,8 @@ def _extract_text_fragment_substitutions(
         if table_substitution_recognized
         else [source_carried_definition_child_text_omission_precheck]
         if source_carried_definition_child_text_omission_precheck is not None
+        else [heading_append]
+        if heading_append is not None
         else [heading_after_anchor_insert]
         if heading_after_anchor_insert is not None
         else [heading_full_replacement]

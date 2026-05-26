@@ -30013,6 +30013,185 @@ def test_compile_heading_insert_before_section_lowers_to_heading_facet_replaceme
     assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
 
 
+def test_compile_heading_that_section_substitute_lowers_to_heading_facet_replacement() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>For the heading to that section substitute
+          “. Admissibility of evidence not affected by offer of settlement etc”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_that_section_substitute",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-10",
+        affected_uri="/id/ukpga/1970/9/section/105/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 105 heading",
+        affecting_uri="/id/ukpga/2003/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="14",
+        affecting_provisions="s. 206(2)",
+        affecting_title="Finance Act 2003",
+        in_force_dates=[{"date": "2003-07-10", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress(path=(("section", "105"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
+    assert ops[0].text_patch.replacement == "Admissibility of evidence not affected by offer of settlement etc"
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_full_replacement_lowered"
+        and record["reason_code"] == "explicit_heading_facet_full_replacement"
+        for record in lowering_records
+    )
+
+
+def test_compile_heading_for_insert_lowers_to_heading_facet_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in the heading, for “Lands Tribunal” insert
+          “the relevant tribunal”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_for_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-06-01",
+        affected_uri="/id/ukpga/1970/9/section/46D/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 46D heading",
+        affecting_uri="/id/uksi/2009/1307",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2009",
+        affecting_number="1307",
+        affecting_provisions="Sch. 1 para. 96(a)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2009-06-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress(path=(("section", "46d"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Lands Tribunal"
+    assert ops[0].text_patch.replacement == "Lands Tribunal the relevant tribunal"
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered"
+        and record["reason_code"] == "explicit_heading_facet_word_patch"
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
+def test_compile_heading_at_end_without_the_lowers_to_heading_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>In the heading, at end insert
+          “: assessments other than simple assessments”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_at_end_without_the",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-09-15",
+        affected_uri="/id/ukpga/1970/9/section/59B/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 59B heading",
+        affecting_uri="/id/ukpga/2016/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="24",
+        affecting_provisions="Sch. 23 para. 7(2)",
+        affecting_title="Finance Act 2016",
+        in_force_dates=[{"date": "2016-09-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress(path=(("section", "59b"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == ": assessments other than simple assessments"
+    assert any(record["rule_id"] == "uk_effect_heading_facet_append_lowered" for record in lowering_records)
+
+
+def test_compile_heading_at_beginning_insert_lowers_to_heading_facet_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in the heading, at the beginning insert
+          “UK Economic Interest Groupings and”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_beginning_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-04-01",
+        affected_uri="/id/ukpga/1970/9/section/12A/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 12A heading",
+        affecting_uri="/id/uksi/2019/689",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="689",
+        affecting_provisions="reg. 2(3)(a)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2019-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress(path=(("section", "12a"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_BEGINNING"
+    assert ops[0].text_patch.replacement == "UK Economic Interest Groupings and"
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered"
+        and record["reason_code"] == "explicit_heading_facet_word_patch"
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
 def test_compile_heading_title_replacement_from_source_parent_instruction() -> None:
     source_root = ET.fromstring(
         f"""
