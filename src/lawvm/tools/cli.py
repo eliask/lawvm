@@ -5115,6 +5115,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="short retries before sleeping until reset after HTTP 429/403 (default: 3)",
     )
     nz_sync_p.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        metavar="SECONDS",
+        help="per-request network timeout in seconds (default: 60)",
+    )
+    nz_sync_p.add_argument(
+        "--quiet",
+        action="store_true",
+        help="suppress default stderr progress reporting",
+    )
+    nz_sync_p.add_argument(
+        "--progress-interval",
+        type=int,
+        default=25,
+        metavar="N",
+        help="print one progress line every N acquisition events (default: 25)",
+    )
+    nz_sync_p.add_argument(
         "--diagnostics-jsonl",
         metavar="PATH",
         help="write acquisition diagnostics/failures as JSONL",

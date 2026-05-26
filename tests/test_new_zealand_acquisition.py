@@ -8,6 +8,7 @@ from typing import Any
 from lawvm.new_zealand.acquisition import (
     NZHttpResponse,
     NZSyncOptions,
+    UrllibNZTransport,
     _canonicalize_version_format_url,
     sync_nz_corpus,
 )
@@ -55,10 +56,17 @@ class _FakeArchive:
 class _FakeTransport:
     def __init__(self, responses: dict[str, NZHttpResponse]) -> None:
         self.responses = responses
-        self.calls: list[tuple[str, str, str]] = []
+        self.calls: list[tuple[str, str, str, float]] = []
 
-    def get(self, url: str, *, api_key: str, accept: str) -> NZHttpResponse:
-        self.calls.append((url, api_key, accept))
+    def get(
+        self,
+        url: str,
+        *,
+        api_key: str,
+        accept: str,
+        timeout_s: float,
+    ) -> NZHttpResponse:
+        self.calls.append((url, api_key, accept, timeout_s))
         assert "api_key=" not in url
         response = self.responses.get(url)
         if response is None:
@@ -71,7 +79,14 @@ class _SequenceTransport:
         self.responses = responses
         self.calls = 0
 
-    def get(self, url: str, *, api_key: str, accept: str) -> NZHttpResponse:
+    def get(
+        self,
+        url: str,
+        *,
+        api_key: str,
+        accept: str,
+        timeout_s: float,
+    ) -> NZHttpResponse:
         self.calls += 1
         if not self.responses:
             raise AssertionError("unexpected extra request")
@@ -130,6 +145,7 @@ def test_nz_corpus_sync_fetches_version_detail_and_xml_without_query_key(tmp_pat
     assert metadata["request_url_without_api_key"] == version_url
     assert "test" not in json.dumps(metadata)
     assert all(call[1] == "test" for call in transport.calls)
+    assert all(call[3] == 60.0 for call in transport.calls)
 
 
 def test_nz_corpus_sync_canonicalizes_latest_xml_alias(tmp_path: Path) -> None:
@@ -315,6 +331,96 @@ def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> 
     assert stats.diagnostics[0].rule_id == "nz_acquire_xml_format_missing"
 
 
+def test_nz_corpus_sync_progress_reports_to_stderr(tmp_path: Path, capsys: Any) -> None:
+    version_id = "act_public_1990_109_en_2022-08-30"
+    version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            version_url: _json_response({"version_id": version_id, "formats": []}),
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(version_id,),
+        delay=0.0,
+        progress=True,
+        progress_interval=1,
+    )
+
+    sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    err = capsys.readouterr().err
+    assert "nz-sync phase=start" in err
+    assert "phase=version_detail requests=1" in err
+    assert "phase=done" in err
+    assert "test" not in err
+
+
+def test_urllib_nz_transport_uses_explicit_timeout(monkeypatch: Any) -> None:
+    seen: dict[str, Any] = {}
+
+    class FakeHeaders(dict[str, str]):
+        def items(self):  # noqa: ANN201
+            return super().items()
+
+        def get(self, key: str, default: str = "") -> str:
+            return super().get(key, default)
+
+    class FakeResponse:
+        headers = FakeHeaders({"Content-Type": "application/json"})
+
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def getcode(self) -> int:
+            return 200
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    def fake_urlopen(request: Any, timeout: float) -> FakeResponse:
+        seen["timeout"] = timeout
+        seen["url"] = request.full_url
+        seen["headers"] = dict(request.header_items())
+        return FakeResponse()
+
+    monkeypatch.setattr("lawvm.new_zealand.acquisition.urlopen", fake_urlopen)
+
+    response = UrllibNZTransport().get(
+        "https://api.legislation.govt.nz/v0/versions/example/",
+        api_key="secret",
+        accept="application/json",
+        timeout_s=17.5,
+    )
+
+    assert response.status_code == 200
+    assert seen["timeout"] == 17.5
+    assert seen["url"] == "https://api.legislation.govt.nz/v0/versions/example/"
+    assert seen["headers"]["X-api-key"] == "secret"
+
+
+def test_urllib_nz_transport_returns_status_zero_on_timeout(monkeypatch: Any) -> None:
+    def fake_urlopen(_request: Any, timeout: float) -> object:
+        assert timeout == 3.0
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("lawvm.new_zealand.acquisition.urlopen", fake_urlopen)
+
+    response = UrllibNZTransport().get(
+        "https://api.legislation.govt.nz/v0/versions/example/",
+        api_key="secret",
+        accept="application/json",
+        timeout_s=3.0,
+    )
+
+    assert response.status_code == 0
+    assert b"timed out" in response.body
+
+
 def test_nz_corpus_cli_parse_defaults() -> None:
     parser = _build_parser()
 
@@ -329,4 +435,7 @@ def test_nz_corpus_cli_parse_defaults() -> None:
     assert args.max_versions_per_work is None
     assert args.sleep_on_rate_limit is False
     assert args.rate_limit_retry_attempts == 3
+    assert args.timeout == 60.0
+    assert args.quiet is False
+    assert args.progress_interval == 25
     assert args.work_id == ["act_public_1990_109"]
