@@ -82,6 +82,21 @@ class UKTableWordSubstitutionLowering:
 
 
 @dataclass(frozen=True)
+class _UKTableDrivenFeeSubstitutionMatch:
+    table_index: int
+    original: str
+    replacement: str
+    row_text: str
+
+
+@dataclass(frozen=True)
+class _UKTableDrivenCorrespondingEntryMatch:
+    table_index: int
+    original: str
+    row_text: str
+
+
+@dataclass(frozen=True)
 class _UKRepealTableQuotedWordsTextRepeal:
     recognized: bool
     original: Optional[str] = None
@@ -2066,7 +2081,7 @@ def _uk_table_driven_fee_substitution(
         return _UKTableDrivenWordSubstitution(recognized=False)
 
     affected_year = str(effect.affected_year or "")
-    matches = []
+    matches: list[_UKTableDrivenFeeSubstitutionMatch] = []
 
     for table_index, table in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
@@ -2111,7 +2126,14 @@ def _uk_table_driven_fee_substitution(
                 old_fee = row[4].strip() if len(row) > 4 else ""
                 original = f"TEXT_FEE_SUM_{old_fee}" if old_fee else "TEXT_FEE_SUM_ANY"
                 if new_fee:
-                    matches.append((table_index, original, new_fee, " | ".join(row[:4])))
+                    matches.append(
+                        _UKTableDrivenFeeSubstitutionMatch(
+                            table_index=table_index,
+                            original=original,
+                            replacement=new_fee,
+                            row_text=" | ".join(row[:4]),
+                        )
+                    )
 
     if len(matches) == 0:
         return _UKTableDrivenWordSubstitution(recognized=False)
@@ -2119,20 +2141,20 @@ def _uk_table_driven_fee_substitution(
     if len(matches) > 1:
         return _UKTableDrivenWordSubstitution(
             recognized=True,
-            replacement=matches[0][2],
+            replacement=matches[0].replacement,
             reason_code="no_unique_matching_table_row",
             match_count=len(matches),
         )
 
-    table_index, original, new_fee, row_text = matches[0]
+    match = matches[0]
     return _UKTableDrivenWordSubstitution(
         recognized=True,
-        original=original,
-        replacement=new_fee,
+        original=match.original,
+        replacement=match.replacement,
         reason_code="",
         match_count=1,
-        table_index=table_index,
-        row_text=row_text,
+        table_index=match.table_index,
+        row_text=match.row_text,
     )
 
 
@@ -2169,7 +2191,7 @@ def _uk_table_driven_corresponding_entry_word_substitution(
         )
         if group is not None
     )
-    matches: list[tuple[int, str, str]] = []
+    matches: list[_UKTableDrivenCorrespondingEntryMatch] = []
     tables = [
         el
         for el in source_root.iter()
@@ -2190,7 +2212,13 @@ def _uk_table_driven_corresponding_entry_word_substitution(
             old_words = _strip_outer_uk_quotes(words_cell)
             if not old_words:
                 continue
-            matches.append((table_index, old_words, " | ".join(row[:2])))
+            matches.append(
+                _UKTableDrivenCorrespondingEntryMatch(
+                    table_index=table_index,
+                    original=old_words,
+                    row_text=" | ".join(row[:2]),
+                )
+            )
 
     if len(matches) != 1:
         return _UKTableDrivenWordSubstitution(
@@ -2200,15 +2228,15 @@ def _uk_table_driven_corresponding_entry_word_substitution(
             match_count=len(matches),
         )
 
-    table_index, original, row_text = matches[0]
+    match = matches[0]
     return _UKTableDrivenWordSubstitution(
         recognized=True,
-        original=original,
+        original=match.original,
         replacement=replacement,
         reason_code="",
         match_count=1,
-        table_index=table_index,
-        row_text=row_text,
+        table_index=match.table_index,
+        row_text=match.row_text,
     )
 
 
