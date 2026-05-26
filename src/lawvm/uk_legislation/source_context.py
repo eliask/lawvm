@@ -65,6 +65,14 @@ class UKAffectingSourceContext:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class UKEnactedScheduleTableRowMatch:
+    row: ET.Element
+    cells: tuple[ET.Element, ...]
+    part_label: str
+    source_label_text: str
+
+
 def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]:
     if el is None:
         return None
@@ -967,7 +975,7 @@ def _extract_enacted_schedule_table_row_source(
     if schedule_el is None or _tag(schedule_el) != "Schedule":
         return None, ()
 
-    matches: list[tuple[ET.Element, tuple[ET.Element, ...], str, str]] = []
+    matches: list[UKEnactedScheduleTableRowMatch] = []
     for part in schedule_el.iter():
         if _tag(part) != "Part":
             continue
@@ -983,17 +991,24 @@ def _extract_enacted_schedule_table_row_source(
             row_label_text = _text_content(cells[0]).strip().rstrip(".")
             row_label = _schedule_table_row_label_key(row_label_text)
             if row_label == target_paragraph_label:
-                matches.append((row, cells, part_label, target_paragraph_label.upper()))
+                matches.append(
+                    UKEnactedScheduleTableRowMatch(
+                        row=row,
+                        cells=cells,
+                        part_label=part_label,
+                        source_label_text=target_paragraph_label.upper(),
+                    )
+                )
     if len(matches) != 1:
         return None, ()
 
-    row, cells, part_label, source_label_text = matches[0]
+    match = matches[0]
     synthetic = _synthetic_schedule_table_row_paragraph_source(
         schedule_label=target_schedule_label,
-        part_label=part_label,
-        target_label=source_label_text,
-        row=row,
-        cells=cells,
+        part_label=match.part_label,
+        target_label=match.source_label_text,
+        row=match.row,
+        cells=match.cells,
     )
     if synthetic is None:
         return None, ()
@@ -1005,9 +1020,9 @@ def _extract_enacted_schedule_table_row_source(
         locator=context.locator,
         authority_layer=context.authority_layer,
         schedule_label=target_schedule_label,
-        part_label=part_label,
+        part_label=match.part_label,
         target_label=target_paragraph_label,
-        source_row_text=_text_content(row),
+        source_row_text=_text_content(match.row),
     )
     return synthetic, (observation,)
 
