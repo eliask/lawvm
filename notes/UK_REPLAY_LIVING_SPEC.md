@@ -3235,7 +3235,10 @@ Current payload-descendant source-ref invariant:
   `uk_effect_repeal_table_reference_text_repeal` only when the row explicitly
   names the affected provision and exactly one reference selector; plural
   `references to`, joined references, table-entry referents, and unresolved
-  selector shapes remain manual/frontier cases. Non-unique
+  selector shapes remain manual/frontier cases. A target-matched repeal-table
+  row may also use one bare quoted preimage without the words `the word(s)`, for
+  example `In section 37A, ", 257D".`; multiple bare quoted fragments or
+  substitution/insert phrasing remain unresolved. Non-unique
   rows, whole-provision repeal clauses, entry/table structural repeals, and
   multi-action clauses remain blocking
   `uk_effect_repeal_table_quoted_words_text_repeal_unresolved` / manual
