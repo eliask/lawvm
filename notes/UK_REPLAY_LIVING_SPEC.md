@@ -3283,7 +3283,14 @@ Current payload-descendant source-ref invariant:
   `Section 98(4C).`, the compiler may lower that single target to `REPEAL`.
   Clauses that mention words, definitions, entries, or table surfaces remain
   unresolved/manual, and structured table matches, mixed rows, and broad
-  container rows take precedence over the flat fallback.
+  container rows take precedence over the flat fallback. A flattened mixed row
+  may also lower only a separately named structural half when the source names
+  the parent container and a simple structural list/range, for example `In
+  section 44-- (a) subsections (1A) and (1B), and (b) in subsection (2), the
+  words "...".` for feed targets `s. 44(1A)` and `s. 44(1B)`. The observation
+  uses `reason_code=flat_mixed_structural_and_word_repeal_split_structural_target`.
+  The later word-deletion host (`s. 44(2)` in this example) is not authority
+  for a structural repeal and must remain outside the flat structural rule.
   A single extent clause that combines word-level repeals with a separately
   named structural target may lower only the exact structural target when the
   structural mention is grammatically separate after punctuation or `and`, for
