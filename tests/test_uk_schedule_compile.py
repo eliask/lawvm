@@ -12164,6 +12164,60 @@ def test_compile_table_column_after_entry_insert_remains_blocked_without_row_mod
     )
 
 
+def test_compile_table_target_column_words_substitution_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b for the words “section 124(3)” in column 2 of the Table
+          there shall be substituted “ regulations under section 124(3) ”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_target_column_words_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="1996-04-29",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1996/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="8",
+        affecting_provisions="Sch. 29 para. 2(2)(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1996-04-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "section 124(3)"
+    assert ops[0].text_patch.replacement == "regulations under section 124(3)"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 2
+    assert selector["match_text"] == "section 124(3)"
+    assert selector["table_column_text_action"] == "replace_text"
+    assert selector["replacement_text"] == "regulations under section 124(3)"
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_column_append_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""

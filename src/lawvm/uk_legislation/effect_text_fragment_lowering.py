@@ -63,7 +63,10 @@ from lawvm.uk_legislation.source_text_reclassifications import lower_quote_only_
 from lawvm.uk_legislation.table_sources import (
     lower_uk_table_driven_corresponding_entry_word_substitution,
 )
-from lawvm.uk_legislation.table_selectors import _uk_table_column_entry_text_patch_claim
+from lawvm.uk_legislation.table_selectors import (
+    _uk_table_column_entry_text_patch_claim,
+    _uk_table_target_column_text_patch_claim,
+)
 from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_rule_ids,
     _multi_quoted_word_repeal_fragments,
@@ -416,6 +419,25 @@ def _extract_text_fragment_substitutions(
                     "match_text": str(table_column_entry_text_patch["match_text"]),
                     "table_column_entry_action": str(
                         table_column_entry_text_patch["table_column_entry_action"]
+                    ),
+                }
+            ]
+    if not subs:
+        table_target_column_text_patch = _uk_table_target_column_text_patch_claim(
+            target_ref=target_ref,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if table_target_column_text_patch is not None:
+            subs = [
+                {
+                    "original": str(table_target_column_text_patch["text_patch_original"]),
+                    "replacement": str(table_target_column_text_patch["text_patch_replacement"]),
+                    "rule_id": str(table_target_column_text_patch["rule_id"]),
+                    "column_index": str(table_target_column_text_patch["column_index"]),
+                    "match_text": str(table_target_column_text_patch["match_text"]),
+                    "table_column_text_action": str(
+                        table_target_column_text_patch["table_column_text_action"]
                     ),
                 }
             ]
