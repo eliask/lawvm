@@ -1420,6 +1420,18 @@ def test_parse_fragment_substitution_handles_after_child_insert_with_comma() -> 
     ]
 
 
+def test_parse_fragment_substitution_handles_insert_after_child() -> None:
+    subs = parse_fragment_substitution("a insert \u201c or \u201d after paragraph (a); and")
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_CHILD_paragraph_a",
+            "replacement": "or",
+            "rule_id": "uk_effect_after_child_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_compound_subsection_child_insert() -> None:
     subs = parse_fragment_substitution(
         "a after subsection (4)(a)(i), insert \u201c or \u201d ;"
