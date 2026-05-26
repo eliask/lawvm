@@ -80,6 +80,14 @@ _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
     r"(?:Substitute|For)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*$",
     flags=re.I,
 )
+_SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
+    r"\bat\s+the\s+end(?:\s+of\s+(?:(?:that|the)\s+)?"
+    r"(?:paragraph|sub-?paragraph|subsection|section)(?:\s+\([^)]+\))?"
+    r"(?:\s+\([^)]*\))?)?,?\s+"
+    r"(?:(?:there\s+(?:is|are|shall\s+be)\s+)?insert(?:ed)?|"
+    r"(?:there\s+(?:is|are)\s+)?added)\s*[—–-]?\s*$",
+    flags=re.I,
+)
 _SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
     r"(?:(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
@@ -393,6 +401,38 @@ def append_source_fragment_context_observations(
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
                 "selector_mode": str(each_other_fragment.get("selector_mode") or ""),
+            },
+        )
+    for source_parent_at_end_fragment in fragment_subs or []:
+        if (
+            str(source_parent_at_end_fragment.get("rule_id") or "")
+            != "uk_effect_source_parent_at_end_text_insertion_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_parent_at_end_text_insertion_patch",
+            family="source_context_elaboration",
+            reason_code="text_insert_end_resolved_from_source_parent",
+            reason=(
+                "UK source payload carries only inserted text while its local "
+                "parent instruction explicitly says the text is inserted at "
+                "the end. Lowering combines those source-local facts into a "
+                "typed end-append text patch instead of treating the payload "
+                "as a standalone broad text rewrite."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(source_parent_at_end_fragment.get("source_parent_id") or ""),
+                "source_parent_instruction": str(
+                    source_parent_at_end_fragment.get("source_parent_instruction") or ""
+                ),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
             },
         )
 
@@ -842,5 +882,44 @@ def _fragment_substitution_source_parent_prefix_substitute(
             "replacement": replacement,
             "source_parent_id": source_parent_id,
             "rule_id": "uk_effect_source_parent_prefix_substitute_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_source_parent_at_end_text_insert(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve payload-only text governed by a local `at the end insert` parent."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or extracted_el is None or _tag(extracted_el) not in {
+        "BlockAmendment",
+        "InlineAmendment",
+    }:
+        return None
+    if any(_tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS for child in list(extracted_el)):
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        if not instruction_text:
+            instruction_text = _source_local_instruction_text_for_carried_payload(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        if not instruction_text or not _SOURCE_PARENT_AT_END_TEXT_INSERT_RE.search(instruction_text):
+            continue
+        source_parent_id = str(
+            ancestor.get("id")
+            or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+        )
+        return {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": payload_text,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+            "rule_id": "uk_effect_source_parent_at_end_text_insertion_patch",
         }
     return None

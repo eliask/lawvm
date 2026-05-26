@@ -1797,6 +1797,14 @@ Current block-substitution context invariant:
   and the block carries an unnumbered `Para`; lowering must first prove whether
   the operation is a child insertion, text append, or some other structural
   mutation.
+- A narrower payload-only recovery is allowed for unstructured
+  `BlockAmendment`/`InlineAmendment` text whose local parent instruction
+  explicitly says `at the end ... inserted`/`added`. In that case lowering emits
+  `uk_effect_source_parent_at_end_text_insertion_patch`, a typed append patch
+  (`TEXT_END`) against the effect target, and records the source-parent id and
+  instruction. The rule does not fire without a source parent and does not
+  apply to structured payload children; those remain structural/payload
+  questions, not text appends.
 - mixed instructions that combine a structural repeal and a text rewrite, such
   as `Omit subsections ... and in subsection ... the words from ... to the
   end`, record `uk_effect_mixed_structural_text_rewrite_rejected`. They need an
