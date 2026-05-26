@@ -38,6 +38,7 @@ UK_TABLE_ENTRY_FOR_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_for_column_text_
 UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
 UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
 UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_labels_column_text_patch"
+UK_TABLE_ROW_COLUMN_TEXT_RULE_ID = "uk_effect_table_row_column_text_patch"
 UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID = (
     "uk_effect_table_entry_deictic_label_column_text_patch"
 )
@@ -254,6 +255,36 @@ def _uk_table_entry_inline_text_selector(
                 "table_label": "",
                 "original_target": str(target),
                 "target_ref": target_ref,
+            }
+    row_column_match = re.search(
+        r"\bin\s+row\s+(?P<row>\d+)\s+of\s+(?:the\s+)?table,\s+"
+        r"in\s+(?:paragraph\s+\((?P<paragraph>[0-9A-Za-z]+)\)\s+of\s+)?"
+        r"the\s+entry\s+in\s+(?:the\s+)?"
+        r"(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+        r"\s+column\b",
+        text,
+        re.I,
+    )
+    if row_column_match is not None and original_text:
+        try:
+            row_index = int(row_column_match.group("row") or "0")
+        except ValueError:
+            row_index = 0
+        column_index = _uk_ordinal_to_int(row_column_match.group("column_ordinal"))
+        if row_index >= 1 and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": UK_TABLE_ROW_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_column_text",
+                "column_index": column_index,
+                "row_index": row_index,
+                "source_entry_paragraph_label": _clean_num(
+                    row_column_match.group("paragraph") or ""
+                ),
+                "match_text": original_text,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+                "source_names_containing_target": source_names_containing_target,
             }
     source_table_relating_column_match = re.search(
         r"\bin\s+(?:the\s+)?"

@@ -964,6 +964,7 @@ def resolve_unique_uk_table_column_text_cell(
 ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
     try:
         column_index = int(selector.get("column_index") or 0)
+        row_index = int(selector.get("row_index") or 0)
     except (TypeError, ValueError):
         return None, "invalid_selector", {}
     match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
@@ -980,6 +981,7 @@ def resolve_unique_uk_table_column_text_cell(
             candidate_cells, candidate_rows = _matching_uk_table_column_text_cells(
                 candidate_table,
                 column_index=column_index,
+                row_index=row_index,
                 match_norm=match_norm,
                 full_cell_match=full_cell_match,
             )
@@ -1004,6 +1006,7 @@ def resolve_unique_uk_table_column_text_cell(
     matching_cells, matching_rows = _matching_uk_table_column_text_cells(
         candidate_tables[0],
         column_index=column_index,
+        row_index=row_index,
         match_norm=match_norm,
         full_cell_match=full_cell_match,
     )
@@ -1025,12 +1028,15 @@ def _matching_uk_table_column_text_cells(
     table: UKMutableNode,
     *,
     column_index: int,
+    row_index: int = 0,
     match_norm: str,
     full_cell_match: bool = False,
 ) -> tuple[list[UKMutableNode], list[str]]:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
-    for row_cells in expanded_uk_table_rows(table):
+    for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
+        if row_index >= 1 and physical_row_index + 1 != row_index:
+            continue
         target_cell = row_cells.get(column_index)
         if target_cell is None:
             continue
