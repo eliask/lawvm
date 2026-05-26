@@ -256,6 +256,17 @@ def try_lower_table_row_insert(
         parent_target = target
     if (
         parent_target is not None
+        and str(table_row_insert_selector.get("selector_mode") or "") == "column_entry"
+        and bool(table_row_insert_selector.get("source_names_table"))
+    ):
+        table_row_insert_selector = {
+            **table_row_insert_selector,
+            "allow_unique_descendant_table": True,
+            "table_marker_parent_target": str(parent_target),
+            "table_carrier_recovery_rule": "uk_replay_table_carrier_unique_descendant_table",
+        }
+    if (
+        parent_target is not None
         and len(parent_target.path) >= 2
         and parent_target.path[-1] == ("subsection", "1")
         and parent_target.path[-2][0] == "section"

@@ -24154,6 +24154,78 @@ def test_compile_table_entry_ordinal_column_row_insert_uses_owned_selector() -> 
     )
 
 
+def test_compile_table_column_entry_row_insert_from_quoted_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a in the first column of the Table after the entry
+            \u201cregulations under section 602;\u201d there shall be inserted
+            the entry \u201cregulations under section 605(1A)(b) to (d);\u201d;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_row_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-11-29",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="s. 105(4)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1994-11-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ROW
+    assert [child.text for child in ops[0].payload.children] == [
+        "regulations under section 605(1A)(b) to (d);",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_row_insert"
+    assert selector["selector_mode"] == "column_entry"
+    assert selector["column_index"] == 1
+    assert selector["relating_text"] == "regulations under section 602"
+    assert selector["allow_unique_descendant_table"] is True
+    assert (
+        selector["table_carrier_recovery_rule"]
+        == "uk_replay_table_carrier_unique_descendant_table"
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -24993,6 +25065,283 @@ def test_replay_table_entry_relating_row_insert_mutates_unique_row_table_only() 
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["selector"]["selector_mode"] == "relating_entry"
+
+
+def test_replay_table_column_entry_row_insert_mutates_unique_column_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_entry",
+        "direction": "after",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "regulations under section 602;",
+        "inserted_text": "regulations under section 605(1A)(b) to (d);",
+        "source_payload_mode": "column_entry_text",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_entry_row_insert_apply",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(
+                IRNode(kind=IRNodeKind.CELL, text="regulations under section 605(1A)(b) to (d);"),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 602;"),),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 606;"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "regulations under section 602;",
+        "regulations under section 605(1A)(b) to (d);",
+        "regulations under section 606;",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["selector"]["selector_mode"] == "column_entry"
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_column_entry_row_insert_blocks_ambiguous_column_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_entry",
+        "direction": "after",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "regulations under section 602;",
+        "inserted_text": "regulations under section 605;",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_entry_row_insert_ambiguous",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 605;"),),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 602;"),),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 602;"),),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "regulations under section 602;",
+        "regulations under section 602;",
+    ]
+    unresolved = next(
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_table_entry_row_insert_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "entry_not_unique"
+    assert unresolved.detail["blocking"] is True
+
+
+def test_replay_table_column_entry_row_insert_resolves_unique_descendant_table() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_entry",
+        "direction": "after",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "regulations under section 602;",
+        "inserted_text": "regulations under section 605;",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_entry_row_insert_descendant",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 605;"),),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Intro"),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="regulations under section 602;",
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[1].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "regulations under section 602;",
+        "regulations under section 605;",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["table_carrier"] == "unique_descendant_table"
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_column_entry_row_insert_blocks_multiple_descendant_tables() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "column_entry",
+        "direction": "after",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "regulations under section 602;",
+        "inserted_text": "regulations under section 605;",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_entry_row_insert_multi_descendant",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "98"),)),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 605;"),),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    table = IRNode(
+        kind=IRNodeKind.TABLE,
+        children=(
+            IRNode(
+                kind=IRNodeKind.ROW,
+                children=(IRNode(kind=IRNodeKind.CELL, text="regulations under section 602;"),),
+            ),
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(table,)),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(table,)),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert len(replayed.body.children[0].children[0].children[0].children) == 1
+    unresolved = next(
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_table_entry_row_insert_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "table_not_unique"
+    assert unresolved.detail["table_count"] == 2
+    assert unresolved.detail["blocking"] is True
 
 
 def test_replay_table_entry_relating_rows_replace_mutates_only_resolved_row_span() -> None:
