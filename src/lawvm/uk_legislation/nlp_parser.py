@@ -2802,6 +2802,24 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 }
             )
 
+    matches_imperative_definition_relating_repeal = re.finditer(
+        r"\bomit\s+(?:the\s+)?definition\s+relating\s+to\s+"
+        r"(?P<term>[A-Za-z][A-Za-z0-9&'(). /-]{1,140}?)"
+        r"(?:\s*,\s*(?:and)?|[.;]|$)",
+        text,
+        re.I,
+    )
+    for m in matches_imperative_definition_relating_repeal:
+        term = " ".join(m.group("term").split()).strip()
+        if term:
+            subs.append(
+                {
+                    "original": f"TEXT_DEFINITION_ENTRY_{term}",
+                    "replacement": "",
+                    "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+                }
+            )
+
     matches_words_are_omitted = re.finditer(
         r"(?:the )?words? [“\"'‘](.*?)[”\"'’]\s+(?:is|are)\s+(?:omitted|repealed)",
         text,

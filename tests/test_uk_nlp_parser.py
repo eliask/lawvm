@@ -846,6 +846,20 @@ def test_parse_fragment_substitution_handles_parenthesized_nested_quote_substitu
     ]
 
 
+def test_parse_fragment_substitution_handles_definition_relating_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "a omit the definition relating to the Service Complaints Commissioner, and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_DEFINITION_ENTRY_the Service Complaints Commissioner",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_anchor_to_end_block_substitution() -> None:
     subs = parse_fragment_substitution(
         "i in sub-paragraph (1)(a), from \u201coffence under\u201d to the end substitute\u2014 "
