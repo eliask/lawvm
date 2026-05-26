@@ -3733,6 +3733,17 @@ Current bench replay-regime invariant:
   `Sch. 22 para. 88(a)` under
   `uk_affecting_act_implicit_first_subparagraph_context_ignored`, recording the
   original ref, normalized ref, authority layer, and extracted element id.
+- Affecting-provision refs such as `s. 175(2)(b)` may be represented in UK XML
+  as an outdented `section-175-b` sibling after `section-175-2`, while a greedy
+  fallback would otherwise resolve the anonymous payload child `(b)` inside a
+  preceding `BlockAmendment`. Extraction may select the outdented source child
+  under `uk_affecting_act_outdented_child_source_selected` only when the
+  outdented child shares the same source parent as the requested numbered
+  provision and its own instruction explicitly names the carried subsection.
+  This is source-context recovery, not permission to treat block-amendment
+  payload descendants as source instructions. Current witness: `ukpga/2020/17`
+  effect `key-72664204ac688329fa47f97a6f44133f`, affecting source
+  `ukpga/2022/32 s. 175(2)(b)`.
 - UK bench rows must also persist replay lowering rejection totals, including
   the blocking subset. A replay score without its unsupported/no-op lowering
   surface is not a coverage metric; it hides which source effects were parsed

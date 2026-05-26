@@ -461,6 +461,45 @@ def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
     }
 
 
+def uk_affecting_act_outdented_child_source_selected(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    requested_parent_id: str,
+    selected_child_id: str,
+    selected_child_label: str,
+    selected_child_text_preview: str,
+    carried_parent_label: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_outdented_child_source_selected",
+        "family": "source_context_recovery",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "requested_parent_id": requested_parent_id,
+        "selected_child_id": selected_child_id,
+        "selected_child_label": selected_child_label,
+        "selected_child_text_preview": selected_child_text_preview,
+        "carried_parent_label": carried_parent_label,
+        "reason": (
+            "UK source XML outdented a lettered source child from the numbered "
+            "provision named by the effects metadata. LawVM selected the "
+            "outdented child only because it shares the same source parent and "
+            "its own instruction explicitly names the carried subsection."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
 def uk_affecting_act_compound_reference_split_fallback(
     *,
     effect_id: str,

@@ -37580,6 +37580,120 @@ def test_pipeline_compile_ops_rejects_anonymous_block_amendment_payload_descenda
     )
 
 
+def test_pipeline_compile_ops_selects_outdented_source_child_before_payload_descendant(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_outdented_source_child",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 343(2)",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="s. 175(2)(b)",
+        affecting_title="Outdented Source Child Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-175">
+          <Pnumber>175</Pnumber>
+          <P1para>
+            <P2 id="section-175-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>In section 343 (sexual harm prevention order)—</Text>
+                <P3 id="section-175-2-a">
+                  <Pnumber>a</Pnumber>
+                  <P3para>
+                    <Text>for subsection (1) substitute—</Text>
+                    <BlockAmendment>
+                      <P2>
+                        <Pnumber>1A</Pnumber>
+                        <P2para>
+                          <P3>
+                            <Pnumber>b</Pnumber>
+                            <P3para><Text>require the offender to do anything described in the order.</Text></P3para>
+                          </P3>
+                        </P2para>
+                      </P2>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+            <P3 id="section-175-b">
+              <Pnumber>b</Pnumber>
+              <P3para>
+                <Text>in subsection (2), after “prohibitions” insert <InlineAmendment>“or requirements”</InlineAmendment>, and</Text>
+              </P3para>
+            </P3>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(_effect, extracted_el, sequence=0, **_kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "id": extracted_el.get("id") if extracted_el is not None else "",
+                "text": uk_replay_mod._text_content(extracted_el) if extracted_el is not None else "",
+            }
+        )
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert compile_calls == [
+        {
+            "tag": "P3",
+            "id": "section-175-b",
+            "text": "b in subsection (2), after “prohibitions” insert “or requirements” , and",
+        }
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_outdented_child_source_selected"
+        and row.get("requested_parent_id") == "section-175-2"
+        and row.get("selected_child_id") == "section-175-b"
+        and row.get("blocking") is False
+        and row.get("strict_disposition") == "record"
+        for row in diagnostics
+    )
+    assert not any(
+        row.get("rule_id") == "uk_affecting_act_block_amendment_payload_descendant_ref_rejected"
+        for row in diagnostics
+    )
+
+
 def test_enacted_source_fallback_rejects_anonymous_block_amendment_payload_descendant() -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_enacted_payload_descendant_source_ref",
