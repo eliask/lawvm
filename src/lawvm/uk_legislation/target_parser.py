@@ -1,6 +1,7 @@
 """Affected-target parsing for UK effects metadata."""
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 from typing import Optional
 
@@ -52,6 +53,7 @@ def _normalize_affected_target_ref(ref: str) -> str:
     )
 
 
+@lru_cache(maxsize=131072)
 def _parse_affected_target(ref: str) -> LegalAddress:
     """Parse 'Sch. 1 Pt. I Ch. 1 para. 1' into a LegalAddress."""
     ref = _normalize_affected_target_ref(ref)

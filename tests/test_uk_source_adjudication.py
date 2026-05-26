@@ -102,6 +102,7 @@ def test_uk_replay_recovery_observations_are_explicitly_owned() -> None:
             "definition_entry_predicate_recovery",
             "definition_entry_separator_recovery",
             "target_resolution_recovery",
+            "source_shape_recovery",
             "text_match_recovery",
             "text_rewrite_recovery",
             "amendment_program_recovery",
