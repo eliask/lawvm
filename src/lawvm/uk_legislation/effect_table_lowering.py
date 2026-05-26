@@ -23,6 +23,10 @@ from lawvm.uk_legislation.provenance_notes import (
 from lawvm.uk_legislation.source_table_entry_paragraph import (
     _source_carried_table_entry_paragraph_substitution,
 )
+from lawvm.uk_legislation.source_parent_payloads import (
+    SOURCE_PARENT_TABLE_ENTRY_INSERT_RE as _SOURCE_PARENT_TABLE_ENTRY_INSERT_RE,
+    _source_parent_instruction_with_payload,
+)
 from lawvm.uk_legislation.table_selectors import (
     UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID as _UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID,
     UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID as _UK_EMBEDDED_TABLE_STRUCTURAL_SUBSTITUTION_RULE_ID,
@@ -236,6 +240,32 @@ def try_lower_table_row_insert(
         if action == "insert"
         else None
     )
+    source_parent_table_entry_insert = (
+        _source_parent_instruction_with_payload(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            instruction_pattern=_SOURCE_PARENT_TABLE_ENTRY_INSERT_RE,
+        )
+        if table_row_insert_selector is None and action == "insert"
+        else None
+    )
+    if source_parent_table_entry_insert is not None:
+        table_row_insert_selector = _uk_table_entry_row_insert_selector(
+            target_ref=t_str,
+            target=target,
+            extracted_text=source_parent_table_entry_insert["combined_text"],
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        if table_row_insert_selector is not None:
+            table_row_insert_selector = {
+                **table_row_insert_selector,
+                "source_parent_id": source_parent_table_entry_insert["source_parent_id"],
+                "source_parent_instruction": source_parent_table_entry_insert[
+                    "source_parent_instruction"
+                ],
+            }
     if table_row_insert_selector is None:
         return UKTableLoweringResult(handled=False)
 

@@ -820,6 +820,45 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    column_passive_entry_insert_match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?table)?\b"
+        r".*?(?:following\s+)?entry\s+(?:shall\s+be|is|are)\s+inserted\s+"
+        r"(?P<direction>after|before)\s+(?:the\s+)?entry\s+"
+        r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<anchor>.+?)\s*[—–-]\s*"
+        r"(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if column_passive_entry_insert_match is not None:
+        column_token = (
+            column_passive_entry_insert_match.group("column_ordinal")
+            or column_passive_entry_insert_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        relating_text = " ".join(column_passive_entry_insert_match.group("anchor").split()).strip(
+            " ,;.“”\"'‘’"
+        )
+        inserted_text = _strip_schedule_entry_payload(
+            column_passive_entry_insert_match.group("payload")
+        )
+        if column_index is not None and column_index >= 1 and relating_text and inserted_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "column_entry",
+                "direction": column_passive_entry_insert_match.group("direction").lower(),
+                "column_index": column_index,
+                "entry_index": 1,
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "source_payload_mode": "column_entry_text",
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     column_final_entry_insert_match = re.search(
         r"\bin\s+(?:the\s+)?"
         r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
