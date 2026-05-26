@@ -55,6 +55,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_table_entry_row_replace_selector,
 )
 from lawvm.uk_legislation.table_sources import (
+    _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
     _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID,
@@ -1036,6 +1037,14 @@ def try_lower_repeal_table_effect(
                 "sentence repeal; lowering emits a sentence text delete "
                 "instead of replaying the broad repeal schedule."
             )
+        elif repeal_table_rule_id == _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID:
+            reason_code = "unique_repeal_table_extent_row_column_entry"
+            reason = (
+                "UK repeal-table source row matched the affected Act and "
+                "provision exactly, and its extent cell names one table-column "
+                "entry repeal; lowering emits a table-cell text delete instead "
+                "of replaying the broad repeal schedule."
+            )
         else:
             reason_code = "unique_repeal_table_extent_row_quoted_words"
             reason = (
@@ -1069,7 +1078,18 @@ def try_lower_repeal_table_effect(
                 "originals": repeal_table_originals,
                 "occurrence": repeal_table_text_repeal.occurrence,
                 "end_occurrence": repeal_table_text_repeal.end_occurrence,
+                **(
+                    {"table_cell_selector": repeal_table_text_repeal.table_cell_selector}
+                    if repeal_table_text_repeal.table_cell_selector is not None
+                    else {}
+                ),
             },
+        )
+        provenance_note = (
+            f"{_NOTE_TABLE_CELL_SELECTOR}"
+            f"{json.dumps(repeal_table_text_repeal.table_cell_selector, ensure_ascii=False)}"
+            if repeal_table_text_repeal.table_cell_selector is not None
+            else ""
         )
         return UKTableBatchLoweringResult(
             handled=True,
@@ -1085,6 +1105,7 @@ def try_lower_repeal_table_effect(
                 extraction_witness=extraction_witness,
                 original_targets_str=original_targets_str,
                 t_str=t_str,
+                provenance_note=provenance_note,
             ),
         )
     if repeal_table_text_repeal.recognized:

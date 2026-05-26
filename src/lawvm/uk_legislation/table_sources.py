@@ -30,6 +30,9 @@ _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
 _UK_REPEAL_TABLE_DEFINITION_CHILD_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_definition_child_text_repeal"
 )
+_UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_repeal_table_column_entry_text_repeal"
+)
 _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID = "uk_effect_repeal_table_structural_repeal"
 _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID = (
     "uk_effect_repeal_table_parent_child_text_repeal_split"
@@ -93,6 +96,7 @@ class _UKRepealTableQuotedWordsTextRepeal:
     enactment_match_basis: str = ""
     occurrence: int = 0
     end_occurrence: int = 0
+    table_cell_selector: Optional[dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -317,6 +321,49 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
     if match is None:
         return "", 0, 0
     return _uk_first_quote_group(match, "quoted_double", "quoted_single"), 0, 0
+
+
+def _uk_repeal_table_column_entry_text_selector(extent_cell: str) -> Optional[dict[str, Any]]:
+    """Extract a singular repeal-table table-column entry without deleting its row."""
+    text = " ".join((extent_cell or "").split()).strip()
+    if not text or re.search(r"\bthat\s+(?:act|schedule|column)\b", text, flags=re.I):
+        return None
+    if re.search(r"\bentries\b", text, flags=re.I):
+        return None
+    if len(re.findall(r"\bentry\s+(?:for|relating\s+to)\b", text, flags=re.I)) != 1:
+        return None
+    match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+        r"\s+column|column\s+(?P<column_number>\d+))\s+"
+        r"of\s+(?:the\s+)?table\b.*?"
+        r"\b(?:the\s+)?entry\s+(?:for|relating\s+to)\s+(?P<entry>.+?)\s*\.?$",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    column_token = match.group("column_ordinal") or match.group("column_number")
+    column_index = _uk_ordinal_to_int(column_token or "")
+    entry_text = " ".join(match.group("entry").split()).strip(" ,;.")
+    if (
+        column_index is None
+        or column_index < 1
+        or not entry_text
+        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+    ):
+        return None
+    return {
+        "rule_id": _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID,
+        "selector_mode": "unique_column_text",
+        "column_index": column_index,
+        "match_text": entry_text,
+        "match_scope": "full_cell",
+        "source_table_mode": "repeal_table_extent_row",
+        "table_column_entry_action": "delete_entry_text",
+        "text_patch_original": entry_text,
+        "text_patch_replacement": "",
+    }
 
 
 def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, ...]:
@@ -595,7 +642,21 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
-    matches: list[tuple[int, str, tuple[str, ...], int, int, str, str, str, str, str]] = []
+    matches: list[
+        tuple[
+            int,
+            str,
+            tuple[str, ...],
+            int,
+            int,
+            str,
+            str,
+            str,
+            str,
+            str,
+            Optional[dict[str, Any]],
+        ]
+    ] = []
     tables = _uk_repeal_extent_source_tables_for_roots(search_roots)
     if not tables:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
@@ -660,6 +721,15 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         original = definition_originals[0]
                         additional_originals = definition_originals[1:]
                         rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
+                table_cell_selector: Optional[dict[str, Any]] = None
+                if (
+                    not original
+                    and not structural_definition_entry_effect
+                ):
+                    table_cell_selector = _uk_repeal_table_column_entry_text_selector(extent_clause)
+                    if table_cell_selector:
+                        original = str(table_cell_selector["match_text"])
+                        rule_id = _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID
                 if (
                     not original
                     and not structural_definition_entry_effect
@@ -707,6 +777,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         enactment_cell,
                         extent_clause,
                         enactment_match_basis,
+                        table_cell_selector,
                     )
                 )
 
@@ -730,6 +801,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         enactment_cell,
         extent_cell,
         enactment_match_basis,
+        table_cell_selector,
     ) = matches[0]
     return _UKRepealTableQuotedWordsTextRepeal(
         recognized=True,
@@ -745,6 +817,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         enactment_match_basis=enactment_match_basis,
         occurrence=occurrence,
         end_occurrence=end_occurrence,
+        table_cell_selector=table_cell_selector,
     )
 
 
@@ -1662,10 +1735,6 @@ def _uk_table_cell_mentions_target(
     if not text:
         return False
     scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
-    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
-    if years and affected_year and affected_year not in years:
-        return False
-
     labels = {kind: label for kind, label in target.path}
     section = labels.get("section", "")
     schedule = labels.get("schedule", "")
@@ -1674,6 +1743,16 @@ def _uk_table_cell_mentions_target(
     subparagraph = labels.get("subparagraph", "")
     part = labels.get("part", "")
     chapter = labels.get("chapter", "")
+    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
+    section_table_extent = (
+        bool(section)
+        and subsection.lower() == "table"
+        and "table" in scope_text
+        and re.search(rf"\b(?:section|sections|s)\.?\s*{re.escape(section.lower())}\b", scope_text)
+        is not None
+    )
+    if years and affected_year and affected_year not in years and not section_table_extent:
+        return False
 
     if part:
         return _uk_table_cell_mentions_container_label(
@@ -1708,7 +1787,13 @@ def _uk_table_cell_mentions_target(
             and not listed_section_match
         ):
             return False
-        descendant_labels = [label for label in (subsection, paragraph, subparagraph) if label]
+        if subsection and subsection.lower() == "table" and "table" not in text:
+            return False
+        descendant_labels = [
+            label
+            for label in (subsection, paragraph, subparagraph)
+            if label and label.lower() != "table"
+        ]
         if descendant_labels and not _uk_cell_has_section_descendant_scope(
             text,
             section=section,
