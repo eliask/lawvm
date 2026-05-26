@@ -322,11 +322,22 @@ def refine_crossheading_or_heading_facet_target(
     heading_full_replacement_fragment = _heading_facet_full_replacement_fragment(
         extracted_text
     )
+    heading_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    allow_source_parent_full_replacement = heading_effect_type not in {
+        "word substituted",
+        "words substituted",
+        "word omitted",
+        "words omitted",
+        "word inserted",
+        "words inserted",
+    }
     heading_source_parent_full_replacement_fragment = (
         _heading_facet_source_parent_full_replacement_fragment(
             extracted_el=extracted_el,
             source_root=source_root,
         )
+        if allow_source_parent_full_replacement
+        else None
     )
     if heading_append_fragment is not None:
         heading_observation_rule = "uk_effect_heading_facet_append_lowered"

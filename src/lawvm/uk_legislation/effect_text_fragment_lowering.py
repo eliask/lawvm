@@ -160,7 +160,7 @@ def lower_uk_text_fragment_rewrite(
             extracted_el=extracted_el,
             source_root=source_root,
         )
-        if heading_facet_target
+        if heading_facet_target and not is_word_level
         else None
     )
     source_carried_definition_child_text_omission_precheck = (
@@ -234,6 +234,7 @@ def lower_uk_text_fragment_rewrite(
         extracted_el=extracted_el,
         source_root=source_root,
         extracted_text=extracted_text,
+        allow_heading_source_parent_full_replacement=not is_word_level,
     )
     if subs:
         return _promote_text_fragment_substitutions(
@@ -354,6 +355,7 @@ def _extract_text_fragment_substitutions(
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],
     extracted_text: str,
+    allow_heading_source_parent_full_replacement: bool = True,
 ) -> list[dict[str, Any]]:
     heading_after_anchor_insert = (
         _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
@@ -366,7 +368,7 @@ def _extract_text_fragment_substitutions(
             extracted_el=extracted_el,
             source_root=source_root,
         )
-        if heading_facet_target
+        if heading_facet_target and allow_heading_source_parent_full_replacement
         else None
     )
     subs = (

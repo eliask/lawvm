@@ -29429,6 +29429,74 @@ def test_compile_heading_facet_word_substitution_targets_heading_special() -> No
     assert any(record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered" for record in lowering_records)
 
 
+def test_compile_heading_facet_word_substitution_ignores_source_parent_full_replacement_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <P1 id="section-7">
+            <Pnumber>7</Pnumber>
+            <P1para>
+              <Text>For the heading substitute "Wrong whole heading replacement".</Text>
+              <P3 id="section-7-3-a">
+                <Pnumber>a</Pnumber>
+                <P3para>
+                  <Text>in the heading, for "terrorist" substitute "certain";</Text>
+                </P3para>
+              </P3>
+            </P1para>
+          </P1>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//*[@id='section-7-3-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_facet_word_substitution_parent_context",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-22",
+        affected_uri="/id/ukpga/2020/17/section/252A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 252A heading",
+        affecting_uri="/id/ukpga/2026/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="2",
+        affecting_provisions="s. 7(3)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2026-03-22", "prospective": "false"}],
+    )
+
+    lowering_records: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("section", "252a"),),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch("terrorist", "certain")
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered"
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"]
+        == "uk_effect_heading_facet_source_parent_full_replacement_text_patch"
+        for record in lowering_records
+    )
+
+
 def test_compile_heading_title_range_respectively_all_occurrences() -> None:
     extracted_el = ET.fromstring(
         f"""
