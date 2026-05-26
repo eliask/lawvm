@@ -2936,6 +2936,14 @@ Current payload-descendant source-ref invariant:
     98`) and the selector also names the table column, row relation, and text
     preimage. Otherwise table-entry wording remains a blocking
     `uk_effect_table_entry_instruction_rejected` manual-frontier row.
+  - Quoted entry substitutions inside one named table column, e.g. `in the
+    first column of the Table for the entry "X" there shall be substituted the
+    entry "Y"`, lower under `uk_effect_table_column_entry_text_patch` as a
+    table-cell preimage replacement. Replay must still resolve exactly one
+    table cell in the named column carrying `X`. This rule does not handle
+    `after entry X insert entry Y`, because that is row/cell placement, not a
+    safe append to the existing cell; those rows remain a table compiler
+    frontier until a source-owned row insertion model can prove them.
   - current witnesses: `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32
     Sch. 17 para. 4(3)(a)`, `s. 122(1) Table` by `ukpga/2022/32 Sch. 21
     para. 3(a)`, `s. 166(5) Table` by `ukpga/2026/2 s. 7(9)(d)`, and

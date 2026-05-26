@@ -34,6 +34,7 @@ UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID = (
 )
 UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
 UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
+UK_TABLE_COLUMN_ENTRY_TEXT_RULE_ID = "uk_effect_table_column_entry_text_patch"
 UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
 UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
 UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID = "uk_effect_table_entry_row_replace"
@@ -108,6 +109,17 @@ def _uk_table_entry_inline_text_selector(
         and not ("table" in text.lower() and source_names_containing_target)
     ):
         return None
+    column_entry_patch = _uk_table_column_entry_text_patch_claim(
+        target_ref=target_ref,
+        target=target,
+        extracted_text=text,
+    )
+    if column_entry_patch is not None:
+        return {
+            key: value
+            for key, value in column_entry_patch.items()
+            if key not in {"text_patch_original", "text_patch_replacement"}
+        }
     fragments = parse_fragment_substitution(text)
     primary_fragment = fragments[0] if len(fragments) == 1 else None
     original_text = str(primary_fragment.get("original") or "") if primary_fragment is not None else ""
@@ -317,6 +329,64 @@ def _uk_table_entry_inline_text_selector(
         "original_target": str(target),
         "target_ref": target_ref,
     }
+
+
+def _uk_table_column_entry_text_patch_claim(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract quoted table-column entry text patches without inventing rows."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_names_table = "table" in " ".join((target_ref, str(target))).lower()
+    source_names_containing_target = _source_names_containing_target_for_table_cell(text, target)
+    if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
+        return None
+    column_match = re.search(
+        r"\bin\s+(?:the\s+)?"
+        r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\b",
+        text,
+        re.I,
+    )
+    if column_match is None:
+        return None
+    column_token = column_match.group("column_ordinal") or column_match.group("column_number")
+    column_index = _uk_ordinal_to_int(column_token or "")
+    if column_index is None or column_index < 1:
+        return None
+    quoted = r"[“\"'‘](?P<{name}>.*?)[”\"'’]"
+    substitution_match = re.search(
+        r"\bfor\s+(?:the\s+)?entry\s+"
+        + quoted.format(name="original")
+        + r"\s+(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute[ds]?)\s+"
+        + r"(?:the\s+)?entry\s+"
+        + quoted.format(name="replacement"),
+        text,
+        re.I,
+    )
+    if substitution_match is not None:
+        original = " ".join(substitution_match.group("original").split()).strip()
+        replacement = " ".join(substitution_match.group("replacement").split()).strip()
+        if original and replacement:
+            return {
+                "rule_id": UK_TABLE_COLUMN_ENTRY_TEXT_RULE_ID,
+                "selector_mode": "unique_column_text",
+                "column_index": column_index,
+                "match_text": original,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+                "source_names_containing_target": source_names_containing_target,
+                "table_column_entry_action": "replace_entry",
+                "replacement_text": replacement,
+                "text_patch_original": original,
+                "text_patch_replacement": replacement,
+            }
+    return None
 
 
 def _uk_table_entry_row_insert_selector(
