@@ -4547,11 +4547,14 @@ Current bench replay-regime invariant:
   59A(8)` affected by `ukpga/2003/14 s. 145(7)(a)`.
 - Grouped `In the following provisions ... for "X" there shall be substituted
   "Y"` source parents may have child rows that enumerate only target
-  provisions. Lowering combines the parent preimage/replacement with the child
-  row only when the child is reference-only and effects metadata owns the target,
-  emitting `uk_effect_source_parent_following_provisions_substitution_text_patch`.
-  Without the parent instruction it remains blocked. Witness: `ukpga/1970/9 s.
-  7(6)` affected by `ukpga/1999/16 s. 22(11)(a)`.
+  provisions. The same rule admits `following enactments` parents and reversed
+  `substitute "Y" for "X"` wording. Lowering combines the parent
+  preimage/replacement with the child row only when the child is reference-only
+  and effects metadata owns the target, emitting
+  `uk_effect_source_parent_following_provisions_substitution_text_patch`.
+  Without the parent instruction it remains blocked. Witnesses: `ukpga/1970/9
+  s. 7(6)` affected by `ukpga/1999/16 s. 22(11)(a)` and `ukpga/1970/9 s.
+  108(2)` affected by `uksi/2009/1890 art. 3(3)(c)`.
 - Some grouped target-list parents split the instruction around the child rows:
   lead text opens the list, e.g. `In TMA 1970, in-`, child rows enumerate
   targets, and tail text carries `for "X" substitute "Y"`. Lowering combines
