@@ -1086,7 +1086,7 @@ def _effect_metadata_carried_scoped_quoted_words_repeal_fragments(
     text = " ".join(str(extracted_text or "").split()).strip()
     if not text:
         return ()
-    if re.search(r"\b(?:table|column|entry|definition)\b", text, flags=re.I):
+    if re.search(r"\b(?:table|column|entry|definitions?)\b", text, flags=re.I):
         return ()
     if re.search(r"\b(?:omit|omitted|repeal|repealed|insert|inserted|substitute|substituted)\b", text, flags=re.I):
         return ()

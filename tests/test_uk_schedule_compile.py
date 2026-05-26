@@ -7455,6 +7455,51 @@ def test_compile_definition_entry_repeal_uses_definition_selector() -> None:
     )
 
 
+def test_compile_definition_relating_repeal_uses_definition_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-11-a">
+          <Pnumber>a</Pnumber>
+          <Text>a omit the definition relating to the Service Complaints Commissioner, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-e746dec506fc026b134506ad2d13b48d",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/374",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 374",
+        affecting_uri="/id/ukpga/2015/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="19",
+        affecting_provisions="Sch. para. 11(a)",
+        affecting_title="Deregulation Act 2015",
+        in_force_dates=[{"date": "2016-01-01", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "374"),)
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_DEFINITION_ENTRY_the Service Complaints Commissioner"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_definition_entry_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_definition_anchor_comma_entry_insert_and_substitution() -> None:
     insert_el = ET.fromstring(
         f"""
