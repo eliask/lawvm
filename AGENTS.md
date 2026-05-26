@@ -158,6 +158,29 @@ return rejected operations with reason, source, and blocking/strictness status.
 
 ### 1.10 avoid try-except too particularly in non-test code
 
+### 1.11 Hot-path performance discipline
+
+Do not make broad performance rewrites without a profiler witness or a bounded
+hot-path reason.
+
+Regex policy:
+
+- compile static regexes when they are reused, complex, or run in corpus-scale
+  loops;
+- do not blindly replace every `re.search(...)` with `re.compile(...)`; Python
+  already caches recent module-level regex calls;
+- avoid constructing dynamic regex strings inside loops over provisions,
+  effects, source XML, or tree descendants;
+- if a target-specific dynamic regex is unavoidable, build it once per target
+  or function call and reuse the compiled pattern inside the inner loop;
+- prefer cheap string guards before regex scans over large legal text;
+- replace regex with direct string operations only when the equivalence is
+  obvious, tested, and not semantic guesswork.
+
+Performance changes must preserve findings, rejected operations, diagnostics,
+and strict-mode behavior. Do not optimize away evidence to improve benchmark
+scores or wall time.
+
 ---
 
 ## 2. What LawVM Optimizes For
