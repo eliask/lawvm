@@ -1792,6 +1792,9 @@ Current parser-surface normalization invariant:
   - transport whitespace is collapsed, matching the existing parser behavior
   - dash-like instruction punctuation outside quoted legal text is normalized
     to a single dash surface
+  - known source transport token-joins in instruction language outside quoted
+    legal text are separated before parsing, currently `thereshall`,
+    `thereis`, `thereare`, `beomitted`, and `berepealed`
   - quoted legal preimages and payloads are preserved after whitespace collapse
   - straight apostrophes between word characters are word punctuation, not quote
     delimiters, so they must not accidentally shield later instruction dashes
@@ -4296,6 +4299,20 @@ Current bench replay-regime invariant:
   quoted preimage and replacement rather than normalizing arbitrary surrounding
   text. Witness: `ukpga/1970/9` affected `s. 61(4)` by
   `ukpga/1989/26 s. 152(4)(7)`.
+- Passive range-to-end substitutions also tolerate source transport token-join
+  damage in the instruction predicate outside quotes, e.g. `onwards thereshall
+  be substituted`. The parser-only view separates that to `onwards there shall`
+  while preserving quoted preimage/payload text; lowering then emits
+  `uk_effect_range_to_end_there_is_substituted_text_patch`. Witness:
+  `ukpga/1970/9` affected `s. 61(1)` by
+  `ukpga/1989/26 s. 152(2)(7)`.
+- Passive range-to-end repeals tolerate the same instruction-predicate spacing
+  damage for `shall beomitted` / `shall berepealed` and lower under
+  `uk_effect_range_to_end_passive_repeal_text_patch`. This does not repair
+  quoted legal text and is only a parser-surface transport cleanup.
+- Passive quoted-range repeals accept the same predicate form, e.g. `the words
+  from "X" to "Y" shall beomitted`, lowering under
+  `uk_effect_range_repeal_text_patch` after parser-only token-join cleanup.
 - All-occurrence passive substitutions accept the replacement marker `the
   words` after `there shall be substituted`, e.g. `for the word "assessment",
   in each place where it occurs, there shall be substituted the words "..."`.
