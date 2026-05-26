@@ -24642,6 +24642,68 @@ def test_compile_table_column_final_entry_row_insert() -> None:
     )
 
 
+def test_compile_table_column_at_end_row_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>6</Pnumber>
+          <P2para>
+            <Text>In the Table in section 98 of the Taxes Management Act 1970
+            at the end of the second column there shall be inserted\u2014
+            \u201cParagraphs 2 to 6 of Schedule 5A to the 1992 Act.\u201d</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_at_end_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1994-05-03",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1994/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1994",
+        affecting_number="9",
+        affecting_provisions="s. 97(6)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1994-05-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert [child.text for child in ops[0].payload.children] == [
+        "",
+        "Paragraphs 2 to 6 of Schedule 5A to the 1992 Act",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "column_final_entry"
+    assert selector["direction"] == "after"
+    assert selector["column_index"] == 2
+    assert selector["relating_text"] == "final entry"
+    assert selector["allow_unique_descendant_table"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> None:
     extracted_el = ET.fromstring(
         f"""
