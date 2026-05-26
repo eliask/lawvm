@@ -14149,6 +14149,109 @@ def test_compile_table_target_column_words_substitution_uses_owned_cell_selector
     )
 
 
+def test_compile_column_only_subsection_target_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-4-paragraph-11-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in the first column, for \u201cthe Welsh Authority\u201d
+          substitute \u201cS4C\u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_column_only_subsection_target",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-08-23",
+        affected_uri="/id/ukpga/1990/42/section/176/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 176(7)",
+        affecting_uri="/id/ukpga/2024/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="15",
+        affecting_provisions="Sch. 4 para. 11(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2024-08-23", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "176"), ("subsection", "7"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "the Welsh Authority"
+    assert ops[0].text_patch.replacement == "S4C"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 1
+    assert selector["source_context"] == "metadata_target_column_only"
+    assert selector["allow_unique_descendant_table"] is True
+    assert (
+        selector["table_carrier_recovery_rule"]
+        == "uk_replay_table_carrier_anchor_filtered_descendant_table"
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_column_only_subsection_target_does_not_lower_row_placement() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in the first column, after the entry relating to the Welsh
+          Authority insert \u201cS4C\u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_column_only_subsection_row_placement_rejected",
+        effect_type="entry inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-08-23",
+        affected_uri="/id/ukpga/1990/42/section/176/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 176(7)",
+        affecting_uri="/id/ukpga/2024/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="15",
+        affecting_provisions="Sch. 4 para. 11(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2024-08-23", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_table_column_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "table_marker_parent_missing"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_table_target_column_reference_substitution_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
