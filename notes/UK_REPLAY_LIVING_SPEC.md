@@ -2992,6 +2992,15 @@ Current payload-descendant source-ref invariant:
     explicit `references to X substitute "Y"` forms, and quoted omissions such
     as `in the first column of the Table, omit "X"`; it does not absorb
     entry/row placement language.
+  - Column-first entry-scoped text patches, e.g. `in the second column of the
+    Table, in the entry for X after "Y" insert "Z"`, lower under
+    `uk_effect_table_entry_for_column_text_patch`. This is a cell text patch,
+    not a row insertion: lowering carries the named entry text and column
+    index, and replay must resolve exactly one table row whose earlier cell
+    contains the entry anchor and then mutate only the named column cell. The
+    rule does not fire for column-only wording that lacks an `entry for ...`
+    scope. Current witness: `ukpga/1970/9` `s. 98 Table` by `ukpga/2001/9`
+    `Sch. 15 para. 39(1)`.
   - current witnesses: `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32
     Sch. 17 para. 4(3)(a)`, `s. 122(1) Table` by `ukpga/2022/32 Sch. 21
     para. 3(a)`, `s. 166(5) Table` by `ukpga/2026/2 s. 7(9)(d)`, and

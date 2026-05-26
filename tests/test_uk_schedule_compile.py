@@ -11765,6 +11765,171 @@ def test_compile_table_entry_for_column_omit_uses_owned_cell_selector() -> None:
     )
 
 
+def test_compile_table_entry_for_column_after_anchor_insert_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>1 In section 98 of the Taxes Management Act 1970 (c. 9),
+          in the second column of the Table, in the entry for section 310(1),
+          (2) and (3) of the Taxes Act 1988 after “(2)” insert “, (2A)”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_for_column_after_anchor_insert",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2001/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="9",
+        affecting_provisions="Sch. 15 para. 39(1)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "(2)"
+    assert ops[0].text_patch.replacement == "(2), (2A)"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_for_column_text_patch"
+    assert selector["selector_mode"] == "unique_relating_cell"
+    assert selector["column_index"] == 2
+    assert selector["relating_text"] == "section 310(1), (2) and (3) of the Taxes Act 1988"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_for_column_text_patch"
+        and record["reason_code"] == "explicit_table_entry_column_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_table_entry_for_column_after_anchor_insert_mutates_one_cell() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_for_column_text_patch",
+        "selector_mode": "unique_relating_cell",
+        "relating_text": "section 310(1), (2) and (3) of the Taxes Act 1988",
+        "column_index": 2,
+        "target_ref": "s. 98 Table",
+        "original_target": "section:98/table:Table",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_for_column_patch",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "98"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="(2)", occurrence=0),
+            replacement="(2), (2A)",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="98",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.CELL,
+                                            text="section 310(1), (2) and (3) of the Taxes Act 1988",
+                                        ),
+                                        IRNode(kind=IRNodeKind.CELL, text="section 310(1) and (2)."),
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="section 311"),
+                                        IRNode(kind=IRNodeKind.CELL, text="section 311(2)."),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0]
+    assert table.children[0].children[1].text == "section 310(1) and (2), (2A)."
+    assert table.children[1].children[1].text == "section 311(2)."
+
+
+def test_compile_table_entry_for_column_after_anchor_requires_entry_scope() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>1 In section 98 of the Taxes Management Act 1970 (c. 9),
+          in the second column of the Table after “(2)” insert “, (2A)”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_for_column_after_anchor_without_entry",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2001-05-11",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2001/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="9",
+        affecting_provisions="Sch. 15 para. 39(1)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2001-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert not any(
+        record["rule_id"] == "uk_effect_table_entry_for_column_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        for record in lowering_records
+    )
+
+
 def test_compile_source_named_section_table_entry_column_insert_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -90,6 +90,7 @@ UK_COMPARE_TABLE_CELL_TEXT_PATCH_RULE_IDS = frozenset(
     {
         "uk_effect_table_column_text_patch",
         "uk_effect_table_entry_inline_text_insertion",
+        "uk_effect_table_entry_for_column_text_patch",
         "uk_effect_table_entry_text_patch",
     }
 )
