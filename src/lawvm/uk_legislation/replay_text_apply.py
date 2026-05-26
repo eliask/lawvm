@@ -2180,6 +2180,43 @@ class UKReplayTextApplyMixin:
                 recovery_rule_ids_out.append("uk_replay_source_carried_child_tail_text_rewrite_applied")
             return rebuilt, True
 
+        if match.startswith("TEXT_AFTER_CHILD_LIST_TAIL_"):
+            child_match = re.fullmatch(
+                r"TEXT_AFTER_CHILD_LIST_TAIL_([A-Za-z]+)",
+                match,
+            )
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1)
+            direct_child_matches = [
+                (index, child)
+                for index, child in enumerate(node.children)
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+            ]
+            if len(direct_child_matches) < 2:
+                return node, False
+            child_index, _ = direct_child_matches[-1]
+            if child_index != len(node.children) - 1:
+                return node, False
+            text = node.text or ""
+            if not text:
+                return node, False
+            separator_matches = list(re.finditer(r"[—–]", text))
+            if not separator_matches:
+                return node, False
+            separator = separator_matches[-1]
+            tail = text[separator.end() :].strip()
+            if not tail:
+                return node, False
+            rebuilt = dc_replace(node, text=text[: separator.end()].rstrip())
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_source_carried_child_list_tail_text_rewrite_applied"
+                )
+            return rebuilt, True
+
         if match.startswith("TEXT_AFTER_CHILD_"):
             child_match = re.fullmatch(
                 r"TEXT_AFTER_CHILD_([A-Za-z]+)_([0-9A-Za-z]+)",

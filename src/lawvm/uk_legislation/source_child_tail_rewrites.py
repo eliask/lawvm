@@ -22,6 +22,14 @@ _SOURCE_CARRIED_CHILD_TAIL_OMIT_RE = re.compile(
     r"paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_CHILD_LIST_TAIL_OMIT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
+    r"\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\)[^,]*,?\s+)?"
+    r"(?:omit|repeal)\s+the\s+words\s+(?:following|after)\s+the\s+paragraphs\s*"
+    r";?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+paragraph\s+\((?P<paragraph>[0-9A-Za-z]+)\),?\s+"
@@ -98,6 +106,36 @@ def _fragment_substitution_source_carried_child_tail_repeal(
         "source_subsection_label": source_subsection,
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_child_tail_repeal_text_patch",
+    }
+
+
+def _fragment_substitution_source_carried_child_list_tail_repeal(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve explicit "words following the paragraphs" tail repeals."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _SOURCE_CARRIED_CHILD_LIST_TAIL_OMIT_RE.match(text)
+    if match is None:
+        return None
+    if _addr_leaf_kind(target) != "subsection":
+        return None
+    source_section = _clean_num(match.group("section") or "")
+    source_subsection = _clean_num(match.group("subsection") or "")
+    target_section = _clean_num(_addr_field(target, "section") or "")
+    target_subsection = _clean_num(_addr_field(target, "subsection") or "")
+    if source_section and source_section != target_section:
+        return None
+    if source_subsection and source_subsection != target_subsection:
+        return None
+    return {
+        "original": "TEXT_AFTER_CHILD_LIST_TAIL_paragraph",
+        "replacement": "",
+        "source_anchor_child_kind": "paragraph",
+        "rule_id": "uk_effect_source_carried_child_list_tail_repeal_text_patch",
     }
 
 

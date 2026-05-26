@@ -8721,6 +8721,119 @@ def test_executor_rejects_child_tail_delete_when_anchor_is_not_last_child() -> N
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_executor_deletes_source_carried_child_list_tail_from_collapsed_parent_text() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text=(
+                                "Where a return does not include a self-assessment— "
+                                "and references in this Act to a self-assessment include one made by an officer."
+                            ),
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="make the assessment; and"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="send a copy of it."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_child_list_tail_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "9"), ("subsection", "3"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_LIST_TAIL_paragraph", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Where a return does not include a self-assessment—"
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_child_list_tail_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_AFTER_CHILD_LIST_TAIL_paragraph"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "source_carried_child_list_tail_selector"
+
+
+def test_executor_rejects_child_list_tail_delete_when_final_child_is_not_in_list() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/1970/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text="Opening words— and tail text.",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first;"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second;"),
+                                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="i", text="not part of the paragraph list."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_child_list_tail_repeal_blocked",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "9"), ("subsection", "3"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_LIST_TAIL_paragraph", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Opening words— and tail text."
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_executor_deletes_source_carried_subparagraph_tail_from_collapsed_parent_text() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

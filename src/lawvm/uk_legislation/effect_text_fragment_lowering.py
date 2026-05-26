@@ -29,6 +29,7 @@ from lawvm.uk_legislation.source_amendment_program_fragments import (
     _fragment_substitution_source_carried_multi_subunit_repeal,
 )
 from lawvm.uk_legislation.source_child_tail_rewrites import (
+    _fragment_substitution_source_carried_child_list_tail_repeal,
     _fragment_substitution_source_carried_child_tail_repeal,
     _fragment_substitution_source_carried_child_tail_substitution,
 )
@@ -686,6 +687,15 @@ def _extract_text_fragment_substitutions(
         )
         if source_carried_quoted_text_substitution is not None:
             subs = [source_carried_quoted_text_substitution]
+    if not subs:
+        source_carried_child_list_tail_repeal = (
+            _fragment_substitution_source_carried_child_list_tail_repeal(
+                extracted_text=extracted_text,
+                target=target,
+            )
+        )
+        if source_carried_child_list_tail_repeal is not None:
+            subs = [source_carried_child_list_tail_repeal]
     if not subs:
         source_carried_child_tail_repeal = (
             _fragment_substitution_source_carried_child_tail_repeal(
