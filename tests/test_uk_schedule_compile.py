@@ -12255,6 +12255,125 @@ def test_compile_direct_table_column_entry_omission_rejects_deictic_entry() -> N
     )
 
 
+def test_compile_table_column_entry_omission_uses_previous_column_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2para xmlns="{_LEG_NS}">
+          <P3 id="section-96-3-a">
+            <Pnumber>a</Pnumber>
+            <Text>a in the first column, after the entry relating to regulations
+            under section 639 of the Taxes Act 1988 there shall be inserted the
+            following entry— regulations under section 651A(1)(b) to (d);</Text>
+          </P3>
+          <P3 id="section-96-3-b">
+            <Pnumber>b</Pnumber>
+            <Text>b in that column, the entry relating to section 652 of the
+            Taxes Act 1988 shall be omitted; and</Text>
+          </P3>
+        </P2para>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-96-3-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_omission_previous_column",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2000-10-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1998/36",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1998",
+        affecting_number="36",
+        affecting_provisions="s. 96(3)(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2000-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "98"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "section 652 of the Taxes Act 1988"
+    assert ops[0].witness_rule_id == "uk_effect_source_previous_table_column_entry_omission_text_patch"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 1
+    assert selector["source_context"] == "previous_source_sibling_table_column"
+    assert selector["source_sibling_id"] == "section-96-3-a"
+    assert any(
+        record["rule_id"] == "uk_effect_source_previous_table_column_entry_omission_text_patch"
+        and record["reason_code"] == "explicit_table_column_entry_omission_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_table_column_entry_omission_blocks_that_column_without_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b in that column, the entry relating to section 652 of the
+          Taxes Act 1988 shall be omitted; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_omission_that_column_no_context",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2000-10-01",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/1998/36",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1998",
+        affecting_number="36",
+        affecting_provisions="s. 96(3)(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2000-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_source_previous_table_column_entry_omission_text_patch"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        and record["reason_code"] == "table_entry_instruction_without_cell_target"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_source_parent_grouped_table_entry_omission_deletes_child_cell_text() -> None:
     source_root = ET.fromstring(
         f"""

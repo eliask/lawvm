@@ -46,6 +46,9 @@ UK_TABLE_COLUMN_ENTRY_TEXT_RULE_ID = "uk_effect_table_column_entry_text_patch"
 UK_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID = (
     "uk_effect_table_column_entry_omission_text_patch"
 )
+UK_SOURCE_PREVIOUS_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID = (
+    "uk_effect_source_previous_table_column_entry_omission_text_patch"
+)
 UK_SOURCE_PARENT_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID = (
     "uk_effect_source_parent_table_column_entry_omission_text_patch"
 )
@@ -555,6 +558,20 @@ def _uk_table_column_entry_omission_text_patch_claim(
         if match is not None:
             break
     if match is None:
+        source_previous_column_claim = (
+            _uk_source_previous_table_column_entry_omission_text_patch_claim(
+                target_ref=target_ref,
+                target=target,
+                extracted_text=text,
+                extracted_el=extracted_el,
+                source_root=source_root,
+                target_names_table=target_names_table,
+                source_names_containing_target=source_names_containing_target,
+                source_parent_id=source_parent_id,
+            )
+        )
+        if source_previous_column_claim is not None:
+            return source_previous_column_claim
         source_parent_claim = _uk_source_parent_table_column_entry_omission_text_patch_claim(
             target_ref=target_ref,
             target=target,
@@ -613,6 +630,106 @@ def _uk_table_column_entry_omission_text_patch_claim(
         "text_patch_original": entry_text,
         "text_patch_replacement": "",
     }
+
+
+def _uk_source_previous_table_column_entry_omission_text_patch_claim(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    target_names_table: bool,
+    source_names_containing_target: bool,
+    source_parent_id: str,
+) -> dict[str, Any] | None:
+    """Resolve `in that column` from a previous sibling table instruction."""
+    if extracted_el is None or not target_names_table:
+        return None
+    match = re.search(
+        r"\bin\s+that\s+column,\s*(?:the\s+)?entry\s+"
+        r"(?:relating\s+to|for)\s+(?P<entry>.+?)\s+"
+        r"(?:shall\s+be|is|are)\s+(?:omitted|repealed)\b",
+        extracted_text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    entry_text = " ".join((match.group("entry") or "").split()).strip(" ,;.")
+    if (
+        not entry_text
+        or re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I)
+    ):
+        return None
+    column_context = _source_previous_table_column_context(
+        extracted_el=extracted_el,
+        source_root=source_root,
+        rule_id=UK_SOURCE_PREVIOUS_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+    )
+    column_index = int(column_context.get("column_index") or 0)
+    if column_index < 1:
+        return None
+    return {
+        "rule_id": UK_SOURCE_PREVIOUS_TABLE_COLUMN_ENTRY_OMISSION_TEXT_RULE_ID,
+        "selector_mode": "unique_column_text",
+        "column_index": column_index,
+        "match_text": entry_text,
+        "match_scope": "full_cell",
+        "table_label": "",
+        "original_target": str(target),
+        "target_ref": target_ref,
+        "source_names_containing_target": source_names_containing_target,
+        "source_parent_id": source_parent_id,
+        "table_column_entry_action": "delete_entry_text",
+        "text_patch_original": entry_text,
+        "text_patch_replacement": "",
+        **column_context,
+    }
+
+
+def _source_previous_table_column_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    rule_id: str,
+) -> dict[str, str | int]:
+    """Return an explicit table column from a previous sibling source row."""
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if extracted_el is None or not ancestors:
+        return {}
+    parent = ancestors[0]
+    children = list(parent)
+    extracted_id = extracted_el.get("id") or extracted_el.get("Id")
+    extracted_index = -1
+    for index, child in enumerate(children):
+        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
+            extracted_index = index
+            break
+    if extracted_index <= 0:
+        return {}
+    for sibling in reversed(children[:extracted_index]):
+        sibling_text = " ".join(_text_content(sibling).split())
+        match = re.search(
+            r"\bin\s+(?:the\s+)?"
+            r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+            r"\s+column|column\s+(?P<column_number>\d+))\b",
+            sibling_text,
+            flags=re.I,
+        )
+        if match is None:
+            continue
+        column_token = match.group("column_ordinal") or match.group("column_number")
+        column_index = _uk_ordinal_to_int(column_token or "")
+        if column_index is None or column_index < 1:
+            continue
+        return {
+            "column_index": column_index,
+            "source_context_rule_id": rule_id,
+            "source_context": "previous_source_sibling_table_column",
+            "source_sibling_label": _clean_num(_direct_structural_num(sibling)),
+            "source_sibling_id": str(sibling.get("id") or sibling.get("Id") or ""),
+        }
+    return {}
 
 
 def _uk_source_parent_table_column_entry_omission_text_patch_claim(
