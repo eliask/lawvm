@@ -270,6 +270,7 @@ UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_broad_schedule_table_shape_gap",
         "uk_replay_annex_schedule_reference_gap",
         "uk_replay_definition_child_shape_gap",
+        "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique",
         "uk_replay_definition_anchor_lexical_variant_recovered",
         "uk_replay_definition_entry_shape_gap",
         "uk_replay_direct_section_paragraph_carrier_gap",
@@ -365,6 +366,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_definition_entry_already_absent_observed",
         "uk_replay_definition_child_flat_ordinal_text_rewrite_applied",
         "uk_replay_definition_child_structured_text_rewrite_applied",
+        "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied",
         "uk_replay_definition_entry_orphan_separator_normalized",
         "uk_replay_definition_entry_qualifier_phrase_normalized",
         "uk_replay_definition_entry_text_rewrite_applied",
@@ -377,6 +379,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_in_definition_after_anchor_text_rewrite_applied",
         "uk_replay_in_definition_after_each_text_rewrite_applied",
         "uk_replay_in_definition_at_end_text_rewrite_applied",
+        "uk_replay_in_definition_quoted_word_delete_applied",
         "uk_replay_in_definition_range_text_rewrite_applied",
         "uk_replay_in_definition_range_to_end_text_rewrite_applied",
         "uk_replay_implicit_first_subparagraph_parent_text_recovered",
@@ -429,6 +432,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_node_local_range_text_rewrite_applied",
         "uk_replay_node_local_range_to_end_text_rewrite_applied",
         "uk_replay_words_in_brackets_text_rewrite_applied",
+        "uk_replay_each_other_place_after_anchor_insert_applied",
+        "uk_replay_each_other_place_substitution_applied",
         "uk_replay_subtree_range_text_rewrite_flattened",
         "uk_replay_subtree_range_to_end_text_rewrite_flattened",
         "uk_replay_children_range_replaced_with_text_applied",
@@ -480,6 +485,10 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
     ("uk_replay_broad_schedule_table_shape_gap", "uk_broad_schedule_table_shape_gap"),
     ("uk_replay_definition_entry_shape_gap", "uk_definition_entry_shape_gap"),
     ("uk_replay_definition_child_shape_gap", "uk_definition_child_shape_gap"),
+    (
+        "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique",
+        "uk_definition_child_tail_boundary_unavailable_anchor_unique",
+    ),
     (
         "uk_replay_direct_section_paragraph_carrier_gap",
         "uk_direct_section_paragraph_carrier_gap",
@@ -1419,7 +1428,18 @@ def classify_uk_effect_source_pathology(
     norm_effect_type = _normalize_effect_text(effect_type)
     actions = list(op_actions)
     kinds = [kind for kind in payload_kinds if kind]
-    payload_norms = [_normalize_effect_text(text) for text in payload_texts if _normalize_effect_text(text)]
+    payload_norms: list[str] | None = None
+
+    def _payload_norms() -> list[str]:
+        nonlocal payload_norms
+        if payload_norms is None:
+            payload_norms = []
+            for text in payload_texts:
+                payload_norm = _normalize_effect_text(text)
+                if payload_norm:
+                    payload_norms.append(payload_norm)
+        return payload_norms
+
     targets = [path for path in target_paths if path]
     lowering_rules = {str(rule_id or "") for rule_id in lowering_rule_ids}
 
@@ -1560,7 +1580,7 @@ def classify_uk_effect_source_pathology(
             return "fragment_context_missing"
         return ""
 
-    if norm_text and payload_norms and any(payload == norm_text for payload in payload_norms):
+    if norm_text and any(payload == norm_text for payload in _payload_norms()):
         if (extracted_tag or "") in {"Schedule", "BlockAmendment"} and len(norm_text) >= 200:
             return "broad_source_reused_as_payload"
         if _looks_like_instruction_text(norm_text):
