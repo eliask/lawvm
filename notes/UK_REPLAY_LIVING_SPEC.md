@@ -1804,8 +1804,15 @@ Current block-substitution context invariant:
   inserted-`. In that case lowering emits
   `uk_effect_source_parent_at_end_text_insertion_patch`, a typed append patch
   (`TEXT_END`) against the effect target, and records the source-parent id and
-  instruction. The rule does not fire without a source parent, does not apply to
-  table/column/entry placement parents, and does not apply to structured payload
+  instruction. A separate word-level variant,
+  `uk_effect_source_parent_at_end_quoted_list_text_insertion_patch`, may flatten
+  only the quoted payload shape where the `BlockAmendment` consists of leading
+  conjunction/punctuation text plus one flat numbered source row, such as `, and`
+  followed by paragraph `b`. That variant exists for source XML which marks the
+  quoted words as list markup while the effect feed still classifies the change
+  as `words inserted`. Both variants require a word-level effect and the rule
+  does not fire without a source parent, does not apply to table/column/entry
+  placement parents, and does not apply to standalone structured payload
   children; those remain structural/payload questions, not text appends.
 - mixed instructions that combine a structural repeal and a text rewrite, such
   as `Omit subsections ... and in subsection ... the words from ... to the

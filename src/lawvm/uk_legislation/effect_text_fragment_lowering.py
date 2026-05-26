@@ -172,7 +172,7 @@ def lower_uk_text_fragment_rewrite(
             source_root=source_root,
             extracted_text=extracted_text,
         )
-        if curr_action == "insert"
+        if word_level_text_patch_required and curr_action == "insert"
         else None
     )
     if fragment_subs is not None or not (
@@ -270,6 +270,9 @@ def lower_uk_text_fragment_rewrite(
         source_root=source_root,
         extracted_text=extracted_text,
         allow_heading_source_parent_full_replacement=not is_word_level,
+        allow_source_parent_at_end_text_insert=(
+            word_level_text_patch_required and curr_action == "insert"
+        ),
     )
     if subs:
         return _promote_text_fragment_substitutions(
@@ -392,6 +395,7 @@ def _extract_text_fragment_substitutions(
     source_root: Optional[ET.Element],
     extracted_text: str,
     allow_heading_source_parent_full_replacement: bool = True,
+    allow_source_parent_at_end_text_insert: bool = False,
 ) -> list[dict[str, Any]]:
     heading_after_anchor_insert = (
         _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
@@ -630,7 +634,7 @@ def _extract_text_fragment_substitutions(
         )
         if source_parent_each_provision_substitution:
             subs = list(source_parent_each_provision_substitution)
-    if not subs:
+    if not subs and allow_source_parent_at_end_text_insert:
         source_parent_at_end_insert = _fragment_substitution_source_parent_at_end_text_insert(
             extracted_el=extracted_el,
             source_root=source_root,

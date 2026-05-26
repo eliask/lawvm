@@ -126,6 +126,10 @@ _EACH_OTHER_PLACE_SUBSTITUTION_RE = re.compile(
 )
 
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
+_SOURCE_PARENT_AT_END_TEXT_INSERT_RULE_ID = "uk_effect_source_parent_at_end_text_insertion_patch"
+_SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
+    "uk_effect_source_parent_at_end_quoted_list_text_insertion_patch"
+)
 _SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 _SOURCE_TAIL_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 
@@ -403,24 +407,40 @@ def append_source_fragment_context_observations(
                 "selector_mode": str(each_other_fragment.get("selector_mode") or ""),
             },
         )
-    for source_parent_at_end_fragment in fragment_subs or []:
-        if (
-            str(source_parent_at_end_fragment.get("rule_id") or "")
-            != "uk_effect_source_parent_at_end_text_insertion_patch"
-        ):
-            continue
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id="uk_effect_source_parent_at_end_text_insertion_patch",
-            family="source_context_elaboration",
-            reason_code="text_insert_end_resolved_from_source_parent",
-            reason=(
+    source_parent_at_end_reasons = {
+        _SOURCE_PARENT_AT_END_TEXT_INSERT_RULE_ID: (
+            "text_insert_end_resolved_from_source_parent",
+            (
                 "UK source payload carries only inserted text while its local "
                 "parent instruction explicitly says the text is inserted at "
                 "the end. Lowering combines those source-local facts into a "
                 "typed end-append text patch instead of treating the payload "
                 "as a standalone broad text rewrite."
             ),
+        ),
+        _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID: (
+            "quoted_list_text_insert_end_resolved_from_source_parent",
+            (
+                "UK source payload carries an inserted quoted list item as XML "
+                "row markup, while the effect feed classifies the change as a "
+                "word-level insertion and the local parent instruction says it "
+                "is inserted at the end. Lowering flattens only this quoted "
+                "payload shape into a typed end-append text patch."
+            ),
+        ),
+    }
+    for source_parent_at_end_fragment in fragment_subs or []:
+        source_parent_rule_id = str(source_parent_at_end_fragment.get("rule_id") or "")
+        source_parent_reason = source_parent_at_end_reasons.get(source_parent_rule_id)
+        if source_parent_reason is None:
+            continue
+        reason_code, reason = source_parent_reason
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=source_parent_rule_id,
+            family="source_context_elaboration",
+            reason_code=reason_code,
+            reason=reason,
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -431,6 +451,7 @@ def append_source_fragment_context_observations(
                 "source_parent_instruction": str(
                     source_parent_at_end_fragment.get("source_parent_instruction") or ""
                 ),
+                "payload_shape": str(source_parent_at_end_fragment.get("payload_shape") or ""),
                 "text_match": op_text_match,
                 "replacement": op_text_replacement,
             },
@@ -546,6 +567,50 @@ def _source_local_instruction_text_for_carried_payload(ancestor: ET.Element) -> 
     if _source_has_subordinate_row_scope(ancestor):
         return ""
     return _instruction_text_before_amendment_container(ancestor)
+
+
+def _is_flat_source_list_item_quote(row: ET.Element) -> bool:
+    if _tag(row) not in _SOURCE_SUBORDINATE_ROW_TAGS:
+        return False
+    if not any(_tag(child) == "Pnumber" and _text_content(child).strip() for child in row):
+        return False
+    para_children = [child for child in row if _tag(child).endswith("para")]
+    if len(para_children) != 1:
+        return False
+    for descendant in para_children[0].iter():
+        if descendant is para_children[0]:
+            continue
+        descendant_tag = _tag(descendant)
+        if descendant_tag in _SOURCE_SUBORDINATE_ROW_TAGS or descendant_tag in {
+            "BlockAmendment",
+            "InlineAmendment",
+            "Table",
+            "Tabular",
+        }:
+            return False
+    return bool(_text_content(para_children[0]).strip())
+
+
+def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET.Element) -> str:
+    """Classify source payload shapes that can safely become word-level appends."""
+    direct_children = list(extracted_el)
+    subordinate_rows = [
+        child for child in direct_children if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS
+    ]
+    if not subordinate_rows:
+        return "plain_text"
+    if len(subordinate_rows) != 1:
+        return ""
+    if any(_tag(child) not in {"Text", _tag(subordinate_rows[0])} for child in direct_children):
+        return ""
+    direct_text = " ".join(
+        _text_content(child).strip() for child in direct_children if _tag(child) == "Text"
+    ).strip()
+    if not re.match(r"^(?:[,;:]|\band\b|\bor\b)", direct_text, flags=re.I):
+        return ""
+    if not _is_flat_source_list_item_quote(subordinate_rows[0]):
+        return ""
+    return "quoted_list_item_flattened_text"
 
 
 def _fragment_substitution_grouped_anchor_occurrence(
@@ -899,7 +964,8 @@ def _fragment_substitution_source_parent_at_end_text_insert(
         "InlineAmendment",
     }:
         return None
-    if any(_tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS for child in list(extracted_el)):
+    payload_shape = _source_parent_at_end_text_insert_payload_shape(extracted_el)
+    if not payload_shape:
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     if not ancestors:
@@ -917,11 +983,17 @@ def _fragment_substitution_source_parent_at_end_text_insert(
             ancestor.get("id")
             or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
         )
+        rule_id = (
+            _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID
+            if payload_shape == "quoted_list_item_flattened_text"
+            else _SOURCE_PARENT_AT_END_TEXT_INSERT_RULE_ID
+        )
         return {
             "original": "TEXT_FROM__TO_END",
             "replacement": payload_text,
             "source_parent_id": source_parent_id,
             "source_parent_instruction": instruction_text,
-            "rule_id": "uk_effect_source_parent_at_end_text_insertion_patch",
+            "payload_shape": payload_shape,
+            "rule_id": rule_id,
         }
     return None
