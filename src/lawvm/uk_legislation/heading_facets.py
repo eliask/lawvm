@@ -365,6 +365,9 @@ _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anc
 _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE = (
     "uk_effect_crossheading_source_parent_reference_substitution_text_patch"
 )
+_CROSSHEADING_SOURCE_PARENT_TAIL_SUBSTITUTION_RULE = (
+    "uk_effect_crossheading_source_parent_tail_substitution_text_patch"
+)
 _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE = (
     "uk_effect_crossheading_and_structural_replacement_split_lowered"
 )

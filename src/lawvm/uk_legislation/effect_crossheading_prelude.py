@@ -16,6 +16,7 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _CROSSHEADING_TARGET_REPLACEMENT_RULE,
     _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE,
+    _CROSSHEADING_SOURCE_PARENT_TAIL_SUBSTITUTION_RULE,
     _crossheading_and_structural_repeal_selector,
     _crossheading_before_anchor_replacement_text,
     _crossheading_before_anchor_text_patch_fragment,
@@ -36,7 +37,10 @@ from lawvm.uk_legislation.source_context import (
     _source_ancestor_chain,
     _unique_source_ancestor_chain_by_tag_text,
 )
-from lawvm.uk_legislation.source_fragment_context import _source_lead_text_before_subordinate_rows
+from lawvm.uk_legislation.source_fragment_context import (
+    _source_lead_text_before_subordinate_rows,
+    _source_tail_text_after_subordinate_rows,
+)
 from lawvm.uk_legislation.witness_builders import (
     _uk_target_expansion_witness,
     _uk_temporal_group_id,
@@ -121,6 +125,13 @@ def build_crossheading_context(
             source_root=source_root,
             extracted_text=extracted_text,
         )
+    if text_patch_fragment is None and action == "replace" and is_crossheading:
+        text_patch_fragment = _crossheading_source_parent_tail_text_patch_fragment(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            target=target,
+        )
     return UKCrossheadingContext(
         replacement_text=replacement_text,
         replacement_rule_id=replacement_rule_id,
@@ -188,6 +199,62 @@ def _crossheading_source_parent_reference_text_patch_fragment(
             "replacement": replacement,
             "source_parent_id": str(ancestor.get("id") or ""),
             "rule_id": _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE,
+        }
+    return None
+
+
+def _crossheading_source_parent_tail_text_patch_fragment(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve listed cross-heading child rows governed by a parent tail substitution."""
+    target_label = str(target.path[-1][1] if target.path else "").strip()
+    if not target_label:
+        return None
+    child_text = " ".join((extracted_text or "").split())
+    match = re.search(
+        r"\bfor\s+[“\"'‘](?P<original>.+?)[”\"'’]\s*,?\s*"
+        r"(?:in\s+each\s+place\s+)?(?:it\s+)?occurs\b",
+        child_text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    original = " ".join(match.group("original").split()).strip()
+    if not original:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor in ancestors:
+        lead_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not re.search(
+            rf"\b(?:italic\s+)?(?:heading|cross-heading|cross heading)\s+before\s+"
+            rf"paragraph\s+{re.escape(target_label)}\b",
+            lead_text,
+            flags=re.I,
+        ):
+            continue
+        tail_text = _source_tail_text_after_subordinate_rows(ancestor)
+        tail_match = re.search(
+            r"\bsubstitute\s+[“\"'‘](?P<replacement>.+?)[”\"'’]\s*\.?$",
+            tail_text,
+            flags=re.I,
+        )
+        if tail_match is None:
+            continue
+        replacement = " ".join(tail_match.group("replacement").split()).strip()
+        if not replacement:
+            return None
+        return {
+            "original": original,
+            "replacement": replacement,
+            "source_parent_id": str(ancestor.get("id") or ""),
+            "rule_id": _CROSSHEADING_SOURCE_PARENT_TAIL_SUBSTITUTION_RULE,
+            "source_context": "source_parent_tail_substitution",
         }
     return None
 
@@ -316,21 +383,25 @@ def refine_crossheading_or_heading_facet_target(
     if crossheading_text_patch_fragment is not None:
         refined_target = LegalAddress(path=refined_target.path, special=FacetKind.HEADING)
         fragment_rule_id = str(crossheading_text_patch_fragment.get("rule_id") or "")
+        source_parent_rule = fragment_rule_id in {
+            _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE,
+            _CROSSHEADING_SOURCE_PARENT_TAIL_SUBSTITUTION_RULE,
+        }
         observation_rule_id = (
             fragment_rule_id
-            if fragment_rule_id == _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE
+            if source_parent_rule
             else "uk_effect_crossheading_before_anchor_text_patch_lowered"
         )
         reason_code = (
             "crossheading_text_patch_resolved_from_source_parent"
-            if fragment_rule_id == _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE
+            if source_parent_rule
             else "explicit_crossheading_before_anchor_text_patch"
         )
         reason = (
             "UK source child row identifies a cross-heading target while its parent "
-            "list instruction carries the reference substitution; lowering combines "
+            "list instruction carries the substitution; lowering combines "
             "those source-local facts instead of mutating the host provision body."
-            if fragment_rule_id == _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE
+            if source_parent_rule
             else (
                 "UK cross-heading replacement lowered as a typed heading "
                 "facet text patch anchored by the named following provision"

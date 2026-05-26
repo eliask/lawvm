@@ -39235,6 +39235,134 @@ def test_compile_crossheading_before_that_paragraph_rejects_without_crossheading
     )
 
 
+def test_compile_crossheading_child_row_uses_parent_tail_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-16-6">
+          <Pnumber>6</Pnumber>
+          <P2para>In paragraphs 9(1) and (2), and in the italic heading before paragraph 9\u2014
+            <P3 id="schedule-4-paragraph-16-6-a">
+              <Pnumber>a</Pnumber>
+              <Text>a for \u201cthe Authority\u201d, in each place it occurs;</Text>
+            </P3>
+            <P3 id="schedule-4-paragraph-16-6-b">
+              <Pnumber>b</Pnumber>
+              <Text>b for \u201cThe Authority\u201d, in each place it occurs;</Text>
+            </P3>
+            <Text>substitute \u201cS4C\u201d.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-4-paragraph-16-6-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_parent_tail_substitution",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-08-23",
+        affected_uri="/id/ukpga/1990/42/schedule/6/paragraph/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 6 para. 9 cross-heading",
+        affecting_uri="/id/ukpga/2024/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="15",
+        affecting_provisions="Sch. 4 para. 16(6)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2024-08-23", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "6"), ("paragraph", "9")),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch("the Authority", "S4C")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_crossheading_source_parent_tail_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_source_parent_tail_substitution_text_patch"
+        and record["reason_code"] == "crossheading_text_patch_resolved_from_source_parent"
+        and record["source_context"] == "source_parent_tail_substitution"
+        and record["blocking"] is False
+        for record in observations
+    )
+
+
+def test_compile_crossheading_child_row_blocks_parent_tail_wrong_anchor() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-16-6">
+          <Pnumber>6</Pnumber>
+          <P2para>In paragraphs 9(1) and (2), and in the italic heading before paragraph 10\u2014
+            <P3 id="schedule-4-paragraph-16-6-a">
+              <Pnumber>a</Pnumber>
+              <Text>a for \u201cthe Authority\u201d, in each place it occurs;</Text>
+            </P3>
+            <Text>substitute \u201cS4C\u201d.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-4-paragraph-16-6-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_parent_tail_wrong_anchor",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-08-23",
+        affected_uri="/id/ukpga/1990/42/schedule/6/paragraph/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="Sch. 6 para. 9 cross-heading",
+        affecting_uri="/id/ukpga/2024/15",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="15",
+        affecting_provisions="Sch. 4 para. 16(6)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2024-08-23", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_crossheading_source_parent_tail_substitution_text_patch"
+        for record in observations
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_replace_rejected"
+        and record["blocking"] is True
+        for record in observations
+    )
+
+
 def test_replay_crossheading_before_anchor_replace_mutates_crossheading_parent_only() -> None:
     base = IRStatute(
         statute_id="ukpga/2004/12",
