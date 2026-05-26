@@ -16,6 +16,7 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.source_fragment_context import _source_local_instruction_text_for_carried_payload
 from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
+from lawvm.uk_legislation.xml_helpers import _text_content
 
 
 UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID = (
@@ -47,7 +48,12 @@ SOURCE_PARENT_TABLE_ENTRY_INSERT_RE = re.compile(
     r"\b(?:(?:before|after)\s+(?:the\s+)?entry\s+"
     r"(?:relating\s+to|relation\s+to|for)\s+.+?"
     r"(?:,?\s+there\s+(?:is|are|shall\s+be)\s+inserted|\s+insert\b)|"
-    r"(?:following\s+)?entry\s+(?:shall\s+be|is|are)\s+inserted\s+"
+    r"(?:following\s+)?entry(?:\s+[“\"'‘].*?[”\"'’])?\s+"
+    r"(?:shall\s+be|is|are)\s+inserted\s+"
+    r"(?:before|after)\s+(?:the\s+)?entry\s+"
+    r"(?:relating\s+to|relation\s+to|for)\b|"
+    r"entry\s+[“\"'‘].*?[”\"'’]\s+"
+    r"(?:shall\s+be|is|are)\s+inserted\b.*?"
     r"(?:before|after)\s+(?:the\s+)?entry\s+"
     r"(?:relating\s+to|relation\s+to|for)\b)",
     flags=re.I | re.S,
@@ -223,6 +229,63 @@ def _source_parent_instruction_with_payload(
             "combined_text": f"{instruction_text} {payload_text}",
             "source_parent_id": source_parent_id,
             "source_parent_instruction": instruction_text,
+        }
+    return None
+
+
+def _source_parent_prefix_with_child_text(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    instruction_pattern: re.Pattern[str],
+) -> Optional[dict[str, str]]:
+    """Combine a source-local parent lead-in with only the current child text."""
+    child_text = " ".join((extracted_text or "").split()).strip()
+    if not child_text or extracted_el is None:
+        return None
+    child_label = _source_parent_range_label(_direct_structural_num(extracted_el))
+    if (
+        child_label
+        and child_text.lower().startswith(child_label.lower())
+        and len(child_text) > len(child_label)
+        and not child_text[len(child_label)].isspace()
+    ):
+        child_text = f"{child_text[:len(child_label)]} {child_text[len(child_label):]}"
+    extracted_id = str(extracted_el.get("id") or "")
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        parts: list[str] = []
+        if ancestor.text:
+            parts.append(ancestor.text)
+        found_child = False
+        for child in list(ancestor):
+            same_child = child is extracted_el or (
+                bool(extracted_id) and str(child.get("id") or "") == extracted_id
+            )
+            if same_child:
+                parts.append(child_text)
+                found_child = True
+                break
+            if _tag(child) in {"Text", "AppendText"}:
+                parts.append(_text_content(child))
+            if child.tail:
+                parts.append(child.tail)
+        if not found_child:
+            continue
+        combined_text = " ".join(" ".join(parts).split()).strip()
+        if not combined_text or instruction_pattern.search(combined_text) is None:
+            continue
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "combined_text": combined_text,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": combined_text.removesuffix(child_text).strip(),
         }
     return None
 
