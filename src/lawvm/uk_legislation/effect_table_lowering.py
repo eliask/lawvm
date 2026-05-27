@@ -1343,9 +1343,9 @@ def prepare_table_cell_text_patch_context(
                 family="source_table_elaboration",
                 reason_code="embedded_table_belongs_to_structural_substitution_payload",
                 reason=(
-                    "UK source text contains table words inside a paragraph-level "
+                    "UK source text contains table words inside a structural "
                     "substitution payload; lowering preserves the structural "
-                    "paragraph substitution path instead of treating the embedded "
+                    "substitution path instead of treating the embedded "
                     "payload table as a standalone table-entry instruction."
                 ),
                 effect=effect,
