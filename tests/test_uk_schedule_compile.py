@@ -8305,8 +8305,11 @@ def test_compile_source_carried_definition_entry_insert_rejects_non_definition_p
 
     assert ops == []
     assert [record["rule_id"] for record in observations] == [
-        "uk_effect_overlap_substitution_unlowered"
+        "uk_effect_source_payload_without_instruction_context_rejected"
     ]
+    assert observations[0]["reason_code"] == "source_payload_without_instruction_context"
+    assert observations[0]["strict_disposition"] == "block"
+    assert observations[0]["source_parent_id"] == "schedule-6-paragraph-9-14"
 
 
 def test_source_after_definition_insert_term_is_bounded_on_quote_heavy_text() -> None:
@@ -8518,8 +8521,11 @@ def test_compile_source_carried_following_words_repeal_rejects_without_parent_fo
 
     assert ops == []
     assert [record["rule_id"] for record in observations] == [
-        "uk_effect_overlap_substitution_unlowered"
+        "uk_effect_source_payload_without_instruction_context_rejected"
     ]
+    assert observations[0]["reason_code"] == "source_payload_without_instruction_context"
+    assert observations[0]["strict_disposition"] == "block"
+    assert observations[0]["source_parent_id"] == "schedule-paragraph-3-9-b"
 
 
 def test_compile_source_carried_definition_entry_substitution_from_parent_context() -> None:
@@ -8668,8 +8674,11 @@ def test_compile_source_carried_definition_entry_substitution_rejects_non_defini
 
     assert ops == []
     assert [record["rule_id"] for record in observations] == [
-        "uk_effect_overlap_substitution_unlowered"
+        "uk_effect_source_payload_without_instruction_context_rejected"
     ]
+    assert observations[0]["reason_code"] == "source_payload_without_instruction_context"
+    assert observations[0]["strict_disposition"] == "block"
+    assert observations[0]["source_parent_id"] == "schedule-1-paragraph-7-a"
 
 
 def test_compile_source_carried_after_quoted_anchor_insert_from_parent_context() -> None:
