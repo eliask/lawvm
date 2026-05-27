@@ -2833,7 +2833,15 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
             candidate=False,
             resolver_eids=(),
             lowering_rejections=(
-                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+                {
+                    "rule_id": "uk_effect_appropriate_place_definition_entry_insert_rejected",
+                    "blocking": True,
+                    "source_parent_id": "schedule-paragraph-3-6-a-iii",
+                    "source_parent_context_preview": (
+                        "iii at the appropriate place insert- "
+                        '" operational service standard " is to be construed'
+                    ),
+                },
             ),
             replay_applicable=True,
             structural_for_replay=True,
@@ -2848,8 +2856,12 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
                 "uk_manual_frontier_appropriate_place_definition_entry_candidate"
             ),
             manual_compile_reason="Definition-entry placement needs a validated anchor.",
-            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
-            manual_compile_blocking_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_appropriate_place_definition_entry_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_appropriate_place_definition_entry_insert_rejected",
+            ),
         ),
     )
     context = _EffectSummaryContext(
@@ -2880,6 +2892,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     assert template["inserted_definition_term"] == "operational service standard"
     assert template["inserted_definition_terms"] == ["operational service standard"]
     assert template["candidate_target_surface"] == "s. 48(1)"
+    assert template["source_parent_id"] == "schedule-paragraph-3-6-a-iii"
+    assert "at the appropriate place insert" in (
+        template["source_parent_context_preview"]
+    )
     assert template["executable"] is False
     assert "claim_supplies_exact_definition_entry_anchor_or_insertion_index" in (
         template["required_validator_checks"]
