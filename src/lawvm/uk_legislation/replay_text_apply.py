@@ -681,6 +681,31 @@ def _delete_ordinal_sentence(text: str, ordinal: int) -> tuple[str, bool]:
     return " ".join(new_text.split()).strip(), True
 
 
+def _delete_ordinal_sentence_beginning(
+    text: str,
+    *,
+    ordinal: int,
+    beginning: str,
+) -> tuple[str, bool]:
+    if ordinal < 1 or not beginning:
+        return text, False
+    spans = list(
+        re.finditer(
+            r"(?P<body>.*?(?:[.!?]+(?:[\"”’')\]]+)?))(?=\s+|$)",
+            text,
+            flags=re.S,
+        )
+    )
+    if len(spans) < ordinal:
+        return text, False
+    sentence = spans[ordinal - 1].group("body")
+    if not _normalize_text(sentence).startswith(_normalize_text(beginning)):
+        return text, False
+    span = spans[ordinal - 1].span()
+    new_text = f"{text[: span[0]]}{text[span[1] :]}"
+    return " ".join(new_text.split()).strip(), True
+
+
 def _delete_source_carried_child_text(
     text: str,
     *,
@@ -2845,9 +2870,33 @@ class UKReplayTextApplyMixin:
 
         if match.startswith("TEXT_SENTENCE_"):
             sentence_ordinal_text = match[len("TEXT_SENTENCE_") :].strip()
+            sentence_beginning = ""
+            if US in sentence_ordinal_text:
+                sentence_parts = sentence_ordinal_text.split(US)
+                if len(sentence_parts) != 3 or sentence_parts[1] != "BEGINNING":
+                    return node, False
+                sentence_ordinal_text = sentence_parts[0]
+                sentence_beginning = sentence_parts[2]
             if not sentence_ordinal_text.isdigit():
                 return node, False
             sentence_ordinal = int(sentence_ordinal_text)
+            if sentence_beginning:
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
+                    node,
+                    text_nodes,
+                    lambda text: _delete_ordinal_sentence_beginning(
+                        text,
+                        ordinal=sentence_ordinal,
+                        beginning=sentence_beginning,
+                    ),
+                )
+                if not applied:
+                    return node, False
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_ordinal_sentence_beginning_text_rewrite_applied"
+                    )
+                return rebuilt, True
             rebuilt, applied = self._apply_unique_text_node_rewrite(
                 node,
                 text_nodes,
