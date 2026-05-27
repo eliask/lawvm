@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import Levenshtein
 
@@ -12,6 +12,12 @@ from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_text import _normalize_text_for_grounding
 from lawvm.uk_legislation.uk_grafter import _clean_num, _semantic_hash
+
+
+class _GroundingTextCandidate(NamedTuple):
+    order: int
+    candidate_id: str
+    text: str
 
 
 def _grounding_eid(node: UKMutableNode) -> Optional[str]:
@@ -67,7 +73,7 @@ def _grounding_node_full_text(node: UKMutableNode) -> str:
 
 
 def _grounding_length_window_text_candidates(
-    candidates_by_len: dict[int, list[tuple[int, str, str]]],
+    candidates_by_len: dict[int, list[_GroundingTextCandidate]],
     text_len: int,
 ) -> list[tuple[str, str]]:
     """Return oracle texts passing the historical fuzzy length guard.
@@ -78,13 +84,13 @@ def _grounding_length_window_text_candidates(
     max_delta = 0.1 * text_len
     min_len = max(0, int(text_len - max_delta) - 1)
     max_len = int(text_len + max_delta) + 1
-    ordered: list[tuple[int, str, str]] = []
+    ordered: list[_GroundingTextCandidate] = []
     for candidate_len in range(min_len, max_len + 1):
         if abs(candidate_len - text_len) > max_delta:
             continue
         ordered.extend(candidates_by_len.get(candidate_len, ()))
-    ordered.sort(key=lambda item: item[0])
-    return [(candidate_id, text) for _order, candidate_id, text in ordered]
+    ordered.sort(key=lambda item: item.order)
+    return [(candidate.candidate_id, candidate.text) for candidate in ordered]
 
 
 class UKReplayGroundingMixin:
@@ -164,9 +170,11 @@ class UKReplayGroundingMixin:
         for sch in self.statute.supplements:
             _ensure_local_eid(sch)
 
-        text_candidates_by_len: dict[int, list[tuple[int, str, str]]] = {}
+        text_candidates_by_len: dict[int, list[_GroundingTextCandidate]] = {}
         for order, (candidate_id, oracle_text) in enumerate(self.text_map.items()):
-            text_candidates_by_len.setdefault(len(oracle_text), []).append((order, candidate_id, oracle_text))
+            text_candidates_by_len.setdefault(len(oracle_text), []).append(
+                _GroundingTextCandidate(order, candidate_id, oracle_text)
+            )
         text_candidate_window_cache: dict[int, list[tuple[str, str]]] = {}
 
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
