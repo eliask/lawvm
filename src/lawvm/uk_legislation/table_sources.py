@@ -432,6 +432,12 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
             len(bare_matches) == 1
             and re.match(r"\s*In\s+", text, flags=re.I) is not None
             and re.search(r"\b(?:insert|substitute|substituted|for)\b", text, re.I) is None
+            and re.search(
+                r"\b(?:definition\s+of|definitions\s+of|entry\s+for|entries\s+for)\b",
+                text,
+                flags=re.I,
+            )
+            is None
         ):
             return _uk_first_quote_group(
                 bare_matches[0],
