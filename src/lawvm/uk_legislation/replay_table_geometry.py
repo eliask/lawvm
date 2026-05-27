@@ -25,6 +25,13 @@ class UKTableColumnInsertPlan:
     row_cells: dict[int, UKMutableNode]
     owned_ranges: list[UKTableOwnedColumnRange]
 
+
+@dataclass(frozen=True, slots=True)
+class UKTableCellMatches:
+    cells: list[UKMutableNode]
+    row_previews: list[str]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
 TablePayloadCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, object]]
@@ -39,7 +46,6 @@ TableRowReplaceSpanResult: TypeAlias = tuple[
 ]
 TableCellResult: TypeAlias = tuple[UKMutableNode | None, str, dict[str, Any]]
 TableCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, Any]]
-TableCellMatches: TypeAlias = tuple[list[UKMutableNode], list[str]]
 
 
 def strip_uk_identity_attrs_recursive(node: UKMutableNode) -> None:
@@ -697,14 +703,14 @@ def resolve_unique_uk_table_relating_cell(
         filtered_tables: list[UKMutableNode] = []
         filtered_rows: list[str] = []
         for candidate_table in candidate_tables:
-            candidate_cells, candidate_rows = _matching_uk_table_relating_cells(
+            candidate_matches = _matching_uk_table_relating_cells(
                 candidate_table,
                 column_index=column_index,
                 relating_norm=relating_norm,
             )
-            if len(candidate_cells) == 1:
+            if len(candidate_matches.cells) == 1:
                 filtered_tables.append(candidate_table)
-                filtered_rows.extend(candidate_rows[:1])
+                filtered_rows.extend(candidate_matches.row_previews[:1])
         if len(filtered_tables) != 1:
             return None, "table_not_unique", {
                 "table_count": len(candidate_tables),
@@ -720,21 +726,21 @@ def resolve_unique_uk_table_relating_cell(
             "anchor_filtered_table_count": 1,
         }
 
-    matching_cells, matching_rows = _matching_uk_table_relating_cells(
+    matches = _matching_uk_table_relating_cells(
         candidate_tables[0],
         column_index=column_index,
         relating_norm=relating_norm,
     )
-    if len(matching_cells) == 1:
-        return matching_cells[0], "", {
+    if len(matches.cells) == 1:
+        return matches.cells[0], "", {
             "matching_cell_count": 1,
-            "matched_row": matching_rows[0] if matching_rows else "",
+            "matched_row": matches.row_previews[0] if matches.row_previews else "",
             **carrier_detail,
         }
-    reason = "relating_cell_not_found" if not matching_cells else "relating_cell_ambiguous"
+    reason = "relating_cell_not_found" if not matches.cells else "relating_cell_ambiguous"
     return None, reason, {
-        "matching_cell_count": len(matching_cells),
-        "matching_rows": tuple(matching_rows[:5]),
+        "matching_cell_count": len(matches.cells),
+        "matching_rows": tuple(matches.row_previews[:5]),
         **carrier_detail,
     }
 
@@ -744,7 +750,7 @@ def _matching_uk_table_relating_cells(
     *,
     column_index: int,
     relating_norm: str,
-) -> TableCellMatches:
+) -> UKTableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(table):
@@ -761,7 +767,7 @@ def _matching_uk_table_relating_cells(
         if not matching_cells or matching_cells[-1] is not target_cell:
             matching_cells.append(target_cell)
             matching_rows.append(" | ".join(row_texts)[:240])
-    return matching_cells, matching_rows
+    return UKTableCellMatches(cells=matching_cells, row_previews=matching_rows)
 
 
 def resolve_unique_uk_table_entry_cells(
@@ -839,16 +845,16 @@ def resolve_unique_uk_table_entry_text_cell(
         filtered_tables: list[UKMutableNode] = []
         filtered_rows: list[str] = []
         for candidate_table in candidate_tables:
-            candidate_cells, candidate_rows = _matching_uk_table_entry_text_cells(
+            candidate_matches = _matching_uk_table_entry_text_cells(
                 candidate_table,
                 selector_mode=selector_mode,
                 match_norm=match_norm,
                 relating_norm=relating_norm,
                 entry_label_norm=entry_label_norm,
             )
-            if len(candidate_cells) == 1:
+            if len(candidate_matches.cells) == 1:
                 filtered_tables.append(candidate_table)
-                filtered_rows.extend(candidate_rows[:1])
+                filtered_rows.extend(candidate_matches.row_previews[:1])
         if len(filtered_tables) != 1:
             return None, "table_not_unique", {
                 "table_count": len(candidate_tables),
@@ -864,23 +870,23 @@ def resolve_unique_uk_table_entry_text_cell(
             "anchor_filtered_table_count": 1,
         }
 
-    matching_cells, matching_rows = _matching_uk_table_entry_text_cells(
+    matches = _matching_uk_table_entry_text_cells(
         candidate_tables[0],
         selector_mode=selector_mode,
         match_norm=match_norm,
         relating_norm=relating_norm,
         entry_label_norm=entry_label_norm,
     )
-    if len(matching_cells) == 1:
-        return matching_cells[0], "", {
+    if len(matches.cells) == 1:
+        return matches.cells[0], "", {
             "matching_cell_count": 1,
-            "matched_row": matching_rows[0] if matching_rows else "",
+            "matched_row": matches.row_previews[0] if matches.row_previews else "",
             **carrier_detail,
         }
-    reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
+    reason = "cell_text_not_found" if not matches.cells else "cell_text_ambiguous"
     return None, reason, {
-        "matching_cell_count": len(matching_cells),
-        "matching_rows": tuple(matching_rows[:5]),
+        "matching_cell_count": len(matches.cells),
+        "matching_rows": tuple(matches.row_previews[:5]),
         **carrier_detail,
     }
 
@@ -892,7 +898,7 @@ def _matching_uk_table_entry_text_cells(
     match_norm: str,
     relating_norm: str,
     entry_label_norm: str,
-) -> TableCellMatches:
+) -> UKTableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(table):
@@ -921,7 +927,7 @@ def _matching_uk_table_entry_text_cells(
             if not matching_cells or matching_cells[-1] is not cell:
                 matching_cells.append(cell)
                 matching_rows.append(" | ".join(row_texts)[:240])
-    return matching_cells, matching_rows
+    return UKTableCellMatches(cells=matching_cells, row_previews=matching_rows)
 
 
 def resolve_unique_uk_table_entry_cell(
@@ -994,16 +1000,16 @@ def resolve_unique_uk_table_column_text_cell(
         filtered_tables: list[UKMutableNode] = []
         filtered_rows: list[str] = []
         for candidate_table in candidate_tables:
-            candidate_cells, candidate_rows = _matching_uk_table_column_text_cells(
+            candidate_matches = _matching_uk_table_column_text_cells(
                 candidate_table,
                 column_index=column_index,
                 row_index=row_index,
                 match_norm=match_norm,
                 full_cell_match=full_cell_match,
             )
-            if len(candidate_cells) == 1:
+            if len(candidate_matches.cells) == 1:
                 filtered_tables.append(candidate_table)
-                filtered_rows.extend(candidate_rows[:1])
+                filtered_rows.extend(candidate_matches.row_previews[:1])
         if len(filtered_tables) != 1:
             return None, "table_not_unique", {
                 "table_count": len(candidate_tables),
@@ -1019,23 +1025,23 @@ def resolve_unique_uk_table_column_text_cell(
             "anchor_filtered_table_count": 1,
         }
 
-    matching_cells, matching_rows = _matching_uk_table_column_text_cells(
+    matches = _matching_uk_table_column_text_cells(
         candidate_tables[0],
         column_index=column_index,
         row_index=row_index,
         match_norm=match_norm,
         full_cell_match=full_cell_match,
     )
-    if len(matching_cells) == 1:
-        return matching_cells[0], "", {
+    if len(matches.cells) == 1:
+        return matches.cells[0], "", {
             "matching_cell_count": 1,
-            "matched_row": matching_rows[0] if matching_rows else "",
+            "matched_row": matches.row_previews[0] if matches.row_previews else "",
             **carrier_detail,
         }
-    reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
+    reason = "cell_text_not_found" if not matches.cells else "cell_text_ambiguous"
     return None, reason, {
-        "matching_cell_count": len(matching_cells),
-        "matching_rows": tuple(matching_rows[:5]),
+        "matching_cell_count": len(matches.cells),
+        "matching_rows": tuple(matches.row_previews[:5]),
         **carrier_detail,
     }
 
@@ -1047,7 +1053,7 @@ def _matching_uk_table_column_text_cells(
     row_index: int = 0,
     match_norm: str,
     full_cell_match: bool = False,
-) -> TableCellMatches:
+) -> UKTableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
@@ -1070,7 +1076,7 @@ def _matching_uk_table_column_text_cells(
                     if str(row_cells[col].text or "")
                 )[:240]
             )
-    return matching_cells, matching_rows
+    return UKTableCellMatches(cells=matching_cells, row_previews=matching_rows)
 
 
 def resolve_uk_table_entry_inline_cell(
