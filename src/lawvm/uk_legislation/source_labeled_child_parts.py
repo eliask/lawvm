@@ -76,15 +76,3 @@ def _source_carried_labeled_child_replacement_shape(
             return SourceCarriedLabeledChildReplacement("", "", ())
         parts.append((labels[index], body))
     return SourceCarriedLabeledChildReplacement(child_kind, parent_prefix, tuple(parts))
-
-
-def _source_carried_labeled_child_replacement_parts(
-    replacement: str,
-    *,
-    parent_kind: str,
-) -> tuple[str, tuple[tuple[str, str], ...]]:
-    shape = _source_carried_labeled_child_replacement_shape(
-        replacement,
-        parent_kind=parent_kind,
-    )
-    return shape.child_kind, shape.parts
