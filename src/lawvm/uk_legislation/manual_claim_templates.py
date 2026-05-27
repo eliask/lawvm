@@ -14,6 +14,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_heading_facet_candidate",
+        "uk_manual_frontier_mixed_body_heading_text_substitution_split",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_referent_qualified_text_substitution_candidate",
         "uk_manual_frontier_repeal_table_candidate",

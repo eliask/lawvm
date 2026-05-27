@@ -81,6 +81,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
         "uk_manual_frontier_heading_facet_candidate",
+        "uk_manual_frontier_mixed_body_heading_text_substitution_split",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_referent_qualified_text_substitution_candidate",
         "uk_manual_frontier_repeal_table_candidate",
@@ -4145,6 +4146,94 @@ def test_uk_manual_compile_evidence_jsonl_templates_structural_child_range_subst
     assert template["placement_family"] == "source_named_child_range_required"
     assert "removed_child_identities" in template["required_ownership"]
     assert "claim_identifies_each_removed_child_unit" in template["required_validator_checks"]
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_mixed_body_heading_substitution() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-mixed-body-heading",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/82",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 82",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="Sch. 13 para. 34",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_mixed_body_heading_text_substitution_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                "34 In section 82 for “Commissioner” (in each place, including "
+                "in the heading) substitute “ appointed person ” ."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_mixed_body_heading_text_substitution_split"
+            ),
+            manual_compile_reason="Body and heading surfaces require a split claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_mixed_body_heading_text_substitution_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_mixed_body_heading_text_substitution_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "mixed_body_heading_text_substitution_split"
+    assert template["placement_family"] == "split_body_and_heading_facet_required"
+    assert template["text_match"] == "Commissioner"
+    assert template["replacement"] == "appointed person"
+    assert "claim_splits_body_text_operation_from_heading_facet_operation" in (
+        template["required_validator_checks"]
+    )
     assert template["executable"] is False
 
 
