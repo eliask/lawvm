@@ -28876,7 +28876,7 @@ def test_compile_table_row_number_insert_rejects_without_row_claim() -> None:
     assert rejection["strict_disposition"] == "block"
 
 
-def test_compile_table_child_anchor_insert_rejects_without_table_claim() -> None:
+def test_compile_table_child_anchor_insert_lowers_with_row_column_claim() -> None:
     source_root = ET.fromstring(
         f"""
         <P1 xmlns="{_LEG_NS}" id="section-13">
@@ -28919,39 +28919,157 @@ def test_compile_table_child_anchor_insert_rejects_without_table_claim() -> None
         affecting_title="Test Amendment Act",
         in_force_dates=[{"date": "2022-05-01", "prospective": "false"}],
     )
-    lowering_rejections: list[dict[str, Any]] = []
+    lowering_records: list[dict[str, Any]] = []
 
-    assert (
-        compile_effect_to_ir_ops(
-            effect,
-            extracted_el,
-            sequence=0,
-            lowering_rejections_out=lowering_rejections,
-            source_root=source_root,
-        )
-        == []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
     )
 
-    assert len(lowering_rejections) == 1
-    rejection = lowering_rejections[0]
-    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
-    assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
-    assert rejection["entry_shape"] == "table_child_structural_insert"
-    assert rejection["source_table_row_number"] == 1
-    assert rejection["source_table_column_index"] == 3
-    assert rejection["table_child_insert_direction"] == "after"
-    assert rejection["table_child_anchor_kind"] == "paragraph"
-    assert rejection["table_child_anchor_label"] == "a"
-    assert rejection["inserted_ordered_list_units"] == (
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target.path == (("section", "132"), ("subsection", "1"))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.ITEM
+    assert op.payload.label == "aa"
+    assert op.payload.text == "corporal in the Royal Marines;"
+    assert op.witness_rule_id == "uk_effect_table_cell_child_list_insert"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("table_cell_child_list_insert_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("table_cell_child_list_insert_selector:"))
+    assert selector["source_table_row_number"] == 1
+    assert selector["source_table_column_index"] == 3
+    assert selector["table_child_insert_direction"] == "after"
+    assert selector["table_child_anchor_kind"] == "paragraph"
+    assert selector["table_child_anchor_label"] == "a"
+    assert selector["inserted_ordered_list_units"] == [
         {
             "source_list_type": "alpha",
             "source_list_decoration": "parens",
             "label": "aa",
             "text": "corporal in the Royal Marines;",
         },
+    ]
+    assert any(
+        record["rule_id"] == "uk_effect_table_cell_child_list_insert"
+        and record["blocking"] is False
+        for record in lowering_records
     )
-    assert rejection["blocking"] is True
-    assert rejection["strict_disposition"] == "block"
+
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Armed Forces Act 2006",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="132",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="Intro.",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="Row Number"),
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="Punishment"),
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="Limitation"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="detention"),
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text=(
+                                                        "only if—\n\n"
+                                                        "leading rate;\n\n\n\n"
+                                                        "lance corporal or lance bombardier;"
+                                                    ),
+                                                    attrs={
+                                                        "source_rule_id": (
+                                                            "uk_table_cell_ordered_list_units_preserved"
+                                                        ),
+                                                        "source_ordered_list_units_json": json.dumps(
+                                                            [
+                                                                {
+                                                                    "source_list_type": "alpha",
+                                                                    "source_list_decoration": "parens",
+                                                                    "label": "a",
+                                                                    "text": "leading rate;",
+                                                                },
+                                                                {
+                                                                    "source_list_type": "alpha",
+                                                                    "source_list_decoration": "parens",
+                                                                    "label": "b",
+                                                                    "text": (
+                                                                        "lance corporal or lance bombardier;"
+                                                                    ),
+                                                                },
+                                                            ],
+                                                            separators=(",", ":"),
+                                                        ),
+                                                    },
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    cell = replayed.body.children[0].children[0].children[0].children[1].children[2]
+    assert " ".join(cell.text.split()) == (
+        "only if— leading rate; corporal in the Royal Marines; "
+        "lance corporal or lance bombardier;"
+    )
+    assert json.loads(cell.attrs["source_ordered_list_units_json"]) == [
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "a",
+            "text": "leading rate;",
+        },
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "aa",
+            "text": "corporal in the Royal Marines;",
+        },
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "b",
+            "text": "lance corporal or lance bombardier;",
+        },
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_table_cell_child_list_insert_resolved"
+        and adjudication.detail["reason_code"] == "source_named_row_column_child_anchor_unique"
+        for adjudication in adjudications
+    )
 
 
 def test_parse_table_cell_ordered_list_units_preserves_evidence_without_text_duplication() -> None:

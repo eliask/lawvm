@@ -16,6 +16,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.provenance_notes import (
+    NOTE_TABLE_CELL_CHILD_LIST_INSERT_SELECTOR as _NOTE_TABLE_CELL_CHILD_LIST_INSERT_SELECTOR,
     NOTE_TABLE_CELL_SELECTOR as _NOTE_TABLE_CELL_SELECTOR,
     NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
@@ -103,6 +104,9 @@ class UKTableCellContext:
     table_cell_selector: Optional[dict[str, Any]] = None
     selector_rule_id: str = ""
     source_carried_table_entry_paragraph_substitution: Optional[dict[str, Any]] = None
+
+
+_UK_TABLE_CELL_CHILD_LIST_INSERT_RULE_ID = "uk_effect_table_cell_child_list_insert"
 
 
 def _uk_definition_pseudo_parent_target(target: LegalAddress) -> Optional[LegalAddress]:
@@ -685,6 +689,103 @@ def try_lower_table_row_replace(
             ),
             witness_rule_id=_UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,
             action=StructuralAction.REPLACE,
+        ),
+    )
+
+
+def try_lower_table_cell_child_list_insert(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTableLoweringResult:
+    if action != "insert":
+        return UKTableLoweringResult(handled=False)
+    table_entry_instruction = _uk_broad_table_entry_instruction(
+        target_ref=t_str,
+        target=target,
+        extracted_text=extracted_text,
+        extracted_el=extracted_el,
+        source_root=source_root,
+        effect_type=effect.effect_type,
+    )
+    if (
+        not table_entry_instruction
+        or table_entry_instruction.get("entry_shape") != "table_child_structural_insert"
+    ):
+        return UKTableLoweringResult(handled=False)
+    parent_target = _uk_parent_target_before_table_marker(target)
+    inserted_units = table_entry_instruction.get("inserted_ordered_list_units")
+    if (
+        parent_target is None
+        or not isinstance(inserted_units, tuple)
+        or len(inserted_units) != 1
+    ):
+        return UKTableLoweringResult(handled=False)
+    inserted_unit = inserted_units[0]
+    if not isinstance(inserted_unit, dict):
+        return UKTableLoweringResult(handled=False)
+    label = str(inserted_unit.get("label") or "").strip()
+    text = str(inserted_unit.get("text") or "").strip()
+    if not label or not text:
+        return UKTableLoweringResult(handled=False)
+    selector = {
+        "rule_id": _UK_TABLE_CELL_CHILD_LIST_INSERT_RULE_ID,
+        "selector_mode": "row_column_ordered_list_child",
+        "target_ref": t_str,
+        "original_target": str(target),
+        "containing_target": str(parent_target),
+        **table_entry_instruction,
+    }
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_TABLE_CELL_CHILD_LIST_INSERT_RULE_ID,
+        family="source_table_elaboration",
+        reason_code="explicit_table_cell_child_list_anchor",
+        reason=(
+            "UK table-cell child-list insertion lowered as a bounded mutation "
+            "inside one source-named table row, column, and ordered-list child."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail=selector,
+    )
+    payload_node = IRNode(
+        kind=IRNodeKind.ITEM,
+        label=label,
+        text=text,
+        attrs={
+            "source_rule_id": "uk_table_cell_child_list_insert_payload",
+            "source_list_type": str(inserted_unit.get("source_list_type") or ""),
+            "source_list_decoration": str(inserted_unit.get("source_list_decoration") or ""),
+        },
+    )
+    return UKTableLoweringResult(
+        handled=True,
+        op=_build_table_payload_op(
+            effect=effect,
+            sequence=sequence,
+            target=parent_target,
+            payload=payload_node,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            t_str=t_str,
+            provenance_note=(
+                f"{_NOTE_TABLE_CELL_CHILD_LIST_INSERT_SELECTOR}"
+                f"{json.dumps(selector, ensure_ascii=False)}"
+            ),
+            witness_rule_id=_UK_TABLE_CELL_CHILD_LIST_INSERT_RULE_ID,
         ),
     )
 

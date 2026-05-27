@@ -22,6 +22,7 @@ from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_selector,
     _schedule_list_entry_table_rows_selector,
     _schedule_table_end_rows_selector,
+    _table_cell_child_list_insert_selector,
     _table_column_insert_selector,
     _table_row_insert_selector,
 )
@@ -214,6 +215,8 @@ class UKReplayInsertApplyMixin:
                     return
                 if _schedule_list_entry_selector(op) is not None:
                     return
+                if _table_cell_child_list_insert_selector(op) is not None:
+                    return
                 if _table_column_insert_selector(op) is not None:
                     return
                 if _table_row_insert_selector(op) is not None:
@@ -353,6 +356,14 @@ class UKReplayInsertApplyMixin:
         schedule_list_entry_selector = _schedule_list_entry_selector(op)
         if schedule_list_entry_selector is not None:
             return self._insert_schedule_list_entry(target, new_node, op, schedule_list_entry_selector)
+        table_cell_child_list_insert_selector = _table_cell_child_list_insert_selector(op)
+        if table_cell_child_list_insert_selector is not None:
+            return self._insert_table_cell_child_list_item(
+                target,
+                new_node,
+                op,
+                table_cell_child_list_insert_selector,
+            )
         table_column_insert_selector = _table_column_insert_selector(op)
         if table_column_insert_selector is not None:
             return self._insert_table_column(target, new_node, op, table_column_insert_selector)
