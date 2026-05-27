@@ -1107,10 +1107,16 @@ def _source_carried_structured_tail_substitution(
     if not anchor or not payload_tail:
         return None
     payload_tail = re.sub(r"^[—–-]\s*", "", payload_tail).strip()
-    prefix_match = re.match(r"^.+?[—–-]\s*(?=[a-z]\s+)", payload_tail, flags=re.I | re.S)
-    if prefix_match is not None:
-        payload_tail = payload_tail[prefix_match.end() :].strip()
     matches = _source_carried_top_level_alpha_matches(payload_tail)
+    if not matches:
+        prefix_match = re.match(
+            r"^.+?[—–-]\s*(?=[a-z]\s+)",
+            payload_tail,
+            flags=re.I | re.S,
+        )
+        if prefix_match is not None:
+            payload_tail = payload_tail[prefix_match.end() :].strip()
+            matches = _source_carried_top_level_alpha_matches(payload_tail)
     if not matches:
         return None
     payloads: list[dict[str, str]] = []
