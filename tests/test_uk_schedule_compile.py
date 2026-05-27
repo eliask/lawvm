@@ -27304,6 +27304,58 @@ def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     assert rejection["quirks_disposition"] == "record"
 
 
+def test_compile_table_row_number_insert_rejects_without_row_claim() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in paragraph 1(1), in the table, after row 7 insert\u2014
+          8 a deprivation order only if section 177C permits ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_row_number_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-01",
+        affected_uri="/id/ukpga/2006/52/schedule/3/paragraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="Sch. 3 para. 1(1) Table",
+        affecting_uri="/id/ukpga/2021/35",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="35",
+        affecting_provisions="s. 14(6)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-05-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
+    assert rejection["target_ref"] == "Sch. 3 para. 1(1) Table"
+    assert rejection["entry_shape"] == "numbered_row"
+    assert rejection["source_action"] == "source_text"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_embedded_table_structural_paragraph_substitution_is_not_table_entry_rejected() -> None:
     extracted_el = ET.fromstring(
         f"""
