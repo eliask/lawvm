@@ -42,6 +42,12 @@ class NumericListTrailingCommaApplyResult(NamedTuple):
     anchor: str | None
 
 
+class DefinitionChildTailSelectorParts(NamedTuple):
+    term: str
+    child_label: str
+    anchor: str
+
+
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
 means
 |have\s+the\s+same\s+meaning\s+as
@@ -1011,7 +1017,7 @@ def _rewrite_definition_child_tail_after_anchor_to_end_text(
 
 def _definition_child_tail_after_anchor_selector_parts(
     match: str,
-) -> tuple[str, str, str] | None:
+) -> DefinitionChildTailSelectorParts | None:
     if not match.startswith(f"TEXT_IN_DEFINITION_CHILD_TAIL{US}"):
         return None
     parts = match.split(US)
@@ -1025,7 +1031,7 @@ def _definition_child_tail_after_anchor_selector_parts(
     anchor = anchor.strip()
     if not term or not child_label or not anchor:
         return None
-    return term, child_label, anchor
+    return DefinitionChildTailSelectorParts(term=term, child_label=child_label, anchor=anchor)
 
 
 def _find_text_range_start_index(
@@ -1280,12 +1286,11 @@ class UKReplayTextApplyMixin:
             selector_parts = _definition_child_tail_after_anchor_selector_parts(match)
             if selector_parts is None:
                 return node, False
-            term, child_label, anchor = selector_parts
             new_text, changed, fallback_recovery_rule_ids = _rewrite_definition_child_tail_after_anchor_to_end_text(
                 text,
-                term=term,
-                child_label=child_label,
-                anchor=anchor,
+                term=selector_parts.term,
+                child_label=selector_parts.child_label,
+                anchor=selector_parts.anchor,
                 replacement=replacement,
                 allow_punctuation_spacing=allow_punctuation_spacing,
                 allow_word_punctuation_elision=allow_word_punctuation_elision,
@@ -2571,16 +2576,15 @@ class UKReplayTextApplyMixin:
             selector_parts = _definition_child_tail_after_anchor_selector_parts(match)
             if selector_parts is None:
                 return node, False
-            term, child_label, anchor = selector_parts
 
             rebuilt, applied, fallback_recovery_rule_ids = self._apply_unique_text_node_rewrite_with_metadata(
                 node,
                 text_nodes,
                 lambda text: _rewrite_definition_child_tail_after_anchor_to_end_text(
                     text,
-                    term=term,
-                    child_label=child_label,
-                    anchor=anchor,
+                    term=selector_parts.term,
+                    child_label=selector_parts.child_label,
+                    anchor=selector_parts.anchor,
                     replacement=replacement,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
