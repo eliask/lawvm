@@ -277,9 +277,21 @@ def _unlowered_overlap_source_shape_classification(
         )
     if (
         re.search(r"\bfor\s+[“\"'‘][^”\"'’]+[”\"'’].*\bsubstitute\b", text, re.I)
-        and re.search(
-            r"\bincluding\s+in\s+(?:the\s+)?(?:italic\s+)?heading\b",
-            lowered,
+        and (
+            re.search(
+                r"\bincluding\s+in\s+(?:the\s+)?(?:italic\s+)?heading\b",
+                lowered,
+            )
+            or (
+                re.search(
+                    r"\bin\s+(?:subsections?|paragraphs?|sub-?paragraphs?)\b",
+                    lowered,
+                )
+                and re.search(
+                    r"\bin\s+(?:the\s+)?(?:italic\s+)?heading\b",
+                    lowered,
+                )
+            )
         )
     ):
         return UnloweredOverlapSourceShapeClassification(

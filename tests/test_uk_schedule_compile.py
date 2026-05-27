@@ -26943,6 +26943,56 @@ def test_compile_mixed_body_heading_text_substitution_records_split_rejection() 
     assert rejection["strict_disposition"] == "block"
 
 
+def test_compile_mixed_subsection_heading_text_substitution_records_split_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>35</Pnumber>
+          <Text>2 In subsections (1) and (3), in the heading, and in the italic
+          heading immediately preceding the section, for \u201cCommissioner\u201d
+          (in each place, including in the word \u201cCommissioner's\u201d) substitute
+          \u201c appointed person \u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_subsection_heading_text_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-01",
+        affected_uri="/id/ukpga/2008/29/section/83/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="s. 83(1)",
+        affecting_uri="/id/ukpga/2011/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="20",
+        affecting_provisions="Sch. 13 para. 35(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_mixed_body_heading_text_substitution_rejected"
+    assert rejection["reason_code"] == "mixed_body_heading_text_substitution_requires_split"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_payload_fragment_overlap_records_source_context_rejection() -> None:
     extracted_el = ET.fromstring(
         f"""
