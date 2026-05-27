@@ -159,10 +159,10 @@ def build_lowered_operations_for_text_patches(
     )
 
     lowered_ops: list[LegalOperation] = []
-    for text_patch_item, fragment_subs_for_witness in text_patch_items:
+    for text_patch_item in text_patch_items:
         text_rewrite_witness = _uk_text_rewrite_spec(
-            fragment_subs=fragment_subs_for_witness,
-            text_patch=text_patch_item,
+            fragment_subs=text_patch_item.witness_fragments,
+            text_patch=text_patch_item.text_patch,
             op_text_match=op_text_match,
             op_text_replacement=op_text_replacement,
             op_text_occurrence=op_text_occurrence,
@@ -211,7 +211,7 @@ def build_lowered_operations_for_text_patches(
                 source=lowered_witness.source,
                 group_id=_uk_temporal_group_id(effect),
                 provenance_tags=operation_provenance.provenance_tags,
-                text_patch=text_patch_item,
+                text_patch=text_patch_item.text_patch,
                 witness_rule_id=operation_provenance.witness_rule_id,
             )
         )
