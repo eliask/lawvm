@@ -4647,6 +4647,8 @@ def test_classify_uk_effect_text_change_against_missing_oracle_branch() -> None:
         oracle_target_texts=[],
         base_parent_texts=["(2) In this paragraph..."],
         oracle_parent_texts=[],
+        text_patch_matches=["the Committee"],
+        text_patch_replacements=["the Commission"],
         base_has_text=True,
         base_has_children=False,
         oracle_has_text=False,
