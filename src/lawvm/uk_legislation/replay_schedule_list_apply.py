@@ -91,6 +91,11 @@ class _ScheduleListEntryAnchorMatch(NamedTuple):
     mode: str
 
 
+class _ScheduleListEntryParentDeleteGroup(NamedTuple):
+    parent: UKMutableNode
+    indices: list[int]
+
+
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_table_rows_insert_resolved"
 )
@@ -1066,17 +1071,17 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
             return False
-        rows_by_parent: dict[int, tuple[UKMutableNode, list[int]]] = {}
+        rows_by_parent: dict[int, _ScheduleListEntryParentDeleteGroup] = {}
         for row in matched_rows:
             key = id(row.parent)
             if key not in rows_by_parent:
-                rows_by_parent[key] = (row.parent, [])
-            rows_by_parent[key][1].append(row.index)
-        for parent, indices in rows_by_parent.values():
-            children = list(parent.children)
-            for idx in sorted(indices, reverse=True):
+                rows_by_parent[key] = _ScheduleListEntryParentDeleteGroup(row.parent, [])
+            rows_by_parent[key].indices.append(row.index)
+        for delete_group in rows_by_parent.values():
+            children = list(delete_group.parent.children)
+            for idx in sorted(delete_group.indices, reverse=True):
                 children.pop(idx)
-            uk_replace_children(parent, children)
+            uk_replace_children(delete_group.parent, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
         _append_uk_replay_adjudication(
