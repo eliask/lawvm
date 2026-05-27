@@ -250,7 +250,7 @@ def _compound_lettered_text_patch_source(text: str) -> bool:
     """Return True for one paragraph carrying lettered sibling text patches."""
     return bool(
         re.search(
-            r"[—-]\s*[a-z]\s+\bfor\b.+?\band\s+[a-z]\s+\bafter\b",
+            r"[—-]\s*[a-z]\s+(?:\bfor\b|\bafter\b).+?\band\s+[a-z]\s+\bafter\b",
             text,
             re.I,
         )
