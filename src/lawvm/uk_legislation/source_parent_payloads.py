@@ -39,6 +39,9 @@ UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID = (
 UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_RULE_ID = (
     "uk_effect_after_paragraph_insert_block_amendment_lowered"
 )
+UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID = (
+    "uk_effect_after_paragraph_insert_connector_sibling_lowered"
+)
 UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID = (
     "uk_effect_after_section_subsection_range_insert_block_amendment_lowered"
 )
@@ -153,6 +156,12 @@ _UK_SECTION_SUBSECTION_REF_RE = re.compile(
 _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_TEXT_RE = re.compile(
     r"^\s*after\s+paragraph\s+\((?P<anchor>[a-z]+)\),?\s*"
     r"insert\s*[—–-]?\s*(?P<label>[a-z]+)\s+(?P<text>.+?)\s*$",
+    flags=re.I | re.S,
+)
+_UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_TEXT_RE = re.compile(
+    r"^\s*(?P<row_label>[a-z])\s+(?:(?P=row_label)\s+)?"
+    r"(?:(?:at\s+the\s+end\s+of|after)\s+paragraph\s+\((?P<anchor>[a-z])\),?\s+)"
+    r"insert\s+(?P<connector>,\s*or)\s+(?P<label>[a-z])\s+(?P<text>.+?)\s*$",
     flags=re.I | re.S,
 )
 _UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
@@ -699,6 +708,59 @@ def _source_after_paragraph_insert_labelled_series(
         "end_label": end_label,
         "semicolon_target": str(anchor_target),
         "payloads": tuple(payloads),
+    }
+
+
+def _source_after_paragraph_insert_connector_sibling(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Lower `after paragraph (b) insert , or c ...` parent-target rows."""
+    if extracted_el is None or _tag(extracted_el) not in {"P3", "P4"}:
+        return None
+    ref_match = _UK_SECTION_SUBSECTION_REF_RE.match(affected_provisions or "")
+    if ref_match is None:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    text_match = _UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_TEXT_RE.match(text)
+    if text_match is None:
+        return None
+    anchor_label = _source_parent_range_label(text_match.group("anchor"))
+    payload_label = _source_parent_range_label(text_match.group("label"))
+    if not anchor_label or not payload_label or _next_alpha_label(anchor_label) != payload_label:
+        return None
+    payload_text = " ".join(text_match.group("text").split()).strip()
+    payload_text = re.sub(r"\s*;\s*\.?\s*$", "", payload_text).strip()
+    if not payload_text:
+        return None
+    section = ref_match.group("section")
+    subsection = ref_match.group("subsection")
+    anchor_target = LegalAddress(
+        path=(
+            ("section", section),
+            ("subsection", subsection),
+            ("paragraph", anchor_label),
+        )
+    )
+    target_ref = f"s. {section}({subsection})({payload_label})"
+    return {
+        "rule_id": UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": text[: text_match.start("text")].strip(),
+        "target_ref": affected_provisions,
+        "section": section,
+        "subsection": subsection,
+        "anchor_label": anchor_label,
+        "anchor_target": str(anchor_target),
+        "anchor_patch": " ".join(text_match.group("connector").split()),
+        "payload": {
+            "label": payload_label,
+            "text": payload_text,
+            "target_ref": target_ref,
+            "target": f"section:{section}/subsection:{subsection}/paragraph:{payload_label}",
+        },
     }
 
 

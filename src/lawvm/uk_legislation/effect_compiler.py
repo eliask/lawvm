@@ -24,6 +24,7 @@ from lawvm.uk_legislation.effect_single_target_lowering import (
 )
 from lawvm.uk_legislation.effect_special_lowering import (
     lower_uk_after_section_subsection_range_insert_block_amendment,
+    lower_uk_after_paragraph_insert_connector_sibling,
     lower_uk_after_paragraph_insert_labelled_series,
     lower_uk_after_paragraph_insert_single_label,
     lower_uk_metadata_renumber_effect,
@@ -51,6 +52,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
     _source_at_end_section_subsection_insert_block_amendment,
     _source_after_section_subsection_range_insert_block_amendment,
     _source_after_paragraph_insert_block_amendment,
+    _source_after_paragraph_insert_connector_sibling,
     _source_after_paragraph_insert_labelled_series,
     _source_after_paragraph_insert_single_label,
     _source_carried_structured_tail_substitution,
@@ -299,6 +301,24 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             sequence=sequence,
             after_paragraph_series=after_paragraph_series,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        _mark_lower_phase("compile_lower_special")
+        return ops
+    after_paragraph_connector = _source_after_paragraph_insert_connector_sibling(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        affected_provisions=effect.affected_provisions,
+    )
+    if action == "insert" and after_paragraph_connector is not None:
+        ops = lower_uk_after_paragraph_insert_connector_sibling(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            after_paragraph_connector=after_paragraph_connector,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
             lowering_rejections_out=lowering_rejections_out,
