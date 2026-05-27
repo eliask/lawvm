@@ -2576,6 +2576,39 @@ def test_classify_uk_effect_compare_shape_marks_table_entry_column_surface_gap()
     assert not is_core_uk_effect_compare_candidate(result)
 
 
+@pytest.mark.parametrize(
+    ("rule_id", "match_text", "replacement"),
+    [
+        ("uk_effect_table_entry_label_text_patch", "terrorist", "certain"),
+        (
+            "uk_effect_table_entry_deictic_label_column_text_patch",
+            "two-thirds",
+            "one-half",
+        ),
+    ],
+)
+def test_classify_uk_effect_compare_shape_marks_table_entry_label_surface_gap(
+    rule_id: str,
+    match_text: str,
+    replacement: str,
+) -> None:
+    result = classify_uk_effect_compare_shape(
+        effect_type="word substituted",
+        op_actions=("text_replace",),
+        resolver_eids=("section-166",),
+        base_target_hits=(True,),
+        oracle_target_hits=(True,),
+        base_target_texts=("Section 166 table carrier text",),
+        oracle_target_texts=("Section 166 table carrier text",),
+        text_patch_matches=(match_text,),
+        text_patch_replacements=(replacement,),
+        lowering_rule_ids=(rule_id,),
+    )
+
+    assert result == "table_cell_text_patch_requires_table_surface"
+    assert not is_core_uk_effect_compare_candidate(result)
+
+
 def test_manual_frontier_keeps_owned_table_cell_surface_gap_deterministic() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="word substituted",
