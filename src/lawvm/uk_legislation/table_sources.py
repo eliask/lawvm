@@ -5,7 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 import weakref
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -47,10 +47,6 @@ _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID = (
     "uk_effect_repeal_table_parent_child_text_repeal_split"
 )
 _UK_DEFINITION_SELECTOR_SEPARATOR = "\x1f"
-_REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
-    ET.Element,
-    tuple[tuple[ET.Element, tuple[int, int]], ...],
-] = weakref.WeakKeyDictionary()
 _UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE = re.compile(
     r"\b(?:definition\s+of|definitions\s+of|entry\s+for|entries\s+for)\b",
     flags=re.I,
@@ -214,6 +210,28 @@ class _UKRepealTableBroadContainerMatch:
     broad_container_target: str
 
 
+class _UKRepealTableColumns(NamedTuple):
+    enactment_index: int
+    extent_index: int
+
+
+class _UKRepealExtentSourceTable(NamedTuple):
+    table: ET.Element
+    columns: _UKRepealTableColumns
+
+
+class _UKRepealTableQuotedWordsSelector(NamedTuple):
+    original: str
+    occurrence: int
+    end_occurrence: int
+
+
+_REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
+    ET.Element,
+    tuple[_UKRepealExtentSourceTable, ...],
+] = weakref.WeakKeyDictionary()
+
+
 def _strip_outer_uk_quotes(text: str) -> str:
     stripped = " ".join(text.split()).strip()
     quote_pairs = (("\u201c", "\u201d"), ("\u2018", "\u2019"), ('"', '"'), ("'", "'"))
@@ -364,7 +382,7 @@ def _uk_repeal_table_enactment_match_cell(
     return primary_cell, ""
 
 
-def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
+def _uk_repeal_table_columns(row: Sequence[str]) -> _UKRepealTableColumns | None:
     enactment_idx: int | None = None
     extent_idx: int | None = None
     for idx, cell in enumerate(row):
@@ -384,13 +402,13 @@ def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
             enactment_idx = idx
     if enactment_idx is None or extent_idx is None or enactment_idx == extent_idx:
         return None
-    return enactment_idx, extent_idx
+    return _UKRepealTableColumns(enactment_idx, extent_idx)
 
 
-def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, int]:
+def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> _UKRepealTableQuotedWordsSelector:
     text = " ".join(extent_cell.split()).strip()
     if not text:
-        return "", 0, 0
+        return _UKRepealTableQuotedWordsSelector("", 0, 0)
     quoted = _uk_quoted_capture
     range_match = re.search(
         r"\bthe\s+words?\s+from\s+"
@@ -417,13 +435,13 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
             "end_single",
         )
         if not start:
-            return "", 0, 0
+            return _UKRepealTableQuotedWordsSelector("", 0, 0)
         occurrence = 0
         if range_match.group("occurrence"):
             occurrence = _uk_ordinal_to_int(range_match.group("occurrence")) or 0
         if end:
-            return f"TEXT_FROM_{start}_TO_{end}", occurrence, 0
-        return f"TEXT_FROM_{start}_TO_END", occurrence, 0
+            return _UKRepealTableQuotedWordsSelector(f"TEXT_FROM_{start}_TO_{end}", occurrence, 0)
+        return _UKRepealTableQuotedWordsSelector(f"TEXT_FROM_{start}_TO_END", occurrence, 0)
     match = re.search(
         r"\bthe\s+words?\s+"
         + _uk_quoted_capture("quoted"),
@@ -438,13 +456,21 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
             and re.search(r"\b(?:insert|substitute|substituted|for)\b", text, re.I) is None
             and _UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE.search(text) is None
         ):
-            return _uk_first_quote_group(
-                bare_matches[0],
-                "bare_double",
-                "bare_single",
-            ), 0, 0
-        return "", 0, 0
-    return _uk_first_quote_group(match, "quoted_double", "quoted_single"), 0, 0
+            return _UKRepealTableQuotedWordsSelector(
+                _uk_first_quote_group(
+                    bare_matches[0],
+                    "bare_double",
+                    "bare_single",
+                ),
+                0,
+                0,
+            )
+        return _UKRepealTableQuotedWordsSelector("", 0, 0)
+    return _UKRepealTableQuotedWordsSelector(
+        _uk_first_quote_group(match, "quoted_double", "quoted_single"),
+        0,
+        0,
+    )
 
 
 def _uk_flat_repeal_schedule_quoted_words_text_repeal(
@@ -905,7 +931,7 @@ def _uk_table_is_repeal_extent_source_table(
     table: ET.Element,
     *,
     source_is_repeal_schedule: bool = False,
-) -> tuple[int, int] | None:
+) -> _UKRepealTableColumns | None:
     for row in _uk_table_rows_with_rowspans(table)[:4]:
         columns = _uk_repeal_table_columns(row)
         if columns is not None:
@@ -920,15 +946,15 @@ def _uk_table_is_repeal_extent_source_table(
                 r"subsection|subsections|sub-?paragraph|sub-?paragraphs|word|words)\b",
                 extent_cell,
             ):
-                return 0, 1
+                return _UKRepealTableColumns(0, 1)
     return None
 
 
-def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[tuple[ET.Element, tuple[int, int]], ...]:
+def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[_UKRepealExtentSourceTable, ...]:
     cached = _REPEAL_EXTENT_TABLE_CACHE.get(root)
     if cached is not None:
         return cached
-    tables: list[tuple[ET.Element, tuple[int, int]]] = []
+    tables: list[_UKRepealExtentSourceTable] = []
     source_is_repeal_schedule = _uk_repeal_schedule_source_text(_text_content(root))
     for el in root.iter():
         if _tag(el).lower() != "table":
@@ -938,7 +964,7 @@ def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[tuple[ET.Element,
             source_is_repeal_schedule=source_is_repeal_schedule,
         )
         if columns is not None:
-            tables.append((el, columns))
+            tables.append(_UKRepealExtentSourceTable(el, columns))
     result = tuple(tables)
     _REPEAL_EXTENT_TABLE_CACHE[root] = result
     return result
@@ -946,16 +972,16 @@ def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[tuple[ET.Element,
 
 def _uk_repeal_extent_source_tables_for_roots(
     roots: Sequence[ET.Element],
-) -> tuple[tuple[ET.Element, tuple[int, int]], ...]:
-    tables: list[tuple[ET.Element, tuple[int, int]]] = []
+) -> tuple[_UKRepealExtentSourceTable, ...]:
+    tables: list[_UKRepealExtentSourceTable] = []
     seen_table_ids: set[int] = set()
     for root in roots:
-        for table, columns in _uk_repeal_extent_source_tables(root):
-            table_id = id(table)
+        for source_table in _uk_repeal_extent_source_tables(root):
+            table_id = id(source_table.table)
             if table_id in seen_table_ids:
                 continue
             seen_table_ids.add(table_id)
-            tables.append((table, columns))
+            tables.append(source_table)
     return tuple(tables)
 
 
