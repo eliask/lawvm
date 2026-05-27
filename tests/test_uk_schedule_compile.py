@@ -47163,6 +47163,300 @@ def test_pipeline_compile_ops_extracts_article_schedule_payload_source(
     )
 
 
+def test_pipeline_compile_ops_selects_single_amendment_child_from_enacted_shell_source(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_single_amendment_child_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/10/3/dd",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 10(3)(dd)",
+        affecting_uri="/id/uksi/2003/1545/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="1545",
+        affecting_provisions="art. 2",
+        affecting_title="Test Water Order",
+        in_force_dates=[{"date": "2003-06-13", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para><Text>. . . . . .</Text></P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <P2 id="article-2-1">
+              <Pnumber>1</Pnumber>
+              <P2para><Text>The Transport Act 1962 is amended as follows.</Text></P2para>
+            </P2>
+            <P2 id="article-2-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>In section 10(3), after paragraph (d) insert—</Text>
+                <BlockAmendment>
+                  <P5>
+                    <Pnumber>dd</Pnumber>
+                    <P5para><Text>except in Scotland—</Text></P5para>
+                  </P5>
+                  <P4>
+                    <Pnumber>i</Pnumber>
+                    <P4para><Text>to abstract water,</Text></P4para>
+                  </P4>
+                  <P4>
+                    <Pnumber>ii</Pnumber>
+                    <P4para><Text>to purchase water;</Text></P4para>
+                  </P4>
+                </BlockAmendment>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_enacted_xml_from_archive",
+        lambda _aid, _archive: enacted_xml,
+    )
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/1962/46",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    op = compiled[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.witness_rule_id == "uk_effect_after_paragraph_insert_block_amendment_lowered"
+    assert op.target.path == (("section", "10"), ("subsection", "3"), ("paragraph", "dd"))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.PARAGRAPH
+    assert op.payload.label == "dd"
+    assert op.payload.text == "except in Scotland—"
+    assert [(child.kind, child.label, child.text) for child in op.payload.children] == [
+        (IRNodeKind.SUBPARAGRAPH, "i", "to abstract water,"),
+        (IRNodeKind.SUBPARAGRAPH, "ii", "to purchase water;"),
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_single_amendment_child_source_selected"
+        and row.get("source_container_id") == "article-2"
+        and row.get("selected_child_id") == "article-2-2"
+        for row in diagnostics
+    )
+    assert all(
+        row.get("rule_id") != "uk_effect_instruction_text_payload_rejected"
+        for row in diagnostics
+    )
+
+
+def test_compile_after_paragraph_insert_block_amendment_emits_lowering_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="article-2-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In section 10(3), after paragraph (d) insert—</Text>
+            <BlockAmendment>
+              <P5>
+                <Pnumber>dd</Pnumber>
+                <P5para><Text>except in Scotland—</Text></P5para>
+              </P5>
+              <P4>
+                <Pnumber>i</Pnumber>
+                <P4para><Text>to abstract water,</Text></P4para>
+              </P4>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_single_amendment_child_insert_direct",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/10/3/dd",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 10(3)(dd)",
+        affecting_uri="/id/uksi/2003/1545/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="1545",
+        affecting_provisions="art. 2",
+        affecting_title="Test Water Order",
+        in_force_dates=[{"date": "2003-06-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].witness_rule_id == "uk_effect_after_paragraph_insert_block_amendment_lowered"
+    assert any(
+        row.get("rule_id") == "uk_effect_after_paragraph_insert_block_amendment_lowered"
+        and row.get("blocking") is False
+        for row in lowering_records
+    )
+    assert all(
+        row.get("rule_id") != "uk_effect_instruction_text_payload_rejected"
+        for row in lowering_records
+    )
+
+
+def test_pipeline_compile_ops_does_not_select_ambiguous_amendment_child_from_shell_source(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_ambiguous_single_amendment_child_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/10/3/dd",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 10(3)(dd)",
+        affecting_uri="/id/uksi/2003/1545/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="1545",
+        affecting_provisions="art. 2",
+        affecting_title="Test Water Order",
+        in_force_dates=[{"date": "2003-06-13", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para><Text>. . . . . .</Text></P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <P2 id="article-2-1">
+              <Pnumber>1</Pnumber>
+              <P2para>
+                <Text>After paragraph (c) insert—</Text>
+                <BlockAmendment><P5><Pnumber>cc</Pnumber><P5para><Text>first payload</Text></P5para></P5></BlockAmendment>
+              </P2para>
+            </P2>
+            <P2 id="article-2-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>After paragraph (d) insert—</Text>
+                <BlockAmendment><P5><Pnumber>dd</Pnumber><P5para><Text>second payload</Text></P5para></P5></BlockAmendment>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "id": extracted_el.get("id") if extracted_el is not None else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("section", "10"), ("subsection", "3"), ("paragraph", "dd"))),
+                payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="dd"),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_enacted_xml_from_archive",
+        lambda _aid, _archive: enacted_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/1962/46",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "tag": "P1",
+            "id": "article-2",
+            "authority": "AFFECTING_ACT_ENACTED_TEXT",
+        }
+    ]
+    assert all(
+        row.get("rule_id") != "uk_affecting_act_single_amendment_child_source_selected"
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_extracts_parenthesized_source_range(
     monkeypatch,
 ) -> None:

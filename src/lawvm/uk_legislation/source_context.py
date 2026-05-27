@@ -38,6 +38,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_outdented_child_source_selected,
     uk_affecting_act_parenthesized_range_source_extracted,
     uk_affecting_act_schedule_part_standalone_split_rejection,
+    uk_affecting_act_single_amendment_child_source_selected,
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
     uk_affecting_act_xml_too_small_rejection,
@@ -578,6 +579,56 @@ def _compound_payload_only_amendment_container(
         payload_text_preview=_source_preview(_text_content(payload)),
     )
     return UKSourceExtractionResult(payload, (observation,))
+
+
+def _has_amendment_payload_descendant(el: ET.Element) -> bool:
+    return any(
+        child is not el and _tag(child) in {"BlockAmendment", "InlineAmendment"}
+        for child in el.iter()
+    )
+
+
+def _direct_structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
+    child_tags = {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}
+    return tuple(
+        descendant
+        for descendant in el
+        if _tag(descendant) in child_tags
+    ) + tuple(
+        grandchild
+        for child in el
+        for grandchild in child
+        if _tag(grandchild) in child_tags
+    )
+
+
+def _single_amendment_child_source(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    el: Optional[ET.Element],
+) -> UKSourceExtractionResult:
+    if el is None or _tag(el) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}:
+        return UKSourceExtractionResult(el, ())
+    candidates = tuple(
+        child
+        for child in _direct_structural_children(el)
+        if _has_amendment_payload_descendant(child)
+    )
+    if len(candidates) != 1:
+        return UKSourceExtractionResult(el, ())
+    selected = candidates[0]
+    observation = uk_affecting_act_single_amendment_child_source_selected(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        source_container_id=str(el.get("id") or el.get("Id") or ""),
+        selected_child_id=str(selected.get("id") or selected.get("Id") or ""),
+        selected_child_label=_clean_num(_direct_structural_num(selected)),
+        selected_child_text_preview=_source_preview(_text_content(selected)),
+    )
+    return UKSourceExtractionResult(selected, (observation,))
 
 
 def _payload_source_instruction_ancestor(
@@ -1374,6 +1425,12 @@ def _select_enacted_source_for_current_shell(
             current_el,
             (enacted_payload_descendant_rejection,),
         )
+    narrowed_enacted = _single_amendment_child_source(enacted_context, effect, enacted_el)
+    enacted_el = narrowed_enacted.extracted_element
+    enacted_source_observations = (
+        *enacted_source_observations,
+        *narrowed_enacted.observations,
+    )
     enacted_text = _extracted_element_text(enacted_el)
     if enacted_el is None or _looks_like_non_substantive_shell_element(enacted_el):
         return UKSelectedAffectingSource(current_context, current_el, ())

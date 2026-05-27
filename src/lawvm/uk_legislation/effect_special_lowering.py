@@ -11,6 +11,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
+from lawvm.core.ir_helpers import irnode_from_dict
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
@@ -264,9 +265,13 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> list[LegalOperation]:
     """Lower a source-owned single labelled paragraph insert."""
+    rule_id = str(
+        after_paragraph_insert.get("rule_id")
+        or UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID
+    )
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
-        rule_id=UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
+        rule_id=rule_id,
         family="source_context_elaboration",
         reason_code="after_paragraph_insert_single_label",
         reason=(
@@ -291,11 +296,14 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
     )
     payload = dict(after_paragraph_insert["payload"])
     payload_target = _parse_affected_target(str(payload["target_ref"]))
-    payload_node = IRNode(
-        kind=IRNodeKind.PARAGRAPH,
-        label=str(payload["label"]),
-        text=str(payload["text"]),
-    )
+    if "kind" in payload:
+        payload_node = irnode_from_dict(payload)
+    else:
+        payload_node = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=str(payload["label"]),
+            text=str(payload["text"]),
+        )
     anchor_target = _parse_affected_target(
         f"s. {after_paragraph_insert['section']}({after_paragraph_insert['subsection']})"
         f"({after_paragraph_insert['anchor_label']})"
@@ -317,7 +325,7 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
         text_rewrite_witness=None,
         insertion_anchor_witness=_uk_insertion_anchor_witness(
             _target_anchor_eid(anchor_target),
-            anchor_source=UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
+            anchor_source=rule_id,
         ),
     )
     return [
@@ -330,7 +338,7 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
             source=src,
             group_id=_uk_temporal_group_id(effect),
             provenance_tags=_uk_lowered_op_provenance_tags(insert_witness),
-            witness_rule_id=UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
+            witness_rule_id=rule_id,
         )
     ]
 

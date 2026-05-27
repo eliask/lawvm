@@ -5,10 +5,12 @@ import xml.etree.ElementTree as ET
 from typing import Any, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
 from lawvm.uk_legislation.source_context import (
+    _first_amendment_container,
     _source_ancestor_chain,
     _source_parent_range_label,
     _unique_source_ancestor_chain_by_tag_text,
@@ -33,6 +35,9 @@ UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID = (
 )
 UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID = (
     "uk_effect_after_paragraph_insert_single_label_lowered"
+)
+UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_RULE_ID = (
+    "uk_effect_after_paragraph_insert_block_amendment_lowered"
 )
 UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_carried_structured_tail_substitution_lowered"
@@ -137,6 +142,10 @@ _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_REF_RE = re.compile(
 _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_TEXT_RE = re.compile(
     r"^\s*after\s+paragraph\s+\((?P<anchor>[a-z]+)\),?\s*"
     r"insert\s*[—–-]?\s*(?P<label>[a-z]+)\s+(?P<text>.+?)\s*$",
+    flags=re.I | re.S,
+)
+_UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
+    r"\bafter\s+paragraph\s+\((?P<anchor>[a-z]+)\),?\s*insert\s*[—–-]?\s*$",
     flags=re.I | re.S,
 )
 _UK_LABELLED_SERIES_ITEM_RE = re.compile(
@@ -693,6 +702,97 @@ def _source_after_paragraph_insert_single_label(
         "payload": {
             "label": target_label,
             "text": payload_text,
+            "target_ref": target_ref,
+            "target": f"section:{section}/subsection:{subsection}/paragraph:{target_label}",
+        },
+    }
+
+
+def _source_after_paragraph_insert_block_amendment(
+    *,
+    extracted_el: Optional[ET.Element],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Lower `after paragraph (d) insert— <BlockAmendment>` rows."""
+    if extracted_el is None or _tag(extracted_el) not in {"P2", "P3", "P4"}:
+        return None
+    ref_match = _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_REF_RE.match(
+        affected_provisions or ""
+    )
+    if ref_match is None:
+        return None
+    instruction_text = " ".join(
+        _instruction_text_before_amendment_container(extracted_el).split()
+    ).strip()
+    instruction_match = _UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_INSTRUCTION_RE.search(
+        instruction_text
+    )
+    if instruction_match is None:
+        return None
+    amendment = _first_amendment_container(extracted_el)
+    if amendment is None or _tag(amendment) != "BlockAmendment":
+        return None
+    payload_children = tuple(
+        child
+        for child in list(amendment)
+        if _tag(child) in {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}
+    )
+    if not payload_children:
+        return None
+    target_label = _source_parent_range_label(ref_match.group("label"))
+    first_label = _source_parent_range_label(_direct_structural_num(payload_children[0]))
+    if not target_label or first_label != target_label:
+        return None
+    section = ref_match.group("section")
+    subsection = ref_match.group("subsection")
+    anchor_label = _source_parent_range_label(instruction_match.group("anchor"))
+    if not anchor_label:
+        return None
+
+    def _label_stripped_text(node: ET.Element, label: str) -> str:
+        text = " ".join(_text_content(node).split()).strip()
+        if label:
+            text = re.sub(rf"^\s*{re.escape(label)}\s+", "", text, count=1).strip()
+        return text
+
+    def _visible_structural_label(node: ET.Element) -> str:
+        return str(_direct_structural_num(node) or "").strip().strip("()").lower()
+
+    child_payloads: list[dict[str, Any]] = []
+    for child in payload_children[1:]:
+        child_label = _visible_structural_label(child)
+        child_text = _label_stripped_text(child, child_label)
+        if not child_label or not child_text:
+            return None
+        child_payloads.append(
+            {
+                "kind": IRNodeKind.SUBPARAGRAPH.value,
+                "label": child_label,
+                "text": child_text,
+                "attrs": {},
+                "children": [],
+            }
+        )
+    payload_text = _label_stripped_text(payload_children[0], first_label)
+    if not payload_text:
+        return None
+    target_ref = f"s. {section}({subsection})({target_label})"
+    return {
+        "rule_id": UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": instruction_text,
+        "target_ref": affected_provisions,
+        "section": section,
+        "subsection": subsection,
+        "anchor_label": anchor_label,
+        "anchor_target": f"section:{section}/subsection:{subsection}/paragraph:{anchor_label}",
+        "source_row_label": _source_parent_range_label(_direct_structural_num(extracted_el)),
+        "payload": {
+            "kind": IRNodeKind.PARAGRAPH.value,
+            "label": target_label,
+            "text": payload_text,
+            "attrs": {},
+            "children": child_payloads,
             "target_ref": target_ref,
             "target": f"section:{section}/subsection:{subsection}/paragraph:{target_label}",
         },

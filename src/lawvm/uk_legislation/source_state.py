@@ -14,6 +14,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_xml_cached_recorded",
         "uk_affecting_act_current_shell_enacted_source_selected",
         "uk_affecting_act_missing_current_enacted_source_selected",
+        "uk_affecting_act_single_amendment_child_source_selected",
         "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
         "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
@@ -228,6 +229,43 @@ def uk_affecting_act_missing_current_enacted_source_selected(
             "UK current affecting-act XML did not expose an extractable same-provision "
             "source node, while the official enacted XML contained substantive text for "
             "that exact affecting provision."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_single_amendment_child_source_selected(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    source_container_id: str,
+    selected_child_id: str,
+    selected_child_label: str,
+    selected_child_text_preview: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_single_amendment_child_source_selected",
+        "family": "source_lane_selection",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "source_container_id": source_container_id,
+        "selected_child_id": selected_child_id,
+        "selected_child_label": selected_child_label,
+        "selected_child_text_preview": selected_child_text_preview,
+        "reason": (
+            "UK effects metadata named a broad source container whose current "
+            "version was only a shell, while the enacted source container had "
+            "exactly one child carrying an amendment payload. LawVM selected "
+            "that child rather than smuggling the context sibling into the payload."
         ),
         "blocking": False,
         "strict_disposition": "record",
