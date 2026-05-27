@@ -59,6 +59,13 @@ class _OrderStateEntry(NamedTuple):
     label: str
 
 
+class _InvariantTargetRoot(NamedTuple):
+    root_name: str
+    node: UKMutableNode
+    initial_path: str
+    scope_prefix: str
+
+
 def _invariant_detail(
     op: LegalOperation,
     scoped_violation: str,
@@ -191,7 +198,7 @@ class UKReplayInvariantDiagnosticsMixin:
     def _invariant_parent_target_roots_for_op(
         self,
         op: LegalOperation,
-    ) -> list[tuple[str, UKMutableNode, str, str]]:
+    ) -> list[_InvariantTargetRoot]:
         if len(op.target.path) <= 1:
             return []
         parent_address = LegalAddress(path=op.target.path[:-1], special=None)
@@ -205,29 +212,29 @@ class UKReplayInvariantDiagnosticsMixin:
                 node,
                 schedule_root.kind.value,
             )
-            return [(root_name, node, initial_path, f"{root_name}:{initial_path}")]
+            return [_InvariantTargetRoot(root_name, node, initial_path, f"{root_name}:{initial_path}")]
         initial_path = self._node_invariant_path(self.statute.body, node, "body")
-        return [("body", node, initial_path, f"body:{initial_path}")]
+        return [_InvariantTargetRoot("body", node, initial_path, f"body:{initial_path}")]
 
     def _invariant_target_roots(
         self,
         root_filter: set[tuple[str, str]] | None = None,
-    ) -> list[tuple[str, UKMutableNode, str, str]]:
-        targets: list[tuple[str, UKMutableNode, str, str]] = []
+    ) -> list[_InvariantTargetRoot]:
+        targets: list[_InvariantTargetRoot] = []
         if root_filter is None or ("body", "") in root_filter:
-            targets.append(("body", self.statute.body, "body", "body:"))
+            targets.append(_InvariantTargetRoot("body", self.statute.body, "body", "body:"))
         for schedule in self.statute.supplements:
             clean_label = _clean_num(str(schedule.label or ""))
             if root_filter is None or ("schedule", clean_label) in root_filter:
                 root_name = f"schedule:{schedule.label or '?'}"
                 initial_path = schedule.kind.value
-                targets.append((root_name, schedule, initial_path, f"{root_name}:"))
+                targets.append(_InvariantTargetRoot(root_name, schedule, initial_path, f"{root_name}:"))
         return targets
 
     def _invariant_target_roots_for_op(
         self,
         op: LegalOperation,
-    ) -> list[tuple[str, UKMutableNode, str, str]]:
+    ) -> list[_InvariantTargetRoot]:
         root_filter = self._invariant_root_filter_for_op(op)
         if root_filter is None:
             return self._invariant_target_roots(root_filter)
@@ -257,16 +264,19 @@ class UKReplayInvariantDiagnosticsMixin:
         if top_node is None:
             return self._invariant_target_roots(root_filter)
         initial_path = self._node_invariant_path(self.statute.body, top_node, "body")
-        return [("body", top_node, initial_path, f"body:{initial_path}")]
+        return [_InvariantTargetRoot("body", top_node, initial_path, f"body:{initial_path}")]
 
     def _collect_invariant_violations(
         self,
         root_filter: set[tuple[str, str]] | None = None,
     ) -> set[str]:
         violations: set[str] = set()
-        for root_name, node, initial_path, _scope_prefix in self._invariant_target_roots(root_filter):
-            for violation in _collect_duplicate_order_invariants(node, initial_path=initial_path):
-                violations.add(f"{root_name}:{violation}")
+        for target_root in self._invariant_target_roots(root_filter):
+            for violation in _collect_duplicate_order_invariants(
+                target_root.node,
+                initial_path=target_root.initial_path,
+            ):
+                violations.add(f"{target_root.root_name}:{violation}")
         return violations
 
     def _invariant_removal_only_op(self, op: LegalOperation) -> bool:
@@ -280,8 +290,8 @@ class UKReplayInvariantDiagnosticsMixin:
             return
         target_roots = self._invariant_target_roots_for_op(op)
         scoped_prefixes: set[str] = set()
-        for _root_name, _node, _initial_path, scope_prefix in target_roots:
-            scoped_prefixes.add(scope_prefix)
+        for target_root in target_roots:
+            scoped_prefixes.add(target_root.scope_prefix)
         scoped_seen = {
             violation
             for violation in self._seen_invariant_violations
@@ -292,9 +302,12 @@ class UKReplayInvariantDiagnosticsMixin:
             return
 
         current_violations: set[str] = set()
-        for root_name, node, initial_path, _scope_prefix in target_roots:
-            for violation in _collect_duplicate_order_invariants(node, initial_path=initial_path):
-                current_violations.add(f"{root_name}:{violation}")
+        for target_root in target_roots:
+            for violation in _collect_duplicate_order_invariants(
+                target_root.node,
+                initial_path=target_root.initial_path,
+            ):
+                current_violations.add(f"{target_root.root_name}:{violation}")
         new_violations = sorted(current_violations - scoped_seen)
         if not new_violations:
             self._seen_invariant_violations.difference_update(scoped_seen)
