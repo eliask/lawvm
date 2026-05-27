@@ -4063,6 +4063,125 @@ def test_compile_empty_type_quoted_anchor_insert_requires_single_text_fragment()
     )
 
 
+def test_compile_empty_type_compound_quoted_anchor_inserts_split_text_patches() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-22">
+          <Pnumber>22</Pnumber>
+          <P2para>
+            <Text>In section 86(4)– a after “to the Minister” there is inserted “or, in Scotland, the Scottish Ministers”; and b after “by the Minister” there is inserted “or by the Scottish Ministers”.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_compound_quoted_anchor_word_insert",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/86/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 86(4)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(22)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "86"), ("subsection", "4")),
+        (("section", "86"), ("subsection", "4")),
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == [
+        "to the Minister",
+        "by the Minister",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch] == [
+        "to the Minister or, in Scotland, the Scottish Ministers",
+        "by the Minister or by the Scottish Ministers",
+    ]
+    assert any(
+        row.get("rule_id")
+        == "uk_effect_empty_type_compound_quoted_anchor_word_insertions_inferred"
+        and row.get("blocking") is False
+        for row in lowering_records
+    )
+    assert any(
+        row.get("rule_id") == "uk_effect_compound_lettered_text_patch_instruction"
+        and row.get("blocking") is False
+        for row in lowering_records
+    )
+    assert all(
+        row.get("rule_id") != "uk_effect_instruction_text_payload_rejected"
+        for row in lowering_records
+    )
+
+
+def test_compile_empty_type_compound_quoted_anchor_inserts_require_target_match() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-22">
+          <Pnumber>22</Pnumber>
+          <P2para>
+            <Text>In section 86(4)– a after “to the Minister” there is inserted “or the Scottish Ministers”; and b after “by the Minister” there is inserted “or by them”.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_compound_quoted_anchor_target_mismatch",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/87/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 87(4)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(22)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert all(
+        row.get("rule_id")
+        != "uk_effect_empty_type_compound_quoted_anchor_word_insertions_inferred"
+        for row in lowering_records
+    )
+
+
 def test_compile_words_inserted_before_fragment_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
