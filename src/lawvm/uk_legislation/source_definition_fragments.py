@@ -1130,8 +1130,8 @@ def _fragment_substitution_source_carried_definition_child_at_end_insert(
     row_context = _instruction_text_before_amendment_container(ancestors[0])
     if not re.match(r"^\s*at\s+the\s+end\s+there\s+is\s+inserted\b", row_context, flags=re.I | re.S):
         return None
-    term, label, sublabel, source_parent_id = _source_definition_child_context_from_ancestors(ancestors)
-    if not term or not label:
+    definition_context = _source_definition_child_context_from_ancestors(ancestors)
+    if not definition_context.term or not definition_context.label:
         return None
     inserted = " ".join((extracted_text or "").split()).strip()
     if not inserted:
@@ -1140,12 +1140,15 @@ def _fragment_substitution_source_carried_definition_child_at_end_insert(
     if not inserted:
         return None
     return {
-        "original": f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_{term}{US}{label}{US}AT_END",
+        "original": (
+            f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_"
+            f"{definition_context.term}{US}{definition_context.label}{US}AT_END"
+        ),
         "replacement": inserted,
-        "source_parent_id": source_parent_id,
-        "source_definition_term": term,
-        "source_child_label": label,
-        "source_child_sublabel": sublabel,
+        "source_parent_id": definition_context.source_parent_id,
+        "source_definition_term": definition_context.term,
+        "source_child_label": definition_context.label,
+        "source_child_sublabel": definition_context.sublabel,
         "source_inserted_text": inserted,
         "rule_id": "uk_effect_source_carried_definition_child_at_end_insert_text_patch",
     }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.nlp_parser import US
@@ -35,6 +35,13 @@ _SOURCE_DEFINITION_CHILD_CONTEXT_RE = re.compile(
     r"(?:\((?P<sublabel>[0-9A-Za-z]+)\))?",
     flags=re.I | re.S,
 )
+
+
+class SourceDefinitionChildContext(NamedTuple):
+    term: str
+    label: str
+    sublabel: str
+    source_parent_id: str
 
 
 def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
@@ -260,12 +267,17 @@ def _source_definition_child_refined_target(
 
 def _source_definition_child_context_from_ancestors(
     ancestors: tuple[ET.Element, ...],
-) -> tuple[str, str, str, str]:
+) -> SourceDefinitionChildContext:
     for ancestor in ancestors:
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
             candidate_text = _instruction_text_before_amendment_container(ancestor)
         term, label, sublabel = _source_definition_child_context_from_parent(candidate_text)
         if term and label:
-            return term, label, sublabel, str(ancestor.get("id") or "")
-    return "", "", "", ""
+            return SourceDefinitionChildContext(
+                term,
+                label,
+                sublabel,
+                str(ancestor.get("id") or ""),
+            )
+    return SourceDefinitionChildContext("", "", "", "")
