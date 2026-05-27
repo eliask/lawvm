@@ -9,6 +9,13 @@ from typing import Optional
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 
 
+_WORD_PUNCTUATION_ELISION_CANDIDATE_RE = re.compile(
+    r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])"
+)
+_ROTATED_TRAILING_COMMA_BODY_RE = re.compile(r"[A-Za-z][A-Za-z0-9 ]{1,80}")
+_NUMERIC_LIST_TRAILING_COMMA_ANCHOR_RE = re.compile(r"\s*(?P<anchor>\d+[A-Za-z]?)\s*,\s*")
+
+
 @dataclass(frozen=True, slots=True)
 class UKNumericListTrailingCommaAnchorPattern:
     anchor: str
@@ -111,7 +118,7 @@ def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
     """Return whether a match string contains recoverable word-internal punctuation."""
     if not match:
         return False
-    return bool(re.search(r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])", match))
+    return bool(_WORD_PUNCTUATION_ELISION_CANDIDATE_RE.search(match))
 
 
 def _walk_text_nodes(node: UKMutableNode) -> list[_UKTextNodeWalkEntry]:
@@ -161,7 +168,7 @@ def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> O
     if not normalized_match.endswith(","):
         return None
     body = normalized_match[:-1].strip()
-    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 ]{1,80}", body):
+    if _ROTATED_TRAILING_COMMA_BODY_RE.fullmatch(body) is None:
         return None
 
     body_pattern = re.escape(body).replace(r"\ ", r"\s+")
@@ -188,7 +195,7 @@ def _numeric_list_trailing_comma_anchor_pattern(
 ) -> UKNumericListTrailingCommaAnchorPattern | None:
     """Return a bounded pattern for insertion anchors quoted as `28,`."""
 
-    match_obj = re.fullmatch(r"\s*(?P<anchor>\d+[A-Za-z]?)\s*,\s*", match or "")
+    match_obj = _NUMERIC_LIST_TRAILING_COMMA_ANCHOR_RE.fullmatch(match or "")
     if match_obj is None:
         return None
     anchor = match_obj.group("anchor")
