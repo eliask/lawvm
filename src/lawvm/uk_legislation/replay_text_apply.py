@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Any, Callable, Optional, TypeAlias
+from typing import Any, Callable, NamedTuple, Optional, TypeAlias
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.core.semantic_types import IRNodeKind
@@ -28,6 +28,12 @@ TextNodeRegexMatchesByPath: TypeAlias = dict[
     TextNodePath,
     tuple[UKMutableNode, list[re.Match[str]]],
 ]
+
+
+class DefinitionTextRewriteResult(NamedTuple):
+    text: str
+    applied: bool
+    recovery_rule_ids: tuple[str, ...]
 
 
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
@@ -305,7 +311,7 @@ def _insert_after_definition_text(
     replacement: str,
     allow_punctuation_spacing: bool,
     allow_word_punctuation_elision: bool,
-) -> tuple[str, bool, tuple[str, ...]]:
+) -> DefinitionTextRewriteResult:
     definition_start: re.Match[str] | None = None
     recovered_anchor = False
     recovered_parenthetical_translation = False
@@ -346,7 +352,7 @@ def _insert_after_definition_text(
         )
         break
     if definition_start is None:
-        return text, False, ()
+        return DefinitionTextRewriteResult(text, False, ())
     next_definition = _UK_NEXT_DEFINITION_PATTERN.search(text, definition_start.end())
     if next_definition is not None:
         insert_at = next_definition.start() + 1
@@ -364,7 +370,11 @@ def _insert_after_definition_text(
     if recovered_conjoined_term:
         recovery_rule_ids.append("uk_replay_definition_anchor_conjoined_term_normalized")
     recovery_rule_ids.append("uk_replay_after_definition_text_insert_applied")
-    return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
+    return DefinitionTextRewriteResult(
+        " ".join(new_text.split()).strip(),
+        True,
+        tuple(recovery_rule_ids),
+    )
 
 
 def _rewrite_flat_definition_child_ordinal_text(
@@ -557,7 +567,7 @@ def _rewrite_definition_entry_text(
     replacement: str,
     allow_punctuation_spacing: bool,
     allow_word_punctuation_elision: bool,
-) -> tuple[str, bool, tuple[str, ...]]:
+) -> DefinitionTextRewriteResult:
     term_pattern = _text_patch_pattern(
         term,
         allow_punctuation_spacing=allow_punctuation_spacing,
@@ -590,7 +600,7 @@ def _rewrite_definition_entry_text(
     )
     matches = list(definition_pattern.finditer(text))
     if len(matches) != 1:
-        return text, False, ()
+        return DefinitionTextRewriteResult(text, False, ())
     match = matches[0]
     predicate = " ".join(str(match.group("predicate") or "").lower().split())
     used_shall_construed = predicate == "shall be construed"
@@ -619,7 +629,11 @@ def _rewrite_definition_entry_text(
         recovery_rule_ids.append("uk_replay_definition_entry_qualifier_phrase_normalized")
     if used_orphan_separator:
         recovery_rule_ids.append("uk_replay_definition_entry_orphan_separator_normalized")
-    return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
+    return DefinitionTextRewriteResult(
+        " ".join(new_text.split()).strip(),
+        True,
+        tuple(recovery_rule_ids),
+    )
 
 
 def _remove_trailing_context_word(text: str, needle: str) -> tuple[str, bool]:
@@ -927,7 +941,7 @@ def _rewrite_definition_child_tail_after_anchor_to_end_text(
     replacement: str,
     allow_punctuation_spacing: bool,
     allow_word_punctuation_elision: bool,
-) -> tuple[str, bool, tuple[str, ...]]:
+) -> DefinitionTextRewriteResult:
     bounds = _flat_definition_child_bounds(
         text,
         term=term,
@@ -946,7 +960,7 @@ def _rewrite_definition_child_tail_after_anchor_to_end_text(
         )
         definition_matches = list(definition_pattern.finditer(text))
         if len(definition_matches) != 1:
-            return text, False, ()
+            return DefinitionTextRewriteResult(text, False, ())
         definition_match = definition_matches[0]
         tail_start = definition_match.end(0) - len(definition_match.group(0))
         entry_end = definition_match.end()
@@ -969,7 +983,7 @@ def _rewrite_definition_child_tail_after_anchor_to_end_text(
         )
         matches = list(re.finditer(pattern, tail_text, flags=re.I | re.S))
         if len(matches) != 1:
-            return text, False, ()
+            return DefinitionTextRewriteResult(text, False, ())
         anchor_match = matches[0]
 
     anchor_end = tail_start + anchor_match.end()
@@ -986,7 +1000,7 @@ def _rewrite_definition_child_tail_after_anchor_to_end_text(
         else " "
     )
     rewritten = " ".join(f"{text[:anchor_end]}{joiner}{replacement_text}{text[entry_end:]}".split()).strip()
-    return rewritten, True, fallback_recovery_rule_ids
+    return DefinitionTextRewriteResult(rewritten, True, fallback_recovery_rule_ids)
 
 
 def _definition_child_tail_after_anchor_selector_parts(
