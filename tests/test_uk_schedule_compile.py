@@ -29902,6 +29902,82 @@ def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> No
     )
 
 
+def test_compile_table_entry_label_row_insert_before_anchor_preserves_source_table_row() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>before entry 1 insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <table xmlns="http://www.w3.org/1999/xhtml">
+                  <tbody>
+                    <tr>
+                      <td>A1</td>
+                      <td>a sentence of detention under section 209</td>
+                      <td>half the term of the sentence of detention</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_label_row_insert_before",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-01-22",
+        affected_uri="/id/ukpga/2006/52/section/177J/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 177J(5) table",
+        affecting_uri="/id/ukpga/2026/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="2",
+        affecting_provisions="s. 24(3)(a)(i)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-01-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "177j"), ("subsection", "5"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [cell.text for cell in ops[0].payload.children[0].children] == [
+        "A1",
+        "a sentence of detention under section 209",
+        "half the term of the sentence of detention",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "entry_label"
+    assert selector["direction"] == "before"
+    assert selector["source_payload_mode"] == "table_rows"
+    assert selector["anchor_entry_label"] == "1"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_label_row_insert_blocks_without_source_row_payload() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -1226,7 +1226,7 @@ def _uk_table_entry_row_insert_selector(
                 **entry_context,
             }
     entry_label_match = re.search(
-        r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+in\s+the\s+table\s+"
+        r"\b(?P<direction>after|before)\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+in\s+the\s+table\s+"
         r"insert(?:ed)?\s*[—–-]?",
         text,
         re.I,
@@ -1238,7 +1238,7 @@ def _uk_table_entry_row_insert_selector(
             return {
                 "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 "selector_mode": "entry_label",
-                "direction": "after",
+                "direction": entry_label_match.group("direction").lower(),
                 "anchor_entry_label": anchor_entry_label,
                 "table_label": table_match.group(1) if table_match is not None else "",
                 "source_names_table": source_names_table,
@@ -1424,7 +1424,7 @@ def _uk_table_entry_row_insert_selector(
                 "target_ref": target_ref,
             }
     numbered_target_table_match = re.search(
-        r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
+        r"\b(?P<direction>after|before)\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
         r"insert(?:ed)?\s*[—–-]?",
         text,
         re.I,
@@ -1435,7 +1435,7 @@ def _uk_table_entry_row_insert_selector(
             return {
                 "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 "selector_mode": "entry_label",
-                "direction": "after",
+                "direction": numbered_target_table_match.group("direction").lower(),
                 "anchor_entry_label": anchor_entry_label,
                 "table_label": table_match.group(1) if table_match is not None else "",
                 "source_payload_mode": "table_rows",
