@@ -9,7 +9,7 @@ executor implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
@@ -78,6 +78,17 @@ class _GroupedScheduleEntryRow:
     group: UKMutableNode
     child_index: int
     child: UKMutableNode
+
+
+class _ScheduleListEntryRow(NamedTuple):
+    parent: UKMutableNode
+    index: int
+    child: UKMutableNode
+
+
+class _ScheduleListEntryAnchorMatch(NamedTuple):
+    rows: list[_ScheduleListEntryRow]
+    mode: str
 
 
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
@@ -907,10 +918,10 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
             return False
-        entry_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
+        entry_rows: list[_ScheduleListEntryRow] = []
         if carrier_kind in {"schedule", "paragraph", "subparagraph"}:
             entry_rows = [
-                (carrier_node, idx, child)
+                _ScheduleListEntryRow(carrier_node, idx, child)
                 for idx, child in enumerate(carrier_node.children)
                 if _uk_kind_value(child.kind) == "schedule_entry"
             ]
@@ -919,7 +930,7 @@ class UKReplayScheduleListApplyMixin:
                 for idx, child in enumerate(parent.children):
                     child_kind = _uk_kind_value(child.kind)
                     if child_kind == "paragraph":
-                        entry_rows.append((parent, idx, child))
+                        entry_rows.append(_ScheduleListEntryRow(parent, idx, child))
                     elif child_kind in {"p1group", "pblock", "part", "chapter", "division"}:
                         _collect_partition_entry_rows(child)
 
@@ -935,78 +946,78 @@ class UKReplayScheduleListApplyMixin:
                 return _compact_schedule_entry_anchor_without_article(child.text)
             return _compact_numbered_schedule_entry_text_without_article(child.text)
 
-        def _matches_for_anchor(anchor: str) -> tuple[list[tuple[UKMutableNode, int, UKMutableNode]], str]:
+        def _matches_for_anchor(anchor: str) -> _ScheduleListEntryAnchorMatch:
             anchor_norm = _compact_normalized_text(anchor)
             matches = [
-                (parent, idx, child)
-                for parent, idx, child in entry_rows
-                if _entry_text_norm(child) == anchor_norm
+                entry_row
+                for entry_row in entry_rows
+                if _entry_text_norm(entry_row.child) == anchor_norm
             ]
             if matches:
-                return matches, "exact"
+                return _ScheduleListEntryAnchorMatch(matches, "exact")
             matches = [
-                (parent, idx, child)
-                for parent, idx, child in entry_rows
-                if _entry_text_norm(child).startswith(anchor_norm)
+                entry_row
+                for entry_row in entry_rows
+                if _entry_text_norm(entry_row.child).startswith(anchor_norm)
             ]
             if matches:
-                return matches, "prefix"
+                return _ScheduleListEntryAnchorMatch(matches, "prefix")
             article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
             matches = [
-                (parent, idx, child)
-                for parent, idx, child in entry_rows
+                entry_row
+                for entry_row in entry_rows
                 if article_anchor_norm
                 and (
-                    _entry_text_article_norm(child) == article_anchor_norm
-                    or _entry_text_article_norm(child).startswith(article_anchor_norm)
+                    _entry_text_article_norm(entry_row.child) == article_anchor_norm
+                    or _entry_text_article_norm(entry_row.child).startswith(article_anchor_norm)
                 )
             ]
             if matches:
-                return matches, "article"
+                return _ScheduleListEntryAnchorMatch(matches, "article")
             if carrier_kind != "schedule":
                 parenthetical_anchor = _schedule_entry_parenthetical_paragraph_anchor(anchor)
                 if parenthetical_anchor is not None:
                     entry_text, paragraph_label = parenthetical_anchor
                     entry_article_norm = _compact_schedule_entry_anchor_without_article(entry_text)
                     matches = [
-                        (parent, idx, child)
-                        for parent, idx, child in entry_rows
-                        if _clean_num(child.label or "") == paragraph_label
+                        entry_row
+                        for entry_row in entry_rows
+                        if _clean_num(entry_row.child.label or "") == paragraph_label
                         and entry_article_norm
                         and (
-                            _entry_text_article_norm(child) == entry_article_norm
-                            or _entry_text_article_norm(child).startswith(entry_article_norm)
+                            _entry_text_article_norm(entry_row.child) == entry_article_norm
+                            or _entry_text_article_norm(entry_row.child).startswith(entry_article_norm)
                         )
                     ]
                     if matches:
-                        return matches, "parenthetical_paragraph"
+                        return _ScheduleListEntryAnchorMatch(matches, "parenthetical_paragraph")
                 numbered_anchor_norm = _compact_numbered_schedule_entry_text(anchor)
                 matches = [
-                    (parent, idx, child)
-                    for parent, idx, child in entry_rows
+                    entry_row
+                    for entry_row in entry_rows
                     if numbered_anchor_norm
                     and (
-                        _entry_text_norm(child) == numbered_anchor_norm
-                        or _entry_text_norm(child).startswith(numbered_anchor_norm)
+                        _entry_text_norm(entry_row.child) == numbered_anchor_norm
+                        or _entry_text_norm(entry_row.child).startswith(numbered_anchor_norm)
                     )
                 ]
                 if matches:
-                    return matches, "numbered"
+                    return _ScheduleListEntryAnchorMatch(matches, "numbered")
                 numbered_anchor_article_norm = _compact_numbered_schedule_entry_text_without_article(anchor)
                 matches = [
-                    (parent, idx, child)
-                    for parent, idx, child in entry_rows
+                    entry_row
+                    for entry_row in entry_rows
                     if numbered_anchor_article_norm
                     and (
-                        _entry_text_article_norm(child) == numbered_anchor_article_norm
-                        or _entry_text_article_norm(child).startswith(numbered_anchor_article_norm)
+                        _entry_text_article_norm(entry_row.child) == numbered_anchor_article_norm
+                        or _entry_text_article_norm(entry_row.child).startswith(numbered_anchor_article_norm)
                     )
                 ]
                 if matches:
-                    return matches, "numbered_article"
-            return [], "none"
+                    return _ScheduleListEntryAnchorMatch(matches, "numbered_article")
+            return _ScheduleListEntryAnchorMatch([], "none")
 
-        matched_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
+        matched_rows: list[_ScheduleListEntryRow] = []
         match_modes: dict[str, str] = {}
         for anchor in anchors:
             matches, mode = _matches_for_anchor(anchor)
@@ -1034,7 +1045,7 @@ class UKReplayScheduleListApplyMixin:
                 return False
             matched_rows.append(matches[0])
             match_modes[anchor] = mode
-        matched_keys = tuple((id(parent), idx) for parent, idx, _child in matched_rows)
+        matched_keys = tuple((id(row.parent), row.index) for row in matched_rows)
         if len(set(matched_keys)) != len(matched_keys):
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -1050,17 +1061,17 @@ class UKReplayScheduleListApplyMixin:
                     selector,
                     blocking=True,
                     reason_code="anchor_collision",
-                    matched_indices=tuple(idx for _parent, idx, _child in matched_rows),
+                    matched_indices=tuple(row.index for row in matched_rows),
                     carrier_kind=carrier_kind,
                 ),
             )
             return False
         rows_by_parent: dict[int, tuple[UKMutableNode, list[int]]] = {}
-        for parent, idx, _child in matched_rows:
-            key = id(parent)
+        for row in matched_rows:
+            key = id(row.parent)
             if key not in rows_by_parent:
-                rows_by_parent[key] = (parent, [])
-            rows_by_parent[key][1].append(idx)
+                rows_by_parent[key] = (row.parent, [])
+            rows_by_parent[key][1].append(row.index)
         for parent, indices in rows_by_parent.values():
             children = list(parent.children)
             for idx in sorted(indices, reverse=True):
@@ -1082,7 +1093,7 @@ class UKReplayScheduleListApplyMixin:
                 selector,
                 blocking=False,
                 reason_code="explicit_entry_anchors_unique",
-                matched_indices=tuple(idx for _parent, idx, _child in matched_rows),
+                matched_indices=tuple(row.index for row in matched_rows),
                 match_modes=match_modes,
                 normalization_rule_ids=tuple(
                     (
