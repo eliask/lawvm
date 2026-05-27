@@ -53,6 +53,11 @@ class TextRangeStartIndex(NamedTuple):
     recovery_rule_ids: tuple[str, ...]
 
 
+class DirectChildTextRewriteMatch(NamedTuple):
+    index: int
+    child: UKMutableNode
+
+
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
 means
 |have\s+the\s+same\s+meaning\s+as
@@ -2158,12 +2163,12 @@ class UKReplayTextApplyMixin:
             original = child_match.group(3).strip()
             if not child_labels or not original:
                 return node, False
-            direct_matches: dict[str, tuple[int, UKMutableNode]] = {}
+            direct_matches: dict[str, DirectChildTextRewriteMatch] = {}
             for index, child in enumerate(node.children):
                 kind_value = child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind)
                 label_key = _clean_num(child.label or "")
                 if kind_value == child_kind and label_key in child_labels and label_key not in direct_matches:
-                    direct_matches[label_key] = (index, child)
+                    direct_matches[label_key] = DirectChildTextRewriteMatch(index, child)
                 elif kind_value == child_kind and label_key in child_labels:
                     return node, False
             if set(direct_matches) != set(child_labels):
@@ -2171,16 +2176,16 @@ class UKReplayTextApplyMixin:
 
             new_children = list(node.children)
             for label in child_labels:
-                index, child = direct_matches[label]
+                direct_match = direct_matches[label]
                 new_text, changed = _delete_source_carried_child_text(
-                    child.text or "",
+                    direct_match.child.text or "",
                     original=original,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
                 )
                 if not changed:
                     return node, False
-                new_children[index] = dc_replace(child, text=new_text)
+                new_children[direct_match.index] = dc_replace(direct_match.child, text=new_text)
             rebuilt = dc_replace(node, children=new_children)
             self._replace_node_in_statute(node, rebuilt)
             if recovery_rule_ids_out is not None:
