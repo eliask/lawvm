@@ -81,12 +81,14 @@ def _fallback_target_eid(addr: LegalAddress) -> str:
             parts.append(f"part-{_clean_num(part)}")
         if chapter:
             parts.append(f"chapter-{_clean_num(chapter)}")
-        paragraph, subsection, item_labels = _schedule_target_levels(addr)
-        if paragraph:
-            parts.append(f"paragraph-{_canonicalize_schedule_paragraph_eid_label(paragraph)}")
-        if subsection:
-            parts.append(_clean_num(subsection))
-        for item_label in item_labels:
+        schedule_levels = _schedule_target_levels(addr)
+        if schedule_levels.paragraph:
+            parts.append(
+                f"paragraph-{_canonicalize_schedule_paragraph_eid_label(schedule_levels.paragraph)}"
+            )
+        if schedule_levels.subparagraph:
+            parts.append(_clean_num(schedule_levels.subparagraph))
+        for item_label in schedule_levels.item_labels:
             parts.append(_canonicalize_eid_tail_label(item_label))
         return "-".join(part for part in parts if part)
 
