@@ -44,6 +44,17 @@ class SourceDefinitionChildContext(NamedTuple):
     source_parent_id: str
 
 
+class SourceDefinitionDirectChildContext(NamedTuple):
+    term: str
+    label: str
+
+
+class SourceDefinitionParentChildContext(NamedTuple):
+    term: str
+    label: str
+    sublabel: str
+
+
 def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
     for ancestor in ancestors:
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
@@ -84,34 +95,36 @@ def _source_definition_child_context_for_direct_section_paragraph(
     *,
     target: LegalAddress,
     parent_context_text: str,
-) -> tuple[str, str]:
+) -> SourceDefinitionDirectChildContext:
     path = tuple(getattr(target, "path", ()) or ())
     if len(path) != 2:
-        return "", ""
+        return SourceDefinitionDirectChildContext(term="", label="")
     section_kind, section_label = path[0]
     child_kind, child_label = path[1]
     if str(section_kind or "").lower() != "section" or str(child_kind or "").lower() != "paragraph":
-        return "", ""
+        return SourceDefinitionDirectChildContext(term="", label="")
     match = _SOURCE_SECTION_DEFINITION_CHILD_CONTEXT_RE.search(parent_context_text)
     if match is None:
-        return "", ""
+        return SourceDefinitionDirectChildContext(term="", label="")
     if _clean_num(match.group("section")) != _clean_num(str(section_label or "")):
-        return "", ""
+        return SourceDefinitionDirectChildContext(term="", label="")
     label = _clean_num(match.group("label"))
     if label != _clean_num(str(child_label or "")):
-        return "", ""
+        return SourceDefinitionDirectChildContext(term="", label="")
     term = " ".join(match.group("term").split()).strip()
-    return term, label
+    return SourceDefinitionDirectChildContext(term=term, label=label)
 
 
-def _source_definition_child_context_from_parent(parent_context_text: str) -> tuple[str, str, str]:
+def _source_definition_child_context_from_parent(
+    parent_context_text: str,
+) -> SourceDefinitionParentChildContext:
     match = _SOURCE_DEFINITION_CHILD_CONTEXT_RE.search(parent_context_text)
     if match is None:
-        return "", "", ""
+        return SourceDefinitionParentChildContext(term="", label="", sublabel="")
     term = " ".join(match.group("term").split()).strip()
     label = _clean_num(match.group("label"))
     sublabel = " ".join((match.group("sublabel") or "").split()).strip()
-    return term, label, sublabel
+    return SourceDefinitionParentChildContext(term=term, label=label, sublabel=sublabel)
 
 
 def _source_row_names_explicit_target_context(row_text: str) -> bool:
@@ -147,17 +160,18 @@ def _scope_fragment_substitutions_to_source_definition_parent(
         return fragments
     parent = ancestors[0]
     parent_context_text = _source_text_before_extracted_child(parent, extracted_el)
-    child_definition_term, child_definition_label = _source_definition_child_context_for_direct_section_paragraph(
+    direct_child_context = _source_definition_child_context_for_direct_section_paragraph(
         target=target,
         parent_context_text=parent_context_text,
     )
+    child_definition_term = direct_child_context.term
+    child_definition_label = direct_child_context.label
     child_definition_sublabel = ""
     if not child_definition_term:
-        (
-            child_definition_term,
-            child_definition_label,
-            child_definition_sublabel,
-        ) = _source_definition_child_context_from_parent(parent_context_text)
+        parent_child_context = _source_definition_child_context_from_parent(parent_context_text)
+        child_definition_term = parent_child_context.term
+        child_definition_label = parent_child_context.label
+        child_definition_sublabel = parent_child_context.sublabel
     definition_match = _SOURCE_DEFINITION_TERM_RE.search(parent_context_text)
     definition_term = (
         " ".join(definition_match.group("term").split()).strip()
@@ -272,12 +286,12 @@ def _source_definition_child_context_from_ancestors(
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
             candidate_text = _instruction_text_before_amendment_container(ancestor)
-        term, label, sublabel = _source_definition_child_context_from_parent(candidate_text)
-        if term and label:
+        parent_child_context = _source_definition_child_context_from_parent(candidate_text)
+        if parent_child_context.term and parent_child_context.label:
             return SourceDefinitionChildContext(
-                term,
-                label,
-                sublabel,
+                parent_child_context.term,
+                parent_child_context.label,
+                parent_child_context.sublabel,
                 str(ancestor.get("id") or ""),
             )
     return SourceDefinitionChildContext("", "", "", "")
