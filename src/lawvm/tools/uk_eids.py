@@ -5,7 +5,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.source_state import (
@@ -19,6 +19,12 @@ if TYPE_CHECKING:
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
+
+
+class _LimitedEIDRows(NamedTuple):
+    rows: list[tuple[str, str]]
+    total_matches: int
+    truncated: bool
 
 
 def _iter_prefixed_rows(
@@ -46,11 +52,15 @@ def _limit_rows_with_evidence(
     rows: list[tuple[str, str]],
     *,
     limit: int | None,
-) -> tuple[list[tuple[str, str]], int, bool]:
+) -> _LimitedEIDRows:
     total_matches = len(rows)
     if limit is None:
-        return rows, total_matches, False
-    return rows[:limit], total_matches, total_matches > limit
+        return _LimitedEIDRows(rows=rows, total_matches=total_matches, truncated=False)
+    return _LimitedEIDRows(
+        rows=rows[:limit],
+        total_matches=total_matches,
+        truncated=total_matches > limit,
+    )
 
 
 def _source_sha256(blob: bytes | None) -> str:
@@ -212,15 +222,15 @@ def main(args: "argparse.Namespace") -> None:
             else:
                 source_parse_observations.extend(uk_source_parse_observations_from_ir(parsed_ir))
             rows = list(_iter_prefixed_rows(data.get("eid_map", {}), data.get("text_map", {}), prefix=prefix))
-            rows, total_matches, truncated = _limit_rows_with_evidence(rows, limit=limit)
+            limited_rows = _limit_rows_with_evidence(rows, limit=limit)
             reports.append(_eid_side_report_jsonable(
                 statute_id=statute_id,
                 prefix=prefix,
                 side=which,
                 source_url=url,
-                rows=rows,
-                total_matches=total_matches,
-                truncated=truncated,
+                rows=limited_rows.rows,
+                total_matches=limited_rows.total_matches,
+                truncated=limited_rows.truncated,
                 missing=False,
                 source_status=source_status,
                 source_size=source_size,
