@@ -28,6 +28,11 @@ class StructuredTailSubstitutionTrimSelector(NamedTuple):
     mode: str
 
 
+class QuoteOnlyDefinitionListOmissionPayload(NamedTuple):
+    definition_term: str
+    source_parent_id: str
+
+
 @dataclass(frozen=True)
 class UKTextReclassificationResult:
     curr_action: str
@@ -478,7 +483,7 @@ def _quote_only_definition_list_omission_payload_match(
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],
     extracted_text: Optional[str],
-) -> Optional[tuple[str, str]]:
+) -> Optional[QuoteOnlyDefinitionListOmissionPayload]:
     """Return a definition term inherited from a parent definition-list omission."""
     fragment = _quote_only_omission_payload_match(extracted_text or "")
     if not fragment:
@@ -493,7 +498,10 @@ def _quote_only_definition_list_omission_payload_match(
                     (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
                     "",
                 )
-            return fragment, source_parent_id
+            return QuoteOnlyDefinitionListOmissionPayload(
+                definition_term=fragment,
+                source_parent_id=source_parent_id,
+            )
     return None
 
 
@@ -617,8 +625,9 @@ def lower_quote_only_word_omission(
         extracted_text=extracted_text,
     )
     if quote_only_definition_omission is not None:
-        definition_term, source_parent_id = quote_only_definition_omission
-        op_text_match = f"TEXT_DEFINITION_ENTRY_{definition_term}"
+        op_text_match = (
+            f"TEXT_DEFINITION_ENTRY_{quote_only_definition_omission.definition_term}"
+        )
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
             rule_id="uk_effect_quote_only_definition_list_omission_text_patch",
@@ -636,8 +645,8 @@ def lower_quote_only_word_omission(
             detail={
                 "target_ref": target_ref,
                 "target": str(target),
-                "definition_term": definition_term,
-                "source_parent_id": source_parent_id,
+                "definition_term": quote_only_definition_omission.definition_term,
+                "source_parent_id": quote_only_definition_omission.source_parent_id,
             },
         )
         return UKQuoteOnlyOmissionLowering(
