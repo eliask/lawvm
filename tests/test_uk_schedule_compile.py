@@ -28954,6 +28954,64 @@ def test_compile_table_child_anchor_insert_rejects_without_table_claim() -> None
     assert rejection["strict_disposition"] == "block"
 
 
+def test_parse_table_cell_ordered_list_units_preserves_evidence_without_text_duplication() -> None:
+    xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-132">
+          <Pnumber>132</Pnumber>
+          <P2 id="section-132-1">
+            <Pnumber>1</Pnumber>
+            <P2para>
+              <Text>Intro.</Text>
+              <Tabular>
+                <table xmlns="http://www.w3.org/1999/xhtml">
+                  <tbody>
+                    <tr>
+                      <td>1</td>
+                      <td>punishment</td>
+                      <td>
+                        <Para xmlns="{_LEG_NS}">
+                          <Text>only if—</Text>
+                          <OrderedList Type="alpha" Decoration="parens">
+                            <ListItem NumberOverride="a"><Para><Text>leading rate;</Text></Para></ListItem>
+                            <ListItem NumberOverride="b"><Para><Text>lance corporal;</Text></Para></ListItem>
+                          </OrderedList>
+                        </Para>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </P2para>
+          </P2>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode()
+
+    statute = parse_uk_statute_ir_bytes(xml, statute_id="ukpga/2006/52")
+
+    cell = statute.body.children[0].children[0].children[0].children[0].children[2]
+    assert " ".join(cell.text.split()) == "only if— leading rate; lance corporal;"
+    assert cell.children == ()
+    assert cell.attrs["source_rule_id"] == "uk_table_cell_ordered_list_units_preserved"
+    assert json.loads(cell.attrs["source_ordered_list_units_json"]) == [
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "a",
+            "text": "leading rate;",
+        },
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "b",
+            "text": "lance corporal;",
+        },
+    ]
+
+
 def test_compile_embedded_table_structural_paragraph_substitution_is_not_table_entry_rejected() -> None:
     extracted_el = ET.fromstring(
         f"""
