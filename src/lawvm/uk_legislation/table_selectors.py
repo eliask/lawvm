@@ -75,6 +75,7 @@ _UK_COLUMN_TOKEN_PATTERN = (
     r"(?:(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
     r"\s+column|column\s+\d+)"
 )
+_UK_QUOTED_PAYLOAD_RE = re.compile(r"[“\"'‘].*?[”\"'’]")
 _UK_EXPLICIT_ENTRY_LABEL_COLUMN_CLAIM_RE = re.compile(
     rf"\bin\s+entr(?:y|ies)\s+[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)*,?\s+"
     rf"in\s+{_UK_COLUMN_TOKEN_PATTERN}\b",
@@ -277,13 +278,18 @@ def _source_names_containing_target_for_table_cell(text: str, target: LegalAddre
     )
 
 
+def _source_instruction_surface(text: str) -> str:
+    return _UK_QUOTED_PAYLOAD_RE.sub("", text)
+
+
 def _source_names_table_column(text: str) -> bool:
+    instruction_surface = _source_instruction_surface(text)
     return (
         re.search(
             r"\bin\s+(?:the\s+)?"
             r"(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
             r"\s+column|column\s+\d+)\b",
-            text,
+            instruction_surface,
             flags=re.I,
         )
         is not None
@@ -1176,13 +1182,18 @@ def _uk_table_target_column_text_patch_claim(
     text = " ".join((extracted_text or "").split())
     if not text:
         return None
+    instruction_surface = _source_instruction_surface(text)
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
     source_names_column = _source_names_table_column(text)
     column_only_metadata_target = (
         source_names_column
         and _addr_leaf_kind(target) in {"section", "subsection", "paragraph", "schedule", "part"}
     )
-    if not target_names_table and "table" not in text.lower() and not column_only_metadata_target:
+    if (
+        not target_names_table
+        and "table" not in instruction_surface.lower()
+        and not column_only_metadata_target
+    ):
         return None
     source_target_context = _source_or_parent_names_containing_target_for_table_cell(
         text=text,
@@ -1193,7 +1204,7 @@ def _uk_table_target_column_text_patch_claim(
     source_names_containing_target = source_target_context.source_names_containing_target
     source_parent_id = source_target_context.source_parent_id
     if not target_names_table and not (
-        ("table" in text.lower() and source_names_containing_target)
+        ("table" in instruction_surface.lower() and source_names_containing_target)
         or column_only_metadata_target
     ):
         return None
@@ -2184,7 +2195,7 @@ def _uk_broad_table_entry_instruction(
         return None
     target_surface = f"{target_ref} {target}".lower()
     target_names_table = "table" in target_surface
-    norm = text.lower()
+    norm = _source_instruction_surface(text).lower()
     if "corresponding entry" in norm:
         return None
     if not target_names_table and not re.search(r"\b(?:table|column|columns)\b", norm):

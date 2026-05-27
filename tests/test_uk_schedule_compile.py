@@ -13699,6 +13699,63 @@ def test_compile_broad_schedule_table_column_text_patch_selector() -> None:
     )
 
 
+def test_compile_range_substitution_ignores_table_words_inside_replacement_quote() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-25-paragraph-3-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In subsection (1), in paragraph (a), for the words from \u201cmentioned\u201d to \u201cAct)\u201d substitute \u201c listed in column 1 of the community order requirements table in section 201 of the Sentencing Code \u201d .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-64c96f6ab123e9ee55278b48de5ad7d0",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 178(1)(a)",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 25 para. 3(2)",
+        affecting_title="Sentencing Act 2020",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "178"),
+        ("subsection", "1"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_mentioned_TO_Act)"
+    assert ops[0].text_patch.replacement == (
+        "listed in column 1 of the community order requirements table in section 201 of the Sentencing Code"
+    )
+    assert not any(
+        tag.startswith(_NOTE_TABLE_CELL_SELECTOR) for tag in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_range_substitution_text_patch"
+    ]
+
+
 def test_replay_broad_schedule_table_column_text_patch_mutates_unique_cell() -> None:
     selector = {
         "rule_id": "uk_effect_table_column_text_patch",
