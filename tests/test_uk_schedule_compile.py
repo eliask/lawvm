@@ -6561,6 +6561,117 @@ def test_compile_additional_frontier_text_patch_idioms(
     assert f"{_NOTE_TEXT_REWRITE_RULE}{expected_rule_id}" in ops[0].provenance_tags
 
 
+def test_compile_beginning_insert_each_child_expands_parent_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-5-b">
+          <Pnumber>b</Pnumber>
+          <Text>b at the beginning of each of paragraphs (b) and (c) insert
+          \u201c a list published in accordance with regulations made under \u201d .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-cbc18c9b04060fdf9003591a50acc1f1",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1978/29/section/17AA/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 17AA(3)",
+        affecting_uri="/id/asp/2005/13",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="13",
+        affecting_provisions="sch. 2 para. 2(5)(b)",
+        affecting_title="Smoking, Health and Social Care (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [tuple(op.target.path) for op in ops] == [
+        (("section", "17aa"), ("subsection", "3"), ("paragraph", "b")),
+        (("section", "17aa"), ("subsection", "3"), ("paragraph", "c")),
+    ]
+    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.text_patch is not None for op in ops)
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == [
+        "TEXT_BEGINNING",
+        "TEXT_BEGINNING",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch] == [
+        "a list published in accordance with regulations made under",
+        "a list published in accordance with regulations made under",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_beginning_each_child_text_insertion_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [
+        row["rule_id"]
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_source_child_beginning_insert_targets_expanded"
+    ] == ["uk_effect_source_child_beginning_insert_targets_expanded"]
+
+
+def test_compile_beginning_insert_each_child_does_not_patch_parent_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-5-b">
+          <Pnumber>b</Pnumber>
+          <Text>b at the beginning of each of paragraphs (b) and (c) insert
+          \u201c a list published in accordance with regulations made under \u201d .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_beginning_each_child_parent_mismatch",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-04-30",
+        affected_uri="/id/ukpga/1978/29/section/17AA",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 17AA",
+        affecting_uri="/id/asp/2005/13",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="13",
+        affecting_provisions="sch. 2 para. 2(5)(b)",
+        affecting_title="Smoking, Health and Social Care (Scotland) Act 2005",
+        in_force_dates=[{"date": "2006-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [
+        row["rule_id"]
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    ] == ["uk_effect_overlap_substitution_unlowered"]
+
+
 def test_compile_imperative_contextual_word_omission_records_child_anchor_observation() -> None:
     extracted_el = ET.fromstring(
         f"""

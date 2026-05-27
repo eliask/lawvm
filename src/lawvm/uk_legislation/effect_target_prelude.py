@@ -42,6 +42,7 @@ from lawvm.uk_legislation.source_text_reclassifications import (
 from lawvm.uk_legislation.source_payload_elaboration import _expand_sibling_targets_from_extracted
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
+    _expand_child_beginning_insert_targets_from_text,
     _expand_sibling_targets_from_text,
     _source_text_schedule_paragraph_target_override,
 )
@@ -180,7 +181,13 @@ def expand_single_target_prelude(
         if amendment_container is not None:
             expansion_source_el = amendment_container
 
-    expanded_targets = _expand_sibling_targets_from_extracted(expansion_ref, expansion_source_el)
+    child_beginning_insert_targets = _expand_child_beginning_insert_targets_from_text(
+        expansion_ref,
+        extracted_text,
+    )
+    expanded_targets = child_beginning_insert_targets
+    if not expanded_targets:
+        expanded_targets = _expand_sibling_targets_from_extracted(expansion_ref, expansion_source_el)
     if not expanded_targets:
         expanded_targets = _expand_sibling_targets_from_text(expansion_ref, extracted_text)
     if expanded_targets:
@@ -189,6 +196,27 @@ def expand_single_target_prelude(
             mixed_heading_source_ref_by_target = {
                 target_ref: original_targets_str[0] for target_ref in expanded_targets
             }
+        elif child_beginning_insert_targets:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_source_child_beginning_insert_targets_expanded",
+                family="target_shape_normalization",
+                reason_code="source_child_beginning_insert_targets_expanded",
+                reason=(
+                    "UK effect metadata names the parent provision while the "
+                    "source text explicitly inserts words at the beginning of "
+                    "multiple named child provisions; lowering expands the "
+                    "target list to those child labels instead of applying a "
+                    "parent TEXT_BEGINNING patch."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "original_target_ref": original_targets_str[0],
+                    "expanded_targets": list(expanded_targets),
+                },
+            )
         else:
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
