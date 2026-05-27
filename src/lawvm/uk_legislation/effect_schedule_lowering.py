@@ -287,6 +287,12 @@ def try_lower_schedule_list_entry_mutation(
             }
 
     if schedule_list_entry_selector is not None:
+        selector_rule_id = str(
+            schedule_list_entry_selector.get("rule_id") or _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID
+        )
+        entry_carrier_family = str(
+            schedule_list_entry_selector.get("entry_carrier_family") or "schedule_list"
+        )
         table_payload_node = _uk_schedule_list_entry_table_payload(extracted_el)
         if table_payload_node is not None:
             _append_uk_effect_lowering_observation(
@@ -345,13 +351,13 @@ def try_lower_schedule_list_entry_mutation(
 
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
-            rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+            rule_id=selector_rule_id,
             family="source_schedule_list_entry_elaboration",
             reason_code="explicit_schedule_list_entry_anchor",
             reason=(
-                "UK schedule-list-entry insertion lowered as a typed "
-                "schedule-entry sibling insert; replay must resolve exactly "
-                "one anchor entry before mutating schedule children."
+                "UK list-entry insertion lowered as a typed schedule-entry "
+                "sibling insert; replay must resolve exactly one anchor entry "
+                "before mutating direct list children."
             ),
             effect=effect,
             extracted_el=extracted_el,
@@ -387,7 +393,11 @@ def try_lower_schedule_list_entry_mutation(
                 label=None,
                 text=inserted_text,
                 attrs={
-                    "source_rule_id": "uk_schedule_list_entry_insert_payload",
+                    "source_rule_id": (
+                        "uk_schedule_list_entry_insert_payload"
+                        if entry_carrier_family == "schedule_list"
+                        else "uk_non_schedule_list_entry_insert_payload"
+                    ),
                     "anchor_text": anchor_text,
                     "anchor_direction": direction,
                     "source_inserted_entry_index": str(entry_index),
@@ -409,7 +419,7 @@ def try_lower_schedule_list_entry_mutation(
                         f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}"
                         f"{json.dumps(entry_selector, ensure_ascii=False)}"
                     ),
-                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+                    witness_rule_id=selector_rule_id,
                 )
             )
             if direction == "after":

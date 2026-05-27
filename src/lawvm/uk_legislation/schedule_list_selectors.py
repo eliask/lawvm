@@ -11,6 +11,7 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
 UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
+UK_NON_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_non_schedule_list_entry_insert"
 UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 
@@ -36,7 +37,10 @@ def _strip_schedule_entry_phrase(raw: str) -> str:
 
 
 def _strip_schedule_entry_payload(raw: str) -> str:
+    raw_text = str(raw or "").lstrip()
     text = _strip_schedule_entry_phrase(raw)
+    if re.match(r"^[;,:]\s*(?:and|or)\s+", raw_text, flags=re.I):
+        text = re.sub(r"^(?:and|or)\s+", "", text, flags=re.I)
     text = re.sub(
         r"^(?:the\s+following\s+entry\s*)[—–-]?\s*",
         "",
@@ -77,6 +81,7 @@ def _schedule_list_entry_selector_from_parts(
     inserted_text: str,
     target_ref: str,
     target: LegalAddress,
+    rule_id: str = UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
 ) -> dict[str, Any] | None:
     direction = str(direction or "").lower()
     anchor_text = _strip_schedule_entry_phrase(anchor_text)
@@ -86,7 +91,7 @@ def _schedule_list_entry_selector_from_parts(
     if direction != "alphabetical" and not anchor_text:
         return None
     return {
-        "rule_id": UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+        "rule_id": rule_id,
         "direction": direction,
         "anchor_text": anchor_text,
         "inserted_text": inserted_text,
@@ -108,16 +113,28 @@ def _uk_schedule_list_entry_insert_selector(
     target_surface = f"{target_ref} {target}".lower()
     if "table" in target_surface or "column" in text.lower():
         return None
-    if _addr_container(target) != "schedule" or _addr_leaf_kind(target) not in {
+    target_container = _addr_container(target)
+    target_leaf_kind = _addr_leaf_kind(target)
+    schedule_carrier_target = target_container == "schedule" and target_leaf_kind in {
         "schedule",
         "part",
         "chapter",
         "division",
         "paragraph",
         "subparagraph",
-    }:
+    }
+    local_list_carrier_target = target_container != "schedule" and target_leaf_kind in {
+        "section",
+        "subsection",
+    }
+    if not schedule_carrier_target and not local_list_carrier_target:
         return None
-    target_leaf_kind = _addr_leaf_kind(target)
+    rule_id = (
+        UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID
+        if schedule_carrier_target
+        else UK_NON_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID
+    )
+    entry_carrier_family = "schedule_list" if schedule_carrier_target else "non_schedule_local_list"
 
     match = re.search(
         r"\b(?P<direction>before|after)\s+(?:the\s+)?"
@@ -155,7 +172,10 @@ def _uk_schedule_list_entry_insert_selector(
             inserted_text=match.group("payload"),
             target_ref=target_ref,
             target=target,
+            rule_id=rule_id,
         )
+        if selector is not None:
+            selector["entry_carrier_family"] = entry_carrier_family
         if selector is not None and re.search(r"\bentry\s+relation\s+to\b", text, re.I):
             selector["source_anchor_form"] = "entry_relation_to_typo"
         ordinal = match.groupdict().get("ordinal")
@@ -171,13 +191,17 @@ def _uk_schedule_list_entry_insert_selector(
     )
     if match is None:
         return None
-    return _schedule_list_entry_selector_from_parts(
+    selector = _schedule_list_entry_selector_from_parts(
         direction="alphabetical",
         anchor_text="",
         inserted_text=match.group("payload"),
         target_ref=target_ref,
         target=target,
+        rule_id=rule_id,
     )
+    if selector is not None:
+        selector["entry_carrier_family"] = entry_carrier_family
+    return selector
 
 
 def _strip_schedule_entry_repeal_anchor(raw: str) -> str:

@@ -418,8 +418,13 @@ class UKReplayScheduleListApplyMixin:
             direction == "end"
             and str(selector.get("placement_family") or "") == "definition_list_end_from_source_range"
         )
+        local_list_insert_carrier = (
+            str(selector.get("entry_carrier_family") or "") == "non_schedule_local_list"
+            and carrier_kind in {"section", "subsection"}
+        )
         if carrier_node is None or (
             carrier_kind not in {"schedule", "part", "chapter", "division", "paragraph", "subparagraph"}
+            and not local_list_insert_carrier
             and not end_definition_list_carrier
         ):
             if self._target_under_repealed_prefix(target):
@@ -444,8 +449,8 @@ class UKReplayScheduleListApplyMixin:
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
                 message=(
-                    "UK replay skipped schedule-list-entry insert: target did "
-                    "not resolve to a schedule or schedule-entry carrier."
+                    "UK replay skipped list-entry insert: target did not "
+                    "resolve to a supported direct list-entry carrier."
                 ),
                 op=op,
                 detail=_schedule_entry_detail(

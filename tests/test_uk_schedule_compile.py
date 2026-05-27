@@ -32985,6 +32985,131 @@ def test_compile_subsection_list_entry_replacement_preserves_entry_boundary() ->
     )
 
 
+def test_compile_subsection_list_entry_insert_preserves_entry_boundary() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-4-paragraph-9-c">
+          <Pnumber>c</Pnumber>
+          <P3para>
+            <Text>after the entry relating to Part 9 insert</Text>
+            <BlockAmendment>
+              <Text>; and</Text>
+              <P2para>
+                <Text>Schedule 3A (offender elected Court Martial trial).</Text>
+              </P2para>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-85133f8714b811e7e80a92a42c86c75d",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-11-03",
+        affected_uri="/id/ukpga/2006/52/section/164/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 164(3)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 4 para. 9(c)",
+        affecting_title="Armed Forces Act 2011",
+        in_force_dates=[{"date": "2011-11-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target.path == (("section", "164"), ("subsection", "3"))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "Schedule 3A (offender elected Court Martial trial)"
+    assert op.payload.attrs["source_rule_id"] == "uk_non_schedule_list_entry_insert_payload"
+    assert op.witness_rule_id == "uk_effect_non_schedule_list_entry_insert"
+    selector_note = next(note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:"))
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["anchor_text"] == "Part 9"
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert any(
+        record["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Armed Forces Act 2006",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="164",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text="The previous provisions of this section are subject to (in particular)—",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    label=None,
+                                    text="section 165 (offender elected Court Martial trial);",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    label=None,
+                                    text=(
+                                        "Chapters 4 to 6 of Part 8 (sentencing powers and mandatory etc "
+                                        "sentences); and"
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    label=None,
+                                    text="Part 9 (general provisions about sentencing).",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "section 165 (offender elected Court Martial trial);",
+        "Chapters 4 to 6 of Part 8 (sentencing powers and mandatory etc sentences); and",
+        "Part 9 (general provisions about sentencing).",
+        "Schedule 3A (offender elected Court Martial trial)",
+    ]
+    assert not any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        for adjudication in adjudications
+    )
+
+
 def test_compile_schedule_list_entry_table_payload_uses_parent_instruction_for_block_payload() -> None:
     source_root = ET.fromstring(
         f"""
