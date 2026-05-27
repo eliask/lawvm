@@ -5011,6 +5011,93 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution_pr
     assert adjudications[0].detail["blocking"] is False
 
 
+def test_executor_materializes_source_carried_alpha_child_text_substitution() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="130",
+                    attrs={"eId": "section-130"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-130-3"},
+                            text=(
+                                "This subsection applies if the charge is amended "
+                                "after referral."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_alpha_child_text_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "130"), ("subsection", "3"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="if the charge is amended after referral.",
+                    occurrence=0,
+                ),
+                replacement=(
+                    "a where the charge is amended after referral; "
+                    "b to any charge substituted for or added to the charge after referral; or "
+                    "c where extended powers are obtained after referral"
+                ),
+            ),
+            source=_source(),
+            provenance_tags=(
+                "text_rewrite_rule:uk_effect_source_carried_quoted_text_substitution_text_patch",
+            ),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "This subsection applies"
+    assert [(child.kind, child.label, child.text, child.attrs.get("eId")) for child in subsection.children] == [
+        (
+            IRNodeKind.PARAGRAPH,
+            "a",
+            "where the charge is amended after referral;",
+            "section-130-3-a",
+        ),
+        (
+            IRNodeKind.PARAGRAPH,
+            "b",
+            "to any charge substituted for or added to the charge after referral; or",
+            "section-130-3-b",
+        ),
+        (
+            IRNodeKind.PARAGRAPH,
+            "c",
+            "where extended powers are obtained after referral",
+            "section-130-3-c",
+        ),
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
+    assert adjudications[0].detail["child_kind"] == "paragraph"
+    assert adjudications[0].detail["child_labels"] == ("a", "b", "c")
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
 def test_uk_mutable_ir_maps_source_point_alias_to_item_kind() -> None:
     assert uk_ir_node_kind("point") == IRNodeKind.ITEM
     assert UKMutableNode(kind="point", label="i").kind == IRNodeKind.ITEM
