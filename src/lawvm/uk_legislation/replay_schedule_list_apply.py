@@ -96,6 +96,12 @@ class _ScheduleListEntryParentDeleteGroup(NamedTuple):
     indices: list[int]
 
 
+class _ScheduleTableAnchorRowMatch(NamedTuple):
+    row_index: int
+    match_mode: str
+    row_preview: str
+
+
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_table_rows_insert_resolved"
 )
@@ -315,7 +321,7 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
             return True
-        matched_rows: list[tuple[int, str, str]] = []
+        matched_rows: list[_ScheduleTableAnchorRowMatch] = []
         last_anchor_cell: UKMutableNode | None = None
         for row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
             anchor_cell = row_cells.get(1)
@@ -344,7 +350,7 @@ class UKReplayScheduleListApplyMixin:
             elif cell_citation_short_norm and cell_citation_short_norm.startswith(anchor_norm):
                 match_mode = "cell_citation_short_title_prefix"
             if match_mode:
-                matched_rows.append((row_index, match_mode, cell_text[:240]))
+                matched_rows.append(_ScheduleTableAnchorRowMatch(row_index, match_mode, cell_text[:240]))
         if len(matched_rows) != 1 or not payload_rows:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -362,12 +368,12 @@ class UKReplayScheduleListApplyMixin:
                     reason_code="anchor_not_unique_or_payload_empty",
                     anchor_match_count=len(matched_rows),
                     payload_row_count=len(payload_rows),
-                    matching_rows=tuple(row[2] for row in matched_rows[:5]),
+                    matching_rows=tuple(row.row_preview for row in matched_rows[:5]),
                 ),
             )
             return False
-        row_index, match_mode, row_preview = matched_rows[0]
-        insert_index = row_index if direction == "before" else row_index + 1
+        match = matched_rows[0]
+        insert_index = match.row_index if direction == "before" else match.row_index + 1
         for row in payload_rows:
             strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
@@ -389,11 +395,11 @@ class UKReplayScheduleListApplyMixin:
                 selector,
                 blocking=False,
                 reason_code="explicit_entry_anchor_unique_in_schedule_table",
-                match_mode=match_mode,
-                matched_row=row_preview,
+                match_mode=match.match_mode,
+                matched_row=match.row_preview,
                 anchor_normalization_rule_id=(
                     _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ANCHOR_CITATION_SHORT_TITLE_RULE_ID
-                    if "citation_short_title" in match_mode
+                    if "citation_short_title" in match.match_mode
                     else ""
                 ),
                 insert_index=insert_index,
