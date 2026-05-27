@@ -1427,6 +1427,16 @@ def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
     return bool(re.search(r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.+\b(?:[ivxlcdm]+)\s+\w", norm))
 
 
+def _looks_like_words_treated_as_substituted_context(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    return bool(
+        re.search(r"\bof\s+the\s+words\s+treated\s+as\s+substituted\b", norm)
+        and re.search(r"\b(?:for|after|before|omit|insert|substitute)\b", norm)
+    )
+
+
 def _looks_like_relative_other_place_occurrence(text: str) -> bool:
     norm = _normalize_effect_text(text)
     if not norm:
@@ -1672,6 +1682,8 @@ def classify_uk_effect_source_pathology(
         return "broad_source_reused_as_payload"
 
     if norm_text and targets:
+        if _looks_like_words_treated_as_substituted_context(extracted_text):
+            return "as_if_application_modification_unsupported"
         if (
             "text_replace" in actions
             and _looks_like_source_carried_structured_tail_substitution(extracted_text)
