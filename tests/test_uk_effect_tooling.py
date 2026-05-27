@@ -4311,6 +4311,96 @@ def test_uk_manual_compile_evidence_jsonl_templates_repeal_table_mixed_split_cla
     assert template["source_target_surface"] == "Sch. 4 para. 3"
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_repeal_table_preserves_fallback_blocker() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-repeal-fallback-blocker",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/12/5",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 12(5)",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="Sch. 40 Pt. 3",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="repeal_schedule_table_source_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_crossheading_source_target_mismatch_rejected",
+                    "reason_code": "crossheading_source_requires_crossheading_target",
+                    "target_ref": "s. 12(5)",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="Schedule",
+            source_extracted_text_preview=(
+                "Schedule 40 Repeals Short title and chapter Extent of repeal "
+                "Test Act 2000 In section 12(5), the words from \"old\" to the end."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_repeal_table_candidate",
+            manual_compile_reason="Table repeal requires row/cell boundary ownership.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_crossheading_source_target_mismatch_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_crossheading_source_target_mismatch_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_repeal_or_omission"
+    assert (
+        template["lowering_rule_id"]
+        == "uk_effect_crossheading_source_target_mismatch_rejected"
+    )
+    assert (
+        template["lowering_reason_code"]
+        == "crossheading_source_requires_crossheading_target"
+    )
+    assert template["source_target_surface"] == "s. 12(5)"
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_source_carried_structured_patch_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-source-carried-structured",
