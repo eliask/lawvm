@@ -1378,6 +1378,11 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
     target: LegalAddress,
 ) -> bool:
     """Return true when a mixed word/structural repeal row separately names target."""
+    if _uk_repeal_table_mixed_clause_names_section_subsection_paragraph_before_word_clause(
+        extent_clause,
+        target=target,
+    ):
+        return True
     if _uk_repeal_table_mixed_clause_carries_schedule_paragraph_descendant(
         extent_clause,
         target=target,
@@ -1411,6 +1416,40 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
         scope_text,
         kind_pattern=kind_pattern,
         label=label,
+    )
+
+
+def _uk_repeal_table_mixed_clause_names_section_subsection_paragraph_before_word_clause(
+    extent_clause: str,
+    *,
+    target: LegalAddress,
+) -> bool:
+    """Match `subsection (1)(a), and in subsection (1)(b) the word ...`.
+
+    UK repeal tables sometimes use `subsection (N)(x)` as shorthand for a
+    paragraph-level target under a section. This matcher accepts only the
+    structural child before a separate later word-deletion clause.
+    """
+
+    labels = {kind: label for kind, label in target.path}
+    section = _clean_num(labels.get("section", ""))
+    subsection = _clean_num(labels.get("subsection", ""))
+    paragraph = _clean_num(labels.get("paragraph", ""))
+    if not section or not subsection or not paragraph:
+        return False
+    scope_text = " ".join((extent_clause or "").split())
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", scope_text)
+    if re.search(rf"\bsection\s+{re.escape(section)}\b", scope_text, flags=re.I) is None:
+        return False
+    return (
+        re.search(
+            rf"\bsubsections?\s*\(\s*{re.escape(subsection)}\s*\)"
+            rf"\s*\(\s*{re.escape(paragraph)}\s*\)\s*[,;]\s*"
+            r"(?:and\s+)?in\s+subsection\s*\(",
+            scope_text,
+            flags=re.I,
+        )
+        is not None
     )
 
 
