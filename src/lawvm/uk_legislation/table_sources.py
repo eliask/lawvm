@@ -68,6 +68,20 @@ def _uk_first_quote_group(match: re.Match[str], *names: str) -> str:
     return ""
 
 
+_UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_CLAUSE_RE = re.compile(
+    r"\bIn\s+[^.;]{0,320}?\b(?:the\s+)?words?\s+"
+    + _uk_quoted_capture("quoted")
+    + r"[^.;]{0,80}(?:[.;]|$)",
+    flags=re.I,
+)
+_UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_CLAUSE_RE = re.compile(
+    r"\b(?:In\s+)?(?:part|parts|chapter|chapters|section|sections|schedule|schedules|"
+    r"paragraph|paragraphs|subsection|subsections|sub-?paragraph|sub-?paragraphs)"
+    r"\b[^.;]{0,260}(?:[.;]|$)",
+    flags=re.I,
+)
+
+
 @dataclass(frozen=True)
 class _UKTableDrivenWordSubstitution:
     recognized: bool
@@ -492,15 +506,8 @@ def _uk_flat_repeal_schedule_quoted_words_text_repeal(
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
-    quoted = _uk_quoted_capture("quoted")
-    clause_pattern = re.compile(
-        r"\bIn\s+[^.;]{0,320}?\b(?:the\s+)?words?\s+"
-        + quoted
-        + r"[^.;]{0,80}(?:[.;]|$)",
-        flags=re.I,
-    )
     matches: list[_UKRepealTableQuotedWordsMatch] = []
-    for match in clause_pattern.finditer(text):
+    for match in _UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_CLAUSE_RE.finditer(text):
         clause = " ".join(match.group(0).split()).strip()
         if not _uk_table_cell_mentions_target(
             clause,
@@ -574,14 +581,8 @@ def _uk_flat_repeal_schedule_structural_repeal(
     if not text:
         return _UKRepealTableStructuralRepeal(recognized=False)
 
-    clause_pattern = re.compile(
-        r"\b(?:In\s+)?(?:part|parts|chapter|chapters|section|sections|schedule|schedules|"
-        r"paragraph|paragraphs|subsection|subsections|sub-?paragraph|sub-?paragraphs)"
-        r"\b[^.;]{0,260}(?:[.;]|$)",
-        flags=re.I,
-    )
     matches: list[_UKRepealTableStructuralMatch] = []
-    for match in clause_pattern.finditer(text):
+    for match in _UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_CLAUSE_RE.finditer(text):
         clause = " ".join(match.group(0).split()).strip()
         if _uk_table_cell_explicitly_excepts_target(
             clause,
