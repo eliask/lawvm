@@ -12,6 +12,13 @@ class UKSameSourceTextPatchOverlapClassification(NamedTuple):
     disjoint_before_edges: dict[str, set[str]]
 
 
+class _SameSourceTextPatchGroupKey(NamedTuple):
+    source_statute_id: str
+    source_effective_date: str
+    target_special: str
+    target_path: tuple[tuple[str, str], ...]
+
+
 def _literal_text_spans_in_subtree(
     node: Any,
     needle: str,
@@ -92,7 +99,7 @@ def _classify_same_source_text_patch_overlaps(
     overlapping_text_patch_op_ids: set[str] = set()
     disjoint_text_patch_overlap_op_ids: set[str] = set()
     disjoint_text_patch_before_edges: dict[str, set[str]] = {}
-    grouped_text_ops: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], list[LegalOperation]] = {}
+    grouped_text_ops: dict[_SameSourceTextPatchGroupKey, list[LegalOperation]] = {}
     for op in ops:
         if _action_name(op.action) != "text_replace" or op.text_patch is None:
             continue
@@ -100,11 +107,11 @@ def _classify_same_source_text_patch_overlaps(
         if match_text.startswith(("TEXT_", "FROM_")):
             continue
         source = op.source
-        group_key = (
-            source.statute_id if source else "",
-            source.effective if source else "",
-            str(op.target.special or ""),
-            op.target.path,
+        group_key = _SameSourceTextPatchGroupKey(
+            source_statute_id=source.statute_id if source else "",
+            source_effective_date=source.effective if source else "",
+            target_special=str(op.target.special or ""),
+            target_path=op.target.path,
         )
         grouped_text_ops.setdefault(group_key, []).append(op)
 

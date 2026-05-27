@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any, Optional, Sequence
+from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import TextPatchKindEnum
@@ -17,6 +17,12 @@ _UK_SOURCE_PROVISION_ORDER_TOKEN_RE = re.compile(
     r"schedules?|schs?|sch|paragraphs?|paras?|para)\.?\s*(?P<label>[0-9]+[A-Za-z]*)"
     r"|\((?P<paren>[0-9A-Za-z]+)\)"
 )
+
+
+class _EffectOrderingGroupKey(NamedTuple):
+    effective_date: str
+    modified_target: str
+    affecting_act_id: str
 
 
 def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
@@ -102,12 +108,12 @@ def _order_uk_effects_for_replay(
     if diagnostics_out is None and lowering_observations_out is None:
         return ordered
 
-    groups: dict[tuple[str, str, str], list[UKEffectRecord]] = {}
+    groups: dict[_EffectOrderingGroupKey, list[UKEffectRecord]] = {}
     for effect in original:
-        group_key = (
-            _effective_date(effect) or "9999-99-99",
-            str(effect.modified or ""),
-            effect.affecting_act_id,
+        group_key = _EffectOrderingGroupKey(
+            effective_date=_effective_date(effect) or "9999-99-99",
+            modified_target=str(effect.modified or ""),
+            affecting_act_id=effect.affecting_act_id,
         )
         groups.setdefault(group_key, []).append(effect)
 
