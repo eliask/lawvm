@@ -2364,6 +2364,26 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap
     assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
 
 
+def test_classify_uk_manual_compile_frontier_misselected_target_preempts_preimage_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="misselected_target_context",
+        extracted_tag="P3",
+        extracted_text='in paragraph (e) for "old" substitute "new";',
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+        compare_shape="text_patch_preimage_absent_from_target_surfaces",
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_misselected_target_context_source_insufficient"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_text_patch_target_source_chain_gap() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
