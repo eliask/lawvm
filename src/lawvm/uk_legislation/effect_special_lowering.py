@@ -22,6 +22,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
     UK_AT_END_SECTION_SUBSECTION_INSERT_BLOCK_AMENDMENT_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
+    UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID,
     UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
 )
 from lawvm.uk_legislation.target_anchors import _target_anchor_eid
@@ -266,6 +267,141 @@ def lower_uk_after_paragraph_insert_labelled_series(  # noqa: PLR0913
         )
         preceding_target = payload_target
     return custom_ops
+
+
+def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    after_paragraph_connector: dict[str, Any],
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> list[LegalOperation]:
+    """Lower a connector-tail append plus one labelled paragraph insert."""
+    rule_id = UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=rule_id,
+        family="source_context_elaboration",
+        reason_code="after_paragraph_insert_connector_sibling",
+        reason=(
+            "UK source row inserts connector text at an existing paragraph "
+            "tail and a new labelled sibling; lowering separates the tail "
+            "text patch from the structural insert."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            key: value
+            for key, value in after_paragraph_connector.items()
+            if key != "rule_id"
+        },
+    )
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    anchor_target = LegalAddress(
+        path=(
+            ("section", str(after_paragraph_connector["section"])),
+            ("subsection", str(after_paragraph_connector["subsection"])),
+            ("paragraph", str(after_paragraph_connector["anchor_label"])),
+        )
+    )
+    anchor_patch_text = str(after_paragraph_connector["anchor_patch"])
+    anchor_patch = TextPatchSpec(
+        kind=TextPatchKindEnum.APPEND,
+        selector=TextSelector(match_text="TEXT_END", occurrence=0),
+        replacement=anchor_patch_text,
+    )
+    anchor_rewrite = _uk_text_rewrite_spec(
+        fragment_subs=[
+            {
+                "original": "TEXT_END",
+                "replacement": anchor_patch_text,
+                "rule_id": rule_id,
+            }
+        ],
+        text_patch=anchor_patch,
+        op_text_match="TEXT_END",
+        op_text_replacement=anchor_patch_text,
+        op_text_occurrence=0,
+    )
+    anchor_witness = UKLoweredOperationWitness(
+        op_id=f"{effect.effect_id}_anchor_tail",
+        sequence=sequence,
+        action=StructuralAction.TEXT_REPLACE,
+        target=anchor_target,
+        payload=None,
+        source=src,
+        effect_witness=effect_witness,
+        extraction_witness=extraction_witness,
+        target_expansion_witness=_uk_target_expansion_witness(
+            effect.affected_provisions,
+            [str(after_paragraph_connector["anchor_target"])],
+            original_targets_str=[effect.affected_provisions],
+        ),
+        text_rewrite_witness=anchor_rewrite,
+        insertion_anchor_witness=None,
+    )
+    payload = after_paragraph_connector["payload"]
+    payload_target = _parse_affected_target(str(payload["target_ref"]))
+    payload_node = IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=str(payload["label"]),
+        text=str(payload["text"]),
+    )
+    insert_witness = UKLoweredOperationWitness(
+        op_id=f"{effect.effect_id}_insert",
+        sequence=sequence,
+        action=StructuralAction.INSERT,
+        target=payload_target,
+        payload=payload_node,
+        source=src,
+        effect_witness=effect_witness,
+        extraction_witness=extraction_witness,
+        target_expansion_witness=_uk_target_expansion_witness(
+            effect.affected_provisions,
+            [str(payload["target_ref"])],
+            original_targets_str=[effect.affected_provisions],
+        ),
+        text_rewrite_witness=None,
+        insertion_anchor_witness=_uk_insertion_anchor_witness(
+            _target_anchor_eid(anchor_target),
+            anchor_source=rule_id,
+        ),
+    )
+    return [
+        LegalOperation(
+            op_id=anchor_witness.op_id,
+            sequence=anchor_witness.sequence,
+            action=anchor_witness.action,
+            target=anchor_target,
+            payload=None,
+            source=src,
+            group_id=_uk_temporal_group_id(effect),
+            provenance_tags=_uk_lowered_op_provenance_tags(anchor_witness),
+            text_patch=anchor_patch,
+            witness_rule_id=rule_id,
+        ),
+        LegalOperation(
+            op_id=insert_witness.op_id,
+            sequence=insert_witness.sequence,
+            action=insert_witness.action,
+            target=payload_target,
+            payload=_payload_with_rewrite_witness(payload_node, insert_witness),
+            source=src,
+            group_id=_uk_temporal_group_id(effect),
+            provenance_tags=_uk_lowered_op_provenance_tags(insert_witness),
+            witness_rule_id=rule_id,
+        ),
+    ]
 
 
 def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913

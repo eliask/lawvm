@@ -3760,12 +3760,12 @@ def test_compile_broad_structural_sibling_insert_rejects_without_parent_claim() 
     assert rejection["strict_disposition"] == "block"
 
 
-def test_compile_child_tail_sibling_insert_rejects_without_parent_claim() -> None:
+def test_compile_child_tail_sibling_insert_rejects_non_contiguous_label() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P3 xmlns="{_LEG_NS}">
           <Pnumber>b</Pnumber>
-          <Text>b at the end of paragraph (b) insert , or c which is conferred
+          <Text>b at the end of paragraph (b) insert , or d which is conferred
           by or under the Childcare Payments Act 2014; .</Text>
         </P3>
         """
@@ -45695,6 +45695,156 @@ def test_compile_after_paragraph_insert_labelled_series_lowers_semicolon_and_sib
     assert series_rows[0]["start_label"] == "c"
     assert series_rows[0]["end_label"] == "e"
     assert [payload["label"] for payload in series_rows[0]["payloads"]] == ["c", "d", "e"]
+
+
+@pytest.mark.parametrize(
+    ("source_text", "anchor_label", "inserted_label", "inserted_text"),
+    [
+        (
+            "b at the end of paragraph (b) insert , or c which is conferred by or under the Childcare Payments Act 2014; .",
+            "b",
+            "c",
+            "which is conferred by or under the Childcare Payments Act 2014",
+        ),
+        (
+            "b after paragraph (c) insert , or d which is conferred by or under section 2 of, or Schedule 2 to, the Savings (Government Contributions) Act 2017 (bonuses in respect of savings in Help-to-Save accounts); .",
+            "c",
+            "d",
+            "which is conferred by or under section 2 of, or Schedule 2 to, the Savings (Government Contributions) Act 2017 (bonuses in respect of savings in Help-to-Save accounts)",
+        ),
+    ],
+)
+def test_compile_after_paragraph_insert_connector_sibling_lowers_tail_and_insert(
+    source_text: str,
+    anchor_label: str,
+    inserted_label: str,
+    inserted_text: str,
+) -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-127-7-source">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>{source_text}</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id=f"uk_test_after_paragraph_insert_connector_{inserted_label}",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-06",
+        affected_uri="/id/ukpga/2012/5/section/127/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2012",
+        affected_number="5",
+        affected_provisions="s. 127(7)",
+        affecting_uri="/id/ukpga/2017/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="2",
+        affecting_provisions="Sch. 2 para. 17(8)(b)",
+        affecting_title="Savings (Government Contributions) Act 2017",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    rule_id = "uk_effect_after_paragraph_insert_connector_sibling_lowered"
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT]
+    assert [op.witness_rule_id for op in ops] == [rule_id, rule_id]
+    assert ops[0].target.path == (
+        ("section", "127"),
+        ("subsection", "7"),
+        ("paragraph", anchor_label),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.replacement == ", or"
+    assert ops[1].target.path == (
+        ("section", "127"),
+        ("subsection", "7"),
+        ("paragraph", inserted_label),
+    )
+    assert ops[1].payload is not None
+    assert ops[1].payload.label == inserted_label
+    assert ops[1].payload.text == inserted_text
+    assert any(
+        row["rule_id"] == rule_id
+        and row["reason_code"] == "after_paragraph_insert_connector_sibling"
+        and row["anchor_patch"] == ", or"
+        and row["payload"]["label"] == inserted_label
+        for row in observations
+    )
+
+
+def test_compile_after_paragraph_insert_connector_sibling_replays_tail_and_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-127-7-b">
+          <Text>b at the end of paragraph (b) insert , or c inserted condition; .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_paragraph_insert_connector_replay",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-06",
+        affected_uri="/id/ukpga/2012/5/section/127/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2012",
+        affected_number="5",
+        affected_provisions="s. 127(7)",
+        affecting_uri="/id/ukpga/2017/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="2",
+        affecting_provisions="Sch. 2 para. 17(8)(b)",
+        affecting_title="Savings (Government Contributions) Act 2017",
+        in_force_dates=[],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    base = IRStatute(
+        statute_id="ukpga/2012/5",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="127",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="7",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [(child.label, child.text) for child in subsection.children] == [
+        ("a", "first"),
+        ("b", "second, or"),
+        ("c", "inserted condition"),
+    ]
+    assert not adjudications
 
 
 def test_compile_multi_quoted_word_repeal_lowers_separate_text_deletes() -> None:
