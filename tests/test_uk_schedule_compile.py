@@ -3958,6 +3958,111 @@ def test_compile_words_inserted_after_fragment_to_text_replace() -> None:
     assert all(op.text_patch is not None for op in ops)
 
 
+def test_compile_empty_type_quoted_anchor_insert_infers_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-32-d">
+          <Pnumber>d</Pnumber>
+          <Text>d in paragraph 8(2) after “the first appointment” there is inserted “by the Minister”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_quoted_anchor_word_insert",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/schedule/1/paragraph/8/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="Sch. 1 para. 8(2)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(32)(d)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "1"),
+        ("paragraph", "8"),
+        ("subparagraph", "2"),
+    )
+    assert ops[0].payload is None
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "the first appointment"
+    assert ops[0].text_patch.replacement == "the first appointment by the Minister"
+    assert any(
+        row.get("rule_id")
+        == "uk_effect_empty_type_quoted_anchor_word_insertion_inferred"
+        and row.get("blocking") is False
+        for row in lowering_records
+    )
+    assert all(
+        row.get("rule_id") != "uk_effect_instruction_text_payload_rejected"
+        for row in lowering_records
+    )
+
+
+def test_compile_empty_type_quoted_anchor_insert_requires_single_text_fragment() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-32-d">
+          <Pnumber>d</Pnumber>
+          <Text>d in paragraph 8(2) after “the first appointment” there is inserted “by the Minister” and after “chair” there is inserted “or deputy”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_empty_type_multi_quoted_anchor_word_insert",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/schedule/1/paragraph/8/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="Sch. 1 para. 8(2)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(32)(d)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert all(
+        row.get("rule_id")
+        != "uk_effect_empty_type_quoted_anchor_word_insertion_inferred"
+        for row in lowering_records
+    )
+
+
 def test_compile_words_inserted_before_fragment_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
