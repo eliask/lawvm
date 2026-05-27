@@ -28245,6 +28245,72 @@ def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     assert rejection["quirks_disposition"] == "record"
 
 
+def test_compile_repeal_table_column_instruction_does_not_report_inserted_table_rows() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <Part xmlns="{_LEG_NS}">
+          <Title>Part 1 Acts of Parliament</Title>
+          <Table>
+            <Tgroup>
+              <Tbody>
+                <Row>
+                  <Entry>Short title and chapter</Entry>
+                  <Entry>Extent of repeal</Entry>
+                </Row>
+                <Row>
+                  <Entry>Taxes Management Act 1970 (c. 9)</Entry>
+                  <Entry>
+                    In section 98, the entries in the first column of the Table
+                    relating to— regulations under section 202 of ICTA;
+                    paragraph 117 of Schedule 8 to FA 2000.
+                  </Entry>
+                </Row>
+              </Tbody>
+            </Tgroup>
+          </Table>
+        </Part>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_column_instruction_no_inserted_rows",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2003/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="1",
+        affecting_provisions="Sch. 8 Pt. 1",
+        affecting_title="Income Tax (Earnings and Pensions) Act 2003",
+        in_force_dates=[{"date": "2003-04-06", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
+    assert rejection["entry_shape"] == "column_instruction"
+    assert rejection["inserted_table_rows"] == ()
+    assert rejection["blocking"] is True
+
+
 def test_compile_table_row_number_insert_rejects_without_row_claim() -> None:
     extracted_el = ET.fromstring(
         f"""
