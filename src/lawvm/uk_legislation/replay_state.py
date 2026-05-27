@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, TypeAlias, cast
+from typing import Any, NamedTuple, Optional, TypeAlias, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.semantic_types import StructuralAction
@@ -14,10 +14,27 @@ _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
 )
 
-NodeIndexEntry: TypeAlias = tuple[UKMutableNode, Optional[UKMutableNode], Optional[int]]
-NodeLookupResult: TypeAlias = tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]
-VersionedNodeLookup: TypeAlias = tuple[int, Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]
+class NodeIndexEntry(NamedTuple):
+    node: UKMutableNode
+    parent: Optional[UKMutableNode]
+    index: Optional[int]
+
+
+class NodeLookupResult(NamedTuple):
+    node: Optional[UKMutableNode]
+    parent: Optional[UKMutableNode]
+    index: Optional[int]
+
+
+class VersionedNodeLookup(NamedTuple):
+    structure_mutation_serial: int
+    node: Optional[UKMutableNode]
+    parent: Optional[UKMutableNode]
+    index: Optional[int]
+
+
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
+_MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 
 
 class UKReplayStateMixin:
@@ -99,38 +116,38 @@ class UKReplayStateMixin:
             self._eid_search_cache.pop((eid, bool(allow_sequence_match)), None)
             return None
         if node is None:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         if parent is not None:
             if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
-                return node, parent, idx
+                return NodeLookupResult(node=node, parent=parent, index=idx)
             try:
                 current_idx = parent.children.index(node)
             except ValueError:
                 self._eid_search_cache.pop((eid, bool(allow_sequence_match)), None)
                 return None
-            self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
+            self._eid_search_cache[(eid, bool(allow_sequence_match))] = VersionedNodeLookup(
                 self._structure_mutation_serial,
                 node,
                 parent,
                 current_idx,
             )
-            return node, parent, current_idx
+            return NodeLookupResult(node=node, parent=parent, index=current_idx)
         if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
-            return node, None, idx
+            return NodeLookupResult(node=node, parent=None, index=idx)
         if self.statute.body is node:
-            return node, None, None
+            return NodeLookupResult(node=node, parent=None, index=None)
         try:
             current_idx = self.statute.supplements.index(node)
         except ValueError:
             self._eid_search_cache.pop((eid, bool(allow_sequence_match)), None)
             return None
-        self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
+        self._eid_search_cache[(eid, bool(allow_sequence_match))] = VersionedNodeLookup(
             self._structure_mutation_serial,
             node,
             None,
             current_idx,
         )
-        return node, None, current_idx
+        return NodeLookupResult(node=node, parent=None, index=current_idx)
 
     def _store_eid_search_cache(
         self,
@@ -140,7 +157,7 @@ class UKReplayStateMixin:
         result: NodeLookupResult,
     ) -> None:
         node, parent, idx = result
-        self._eid_search_cache[(eid, bool(allow_sequence_match))] = (
+        self._eid_search_cache[(eid, bool(allow_sequence_match))] = VersionedNodeLookup(
             self._structure_mutation_serial,
             node,
             parent,
@@ -183,38 +200,38 @@ class UKReplayStateMixin:
             self._target_lookup_cache.pop(key, None)
             return None
         if node is None:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         if parent is not None:
             if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
-                return node, parent, idx
+                return NodeLookupResult(node=node, parent=parent, index=idx)
             try:
                 current_idx = parent.children.index(node)
             except ValueError:
                 self._target_lookup_cache.pop(key, None)
                 return None
-            self._target_lookup_cache[key] = (
+            self._target_lookup_cache[key] = VersionedNodeLookup(
                 self._structure_mutation_serial,
                 node,
                 parent,
                 current_idx,
             )
-            return node, parent, current_idx
+            return NodeLookupResult(node=node, parent=parent, index=current_idx)
         if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
-            return node, None, idx
+            return NodeLookupResult(node=node, parent=None, index=idx)
         if self.statute.body is node:
-            return node, None, None
+            return NodeLookupResult(node=node, parent=None, index=None)
         try:
             current_idx = self.statute.supplements.index(node)
         except ValueError:
             self._target_lookup_cache.pop(key, None)
             return None
-        self._target_lookup_cache[key] = (
+        self._target_lookup_cache[key] = VersionedNodeLookup(
             self._structure_mutation_serial,
             node,
             None,
             current_idx,
         )
-        return node, None, current_idx
+        return NodeLookupResult(node=node, parent=None, index=current_idx)
 
     def _store_target_lookup_cache(
         self,
@@ -222,7 +239,7 @@ class UKReplayStateMixin:
         result: NodeLookupResult,
     ) -> None:
         node, parent, idx = result
-        self._target_lookup_cache[key] = (
+        self._target_lookup_cache[key] = VersionedNodeLookup(
             self._structure_mutation_serial,
             node,
             parent,
@@ -250,24 +267,24 @@ class UKReplayStateMixin:
             self._recursive_match_cache.pop(key, None)
             return None
         if node is None:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         if parent is None:
             self._recursive_match_cache.pop(key, None)
             return None
         if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
-            return node, parent, idx
+            return NodeLookupResult(node=node, parent=parent, index=idx)
         try:
             current_idx = parent.children.index(node)
         except ValueError:
             self._recursive_match_cache.pop(key, None)
             return None
-        self._recursive_match_cache[key] = (
+        self._recursive_match_cache[key] = VersionedNodeLookup(
             self._structure_mutation_serial,
             node,
             parent,
             current_idx,
         )
-        return node, parent, current_idx
+        return NodeLookupResult(node=node, parent=parent, index=current_idx)
 
     def _store_recursive_match_cache(
         self,
@@ -275,7 +292,7 @@ class UKReplayStateMixin:
         result: NodeLookupResult,
     ) -> None:
         node, parent, idx = result
-        self._recursive_match_cache[key] = (
+        self._recursive_match_cache[key] = VersionedNodeLookup(
             self._structure_mutation_serial,
             node,
             parent,
@@ -295,19 +312,19 @@ class UKReplayStateMixin:
         for eid in self._node_eid_values(node):
             if eid in ambiguous:
                 continue
-            if eid in index and index[eid][0] is not node:
+            if eid in index and index[eid].node is not node:
                 index.pop(eid, None)
                 ambiguous.add(eid)
                 continue
-            index[eid] = (node, parent, idx)
+            index[eid] = NodeIndexEntry(node=node, parent=parent, index=idx)
             for suffix_key in self._eid_suffix_alias_keys(eid):
                 if suffix_key in suffix_ambiguous:
                     continue
-                if suffix_key in suffix_index and suffix_index[suffix_key][0] is not node:
+                if suffix_key in suffix_index and suffix_index[suffix_key].node is not node:
                     suffix_index.pop(suffix_key, None)
                     suffix_ambiguous.add(suffix_key)
                     continue
-                suffix_index[suffix_key] = (node, parent, idx)
+                suffix_index[suffix_key] = NodeIndexEntry(node=node, parent=parent, index=idx)
         for child_idx, child in enumerate(node.children):
             self._index_eid_subtree(
                 child,
@@ -359,46 +376,46 @@ class UKReplayStateMixin:
         eid: str,
     ) -> NodeLookupResult:
         if not eid or eid in self._eid_lookup_ambiguous:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         entry = self._ensure_eid_lookup_index().get(eid)
         if entry is None:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         node, parent, idx = entry
         if parent is not None:
             if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
-                return node, parent, idx
+                return NodeLookupResult(node=node, parent=parent, index=idx)
             try:
                 current_idx = parent.children.index(node)
             except ValueError:
                 self._ensure_eid_lookup_index().pop(eid, None)
-                return None, None, None
-            self._ensure_eid_lookup_index()[eid] = (node, parent, current_idx)
-            return node, parent, current_idx
+                return _MISSING_NODE_LOOKUP
+            self._ensure_eid_lookup_index()[eid] = NodeIndexEntry(node=node, parent=parent, index=current_idx)
+            return NodeLookupResult(node=node, parent=parent, index=current_idx)
         if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
-            return node, None, idx
+            return NodeLookupResult(node=node, parent=None, index=idx)
         try:
             current_idx = self.statute.supplements.index(node)
         except ValueError:
             self._ensure_eid_lookup_index().pop(eid, None)
-            return None, None, None
-        self._ensure_eid_lookup_index()[eid] = (node, None, current_idx)
-        return node, None, current_idx
+            return _MISSING_NODE_LOOKUP
+        self._ensure_eid_lookup_index()[eid] = NodeIndexEntry(node=node, parent=None, index=current_idx)
+        return NodeLookupResult(node=node, parent=None, index=current_idx)
 
     def _cached_suffix_eid_lookup(
         self,
         eid: str,
     ) -> NodeLookupResult:
         if not eid:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         self._ensure_eid_lookup_index()
         if self._eid_suffix_lookup_index is None:
-            return None, None, None
+            return _MISSING_NODE_LOOKUP
         top_scope = self._eid_top_scope_key(eid)
         top_scope_node = None
         if top_scope:
             top_scope_node, _top_parent, _top_idx = self._cached_exact_eid_lookup(top_scope)
             if top_scope_node is None:
-                return None, None, None
+                return _MISSING_NODE_LOOKUP
         lookup_keys = ((top_scope, eid),) if top_scope else (("", eid),)
         for lookup_key in lookup_keys:
             if lookup_key in self._eid_suffix_lookup_ambiguous:
@@ -411,26 +428,34 @@ class UKReplayStateMixin:
                 continue
             if parent is not None:
                 if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
-                    return node, parent, idx
+                    return NodeLookupResult(node=node, parent=parent, index=idx)
                 try:
                     current_idx = parent.children.index(node)
                 except ValueError:
                     self._eid_suffix_lookup_index.pop(lookup_key, None)
                     continue
-                self._eid_suffix_lookup_index[lookup_key] = (node, parent, current_idx)
-                return node, parent, current_idx
+                self._eid_suffix_lookup_index[lookup_key] = NodeIndexEntry(
+                    node=node,
+                    parent=parent,
+                    index=current_idx,
+                )
+                return NodeLookupResult(node=node, parent=parent, index=current_idx)
             if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
-                return node, None, idx
+                return NodeLookupResult(node=node, parent=None, index=idx)
             if self.statute.body is node:
-                return node, None, None
+                return NodeLookupResult(node=node, parent=None, index=None)
             try:
                 current_idx = self.statute.supplements.index(node)
             except ValueError:
                 self._eid_suffix_lookup_index.pop(lookup_key, None)
                 continue
-            self._eid_suffix_lookup_index[lookup_key] = (node, None, current_idx)
-            return node, None, current_idx
-        return None, None, None
+            self._eid_suffix_lookup_index[lookup_key] = NodeIndexEntry(
+                node=node,
+                parent=None,
+                index=current_idx,
+            )
+            return NodeLookupResult(node=node, parent=None, index=current_idx)
+        return _MISSING_NODE_LOOKUP
 
     def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None:
         if self._eid_lookup_index is None:
@@ -440,12 +465,12 @@ class UKReplayStateMixin:
             current = stack.pop()
             for eid in self._node_eid_values(current):
                 entry = self._eid_lookup_index.get(eid)
-                if entry is not None and entry[0] is current:
+                if entry is not None and entry.node is current:
                     self._eid_lookup_index.pop(eid, None)
                 if self._eid_suffix_lookup_index is not None:
                     for suffix_key in self._eid_suffix_alias_keys(eid):
                         suffix_entry = self._eid_suffix_lookup_index.get(suffix_key)
-                        if suffix_entry is not None and suffix_entry[0] is current:
+                        if suffix_entry is not None and suffix_entry.node is current:
                             self._eid_suffix_lookup_index.pop(suffix_key, None)
             stack.extend(current.children)
 
@@ -496,7 +521,7 @@ class UKReplayStateMixin:
             return None
         for eid in self._node_eid_values(node):
             entry = self._eid_lookup_index.get(eid)
-            if entry is None or entry[0] is not node:
+            if entry is None or entry.node is not node:
                 continue
             _, parent, idx = entry
             if parent is not None:
@@ -507,7 +532,11 @@ class UKReplayStateMixin:
                 except ValueError:
                     self._eid_lookup_index.pop(eid, None)
                     continue
-                self._eid_lookup_index[eid] = (node, parent, current_idx)
+                self._eid_lookup_index[eid] = NodeIndexEntry(
+                    node=node,
+                    parent=parent,
+                    index=current_idx,
+                )
                 return parent, current_idx
             if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
                 return None, idx
@@ -518,7 +547,11 @@ class UKReplayStateMixin:
             except ValueError:
                 self._eid_lookup_index.pop(eid, None)
                 continue
-            self._eid_lookup_index[eid] = (node, None, current_idx)
+            self._eid_lookup_index[eid] = NodeIndexEntry(
+                node=node,
+                parent=None,
+                index=current_idx,
+            )
             return None, current_idx
         return None
 
