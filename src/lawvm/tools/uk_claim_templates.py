@@ -690,6 +690,62 @@ def manual_compile_suggested_claim_template(
                 ],
             }
         )
+        if detail.get("entry_shape") == "table_child_structural_insert":
+            template.update(
+                {
+                    "placement_family": (
+                        "table_cell_child_anchor_requires_row_column_claim"
+                    ),
+                    "source_parent_instruction": detail.get(
+                        "source_parent_instruction",
+                        "",
+                    ),
+                    "source_parent_id": detail.get("source_parent_id", ""),
+                    "source_table_row_number": detail.get(
+                        "source_table_row_number",
+                        "",
+                    ),
+                    "source_table_column_text": detail.get(
+                        "source_table_column_text",
+                        "",
+                    ),
+                    "source_table_column_index": detail.get(
+                        "source_table_column_index",
+                        "",
+                    ),
+                    "table_child_insert_direction": detail.get(
+                        "table_child_insert_direction",
+                        "",
+                    ),
+                    "table_child_anchor_kind": detail.get(
+                        "table_child_anchor_kind",
+                        "",
+                    ),
+                    "table_child_anchor_label": detail.get(
+                        "table_child_anchor_label",
+                        "",
+                    ),
+                    "inserted_ordered_list_units": [
+                        dict(unit)
+                        for unit in detail.get("inserted_ordered_list_units", ())
+                    ],
+                }
+            )
+            template["required_ownership"].extend(
+                [
+                    "table_cell_child_list_carrier",
+                    "ordered_list_anchor_identity",
+                    "inserted_child_identity_and_tail_punctuation",
+                ]
+            )
+            template["required_validator_checks"].extend(
+                [
+                    "claim_identifies_exact_table_row_and_column",
+                    "claim_identifies_ordered_list_inside_cell",
+                    "claim_inserts_only_source_owned_list_items",
+                    "claim_preserves_unclaimed_cell_text_and_sibling_items",
+                ]
+            )
         if (
             summary.manual_compile_rule_id
             == "uk_manual_frontier_table_appropriate_place_candidate"

@@ -3944,6 +3944,121 @@ def test_uk_manual_compile_evidence_jsonl_table_appropriate_place_template_carri
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_table_child_template_carries_cell_child_evidence() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-child-insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-01",
+        affected_uri="/id/ukpga/2006/52/section/132",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 132(1) Table",
+        affecting_uri="/id/ukpga/2021/35",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="35",
+        affecting_provisions="s. 13(2)(a)",
+        affecting_title="Test Act 2021",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="table_entry_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_table_entry_instruction_rejected",
+                    "blocking": True,
+                    "target_ref": "s. 132(1) Table",
+                    "target": "section:132/subsection:1/paragraph:table",
+                    "entry_shape": "table_child_structural_insert",
+                    "source_parent_instruction": (
+                        "In subsection (1), in row 1 of the table, in the third column—"
+                    ),
+                    "source_parent_id": "section-13-2",
+                    "source_table_row_number": 1,
+                    "source_table_column_text": "third",
+                    "source_table_column_index": 3,
+                    "table_child_insert_direction": "after",
+                    "table_child_anchor_kind": "paragraph",
+                    "table_child_anchor_label": "a",
+                    "inserted_ordered_list_units": (
+                        {
+                            "source_list_type": "alpha",
+                            "source_list_decoration": "parens",
+                            "label": "aa",
+                            "text": "corporal in the Royal Marines;",
+                        },
+                    ),
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "after paragraph (a) insert— corporal in the Royal Marines;"
+            ),
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_table_entry_candidate",
+            manual_compile_reason="Table child insertion requires a cell child claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_table_entry_instruction_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_table_entry_instruction_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2006/52",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2006/52",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_surface_mutation"
+    assert (
+        template["placement_family"]
+        == "table_cell_child_anchor_requires_row_column_claim"
+    )
+    assert template["source_table_row_number"] == 1
+    assert template["source_table_column_index"] == 3
+    assert template["table_child_anchor_label"] == "a"
+    assert template["inserted_ordered_list_units"] == [
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "aa",
+            "text": "corporal in the Royal Marines;",
+        }
+    ]
+    assert "table_cell_child_list_carrier" in template["required_ownership"]
+    assert "claim_identifies_ordered_list_inside_cell" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-appropriate-place",
