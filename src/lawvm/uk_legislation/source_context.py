@@ -6,7 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, NamedTuple, Optional, Sequence
 
 from lawvm.roman import (
     arabic_to_roman as _shared_arabic_to_roman,
@@ -70,6 +70,11 @@ class UKAffectingSourceContext:
         compare=False,
         repr=False,
     )
+
+
+class UKAffectingSourceContextBuild(NamedTuple):
+    source_context: UKAffectingSourceContext
+    parse_error: Optional[ET.ParseError]
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,7 +293,7 @@ def _build_affecting_source_context(
     locator: str,
     authority_layer: str,
     provision_extractor: Callable[..., Optional[ET.Element]] = extract_provision_element_from_bytes,
-) -> tuple[UKAffectingSourceContext, Optional[ET.ParseError]]:
+) -> UKAffectingSourceContextBuild:
     source_status, source_size = uk_source_state_wire_tuple(xml_bytes)
     root = None
     parent_map = None
@@ -302,8 +307,8 @@ def _build_affecting_source_context(
             parse_error = exc
         else:
             parent_map, exact_id_map, sequence_map = _build_extraction_context(root)
-    return (
-        UKAffectingSourceContext(
+    return UKAffectingSourceContextBuild(
+        source_context=UKAffectingSourceContext(
             xml_bytes=xml_bytes,
             root=root,
             parent_map=parent_map,
@@ -315,7 +320,7 @@ def _build_affecting_source_context(
             authority_layer=authority_layer,
             provision_extractor=provision_extractor,
         ),
-        parse_error,
+        parse_error=parse_error,
     )
 
 
