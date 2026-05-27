@@ -3730,6 +3730,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="only show rows carrying this lowering observation or rejection reason_code",
     )
     uk_effects_p.add_argument(
+        "--blocking-only",
+        action="store_true",
+        help="only show rows carrying at least one blocking lowering rejection",
+    )
+    uk_effects_p.add_argument(
         "--source-acquisition-rule",
         metavar="RULE_ID",
         help="only show rows carrying this source-acquisition rejection rule ID",

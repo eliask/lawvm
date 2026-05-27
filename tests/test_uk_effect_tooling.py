@@ -6198,6 +6198,7 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
         summary,
         lowering_reason_code="overlap_substitution_parse_failed",
     )
+    assert _effect_summary_matches_filters(summary, blocking_only=True)
     assert _effect_summary_matches_filters(
         summary,
         source_acquisition_rule="uk_affecting_act_xml_missing_rejected",
@@ -6215,6 +6216,19 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
     assert not _effect_summary_matches_filters(
         summary,
         lowering_reason_code="missing_reason",
+    )
+    assert not _effect_summary_matches_filters(
+        _EffectSummary(
+            source_pathology="",
+            compare_shape="",
+            n_ops=1,
+            candidate=True,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_note_only_observed", "blocking": False},
+            ),
+        ),
+        blocking_only=True,
     )
     assert not _effect_summary_matches_filters(
         summary,
@@ -6339,6 +6353,7 @@ def test_uk_effects_report_jsonable_can_omit_rows_for_summary_only() -> None:
         "source_pathology": "",
         "lowering_rule": "",
         "lowering_reason_code": "",
+        "blocking_only": False,
         "source_acquisition_rule": "",
         "manual_compile_status": "",
         "manual_compile_rule": "",
