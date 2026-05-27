@@ -190,10 +190,11 @@ _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
 )
 _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
-    r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
+    r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\)"
+    r"(?:\s+\(.*?\))?,?\s+"
     r"for\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
-    r"to\s+the\s+end\s+of\s+the\s+subsection\s+"
-    r"substitute\s*[“\"'‘]?[—–-]\s*(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    r"to\s+the\s+end(?:\s+of\s+the\s+subsection)?\s+"
+    r"substitute\s*[“\"'‘]?(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE = re.compile(
@@ -1105,6 +1106,10 @@ def _source_carried_structured_tail_substitution(
         payload_tail = " ".join(active_match.group("payload").split()).strip()
     if not anchor or not payload_tail:
         return None
+    payload_tail = re.sub(r"^[—–-]\s*", "", payload_tail).strip()
+    prefix_match = re.match(r"^.+?[—–-]\s*(?=[a-z]\s+)", payload_tail, flags=re.I | re.S)
+    if prefix_match is not None:
+        payload_tail = payload_tail[prefix_match.end() :].strip()
     matches = _source_carried_top_level_alpha_matches(payload_tail)
     if not matches:
         return None
