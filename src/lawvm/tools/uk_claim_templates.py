@@ -688,6 +688,14 @@ def manual_compile_suggested_claim_template(
                 "inserted_table_rows": [
                     list(row) for row in detail.get("inserted_table_rows", ())
                 ],
+                "table_selector_mode": detail.get("selector_mode", ""),
+                "table_insert_direction": detail.get("direction", ""),
+                "table_anchor_relating_text": detail.get("relating_text", ""),
+                "table_inserted_text": detail.get("inserted_text", ""),
+                "table_label": detail.get("table_label", ""),
+                "table_column_index": detail.get("column_index", ""),
+                "table_entry_index": detail.get("entry_index", ""),
+                "source_names_table": detail.get("source_names_table", ""),
             }
         )
         if detail.get("entry_shape") == "table_child_structural_insert":
