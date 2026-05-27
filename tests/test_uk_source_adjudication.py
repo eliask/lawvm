@@ -2364,6 +2364,27 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap
     assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
 
 
+def test_classify_uk_manual_compile_frontier_application_reference_preempts_preimage_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="applied by 2006 c. 52, s. 215 (as amended)",
+        source_pathology="application_by_reference_effect_out_of_scope",
+        extracted_tag="P1",
+        extracted_text=(
+            "35 In section 215 (section 214: definitions etc), in subsection (1), "
+            "for “Section 101(13) of the Sentencing Act” substitute "
+            "“Section 238(3) of the Sentencing Code”."
+        ),
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+        compare_shape="text_patch_preimage_absent_from_target_surfaces",
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_application_by_reference_out_of_scope"
+
+
 def test_classify_uk_manual_compile_frontier_misselected_target_preempts_preimage_gap() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -3014,6 +3035,25 @@ def test_classify_uk_effect_reference_act_has_effect_as_if_source_pathology() ->
         payload_texts=[],
         effect_type="",
         is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_applied_by_effect_type_is_application_reference() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "35 In section 215 (section 214: definitions etc), in subsection (1), "
+            "for “Section 101(13) of the Sentencing Act” substitute "
+            "“Section 238(3) of the Sentencing Code”."
+        ),
+        op_actions=["text_replace"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:238/subsection:3"],
+        effect_type="applied by 2006 c. 52, s. 215 (as amended)",
     )
 
     assert pathology == "application_by_reference_effect_out_of_scope"

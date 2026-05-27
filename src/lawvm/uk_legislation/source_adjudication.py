@@ -151,6 +151,15 @@ _UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS: dict[
         "The extracted source text appears to describe a different target context from the effect-feed target; source/target reconciliation must happen before treating any preimage miss as replay evidence.",
     ),
 }
+_UK_MANUAL_FRONTIER_OUT_OF_SCOPE_PATHOLOGIES = frozenset(
+    {
+        "application_by_reference_effect_out_of_scope",
+        "application_modification_payload_out_of_scope",
+        "as_if_application_modification_unsupported",
+        "commencement_effect_out_of_scope",
+        "conditional_temporal_repeal_unsupported",
+    }
+)
 _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
     "amendment_text_target_unsupported": _ManualFrontierClassification(
         "deterministic_frontend_candidate",
@@ -1501,6 +1510,9 @@ def classify_uk_effect_source_pathology(
     targets = [path for path in target_paths if path]
     lowering_rules = {str(rule_id or "") for rule_id in lowering_rule_ids}
 
+    if norm_effect_type.startswith("applied by "):
+        return "application_by_reference_effect_out_of_scope"
+
     if {
         "uk_effect_source_parent_substitution_range_payload_lowered",
         "uk_effect_source_parent_at_end_added_payload_lowered",
@@ -1839,6 +1851,14 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     compare_shape_norm = str(compare_shape or "")
     extracted_tag_norm = str(extracted_tag or "")
     extracted_text_norm = " ".join(str(extracted_text or "").lower().split())
+
+    if source_pathology_norm in _UK_MANUAL_FRONTIER_OUT_OF_SCOPE_PATHOLOGIES:
+        out_of_scope_result = _uk_manual_frontier_classification(
+            _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
+            source_pathology_norm,
+        )
+        if out_of_scope_result is not None:
+            return out_of_scope_result
 
     if source_pathology_norm == "misselected_target_context" and compare_shape_norm.startswith(
         "text_patch_"
