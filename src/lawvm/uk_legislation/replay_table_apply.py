@@ -387,8 +387,8 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
-        table, start, end, reason, detail = resolve_uk_table_entry_row_replace_span(node, selector)
-        if table is None or start is None or end is None:
+        row_span = resolve_uk_table_entry_row_replace_span(node, selector)
+        if row_span.table is None or row_span.start_index is None or row_span.end_index is None:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID,
@@ -401,8 +401,8 @@ class UKReplayTableApplyMixin:
                     op,
                     target,
                     selector=dict(selector),
-                    reason_code=reason,
-                    **detail,
+                    reason_code=row_span.reason_code,
+                    **row_span.detail,
                     family="source_table_elaboration",
                 ),
             )
@@ -429,10 +429,10 @@ class UKReplayTableApplyMixin:
             return False
         for row in replacement_rows:
             strip_uk_identity_attrs_recursive(row)
-        children = list(table.children)
-        replaced_row_count = end - start
-        children[start:end] = replacement_rows
-        uk_replace_children(table, children)
+        children = list(row_span.table.children)
+        replaced_row_count = row_span.end_index - row_span.start_index
+        children[row_span.start_index:row_span.end_index] = replacement_rows
+        uk_replace_children(row_span.table, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
         _append_uk_replay_adjudication(
@@ -450,7 +450,7 @@ class UKReplayTableApplyMixin:
                 selector=dict(selector),
                 replaced_row_count=replaced_row_count,
                 replacement_row_count=len(replacement_rows),
-                **detail,
+                **row_span.detail,
                 family="source_table_elaboration",
             ),
         )

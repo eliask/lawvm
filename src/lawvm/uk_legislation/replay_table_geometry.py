@@ -47,16 +47,18 @@ class UKTableRowInsertResolution:
     detail: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class UKTableRowReplaceSpanResolution:
+    table: UKMutableNode | None
+    start_index: int | None
+    end_index: int | None
+    reason_code: str
+    detail: dict[str, Any]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
 TableSelectorTablesResult: TypeAlias = tuple[list[UKMutableNode], dict[str, Any]]
-TableRowReplaceSpanResult: TypeAlias = tuple[
-    UKMutableNode | None,
-    int | None,
-    int | None,
-    str,
-    dict[str, Any],
-]
 TableCellResult: TypeAlias = tuple[UKMutableNode | None, str, dict[str, Any]]
 TableCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, Any]]
 
@@ -707,16 +709,31 @@ def resolve_uk_table_entry_row_insert_index(
 def resolve_uk_table_entry_row_replace_span(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> TableRowReplaceSpanResult:
+) -> UKTableRowReplaceSpanResolution:
     """Resolve rows named by a table-entry replacement selector.
 
     Replacement is intentionally stricter than insertion: every named relating
     entry must resolve to exactly one physical row, and the resolved rows must
     form a contiguous span.
     """
+    def result(
+        table: UKMutableNode | None,
+        start_index: int | None,
+        end_index: int | None,
+        reason_code: str,
+        detail: dict[str, Any],
+    ) -> UKTableRowReplaceSpanResolution:
+        return UKTableRowReplaceSpanResolution(
+            table=table,
+            start_index=start_index,
+            end_index=end_index,
+            reason_code=reason_code,
+            detail=detail,
+        )
+
     selector_mode = str(selector.get("selector_mode") or "")
     if selector_mode != "relating_entries":
-        return None, None, None, "invalid_selector", {}
+        return result(None, None, None, "invalid_selector", {})
     relating_anchor_variants: list[tuple[str, tuple[str, ...]]] = []
     for text in selector.get("relating_texts") or ():
         primary_norm = _compact_normalized_text(str(text or ""))
@@ -724,11 +741,17 @@ def resolve_uk_table_entry_row_replace_span(
         if primary_norm and variants:
             relating_anchor_variants.append((primary_norm, variants))
     if len(relating_anchor_variants) < 2:
-        return None, None, None, "invalid_selector", {}
+        return result(None, None, None, "invalid_selector", {})
 
     tables, carrier_detail = uk_table_selector_tables(node, selector)
     if len(tables) != 1:
-        return None, None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+        return result(
+            None,
+            None,
+            None,
+            "table_not_unique",
+            {"table_count": len(tables), **carrier_detail},
+        )
 
     table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
@@ -768,33 +791,57 @@ def resolve_uk_table_entry_row_replace_span(
             if any(int(item["matching_entry_count"]) == 0 for item in non_unique)
             else "entry_not_unique"
         )
-        return None, None, None, reason, {
-            "anchor_matches": tuple(non_unique),
-            **carrier_detail,
-        }
+        return result(
+            None,
+            None,
+            None,
+            reason,
+            {
+                "anchor_matches": tuple(non_unique),
+                **carrier_detail,
+            },
+        )
 
     matched_rows = tuple(matches[0] for _anchor, matches in matches_by_anchor)
     row_indices = sorted({index for index, _preview in matched_rows})
     if len(row_indices) != len(matched_rows):
-        return None, None, None, "entries_share_row", {
-            "matched_rows": tuple(preview for _index, preview in matched_rows),
-            **carrier_detail,
-        }
+        return result(
+            None,
+            None,
+            None,
+            "entries_share_row",
+            {
+                "matched_rows": tuple(preview for _index, preview in matched_rows),
+                **carrier_detail,
+            },
+        )
     start = row_indices[0]
     end_exclusive = row_indices[-1] + 1
     if row_indices != list(range(start, end_exclusive)):
-        return None, None, None, "entry_span_not_contiguous", {
-            "row_indices": tuple(row_indices),
+        return result(
+            None,
+            None,
+            None,
+            "entry_span_not_contiguous",
+            {
+                "row_indices": tuple(row_indices),
+                "matched_rows": tuple(preview for _index, preview in matched_rows),
+                **carrier_detail,
+            },
+        )
+    return result(
+        table,
+        start,
+        end_exclusive,
+        "",
+        {
+            "matching_entry_count": len(matched_rows),
             "matched_rows": tuple(preview for _index, preview in matched_rows),
+            "replace_start_index": start,
+            "replace_end_index": end_exclusive,
             **carrier_detail,
-        }
-    return table, start, end_exclusive, "", {
-        "matching_entry_count": len(matched_rows),
-        "matched_rows": tuple(preview for _index, preview in matched_rows),
-        "replace_start_index": start,
-        "replace_end_index": end_exclusive,
-        **carrier_detail,
-    }
+        },
+    )
 
 
 def resolve_unique_uk_table_relating_cell(
