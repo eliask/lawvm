@@ -24,6 +24,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
 from lawvm.uk_legislation.source_definition_structural_insert import (
     UK_DEFINITION_CHILD_STRUCTURAL_INSERT_BEFORE_TAIL_CONNECTOR_RULE_ID,
     UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
+    UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID,
 )
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.source_parent_payloads import (
@@ -456,6 +457,106 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
         )
         preceding_target = payload_target
     return custom_ops
+
+
+def lower_uk_definition_child_structural_substitution(  # noqa: PLR0913
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    definition_child_substitution: dict[str, Any],
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> list[LegalOperation]:
+    """Lower a source-owned definition child structural substitution."""
+    rule_id = UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=rule_id,
+        family="source_context_elaboration",
+        reason_code="definition_child_structural_substitution_with_tail_connector",
+        reason=(
+            "UK source substitutes one named child inside a named definition and "
+            "explicitly includes that child's final connector; lowering emits a "
+            "bounded structural replacement scoped by definition term and child "
+            "label instead of rewriting the containing subsection."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            key: value
+            for key, value in definition_child_substitution.items()
+            if key != "rule_id"
+        },
+    )
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    payload = dict(definition_child_substitution["payload"])
+    child_label = str(definition_child_substitution["child_label"])
+    child_nodes = tuple(
+        IRNode(
+            kind=IRNodeKind.SUBPARAGRAPH,
+            label=str(child["label"]),
+            text=str(child["text"]),
+        )
+        for child in payload.get("children", ())
+    )
+    payload_node = IRNode(
+        kind=IRNodeKind.ITEM,
+        label=child_label,
+        text=str(payload["text"]),
+        children=child_nodes,
+        attrs={
+            "source_rule_id": rule_id,
+            "definition_term": str(definition_child_substitution["definition_term"]),
+            "definition_child_label": child_label,
+            "included_tail_connector": str(definition_child_substitution["tail_connector"]),
+        },
+    )
+    target = LegalAddress(
+        path=(
+            ("section", str(definition_child_substitution["section"])),
+            ("subsection", str(definition_child_substitution["subsection"])),
+            ("item", child_label),
+        )
+    )
+    witness = UKLoweredOperationWitness(
+        op_id=f"{effect.effect_id}_definition_child_structural_substitution",
+        sequence=sequence,
+        action=StructuralAction.REPLACE,
+        target=target,
+        payload=payload_node,
+        source=src,
+        effect_witness=effect_witness,
+        extraction_witness=extraction_witness,
+        target_expansion_witness=_uk_target_expansion_witness(
+            effect.affected_provisions,
+            [str(definition_child_substitution["target_ref"])],
+            original_targets_str=[effect.affected_provisions],
+        ),
+        text_rewrite_witness=None,
+        insertion_anchor_witness=None,
+    )
+    return [
+        LegalOperation(
+            op_id=witness.op_id,
+            sequence=witness.sequence,
+            action=witness.action,
+            target=target,
+            payload=_payload_with_rewrite_witness(payload_node, witness),
+            source=src,
+            group_id=_uk_temporal_group_id(effect),
+            provenance_tags=_uk_lowered_op_provenance_tags(witness),
+            witness_rule_id=rule_id,
+        )
+    ]
 
 
 def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
