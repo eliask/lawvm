@@ -1106,6 +1106,13 @@ def _looks_like_table_entry_instruction(text: str, *, target_paths: Iterable[str
     return bool(
         re.search(r"\b(?:table|column|columns)\b", norm)
         or (target_names_table and re.search(r"\bafter\s+(?:that\s+)?entry\b", norm))
+        or (
+            target_names_table
+            and re.search(
+                r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
+                norm,
+            )
+        )
         or (target_names_table and re.search(r"\bat\s+the\s+end\s+insert(?:ed)?\b", norm))
         or (target_names_table and re.search(r"\bbetween\s+the\s+\w+\s+and\s+\w+\s+columns?\b", norm))
     )

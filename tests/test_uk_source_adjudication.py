@@ -3309,6 +3309,22 @@ def test_classify_uk_effect_table_target_deictic_entry_insert() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_table_target_child_anchor_insert() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text="after paragraph (a) insert- corporal in the Royal Marines;",
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:132/subsection:1/paragraph:table"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "table_entry_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_manual_frontier_overlap_table_entry_candidate() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
