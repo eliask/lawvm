@@ -1279,7 +1279,9 @@ def test_uk_bench_limit_zero_preserves_empty_diagnostic_budget(monkeypatch, tmp_
 
     assert seen["corpus"] == []
     assert seen["archive_closed_before_run"] is False
-    assert seen["run_kwargs"] == {
+    run_kwargs = dict(seen["run_kwargs"])
+    assert callable(run_kwargs.pop("progress_start"))
+    assert run_kwargs == {
         "do_replay": False,
         "repo_root": uk_bench._REPO_ROOT,
         "workers": 1,
@@ -1362,7 +1364,9 @@ def test_uk_bench_source_first_candidate_threads_regime(monkeypatch, tmp_path) -
 
     uk_bench.main(args)
 
-    assert seen["run_kwargs"] == {
+    run_kwargs = dict(seen["run_kwargs"])
+    assert callable(run_kwargs.pop("progress_start"))
+    assert run_kwargs == {
         "do_replay": True,
         "repo_root": uk_bench._REPO_ROOT,
         "workers": 1,

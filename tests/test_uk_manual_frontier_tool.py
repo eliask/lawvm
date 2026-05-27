@@ -299,6 +299,7 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
             "line_number": 2,
             "statute_id": "ukpga/2020/1",
             "effect_id": "eff-live",
+            "manual_compile_rule_id": "uk_manual_frontier_table_entry_candidate",
             "source": {"text_preview": "live"},
         },
     )
