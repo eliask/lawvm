@@ -3760,6 +3760,54 @@ def test_compile_broad_structural_sibling_insert_rejects_without_parent_claim() 
     assert rejection["strict_disposition"] == "block"
 
 
+def test_compile_child_tail_sibling_insert_rejects_without_parent_claim() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b at the end of paragraph (b) insert , or c which is conferred
+          by or under the Childcare Payments Act 2014; .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_tail_sibling_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-01-01",
+        affected_uri="/id/ukpga/2012/5/section/127/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2012",
+        affected_number="5",
+        affected_provisions="s. 127(7)",
+        affecting_uri="/id/ukpga/2014/28",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="28",
+        affecting_provisions="s. 27(6)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            lowering_rejections_out=lowering_records,
+        )
+        == []
+    )
+
+    assert len(lowering_records) == 1
+    rejection = lowering_records[0]
+    assert rejection["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+    assert rejection["reason_code"] == "structural_sibling_insert_requires_owned_parent_anchor_payload"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_compile_definition_child_structural_insert_rejects_without_tail_claim() -> None:
     extracted_el = ET.fromstring(
         f"""

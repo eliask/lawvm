@@ -231,10 +231,18 @@ def _unlowered_overlap_source_shape_classification(
                 "connector boundary."
             ),
         )
-    if re.search(
-        r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph|subsection)\s*"
-        r"\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
-        lowered,
+    if (
+        re.search(
+            r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph|subsection)\s*"
+            r"\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
+            lowered,
+        )
+        or re.search(
+            r"\bat\s+the\s+end\s+of\s+"
+            r"(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+"
+            r"insert\s+[,;:]?\s*(?:and|or)\s+[a-z]\b",
+            lowered,
+        )
     ):
         return UnloweredOverlapSourceShapeClassification(
             "uk_effect_structural_sibling_insert_rejected",
