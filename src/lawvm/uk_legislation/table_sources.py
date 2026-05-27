@@ -702,6 +702,98 @@ def _uk_repeal_table_column_entry_text_selector(extent_cell: str) -> Optional[di
     }
 
 
+def _uk_effect_source_child_label(effect: UKEffectRecord) -> str:
+    labels = re.findall(r"\(([A-Za-z])\)", str(effect.affecting_provisions or ""))
+    return labels[-1].lower() if labels else ""
+
+
+def _uk_repeal_table_grouped_column_entry_text_selector(
+    extent_cell: str,
+    *,
+    effect: UKEffectRecord,
+) -> Optional[dict[str, Any]]:
+    """Extract one effect-split list item from grouped table-column entry repeals."""
+    text = " ".join((extent_cell or "").split()).strip()
+    if not text:
+        return None
+    match = re.search(
+        r"\bin\s+section\s+\d+\s*,\s+"
+        r"(?:the\s+)?entries\s+in\s+(?:the\s+)?"
+        r"(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
+        r"\s+column\s+of\s+(?:the\s+)?table\s+relating\s+to\s*[—-]\s*"
+        r"(?P<body>.+?)\.?$",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    column_index = _uk_ordinal_to_int(match.group("column"))
+    source_label = _uk_effect_source_child_label(effect)
+    if column_index is None or column_index < 1 or not source_label:
+        return None
+    source_index = ord(source_label) - ord("a")
+    if source_index < 0:
+        return None
+    entries = [
+        " ".join(part.split()).strip(" ,;.")
+        for part in re.split(r";\s*", match.group("body"))
+    ]
+    entries = [entry for entry in entries if entry]
+    if source_index >= len(entries):
+        return None
+    entry_text = entries[source_index]
+    if re.search(r"\bthat\s+(?:act|schedule|column)\b", entry_text, flags=re.I):
+        return None
+    return {
+        "rule_id": _UK_REPEAL_TABLE_COLUMN_ENTRY_TEXT_REPEAL_RULE_ID,
+        "selector_mode": "unique_column_text",
+        "column_index": column_index,
+        "match_text": entry_text,
+        "match_scope": "full_cell",
+        "source_table_mode": "grouped_repeal_table_extent_row",
+        "source_group_label": source_label,
+        "table_column_entry_action": "delete_entry_text",
+        "text_patch_original": entry_text,
+        "text_patch_replacement": "",
+    }
+
+
+def _uk_repeal_table_grouped_column_entry_clause_matches_label(
+    extent_cell: str,
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+) -> bool:
+    text = " ".join((extent_cell or "").split()).strip()
+    if not text:
+        return False
+    if not _uk_repeal_table_column_entry_clause_mentions_target(text, target=target):
+        return False
+    match = re.search(
+        r"\bin\s+section\s+\d+\s*,\s+"
+        r"(?:the\s+)?entries\s+in\s+(?:the\s+)?"
+        r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
+        r"\s+column\s+of\s+(?:the\s+)?table\s+relating\s+to\s*[—-]\s*"
+        r"(?P<body>.+?)\.?$",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return False
+    source_label = _uk_effect_source_child_label(effect)
+    if not source_label:
+        return False
+    source_index = ord(source_label) - ord("a")
+    if source_index < 0:
+        return False
+    entries = [
+        " ".join(part.split()).strip(" ,;.")
+        for part in re.split(r";\s*", match.group("body"))
+    ]
+    entries = [entry for entry in entries if entry]
+    return source_index < len(entries)
+
+
 def _uk_repeal_table_column_entry_clause_mentions_target(
     extent_cell: str,
     *,
@@ -1014,12 +1106,17 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         "words omitted",
         "word omitted",
     }
+    table_entry_repeal_effect = effect_type in {
+        "entry repealed",
+        "entry omitted",
+        "entry revoked",
+    }
     structural_definition_entry_effect = allow_structural_definition_entry and effect_type in {
         "repealed",
         "omitted",
         "revoked",
     }
-    if not word_effect and not structural_definition_entry_effect:
+    if not word_effect and not structural_definition_entry_effect and not table_entry_repeal_effect:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
     search_roots = _uk_repeal_extent_search_roots(
         extracted_el=extracted_el,
@@ -1041,6 +1138,19 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             extracted_text=extracted_text,
             target=target,
         )
+    grouped_column_entry_clause_count = 0
+    if table_entry_repeal_effect:
+        for table, (_, extent_idx) in tables:
+            for row in _uk_table_rows_with_rowspans(table)[1:]:
+                if len(row) <= extent_idx:
+                    continue
+                for extent_clause in _uk_repeal_table_extent_clauses(row[extent_idx]):
+                    if _uk_repeal_table_grouped_column_entry_clause_matches_label(
+                        extent_clause,
+                        effect=effect,
+                        target=target,
+                    ):
+                        grouped_column_entry_clause_count += 1
     unsupported_sentence_repeal: Optional[_UKRepealTableQuotedWordsTextRepeal] = None
     for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
         rows = _uk_table_rows_with_rowspans(table)
@@ -1085,6 +1195,15 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                     affected_year=str(effect.affected_year or ""),
                 )
                 table_cell_selector = _uk_repeal_table_column_entry_text_selector(extent_clause)
+                if (
+                    table_cell_selector is None
+                    and table_entry_repeal_effect
+                    and grouped_column_entry_clause_count == 1
+                ):
+                    table_cell_selector = _uk_repeal_table_grouped_column_entry_text_selector(
+                        extent_clause,
+                        effect=effect,
+                    )
                 column_entry_mentions_target = (
                     table_cell_selector is not None
                     and _uk_repeal_table_column_entry_clause_mentions_target(
@@ -1099,7 +1218,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 original = ""
                 occurrence = 0
                 end_occurrence = 0
-                if not structural_definition_entry_effect:
+                if not structural_definition_entry_effect and not table_entry_repeal_effect:
                     original = _uk_repeal_table_mixed_clause_word_selector(
                         extent_clause,
                         target=target,

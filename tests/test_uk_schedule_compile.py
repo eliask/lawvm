@@ -19726,6 +19726,84 @@ def test_compile_repeal_table_column_entry_text_repeal_uses_owned_cell_selector(
     )
 
 
+def test_compile_grouped_repeal_table_column_entry_uses_effect_child_label() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <tbody>
+                <tr><th>Short title and chapter</th><th>Extent of repeal</th></tr>
+                <tr>
+                  <td>Taxes Management Act 1970 (c. 9)</td>
+                  <td>
+                    <P>
+                      <BlockText>
+                        <Para><Text>In section 98, the entries in the first column of the Table relating to—</Text></Para>
+                        <OrderedList Type="alpha" Decoration="parens">
+                          <ListItem NumberOverride="a"><Para><Text>regulations under section 202 of ICTA;</Text></Para></ListItem>
+                          <ListItem NumberOverride="b"><Para><Text>paragraph 117 of Schedule 8 to FA 2000;</Text></Para></ListItem>
+                          <ListItem NumberOverride="c"><Para><Text>paragraph 64 of Schedule 14 to that Act.</Text></Para></ListItem>
+                        </OrderedList>
+                      </BlockText>
+                    </P>
+                  </td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_grouped_repeal_table_column_entry",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2003/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="1",
+        affecting_provisions="Sch. 6 para. 137(2)(b) Sch. 8 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2003-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "paragraph 117 of Schedule 8 to FA 2000"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["source_table_mode"] == "grouped_repeal_table_extent_row"
+    assert selector["source_group_label"] == "b"
+    assert selector["column_index"] == 1
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_column_entry_text_repeal"
+        and record["reason_code"] == "unique_repeal_table_extent_row_column_entry"
+        and record["table_cell_selector"]["source_group_label"] == "b"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_repeal_table_column_entry_target_match_is_not_global_year_bypass() -> None:
     target = LegalAddress((("section", "98"), ("subsection", "table")))
     extent_clause = (
@@ -19782,6 +19860,67 @@ def test_compile_repeal_table_column_entry_text_repeal_blocks_deictic_entry() ->
         affecting_provisions="Sch. 7 para. 18(2) Sch. 10 Pt. 12",
         affecting_title="Test Repeal Act",
         in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_column_entry_text_repeal"
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_grouped_repeal_table_column_entry_blocks_deictic_item() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <tbody>
+                <tr><th>Short title and chapter</th><th>Extent of repeal</th></tr>
+                <tr>
+                  <td>Taxes Management Act 1970 (c. 9)</td>
+                  <td>In section 98, the entries in the first column of the Table relating to— regulations under section 202 of ICTA; paragraph 117 of Schedule 8 to FA 2000; paragraph 64 of Schedule 14 to that Act.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_grouped_repeal_table_column_entry_deictic",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2003/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="1",
+        affecting_provisions="Sch. 6 para. 137(2)(c) Sch. 8 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2003-04-06", "prospective": "false"}],
     )
     lowering_records: list[dict[str, Any]] = []
 
