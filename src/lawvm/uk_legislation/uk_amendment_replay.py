@@ -339,11 +339,11 @@ class UKReplayPipeline:
                     lowering_rejections=lowering_rejections_out,
                     start_index=lowering_rejection_count_before,
                 )
-            extracted_tag, extracted_text = _extracted_tag_and_text(el)
+            extracted_tag_and_text = _extracted_tag_and_text(el)
             source_pathology = _classify_compiled_effect_source_pathology(
                 effect=e,
-                extracted_tag=extracted_tag,
-                extracted_text=extracted_text,
+                extracted_tag=extracted_tag_and_text.tag,
+                extracted_text=extracted_tag_and_text.text,
                 compiled_ops=compiled,
                 lowering_rejections=lowering_rejections_out,
                 lowering_rejection_start_index=lowering_rejection_count_before,
@@ -377,8 +377,8 @@ class UKReplayPipeline:
                     effect_diagnostics_out,
                     effect=e,
                     source_pathology=source_pathology,
-                    extracted_tag=extracted_tag or "",
-                    extracted_text=extracted_text,
+                    extracted_tag=extracted_tag_and_text.tag or "",
+                    extracted_text=extracted_tag_and_text.text,
                     lowering_rejections_out=lowering_rejections_out,
                     lowering_rejection_start_index=lowering_rejection_count_before,
                     compiled_op_count=0,
@@ -398,8 +398,8 @@ class UKReplayPipeline:
                 effect_diagnostics_out,
                 effect=e,
                 source_pathology=source_pathology,
-                extracted_tag=extracted_tag or "",
-                extracted_text=extracted_text,
+                extracted_tag=extracted_tag_and_text.tag or "",
+                extracted_text=extracted_tag_and_text.text,
                 lowering_rejections_out=lowering_rejections_out,
                 lowering_rejection_start_index=lowering_rejection_count_before,
                 compiled_op_count=len(compiled),
