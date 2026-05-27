@@ -7033,7 +7033,13 @@ def _write_curated_corpus(
     return selected
 
 
-def _curated_corpus_request(args: Any) -> tuple[Path | None, int, str]:
+class _CuratedCorpusRequest(NamedTuple):
+    output: Path | None
+    size: int
+    preset: str
+
+
+def _curated_corpus_request(args: Any) -> _CuratedCorpusRequest:
     preset = str(getattr(args, "curate_preset", "") or "")
     if preset and preset not in _CURATE_PRESET_SIZES:
         raise ValueError(f"unknown UK curate preset: {preset}")
@@ -7046,7 +7052,7 @@ def _curated_corpus_request(args: Any) -> tuple[Path | None, int, str]:
         output = _CORPUS_CSV.parent / _CURATE_PRESET_FILENAMES[preset]
     else:
         output = None
-    return output, size, preset
+    return _CuratedCorpusRequest(output=output, size=size, preset=preset)
 
 
 # ---------------------------------------------------------------------------
@@ -7118,8 +7124,8 @@ def main(args) -> None:  # noqa: ANN001
     if limit is not None and limit < 0:
         print("error: --limit must be zero or a positive integer", file=sys.stderr)
         sys.exit(2)
-    curate_output, curate_size, curate_preset = _curated_corpus_request(args)
-    if curate_output is not None and curate_size < 1:
+    curated_corpus_request = _curated_corpus_request(args)
+    if curated_corpus_request.output is not None and curated_corpus_request.size < 1:
         print("error: --curate-size must be a positive integer", file=sys.stderr)
         sys.exit(2)
     _par = getattr(args, "parallel", None)
@@ -7132,8 +7138,8 @@ def main(args) -> None:  # noqa: ANN001
         sys.exit(2)
     min_year = getattr(args, "min_year", None)
     max_year = getattr(args, "max_year", None)
-    if min_year is None and curate_preset in _CURATE_PRESET_MIN_YEARS:
-        min_year = _CURATE_PRESET_MIN_YEARS[curate_preset]
+    if min_year is None and curated_corpus_request.preset in _CURATE_PRESET_MIN_YEARS:
+        min_year = _CURATE_PRESET_MIN_YEARS[curated_corpus_request.preset]
     if min_year is not None and max_year is not None and min_year > max_year:
         print("error: --min-year must be less than or equal to --max-year", file=sys.stderr)
         sys.exit(2)
@@ -7156,7 +7162,7 @@ def main(args) -> None:  # noqa: ANN001
         archive.close()
         return
 
-    if curate_output is not None and not getattr(args, "corpus", None):
+    if curated_corpus_request.output is not None and not getattr(args, "corpus", None):
         if not _default_corpus_has_source_status_fields():
             print("Default UK corpus lacks source-status fields; rebuilding before curation...")
             _build_corpus_csv(archive, types=types_filter)
@@ -7206,7 +7212,7 @@ def main(args) -> None:  # noqa: ANN001
         archive.close()
         return
 
-    if curate_output is not None:
+    if curated_corpus_request.output is not None:
         curate_require_source_closure = bool(
             getattr(args, "curate_require_source_closure", False)
         )
@@ -7229,22 +7235,22 @@ def main(args) -> None:  # noqa: ANN001
                 "  Replay source-closed filter: "
                 f"{before_count} -> {len(corpus)} statutes"
             )
-        hard_curate = curate_preset in _CURATE_HARD_PRESETS
+        hard_curate = curated_corpus_request.preset in _CURATE_HARD_PRESETS
         selected = _write_curated_corpus(
             corpus,
-            output=curate_output,
-            size=curate_size,
+            output=curated_corpus_request.output,
+            size=curated_corpus_request.size,
             hard=hard_curate,
         )
-        if curate_preset:
-            print(f"  Curated preset: {curate_preset}")
+        if curated_corpus_request.preset:
+            print(f"  Curated preset: {curated_corpus_request.preset}")
         if hard_curate:
-            print(f"  Curated source-complete hard corpus: {curate_output}")
+            print(f"  Curated source-complete hard corpus: {curated_corpus_request.output}")
         else:
-            print(f"  Curated source-complete corpus: {curate_output}")
+            print(f"  Curated source-complete corpus: {curated_corpus_request.output}")
         if curate_require_source_closure:
             print("  Required replay source closure: full/not_required")
-        print(f"  Requested rows: {curate_size}")
+        print(f"  Requested rows: {curated_corpus_request.size}")
         print(f"  Written rows: {len(selected)}")
         selected_source_closure_summary = None
         if curate_require_source_closure or getattr(args, "source_closure_stats", False):
