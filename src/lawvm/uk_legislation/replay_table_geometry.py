@@ -94,6 +94,24 @@ class _UKTableEntryCellMatch:
     row_preview: str
 
 
+@dataclass(frozen=True, slots=True)
+class _UKTableInsertRowMatch:
+    insert_index: int
+    row_preview: str
+
+
+@dataclass(frozen=True, slots=True)
+class _UKTablePhysicalRowMatch:
+    row_index: int
+    row_preview: str
+
+
+@dataclass(frozen=True, slots=True)
+class _UKTableRelatingAnchorMatches:
+    anchor: str
+    matches: list[_UKTablePhysicalRowMatch]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
 
@@ -587,7 +605,7 @@ def resolve_uk_table_entry_row_insert_index(
                     **carrier_detail,
                 },
             )
-        matching_each_column_rows: list[tuple[int, str]] = []
+        matching_each_column_rows: list[_UKTableInsertRowMatch] = []
         for row_index, row_cells in expanded_rows:
             if not row_cells:
                 continue
@@ -598,12 +616,10 @@ def resolve_uk_table_entry_row_insert_index(
             ):
                 continue
             matching_each_column_rows.append(
-                (
-                    row_index if direction == "before" else row_index + 1,
-                    " | ".join(
-                        str(row_cells[col].text or "")
-                        for col in sorted(row_cells)
-                        if str(row_cells[col].text or "")
+                _UKTableInsertRowMatch(
+                    insert_index=row_index if direction == "before" else row_index + 1,
+                    row_preview=" | ".join(
+                        str(row_cells[col].text or "") for col in sorted(row_cells) if str(row_cells[col].text or "")
                     )[:240],
                 )
             )
@@ -615,24 +631,24 @@ def resolve_uk_table_entry_row_insert_index(
                 {
                     "matching_entry_count": len(matching_each_column_rows),
                     "table_column_count": column_count,
-                    "matching_rows": tuple(row for _index, row in matching_each_column_rows[:5]),
+                    "matching_rows": tuple(row.row_preview for row in matching_each_column_rows[:5]),
                     **carrier_detail,
                 },
             )
-        insert_index, row_preview = matching_each_column_rows[0]
+        match = matching_each_column_rows[0]
         return result(
             table,
-            insert_index,
+            match.insert_index,
             "",
             {
                 "matching_entry_count": 1,
-                "matched_row": row_preview,
+                "matched_row": match.row_preview,
                 "table_column_count": column_count,
                 **carrier_detail,
             },
         )
     if selector_mode == "entry_group_heading":
-        matching_groups: list[tuple[int, str]] = []
+        matching_groups: list[_UKTableInsertRowMatch] = []
         for row_position, (row_index, row_cells) in enumerate(expanded_rows):
             if not _is_entry_group_heading(row_cells):
                 continue
@@ -648,7 +664,7 @@ def resolve_uk_table_entry_row_insert_index(
                 if _is_entry_group_heading(next_row_cells):
                     insert_index = next_row_index
                     break
-            matching_groups.append((insert_index, row_preview))
+            matching_groups.append(_UKTableInsertRowMatch(insert_index, row_preview))
         if len(matching_groups) != 1:
             return result(
                 None,
@@ -656,23 +672,23 @@ def resolve_uk_table_entry_row_insert_index(
                 "entry_group_heading_not_unique",
                 {
                     "matching_entry_count": len(matching_groups),
-                    "matching_rows": tuple(row[1] for row in matching_groups[:5]),
+                    "matching_rows": tuple(row.row_preview for row in matching_groups[:5]),
                     **carrier_detail,
                 },
             )
-        insert_index, row_preview = matching_groups[0]
+        match = matching_groups[0]
         return result(
             table,
-            insert_index,
+            match.insert_index,
             "",
             {
                 "matching_entry_count": 1,
-                "matched_row": row_preview,
+                "matched_row": match.row_preview,
                 **carrier_detail,
             },
         )
 
-    matching_rows: list[tuple[int, str]] = []
+    matching_rows: list[_UKTableInsertRowMatch] = []
     last_target_cell: UKMutableNode | None = None
     for row_index, row_cells in expanded_rows:
         if selector_mode == "relating_entry":
@@ -726,18 +742,16 @@ def resolve_uk_table_entry_row_insert_index(
             rowspan, _colspan = uk_table_cell_span(target_cell)
             insert_index = min(len(table.children), row_index + max(rowspan, 1))
         matching_rows.append(
-            (
-                insert_index,
-                " | ".join(
-                    str(row_cells[col].text or "")
-                    for col in sorted(row_cells)
-                    if str(row_cells[col].text or "")
+            _UKTableInsertRowMatch(
+                insert_index=insert_index,
+                row_preview=" | ".join(
+                    str(row_cells[col].text or "") for col in sorted(row_cells) if str(row_cells[col].text or "")
                 )[:240],
             )
         )
     if selector_mode == "column_final_entry":
-        row_index, _preview = matching_rows[-1] if matching_rows else (None, "")
-        if row_index is None:
+        match = matching_rows[-1] if matching_rows else None
+        if match is None:
             return result(
                 None,
                 None,
@@ -747,14 +761,14 @@ def resolve_uk_table_entry_row_insert_index(
                     **carrier_detail,
                 },
             )
-        insert_index = min(row_index, len(table.children))
+        insert_index = min(match.insert_index, len(table.children))
         return result(
             table,
             insert_index,
             "",
             {
                 "matching_entry_count": len(matching_rows),
-                "matching_rows": tuple(row[1] for row in matching_rows[-5:]),
+                "matching_rows": tuple(row.row_preview for row in matching_rows[-5:]),
                 **carrier_detail,
             },
         )
@@ -766,7 +780,7 @@ def resolve_uk_table_entry_row_insert_index(
             "entry_not_found",
             {
                 "matching_entry_count": len(matching_rows),
-                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
+                "matching_rows": tuple(row.row_preview for row in matching_rows[:5]),
                 **carrier_detail,
             },
         )
@@ -777,18 +791,18 @@ def resolve_uk_table_entry_row_insert_index(
             "entry_not_unique",
             {
                 "matching_entry_count": len(matching_rows),
-                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
+                "matching_rows": tuple(row.row_preview for row in matching_rows[:5]),
                 **carrier_detail,
             },
         )
-    insert_index, row_preview = matching_rows[required_entry_index - 1]
+    match = matching_rows[required_entry_index - 1]
     return result(
         table,
-        insert_index,
+        match.insert_index,
         "",
         {
             "matching_entry_count": len(matching_rows),
-            "matched_row": row_preview,
+            "matched_row": match.row_preview,
             **carrier_detail,
         },
     )
@@ -845,9 +859,9 @@ def resolve_uk_table_entry_row_replace_span(
 
     table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
-    matches_by_anchor: list[tuple[str, list[tuple[int, str]]]] = []
+    matches_by_anchor: list[_UKTableRelatingAnchorMatches] = []
     for relating_norm, relating_variants in relating_anchor_variants:
-        anchor_matches: list[tuple[int, str]] = []
+        anchor_matches: list[_UKTablePhysicalRowMatch] = []
         for row_index, row_cells in expanded_rows:
             row_preview = " | ".join(
                 str(row_cells[col].text or "")
@@ -863,17 +877,17 @@ def resolve_uk_table_entry_row_replace_span(
                 )
                 for cell in _unique_row_cells(row_cells)
             ):
-                anchor_matches.append((row_index, row_preview))
-        matches_by_anchor.append((relating_norm, anchor_matches))
+                anchor_matches.append(_UKTablePhysicalRowMatch(row_index, row_preview))
+        matches_by_anchor.append(_UKTableRelatingAnchorMatches(relating_norm, anchor_matches))
 
     non_unique = [
         {
-            "anchor": anchor,
-            "matching_entry_count": len(matches),
-            "matching_rows": tuple(row for _index, row in matches[:5]),
+            "anchor": anchor_match.anchor,
+            "matching_entry_count": len(anchor_match.matches),
+            "matching_rows": tuple(match.row_preview for match in anchor_match.matches[:5]),
         }
-        for anchor, matches in matches_by_anchor
-        if len(matches) != 1
+        for anchor_match in matches_by_anchor
+        if len(anchor_match.matches) != 1
     ]
     if non_unique:
         reason = (
@@ -892,8 +906,8 @@ def resolve_uk_table_entry_row_replace_span(
             },
         )
 
-    matched_rows = tuple(matches[0] for _anchor, matches in matches_by_anchor)
-    row_indices = sorted({index for index, _preview in matched_rows})
+    matched_rows = tuple(anchor_match.matches[0] for anchor_match in matches_by_anchor)
+    row_indices = sorted({match.row_index for match in matched_rows})
     if len(row_indices) != len(matched_rows):
         return result(
             None,
@@ -901,7 +915,7 @@ def resolve_uk_table_entry_row_replace_span(
             None,
             "entries_share_row",
             {
-                "matched_rows": tuple(preview for _index, preview in matched_rows),
+                "matched_rows": tuple(match.row_preview for match in matched_rows),
                 **carrier_detail,
             },
         )
@@ -915,7 +929,7 @@ def resolve_uk_table_entry_row_replace_span(
             "entry_span_not_contiguous",
             {
                 "row_indices": tuple(row_indices),
-                "matched_rows": tuple(preview for _index, preview in matched_rows),
+                "matched_rows": tuple(match.row_preview for match in matched_rows),
                 **carrier_detail,
             },
         )
@@ -926,7 +940,7 @@ def resolve_uk_table_entry_row_replace_span(
         "",
         {
             "matching_entry_count": len(matched_rows),
-            "matched_rows": tuple(preview for _index, preview in matched_rows),
+            "matched_rows": tuple(match.row_preview for match in matched_rows),
             "replace_start_index": start,
             "replace_end_index": end_exclusive,
             **carrier_detail,
