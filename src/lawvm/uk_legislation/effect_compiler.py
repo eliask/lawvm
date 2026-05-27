@@ -27,6 +27,7 @@ from lawvm.uk_legislation.effect_special_lowering import (
     lower_uk_after_paragraph_insert_connector_sibling,
     lower_uk_after_paragraph_insert_labelled_series,
     lower_uk_after_paragraph_insert_single_label,
+    lower_uk_definition_child_structural_sibling_insert,
     lower_uk_definition_child_range_substitution,
     lower_uk_metadata_renumber_effect,
     lower_uk_source_carried_structured_tail_substitution,
@@ -60,6 +61,9 @@ from lawvm.uk_legislation.source_parent_payloads import (
 )
 from lawvm.uk_legislation.source_definition_fragments import (
     source_definition_child_range_substitution,
+)
+from lawvm.uk_legislation.source_definition_structural_insert import (
+    source_definition_child_structural_sibling_insert,
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
@@ -305,6 +309,26 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             sequence=sequence,
             definition_child_range=definition_child_range,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        _mark_lower_phase("compile_lower_special")
+        return ops
+
+    definition_child_structural_insert = source_definition_child_structural_sibling_insert(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+        affected_provisions=effect.affected_provisions,
+    )
+    if action == "insert" and definition_child_structural_insert is not None:
+        ops = lower_uk_definition_child_structural_sibling_insert(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            definition_child_insert=definition_child_structural_insert,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
             lowering_rejections_out=lowering_rejections_out,

@@ -41,11 +41,25 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_existing_target_insert_gap,
 )
 from lawvm.uk_legislation.target_anchors import _body_target_eid_suffixes, uk_match_kind_label
+from lawvm.uk_legislation.source_definition_structural_insert import (
+    UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
+)
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 _TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
 )
+
+
+def _normalized_definition_text(text: object) -> str:
+    return " ".join(str(text or "").split()).strip().lower()
+
+
+def _definition_child_identity(node: UKMutableNode) -> tuple[str, str]:
+    return (
+        _normalized_definition_text(node.attrs.get("definition_term")),
+        _clean_num(str(node.attrs.get("definition_child_label") or "")),
+    )
 
 
 class UKReplayInsertApplyMixin:
@@ -370,6 +384,8 @@ class UKReplayInsertApplyMixin:
         table_row_insert_selector = _table_row_insert_selector(op)
         if table_row_insert_selector is not None:
             return self._insert_table_entry_row(target, new_node, op, table_row_insert_selector)
+        if self._insert_definition_child_structural_sibling(target, new_node, op):
+            return True
 
         prec_eid = _preceding_eid(op)
         following_eid = _following_eid(op)
@@ -621,6 +637,150 @@ class UKReplayInsertApplyMixin:
             self.statute.body.children = body_children
             self._record_child_inserted(self.statute.body, new_node)
             return True
+
+    def _insert_definition_child_structural_sibling(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+    ) -> bool:
+        if (
+            new_node.attrs.get("source_rule_id")
+            != UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID
+        ):
+            return False
+        parent_addr = target.parent() if len(target.path) > 1 else None
+        if parent_addr is None:
+            return False
+        parent_node, _, _ = self._find_node_by_target(parent_addr)
+        if parent_node is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_sibling_parent_gap",
+                message="UK replay skipped definition-child sibling insert: definition section parent was absent.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    payload_kind=str(new_node.kind),
+                    payload_label=new_node.label or "",
+                    strict_disposition="block",
+                ),
+            )
+            return True
+        parent_node = cast(UKMutableNode, parent_node)
+        definition_term, inserted_label = _definition_child_identity(new_node)
+        anchor_label = _clean_num(str(new_node.attrs.get("source_anchor_child_label") or ""))
+        if not definition_term or not inserted_label or not anchor_label:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_sibling_anchor_gap",
+                message="UK replay skipped definition-child sibling insert: payload lacks scoped definition-child identity.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    payload_kind=str(new_node.kind),
+                    payload_label=new_node.label or "",
+                    strict_disposition="block",
+                ),
+            )
+            return True
+
+        existing_indexes = [
+            index
+            for index, child in enumerate(parent_node.children)
+            if _definition_child_identity(child) == (definition_term, inserted_label)
+        ]
+        if existing_indexes:
+            existing = parent_node.children[existing_indexes[0]]
+            if _normalized_definition_text(existing.text) == _normalized_definition_text(new_node.text):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_definition_child_structural_sibling_already_materialized",
+                    message=(
+                        "UK replay skipped definition-child sibling insert: target definition child "
+                        "already exists with the same normalized payload text."
+                    ),
+                    op=op,
+                    detail=uk_replay_action_target_detail(
+                        op,
+                        target,
+                        blocking=False,
+                        payload_kind=str(new_node.kind),
+                        payload_label=new_node.label or "",
+                    ),
+                )
+                return True
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_sibling_conflict_gap",
+                message=(
+                    "UK replay skipped definition-child sibling insert: target definition child "
+                    "already exists with different normalized payload text."
+                ),
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    payload_kind=str(new_node.kind),
+                    payload_label=new_node.label or "",
+                    existing_text=str(existing.text or "")[:200],
+                    payload_text=str(new_node.text or "")[:200],
+                    strict_disposition="block",
+                ),
+            )
+            return True
+
+        anchor_indexes = [
+            index
+            for index, child in enumerate(parent_node.children)
+            if _definition_child_identity(child) == (definition_term, anchor_label)
+        ]
+        if len(anchor_indexes) != 1:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_sibling_anchor_gap",
+                message=(
+                    "UK replay skipped definition-child sibling insert: source-named "
+                    "definition child anchor did not resolve uniquely."
+                ),
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    payload_kind=str(new_node.kind),
+                    payload_label=new_node.label or "",
+                    definition_term=definition_term,
+                    anchor_label=anchor_label,
+                    anchor_match_count=len(anchor_indexes),
+                    strict_disposition="block",
+                ),
+            )
+            return True
+        children = list(parent_node.children)
+        children.insert(anchor_indexes[0] + 1, new_node)
+        uk_replace_children(parent_node, children)
+        self._record_child_inserted(parent_node, new_node)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_definition_child_structural_sibling_insert_applied",
+            message=(
+                "UK replay inserted a source-owned definition child after the "
+                "source-named sibling anchor."
+            ),
+            op=op,
+            detail=uk_replay_action_target_detail(
+                op,
+                target,
+                blocking=False,
+                payload_kind=str(new_node.kind),
+                payload_label=new_node.label or "",
+                definition_term=definition_term,
+                anchor_label=anchor_label,
+            ),
+        )
+        return True
 
     def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool:
         leaf_kind = _addr_leaf_kind(target)

@@ -542,7 +542,6 @@ def _definition_child_nodes(
         if (
             child.kind is IRNodeKind.ITEM
             and str(child.attrs.get("definition_child_label") or "").lower() == normalized_label
-            and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
             and _normalize_text(str(child.attrs.get("definition_term") or "")) == normalized_term
         ):
             matches.append((child_path, child))
