@@ -37974,6 +37974,12 @@ def test_compile_source_parent_table_insert_at_end_text_payload_stays_blocked() 
     )
 
     assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "source_parent_table_row_insert_flat_text_payload"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
     assert all(
         record["rule_id"] != "uk_effect_source_parent_at_end_text_insertion_patch"
         for record in lowering_records

@@ -27,6 +27,7 @@ from lawvm.uk_legislation.heading_facets import (
     _heading_facet_full_replacement_fragment,
     _heading_facet_source_parent_full_replacement_fragment,
     _is_crossheading_ref,
+    _is_heading_only_ref,
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
@@ -305,7 +306,7 @@ def reject_crossheading_source_without_crossheading_target(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
     """Block generic text lowering for source text that names a cross-heading facet."""
-    if action != "replace" or _is_crossheading_ref(t_str):
+    if action != "replace" or _is_crossheading_ref(t_str) or _is_heading_only_ref(t_str):
         return False
     text = " ".join((extracted_text or "").split())
     if not re.search(

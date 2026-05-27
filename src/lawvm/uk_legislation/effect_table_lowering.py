@@ -81,6 +81,7 @@ from lawvm.uk_legislation.witnesses import (
     UKLoweredOperationWitness,
     UKProvisionExtractionWitness,
 )
+from lawvm.uk_legislation.xml_helpers import _tag
 
 
 @dataclass(frozen=True)
@@ -493,6 +494,32 @@ def try_lower_table_row_insert(
                 "column and child list payload, but the source no longer "
                 "carries exactly one owned UnorderedList; lowering blocks "
                 "instead of flattening list entries into one table cell."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "original_target": str(target),
+                "containing_target": str(parent_target),
+                **table_row_insert_selector,
+            },
+        )
+        return UKTableLoweringResult(handled=True)
+    if _source_parent_flat_block_text_table_row_insert(
+        table_row_insert_selector,
+        extracted_el,
+    ):
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+            family="source_table_elaboration",
+            reason_code="source_parent_table_row_insert_flat_text_payload",
+            reason=(
+                "UK source parent names a table-row insertion, but the "
+                "BlockAmendment carries only direct Text rather than an "
+                "owned row, paragraph, list, or table payload; lowering "
+                "blocks instead of inventing table row structure from flat text."
             ),
             effect=effect,
             extracted_el=extracted_el,
@@ -1470,6 +1497,24 @@ def prepare_table_cell_text_patch_context(
             source_carried_table_entry_paragraph_substitution
         ),
     )
+
+
+def _source_parent_flat_block_text_table_row_insert(
+    selector: dict[str, Any],
+    extracted_el: Optional[ET.Element],
+) -> bool:
+    """Return true when source-parent table lowering would invent row structure."""
+    if "source_parent_id" not in selector or extracted_el is None:
+        return False
+    if _tag(extracted_el) != "BlockAmendment":
+        return False
+    if str(selector.get("source_payload_mode") or "") not in {
+        "column_entry_text",
+        "each_column_entry_text",
+        "each_column_final_entry_text",
+    }:
+        return False
+    return {_tag(child) for child in list(extracted_el)} == {"Text"}
 
 
 def _table_row_insert_payload(
