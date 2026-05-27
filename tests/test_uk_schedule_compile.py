@@ -10271,6 +10271,174 @@ def test_compile_definition_child_substitution_uses_bounded_definition_child_sel
     )
 
 
+def test_compile_definition_child_range_substitution_lowers_same_label_children() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-6-paragraph-61">
+          <Pnumber>61</Pnumber>
+          <Text>
+            61 In section 127(7) (purposes for which information held for HMRC
+            purposes may be supplied to a Northern Ireland department), for
+            paragraphs (a) to (c) of the definition of “Northern Ireland
+            department”, substitute— a the Department for Communities; b the
+            Department of Finance; c the Department for the Economy. .
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_range_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-09",
+        affected_uri="/id/ukpga/2012/5/section/127/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2012",
+        affected_number="5",
+        affected_provisions="s. 127(7)",
+        affecting_uri="/id/nisr/2016/76",
+        affecting_class="NorthernIrelandStatutoryRule",
+        affecting_year="2016",
+        affecting_number="76",
+        affecting_provisions="Sch. 6 para. 61",
+        affecting_title="Departments Act (Northern Ireland) 2016",
+        in_force_dates=[{"date": "2016-05-09", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    rule_id = "uk_effect_definition_child_range_substitution_text_patch"
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert all(op.target.path == (("section", "127"), ("subsection", "7")) for op in ops)
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "TEXT_DEFINITION_CHILD_PARAGRAPH_Northern Ireland department\x1fa",
+        "TEXT_DEFINITION_CHILD_PARAGRAPH_Northern Ireland department\x1fb",
+        "TEXT_DEFINITION_CHILD_PARAGRAPH_Northern Ireland department\x1fc",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch is not None] == [
+        "the Department for Communities",
+        "the Department of Finance",
+        "the Department for the Economy",
+    ]
+    assert all(op.witness_rule_id == rule_id for op in ops)
+    assert any(
+        row["rule_id"] == rule_id
+        and row["reason_code"] == "definition_child_range_same_label_payload"
+        and row["definition_term"] == "Northern Ireland department"
+        and row["start_label"] == "a"
+        and row["end_label"] == "c"
+        for row in lowering_records
+    )
+
+
+def test_compile_definition_child_range_substitution_replays_structured_children() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Text>
+            61 In section 127(7), for paragraphs (a) to (c) of the definition
+            of “Northern Ireland department”, substitute— a new A; b new B; c new C.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_range_substitution_replay",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-09",
+        affected_uri="/id/ukpga/2012/5/section/127/subsection/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2012",
+        affected_number="5",
+        affected_provisions="s. 127(7)",
+        affecting_uri="/id/nisr/2016/76",
+        affecting_class="NorthernIrelandStatutoryRule",
+        affecting_year="2016",
+        affecting_number="76",
+        affecting_provisions="Sch. 6 para. 61",
+        affecting_title="Departments Act (Northern Ireland) 2016",
+        in_force_dates=[{"date": "2016-05-09", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    base = IRStatute(
+        statute_id="ukpga/2012/5",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="127",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="7",
+                            text="definition carrier",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="a",
+                                    text="old A",
+                                    attrs={
+                                        "definition_term": "Northern Ireland department",
+                                        "definition_child_label": "a",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="b",
+                                    text="old B",
+                                    attrs={
+                                        "definition_term": "Northern Ireland department",
+                                        "definition_child_label": "b",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="c",
+                                    text="old C",
+                                    attrs={
+                                        "definition_term": "Northern Ireland department",
+                                        "definition_child_label": "c",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [(child.label, child.text) for child in subsection.children] == [
+        ("a", "new A"),
+        ("b", "new B"),
+        ("c", "new C"),
+    ]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_structured_text_rewrite_applied",
+        "uk_replay_definition_child_structured_text_rewrite_applied",
+        "uk_replay_definition_child_structured_text_rewrite_applied",
+    ]
+
+
 def test_compile_postpositive_definition_child_repeal_uses_bounded_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -28024,7 +28192,7 @@ def test_compile_table_paragraph_at_end_insert_stays_blocked_without_note_model(
         (
             "61 In section 127(7), for paragraphs (a) to (c) of the definition "
             "of “Northern Ireland department”, substitute— a the Department for "
-            "Communities; b the Department of Finance; c the Department for the Economy.",
+            "Communities; b the Department of Finance; d the Department for the Economy.",
             "s. 127(7)",
             "uk_effect_structural_child_range_substitution_rejected",
             "structural_child_range_substitution_requires_owned_payload",
