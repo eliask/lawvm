@@ -26,6 +26,11 @@ class NodeLookupResult(NamedTuple):
     index: Optional[int]
 
 
+class ParentIndexEntry(NamedTuple):
+    parent: Optional[UKMutableNode]
+    index: Optional[int]
+
+
 class VersionedNodeLookup(NamedTuple):
     structure_mutation_serial: int
     node: Optional[UKMutableNode]
@@ -35,6 +40,7 @@ class VersionedNodeLookup(NamedTuple):
 
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
+_ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
 
 
 class UKReplayStateMixin:
@@ -516,7 +522,7 @@ class UKReplayStateMixin:
     def _eid_lookup_parent_entry(
         self,
         node: UKMutableNode,
-    ) -> tuple[Optional[UKMutableNode], Optional[int]] | None:
+    ) -> ParentIndexEntry | None:
         if self._eid_lookup_index is None:
             return None
         for eid in self._node_eid_values(node):
@@ -526,7 +532,7 @@ class UKReplayStateMixin:
             _, parent, idx = entry
             if parent is not None:
                 if idx is not None and 0 <= idx < len(parent.children) and parent.children[idx] is node:
-                    return parent, idx
+                    return ParentIndexEntry(parent=parent, index=idx)
                 try:
                     current_idx = parent.children.index(node)
                 except ValueError:
@@ -537,11 +543,11 @@ class UKReplayStateMixin:
                     parent=parent,
                     index=current_idx,
                 )
-                return parent, current_idx
+                return ParentIndexEntry(parent=parent, index=current_idx)
             if idx is not None and 0 <= idx < len(self.statute.supplements) and self.statute.supplements[idx] is node:
-                return None, idx
+                return ParentIndexEntry(parent=None, index=idx)
             if self.statute.body is node:
-                return None, None
+                return _ROOT_PARENT_INDEX
             try:
                 current_idx = self.statute.supplements.index(node)
             except ValueError:
@@ -552,7 +558,7 @@ class UKReplayStateMixin:
                 parent=None,
                 index=current_idx,
             )
-            return None, current_idx
+            return ParentIndexEntry(parent=None, index=current_idx)
         return None
 
     def _replace_statute(
@@ -609,13 +615,13 @@ class UKReplayStateMixin:
         self,
         root: UKMutableNode,
         path: tuple[int, ...],
-    ) -> tuple[Optional[UKMutableNode], Optional[int]]:
+    ) -> ParentIndexEntry:
         if not path:
-            return None, None
+            return _ROOT_PARENT_INDEX
         parent = root
         for child_idx in path[:-1]:
             parent = parent.children[child_idx]
-        return parent, path[-1]
+        return ParentIndexEntry(parent=parent, index=path[-1])
 
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
@@ -689,30 +695,30 @@ class UKReplayStateMixin:
     def _find_parent_tuple_for_node(
         self,
         target_node: UKMutableNode,
-    ) -> tuple[Optional[UKMutableNode], Optional[int]]:
-        def _walk(parent: UKMutableNode) -> tuple[Optional[UKMutableNode], Optional[int]]:
+    ) -> ParentIndexEntry:
+        def _walk(parent: UKMutableNode) -> ParentIndexEntry:
             for child_idx, child in enumerate(parent.children):
                 if child is target_node:
-                    return parent, child_idx
+                    return ParentIndexEntry(parent=parent, index=child_idx)
                 if not child.children:
                     continue
-                found_parent, found_idx = _walk(child)
-                if found_parent is not None:
-                    return found_parent, found_idx
-            return None, None
+                found = _walk(child)
+                if found.parent is not None:
+                    return found
+            return _ROOT_PARENT_INDEX
 
         if self.statute.body is target_node:
-            return None, None
-        found_parent, found_idx = _walk(self.statute.body)
-        if found_parent is not None:
-            return found_parent, found_idx
+            return _ROOT_PARENT_INDEX
+        found = _walk(self.statute.body)
+        if found.parent is not None:
+            return found
         for supplement in self.statute.supplements:
             if supplement is target_node:
-                return None, None
-            found_parent, found_idx = _walk(supplement)
-            if found_parent is not None:
-                return found_parent, found_idx
-        return None, None
+                return _ROOT_PARENT_INDEX
+            found = _walk(supplement)
+            if found.parent is not None:
+                return found
+        return _ROOT_PARENT_INDEX
 
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool:
         from lawvm.uk_legislation.canonicalize import uk_insert_into_children
