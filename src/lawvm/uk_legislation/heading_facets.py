@@ -216,6 +216,32 @@ def _heading_facet_insert_fragment(extracted_text: Optional[str]) -> Optional[di
     return None
 
 
+def _source_explicit_heading_facet_word_patch_supported(
+    effect_type: str,
+    extracted_text: Optional[str],
+    *,
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
+) -> bool:
+    """Return True when source text itself targets a heading/title/sidenote facet."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return False
+    if not re.match(
+        r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
+        r"(?:in|for)\s+(?:the\s+)?(?:side[-\s]?note|sidenote|heading|title)\b",
+        text,
+        flags=re.I,
+    ):
+        return False
+    return _is_heading_facet_word_patch_supported(
+        effect_type,
+        extracted_text,
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+
+
 def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
     """Return an explicit full heading/title/sidenote replacement fragment."""
     text = " ".join((extracted_text or "").split()).strip()
