@@ -1803,6 +1803,30 @@ def test_classify_uk_manual_compile_frontier_marks_structural_sibling_insert_bef
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_child_tail_sibling_insert() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "at the end of paragraph (b) insert , or c which is conferred "
+            "by or under the Childcare Payments Act 2014;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_structural_sibling_insert_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_amendment_program_target() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",

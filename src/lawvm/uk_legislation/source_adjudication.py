@@ -1219,6 +1219,12 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
             norm,
         )
         or re.search(
+            r"\bat\s+the\s+end\s+of\s+"
+            r"(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+"
+            r"insert\s+[,;:]?\s*(?:and|or)\s+[a-z]\b",
+            norm,
+        )
+        or re.search(
             r"\bbefore\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
             norm,
         )
@@ -2143,7 +2149,7 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
         }
 
-    if (
+    if "uk_effect_structural_sibling_insert_rejected" in blocking_rules or (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and _looks_like_structural_sibling_insert_instruction(extracted_text_norm)
     ):
