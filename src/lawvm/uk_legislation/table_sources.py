@@ -1244,6 +1244,11 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
     target: LegalAddress,
 ) -> bool:
     """Return true when a mixed word/structural repeal row separately names target."""
+    if _uk_repeal_table_mixed_clause_carries_schedule_paragraph_descendant(
+        extent_clause,
+        target=target,
+    ):
+        return True
     label = target.leaf_label().strip()
     if not label:
         return False
@@ -1273,6 +1278,97 @@ def _uk_repeal_table_mixed_clause_explicitly_names_structural_target(
         kind_pattern=kind_pattern,
         label=label,
     )
+
+
+def _uk_repeal_table_mixed_clause_carries_schedule_paragraph_descendant(
+    extent_clause: str,
+    *,
+    target: LegalAddress,
+) -> bool:
+    """Match carried schedule paragraph descendants in mixed repeal-table rows.
+
+    This owns only source-listed targets such as
+    `In Schedule 7, paragraphs ... 48(1), (2), (3) and (5)(a), (b) and (c)`;
+    later `in paragraph 36, the words ...` clauses remain word-level source
+    facts and do not authorize structural repeal of paragraph 36.
+    """
+
+    labels = {kind: label for kind, label in target.path}
+    schedule = _clean_num(labels.get("schedule", ""))
+    paragraph = _clean_num(labels.get("paragraph", ""))
+    subparagraph = _clean_num(labels.get("subparagraph", ""))
+    item = _clean_num(labels.get("item", ""))
+    if not schedule or not paragraph or not subparagraph:
+        return False
+
+    scope_text = " ".join((extent_clause or "").split())
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", scope_text)
+    if not _uk_schedule_in_cell_text(scope_text.lower(), re.escape(schedule.lower())):
+        return False
+
+    for match in re.finditer(
+        r"\bparagraphs?\s+(?P<body>[^.;]+)",
+        scope_text,
+        flags=re.I,
+    ):
+        if _uk_carried_paragraph_descendant_body_mentions_target(
+            match.group("body"),
+            paragraph=paragraph,
+            subparagraph=subparagraph,
+            item=item,
+        ):
+            return True
+    return False
+
+
+def _uk_carried_paragraph_descendant_body_mentions_target(
+    body: str,
+    *,
+    paragraph: str,
+    subparagraph: str,
+    item: str,
+) -> bool:
+    current_paragraph = ""
+    current_subparagraph = ""
+    token_re = re.compile(
+        r"(?P<bare>\b[0-9]+[a-z]?\b)(?P<bare_parens>(?:\s*\(\s*[0-9a-zivxlcdm]+\s*\))*)"
+        r"|(?P<paren_only>(?:\(\s*[0-9a-zivxlcdm]+\s*\))+)",
+        flags=re.I,
+    )
+    for token_match in token_re.finditer(body or ""):
+        bare = token_match.group("bare")
+        parens_text = token_match.group("bare_parens") or token_match.group("paren_only") or ""
+        parens = tuple(
+            _clean_num(paren_match.group(1))
+            for paren_match in re.finditer(r"\(\s*([0-9a-zivxlcdm]+)\s*\)", parens_text, re.I)
+        )
+        if bare:
+            current_paragraph = _clean_num(bare)
+            current_subparagraph = ""
+            if not parens:
+                continue
+            current_subparagraph = parens[0]
+            candidate_item = parens[1] if len(parens) > 1 else ""
+            if (
+                current_paragraph == paragraph
+                and current_subparagraph == subparagraph
+                and candidate_item == item
+            ):
+                return True
+            continue
+        if current_paragraph != paragraph or not parens:
+            continue
+        if len(parens) > 1:
+            current_subparagraph = parens[0]
+            candidate_item = parens[1]
+        elif item and current_subparagraph == subparagraph and parens[0].isalpha():
+            candidate_item = parens[0]
+        else:
+            current_subparagraph = parens[0]
+            candidate_item = ""
+        if current_subparagraph == subparagraph and candidate_item == item:
+            return True
+    return False
 
 
 def _uk_repeal_table_mixed_clause_names_target_in_list_or_range(
