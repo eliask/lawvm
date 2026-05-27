@@ -39733,6 +39733,73 @@ def test_compile_flat_p1para_schedule_paragraph_insert_requires_matching_label()
     assert filter_records[0]["rule_id"] == "uk_effect_instruction_text_payload_rejected"
 
 
+def test_source_pathology_filter_observes_out_of_scope_compiled_ops() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_notional_words_filter",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-02",
+        affected_uri="/id/ukpga/2006/52",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 200(5)(b)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 3 para. 17",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+    )
+    op = LegalOperation(
+        op_id="uk_test_notional_words_filter_op",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "200"), ("subsection", "5"), ("paragraph", "b"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text=" in the British Islands ", occurrence=0),
+            replacement="under the law of any part of the British Islands",
+        ),
+        source=OperationSource(statute_id="ukpga/2011/18", title="Test Amendment Act"),
+    )
+    filter_records: list[dict[str, Any]] = []
+
+    rejected = uk_replay_mod.append_source_pathology_filter_lowering_rejections(
+        effect,
+        source_pathology="as_if_application_modification_unsupported",
+        structural_for_replay=True,
+        compiled_ops=[op],
+        lowering_rejections_out=filter_records,
+    )
+
+    assert rejected is True
+    assert filter_records == [
+        {
+            "rule_id": "uk_effect_source_pathology_out_of_scope_observed",
+            "family": "source_pathology_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_notional_words_filter",
+            "affecting_act_id": "ukpga/2011/18",
+            "affected_provisions": "s. 200(5)(b)",
+            "affecting_provisions": "Sch. 3 para. 17",
+            "effect_type": "words substituted",
+            "reason": (
+                "UK source-pathology classification proves this row is outside "
+                "direct text/tree replay; compiled operations are recorded as "
+                "evidence but not replayed."
+            ),
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+            "source_pathology": "as_if_application_modification_unsupported",
+            "compiled_op_count": 1,
+        }
+    ]
+
+
 def test_compile_multiclause_schedule_paragraph_substitution_splits_to_items() -> None:
     extracted_el = ET.fromstring(
         f"""
