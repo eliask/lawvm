@@ -11,6 +11,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.metadata_rewrites import _uk_unsupported_metadata_renumber_rejection
+from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_context import _preview_source_text
 from lawvm.uk_legislation.source_parent_payloads import (
     UK_SOURCE_PARENT_WHOLE_SCHEDULE_INSERT_RULE_ID,
@@ -87,6 +88,25 @@ def _empty_effect_type_application_modification_table_source(text: str) -> bool:
         and "modifications and limitations" in normalized
         and "enactment" in normalized[:300]
     )
+
+
+def _empty_effect_type_quoted_anchor_word_insertion(text: str) -> dict[str, Any] | None:
+    normalized = " ".join((text or "").split()).strip()
+    if not normalized:
+        return None
+    if re.search(r"\b(?:there\s+is\s+inserted|insert)\b", normalized, flags=re.I) is None:
+        return None
+    fragments = parse_fragment_substitution(normalized)
+    if len(fragments) != 1:
+        return None
+    fragment = dict(fragments[0])
+    if fragment.get("rule_id") != "uk_effect_after_quoted_anchor_insert_text_patch":
+        return None
+    original = str(fragment.get("original") or "")
+    replacement = str(fragment.get("replacement") or "")
+    if not original or not replacement or replacement == original:
+        return None
+    return fragment
 
 
 def infer_uk_effect_action_from_source(  # noqa: PLR0913
@@ -190,6 +210,34 @@ def infer_uk_effect_action_from_source(  # noqa: PLR0913
             detail={"affected_provisions": effect.affected_provisions},
         )
         return UKActionInference(action=None, blocked=True)
+
+    quoted_anchor_word_insertion = _empty_effect_type_quoted_anchor_word_insertion(
+        extracted_text or ""
+    )
+    if quoted_anchor_word_insertion is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_empty_type_quoted_anchor_word_insertion_inferred",
+            family="source_action_inference",
+            reason_code="empty_effect_type_quoted_anchor_word_insertion",
+            reason=(
+                "UK effect has no explicit effect type, but the source row "
+                "explicitly inserts quoted words after a quoted anchor; lowering "
+                "treats the row as a source-owned text rewrite rather than a "
+                "structural insertion."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "original": str(quoted_anchor_word_insertion.get("original") or ""),
+                "replacement": str(quoted_anchor_word_insertion.get("replacement") or ""),
+                "fragment_rule_id": str(
+                    quoted_anchor_word_insertion.get("rule_id") or ""
+                ),
+            },
+        )
+        return UKActionInference(action="replace")
 
     if "repeal" in text_lower or "omit" in text_lower:
         return UKActionInference(action="repeal")
