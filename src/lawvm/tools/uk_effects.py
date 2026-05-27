@@ -6,7 +6,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.tools.uk_claim_templates import (
@@ -30,13 +30,18 @@ _DEFAULT_AFFECTING_SOURCE_CACHE_LIMIT = 8
 UK_CLAIM_TEMPLATE_RULE_IDS = _UK_CLAIM_TEMPLATE_RULE_IDS
 
 
-def _bounded_cache_lookup(cache: dict[Any, Any], key: Any) -> tuple[bool, Any]:
+class _BoundedCacheLookup(NamedTuple):
+    hit: bool
+    value: Any
+
+
+def _bounded_cache_lookup(cache: dict[Any, Any], key: Any) -> _BoundedCacheLookup:
     """Return cached value and refresh insertion order for cheap LRU eviction."""
     if key not in cache:
-        return False, None
+        return _BoundedCacheLookup(hit=False, value=None)
     value = cache.pop(key)
     cache[key] = value
-    return True, value
+    return _BoundedCacheLookup(hit=True, value=value)
 
 
 def _bounded_cache_store(
@@ -340,11 +345,12 @@ def summarize_uk_effect(
     affecting_xml = None
     affecting_act_id = str(effect.affecting_act_id or "")
     if source_required_for_replay:
-        xml_cache_hit, affecting_xml = _bounded_cache_lookup(
+        xml_cache_lookup = _bounded_cache_lookup(
             context.affecting_xml_cache,
             affecting_act_id,
         )
-        if not xml_cache_hit:
+        affecting_xml = xml_cache_lookup.value
+        if not xml_cache_lookup.hit:
             affecting_xml = get_affecting_act_xml_from_archive(affecting_act_id, archive)
             _bounded_cache_store(
                 context.affecting_xml_cache,
@@ -359,11 +365,11 @@ def summarize_uk_effect(
     )
     authority_layer = "AFFECTING_ACT_TEXT" if source_required_for_replay else "EFFECT_FEED_INDEX"
     source_context_cache_key = (affecting_act_id, authority_layer)
-    source_cache_hit, cached_source_context = _bounded_cache_lookup(
+    source_cache_lookup = _bounded_cache_lookup(
         context.affecting_source_context_cache,
         source_context_cache_key,
     )
-    if not source_cache_hit:
+    if not source_cache_lookup.hit:
         source_context, parse_error = _build_affecting_source_context(
             xml_bytes=affecting_xml,
             locator=current_locator,
@@ -376,7 +382,7 @@ def summarize_uk_effect(
             limit=context.affecting_source_cache_limit,
         )
     else:
-        source_context, parse_error = cached_source_context
+        source_context, parse_error = source_cache_lookup.value
     affecting_source_status = source_context.source_status
     affecting_source_size = source_context.source_size
     affecting_source_sha256 = (
@@ -513,51 +519,56 @@ def summarize_uk_effect(
         if op.text_patch is not None:
             text_patch_matches.append(op.text_patch.selector.match_text)
             text_patch_replacements.append(op.text_patch.replacement or "")
-        resolver_eid, base_hit, oracle_hit = _resolve_target_presence(
+        target_presence = _resolve_target_presence(
             op.target,
             resolver=context.resolver,
             base_eids=context.base_eids,
             oracle_eids=context.oracle_eids,
         )
-        if not resolver_eid:
+        if not target_presence.eid:
             continue
-        resolver_eids.append(resolver_eid)
-        base_target_hits.append(base_hit)
-        oracle_target_hits.append(oracle_hit)
-        base_descendant_hit, oracle_descendant_hit = _resolve_descendant_presence(
-            resolver_eid,
+        resolver_eids.append(target_presence.eid)
+        base_target_hits.append(target_presence.base_present)
+        oracle_target_hits.append(target_presence.oracle_present)
+        descendant_presence = _resolve_descendant_presence(
+            target_presence.eid,
             base_eids=context.base_eids,
             oracle_eids=context.oracle_eids,
         )
+        base_descendant_hit = descendant_presence.base_present
+        oracle_descendant_hit = descendant_presence.oracle_present
         base_descendant_hits.append(base_descendant_hit)
         oracle_descendant_hits.append(oracle_descendant_hit)
-        parent_eid, base_parent_hit, oracle_parent_hit = _resolve_parent_presence(
-            resolver_eid,
+        parent_presence = _resolve_parent_presence(
+            target_presence.eid,
             base_eids=context.base_eids,
             oracle_eids=context.oracle_eids,
         )
+        parent_eid = parent_presence.eid
+        base_parent_hit = parent_presence.base_present
+        oracle_parent_hit = parent_presence.oracle_present
         base_parent_hits.append(base_parent_hit)
         oracle_parent_hits.append(oracle_parent_hit)
-        if base_hit:
-            hit_has_text, hit_has_children, hit_texts = _collect_target_shape(
+        if target_presence.base_present:
+            target_shape = _collect_target_shape(
                 context.enacted_ir,
-                eid=resolver_eid,
+                eid=target_presence.eid,
                 text_map=context.base_text_map,
                 descendant_hit=base_descendant_hit,
             )
-            base_has_text = base_has_text or hit_has_text
-            base_has_children = base_has_children or hit_has_children
-            base_target_texts.extend(hit_texts)
-        if oracle_hit:
-            hit_has_text, hit_has_children, hit_texts = _collect_target_shape(
+            base_has_text = base_has_text or target_shape.has_text
+            base_has_children = base_has_children or target_shape.has_children
+            base_target_texts.extend(target_shape.texts)
+        if target_presence.oracle_present:
+            target_shape = _collect_target_shape(
                 context.oracle_ir,
-                eid=resolver_eid,
+                eid=target_presence.eid,
                 text_map=context.oracle_text_map,
                 descendant_hit=oracle_descendant_hit,
             )
-            oracle_has_text = oracle_has_text or hit_has_text
-            oracle_has_children = oracle_has_children or hit_has_children
-            oracle_target_texts.extend(hit_texts)
+            oracle_has_text = oracle_has_text or target_shape.has_text
+            oracle_has_children = oracle_has_children or target_shape.has_children
+            oracle_target_texts.extend(target_shape.texts)
         if base_parent_hit and context.base_text_map.get(parent_eid):
             base_parent_texts.append(context.base_text_map[parent_eid])
         if oracle_parent_hit and context.oracle_text_map.get(parent_eid):
