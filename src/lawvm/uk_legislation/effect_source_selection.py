@@ -5,7 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.uk_legislation.effects import (
     UKEffectRecord,
@@ -30,6 +30,11 @@ class EffectSourceSelection:
     source_context: UKAffectingSourceContext
     extracted_el: Optional[ET.Element]
     source_required_for_replay: bool
+
+
+class ExtractedTagAndText(NamedTuple):
+    tag: str | None
+    text: str
 
 
 def source_context_for_effect(
@@ -144,10 +149,10 @@ def select_source_for_effect(
     )
 
 
-def extracted_tag_and_text(el: Optional[ET.Element]) -> tuple[Optional[str], str]:
+def extracted_tag_and_text(el: Optional[ET.Element]) -> ExtractedTagAndText:
     if el is None:
-        return None, ""
-    return (
-        el.tag.rsplit("}", 1)[-1],
-        " ".join(t.strip() for t in el.itertext() if t and t.strip()),
+        return ExtractedTagAndText(None, "")
+    return ExtractedTagAndText(
+        tag=el.tag.rsplit("}", 1)[-1],
+        text=" ".join(t.strip() for t in el.itertext() if t and t.strip()),
     )
