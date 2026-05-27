@@ -83,7 +83,7 @@ def _local_structural_text(el: ET.Element) -> str:
         for child in node:
             tag = _tag(child).lower()
             if (
-                tag in structural
+                (tag in structural and not (tag == "unorderedlist" and _contains_definition_ordered_list(child)))
                 or tag in transparent_skip
                 or tag in structural_text_skip
                 or _definition_ordered_list_term(node, child)
@@ -96,6 +96,15 @@ def _local_structural_text(el: ET.Element) -> str:
         return parts
 
     return " ".join(" ".join(_collect(el)).split())
+
+
+def _contains_definition_ordered_list(el: ET.Element) -> bool:
+    """Return whether a list embeds a definition ordered-list payload."""
+    for parent in el.iter():
+        for child in parent:
+            if _tag(child) == "OrderedList" and _definition_ordered_list_term(parent, child):
+                return True
+    return False
 
 
 def _post_child_local_text_tail(el: ET.Element) -> str:
@@ -918,14 +927,19 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
                 continue
         elif ct == "UnorderedList":
             schedule_entries = (
-                _parse_schedule_body_list_entries(child, start_ordinal=schedule_entry_ordinal)
+                _parse_schedule_body_list_entries(
+                    child,
+                    start_ordinal=schedule_entry_ordinal,
+                )
                 if context == "schedule"
-                else _parse_non_schedule_list_entries(
+                else []
+            )
+            if context != "schedule" and not _contains_definition_ordered_list(child):
+                schedule_entries = _parse_non_schedule_list_entries(
                     child,
                     context=context,
                     start_ordinal=schedule_entry_ordinal,
                 )
-            )
             if schedule_entries:
                 schedule_entry_ordinal += len(schedule_entries)
                 children.extend(schedule_entries)

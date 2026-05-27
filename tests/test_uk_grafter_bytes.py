@@ -791,6 +791,7 @@ def test_parse_uk_statute_ir_bytes_preserves_schedule_unordered_list_entries() -
         "kind": "schedule_entry",
         "source_tag": "ListItem",
         "source_ordinal": "1",
+        "source_context": "schedule_body",
         "text": "Scottish Children's Reporter Administration",
     }
     assert schedule_observation["blocking"] is False
