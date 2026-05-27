@@ -112,6 +112,12 @@ class _UKTableRelatingAnchorMatches:
     matches: list[_UKTablePhysicalRowMatch]
 
 
+@dataclass(frozen=True, slots=True)
+class _UKDescendantTableMatch:
+    table: UKMutableNode
+    path: tuple[str, ...]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
 
@@ -357,7 +363,7 @@ def _table_entry_article_tolerant_anchor_variants(text: str) -> tuple[str, ...]:
 def _unique_descendant_uk_tables(
     node: UKMutableNode,
 ) -> UKTableSelectorTables:
-    matches: list[tuple[UKMutableNode, tuple[str, ...]]] = []
+    matches: list[_UKDescendantTableMatch] = []
 
     def _walk(candidate: UKMutableNode, path: tuple[str, ...]) -> None:
         for child_index, child in enumerate(candidate.children):
@@ -370,16 +376,16 @@ def _unique_descendant_uk_tables(
             )
             child_path = (*path, child_token)
             if child_kind == "table":
-                matches.append((child, child_path))
+                matches.append(_UKDescendantTableMatch(child, child_path))
                 continue
             _walk(child, child_path)
 
     _walk(node, ())
     return UKTableSelectorTables(
-        tables=[table for table, _path in matches],
+        tables=[match.table for match in matches],
         detail={
             "table_carrier": "unique_descendant_table",
-            "descendant_table_paths": tuple("/".join(path) for _table, path in matches[:5]),
+            "descendant_table_paths": tuple("/".join(match.path) for match in matches[:5]),
         },
     )
 
