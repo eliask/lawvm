@@ -18903,6 +18903,141 @@ def test_compile_repeal_table_mixed_structural_subsection_alphanumeric_list_memb
     )
 
 
+@pytest.mark.parametrize(
+    ("target_suffix", "expected_target"),
+    [
+        ("1", (("schedule", "7"), ("paragraph", "48"), ("subparagraph", "1"))),
+        ("2", (("schedule", "7"), ("paragraph", "48"), ("subparagraph", "2"))),
+        ("3", (("schedule", "7"), ("paragraph", "48"), ("subparagraph", "3"))),
+        ("5/a", (("schedule", "7"), ("paragraph", "48"), ("subparagraph", "5"), ("item", "a"))),
+        ("5/b", (("schedule", "7"), ("paragraph", "48"), ("subparagraph", "5"), ("item", "b"))),
+        ("5/c", (("schedule", "7"), ("paragraph", "48"), ("subparagraph", "5"), ("item", "c"))),
+    ],
+)
+def test_compile_repeal_table_mixed_schedule_paragraph_carried_descendant_list(
+    target_suffix: str,
+    expected_target: tuple[tuple[str, str], ...],
+) -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Chapter</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Social Security Act 1998 (c. 14)</td>
+                  <td>In Schedule 7, paragraphs 20, 24, 25, 28, 34, and 35; in paragraph 36, the words “(1) and”; and paragraphs 37, 38, 39, 40, 43, 46, 48(1), (2), (3) and (5)(a), (b) and (c), 53 and 54.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id=f"uk_test_repeal_table_mixed_carried_schedule_para_{target_suffix}",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2000-07-28",
+        affected_uri=f"/id/ukpga/1998/14/schedule/7/paragraph/48/{target_suffix}",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions=f"Sch. 7 para. 48({target_suffix.replace('/', ')(')})",
+        affecting_uri="/id/ukpga/2000/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="19",
+        affecting_provisions="Sch. 9 Pt. 1",
+        affecting_title="Child Support, Pensions and Social Security Act 2000",
+        in_force_dates=[{"date": "2000-07-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == expected_target
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_split_structural_target"
+        and record["target"] == "/".join(f"{kind}:{label}" for kind, label in expected_target)
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_mixed_schedule_paragraph_word_clause_not_structural() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Chapter</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Social Security Act 1998 (c. 14)</td>
+                  <td>In Schedule 7, paragraphs 20, 24, 25, 28, 34, and 35; in paragraph 36, the words “(1) and”; and paragraphs 37, 38, 39, 40, 43, 46, 48(1), (2), (3) and (5)(a), (b) and (c), 53 and 54.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_carried_schedule_para_word_clause",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2000-07-28",
+        affected_uri="/id/ukpga/1998/14/schedule/7/paragraph/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="Sch. 7 para. 36",
+        affecting_uri="/id/ukpga/2000/19",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="19",
+        affecting_provisions="Sch. 9 Pt. 1",
+        affecting_title="Child Support, Pensions and Social Security Act 2000",
+        in_force_dates=[{"date": "2000-07-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_requires_split"
+        and record["target"] == "schedule:7/paragraph:36"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_parent_child_text_repeal_splits_ops() -> None:
     source_root = ET.fromstring(
         """
