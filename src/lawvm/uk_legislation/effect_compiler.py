@@ -469,6 +469,7 @@ def compile_effect_to_ir_ops(
         extracted_text=extracted_text,
         affected_provisions=effect.affected_provisions,
         affecting_provisions=effect.affecting_provisions,
+        source_root=source_root,
     )
     if action in {"insert", "replace", "text_replace"} and structured_tail_substitution is not None:
         ops = lower_uk_source_carried_structured_tail_substitution(
