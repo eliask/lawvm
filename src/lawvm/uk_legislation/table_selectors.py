@@ -2073,7 +2073,21 @@ def _uk_broad_table_entry_instruction(
         )
         is not None
     )
-    if not has_entry_text and not has_column_instruction and not has_row_instruction:
+    has_table_child_instruction = (
+        target_names_table
+        and re.search(
+            r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph)\s*"
+            r"\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
+            norm,
+        )
+        is not None
+    )
+    if (
+        not has_entry_text
+        and not has_column_instruction
+        and not has_row_instruction
+        and not has_table_child_instruction
+    ):
         return None
     effect_type_norm = str(effect_type or "").strip().lower()
     source_supplies_action = re.search(
@@ -2105,6 +2119,8 @@ def _uk_broad_table_entry_instruction(
         entry_shape = "numbered_entry"
     elif has_row_instruction:
         entry_shape = "numbered_row"
+    elif has_table_child_instruction:
+        entry_shape = "table_child_structural_insert"
     elif re.search(r"\bentries?\s+specified\b", norm):
         entry_shape = "specified_entries"
     elif has_column_instruction:
