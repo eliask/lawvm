@@ -1192,6 +1192,12 @@ def _looks_like_repeal_schedule_table_source(
 
 def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
+    if re.search(
+        r"\bafter\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)"
+        r"\s*,?\s+insert\s*[—-]\s*(?:and|or|but)\b",
+        norm,
+    ):
+        return False
     return bool(
         re.search(
             r"\bafter\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
