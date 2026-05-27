@@ -11885,6 +11885,66 @@ def test_compile_source_carried_structured_tail_substitution_to_child_replaces()
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_source_carried_structured_tail_substitution_with_descriptive_parenthetical() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-24-2-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a in subsection (3) (special parliamentary procedure does not
+            apply if Secretary of State certifies that subsection (4) or (5)
+            applies) for the words from \u201cunless\u201d to the end substitute
+            \u201cunless\u2014 a the Secretary of State is satisfied that one of
+            subsections (4) to (5) applies, and b that fact, and the subsection
+            concerned, are recorded in the order or otherwise in the instrument
+            or other document containing the order.\u201d</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-0de1ea1da040970db31a11eb5c934d51",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2013-06-25",
+        affected_uri="/id/ukpga/2008/29/section/131/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="s. 131(3)",
+        affecting_uri="/id/ukpga/2013/27",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2013",
+        affecting_number="27",
+        affecting_provisions="s. 24(2)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2013-06-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE, StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [
+        (("section", "131"), ("subsection", "3"), ("paragraph", "a")),
+        (("section", "131"), ("subsection", "3"), ("paragraph", "b")),
+    ]
+    assert {op.witness_rule_id for op in ops} == {
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
+    }
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_structured_tail_substitution_lowered",
+    ]
+    assert lowering_records[0]["trim_selector"] == "TEXT_FROM_unless_TO_END"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_source_carried_structured_subparagraph_tail_substitution_to_items() -> None:
     extracted_el = ET.fromstring(
         f"""
