@@ -51,6 +51,10 @@ _REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
     ET.Element,
     tuple[tuple[ET.Element, tuple[int, int]], ...],
 ] = weakref.WeakKeyDictionary()
+_UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE = re.compile(
+    r"\b(?:definition\s+of|definitions\s+of|entry\s+for|entries\s+for)\b",
+    flags=re.I,
+)
 
 
 def _uk_quoted_capture(name: str) -> str:
@@ -432,12 +436,7 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
             len(bare_matches) == 1
             and re.match(r"\s*In\s+", text, flags=re.I) is not None
             and re.search(r"\b(?:insert|substitute|substituted|for)\b", text, re.I) is None
-            and re.search(
-                r"\b(?:definition\s+of|definitions\s+of|entry\s+for|entries\s+for)\b",
-                text,
-                flags=re.I,
-            )
-            is None
+            and _UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE.search(text) is None
         ):
             return _uk_first_quote_group(
                 bare_matches[0],
