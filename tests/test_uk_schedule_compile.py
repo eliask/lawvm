@@ -22463,6 +22463,66 @@ def test_compile_after_anchor_both_places_where_it_appears_records_all_occurrenc
     ] == ["uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"]
 
 
+def test_compile_after_anchor_wherever_occurring_insert_records_all_occurrences_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-92-4-b-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii after \u201cday\u201d, wherever occurring, insert \u201c after the day \u201d ;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_anchor_wherever_occurring_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-04-13",
+        affected_uri="/id/ukpga/2008/29/section/118/4/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="s. 118(4)(b)",
+        affecting_uri="/id/ukpga/2015/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="2",
+        affecting_provisions="s. 92(4)(b)(ii)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2015-04-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "118"),
+        ("subsection", "4"),
+        ("paragraph", "b"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "day"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "day after the day "
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
+    ] == ["uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"]
+    assert not any(record["blocking"] is True for record in lowering_records)
+
+
 def test_compile_after_anchor_each_place_occurring_records_all_occurrences_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
