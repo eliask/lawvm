@@ -2419,7 +2419,7 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_target_source_chai
     )
 
     assert result["status"] == "source_insufficient"
-    assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
+    assert result["rule_id"] == "uk_manual_frontier_text_patch_target_source_chain_gap"
     assert "target absent from the enacted source" in result["reason"]
 
 

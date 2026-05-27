@@ -1880,7 +1880,7 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     if compare_shape_norm == "text_patch_target_absent_from_enacted_source_chain":
         return {
             "status": "source_insufficient",
-            "rule_id": "uk_manual_frontier_text_patch_preimage_chain_gap",
+            "rule_id": "uk_manual_frontier_text_patch_target_source_chain_gap",
             "reason": "The source instruction lowers to a text patch against a target absent from the enacted source but present in the current oracle; acquire or prove the amendment-created target chain before replaying or claiming the row in isolation.",
         }
 
