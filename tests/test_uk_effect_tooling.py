@@ -3960,6 +3960,101 @@ def test_uk_manual_compile_evidence_jsonl_table_appropriate_place_template_carri
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_table_row_insert_template_carries_selector_evidence() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-row-insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-02",
+        affected_uri="/id/ukpga/2006/52/section/164/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 164(3)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 4 para. 9(c)",
+        affecting_title="Test Act 2011",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="table_entry_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_table_entry_row_insert",
+                    "blocking": True,
+                    "target_ref": "s. 164(3)",
+                    "target": "section:164/subsection:3",
+                    "selector_mode": "relating_entry",
+                    "direction": "after",
+                    "relating_text": "Part 9",
+                    "inserted_text": (
+                        "and Schedule 3A (offender elected Court Martial trial)"
+                    ),
+                    "table_label": "",
+                    "column_index": 1,
+                    "entry_index": 1,
+                    "source_names_table": False,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "after the entry relating to Part 9 insert; and Schedule 3A."
+            ),
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_table_entry_candidate",
+            manual_compile_reason="Table/list entry placement requires a validated claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_table_entry_row_insert",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_table_entry_row_insert",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2006/52",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2006/52",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_surface_mutation"
+    assert template["table_selector_mode"] == "relating_entry"
+    assert template["table_insert_direction"] == "after"
+    assert template["table_anchor_relating_text"] == "Part 9"
+    assert (
+        template["table_inserted_text"]
+        == "and Schedule 3A (offender elected Court Martial trial)"
+    )
+    assert template["table_column_index"] == 1
+    assert template["table_entry_index"] == 1
+    assert template["source_names_table"] is False
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_table_child_template_carries_cell_child_evidence() -> None:
     effect = UKEffectRecord(
         effect_id="eff-table-child-insert",
