@@ -50,6 +50,13 @@ class UKInsertionParentResolution(NamedTuple):
     insert_index: Optional[int]
 
 
+class _UKBodyPredecessorCandidate(NamedTuple):
+    sort_key: tuple[tuple[int, object], ...]
+    parent: IRNode
+    index: int
+    label: str
+
+
 def _clean_num(s: str) -> str:
     return str(s or "").strip().strip("()").replace("\u00a0", " ").lower()
 
@@ -331,7 +338,7 @@ def uk_find_body_predecessor_parent(
         return UKBodyPredecessorParent(None, None, None)
 
     want_key = label_sort_key(node_label)
-    best: tuple[tuple[tuple[int, object], ...], IRNode, int, str] | None = None
+    best: _UKBodyPredecessorCandidate | None = None
 
     def _walk(parent: IRNode) -> None:
         nonlocal best
@@ -339,14 +346,14 @@ def uk_find_body_predecessor_parent(
             child_label = child.label or ""
             if str(child.kind).lower() == str(node_kind or "").lower() and child_label:
                 child_key = label_sort_key(child_label)
-                if child_key < want_key and (best is None or child_key > best[0]):
-                    best = (child_key, parent, i, child_label)
+                if child_key < want_key and (best is None or child_key > best.sort_key):
+                    best = _UKBodyPredecessorCandidate(child_key, parent, i, child_label)
             _walk(child)
 
     _walk(body_root)
     if best is None:
         return UKBodyPredecessorParent(None, None, None)
-    return UKBodyPredecessorParent(best[1], best[2], best[3])
+    return UKBodyPredecessorParent(best.parent, best.index, best.label)
 
 
 def uk_resolve_insertion_parent(
