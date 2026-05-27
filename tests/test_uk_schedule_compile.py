@@ -36,7 +36,10 @@ from lawvm.uk_legislation.replay_applicability import should_replay_nonstructura
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
-from lawvm.uk_legislation.replay_grounding import _grounding_length_window_text_candidates
+from lawvm.uk_legislation.replay_grounding import (
+    _GroundingTextCandidate,
+    _grounding_length_window_text_candidates,
+)
 from lawvm.uk_legislation.provision_extractor import (
     _INSTRUCTION_TEXT_CACHE,
     _build_extraction_context,
@@ -270,10 +273,10 @@ def test_replay_words_in_brackets_blocks_ambiguous_parenthesized_spans() -> None
 
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     candidates_by_len = {
-        90: [(2, "too-short", "x" * 90)],
-        95: [(1, "second", "x" * 95)],
-        100: [(0, "first", "x" * 100)],
-        111: [(3, "too-long", "x" * 111)],
+        90: [_GroundingTextCandidate(2, "too-short", "x" * 90)],
+        95: [_GroundingTextCandidate(1, "second", "x" * 95)],
+        100: [_GroundingTextCandidate(0, "first", "x" * 100)],
+        111: [_GroundingTextCandidate(3, "too-long", "x" * 111)],
     }
 
     assert _grounding_length_window_text_candidates(candidates_by_len, 100) == [
