@@ -376,3 +376,44 @@ def _expand_sibling_targets_from_text(
         base = re.sub(r"\([0-9A-Z]+\)\s*$", "", base, flags=re.I).rstrip()
 
     return [f"{base}{part}" for part in sibling_parts]
+
+
+def _expand_child_beginning_insert_targets_from_text(
+    prov_str: str,
+    extracted_text: Optional[str],
+) -> Optional[list[str]]:
+    """Expand parent metadata for explicit beginning insertions into child targets."""
+    if not extracted_text:
+        return None
+    text = " ".join(str(extracted_text).split())
+    match = re.search(
+        r"\bat\s+the\s+beginning\s+of\s+(?:each\s+of\s+)?"
+        r"(?P<kind>paragraphs?|sub-?paragraphs?|subsections?)\s+"
+        r"(?P<labels>[^.;]+?)\s+"
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\b",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    labels = re.findall(r"\(([0-9A-Za-z]+)\)", match.group("labels"))
+    if len(labels) < 2:
+        return None
+    if re.search(r"\b(?:to|through)\b", match.group("labels"), flags=re.I):
+        return None
+    source_kind = re.sub(r"[^a-z]+", "", match.group("kind").lower())
+    if source_kind.endswith("s"):
+        source_kind = source_kind[:-1]
+    try:
+        parent_target = canonicalize_uk_address(_parse_affected_target(prov_str))
+    except ValueError:
+        return None
+    parent_kind = _addr_leaf_kind(parent_target)
+    if source_kind == "paragraph" and parent_kind != "subsection":
+        return None
+    if source_kind == "subparagraph" and parent_kind != "paragraph":
+        return None
+    if source_kind == "subsection" and parent_kind != "section":
+        return None
+    base = prov_str.rstrip()
+    return [f"{base}({label})" for label in labels]

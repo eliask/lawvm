@@ -483,6 +483,13 @@ def _extract_text_fragment_substitutions(
         if heading_source_parent_full_replacement is not None
         else parse_fragment_substitution(extracted_text)
     )
+    if not subs:
+        beginning_each_child_insert = _effect_beginning_each_child_text_insert_fragment(
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if beginning_each_child_insert is not None:
+            subs = [beginning_each_child_insert]
     multi_quoted_word_repeals = _multi_quoted_word_repeal_fragments(
         extracted_text=extracted_text,
         effect_type=effect.effect_type,
@@ -1034,6 +1041,39 @@ def _simple_quoted_omission_fragment(extracted_text: str) -> Optional[dict[str, 
     if not m_omit:
         return None
     return {"original": m_omit.group(1), "replacement": ""}
+
+
+def _effect_beginning_each_child_text_insert_fragment(
+    *,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    text = " ".join(str(extracted_text or "").split())
+    match = re.search(
+        r"\bat\s+the\s+beginning\s+of\s+(?:each\s+of\s+)?"
+        r"(?P<kind>paragraphs?|sub-?paragraphs?|subsections?)\s+"
+        r"(?P<labels>[^.;]+?)\s+"
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    source_kind = re.sub(r"[^a-z]+", "", match.group("kind").lower())
+    if source_kind.endswith("s"):
+        source_kind = source_kind[:-1]
+    if _addr_leaf_kind(target) != source_kind:
+        return None
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    labels = [_clean_num(label) for label in re.findall(r"\(([0-9A-Za-z]+)\)", match.group("labels"))]
+    if target_label not in labels or len(labels) < 2:
+        return None
+    return {
+        "original": "TEXT_BEGINNING",
+        "replacement": match.group("inserted").strip(),
+        "rule_id": "uk_effect_beginning_each_child_text_insertion_patch",
+    }
 
 
 def _effect_metadata_carried_quoted_words_repeal_fragment(
