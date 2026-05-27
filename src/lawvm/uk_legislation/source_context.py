@@ -83,6 +83,11 @@ class UKSelectedAffectingSource(NamedTuple):
     observations: tuple[dict[str, Any], ...]
 
 
+class UKSourceExtractionResult(NamedTuple):
+    extracted_element: Optional[ET.Element]
+    observations: tuple[dict[str, Any], ...]
+
+
 @dataclass(frozen=True, slots=True)
 class UKEnactedScheduleTableRowMatch:
     row: ET.Element
@@ -1087,7 +1092,7 @@ def _extract_enacted_schedule_table_row_source(
 def _extract_from_affecting_source_context_with_observations(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     provision_ref = str(effect.affecting_provisions or "")
     el = _extract_from_affecting_source_context(context, provision_ref)
     if el is not None:
@@ -1121,18 +1126,21 @@ def _extract_from_affecting_source_context_with_observations(
                         second_el,
                     )
                     if payload_descendant_rejection is not None:
-                        return None, (payload_descendant_rejection,)
-                    return second_el, (
-                        _compound_reference_split_observation(
-                            context=context,
-                            effect=effect,
-                            first_part=first_part,
-                            second_part=second_part,
-                            selected_part="second",
-                            split_el=second_el,
+                        return UKSourceExtractionResult(None, (payload_descendant_rejection,))
+                    return UKSourceExtractionResult(
+                        second_el,
+                        (
+                            _compound_reference_split_observation(
+                                context=context,
+                                effect=effect,
+                                first_part=first_part,
+                                second_part=second_part,
+                                selected_part="second",
+                                split_el=second_el,
+                            ),
+                            *second_observations,
+                            *payload_only_observations,
                         ),
-                        *second_observations,
-                        *payload_only_observations,
                     )
         payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
             context,
@@ -1146,17 +1154,17 @@ def _extract_from_affecting_source_context_with_observations(
                 provision_ref,
             )
             if outdented_el is not None:
-                return outdented_el, outdented_observations
-            return None, (payload_descendant_rejection,)
-        return el, ()
+                return UKSourceExtractionResult(outdented_el, outdented_observations)
+            return UKSourceExtractionResult(None, (payload_descendant_rejection,))
+        return UKSourceExtractionResult(el, ())
 
     range_el, range_observations = _extract_parenthesized_range_source(context, effect)
     if range_el is not None:
-        return range_el, range_observations
+        return UKSourceExtractionResult(range_el, range_observations)
 
     article_schedule_el, article_schedule_observations = _extract_article_schedule_payload_source(context, effect)
     if article_schedule_el is not None:
-        return article_schedule_el, article_schedule_observations
+        return UKSourceExtractionResult(article_schedule_el, article_schedule_observations)
 
     normalized = _schedule_part_context_normalized_ref(provision_ref)
     if normalized is not None:
@@ -1167,7 +1175,7 @@ def _extract_from_affecting_source_context_with_observations(
             normalized_el,
             requested_part_label,
         ):
-            return None, ()
+            return UKSourceExtractionResult(None, ())
 
         observation = uk_affecting_act_nonaddressable_schedule_part_context_ignored(
             effect_id=str(effect.effect_id or ""),
@@ -1179,7 +1187,7 @@ def _extract_from_affecting_source_context_with_observations(
             normalized_affecting_provisions=normalized_ref,
             extracted_element_id=str(normalized_el.get("id") or normalized_el.get("Id") or ""),
         )
-        return normalized_el, (observation,)
+        return UKSourceExtractionResult(normalized_el, (observation,))
 
     compound_parts = _compound_reference_parts(provision_ref)
     if compound_parts is not None:
@@ -1191,7 +1199,7 @@ def _extract_from_affecting_source_context_with_observations(
             second_part=second_part,
         )
         if schedule_part_rejection is not None:
-            return None, (schedule_part_rejection,)
+            return UKSourceExtractionResult(None, (schedule_part_rejection,))
         split_el = None
         split_selected_part = ""
         split_observations: tuple[dict[str, Any], ...] = ()
@@ -1225,7 +1233,7 @@ def _extract_from_affecting_source_context_with_observations(
                 split_el,
             )
             if payload_descendant_rejection is not None:
-                return None, (payload_descendant_rejection,)
+                return UKSourceExtractionResult(None, (payload_descendant_rejection,))
             observation = _compound_reference_split_observation(
                 context=context,
                 effect=effect,
@@ -1234,7 +1242,10 @@ def _extract_from_affecting_source_context_with_observations(
                 selected_part=split_selected_part,
                 split_el=split_el,
             )
-            return split_el, (observation, *split_observations, *payload_only_observations)
+            return UKSourceExtractionResult(
+                split_el,
+                (observation, *split_observations, *payload_only_observations),
+            )
 
     implicit_first_ref = _implicit_first_subparagraph_context_normalized_ref(provision_ref)
     if implicit_first_ref is not None:
@@ -1251,9 +1262,9 @@ def _extract_from_affecting_source_context_with_observations(
                     implicit_first_el.get("id") or implicit_first_el.get("Id") or ""
                 ),
             )
-            return implicit_first_el, (observation,)
+            return UKSourceExtractionResult(implicit_first_el, (observation,))
 
-    return None, ()
+    return UKSourceExtractionResult(None, ())
 
 
 def _extracted_element_text(el: Optional[ET.Element]) -> str:
