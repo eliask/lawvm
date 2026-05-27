@@ -1531,19 +1531,26 @@ def _table_row_insert_payload(
 ) -> IRNode:
     if str(selector.get("source_payload_mode") or "") == "table_rows":
         assert source_table_payload is not None
+        selector_mode = str(selector.get("selector_mode") or "")
         return dc_replace(
             source_table_payload,
             attrs={
                 **dict(source_table_payload.attrs or {}),
                 "source_rule_id": "uk_table_entry_group_insert_payload"
-                if str(selector.get("selector_mode") or "") == "entry_group_heading"
+                if selector_mode == "entry_group_heading"
+                else "uk_table_row_number_insert_payload"
+                if selector_mode == "row_number"
                 else "uk_table_entry_label_insert_payload",
                 "anchor_direction": str(selector["direction"]),
                 **(
                     {
                         "relating_text": str(selector["relating_text"]),
                     }
-                    if str(selector.get("selector_mode") or "") == "entry_group_heading"
+                    if selector_mode == "entry_group_heading"
+                    else {
+                        "row_number": str(selector["row_number"]),
+                    }
+                    if selector_mode == "row_number"
                     else {
                         "anchor_entry_label": str(selector["anchor_entry_label"]),
                     }
