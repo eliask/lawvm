@@ -25992,6 +25992,75 @@ def test_compile_empty_effect_type_blocks_application_modification_payload() -> 
     assert "subject to the modification" in rejection["parent_context_preview"]
 
 
+def test_compile_empty_effect_type_blocks_application_modification_table() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Part xmlns="{_LEG_NS}" id="schedule-part-I">
+          <Title>PART I THE ACT</Title>
+          <Table>
+            <tbody>
+              <tr>
+                <td>Enactment</td>
+                <td>Nature of Provision</td>
+                <td>Modifications and Limitations (where applicable)</td>
+              </tr>
+              <tr>
+                <td>In Section 85A-</td>
+                <td>Sub section (1)</td>
+                <td>Duty of bodies referred to in section 85(1) as regards expenditure</td>
+              </tr>
+              <tr>
+                <td>In Schedule 1-</td>
+                <td>Paragraph 13</td>
+                <td>The words ", including compensation for loss of remunerative time,"
+                shall be omitted</td>
+              </tr>
+            </tbody>
+          </Table>
+        </Part>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_application_modification_table",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-08-26",
+        affected_uri="/id/ukpga/1978/29/section/85A/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="29",
+        affected_provisions="s. 85A(1)",
+        affecting_uri="/id/ssi/2001/137",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="137",
+        affecting_provisions="Sch. Pt. 1",
+        affecting_title="Test Application Modification Regulations",
+        in_force_dates=[],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            source_root,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+            source_root=source_root,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_application_modification_table_rejected"
+    assert rejection["family"] == "applicability_scope"
+    assert rejection["reason_code"] == "application_modification_table_out_of_scope"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert "Nature of Provision" in rejection["extracted_text_preview"]
+
+
 def test_compile_structural_effect_records_no_targets_rejection() -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_no_targets_rejection",

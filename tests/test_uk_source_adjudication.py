@@ -1038,6 +1038,25 @@ def test_classify_uk_effect_source_pathology_marks_application_payload_out_of_sc
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_application_table_out_of_scope() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="Part",
+        extracted_text=(
+            "Column 1 Column 2 Column 3 Enactment Nature of Provision "
+            "Modifications and Limitations In Section 85A Sub section (1)"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_application_modification_table_rejected"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_modification_payload_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_manual_compile_frontier_marks_heading_facets_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
