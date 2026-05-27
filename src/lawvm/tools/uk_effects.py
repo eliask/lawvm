@@ -157,6 +157,7 @@ class _EffectFilters:
     source_pathology: str = ""
     lowering_rule: str = ""
     lowering_reason_code: str = ""
+    blocking_only: bool = False
     source_acquisition_rule: str = ""
     manual_compile_status: str = ""
     manual_compile_rule: str = ""
@@ -947,6 +948,7 @@ def _effect_filters_jsonable(filters: _EffectFilters) -> dict[str, Any]:
         "source_pathology": filters.source_pathology,
         "lowering_rule": filters.lowering_rule,
         "lowering_reason_code": filters.lowering_reason_code,
+        "blocking_only": filters.blocking_only,
         "source_acquisition_rule": filters.source_acquisition_rule,
         "manual_compile_status": filters.manual_compile_status,
         "manual_compile_rule": filters.manual_compile_rule,
@@ -980,6 +982,7 @@ def _effect_summary_matches_filters(
     source_pathology: str = "",
     lowering_rule: str = "",
     lowering_reason_code: str = "",
+    blocking_only: bool = False,
     source_acquisition_rule: str = "",
     manual_compile_status: str = "",
     manual_compile_rule: str = "",
@@ -996,6 +999,8 @@ def _effect_summary_matches_filters(
         reason_codes = _lowering_reason_code_counts(summary)
         if lowering_reason_code not in reason_codes:
             return False
+    if blocking_only and not _blocking_rows(tuple(summary.lowering_rejections)):
+        return False
     if source_acquisition_rule:
         source_acquisition_rules = _rule_counts(tuple(summary.source_acquisition_rejections))
         if source_acquisition_rule not in source_acquisition_rules:
@@ -1045,6 +1050,7 @@ def _effect_row_matches_filters(
     source_pathology: str = "",
     lowering_rule: str = "",
     lowering_reason_code: str = "",
+    blocking_only: bool = False,
     source_acquisition_rule: str = "",
     manual_compile_status: str = "",
     manual_compile_rule: str = "",
@@ -1055,6 +1061,7 @@ def _effect_row_matches_filters(
         source_pathology=source_pathology,
         lowering_rule=lowering_rule,
         lowering_reason_code=lowering_reason_code,
+        blocking_only=blocking_only,
         source_acquisition_rule=source_acquisition_rule,
         manual_compile_status=manual_compile_status,
         manual_compile_rule=manual_compile_rule,
@@ -1507,6 +1514,7 @@ def main(args: "argparse.Namespace") -> None:
     source_pathology_filter: str = getattr(args, "source_pathology", "") or ""
     lowering_rule_filter: str = getattr(args, "lowering_rule", "") or ""
     lowering_reason_code_filter: str = getattr(args, "lowering_reason_code", "") or ""
+    blocking_only: bool = bool(getattr(args, "blocking_only", False))
     source_acquisition_rule_filter: str = getattr(args, "source_acquisition_rule", "") or ""
     manual_compile_status_filter: str = getattr(args, "manual_compile_status", "") or ""
     manual_compile_rule_filter: str = getattr(args, "manual_compile_rule", "") or ""
@@ -1556,6 +1564,7 @@ def main(args: "argparse.Namespace") -> None:
         source_pathology=source_pathology_filter,
         lowering_rule=lowering_rule_filter,
         lowering_reason_code=lowering_reason_code_filter,
+        blocking_only=blocking_only,
         source_acquisition_rule=source_acquisition_rule_filter,
         manual_compile_status=manual_compile_status_filter,
         manual_compile_rule=manual_compile_rule_filter,
@@ -1602,6 +1611,7 @@ def main(args: "argparse.Namespace") -> None:
             source_pathology_filter
             or lowering_rule_filter
             or lowering_reason_code_filter
+            or blocking_only
             or source_acquisition_rule_filter
             or manual_compile_status_filter
             or manual_compile_rule_filter
@@ -1640,6 +1650,7 @@ def main(args: "argparse.Namespace") -> None:
                     source_pathology=source_pathology_filter,
                     lowering_rule=lowering_rule_filter,
                     lowering_reason_code=lowering_reason_code_filter,
+                    blocking_only=blocking_only,
                     source_acquisition_rule=source_acquisition_rule_filter,
                     manual_compile_status=manual_compile_status_filter,
                     manual_compile_rule=manual_compile_rule_filter,
@@ -1678,6 +1689,7 @@ def main(args: "argparse.Namespace") -> None:
                         source_pathology=source_pathology_filter,
                         lowering_rule=lowering_rule_filter,
                         lowering_reason_code=lowering_reason_code_filter,
+                        blocking_only=blocking_only,
                         source_acquisition_rule=source_acquisition_rule_filter,
                         manual_compile_status=manual_compile_status_filter,
                         manual_compile_rule=manual_compile_rule_filter,

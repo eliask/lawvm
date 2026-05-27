@@ -723,6 +723,7 @@ def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
             "instruction_text_reused_as_payload",
             "--lowering-rule",
             "uk_effect_overlap_substitution_unlowered",
+            "--blocking-only",
             "--source-acquisition-rule",
             "uk_affecting_act_xml_missing_rejected",
             "--manual-compile-status",
@@ -739,6 +740,7 @@ def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
 
     assert args.source_pathology == "instruction_text_reused_as_payload"
     assert args.lowering_rule == "uk_effect_overlap_substitution_unlowered"
+    assert args.blocking_only is True
     assert args.source_acquisition_rule == "uk_affecting_act_xml_missing_rejected"
     assert args.manual_compile_status == "manual_compile_candidate"
     assert args.manual_compile_rule == "uk_manual_frontier_heading_facet_candidate"
