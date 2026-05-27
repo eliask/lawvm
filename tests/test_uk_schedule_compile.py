@@ -16017,6 +16017,74 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_quoted_word_immediately_preceding_it_targets_parent() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-8">
+            <Title>Repeals</Title>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Social Security Act 1998 (c. 14)</td>
+                  <td>In section 28(3), paragraph (e), and the word “or” immediately preceding it.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_quoted_word_preceding_it",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1998/14/section/28/subsection/3/paragraph/e",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="s. 28(3)(e)",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="Sch. 8",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "28"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_e"
+    )
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_quoted_words_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["target"] == "section:28/subsection:3/paragraph:e"
+        and record["original"] == "TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_e"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_reference_text_repeal() -> None:
     source_root = ET.fromstring(
         """
