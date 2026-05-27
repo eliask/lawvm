@@ -2149,11 +2149,14 @@ def _uk_broad_table_entry_instruction(
         entry_shape = "column_instruction"
     else:
         return None
+    inserted_table_rows: tuple[tuple[str, ...], ...] = ()
+    if re.search(r"\b(?:insert|inserted|add|added)\b", norm):
+        inserted_table_rows = _inserted_table_payload_rows(extracted_el)
     return {
         "target_ref": target_ref,
         "target": str(target),
         "entry_shape": entry_shape,
-        "inserted_table_rows": _inserted_table_payload_rows(extracted_el),
+        "inserted_table_rows": inserted_table_rows,
         "source_action": (
             "source_text"
             if source_supplies_action
