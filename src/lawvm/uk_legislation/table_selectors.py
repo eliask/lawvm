@@ -67,6 +67,16 @@ UK_EMBEDDED_TABLE_STRUCTURAL_INSERTION_RULE_ID = (
 )
 UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 
+_UK_COLUMN_TOKEN_PATTERN = (
+    r"(?:(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    r"\s+column|column\s+\d+)"
+)
+_UK_EXPLICIT_ENTRY_LABEL_COLUMN_CLAIM_RE = re.compile(
+    rf"\bin\s+entr(?:y|ies)\s+[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)*,?\s+"
+    rf"in\s+{_UK_COLUMN_TOKEN_PATTERN}\b",
+    re.I,
+)
+
 _NORMALIZED_ELEMENT_TEXT_CACHE: weakref.WeakKeyDictionary[
     ET.Element,
     str,
@@ -1235,6 +1245,30 @@ def _uk_table_entry_row_insert_selector(
         re.I,
     )
     if (
+        implicit_subsection_entry_group is not None
+        and not source_names_table
+        and _addr_leaf_kind(target) == "subsection"
+        and _uk_schedule_list_entry_table_payload(extracted_el) is not None
+    ):
+        relating_text = " ".join(
+            implicit_subsection_entry_group.group("relating").split()
+        ).strip(" ,;.")
+        inserted_text = _strip_schedule_entry_payload(
+            implicit_subsection_entry_group.group("payload")
+        )
+        if relating_text:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "entry_group_heading",
+                "direction": "after",
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "source_payload_mode": "table_rows",
+                "source_names_table": False,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    if (
         entry_for_insert_match is not None
         and entry_for_source_names_column is None
         and entry_for_source_names_each_column is None
@@ -1623,6 +1657,8 @@ def _uk_table_entry_row_insert_selector(
             column_end_entry_insert_match.group("payload")
         )
         if column_index is not None and column_index >= 1 and inserted_text:
+            if _UK_EXPLICIT_ENTRY_LABEL_COLUMN_CLAIM_RE.search(text) is not None:
+                return None
             source_list_payload = _uk_column_entry_list_row_payload(
                 extracted_el,
                 source_root=source_root,
