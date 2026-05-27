@@ -35,6 +35,26 @@ _SOURCE_CARRIED_FRAGMENT_ACTION_RE = re.compile(
     r"\b(?:omit|repeal|substitute|insert)\b",
     flags=re.I,
 )
+UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_definition_child_range_substitution_text_patch"
+)
+_UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"In\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<subsection>[0-9A-Za-z]+)\).*?"
+    r"\bfor\s+paragraphs\s+\((?P<start>[a-z])\)\s+to\s+\((?P<end>[a-z])\)\s+"
+    r"of\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
+    r"substitute\s*[—–-]\s*(?P<payload>.+?)\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_UK_SECTION_SUBSECTION_TARGET_RE = re.compile(
+    r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*\((?P<subsection>[0-9A-Za-z]+)\)\s*$",
+    flags=re.I,
+)
+_UK_DEFINITION_CHILD_RANGE_PAYLOAD_ITEM_RE = re.compile(
+    r"(?:^|;\s*)(?P<label>[a-z])\s+(?P<text>.*?)(?=(?:;\s*[a-z]\s+)|$)",
+    flags=re.I | re.S,
+)
 
 
 def _has_following_words_repeal_instruction(
@@ -82,6 +102,86 @@ class UKPseudoDefinitionChildTextPatch:
     fragment: dict[str, str]
     op_text_match: str
     op_text_replacement: str
+
+
+def _source_definition_child_range_labels(start: str, end: str) -> tuple[str, ...]:
+    start_label = _clean_num(start)
+    end_label = _clean_num(end)
+    if not re.fullmatch(r"[a-z]", start_label or "") or not re.fullmatch(r"[a-z]", end_label or ""):
+        return ()
+    start_ord = ord(start_label)
+    end_ord = ord(end_label)
+    if end_ord < start_ord:
+        return ()
+    return tuple(chr(label_ord) for label_ord in range(start_ord, end_ord + 1))
+
+
+def _source_definition_child_range_payloads(payload: str) -> tuple[dict[str, str], ...]:
+    text = re.sub(r"\s+\.\s*$", "", " ".join((payload or "").split())).strip()
+    if not text:
+        return ()
+    items: list[dict[str, str]] = []
+    for match in _UK_DEFINITION_CHILD_RANGE_PAYLOAD_ITEM_RE.finditer(text):
+        label = _clean_num(match.group("label"))
+        replacement = " ".join(match.group("text").split()).strip()
+        replacement = replacement.rstrip(" .")
+        if not label or not replacement:
+            return ()
+        items.append({"label": label, "text": replacement})
+    return tuple(items)
+
+
+def source_definition_child_range_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Parse same-label definition-child range substitutions into text patches."""
+    if extracted_el is None or _tag(extracted_el) not in {"P1", "P2", "P3", "P4"}:
+        return None
+    target_match = _UK_SECTION_SUBSECTION_TARGET_RE.match(affected_provisions or "")
+    if target_match is None:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    match = _UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    section = match.group("section")
+    subsection = match.group("subsection")
+    if (
+        _clean_num(section) != _clean_num(target_match.group("section"))
+        or _clean_num(subsection) != _clean_num(target_match.group("subsection"))
+    ):
+        return None
+    expected_labels = _source_definition_child_range_labels(match.group("start"), match.group("end"))
+    payloads = _source_definition_child_range_payloads(match.group("payload"))
+    if not expected_labels or tuple(payload["label"] for payload in payloads) != expected_labels:
+        return None
+    term = " ".join(match.group("term").split()).strip()
+    if not term:
+        return None
+    fragments = tuple(
+        {
+            "original": f"TEXT_DEFINITION_CHILD_PARAGRAPH_{term}{US}{payload['label']}",
+            "replacement": payload["text"],
+            "source_definition_term": term,
+            "source_child_label": payload["label"],
+            "rule_id": UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
+        }
+        for payload in payloads
+    )
+    return {
+        "rule_id": UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "target_ref": affected_provisions,
+        "section": section,
+        "subsection": subsection,
+        "definition_term": term,
+        "start_label": expected_labels[0],
+        "end_label": expected_labels[-1],
+        "fragments": fragments,
+    }
 
 
 @dataclass(frozen=True)
