@@ -39,10 +39,17 @@ class UKTableColumnPayloadCells:
     detail: dict[str, object]
 
 
+@dataclass(frozen=True, slots=True)
+class UKTableRowInsertResolution:
+    table: UKMutableNode | None
+    insert_index: int | None
+    reason_code: str
+    detail: dict[str, Any]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
 TableSelectorTablesResult: TypeAlias = tuple[list[UKMutableNode], dict[str, Any]]
-TableRowInsertResult: TypeAlias = tuple[UKMutableNode | None, int | None, str, dict[str, Any]]
 TableRowReplaceSpanResult: TypeAlias = tuple[
     UKMutableNode | None,
     int | None,
@@ -313,12 +320,25 @@ def _unique_descendant_uk_tables(
 def resolve_uk_table_entry_row_insert_index(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> TableRowInsertResult:
+) -> UKTableRowInsertResolution:
+    def result(
+        table: UKMutableNode | None,
+        insert_index: int | None,
+        reason_code: str,
+        detail: dict[str, Any],
+    ) -> UKTableRowInsertResolution:
+        return UKTableRowInsertResolution(
+            table=table,
+            insert_index=insert_index,
+            reason_code=reason_code,
+            detail=detail,
+        )
+
     try:
         column_index = int(selector.get("column_index") or 0)
         entry_index = int(selector.get("entry_index") or 0)
     except (TypeError, ValueError):
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
     relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
     row_anchor_norms = tuple(
         anchor_norm
@@ -330,32 +350,32 @@ def resolve_uk_table_entry_row_insert_index(
     direction = str(selector.get("direction") or "")
     selector_mode = str(selector.get("selector_mode") or "ordinal_column")
     if direction not in {"after", "before"}:
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
     if selector_mode in {"column_final_entry", "each_column_final_entry"} and direction != "after":
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
     if selector_mode == "entry_label":
         if not anchor_entry_label:
-            return None, None, "invalid_selector", {}
+            return result(None, None, "invalid_selector", {})
     elif selector_mode == "entry_group_heading":
         if not relating_norm:
-            return None, None, "invalid_selector", {}
+            return result(None, None, "invalid_selector", {})
     elif selector_mode == "column_entry":
         if column_index < 1 or not relating_norm:
-            return None, None, "invalid_selector", {}
+            return result(None, None, "invalid_selector", {})
     elif selector_mode == "each_column_entry":
         if not relating_norm:
-            return None, None, "invalid_selector", {}
+            return result(None, None, "invalid_selector", {})
     elif selector_mode == "column_final_entry":
         if column_index < 1:
-            return None, None, "invalid_selector", {}
+            return result(None, None, "invalid_selector", {})
     elif selector_mode == "each_column_final_entry":
         pass
     elif entry_index < 1 or not relating_norm:
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
     if selector_mode == "ordinal_column" and column_index < 2:
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
     if selector_mode == "relating_entry" and column_index != 1:
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
     if selector_mode not in {
         "ordinal_column",
         "relating_entry",
@@ -366,7 +386,7 @@ def resolve_uk_table_entry_row_insert_index(
         "column_final_entry",
         "each_column_final_entry",
     }:
-        return None, None, "invalid_selector", {}
+        return result(None, None, "invalid_selector", {})
 
     tables, carrier_detail = uk_table_selector_tables(node, selector)
     if len(tables) != 1:
@@ -406,52 +426,77 @@ def resolve_uk_table_entry_row_insert_index(
                     "anchor_filtered_table_count": 1,
                 }
             else:
-                return None, None, "table_not_unique", {
-                    "table_count": len(tables),
-                    "anchor_filtered_table_count": len(anchor_table_matches),
-                    "anchor_filtered_matches": tuple(
-                        {
-                            "matching_entry_count": len(matches),
-                            "matching_rows": tuple(row for _index, row in matches[:5]),
-                        }
-                        for _table, matches in anchor_table_matches[:5]
-                    ),
-                    **carrier_detail,
-                }
+                return result(
+                    None,
+                    None,
+                    "table_not_unique",
+                    {
+                        "table_count": len(tables),
+                        "anchor_filtered_table_count": len(anchor_table_matches),
+                        "anchor_filtered_matches": tuple(
+                            {
+                                "matching_entry_count": len(matches),
+                                "matching_rows": tuple(row for _index, row in matches[:5]),
+                            }
+                            for _table, matches in anchor_table_matches[:5]
+                        ),
+                        **carrier_detail,
+                    },
+                )
         else:
-            return None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+            return result(
+                None,
+                None,
+                "table_not_unique",
+                {"table_count": len(tables), **carrier_detail},
+            )
     else:
         table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
     if selector_mode == "each_column_final_entry":
         column_count = max((max(row_cells) for _row_index, row_cells in expanded_rows if row_cells), default=0)
         if column_count < 1:
-            return None, None, "entry_not_found", {
-                "matching_entry_count": 0,
+            return result(
+                None,
+                None,
+                "entry_not_found",
+                {
+                    "matching_entry_count": 0,
+                    "table_column_count": column_count,
+                    **carrier_detail,
+                },
+            )
+        return result(
+            table,
+            len(table.children),
+            "",
+            {
+                "matching_entry_count": len(expanded_rows),
                 "table_column_count": column_count,
+                "matching_rows": tuple(
+                    " | ".join(
+                        str(row_cells[col].text or "")
+                        for col in sorted(row_cells)
+                        if str(row_cells[col].text or "")
+                    )[:240]
+                    for _row_index, row_cells in expanded_rows[-5:]
+                ),
                 **carrier_detail,
-            }
-        return table, len(table.children), "", {
-            "matching_entry_count": len(expanded_rows),
-            "table_column_count": column_count,
-            "matching_rows": tuple(
-                " | ".join(
-                    str(row_cells[col].text or "")
-                    for col in sorted(row_cells)
-                    if str(row_cells[col].text or "")
-                )[:240]
-                for _row_index, row_cells in expanded_rows[-5:]
-            ),
-            **carrier_detail,
-        }
+            },
+        )
     if selector_mode == "each_column_entry":
         column_count = max((max(row_cells) for _row_index, row_cells in expanded_rows if row_cells), default=0)
         if column_count < 1:
-            return None, None, "entry_not_found", {
-                "matching_entry_count": 0,
-                "table_column_count": column_count,
-                **carrier_detail,
-            }
+            return result(
+                None,
+                None,
+                "entry_not_found",
+                {
+                    "matching_entry_count": 0,
+                    "table_column_count": column_count,
+                    **carrier_detail,
+                },
+            )
         matching_each_column_rows: list[tuple[int, str]] = []
         for row_index, row_cells in expanded_rows:
             if not row_cells:
@@ -473,19 +518,29 @@ def resolve_uk_table_entry_row_insert_index(
                 )
             )
         if len(matching_each_column_rows) != 1:
-            return None, None, "entry_not_unique", {
-                "matching_entry_count": len(matching_each_column_rows),
-                "table_column_count": column_count,
-                "matching_rows": tuple(row for _index, row in matching_each_column_rows[:5]),
-                **carrier_detail,
-            }
+            return result(
+                None,
+                None,
+                "entry_not_unique",
+                {
+                    "matching_entry_count": len(matching_each_column_rows),
+                    "table_column_count": column_count,
+                    "matching_rows": tuple(row for _index, row in matching_each_column_rows[:5]),
+                    **carrier_detail,
+                },
+            )
         insert_index, row_preview = matching_each_column_rows[0]
-        return table, insert_index, "", {
-            "matching_entry_count": 1,
-            "matched_row": row_preview,
-            "table_column_count": column_count,
-            **carrier_detail,
-        }
+        return result(
+            table,
+            insert_index,
+            "",
+            {
+                "matching_entry_count": 1,
+                "matched_row": row_preview,
+                "table_column_count": column_count,
+                **carrier_detail,
+            },
+        )
     if selector_mode == "entry_group_heading":
         matching_groups: list[tuple[int, str]] = []
         for row_position, (row_index, row_cells) in enumerate(expanded_rows):
@@ -505,17 +560,27 @@ def resolve_uk_table_entry_row_insert_index(
                     break
             matching_groups.append((insert_index, row_preview))
         if len(matching_groups) != 1:
-            return None, None, "entry_group_heading_not_unique", {
-                "matching_entry_count": len(matching_groups),
-                "matching_rows": tuple(row[1] for row in matching_groups[:5]),
-                **carrier_detail,
-            }
+            return result(
+                None,
+                None,
+                "entry_group_heading_not_unique",
+                {
+                    "matching_entry_count": len(matching_groups),
+                    "matching_rows": tuple(row[1] for row in matching_groups[:5]),
+                    **carrier_detail,
+                },
+            )
         insert_index, row_preview = matching_groups[0]
-        return table, insert_index, "", {
-            "matching_entry_count": 1,
-            "matched_row": row_preview,
-            **carrier_detail,
-        }
+        return result(
+            table,
+            insert_index,
+            "",
+            {
+                "matching_entry_count": 1,
+                "matched_row": row_preview,
+                **carrier_detail,
+            },
+        )
 
     matching_rows: list[tuple[int, str]] = []
     last_target_cell: UKMutableNode | None = None
@@ -583,35 +648,60 @@ def resolve_uk_table_entry_row_insert_index(
     if selector_mode == "column_final_entry":
         row_index, _preview = matching_rows[-1] if matching_rows else (None, "")
         if row_index is None:
-            return None, None, "entry_not_found", {
-                "matching_entry_count": 0,
-                **carrier_detail,
-            }
+            return result(
+                None,
+                None,
+                "entry_not_found",
+                {
+                    "matching_entry_count": 0,
+                    **carrier_detail,
+                },
+            )
         insert_index = min(row_index, len(table.children))
-        return table, insert_index, "", {
-            "matching_entry_count": len(matching_rows),
-            "matching_rows": tuple(row[1] for row in matching_rows[-5:]),
-            **carrier_detail,
-        }
+        return result(
+            table,
+            insert_index,
+            "",
+            {
+                "matching_entry_count": len(matching_rows),
+                "matching_rows": tuple(row[1] for row in matching_rows[-5:]),
+                **carrier_detail,
+            },
+        )
     required_entry_index = 1 if selector_mode in {"entry_label", "column_entry"} else entry_index
     if len(matching_rows) < required_entry_index:
-        return None, None, "entry_not_found", {
-            "matching_entry_count": len(matching_rows),
-            "matching_rows": tuple(row[1] for row in matching_rows[:5]),
-            **carrier_detail,
-        }
+        return result(
+            None,
+            None,
+            "entry_not_found",
+            {
+                "matching_entry_count": len(matching_rows),
+                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
+                **carrier_detail,
+            },
+        )
     if selector_mode in {"entry_label", "column_entry"} and len(matching_rows) > 1:
-        return None, None, "entry_not_unique", {
-            "matching_entry_count": len(matching_rows),
-            "matching_rows": tuple(row[1] for row in matching_rows[:5]),
-            **carrier_detail,
-        }
+        return result(
+            None,
+            None,
+            "entry_not_unique",
+            {
+                "matching_entry_count": len(matching_rows),
+                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
+                **carrier_detail,
+            },
+        )
     insert_index, row_preview = matching_rows[required_entry_index - 1]
-    return table, insert_index, "", {
-        "matching_entry_count": len(matching_rows),
-        "matched_row": row_preview,
-        **carrier_detail,
-    }
+    return result(
+        table,
+        insert_index,
+        "",
+        {
+            "matching_entry_count": len(matching_rows),
+            "matched_row": row_preview,
+            **carrier_detail,
+        },
+    )
 
 
 def resolve_uk_table_entry_row_replace_span(
