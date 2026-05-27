@@ -41971,6 +41971,91 @@ def test_compile_crossheading_child_row_uses_source_parent_reference_substitutio
     assert not any(record["rule_id"] == "uk_effect_crossheading_replace_rejected" for record in observations)
 
 
+def test_compile_crossheading_child_row_uses_governing_words_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <ScheduleBody xmlns="{_LEG_NS}">
+          <P1 id="schedule-paragraph-1">
+            <Pnumber>1</Pnumber>
+            <P1para>
+              <Text>
+                In the enactments mentioned in paragraphs 2 and 3 below, for the
+                words “invalid care allowance” wherever they occur, there shall be
+                substituted the words “ carer’s allowance ”.
+              </Text>
+            </P1para>
+          </P1>
+          <P1 id="schedule-paragraph-3">
+            <Pnumber>3</Pnumber>
+            <P1para>
+              <Text>In other legislation, the enactments are—</Text>
+              <P3 id="schedule-paragraph-3-b">
+                <Pnumber>b</Pnumber>
+                <Text>
+                  in Schedule 2 to the Social Security Act 1998, the cross-heading
+                  preceding paragraph 3;
+                </Text>
+              </P3>
+            </P1para>
+          </P1>
+        </ScheduleBody>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-paragraph-3-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-39b1b6a79f3a066eed901cd807bb0402",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2002-09-01",
+        affected_uri="/id/ukpga/1998/14/schedule/2/paragraph/3/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="Sch. 2 para. 3 cross-heading",
+        affecting_uri="/id/uksi/2002/1457",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2002",
+        affecting_number="1457",
+        affecting_provisions="Sch. para. 3(b)",
+        affecting_title="Regulatory Reform (Carer's Allowance) Order 2002",
+        in_force_dates=[{"date": "2002-09-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(
+        path=(("schedule", "2"), ("paragraph", "3")),
+        special=FacetKind.HEADING,
+    )
+    assert op.text_patch == _replace_patch("invalid care allowance", "carer’s allowance")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_crossheading_source_parent_governing_words_substitution_text_patch"
+        in op.provenance_tags
+    )
+    matching_observations = [
+        record
+        for record in observations
+        if record["rule_id"]
+        == "uk_effect_crossheading_source_parent_governing_words_substitution_text_patch"
+    ]
+    assert len(matching_observations) == 1
+    assert matching_observations[0]["source_parent_id"] == "schedule-paragraph-1"
+    assert matching_observations[0]["source_governed_paragraph_label"] == "3"
+    assert not any(record["rule_id"] == "uk_effect_crossheading_replace_rejected" for record in observations)
+
+
 def test_compile_crossheading_target_replace_lowers_to_owned_heading_patch() -> None:
     extracted_el = ET.fromstring(
         f"""

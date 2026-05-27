@@ -15,6 +15,7 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _CROSSHEADING_TARGET_REPLACEMENT_RULE,
+    _CROSSHEADING_SOURCE_PARENT_GOVERNING_WORDS_SUBSTITUTION_RULE,
     _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE,
     _CROSSHEADING_SOURCE_PARENT_TAIL_SUBSTITUTION_RULE,
     _crossheading_and_structural_repeal_selector,
@@ -36,6 +37,7 @@ from lawvm.uk_legislation.source_payload_elaboration import (
 )
 from lawvm.uk_legislation.source_context import (
     _source_ancestor_chain,
+    _source_parent_map,
     _unique_source_ancestor_chain_by_tag_text,
 )
 from lawvm.uk_legislation.source_fragment_context import (
@@ -48,6 +50,7 @@ from lawvm.uk_legislation.witness_builders import (
     _uk_text_rewrite_spec,
 )
 from lawvm.uk_legislation.witness_sidecars import _uk_lowered_op_provenance_tags
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 from lawvm.uk_legislation.witnesses import (
     UKEffectWitness,
     UKLoweredOperationWitness,
@@ -127,6 +130,12 @@ def build_crossheading_context(
             extracted_text=extracted_text,
         )
     if text_patch_fragment is None and action == "replace" and is_crossheading:
+        text_patch_fragment = _crossheading_source_parent_governing_words_text_patch_fragment(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+    if text_patch_fragment is None and action == "replace" and is_crossheading:
         text_patch_fragment = _crossheading_source_parent_tail_text_patch_fragment(
             extracted_el=extracted_el,
             source_root=source_root,
@@ -159,6 +168,18 @@ def build_crossheading_context(
             if action in {"replace", "repeal"} and is_crossheading
             else None
         ),
+    )
+
+
+def _crossheading_child_text_names_following_paragraph(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:cross-heading|cross heading|heading)\s+"
+            r"(?:before|preceding)\s+(?:paragraph|section|article)\s+"
+            r"[0-9A-Za-z]+\b",
+            " ".join((text or "").split()),
+            flags=re.I,
+        )
     )
 
 
@@ -201,6 +222,91 @@ def _crossheading_source_parent_reference_text_patch_fragment(
             "source_parent_id": str(ancestor.get("id") or ""),
             "rule_id": _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE,
         }
+    return None
+
+
+def _paragraph_list_mentions_label(refs: str, label: str) -> bool:
+    label_norm = " ".join((label or "").split()).strip().casefold()
+    if not label_norm:
+        return False
+    tokens = [token.casefold() for token in re.findall(r"\b[0-9A-Za-z]+\b", refs)]
+    if label_norm in tokens:
+        return True
+    range_match = re.search(
+        r"\b(?P<start>[0-9]+)\s+to\s+(?P<end>[0-9]+)\b",
+        refs,
+        flags=re.I,
+    )
+    if range_match is None or not label_norm.isdigit():
+        return False
+    start = int(range_match.group("start"))
+    end = int(range_match.group("end"))
+    current = int(label_norm)
+    return min(start, end) <= current <= max(start, end)
+
+
+def _governing_words_substitution_fragment(text: str, paragraph_label: str) -> Optional[dict[str, str]]:
+    source_norm = " ".join((text or "").split())
+    match = re.search(
+        r"\bIn\s+the\s+enactments\s+mentioned\s+in\s+paragraphs?\s+"
+        r"(?P<refs>.+?)\s+below,\s+for\s+(?:the\s+)?words?\s+"
+        r"[“\"](?P<original>.*?)[”\"]\s+"
+        r"wherever\s+they\s+occur,\s+there\s+shall\s+be\s+substituted\s+"
+        r"(?:the\s+)?words?\s+[“\"](?P<replacement>.*?)[”\"]",
+        source_norm,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    if not _paragraph_list_mentions_label(match.group("refs"), paragraph_label):
+        return None
+    original = " ".join(match.group("original").split()).strip()
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not original or not replacement:
+        return None
+    return {
+        "original": original,
+        "replacement": replacement,
+        "rule_id": _CROSSHEADING_SOURCE_PARENT_GOVERNING_WORDS_SUBSTITUTION_RULE,
+        "source_context": "source_parent_governing_words_substitution",
+        "source_governed_paragraph_label": paragraph_label,
+    }
+
+
+def _crossheading_source_parent_governing_words_text_patch_fragment(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve listed cross-heading rows governed by an earlier list instruction."""
+    if not _crossheading_child_text_names_following_paragraph(extracted_text or ""):
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    paragraph = next((ancestor for ancestor in ancestors if _tag(ancestor) == "P1"), None)
+    if source_root is None or paragraph is None:
+        return None
+    paragraph_label = " ".join(_direct_structural_num(paragraph).split()).strip()
+    if not paragraph_label:
+        return None
+    parent = _source_parent_map(source_root).get(paragraph)
+    if parent is None:
+        return None
+    for sibling in parent:
+        if sibling is paragraph:
+            break
+        if _tag(sibling) != "P1":
+            continue
+        fragment = _governing_words_substitution_fragment(
+            _text_content(sibling),
+            paragraph_label,
+        )
+        if fragment is None:
+            continue
+        fragment["source_parent_id"] = str(sibling.get("id") or "")
+        return fragment
     return None
 
 
@@ -385,6 +491,7 @@ def refine_crossheading_or_heading_facet_target(
         refined_target = LegalAddress(path=refined_target.path, special=FacetKind.HEADING)
         fragment_rule_id = str(crossheading_text_patch_fragment.get("rule_id") or "")
         source_parent_rule = fragment_rule_id in {
+            _CROSSHEADING_SOURCE_PARENT_GOVERNING_WORDS_SUBSTITUTION_RULE,
             _CROSSHEADING_SOURCE_PARENT_REFERENCE_SUBSTITUTION_RULE,
             _CROSSHEADING_SOURCE_PARENT_TAIL_SUBSTITUTION_RULE,
         }
@@ -422,6 +529,10 @@ def refine_crossheading_or_heading_facet_target(
                 "target": str(refined_target),
                 "source_parent_id": str(crossheading_text_patch_fragment.get("source_parent_id") or ""),
                 "source_context": str(crossheading_text_patch_fragment.get("source_context") or ""),
+                "source_governed_paragraph_label": str(
+                    crossheading_text_patch_fragment.get("source_governed_paragraph_label")
+                    or ""
+                ),
                 "match_text": str(crossheading_text_patch_fragment["original"]),
                 "replacement_text_preview": str(
                     crossheading_text_patch_fragment["replacement"]
