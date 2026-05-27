@@ -355,6 +355,88 @@ def test_uk_bench_report_summary_only_uses_true_even_median(capsys) -> None:
     assert "EID score (raw, N=2): avg=60.0% median=60.0%" in out
 
 
+def test_uk_bench_report_summary_only_shows_core_lane_for_mixed_rows(capsys) -> None:
+    core = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=9,
+        score=0.9,
+        status="OK",
+        replay_score=0.8,
+        n_ops=100,
+        comparison_class="commensurable",
+    )
+    noncore = _BenchResult(
+        statute_id="ukpga/2000/2",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=2,
+        score=0.2,
+        status="OK",
+        replay_score=0.1,
+        n_ops=900,
+        comparison_class="unapplied_oracle_expansion",
+        core_benchmark=False,
+    )
+
+    uk_bench._print_report([core, noncore], "summary", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "EID score (raw, N=2): avg=55.0% median=55.0%" in out
+    assert "Core EID score (raw, N=1): avg=90.0% median=90.0%" in out
+    assert "Replay score (N=2, ops=1000): avg=45.0%" in out
+    assert "Core replay score (N=1, ops=100): avg=80.0%" in out
+
+
+def test_uk_bench_report_summary_only_shows_core_commencement_lane(capsys) -> None:
+    core = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=9,
+        score=0.9,
+        status="OK",
+        replay_score=0.8,
+        commencement_score=0.95,
+        replay_commencement_score=0.9,
+        comparison_class="commensurable",
+    )
+    noncore = _BenchResult(
+        statute_id="ukpga/2000/2",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=2,
+        score=0.2,
+        status="OK",
+        replay_score=0.1,
+        commencement_score=0.25,
+        replay_commencement_score=0.2,
+        comparison_class="commencement_current_projection",
+        core_benchmark=False,
+    )
+
+    uk_bench._print_report([core, noncore], "summary", summary_only=True)
+
+    out = capsys.readouterr().out
+    assert "EID score (commenced, N=2): avg=60.0% median=60.0%" in out
+    assert "Core EID score (commenced, N=1): avg=95.0% median=95.0%" in out
+    assert "Replay commenced score (N=2): avg=55.0%" in out
+    assert "Core replay commenced score (N=1): avg=90.0%" in out
+
+
 def test_uk_bench_accumulator_keeps_report_rows_memory_bounded() -> None:
     diagnostic = {
         "kind": "replay_bug",

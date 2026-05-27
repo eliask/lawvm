@@ -1100,6 +1100,8 @@ class _BenchRunAccumulator:
 
         self.replay_commencement_scores: list[float] = []
         self.replay_commencement_enacted_scores: list[float] = []
+        self.core_replay_commencement_scores: list[float] = []
+        self.core_total_ops = 0
 
         self.type_groups: dict[str, list[float]] = {}
         self.type_replay_groups: dict[str, list[float]] = {}
@@ -1394,6 +1396,8 @@ class _BenchRunAccumulator:
 
         if r.replay_score >= 0.0:
             self.total_ops += max(r.n_ops, 0)
+            if r.core_benchmark:
+                self.core_total_ops += max(r.n_ops, 0)
             self.total_replay_adjudications += r.replay_adjudication_count
             self.total_alignment_changes += r.oracle_alignment_changed_count
             self.total_alignment_oracle_assigned += r.oracle_alignment_oracle_assigned_count
@@ -1435,6 +1439,8 @@ class _BenchRunAccumulator:
             if r.commencement_score >= 0.0 and r.replay_commencement_score >= 0.0:
                 self.replay_commencement_scores.append(r.replay_commencement_score)
                 self.replay_commencement_enacted_scores.append(r.commencement_score)
+                if r.core_benchmark:
+                    self.core_replay_commencement_scores.append(r.replay_commencement_score)
                 delta = r.replay_commencement_score - r.commencement_score
                 if delta > 0.001:
                     self.improvements_comm.append(_report_row())
@@ -4384,6 +4390,14 @@ def _print_report(
 
 
 def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
+    def _score_summary(values: Sequence[float]) -> tuple[float, float]:
+        average = sum(values) / len(values)
+        sorted_scores = sorted(values)
+        mid = len(sorted_scores) // 2
+        if len(sorted_scores) % 2:
+            return average, sorted_scores[mid]
+        return average, (sorted_scores[mid - 1] + sorted_scores[mid]) / 2
+
     if not acc.ok_count:
         print("No valid results to report.")
         return
@@ -4391,20 +4405,27 @@ def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
     primary_scores = acc.commencement_scores if has_commencement else acc.raw_scores
     primary_label = "commenced" if has_commencement else "raw"
     if primary_scores:
-        average = sum(primary_scores) / len(primary_scores)
-        sorted_scores = sorted(primary_scores)
-        mid = len(sorted_scores) // 2
-        if len(sorted_scores) % 2:
-            median = sorted_scores[mid]
-        else:
-            median = (sorted_scores[mid - 1] + sorted_scores[mid]) / 2
+        average, median = _score_summary(primary_scores)
         print(f"EID score ({primary_label}, N={len(primary_scores)}): avg={average:.1%} median={median:.1%}")
+        core_primary_scores = acc.core_comm_scores if has_commencement else acc.core_scores
+        if core_primary_scores and len(core_primary_scores) != len(primary_scores):
+            core_average, core_median = _score_summary(core_primary_scores)
+            print(
+                f"Core EID score ({primary_label}, N={len(core_primary_scores)}): "
+                f"avg={core_average:.1%} median={core_median:.1%}"
+            )
     if acc.replay_scores:
         replay_average = sum(acc.replay_scores) / len(acc.replay_scores)
         print(
             f"Replay score (N={len(acc.replay_scores)}, ops={acc.total_ops}): "
             f"avg={replay_average:.1%}"
         )
+        if acc.core_replay_scores and len(acc.core_replay_scores) != len(acc.replay_scores):
+            core_replay_average = sum(acc.core_replay_scores) / len(acc.core_replay_scores)
+            print(
+                f"Core replay score (N={len(acc.core_replay_scores)}, ops={acc.core_total_ops}): "
+                f"avg={core_replay_average:.1%}"
+            )
     if acc.replay_commencement_scores:
         replay_comm_average = sum(acc.replay_commencement_scores) / len(
             acc.replay_commencement_scores
@@ -4413,6 +4434,17 @@ def _print_summary_only_report(acc: _BenchRunAccumulator) -> None:
             f"Replay commenced score (N={len(acc.replay_commencement_scores)}): "
             f"avg={replay_comm_average:.1%}"
         )
+        if (
+            acc.core_replay_commencement_scores
+            and len(acc.core_replay_commencement_scores) != len(acc.replay_commencement_scores)
+        ):
+            core_replay_comm_average = sum(acc.core_replay_commencement_scores) / len(
+                acc.core_replay_commencement_scores
+            )
+            print(
+                f"Core replay commenced score (N={len(acc.core_replay_commencement_scores)}): "
+                f"avg={core_replay_comm_average:.1%}"
+            )
     print(
         "Evidence totals: "
         f"source_parse_obs={acc.source_parse_observations_total} "
