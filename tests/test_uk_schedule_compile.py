@@ -19944,6 +19944,72 @@ def test_compile_grouped_repeal_table_column_entry_blocks_deictic_item() -> None
     )
 
 
+def test_compile_source_parent_omit_from_table_column_entry_omission() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-6-paragraph-137">
+          <Pnumber>137</Pnumber>
+          <P1para>
+            <P2 id="schedule-6-paragraph-137-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>Omit from the first column of the Table the entries relating to\u2014</Text>
+                <P3 id="schedule-6-paragraph-137-2-b">
+                  <Pnumber>b</Pnumber>
+                  <P3para><Text>paragraph 117 of Schedule 8 to FA 2000;</Text></P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_omit_from_table_column_entry",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2003/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="1",
+        affecting_provisions="Sch. 6 para. 137(2)(b) Sch. 8 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2003-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "paragraph 117 of Schedule 8 to FA 2000"
+    assert ops[0].witness_rule_id == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_table_column_entry_omission_text_patch"
+        and record["source_parent_mode"] == "grouped_entries_relating_to"
+        and record["source_parent_instruction"]
+        == "Omit from the first column of the Table the entries relating to—"
+        and record["column_index"] == 1
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_column_entry_text_repeal_blocks_multiple_entries() -> None:
     source_root = ET.fromstring(
         """
@@ -49222,6 +49288,86 @@ def test_regulation_schedule_compound_source_ref_selects_schedule_child_instruct
     assert observations[0]["split_second_part"] == "Sch. para. 10(b)"
     assert observations[0]["split_selected_part"] == "second"
     assert observations[0]["extracted_element_id"] == "schedule-paragraph-10-b"
+
+
+def test_compound_source_ref_prefers_concrete_table_omission_over_repeal_part() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_compound_table_omission_source_first",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2003-04-06",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98 Table",
+        affecting_uri="/id/ukpga/2003/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="1",
+        affecting_provisions="Sch. 6 para. 137(2)(b) Sch. 8 Pt. 1",
+        affecting_title="Income Tax (Earnings and Pensions) Act 2003",
+    )
+    xml_bytes = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule-6">
+          <ScheduleBody>
+            <P1 id="schedule-6-paragraph-137">
+              <Pnumber>137</Pnumber>
+              <P1para>
+                <P2 id="schedule-6-paragraph-137-2">
+                  <Pnumber>2</Pnumber>
+                  <P2para>
+                    <Text>Omit from the first column of the Table the entries relating to\u2014</Text>
+                    <P3 id="schedule-6-paragraph-137-2-a"><Pnumber>a</Pnumber><P3para><Text>regulations under section 202 of ICTA;</Text></P3para></P3>
+                    <P3 id="schedule-6-paragraph-137-2-b"><Pnumber>b</Pnumber><P3para><Text>paragraph 117 of Schedule 8 to FA 2000;</Text></P3para></P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </ScheduleBody>
+        </Schedule>
+        <Schedule id="schedule-8">
+          <ScheduleBody>
+            <Part id="schedule-8-part-1">
+              <Number><Strong>Part 1</Strong></Number>
+              <Title>Acts of Parliament</Title>
+              <Tabular>
+                <table>
+                  <tbody>
+                    <tr><th>Short title and chapter</th><th>Extent of repeal</th></tr>
+                    <tr><td>Taxes Management Act 1970 (c. 9)</td><td>In section 98, the entries in the first column of the Table relating to\u2014 regulations under section 202 of ICTA; paragraph 117 of Schedule 8 to FA 2000.</td></tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </Part>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    context, parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=xml_bytes,
+        locator="https://www.legislation.gov.uk/ukpga/2003/1/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+    )
+    assert parse_error is None
+
+    extracted, observations = uk_replay_mod._extract_from_affecting_source_context_with_observations(
+        context,
+        effect,
+    )
+
+    assert extracted is not None
+    assert uk_replay_mod._tag(extracted) == "P3"
+    assert extracted.get("id") == "schedule-6-paragraph-137-2-b"
+    assert uk_replay_mod._text_content(extracted) == "b paragraph 117 of Schedule 8 to FA 2000;"
+    assert observations[0]["rule_id"] == "uk_affecting_act_compound_reference_split_fallback"
+    assert observations[0]["split_first_part"] == "Sch. 6 para. 137(2)(b)"
+    assert observations[0]["split_second_part"] == "Sch. 8 Pt. 1"
+    assert observations[0]["split_selected_part"] == "first"
 
 
 def test_pipeline_compile_ops_extracts_compound_payload_range_source_ref(

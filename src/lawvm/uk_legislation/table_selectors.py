@@ -976,16 +976,25 @@ def _uk_source_parent_table_column_entry_omission_text_patch_claim(
         if not target_names_table and not parent_names_target:
             continue
         match = re.search(
-            r"\bin\s+(?:the\s+)?"
+            r"(?:\bin\s+(?:the\s+)?"
             r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
             r"\s+column|column\s+(?P<column_number>\d+))\b"
-            r".*?\bomit\s+(?:the\s+)?entries\s+relating\s+to\s*[—–-]?\s*$",
+            r".*?\bomit\s+(?:the\s+)?entries\s+relating\s+to|"
+            r"\bomit\s+from\s+(?:the\s+)?"
+            r"(?:(?P<from_column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+            r"\s+column|column\s+(?P<from_column_number>\d+))\b"
+            r".*?\b(?:the\s+)?entries\s+relating\s+to)\s*[—–-]?\s*$",
             lead_text,
             flags=re.I,
         )
         if match is None:
             continue
-        column_token = match.group("column_ordinal") or match.group("column_number")
+        column_token = (
+            match.group("column_ordinal")
+            or match.group("column_number")
+            or match.group("from_column_ordinal")
+            or match.group("from_column_number")
+        )
         column_index = _uk_ordinal_to_int(column_token or "")
         if column_index is None or column_index < 1:
             continue

@@ -481,6 +481,44 @@ def _compound_reference_split_observation(
     )
 
 
+def _source_child_has_parent_table_column_omission(
+    context: UKAffectingSourceContext,
+    el: ET.Element,
+) -> bool:
+    for ancestor in _source_ancestor_chain(context.root, el)[:3]:
+        text = " ".join(_text_content(ancestor).split())
+        if re.search(
+            r"\bomit\s+from\s+(?:the\s+)?"
+            r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
+            r"\s+column\s+of\s+(?:the\s+)?table\s+(?:the\s+)?entries\s+relating\s+to\b",
+            text,
+            flags=re.I,
+        ):
+            return True
+    return False
+
+
+def _source_is_broad_repeal_extent_part(el: ET.Element) -> bool:
+    if _tag(el) not in {"Part", "Schedule"}:
+        return False
+    text = " ".join(_text_content(el).split()).lower()
+    return "extent of repeal" in text[:500] or "repeals and revocations" in text[:500]
+
+
+def _compound_first_instruction_overrides_broad_repeal_part(
+    context: UKAffectingSourceContext,
+    *,
+    first_el: Optional[ET.Element],
+    second_el: Optional[ET.Element],
+) -> bool:
+    if first_el is None or second_el is None:
+        return False
+    return (
+        _source_child_has_parent_table_column_omission(context, first_el)
+        and _source_is_broad_repeal_extent_part(second_el)
+    )
+
+
 def _extract_compound_reference_component(
     context: UKAffectingSourceContext,
     component_ref: str,
@@ -1160,6 +1198,7 @@ def _extract_from_affecting_source_context_with_observations(
                 second_part=second_part,
             )
             if unsafe_schedule_part_split is None:
+                first_el = _extract_compound_reference_component(context, first_part)
                 second_el = _extract_compound_reference_component(context, second_part)
                 second_observations: tuple[dict[str, Any], ...] = ()
                 if second_el is None:
@@ -1167,6 +1206,24 @@ def _extract_from_affecting_source_context_with_observations(
                         context,
                         effect,
                         second_part,
+                    )
+                if _compound_first_instruction_overrides_broad_repeal_part(
+                    context,
+                    first_el=first_el,
+                    second_el=second_el,
+                ):
+                    return UKSourceExtractionResult(
+                        first_el,
+                        (
+                            _compound_reference_split_observation(
+                                context=context,
+                                effect=effect,
+                                first_part=first_part,
+                                second_part=second_part,
+                                selected_part="first",
+                                split_el=first_el,
+                            ),
+                        ),
                     )
                 if second_el is not None and second_el is not el:
                     second_el, payload_only_observations = _compound_payload_only_amendment_container(
@@ -1257,6 +1314,7 @@ def _extract_from_affecting_source_context_with_observations(
         split_el = None
         split_selected_part = ""
         split_observations: tuple[dict[str, Any], ...] = ()
+        first_el = _extract_compound_reference_component(context, first_part) if first_part else None
         if second_part:
             split_el = _extract_compound_reference_component(context, second_part)
             if split_el is not None:
@@ -1270,8 +1328,17 @@ def _extract_from_affecting_source_context_with_observations(
                 if split_el is not None:
                     split_selected_part = "second"
 
-        if split_el is None and first_part:
-            split_el = _extract_compound_reference_component(context, first_part)
+        if _compound_first_instruction_overrides_broad_repeal_part(
+            context,
+            first_el=first_el,
+            second_el=split_el,
+        ):
+            split_el = first_el
+            split_selected_part = "first"
+            split_observations = ()
+
+        if split_el is None and first_el is not None:
+            split_el = first_el
             if split_el is not None:
                 split_selected_part = "first"
 
