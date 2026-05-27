@@ -99,6 +99,19 @@ def _first_table_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
     return {}
 
 
+def _first_blocking_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
+    """Return the first blocking lowering rejection when family-specific detail is absent."""
+    first_rejection: dict[str, Any] = {}
+    for rejection in row.summary.lowering_rejections:
+        if not isinstance(rejection, dict):
+            continue
+        if not first_rejection:
+            first_rejection = dict(rejection)
+        if rejection.get("blocking") is True:
+            return dict(rejection)
+    return first_rejection
+
+
 def _definition_child_and_tail_parts(source_preview: str) -> dict[str, str]:
     source_norm = " ".join(source_preview.split())
     match = re.search(
@@ -841,6 +854,8 @@ def manual_compile_suggested_claim_template(
             detail = _first_lowering_rejection_detail(row=row, rule_id=rule_id)
             if detail:
                 break
+        if not detail:
+            detail = _first_blocking_lowering_rejection_detail(row=row)
         required_ownership = [
             "source_named_table_or_row_surface",
             "repealed_row_column_or_cell_boundary",
