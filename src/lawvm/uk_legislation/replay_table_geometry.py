@@ -32,9 +32,15 @@ class UKTableCellMatches:
     row_previews: list[str]
 
 
+@dataclass(frozen=True, slots=True)
+class UKTableColumnPayloadCells:
+    cells: list[UKMutableNode]
+    reason_code: str
+    detail: dict[str, object]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
-TablePayloadCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, object]]
 TableSelectorTablesResult: TypeAlias = tuple[list[UKMutableNode], dict[str, Any]]
 TableRowInsertResult: TypeAlias = tuple[UKMutableNode | None, int | None, str, dict[str, Any]]
 TableRowReplaceSpanResult: TypeAlias = tuple[
@@ -115,14 +121,22 @@ def expanded_uk_table_rows_with_physical_index(
 
 def uk_table_column_payload_cells(
     new_node: UKMutableNode,
-) -> TablePayloadCellsResult:
+) -> UKTableColumnPayloadCells:
     if _uk_kind_value(new_node.kind).lower() != "table":
-        return [], "payload_not_table", {"payload_kind": _uk_kind_value(new_node.kind)}
+        return UKTableColumnPayloadCells(
+            cells=[],
+            reason_code="payload_not_table",
+            detail={"payload_kind": _uk_kind_value(new_node.kind)},
+        )
     payload_rows = [
         row for row in new_node.children if _uk_kind_value(row.kind).lower() == "row"
     ]
     if not payload_rows:
-        return [], "payload_has_no_rows", {"payload_row_count": 0}
+        return UKTableColumnPayloadCells(
+            cells=[],
+            reason_code="payload_has_no_rows",
+            detail={"payload_row_count": 0},
+        )
     payload_cells: list[UKMutableNode] = []
     for row_index, row in enumerate(payload_rows):
         row_cells = [
@@ -131,15 +145,23 @@ def uk_table_column_payload_cells(
             if _uk_kind_value(child.kind).lower() in {"cell", "header_cell"}
         ]
         if len(row_cells) != 1:
-            return [], "payload_not_single_column", {
-                "payload_row_index": row_index,
-                "payload_cell_count": len(row_cells),
-                "payload_row_count": len(payload_rows),
-            }
+            return UKTableColumnPayloadCells(
+                cells=[],
+                reason_code="payload_not_single_column",
+                detail={
+                    "payload_row_index": row_index,
+                    "payload_cell_count": len(row_cells),
+                    "payload_row_count": len(payload_rows),
+                },
+            )
         cloned = UKMutableNode.from_irnode(row_cells[0].to_irnode())
         strip_uk_identity_attrs_recursive(cloned)
         payload_cells.append(cloned)
-    return payload_cells, "", {"payload_row_count": len(payload_rows)}
+    return UKTableColumnPayloadCells(
+        cells=payload_cells,
+        reason_code="",
+        detail={"payload_row_count": len(payload_rows)},
+    )
 
 
 def uk_table_column_insert_plans(

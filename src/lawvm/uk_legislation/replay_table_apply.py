@@ -95,8 +95,8 @@ class UKReplayTableApplyMixin:
             table = tables[0] if len(tables) == 1 else None
             reason = "" if table is not None else "table_not_unique"
             detail = {"table_count": len(tables), **carrier_detail} if table is None else carrier_detail
-        payload_cells, payload_reason, payload_detail = uk_table_column_payload_cells(new_node)
-        if table is None or payload_reason:
+        payload_cells_result = uk_table_column_payload_cells(new_node)
+        if table is None or payload_cells_result.reason_code:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
@@ -106,9 +106,9 @@ class UKReplayTableApplyMixin:
                     op,
                     target,
                     selector=dict(selector),
-                    reason_code=payload_reason or reason,
+                    reason_code=payload_cells_result.reason_code or reason,
                     **detail,
-                    **payload_detail,
+                    **payload_cells_result.detail,
                     family="source_table_elaboration",
                 ),
             )
@@ -148,7 +148,7 @@ class UKReplayTableApplyMixin:
             if before_cell is not None and before_cell is after_cell:
                 reason = "column_boundary_carried_span_unsupported"
                 break
-            if payload_index >= len(payload_cells):
+            if payload_index >= len(payload_cells_result.cells):
                 reason = "payload_row_count_too_small"
                 break
             insertion_candidates = [
@@ -163,7 +163,9 @@ class UKReplayTableApplyMixin:
             else:
                 reason = "column_boundary_not_found"
                 break
-            row.children[insert_index:insert_index] = [payload_cells[payload_index]]
+            row.children[insert_index:insert_index] = [
+                payload_cells_result.cells[payload_index]
+            ]
             inserted_cells += 1
             payload_index += 1
             matched_rows.append(
@@ -175,7 +177,7 @@ class UKReplayTableApplyMixin:
             )
         else:
             reason = ""
-        if reason or payload_index != len(payload_cells):
+        if reason or payload_index != len(payload_cells_result.cells):
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
@@ -186,7 +188,7 @@ class UKReplayTableApplyMixin:
                     target,
                     selector=dict(selector),
                     reason_code=reason or "payload_row_count_too_large",
-                    payload_row_count=len(payload_cells),
+                    payload_row_count=len(payload_cells_result.cells),
                     payload_rows_consumed=payload_index,
                     adjusted_spans=adjusted_spans,
                     inserted_cells=inserted_cells,
@@ -208,7 +210,7 @@ class UKReplayTableApplyMixin:
                 target,
                 blocking=False,
                 selector=dict(selector),
-                payload_row_count=len(payload_cells),
+                payload_row_count=len(payload_cells_result.cells),
                 adjusted_spans=adjusted_spans,
                 inserted_cells=inserted_cells,
                 matched_rows=tuple(matched_rows[:5]),
