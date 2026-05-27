@@ -739,6 +739,29 @@ broad fix.
 
 ---
 
+## 19.1 Performance Discipline
+
+Performance fixes must preserve the same evidence contract as semantic fixes.
+Do not optimize by skipping findings, observations, rejected operations,
+strict-mode barriers, source-pathology records, or adjudication detail.
+
+In hot replay, benchmark, extraction, and source-scan paths:
+
+* compile regexes once at module scope or cache them when the pattern is reused;
+* avoid repeated full-tree XML or mutable-IR walks inside per-operation loops;
+* build explicit indexes for repeated `eId`, sequence, label, table, or source
+  lookups;
+* stream benchmark rows and reports instead of retaining full-corpus artifacts
+  unless a command explicitly needs them;
+* make expensive fallback paths visible in timing or diagnostic output when
+  they can dominate corpus runs.
+
+Exceptions are allowed for cold code, one-shot scripts, tests, and genuinely
+dynamic patterns. If a dynamic pattern appears in a hot loop, document why it
+cannot be precompiled or cached.
+
+---
+
 ## 20. Agent Final Response Contract
 
 When an agent finishes, it must report:
