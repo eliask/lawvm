@@ -1086,9 +1086,13 @@ def try_lower_repeal_table_effect(
                 "enactment_cell": repeal_table_structural_repeal.enactment_cell,
                 "extent_cell": repeal_table_structural_repeal.extent_cell,
                 "enactment_match_basis": repeal_table_structural_repeal.enactment_match_basis,
-                "split_from_mixed_extent_row": (
-                    reason_code == "mixed_structural_and_word_repeal_split_structural_target"
-                ),
+                "split_from_mixed_extent_row": reason_code
+                in {
+                    "mixed_structural_and_word_repeal_split_structural_target",
+                    "mixed_structural_and_definition_repeal_split_structural_target",
+                    "flat_mixed_structural_and_word_repeal_split_structural_target",
+                    "flat_mixed_structural_and_definition_repeal_split_structural_target",
+                },
             },
         )
         return UKTableBatchLoweringResult(

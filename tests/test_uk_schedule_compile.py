@@ -19206,6 +19206,129 @@ def test_compile_repeal_table_mixed_schedule_paragraph_word_clause_not_structura
     )
 
 
+def test_compile_repeal_table_mixed_schedule_descendant_definition_split() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Planning Act 2008 (c. 29)</td>
+                  <td>In Schedule 4— paragraph 1(9), and in paragraph 4, the definition of “the appropriate authority”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_schedule_definition_split",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-01",
+        affected_uri="/id/ukpga/2008/29/schedule/4/paragraph/1/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="Sch. 4 para. 1(9)",
+        affecting_uri="/id/ukpga/2011/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="20",
+        affecting_provisions="Sch. 25 Pt. 20",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("schedule", "4"), ("paragraph", "1"), ("subparagraph", "9"))
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["reason_code"]
+        == "mixed_structural_and_definition_repeal_split_structural_target"
+        and record["target"] == "schedule:4/paragraph:1/subparagraph:9"
+        and record["split_from_mixed_extent_row"] is True
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_definition_clause_does_not_repeal_parent_paragraph() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Planning Act 2008 (c. 29)</td>
+                  <td>In Schedule 4— paragraph 1(9), and in paragraph 4, the definition of “the appropriate authority”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_definition_clause_parent_negative",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-01",
+        affected_uri="/id/ukpga/2008/29/schedule/4/paragraph/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="Sch. 4 para. 4",
+        affecting_uri="/id/ukpga/2011/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="20",
+        affecting_provisions="Sch. 25 Pt. 20",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+        and record["reason_code"] == "no_unique_matching_repeal_table_structural_row"
+        and record["target"] == "schedule:4/paragraph:4"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_parent_child_text_repeal_splits_ops() -> None:
     source_root = ET.fromstring(
         """
