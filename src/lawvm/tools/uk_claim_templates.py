@@ -20,7 +20,9 @@ class _QuotedSubstitutionPair(NamedTuple):
 def _quoted_for_substitute_pair(source_preview: str) -> _QuotedSubstitutionPair:
     """Return the quoted preimage/replacement pair from a simple formula."""
     replacement_match = re.search(
-        r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
+        r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]"
+        r"(?:\s+\([^)]{0,320}\))*\s+"
+        r"substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
         " ".join(source_preview.split()),
         flags=re.I,
     )
@@ -459,6 +461,25 @@ def manual_compile_suggested_claim_template(
                 "claim_preserves_neighbouring_sections_and_body_text",
                 "claim_text_preimage_matches_crossheading_surface",
                 "changed_paths_are_within_declared_crossheading_target",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_mixed_body_heading_text_substitution_split"
+    ):
+        return _surface_text_rewrite_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="mixed_body_heading_text_substitution_split",
+            facet_family="body_text_and_heading_or_title",
+            placement_family="split_body_and_heading_facet_required",
+            required_validator_checks=[
+                "source_witness_names_body_target_and_heading_facet",
+                "claim_splits_body_text_operation_from_heading_facet_operation",
+                "claim_identifies_exact_heading_or_italic_heading_carrier",
+                "claim_text_preimage_matches_each_claimed_surface",
+                "claim_preserves_unclaimed_body_text_heading_text_and_children",
+                "changed_paths_are_within_declared_body_and_facet_targets",
             ],
         )
     if summary.manual_compile_rule_id == "uk_manual_frontier_table_crossheading_candidate":
