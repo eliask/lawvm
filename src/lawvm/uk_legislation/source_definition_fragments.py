@@ -1070,7 +1070,11 @@ def _source_after_definition_insert_term(text: str) -> str:
 
 def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> bool:
     norm = " ".join((text or "").split())
-    if not re.search(r"\bat\s+(?:an?|the)\s+appropriate\s+places?\b", norm, flags=re.I):
+    if not re.search(
+        r"\b(?:at|in)\s+(?:an?|the)\s+appropriate\s+places?\b",
+        norm,
+        flags=re.I,
+    ):
         return False
     if not re.search(r"\binsert(?:ed|ion)?\b", norm, flags=re.I):
         return False

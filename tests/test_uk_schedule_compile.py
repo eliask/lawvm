@@ -8784,6 +8784,86 @@ def test_compile_appropriate_place_definition_entry_insert_rejects_without_ancho
     )
 
 
+def test_compile_parent_owned_appropriate_place_definition_block_rejects_without_anchor_claim() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="article-2-6">
+              <Pnumber>6</Pnumber>
+              <P1para>
+                <Text>
+                  In section 235(1) (interpretation) insert in the appropriate place—
+                </Text>
+                <BlockAmendment>
+                  <P2para>
+                    <Text>
+                      “deployable output” means, in relation to a given facility,
+                      the annual average volume of water that can be produced per day;
+                    </Text>
+                  </P2para>
+                  <P2para>
+                    <Text>
+                      “desalination plant” means a facility for the extraction of
+                      mineral components from saline water;
+                    </Text>
+                  </P2para>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-parent-appropriate-place-definition-entry-block",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-01-09",
+        affected_uri="/id/ukpga/2008/29/section/235",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="s. 235(1)",
+        affecting_uri="/id/uksi/2019/12",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="12",
+        affecting_provisions="art. 2(6)",
+        affecting_title="Infrastructure Planning (Water Resources) Order 2019",
+        in_force_dates=[{"date": "2019-01-09", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_appropriate_place_definition_entry_insert_rejected"
+    ]
+    assert observations[0]["blocking"] is True
+    assert observations[0]["strict_disposition"] == "block"
+    assert observations[0]["reason_code"] == (
+        "appropriate_place_definition_entry_requires_anchor_claim"
+    )
+    assert observations[0]["placement_family"] == (
+        "appropriate_place_definition_entry_requires_anchor_claim"
+    )
+    assert observations[0]["source_parent_id"] == "article-2-6"
+    assert "insert in the appropriate place" in (
+        observations[0]["source_parent_context_preview"]
+    )
+
+
 def test_compile_source_carried_definition_entry_insert_does_not_smuggle_sibling_substitution_context() -> None:
     source_root = ET.fromstring(
         f"""
