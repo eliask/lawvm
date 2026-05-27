@@ -145,6 +145,11 @@ _UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS: dict[
         "uk_manual_frontier_non_substantive_payload_source_insufficient",
         "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
     ),
+    "misselected_target_context": _ManualFrontierClassification(
+        "source_insufficient",
+        "uk_manual_frontier_misselected_target_context_source_insufficient",
+        "The extracted source text appears to describe a different target context from the effect-feed target; source/target reconciliation must happen before treating any preimage miss as replay evidence.",
+    ),
 }
 _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
     "amendment_text_target_unsupported": _ManualFrontierClassification(
@@ -1834,6 +1839,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     compare_shape_norm = str(compare_shape or "")
     extracted_tag_norm = str(extracted_tag or "")
     extracted_text_norm = " ".join(str(extracted_text or "").lower().split())
+
+    if source_pathology_norm == "misselected_target_context" and compare_shape_norm.startswith(
+        "text_patch_"
+    ):
+        misselected_target_result = _uk_manual_frontier_classification(
+            _UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS,
+            source_pathology_norm,
+        )
+        if misselected_target_result is not None:
+            return misselected_target_result
 
     if compare_shape_norm == "text_patch_preimage_absent_from_target_surfaces":
         return {
