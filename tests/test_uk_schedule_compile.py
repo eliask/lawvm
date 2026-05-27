@@ -5392,8 +5392,11 @@ def test_compile_child_qualified_word_omission_rejects_target_mismatch() -> None
     )
 
     assert ops == []
-    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+    assert (
+        lowering_records[-1]["rule_id"]
+        == "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+    )
+    assert lowering_records[-1]["reason_code"] == "child_qualified_word_omission_target_mismatch"
 
 
 def test_compile_prefix_subsection_paragraph_word_omission() -> None:
@@ -5495,8 +5498,11 @@ def test_compile_prefix_subsection_paragraph_word_omission_rejects_target_mismat
     )
 
     assert ops == []
-    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+    assert (
+        lowering_records[-1]["rule_id"]
+        == "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+    )
+    assert lowering_records[-1]["reason_code"] == "child_qualified_word_omission_target_mismatch"
 
 
 def test_compile_prefix_subparagraph_item_word_omission() -> None:
@@ -5596,8 +5602,11 @@ def test_compile_prefix_subparagraph_item_word_omission_rejects_target_mismatch(
     )
 
     assert ops == []
-    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+    assert (
+        lowering_records[-1]["rule_id"]
+        == "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+    )
+    assert lowering_records[-1]["reason_code"] == "child_qualified_word_omission_target_mismatch"
 
 
 def test_compile_prefix_subparagraph_word_omission() -> None:
@@ -5694,8 +5703,11 @@ def test_compile_prefix_subparagraph_word_omission_rejects_target_mismatch() -> 
     )
 
     assert ops == []
-    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+    assert (
+        lowering_records[-1]["rule_id"]
+        == "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+    )
+    assert lowering_records[-1]["reason_code"] == "child_qualified_word_omission_target_mismatch"
 
 
 def test_compile_conjoined_prefix_subsection_paragraph_word_omission() -> None:
@@ -5794,8 +5806,11 @@ def test_compile_conjoined_prefix_subsection_paragraph_word_omission_rejects_tar
     )
 
     assert ops == []
-    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+    assert (
+        lowering_records[-1]["rule_id"]
+        == "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+    )
+    assert lowering_records[-1]["reason_code"] == "child_qualified_word_omission_target_mismatch"
 
 
 def test_compile_child_qualified_final_word_omission() -> None:
@@ -5903,8 +5918,11 @@ def test_compile_child_qualified_final_word_omission_rejects_target_mismatch() -
     )
 
     assert ops == []
-    assert lowering_records[-1]["rule_id"] == "uk_effect_overlap_substitution_unlowered"
-    assert lowering_records[-1]["reason_code"] == "overlap_substitution_parse_failed"
+    assert (
+        lowering_records[-1]["rule_id"]
+        == "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+    )
+    assert lowering_records[-1]["reason_code"] == "child_qualified_word_omission_target_mismatch"
 
 
 def test_compile_at_end_definition_insert() -> None:

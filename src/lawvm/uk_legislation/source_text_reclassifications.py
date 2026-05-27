@@ -385,6 +385,31 @@ def _source_child_label(label: str) -> str:
     return str(label or "").strip().strip("()").lower()
 
 
+def source_claims_child_qualified_word_omission(
+    *,
+    effect_type: str,
+    extracted_text: Optional[str],
+) -> bool:
+    """Return true when source text explicitly scopes a word omission to a child."""
+    effect_type_norm = (effect_type or "").strip().lower()
+    if effect_type_norm not in {"words omitted", "word omitted", "words repealed", "word repealed"}:
+        return False
+    normalized = " ".join((extracted_text or "").split()).strip()
+    if not normalized:
+        return False
+    return any(
+        pattern.match(normalized) is not None
+        for pattern in (
+            _CHILD_QUALIFIED_WORD_OMISSION_RE,
+            _PREFIX_SUBSECTION_PARAGRAPH_WORD_OMISSION_RE,
+            _PREFIX_CHILD_WORD_OMISSION_RE,
+            _PREFIX_SECTION_WORD_OMISSION_RE,
+            _PREFIX_SUBSECTION_CONJOINED_PARAGRAPH_WORD_OMISSION_RE,
+            _CHILD_QUALIFIED_FINAL_WORD_OMISSION_RE,
+        )
+    )
+
+
 SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE = re.compile(
     r"\bfor\s+the\s+words\s+(?:following|after)\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
     r"substitute\b",
