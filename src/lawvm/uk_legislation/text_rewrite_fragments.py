@@ -146,6 +146,12 @@ def _multi_quoted_word_repeal_fragments(
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return ()
+    if re.search(
+        r"\bthe\s+words?\s+from\s+[“\"].+?[”\"](?:\s*\([^)]*\))?\s+to\s+[“\"].+?[”\"]",
+        text,
+        flags=re.I,
+    ):
+        return ()
     passive_omission = (
         re.search(r"\bthe\s+words?\b", text, flags=re.I) is not None
         and re.search(r"\b(?:are|is)\s+(?:repealed|omitted)\b", text, flags=re.I) is not None
