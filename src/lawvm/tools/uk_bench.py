@@ -3031,6 +3031,9 @@ def _run_bench_parallel_entries(
     score_text: bool,
     record_replay_subphases: bool,
     worker_max_tasks_per_child: int | None,
+    progress_start: Callable[[int, int, Mapping[str, object]], None] | None = None,
+    progress_start_offset: int = 0,
+    progress_total: int | None = None,
 ) -> Generator[_BenchResult, None, None]:
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -3075,6 +3078,12 @@ def _run_bench_parallel_entries(
                 return None
             entry = submission_order[next_submission]
             next_submission += 1
+            if progress_start is not None:
+                progress_start(
+                    progress_start_offset + next_submission,
+                    progress_total if progress_total is not None else len(submission_order),
+                    entry,
+                )
             try:
                 future_to_entry[pool.submit(_score_statute_worker, entry)] = entry
             except Exception as exc:
@@ -3161,6 +3170,9 @@ def _run_bench(
                 score_text=score_text,
                 record_replay_subphases=record_replay_subphases,
                 worker_max_tasks_per_child=worker_max_tasks_per_child,
+                progress_start=progress_start,
+                progress_start_offset=0,
+                progress_total=len(corpus),
             )
         if heavy_corpus:
             yield from _run_bench_parallel_entries(
@@ -3178,6 +3190,9 @@ def _run_bench(
                 score_text=score_text,
                 record_replay_subphases=record_replay_subphases,
                 worker_max_tasks_per_child=1,
+                progress_start=progress_start,
+                progress_start_offset=len(ordinary_corpus),
+                progress_total=len(corpus),
             )
         return
 
@@ -7393,20 +7408,20 @@ def main(args) -> None:  # noqa: ANN001
     }
     if worker_max_tasks is not None:
         run_kwargs["worker_max_tasks_per_child"] = worker_max_tasks
-    if workers == 1:
-        def _print_row_start(index: int, total: int, entry: Mapping[str, object]) -> None:
-            print(
-                _format_uk_bench_row_start(
-                    index=index,
-                    total=total,
-                    entry=entry,
-                    do_replay=do_replay,
-                ),
-                file=sys.stderr,
-                flush=True,
-            )
 
-        run_kwargs["progress_start"] = _print_row_start
+    def _print_row_start(index: int, total: int, entry: Mapping[str, object]) -> None:
+        print(
+            _format_uk_bench_row_start(
+                index=index,
+                total=total,
+                entry=entry,
+                do_replay=do_replay,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+
+    run_kwargs["progress_start"] = _print_row_start
 
     try:
         for r in _run_bench(corpus, archive, **run_kwargs):

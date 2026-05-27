@@ -4879,6 +4879,88 @@ def test_uk_bench_parallel_submits_predicted_heavy_rows_first(monkeypatch) -> No
     ]
 
 
+def test_uk_bench_parallel_reports_row_start_on_submission(monkeypatch) -> None:
+    starts: list[tuple[int, int, str]] = []
+
+    class FakeFuture:
+        def __init__(self, entry: dict[str, object]) -> None:
+            self.entry = entry
+
+        def result(self) -> _BenchResult:
+            statute_id = str(self.entry["statute_id"])
+            return _BenchResult(
+                statute_id=statute_id,
+                act_type=str(self.entry["type"]),
+                year=int(self.entry["year"]),
+                n_effects=int(self.entry["n_effects"]),
+                n_enacted_eids=1,
+                n_oracle_eids=1,
+                n_common=1,
+                score=1.0,
+                status="OK",
+            )
+
+    class FakePool:
+        def __init__(self, max_workers: int):
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "FakePool":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def submit(self, fn, entry):  # noqa: ANN001
+            return FakeFuture(entry)
+
+    def fake_as_completed(futures):  # noqa: ANN001
+        return list(futures)
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(concurrent.futures, "as_completed", fake_as_completed)
+
+    class FakeArchive:
+        _db_path = "uk.farchive"
+
+    corpus = [
+        {
+            "statute_id": "ukpga/2000/1",
+            "type": "ukpga",
+            "year": 2000,
+            "n_effects": 0,
+        },
+        {
+            "statute_id": "ukpga/2010/4",
+            "type": "ukpga",
+            "year": 2010,
+            "n_effects": 1900,
+        },
+        {
+            "statute_id": "ukpga/2020/17",
+            "type": "ukpga",
+            "year": 2020,
+            "n_effects": 621,
+        },
+    ]
+
+    list(
+        uk_bench._run_bench(
+            corpus,
+            cast(Farchive, FakeArchive()),
+            workers=2,
+            progress_start=lambda index, total, entry: starts.append(
+                (index, total, str(entry["statute_id"]))
+            ),
+        )
+    )
+
+    assert starts == [
+        (1, 3, "ukpga/2010/4"),
+        (2, 3, "ukpga/2020/17"),
+        (3, 3, "ukpga/2000/1"),
+    ]
+
+
 def test_uk_bench_parallel_releases_completed_futures_before_result(monkeypatch) -> None:
     live_future_mapping = None
 
