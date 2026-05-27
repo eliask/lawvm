@@ -1514,6 +1514,8 @@ def classify_uk_effect_source_pathology(
             return "referent_qualified_text_substitution_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:
             return "application_modification_payload_out_of_scope"
+        if "uk_effect_application_modification_table_rejected" in lowering_rules:
+            return "application_modification_payload_out_of_scope"
         if "uk_effect_schedule_note_target_rejected" in lowering_rules:
             return "schedule_note_target_unsupported"
         targets_norm = " ".join(targets).lower()

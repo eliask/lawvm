@@ -77,6 +77,18 @@ def append_no_supported_action_rejection(
     )
 
 
+def _empty_effect_type_application_modification_table_source(text: str) -> bool:
+    """Return true for application/modification tables, not amendment tables."""
+    normalized = " ".join((text or "").split()).strip().lower()
+    if not normalized:
+        return False
+    return (
+        "nature of provision" in normalized
+        and "modifications and limitations" in normalized
+        and "enactment" in normalized[:300]
+    )
+
+
 def infer_uk_effect_action_from_source(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
@@ -139,6 +151,24 @@ def infer_uk_effect_action_from_source(  # noqa: PLR0913
                     limit=240,
                 ),
             },
+        )
+        return UKActionInference(action=None, blocked=True)
+
+    if _empty_effect_type_application_modification_table_source(extracted_text or ""):
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_application_modification_table_rejected",
+            family="applicability_scope",
+            reason_code="application_modification_table_out_of_scope",
+            reason=(
+                "UK effect has no explicit text/tree action and the extracted "
+                "source is an application/modification table; structural replay "
+                "must not infer repeal or replacement from unrelated table cells."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"effect_type_normalized": effect_type},
         )
         return UKActionInference(action=None, blocked=True)
 
