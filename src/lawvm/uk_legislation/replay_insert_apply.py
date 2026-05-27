@@ -623,7 +623,10 @@ class UKReplayInsertApplyMixin:
         part = _addr_field(addr, "part")
         chapter = _addr_field(addr, "chapter")
         if container == "schedule":
-            paragraph, subsection, item_labels = _schedule_target_levels(addr)
+            schedule_levels = _schedule_target_levels(addr)
+            paragraph = schedule_levels.paragraph
+            subsection = schedule_levels.subparagraph
+            item_labels = schedule_levels.item_labels
         else:
             paragraph = None
             subsection = None

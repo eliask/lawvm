@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import re
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
@@ -79,6 +79,12 @@ def _addr_field(addr: LegalAddress, kind: str) -> Optional[str]:
     return None
 
 
+class UKScheduleTargetLevels(NamedTuple):
+    paragraph: Optional[str]
+    subparagraph: Optional[str]
+    item_labels: list[str]
+
+
 def _addr_leaf_label(addr: LegalAddress) -> Optional[str]:
     """Return the deepest meaningful label from a LegalAddress path."""
     for _kind, lbl in reversed(addr.path):
@@ -94,7 +100,7 @@ def _addr_leaf_kind(addr: LegalAddress) -> Optional[str]:
     return addr.path[-1][0]
 
 
-def _schedule_target_levels(addr: LegalAddress) -> tuple[Optional[str], Optional[str], list[str]]:
+def _schedule_target_levels(addr: LegalAddress) -> UKScheduleTargetLevels:
     """Return typed schedule descendant labels as (paragraph, subparagraph, items)."""
     paragraph = None
     subparagraph = None
@@ -108,7 +114,11 @@ def _schedule_target_levels(addr: LegalAddress) -> tuple[Optional[str], Optional
             subparagraph = lbl
         elif kind in {"item", "point"}:
             items.append(lbl)
-    return paragraph, subparagraph, items
+    return UKScheduleTargetLevels(
+        paragraph=paragraph,
+        subparagraph=subparagraph,
+        item_labels=items,
+    )
 
 
 def _looks_like_lettered_item_label(label: str) -> bool:

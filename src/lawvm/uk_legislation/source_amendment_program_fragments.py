@@ -90,12 +90,16 @@ def _fragment_substitution_amendment_inserted_text_substitution(
         return None
     if _addr_container(target) != "schedule":
         return None
-    target_paragraph, _, target_items = _schedule_target_levels(target)
+    target_levels = _schedule_target_levels(target)
     source_paragraph = _clean_num(match.group("paragraph"))
     source_item = _clean_num(match.group("item"))
-    if not source_paragraph or _clean_num(target_paragraph or "") != source_paragraph:
+    if not source_paragraph or _clean_num(target_levels.paragraph or "") != source_paragraph:
         return None
-    if not source_item or not target_items or _clean_num(target_items[-1]) != source_item:
+    if (
+        not source_item
+        or not target_levels.item_labels
+        or _clean_num(target_levels.item_labels[-1]) != source_item
+    ):
         return None
     replacement = " ".join(match.group("replacement").split()).strip()
     if not replacement:
@@ -121,12 +125,16 @@ def _amendment_program_inserted_parent_structural_insert(
     match = _SOURCE_AMENDMENT_INSERTED_PARENT_STRUCTURAL_INSERT_RE.match(text)
     if match is None:
         return None
-    _target_paragraph, target_subparagraph, target_items = _schedule_target_levels(target)
+    target_levels = _schedule_target_levels(target)
     source_subparagraph = _clean_num(match.group("subparagraph"))
     source_item = _clean_num(match.group("item"))
-    if not source_subparagraph or _clean_num(target_subparagraph or "") != source_subparagraph:
+    if not source_subparagraph or _clean_num(target_levels.subparagraph or "") != source_subparagraph:
         return None
-    if not source_item or not target_items or _clean_num(target_items[-1]) != source_item:
+    if (
+        not source_item
+        or not target_levels.item_labels
+        or _clean_num(target_levels.item_labels[-1]) != source_item
+    ):
         return None
     def source_label(value: object) -> str:
         return str(value or "").strip().strip("()").lower().strip(".")

@@ -46,7 +46,10 @@ def infer_source_payload_from_target(
     schedule_subparagraph = None
     schedule_items: list[str] = []
     if container == "schedule":
-        schedule_paragraph, schedule_subparagraph, schedule_items = _schedule_target_levels(target)
+        schedule_levels = _schedule_target_levels(target)
+        schedule_paragraph = schedule_levels.paragraph
+        schedule_subparagraph = schedule_levels.subparagraph
+        schedule_items = schedule_levels.item_labels
         target_subsection = schedule_subparagraph
         target_item = schedule_items[-1] if schedule_items else None
     else:
