@@ -1962,6 +1962,23 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             }
         )
 
+    matches_after_child_unquoted_insert = re.finditer(
+        r"after\s+(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\),?\s+"
+        r"insert\s*[—-]\s*(and|or|but)\b(?P<tail>[^;]+?)\s*(?:;|$)",
+        text,
+        re.I,
+    )
+    for m in matches_after_child_unquoted_insert:
+        unit_kind = m.group(1).lower().replace("-", "")
+        inserted = f"{m.group(3).strip()} {m.group('tail').strip()}".strip()
+        subs.append(
+            {
+                "original": f"TEXT_AFTER_CHILD_{unit_kind}_{m.group(2).strip()}",
+                "replacement": inserted,
+                "rule_id": UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+            }
+        )
+
     matches_insert_after_child = re.finditer(
         r"insert\s+[“\"'‘](.*?)[”\"'’]\s+after\s+"
         r"(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\)",

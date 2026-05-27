@@ -22850,6 +22850,58 @@ def test_compile_insert_after_child_appends_to_named_child() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_unquoted_after_child_insert_appends_to_named_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-123-3-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in subsection (2), after paragraph (b) insert— and the case does not fall within section 221 or 227 (see subsections (4), (5B) and (5C)). ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6a40529d46387b40d3a03b3fd8ae606a",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-11",
+        affected_uri="/id/ukpga/2006/52/section/209/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 209(2)",
+        affecting_uri="/id/ukpga/2020/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="9",
+        affecting_provisions="Sch. 2 para. 123(3)(b)",
+        affecting_title="Sentencing Act 2020",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "209"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_paragraph_b"
+    assert ops[0].text_patch.replacement == (
+        "and the case does not fall within section 221 or 227 "
+        "(see subsections (4), (5B) and (5C))."
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_after_child_text_insertion_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_words_inserted_insert_at_end_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
