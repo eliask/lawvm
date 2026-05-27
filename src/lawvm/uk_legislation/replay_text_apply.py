@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeAlias
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.core.semantic_types import IRNodeKind
@@ -16,6 +16,18 @@ from lawvm.uk_legislation.text_matching import (
     _text_patch_pattern,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
+
+
+TextNodePath: TypeAlias = tuple[int, ...]
+DocumentTextNode: TypeAlias = tuple[TextNodePath, UKMutableNode]
+TextNodeRewriteCandidate: TypeAlias = tuple[TextNodePath, UKMutableNode, str]
+TextNodeRewriteMetadataCandidate: TypeAlias = tuple[TextNodePath, UKMutableNode, str, Any]
+TextNodeRegexMatch: TypeAlias = tuple[TextNodePath, UKMutableNode, re.Match[str]]
+TextNodeExactMatch: TypeAlias = tuple[TextNodePath, UKMutableNode, int]
+TextNodeRegexMatchesByPath: TypeAlias = dict[
+    TextNodePath,
+    tuple[UKMutableNode, list[re.Match[str]]],
+]
 
 
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
@@ -442,7 +454,7 @@ def _rewrite_flat_definition_child_inner_text(
     return " ".join(new_text.split()).strip(), True
 
 
-def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+def _node_at_path(n: UKMutableNode, path: TextNodePath) -> UKMutableNode:
     current = n
     for index in path:
         current = current.children[index]
@@ -454,8 +466,8 @@ def _find_descendant_path_by_kind_label(
     *,
     kind: str,
     label: str,
-) -> tuple[int, ...] | None:
-    stack: list[tuple[tuple[int, ...], UKMutableNode]] = [((), node)]
+) -> TextNodePath | None:
+    stack: list[DocumentTextNode] = [((), node)]
     while stack:
         path, current = stack.pop()
         kind_value = current.kind.value if isinstance(current.kind, IRNodeKind) else str(current.kind)
@@ -471,9 +483,9 @@ def _collect_descendant_paths_by_label_and_kinds(
     *,
     label: str,
     allowed_kinds: set[str],
-) -> list[tuple[int, ...]]:
-    matches: list[tuple[int, ...]] = []
-    stack: list[tuple[tuple[int, ...], UKMutableNode]] = [((), node)]
+) -> list[TextNodePath]:
+    matches: list[TextNodePath] = []
+    stack: list[DocumentTextNode] = [((), node)]
     while stack:
         path, current = stack.pop()
         kind_value = current.kind.value if isinstance(current.kind, IRNodeKind) else str(current.kind)
@@ -489,9 +501,9 @@ def _definition_child_nodes(
     *,
     term: str,
     child_label: str,
-    path: tuple[int, ...] = (),
-) -> list[tuple[tuple[int, ...], UKMutableNode]]:
-    matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+    path: TextNodePath = (),
+) -> list[DocumentTextNode]:
+    matches: list[DocumentTextNode] = []
     normalized_term = _normalize_text(term)
     normalized_label = child_label.lower()
     for index, child in enumerate(n.children):
@@ -524,9 +536,9 @@ def _child_ordinal(label: str) -> Optional[int]:
 
 def _text_nodes_in_document_order(
     n: UKMutableNode,
-    path: tuple[int, ...] = (),
-) -> list[tuple[tuple[int, ...], UKMutableNode]]:
-    text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+    path: TextNodePath = (),
+) -> list[DocumentTextNode]:
+    text_nodes: list[DocumentTextNode] = []
     if n.text:
         text_nodes.append((path, n))
     for index, child in enumerate(n.children):
@@ -1577,7 +1589,7 @@ class UKReplayTextApplyMixin:
     def _apply_unique_text_node_rewrite(
         self,
         node: UKMutableNode,
-        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]],
+        text_nodes: list[DocumentTextNode],
         rewrite: Callable[[str], tuple[str, bool]],
     ) -> tuple[UKMutableNode, bool]:
         """Apply a text rewrite to root text or one unique descendant text node."""
@@ -1589,7 +1601,7 @@ class UKReplayTextApplyMixin:
                 self._replace_node_in_statute(node, rebuilt)
                 return rebuilt, True
 
-        candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+        candidate_paths: list[TextNodeRewriteCandidate] = []
         for path, text_node in text_nodes:
             if not text_node.text:
                 continue
@@ -1610,7 +1622,7 @@ class UKReplayTextApplyMixin:
     def _apply_unique_text_node_rewrite_with_metadata(
         self,
         node: UKMutableNode,
-        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]],
+        text_nodes: list[DocumentTextNode],
         rewrite: Callable[[str], tuple[str, bool, Any]],
     ) -> tuple[UKMutableNode, bool, Any]:
         """Apply a unique text rewrite and return the rewrite's metadata."""
@@ -1622,7 +1634,7 @@ class UKReplayTextApplyMixin:
                 self._replace_node_in_statute(node, rebuilt)
                 return rebuilt, True, metadata
 
-        candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, Any]] = []
+        candidate_paths: list[TextNodeRewriteMetadataCandidate] = []
         for path, text_node in text_nodes:
             if not text_node.text:
                 continue
@@ -1675,7 +1687,7 @@ class UKReplayTextApplyMixin:
             )
             if program_match is None or not replacement:
                 return node, False
-            candidate_replacements: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            candidate_replacements: list[TextNodeRewriteCandidate] = []
             for path, text_node in text_nodes:
                 new_text = _uk_apply_amendment_program_inserted_parent_child_insert(
                     text_node.text or "",
@@ -1763,7 +1775,7 @@ class UKReplayTextApplyMixin:
                 return node, False
 
         if match == "TEXT_IN_BRACKETS":
-            all_matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+            all_matches: list[TextNodeRegexMatch] = []
             for path, text_node in text_nodes:
                 for bracket_match in re.finditer(r"\([^()]*\)", text_node.text or ""):
                     all_matches.append((path, text_node, bracket_match))
@@ -1794,7 +1806,7 @@ class UKReplayTextApplyMixin:
             anchor = match.split("\x1f", 1)[1].strip()
             if not anchor:
                 return node, False
-            all_matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+            all_matches: list[TextNodeRegexMatch] = []
             for path, text_node in text_nodes:
                 text = text_node.text or ""
                 node_matches = list(re.finditer(re.escape(anchor), text))
@@ -1810,7 +1822,7 @@ class UKReplayTextApplyMixin:
             if len(all_matches) <= 1:
                 return node, False
             rebuilt = node
-            by_path: dict[tuple[int, ...], tuple[UKMutableNode, list[re.Match[str]]]] = {}
+            by_path: TextNodeRegexMatchesByPath = {}
             for path, text_node, anchor_match in all_matches[1:]:
                 existing = by_path.get(path)
                 if existing is None:
@@ -1849,7 +1861,7 @@ class UKReplayTextApplyMixin:
             anchor = parts[2].strip()
             if not anchor:
                 return node, False
-            all_matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+            all_matches: list[TextNodeRegexMatch] = []
             prefix_parts: list[str] = []
             prefix_before_first_match = ""
             for path, text_node in text_nodes:
@@ -1887,7 +1899,7 @@ class UKReplayTextApplyMixin:
             if not selected_matches:
                 return node, False
             rebuilt = node
-            by_path: dict[tuple[int, ...], tuple[UKMutableNode, list[re.Match[str]]]] = {}
+            by_path: TextNodeRegexMatchesByPath = {}
             for path, text_node, anchor_match in selected_matches:
                 existing = by_path.get(path)
                 if existing is None:
@@ -2635,7 +2647,7 @@ class UKReplayTextApplyMixin:
                     )
                 return rebuilt, True
 
-            candidate_rewrites: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            candidate_rewrites: list[TextNodeRewriteCandidate] = []
             for text_path, text_node in text_nodes:
                 if not text_node.text:
                     continue
@@ -3062,7 +3074,7 @@ class UKReplayTextApplyMixin:
                     return rebuilt, True
 
         if occurrence == -1:
-            last_exact_match: Optional[tuple[tuple[int, ...], UKMutableNode, int]] = None
+            last_exact_match: Optional[TextNodeExactMatch] = None
             for path, tn in text_nodes:
                 start = 0
                 while True:
@@ -3086,7 +3098,7 @@ class UKReplayTextApplyMixin:
                 allow_punctuation_spacing=allow_punctuation_spacing,
                 allow_word_punctuation_elision=allow_word_punctuation_elision,
             )
-            last_normalized_match: Optional[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = None
+            last_normalized_match: Optional[TextNodeRegexMatch] = None
             for path, tn in text_nodes:
                 for m in re.finditer(pattern, tn.text, flags=re.I):
                     last_normalized_match = (path, tn, m)
