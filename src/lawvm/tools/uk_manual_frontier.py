@@ -5,7 +5,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 if TYPE_CHECKING:
     import argparse
@@ -21,6 +21,11 @@ _STALE_VALIDATOR_STATUSES = frozenset(
     }
 )
 _VALIDATION_ERROR_STATUSES = frozenset({"effect_not_found", "input_error"})
+
+
+class _ValidationStatus(NamedTuple):
+    status: str
+    rule_id: str
 
 
 def _read_jsonl_rows(path: Path) -> tuple[dict[str, Any], ...]:
@@ -88,30 +93,30 @@ def _validation_status(
     current_manual_status: str,
     current_blocking_rules: tuple[str, ...],
     current_compiled_op_count: int,
-) -> tuple[str, str]:
+) -> _ValidationStatus:
     if current_manual_status == "deterministic_frontend_supported":
-        return (
-            "resolved_deterministic_supported",
-            "uk_manual_frontier_validator_currently_deterministic_supported",
+        return _ValidationStatus(
+            status="resolved_deterministic_supported",
+            rule_id="uk_manual_frontier_validator_currently_deterministic_supported",
         )
     if current_manual_status:
-        return (
-            "still_manual_frontier",
-            "uk_manual_frontier_validator_still_manual_frontier",
+        return _ValidationStatus(
+            status="still_manual_frontier",
+            rule_id="uk_manual_frontier_validator_still_manual_frontier",
         )
     if current_compiled_op_count > 0 and not current_blocking_rules:
-        return (
-            "resolved_compiles_without_blocking_lowering",
-            "uk_manual_frontier_validator_currently_compiles",
+        return _ValidationStatus(
+            status="resolved_compiles_without_blocking_lowering",
+            rule_id="uk_manual_frontier_validator_currently_compiles",
         )
     if current_blocking_rules:
-        return (
-            "still_blocked_without_manual_frontier_classification",
-            "uk_manual_frontier_validator_still_blocked_unclassified",
+        return _ValidationStatus(
+            status="still_blocked_without_manual_frontier_classification",
+            rule_id="uk_manual_frontier_validator_still_blocked_unclassified",
         )
-    return (
-        "changed_without_manual_frontier_or_ops",
-        "uk_manual_frontier_validator_current_shape_changed",
+    return _ValidationStatus(
+        status="changed_without_manual_frontier_or_ops",
+        rule_id="uk_manual_frontier_validator_current_shape_changed",
     )
 
 
@@ -158,18 +163,18 @@ def _validation_row_jsonable(
     current_manual_rule_id = str(current_summary.manual_compile_rule_id or "")
     current_blocking_rules = tuple(current_summary.manual_compile_blocking_lowering_rule_ids)
     current_template = dict(current_suggested_claim_template or {})
-    status, rule_id = _validation_status(
+    validation_status = _validation_status(
         current_manual_status=current_manual_status,
         current_blocking_rules=current_blocking_rules,
         current_compiled_op_count=int(current_summary.n_ops),
     )
     return {
         "schema": "lawvm.uk_manual_frontier_validation.v1",
-        "rule_id": rule_id,
+        "rule_id": validation_status.rule_id,
         "family": "manual_frontier_validation",
         "phase": "tooling_diagnostic",
         "jurisdiction": "uk",
-        "validator_status": status,
+        "validator_status": validation_status.status,
         "line_number": int(row.get("line_number") or 0),
         "statute_id": statute_id,
         "effect_id": effect_id,
@@ -192,7 +197,7 @@ def _validation_row_jsonable(
             "available" if current_template else "not_available"
         ),
         "current_suggested_claim_template": current_template,
-        "blocking": status in {"input_error", "effect_not_found"},
+        "blocking": validation_status.status in {"input_error", "effect_not_found"},
         "strict_disposition": "record",
         "quirks_disposition": "record",
     }
