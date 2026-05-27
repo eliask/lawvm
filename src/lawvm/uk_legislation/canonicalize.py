@@ -39,6 +39,17 @@ class UKCanonicalNodeMatch(NamedTuple):
     index: Optional[int]
 
 
+class UKBodyPredecessorParent(NamedTuple):
+    parent: Optional[IRNode]
+    predecessor_index: Optional[int]
+    predecessor_label: Optional[str]
+
+
+class UKInsertionParentResolution(NamedTuple):
+    parent: Optional[IRNode]
+    insert_index: Optional[int]
+
+
 def _clean_num(s: str) -> str:
     return str(s or "").strip().strip("()").replace("\u00a0", " ").lower()
 
@@ -315,9 +326,9 @@ def uk_find_body_predecessor_parent(
     node_label: Optional[str],
     *,
     label_sort_key,
-) -> tuple[Optional[IRNode], Optional[int], Optional[str]]:
+) -> UKBodyPredecessorParent:
     if not node_label:
-        return None, None, None
+        return UKBodyPredecessorParent(None, None, None)
 
     want_key = label_sort_key(node_label)
     best: tuple[tuple[tuple[int, object], ...], IRNode, int, str] | None = None
@@ -334,8 +345,8 @@ def uk_find_body_predecessor_parent(
 
     _walk(body_root)
     if best is None:
-        return None, None, None
-    return best[1], best[2], best[3]
+        return UKBodyPredecessorParent(None, None, None)
+    return UKBodyPredecessorParent(best[1], best[2], best[3])
 
 
 def uk_resolve_insertion_parent(
@@ -349,26 +360,26 @@ def uk_resolve_insertion_parent(
     find_node_by_target,
     find_node_and_parent_statute,
     label_sort_key,
-) -> tuple[Optional[IRNode], Optional[int]]:
+) -> UKInsertionParentResolution:
     if preceding_eid:
         _, sib_p, sib_idx = find_node_and_parent_statute(preceding_eid)
         if sib_p and sib_idx is not None:
-            return sib_p, sib_idx + 1
+            return UKInsertionParentResolution(sib_p, sib_idx + 1)
     if following_eid:
         _, sib_p, sib_idx = find_node_and_parent_statute(following_eid)
         if sib_p and sib_idx is not None:
-            return sib_p, sib_idx
+            return UKInsertionParentResolution(sib_p, sib_idx)
 
     parent_addr = target.parent() if len(target.path) > 1 else None
     if parent_addr is not None:
         p_node, _, _ = find_node_by_target(parent_addr)
         if p_node:
-            return p_node, None
+            return UKInsertionParentResolution(p_node, None)
 
     if uk_addr_container(target) == "schedule":
         schedule_node, _, _ = find_node_by_target(target)
         if schedule_node and str(node_kind or "").lower() in {"part", "chapter", "section"}:
-            return schedule_node, None
+            return UKInsertionParentResolution(schedule_node, None)
 
     if node_label and len(target.path) == 1 and uk_addr_container(target) != "schedule":
         p_node, p_idx, _ = uk_find_body_predecessor_parent(
@@ -378,9 +389,9 @@ def uk_resolve_insertion_parent(
             label_sort_key=label_sort_key,
         )
         if p_node and p_idx is not None:
-            return p_node, p_idx + 1
+            return UKInsertionParentResolution(p_node, p_idx + 1)
 
-    return None, None
+    return UKInsertionParentResolution(None, None)
 
 
 def uk_kind_matches(
