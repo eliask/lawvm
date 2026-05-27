@@ -275,6 +275,23 @@ def _unlowered_overlap_source_shape_classification(
                 "an owned split into separate canonical operations before replay."
             ),
         )
+    if (
+        re.search(r"\bfor\s+[“\"'‘][^”\"'’]+[”\"'’].*\bsubstitute\b", text, re.I)
+        and re.search(
+            r"\bincluding\s+in\s+(?:the\s+)?(?:italic\s+)?heading\b",
+            lowered,
+        )
+    ):
+        return UnloweredOverlapSourceShapeClassification(
+            "uk_effect_mixed_body_heading_text_substitution_rejected",
+            "unsupported_target_facet",
+            "mixed_body_heading_text_substitution_requires_split",
+            (
+                "UK source applies a quoted text substitution to both body text "
+                "and a heading facet; lowering requires an owned split so replay "
+                "does not silently apply heading claims to the host body text."
+            ),
+        )
     if source_or_target_names_table and re.search(
         r"\bthis\s+subsection\s+inserted\s+at\s+the\s+end\s+of\s+the\s+"
         r"(?:first|second)\s+column\s+of\s+the\s+table\b",
