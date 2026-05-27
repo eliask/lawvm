@@ -276,6 +276,21 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     crossheading_text_patch_fragment = crossheading_context.text_patch_fragment
     crossheading_compound_heading_text = crossheading_context.compound_heading_text
     crossheading_group_repeal_selector = crossheading_context.group_repeal_selector
+    repeal_table_effect = try_lower_repeal_table_effect(
+        effect=effect,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=ctx.source_root,
+        sequence=ctx.sequence,
+        effect_witness=ctx.effect_witness,
+        extraction_witness=ctx.extraction_witness,
+        original_targets_str=ctx.original_targets_str,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if _extend_handled_lowering_ops(target_ops, repeal_table_effect):
+        return unchanged
     if reject_unsupported_crossheading_replace(
         effect=effect,
         action=action,
@@ -415,21 +430,6 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         lowering_rejections_out=lowering_rejections_out,
     )
     if _append_handled_lowering_op(target_ops, table_row_replace):
-        return unchanged
-    repeal_table_effect = try_lower_repeal_table_effect(
-        effect=effect,
-        t_str=t_str,
-        target=target,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        source_root=ctx.source_root,
-        sequence=ctx.sequence,
-        effect_witness=ctx.effect_witness,
-        extraction_witness=ctx.extraction_witness,
-        original_targets_str=ctx.original_targets_str,
-        lowering_rejections_out=lowering_rejections_out,
-    )
-    if _extend_handled_lowering_ops(target_ops, repeal_table_effect):
         return unchanged
     table_column_entry_omission = try_lower_table_column_entry_omission(
         effect=effect,
