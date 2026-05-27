@@ -47712,6 +47712,67 @@ def test_compile_after_section_subsection_range_insert_requires_contiguous_paylo
     )
 
 
+def test_compile_at_end_section_subsection_insert_block_amendment() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-21">
+          <Pnumber>21</Pnumber>
+          <P2para>
+            <Text>At the end of section 28(4) there is inserted–</Text>
+            <BlockAmendment>
+              <P2><Pnumber>5</Pnumber><P2para><Text>First inserted subsection.</Text></P2para></P2>
+              <P2><Pnumber>6</Pnumber><P2para><Text>Second inserted subsection.</Text></P2para></P2>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_at_end_section_subsection_insert",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/28/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 28(4)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(21)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    assert [op.target for op in ops] == [
+        LegalAddress(path=(("section", "28"), ("subsection", "5"))),
+        LegalAddress(path=(("section", "28"), ("subsection", "6"))),
+    ]
+    assert [op.payload.label if op.payload is not None else "" for op in ops] == [
+        "5",
+        "6",
+    ]
+    assert f"{_NOTE_PRECEDING_EID}section-28-4" in ops[0].provenance_tags
+    assert f"{_NOTE_PRECEDING_EID}section-28-5" in ops[1].provenance_tags
+    assert any(
+        row.get("rule_id")
+        == "uk_effect_at_end_section_subsection_insert_block_amendment_lowered"
+        and row.get("blocking") is False
+        for row in observations
+    )
+
+
 def test_pipeline_compile_ops_does_not_select_ambiguous_amendment_child_from_shell_source(
     monkeypatch,
 ) -> None:
