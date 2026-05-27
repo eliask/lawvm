@@ -602,14 +602,29 @@ def _uk_flat_repeal_schedule_structural_repeal(
             continue
         reason_code = "unique_flat_repeal_schedule_structural_repeal"
         if not _uk_repeal_table_clause_is_structural_repeal(clause):
-            if not _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
-                clause,
-                target=target,
-                affected_year=str(effect.affected_year or ""),
+            mixed_definition_target = (
+                _uk_repeal_table_mixed_clause_carries_schedule_descendant_before_definition(
+                    clause,
+                    target=target,
+                )
+            )
+            if not mixed_definition_target and not (
+                _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
+                    clause,
+                    target=target,
+                    affected_year=str(effect.affected_year or ""),
+                )
             ):
                 continue
-            reason_code = "flat_mixed_structural_and_word_repeal_split_structural_target"
-        if re.search(r"\b(?:definition|entry|entries)\b", clause, flags=re.I):
+            if mixed_definition_target:
+                reason_code = (
+                    "flat_mixed_structural_and_definition_repeal_split_structural_target"
+                )
+            else:
+                reason_code = "flat_mixed_structural_and_word_repeal_split_structural_target"
+        if re.search(r"\b(?:definition|entry|entries)\b", clause, flags=re.I) and (
+            reason_code != "flat_mixed_structural_and_definition_repeal_split_structural_target"
+        ):
             continue
         if not _uk_table_cell_mentions_target(
             clause,
@@ -1440,6 +1455,35 @@ def _uk_repeal_table_mixed_clause_carries_schedule_paragraph_descendant(
     return False
 
 
+def _uk_repeal_table_mixed_clause_carries_schedule_descendant_before_definition(
+    extent_clause: str,
+    *,
+    target: LegalAddress,
+) -> bool:
+    """Match a structural schedule descendant before a separate definition repeal.
+
+    This is deliberately narrower than the word-level mixed-row splitter: the
+    definition/entry text is a separate source fact and does not authorize a
+    repeal of its containing paragraph.
+    """
+
+    scope_text = " ".join((extent_clause or "").split())
+    if not re.search(r"\b(?:definition|entry|entries)\b", scope_text, flags=re.I):
+        return False
+    definition_start = re.search(
+        r"\b(?:definition|entry|entries)\b",
+        scope_text,
+        flags=re.I,
+    )
+    if definition_start is None:
+        return False
+    structural_prefix = scope_text[: definition_start.start()]
+    return _uk_repeal_table_mixed_clause_carries_schedule_paragraph_descendant(
+        structural_prefix,
+        target=target,
+    )
+
+
 def _uk_carried_paragraph_descendant_body_mentions_target(
     body: str,
     *,
@@ -1982,6 +2026,22 @@ def _uk_table_driven_repeal_table_structural_repeal(
                                     enactment_match_basis=enactment_match_basis,
                                 )
                             )
+                    elif _uk_repeal_table_mixed_clause_carries_schedule_descendant_before_definition(
+                        extent_clause,
+                        target=target,
+                    ):
+                        matches.append(
+                            _UKRepealTableStructuralMatch(
+                                table_index=table_index,
+                                row_text=" | ".join((enactment_cell, extent_clause)),
+                                enactment_cell=enactment_cell,
+                                extent_cell=extent_clause,
+                                enactment_match_basis=enactment_match_basis,
+                                reason_code=(
+                                    "mixed_structural_and_definition_repeal_split_structural_target"
+                                ),
+                            )
+                        )
                     continue
                 matches.append(
                     _UKRepealTableStructuralMatch(
