@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 import xml.etree.ElementTree as ET
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -148,9 +148,15 @@ def _pseudo_definition_base_target(target: LegalAddress) -> Optional[LegalAddres
     return base_target
 
 
+class _PseudoDefinitionChildTargetParts(NamedTuple):
+    base_target: LegalAddress
+    term: str
+    child_label: str
+
+
 def _pseudo_definition_child_target_parts(
     target: LegalAddress,
-) -> Optional[tuple[LegalAddress, str, str]]:
+) -> Optional[_PseudoDefinitionChildTargetParts]:
     pseudo_index = next(
         (
             index
@@ -177,7 +183,11 @@ def _pseudo_definition_child_target_parts(
     base_target = LegalAddress(path=target.path[:pseudo_index], special=None)
     if not base_target.path:
         return None
-    return base_target, term, child_label
+    return _PseudoDefinitionChildTargetParts(
+        base_target=base_target,
+        term=term,
+        child_label=child_label,
+    )
 
 
 def _target_ref_names_pseudo_definition_entries(target_ref: str) -> bool:
@@ -555,13 +565,15 @@ def lower_metadata_pseudo_definition_child_substitution(
     target_parts = _pseudo_definition_child_target_parts(target)
     if target_parts is None:
         return None
-    base_target, term, child_label = target_parts
-    text_match = f"TEXT_DEFINITION_CHILD_PARAGRAPH_{term}{US}{child_label}"
+    text_match = (
+        f"TEXT_DEFINITION_CHILD_PARAGRAPH_{target_parts.term}"
+        f"{US}{target_parts.child_label}"
+    )
     fragment = {
         "original": text_match,
         "replacement": replacement,
-        "source_definition_term": term,
-        "source_child_label": child_label,
+        "source_definition_term": target_parts.term,
+        "source_child_label": target_parts.child_label,
         "rule_id": "uk_effect_metadata_pseudo_definition_child_substitution_text_patch",
     }
     _append_uk_effect_lowering_observation(
@@ -582,15 +594,15 @@ def lower_metadata_pseudo_definition_child_substitution(
         detail={
             "target_ref": target_ref,
             "original_target": str(target),
-            "target": str(base_target),
-            "source_definition_term": term,
-            "source_child_label": child_label,
+            "target": str(target_parts.base_target),
+            "source_definition_term": target_parts.term,
+            "source_child_label": target_parts.child_label,
             "text_match": text_match,
             "replacement": replacement,
         },
     )
     return UKPseudoDefinitionChildTextPatch(
-        target=base_target,
+        target=target_parts.base_target,
         fragment=fragment,
         op_text_match=text_match,
         op_text_replacement=replacement,
