@@ -48,6 +48,12 @@ class _ExistingInsertTargetResolution(NamedTuple):
     reason: str
 
 
+class _ScheduleItemTargetCandidate(NamedTuple):
+    node: UKMutableNode
+    parent: UKMutableNode
+    index: int
+
+
 class UKReplayTargetLookupMixin:
     statute: UKMutableStatute
     adjudications_out: list[CompileAdjudication]
@@ -287,7 +293,7 @@ class UKReplayTargetLookupMixin:
             remaining_path=(),
             match_kind_label=uk_match_kind_label,
         )
-        candidates: list[tuple[UKMutableNode, UKMutableNode, int]] = []
+        candidates: list[_ScheduleItemTargetCandidate] = []
 
         def _walk(parent: UKMutableNode) -> None:
             for child_idx, child in enumerate(parent.children):
@@ -295,7 +301,7 @@ class UKReplayTargetLookupMixin:
                     _uk_kind_value(child.kind).lower() == "item"
                     and _source_parent_range_label(child.label or "") == target_label
                 ):
-                    candidates.append((child, parent, child_idx))
+                    candidates.append(_ScheduleItemTargetCandidate(child, parent, child_idx))
                 _walk(child)
 
         for root, _root_parent, _root_idx in roots:
