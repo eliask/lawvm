@@ -242,8 +242,8 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
-        table, insert_index, reason, detail = resolve_uk_table_entry_row_insert_index(node, selector)
-        if table is None or insert_index is None:
+        row_insert = resolve_uk_table_entry_row_insert_index(node, selector)
+        if row_insert.table is None or row_insert.insert_index is None:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
@@ -256,8 +256,8 @@ class UKReplayTableApplyMixin:
                     op,
                     target,
                     selector=dict(selector),
-                    reason_code=reason,
-                    **detail,
+                    reason_code=row_insert.reason_code,
+                    **row_insert.detail,
                     family="source_table_elaboration",
                 ),
             )
@@ -299,7 +299,7 @@ class UKReplayTableApplyMixin:
             )
             return False
         if str(selector.get("source_payload_mode") or "") == "each_column_entry_text":
-            table_column_count = int(detail.get("table_column_count") or 0)
+            table_column_count = int(row_insert.detail.get("table_column_count") or 0)
             if table_column_count < 1 or len(inserted_rows) != 1 or len(inserted_rows[0].children) != 1:
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
@@ -338,9 +338,9 @@ class UKReplayTableApplyMixin:
             ]
         for row in inserted_rows:
             strip_uk_identity_attrs_recursive(row)
-        children = list(table.children)
-        children[insert_index:insert_index] = inserted_rows
-        uk_replace_children(table, children)
+        children = list(row_insert.table.children)
+        children[row_insert.insert_index:row_insert.insert_index] = inserted_rows
+        uk_replace_children(row_insert.table, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
         _append_uk_replay_adjudication(
@@ -356,9 +356,9 @@ class UKReplayTableApplyMixin:
                 target,
                 blocking=False,
                 selector=dict(selector),
-                insert_index=insert_index,
+                insert_index=row_insert.insert_index,
                 inserted_row_count=len(inserted_rows),
-                **detail,
+                **row_insert.detail,
                 family="source_table_elaboration",
             ),
         )
