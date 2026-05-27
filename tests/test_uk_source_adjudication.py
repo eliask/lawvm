@@ -1892,6 +1892,33 @@ def test_classify_uk_manual_compile_frontier_marks_unresolved_repeal_table_lower
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_mixed_body_heading_split() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            'for "Commissioner" (in each place, including in the heading) '
+            'substitute "appointed person".'
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_mixed_body_heading_text_substitution_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_mixed_body_heading_text_substitution_split"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_repeal_table_feed_source_gap() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="",

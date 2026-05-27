@@ -2073,6 +2073,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source combines structural subsection repeal and definition-entry repeal; a future compiler must split and witness each canonical operation before replay.",
         }
 
+    if "uk_effect_mixed_body_heading_text_substitution_rejected" in blocking_rules:
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_mixed_body_heading_text_substitution_split",
+            "reason": "The source applies one quoted substitution to both body text and heading facets; a future compiler must split body and heading/facet operations instead of applying a broad section text patch.",
+        }
+
     if "uk_effect_table_entry_placement_insert_rejected" in blocking_rules:
         return {
             "status": "manual_compile_candidate",
