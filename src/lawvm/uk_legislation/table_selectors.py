@@ -2307,7 +2307,7 @@ def _uk_embedded_table_payload_structural_substitution(
     target: LegalAddress,
     extracted_text: Optional[str],
 ) -> dict[str, Any] | None:
-    """Detect paragraph-level substitution sources whose payload embeds a table.
+    """Detect structural substitution sources whose payload embeds a table.
 
     This is not a table-entry instruction even though the flattened source text
     contains "table", "entry", and "column" words. The executable source action
@@ -2319,20 +2319,25 @@ def _uk_embedded_table_payload_structural_substitution(
     target_surface = f"{target_ref} {target}".lower()
     if "table" in target_surface:
         return None
-    if _addr_leaf_kind(target) != "paragraph":
+    target_kind = _addr_leaf_kind(target)
+    if target_kind not in {"paragraph", "subsection"}:
         return None
     norm = text.lower()
     if not re.search(r"\b(?:table|column|columns|entry|entries)\b", norm):
         return None
-    if not re.search(
-        r"\bfor\s+paragraph\s+\(?[0-9A-Za-z]+\)?\s+(?:there\s+is\s+)?substitut(?:e|ed)\b",
+    structural_match = re.search(
+        r"\bfor\s+(?P<kind>paragraph|subsection)\s+\(?[0-9A-Za-z]+\)?\s+"
+        r"(?:there\s+is\s+)?substitut(?:e|ed)\b",
         norm,
-    ):
+    )
+    if structural_match is None:
+        return None
+    if structural_match.group("kind") != target_kind:
         return None
     return {
         "target_ref": target_ref,
         "target": str(target),
-        "source_action": "paragraph_substitution",
+        "source_action": f"{target_kind}_substitution",
     }
 
 

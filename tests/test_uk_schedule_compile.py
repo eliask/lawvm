@@ -29034,6 +29034,75 @@ def test_compile_embedded_table_structural_paragraph_substitution_is_not_table_e
     )
 
 
+def test_compile_embedded_table_structural_subsection_substitution_is_not_table_entry_rejected() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-13-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>For subsection (1A) substitute—</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>1A</Pnumber>
+                <P2para>
+                  <Text>
+                    In row 1 of the Table, in paragraph (c) of the entry in the
+                    third column, in relation to the Royal Air Force Regiment, the
+                    reference to a corporal is to be read as a reference to a lance
+                    corporal.
+                  </Text>
+                </P2para>
+              </P2>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-bc88f8c99b4586eef703c364c161ead1",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-01",
+        affected_uri="/id/ukpga/2006/52/section/132/subsection/1A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 132(1A)",
+        affecting_uri="/id/ukpga/2021/35",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="35",
+        affecting_provisions="s. 13(3)",
+        affecting_title="Armed Forces Act 2021",
+        in_force_dates=[{"date": "2022-05-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "132"), ("subsection", "1a")))
+    assert ops[0].payload is not None
+    assert ops[0].payload.label == "1A"
+    assert any(
+        row["rule_id"] == "uk_effect_embedded_table_payload_structural_substitution_preserved"
+        and row["source_action"] == "subsection_substitution"
+        and row["blocking"] is False
+        for row in lowering_rejections
+    )
+    assert not any(
+        row["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for row in lowering_rejections
+    )
+
+
 def test_compile_direct_table_after_that_entry_instruction_rejects_without_source_context() -> None:
     extracted_el = ET.fromstring(
         f"""
