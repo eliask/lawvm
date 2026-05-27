@@ -28,6 +28,7 @@ from lawvm.uk_legislation.effect_special_lowering import (
     lower_uk_after_paragraph_insert_labelled_series,
     lower_uk_after_paragraph_insert_single_label,
     lower_uk_definition_child_structural_sibling_insert,
+    lower_uk_definition_child_structural_substitution,
     lower_uk_definition_child_range_substitution,
     lower_uk_metadata_renumber_effect,
     lower_uk_source_carried_structured_tail_substitution,
@@ -64,6 +65,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
     source_definition_child_range_substitution,
 )
 from lawvm.uk_legislation.source_definition_structural_insert import (
+    source_definition_child_structural_substitution,
     source_definition_child_structural_sibling_insert,
 )
 from lawvm.uk_legislation.substitution_metadata import (
@@ -310,6 +312,25 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             sequence=sequence,
             definition_child_range=definition_child_range,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        _mark_lower_phase("compile_lower_special")
+        return ops
+
+    definition_child_structural_substitution = source_definition_child_structural_substitution(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        affected_provisions=effect.affected_provisions,
+    )
+    if action == "replace" and definition_child_structural_substitution is not None:
+        ops = lower_uk_definition_child_structural_substitution(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            definition_child_substitution=definition_child_structural_substitution,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
             lowering_rejections_out=lowering_rejections_out,

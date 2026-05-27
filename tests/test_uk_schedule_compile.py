@@ -10867,6 +10867,135 @@ def test_compile_definition_child_range_substitution_replays_structured_children
     ]
 
 
+def test_compile_definition_child_structural_substitution_replaces_scoped_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-1">
+          <Pnumber>1</Pnumber>
+          <Text>
+            1 In section 177 of the Broadcasting Act 1990, in subsection (6),
+            in the definition of “foreign satellite service”, for paragraph
+            (a) (including the “or” at the end) substitute— a a service
+            which— i consists wholly or mainly in the transmission by satellite
+            of television programmes, ii does not fall within section 211(2)(a)
+            or (b), and iii is not provided by the BBC, or .
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/1990/42/section/177/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 177(6)",
+        affecting_uri="/id/uksi/2019/224",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="224",
+        affecting_provisions="Sch. 1 para. 1",
+        affecting_title="Audiovisual Media Services Regulations 2020",
+        in_force_dates=[{"date": "2020-12-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "177"), ("subsection", "6"), ("item", "a"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "a"
+    assert ops[0].payload.text == "a service which"
+    assert [(child.kind, child.label, child.text) for child in ops[0].payload.children] == [
+        (
+            IRNodeKind.SUBPARAGRAPH,
+            "i",
+            "consists wholly or mainly in the transmission by satellite of television programmes",
+        ),
+        (IRNodeKind.SUBPARAGRAPH, "ii", "does not fall within section 211(2)(a) or (b)"),
+        (IRNodeKind.SUBPARAGRAPH, "iii", "is not provided by the BBC, or"),
+    ]
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_substitution_lowered"
+    assert lowering_records[0]["rule_id"] == "uk_effect_definition_child_structural_substitution_lowered"
+    assert lowering_records[0]["reason_code"] == "definition_child_structural_substitution_with_tail_connector"
+    assert lowering_records[0]["definition_term"] == "foreign satellite service"
+    assert lowering_records[0]["tail_connector"] == "or"
+
+    base = IRStatute(
+        statute_id="ukpga/1990/42",
+        title="Broadcasting Act 1990",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="177",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text="definition carrier",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="a",
+                                    text="old service, or",
+                                    attrs={
+                                        "definition_term": "foreign satellite service",
+                                        "definition_child_label": "a",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="b",
+                                    text="old other service.",
+                                    attrs={
+                                        "definition_term": "foreign satellite service",
+                                        "definition_child_label": "b",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [(child.label, child.text) for child in subsection.children] == [
+        ("a", "a service which"),
+        ("b", "old other service."),
+    ]
+    assert [(child.label, child.text) for child in subsection.children[0].children] == [
+        ("i", "consists wholly or mainly in the transmission by satellite of television programmes"),
+        ("ii", "does not fall within section 211(2)(a) or (b)"),
+        ("iii", "is not provided by the BBC, or"),
+    ]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_structural_substitution_applied"
+    ]
+
+
 def test_compile_postpositive_definition_child_repeal_uses_bounded_selector() -> None:
     extracted_el = ET.fromstring(
         f"""

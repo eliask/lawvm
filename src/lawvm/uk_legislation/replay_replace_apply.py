@@ -18,6 +18,9 @@ from lawvm.uk_legislation.replay_records import (
 from lawvm.uk_legislation.replay_schedule_list_apply import (
     _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
 )
+from lawvm.uk_legislation.source_definition_structural_insert import (
+    UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID,
+)
 from lawvm.uk_legislation.substitution_metadata import (
     UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
 )
@@ -47,6 +50,113 @@ def _source_label_changing_substitution_detail(
 
 
 class UKReplayReplaceApplyMixin:
+    def _replace_definition_child_structural_substitution(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+    ) -> bool:
+        if new_node.attrs.get("source_rule_id") != UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID:
+            return False
+        if len(target.path) < 2:
+            return False
+        definition_term = " ".join(str(new_node.attrs.get("definition_term") or "").split()).strip()
+        child_label = _clean_num(str(new_node.attrs.get("definition_child_label") or ""))
+        target_label = _clean_num(_addr_leaf_label(target) or "")
+        if not definition_term or not child_label or child_label != target_label:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_substitution_target_gap",
+                message=(
+                    "UK replay skipped definition-child structural substitution: "
+                    "payload identity did not match the lowered target."
+                ),
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    definition_term=definition_term,
+                    child_label=child_label,
+                    target_label=target_label,
+                    strict_disposition="block",
+                ),
+            )
+            return True
+        parent_target = LegalAddress(path=target.path[:-1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_substitution_parent_gap",
+                message=(
+                    "UK replay skipped definition-child structural substitution: "
+                    "definition child parent target was absent."
+                ),
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    definition_term=definition_term,
+                    child_label=child_label,
+                    strict_disposition="block",
+                ),
+            )
+            return True
+
+        matches: list[UKMutableNode] = []
+        stack = list(parent_node.children)
+        while stack:
+            current = stack.pop()
+            if (
+                current.kind == new_node.kind
+                and _clean_num(current.attrs.get("definition_child_label") or "") == child_label
+                and " ".join(str(current.attrs.get("definition_term") or "").split()).strip().lower()
+                == definition_term.lower()
+            ):
+                matches.append(current)
+            stack.extend(reversed(current.children))
+        if len(matches) != 1:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_definition_child_structural_substitution_target_gap",
+                message=(
+                    "UK replay skipped definition-child structural substitution: "
+                    "definition child target did not resolve uniquely."
+                ),
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    definition_term=definition_term,
+                    child_label=child_label,
+                    match_count=len(matches),
+                    strict_disposition="block",
+                ),
+            )
+            return True
+        existing = matches[0]
+        existing_eid = str(existing.attrs.get("eId") or existing.attrs.get("id") or "")
+        if existing_eid:
+            new_node.attrs["eId"] = existing_eid
+        self._replace_node_in_statute(existing, new_node)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_definition_child_structural_substitution_applied",
+            message=(
+                "UK replay replaced a source-owned definition child with a "
+                "structured payload scoped by definition term and child label."
+            ),
+            op=op,
+            detail=uk_replay_action_target_detail(
+                op,
+                target,
+                blocking=False,
+                definition_term=definition_term,
+                child_label=child_label,
+                payload_child_count=len(new_node.children),
+            ),
+        )
+        return True
 
     def _apply_replace_op(
         self,
@@ -163,6 +273,10 @@ class UKReplayReplaceApplyMixin:
         elif op.payload is not None:
             # Clone payload so repeated ops don't share state
             new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
+            if self._replace_definition_child_structural_substitution(target, new_node, op):
+                self._record_invariant_violations(op)
+                self._emit_top_section_snapshot(op)
+                return
             if node:
                 node_kind = str(node.kind).lower()
                 new_kind = str(new_node.kind).lower()
