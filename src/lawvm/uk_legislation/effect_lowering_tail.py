@@ -212,6 +212,41 @@ def _unlowered_overlap_source_shape_classification(
                 "not append the payload to the broad table carrier."
             ),
         )
+    if re.search(
+        r"\bin\s+the\s+definition\s+of\s+[“\"'‘][^”\"'’]+[”\"'’].*"
+        r"\bafter\s+paragraph\s*\([0-9A-Za-z]+\).*"
+        r"\bbefore\s+the\s+[“\"'‘](?:and|or)[”\"'’]\s+at\s+the\s+end\b.*"
+        r"\binsert(?:ed)?\b",
+        text,
+        re.I,
+    ):
+        return UnloweredOverlapSourceShapeClassification(
+            "uk_effect_definition_child_structural_insert_rejected",
+            "source_payload_elaboration",
+            "definition_child_structural_insert_requires_child_and_tail_claim",
+            (
+                "UK source inserts a structural definition child and explicitly "
+                "references the existing child-tail connector; lowering blocks "
+                "until a compiler or claim owns the inserted child shape and "
+                "connector boundary."
+            ),
+        )
+    if re.search(
+        r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph|subsection)\s*"
+        r"\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
+        lowered,
+    ):
+        return UnloweredOverlapSourceShapeClassification(
+            "uk_effect_structural_sibling_insert_rejected",
+            "source_payload_elaboration",
+            "structural_sibling_insert_requires_owned_parent_anchor_payload",
+            (
+                "UK source inserts structural siblings after a named child, but "
+                "lowering cannot prove the parent, anchor, and inserted child "
+                "payload shape; replay must not append the payload to the anchor "
+                "or broad target text."
+            ),
+        )
     if (
         re.search(r"\bomit\s+subsections?\b", lowered)
         and re.search(r"\bwords?\s+from\b", lowered)

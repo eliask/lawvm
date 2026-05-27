@@ -3710,6 +3710,107 @@ def test_compile_structural_sibling_insert_does_not_append_when_feed_target_is_i
     assert all(op.target.path != (("schedule", "22"), ("paragraph", "87"), ("subparagraph", "2"), ("item", "2")) for op in ops)
 
 
+def test_compile_broad_structural_sibling_insert_rejects_without_parent_claim() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-25-paragraph-78-3-c">
+          <Pnumber>c</Pnumber>
+          <P3para>
+            <Text>c after paragraph (f) insert\u2014 g a sentence of detention
+            in a young offender institution; h a sentence of custody for life.</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_broad_structural_sibling_insert_rejected",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-01",
+        affected_uri="/id/ukpga/2006/52/section/374",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 374",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 25 para. 78(3)(c)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            lowering_rejections_out=lowering_records,
+        )
+        == []
+    )
+
+    assert len(lowering_records) == 1
+    rejection = lowering_records[0]
+    assert rejection["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+    assert rejection["reason_code"] == "structural_sibling_insert_requires_owned_parent_anchor_payload"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
+def test_compile_definition_child_structural_insert_rejects_without_tail_claim() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-22-paragraph-37">
+          <Pnumber>37</Pnumber>
+          <P1para>
+            <Text>37 In section 374, in the definition of \u201ccustodial sentence\u201d,
+            after paragraph (e) (but before the \u201cor\u201d at the end of that
+            paragraph) insert\u2014 ea a sentence of detention under section 226B; .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_insert_rejected",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-12-03",
+        affected_uri="/id/ukpga/2006/52/section/374",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 374",
+        affecting_uri="/id/ukpga/2012/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="10",
+        affecting_provisions="Sch. 22 para. 37",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-12-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            lowering_rejections_out=lowering_records,
+        )
+        == []
+    )
+
+    assert len(lowering_records) == 1
+    rejection = lowering_records[0]
+    assert rejection["rule_id"] == "uk_effect_definition_child_structural_insert_rejected"
+    assert rejection["reason_code"] == "definition_child_structural_insert_requires_child_and_tail_claim"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
 def test_extract_provision_bytes_keeps_enclosing_instruction_when_only_inline_amendment() -> None:
     xml_bytes = f"""
     <Legislation xmlns="{_LEG_NS}">
