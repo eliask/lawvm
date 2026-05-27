@@ -7163,6 +7163,202 @@ def test_compile_beginning_insert_each_child_does_not_patch_parent_target() -> N
     ] == ["uk_effect_overlap_substitution_unlowered"]
 
 
+def test_compile_at_end_insert_each_child_lowers_listed_child_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-7-paragraph-29-a">
+          <Pnumber>a</Pnumber>
+          <Text>a at the end of each of sub-paragraphs (i) and (ii)
+          there is inserted \u201c or \u201d , and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_at_end_each_child_insert",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1999-07-27",
+        affected_uri="/id/ukpga/1998/14/section/18/subsection/1/paragraph/a/i",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="s. 18(1)(a)(i)",
+        affecting_uri="/id/ukpga/1999/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1999",
+        affecting_number="2",
+        affecting_provisions="Sch. 7 para. 29(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1999-07-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "18"),
+        ("subsection", "1"),
+        ("paragraph", "a"),
+        ("subparagraph", "i"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == "or"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_each_child_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
+def test_compile_at_end_insert_each_child_does_not_patch_unlisted_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-7-paragraph-29-a">
+          <Pnumber>a</Pnumber>
+          <Text>a at the end of each of sub-paragraphs (i) and (ii)
+          there is inserted \u201c or \u201d , and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_at_end_each_child_insert_unlisted",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1999-07-27",
+        affected_uri="/id/ukpga/1998/14/section/18/subsection/1/paragraph/a/iii",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="s. 18(1)(a)(iii)",
+        affecting_uri="/id/ukpga/1999/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1999",
+        affecting_number="2",
+        affecting_provisions="Sch. 7 para. 29(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "1999-07-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["reason_code"] == "overlap_substitution_parse_failed"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_ordinal_sentence_beginning_omission_lowers_bounded_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-3-paragraph-157-a-iv">
+          <Pnumber>iv</Pnumber>
+          <Text>iv omit the second sentence beginning \u201cIn this subsection\u201d; and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_ordinal_sentence_beginning_omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-11-26",
+        affected_uri="/id/ukpga/1998/14/section/20/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="s. 20(2)",
+        affecting_uri="/id/uksi/2008/2833",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="2833",
+        affecting_provisions="Sch. 3 para. 157(a)(iv)",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2008-11-26", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "20"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert (
+        ops[0].text_patch.selector.match_text
+        == f"TEXT_SENTENCE_2{US}BEGINNING{US}In this subsection"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_ordinal_sentence_beginning_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1998/14",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="20",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text=(
+                                "First sentence. In this subsection the second "
+                                "sentence is removed. Third sentence."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == "First sentence. Third sentence."
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_ordinal_sentence_beginning_text_rewrite_applied"
+    ]
+
+
 def test_compile_imperative_contextual_word_omission_records_child_anchor_observation() -> None:
     extracted_el = ET.fromstring(
         f"""

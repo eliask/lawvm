@@ -19,6 +19,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.nlp_parser import (
     _ORDINAL_OCCURRENCES,
     _ORDINAL_OCCURRENCE_WORDS,
+    US,
     is_whole_node_replacement,
     parse_fragment_substitution,
 )
@@ -490,6 +491,13 @@ def _extract_text_fragment_substitutions(
         )
         if beginning_each_child_insert is not None:
             subs = [beginning_each_child_insert]
+    if not subs:
+        at_end_each_child_insert = _effect_at_end_each_child_text_insert_fragment(
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if at_end_each_child_insert is not None:
+            subs = [at_end_each_child_insert]
     multi_quoted_word_repeals = _multi_quoted_word_repeal_fragments(
         extracted_text=extracted_text,
         effect_type=effect.effect_type,
@@ -568,6 +576,13 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_word_repeal is not None:
             subs = [metadata_carried_word_repeal]
+    if not subs:
+        ordinal_sentence_beginning_repeal = _effect_ordinal_sentence_beginning_repeal_fragment(
+            effect_type=effect.effect_type,
+            extracted_text=extracted_text,
+        )
+        if ordinal_sentence_beginning_repeal is not None:
+            subs = [ordinal_sentence_beginning_repeal]
     if not subs:
         scoped_metadata_carried_word_repeals = (
             _effect_metadata_carried_scoped_quoted_words_repeal_fragments(
@@ -1073,6 +1088,68 @@ def _effect_beginning_each_child_text_insert_fragment(
         "original": "TEXT_BEGINNING",
         "replacement": match.group("inserted").strip(),
         "rule_id": "uk_effect_beginning_each_child_text_insertion_patch",
+    }
+
+
+def _effect_at_end_each_child_text_insert_fragment(
+    *,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    text = " ".join(str(extracted_text or "").split())
+    match = re.search(
+        r"\bat\s+the\s+end\s+of\s+(?:each\s+of\s+)?"
+        r"(?P<kind>paragraphs?|sub-?paragraphs?|subsections?)\s+"
+        r"(?P<labels>[^.;]+?)\s+"
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    source_kind = re.sub(r"[^a-z]+", "", match.group("kind").lower())
+    if source_kind.endswith("s"):
+        source_kind = source_kind[:-1]
+    if _addr_leaf_kind(target) != source_kind:
+        return None
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    labels = [_clean_num(label) for label in re.findall(r"\(([0-9A-Za-z]+)\)", match.group("labels"))]
+    if target_label not in labels or len(labels) < 2:
+        return None
+    return {
+        "original": "TEXT_FROM__TO_END",
+        "replacement": match.group("inserted").strip(),
+        "rule_id": "uk_effect_at_end_each_child_text_insertion_patch",
+    }
+
+
+def _effect_ordinal_sentence_beginning_repeal_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word omitted", "words omitted", "word repealed", "words repealed"}:
+        return None
+    text = " ".join(str(extracted_text or "").split())
+    match = re.search(
+        r"\b(?:omit|repeal)\s+(?:the\s+)?"
+        rf"(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+sentence\s+"
+        r"beginning\s+[“\"'‘](?P<anchor>.*?)[”\"'’]",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    ordinal = _ORDINAL_OCCURRENCES.get(match.group("ordinal").lower())
+    anchor = " ".join(match.group("anchor").split()).strip()
+    if not ordinal or not anchor:
+        return None
+    return {
+        "original": f"TEXT_SENTENCE_{ordinal}{US}BEGINNING{US}{anchor}",
+        "replacement": "",
+        "rule_id": "uk_effect_ordinal_sentence_beginning_repeal_text_patch",
     }
 
 
