@@ -1547,6 +1547,34 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_definition_
     )
 
 
+def test_classify_uk_manual_compile_frontier_prefers_appropriate_place_definition_rejection_over_payload_shape() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="fragment_context_missing",
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "“deployable output” means, in relation to a facility, water produced "
+            "under drought conditions, having regard in particular to— hydrological "
+            "yield; licensed abstraction; environmental state;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_appropriate_place_definition_entry_insert_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_keeps_action_fragment_with_parser_work() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -2901,6 +2929,24 @@ def test_classify_uk_effect_appropriate_place_definition_entry_source_pathology(
         extracted_text=(
             "iii at the appropriate place insert- "
             '"operational service standard" is to be construed in accordance with section 3C(1)(b),'
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "appropriate_place_definition_entry_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_appropriate_place_definition_entry_source_pathology_with_insert_in() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "In section 235(1) (interpretation) insert in the appropriate place— "
+            "“deployable output” means, in relation to a facility, water;"
         ),
         op_actions=[],
         payload_kinds=[],

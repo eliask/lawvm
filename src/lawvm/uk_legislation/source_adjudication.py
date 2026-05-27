@@ -1161,7 +1161,7 @@ def _looks_like_table_crossheading_target(text: str, *, target_paths: Iterable[s
 def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
-        re.search(r"\bat\s+(?:an?|the)\s+appropriate\s+places?\b", norm)
+        re.search(r"\b(?:at|in)\s+(?:an?|the)\s+appropriate\s+places?\b", norm)
         and re.search(r"\b(?:insert|insertion|substitute)\b", norm)
     )
 
@@ -1966,6 +1966,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     if insufficient_source_pathology_result is not None:
         return insufficient_source_pathology_result
 
+    if "uk_effect_appropriate_place_definition_entry_insert_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+            "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
+        }
+
     if (
         source_pathology_norm in {"fragment_context_missing", "payload_fragment_without_action_formula"}
         and extracted_tag_norm == "BlockAmendment"
@@ -2074,13 +2081,6 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_crossheading_candidate",
             "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
-        }
-
-    if "uk_effect_appropriate_place_definition_entry_insert_rejected" in blocking_rules:
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
-            "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
         }
 
     if "uk_effect_appropriate_place_insert_rejected" in blocking_rules:
