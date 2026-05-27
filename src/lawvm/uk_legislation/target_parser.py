@@ -27,6 +27,12 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.provision_extractor import _parse_ref
 
 
+_SUBORDINATE_TARGET_PREFIX_RE = re.compile(
+    r"^(?:para(?:graph)?|sub-?paragraph|item|point)\b",
+    re.I,
+)
+
+
 def _schedule_part_context_removed_target(target: LegalAddress) -> Optional[LegalAddress]:
     """Drop a non-addressable schedule Part context from a paragraph target."""
 
@@ -590,10 +596,6 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
 
     carried_parts: list[str] = []
     active_prefix: Optional[str] = None
-    subordinate_prefix_re = re.compile(
-        r"^(?:para(?:graph)?|sub-?paragraph|item|point)\b",
-        re.I,
-    )
     for p in all_parts:
         part = p.strip()
         if not part:
@@ -603,7 +605,7 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
             continue
 
         groups = re.findall(r"\(([0-9A-Z]+)\)", part, re.I)
-        if active_prefix and groups and subordinate_prefix_re.match(part):
+        if active_prefix and groups and _SUBORDINATE_TARGET_PREFIX_RE.match(part):
             carried_parts.append(f"{active_prefix}{''.join(f'({group})' for group in groups)}")
             continue
 
