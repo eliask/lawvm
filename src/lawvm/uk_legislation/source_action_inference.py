@@ -116,7 +116,16 @@ def _source_section_target_matches_affected_provision(
     )
 
 
-def _empty_effect_type_quoted_anchor_word_insertions(
+_EMPTY_TYPE_TEXT_INSERTION_FRAGMENT_RULES = frozenset(
+    {
+        "uk_effect_after_quoted_anchor_insert_text_patch",
+        "uk_effect_at_end_text_insertion_patch",
+        "uk_effect_compound_lettered_text_patch_instruction",
+    }
+)
+
+
+def _empty_effect_type_text_insertions(
     *,
     text: str,
     affected_provisions: str,
@@ -134,17 +143,17 @@ def _empty_effect_type_quoted_anchor_word_insertions(
         original = str(fragment.get("original") or "")
         replacement = str(fragment.get("replacement") or "")
         if (
-            rule_id
-            not in {
-                "uk_effect_after_quoted_anchor_insert_text_patch",
-                "uk_effect_compound_lettered_text_patch_instruction",
-            }
+            rule_id not in _EMPTY_TYPE_TEXT_INSERTION_FRAGMENT_RULES
             or not original
             or not replacement
             or replacement == original
         ):
             return ()
-    if len(fragments) > 1 and not _source_section_target_matches_affected_provision(
+    has_at_end_fragment = any(
+        str(fragment.get("rule_id") or "") == "uk_effect_at_end_text_insertion_patch"
+        for fragment in fragments
+    )
+    if (len(fragments) > 1 or has_at_end_fragment) and not _source_section_target_matches_affected_provision(
         text=normalized,
         affected_provisions=affected_provisions,
     ):
@@ -254,28 +263,38 @@ def infer_uk_effect_action_from_source(  # noqa: PLR0913
         )
         return UKActionInference(action=None, blocked=True)
 
-    quoted_anchor_word_insertions = _empty_effect_type_quoted_anchor_word_insertions(
+    text_insertions = _empty_effect_type_text_insertions(
         text=extracted_text or "",
         affected_provisions=effect.affected_provisions,
     )
-    if quoted_anchor_word_insertions:
-        compound = len(quoted_anchor_word_insertions) > 1
+    if text_insertions:
+        compound = len(text_insertions) > 1
+        has_at_end = any(
+            str(fragment.get("rule_id") or "") == "uk_effect_at_end_text_insertion_patch"
+            for fragment in text_insertions
+        )
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
             rule_id=(
+                "uk_effect_empty_type_compound_target_local_text_insertions_inferred"
+                if compound and has_at_end
+                else
                 "uk_effect_empty_type_compound_quoted_anchor_word_insertions_inferred"
                 if compound
                 else "uk_effect_empty_type_quoted_anchor_word_insertion_inferred"
             ),
             family="source_action_inference",
             reason_code=(
+                "empty_effect_type_compound_target_local_text_insertions"
+                if compound and has_at_end
+                else
                 "empty_effect_type_compound_quoted_anchor_word_insertions"
                 if compound
                 else "empty_effect_type_quoted_anchor_word_insertion"
             ),
             reason=(
                 "UK effect has no explicit effect type, but the source row "
-                "explicitly inserts quoted words after quoted anchors; lowering "
+                "explicitly inserts target-local text fragments; lowering "
                 "treats the row as source-owned text rewrite rather than a "
                 "structural insertion."
             ),
@@ -283,14 +302,14 @@ def infer_uk_effect_action_from_source(  # noqa: PLR0913
             extracted_el=extracted_el,
             extracted_text=extracted_text,
             detail={
-                "fragment_count": len(quoted_anchor_word_insertions),
-                "original": str(quoted_anchor_word_insertions[0].get("original") or ""),
+                "fragment_count": len(text_insertions),
+                "original": str(text_insertions[0].get("original") or ""),
                 "replacement": str(
-                    quoted_anchor_word_insertions[0].get("replacement") or ""
+                    text_insertions[0].get("replacement") or ""
                 ),
                 "fragment_rule_ids": tuple(
                     str(fragment.get("rule_id") or "")
-                    for fragment in quoted_anchor_word_insertions
+                    for fragment in text_insertions
                 ),
             },
         )
