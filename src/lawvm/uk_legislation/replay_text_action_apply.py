@@ -166,11 +166,11 @@ class UKReplayTextActionApplyMixin:
             table_cell_selector = _table_cell_selector(op)
             if table_cell_selector is not None:
                 if str(table_cell_selector.get("selector_mode") or "") == "unique_entry_cells":
-                    table_cells, table_cell_reason, table_cell_detail = resolve_unique_uk_table_entry_cells(
+                    table_cells_result = resolve_unique_uk_table_entry_cells(
                         node,
                         table_cell_selector,
                     )
-                    if not table_cells:
+                    if not table_cells_result.cells:
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
                             kind=_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID,
@@ -186,8 +186,8 @@ class UKReplayTextActionApplyMixin:
                                 replacement,
                                 blocking=True,
                                 selector=dict(table_cell_selector),
-                                reason_code=table_cell_reason,
-                                **table_cell_detail,
+                                reason_code=table_cells_result.reason_code,
+                                **table_cells_result.detail,
                                 family="source_table_elaboration",
                             ),
                         )
@@ -206,14 +206,14 @@ class UKReplayTextActionApplyMixin:
                                 blocking=True,
                                 selector=dict(table_cell_selector),
                                 reason_code="unsupported_multi_cell_text_patch_kind",
-                                **table_cell_detail,
+                                **table_cells_result.detail,
                                 family="source_table_elaboration",
                             ),
                         )
                         return
                     preimage_gaps = [
                         str(cell.text or "")[:240]
-                        for cell in table_cells
+                        for cell in table_cells_result.cells
                         if not _node_text_patch_preimage_present(
                             cell,
                             text_patch.selector.match_text,
@@ -239,12 +239,12 @@ class UKReplayTextActionApplyMixin:
                                 selector=dict(table_cell_selector),
                                 reason_code="multi_cell_text_preimage_gap",
                                 preimage_gap_cells=tuple(preimage_gaps),
-                                **table_cell_detail,
+                                **table_cells_result.detail,
                                 family="source_table_elaboration",
                             ),
                         )
                         return
-                    for table_cell in table_cells:
+                    for table_cell in table_cells_result.cells:
                         _new_cell, applied = self._apply_text_replace_on_node_text_only(
                             table_cell,
                             text_patch.selector.match_text,
@@ -269,7 +269,7 @@ class UKReplayTextActionApplyMixin:
                                     blocking=True,
                                     selector=dict(table_cell_selector),
                                     reason_code="multi_cell_text_apply_gap",
-                                    **table_cell_detail,
+                                    **table_cells_result.detail,
                                     family="source_table_elaboration",
                                 ),
                             )
@@ -287,7 +287,7 @@ class UKReplayTextActionApplyMixin:
                             blocking=False,
                             quirks_disposition="apply",
                             selector=dict(table_cell_selector),
-                            **table_cell_detail,
+                            **table_cells_result.detail,
                             family="source_table_elaboration",
                         ),
                     )
@@ -297,11 +297,11 @@ class UKReplayTextActionApplyMixin:
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
                     return
-                table_cell, table_cell_reason, table_cell_detail = resolve_uk_table_entry_inline_cell(
+                table_cell_result = resolve_uk_table_entry_inline_cell(
                     node,
                     table_cell_selector,
                 )
-                if table_cell is None:
+                if table_cell_result.cell is None:
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind=_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID,
@@ -317,12 +317,13 @@ class UKReplayTextActionApplyMixin:
                             replacement,
                             blocking=True,
                             selector=dict(table_cell_selector),
-                            reason_code=table_cell_reason,
-                            **table_cell_detail,
+                            reason_code=table_cell_result.reason_code,
+                            **table_cell_result.detail,
                             family="source_table_elaboration",
                         ),
                     )
                     return
+                table_cell = table_cell_result.cell
                 symbolic_detail: dict[str, Any] = {}
                 symbolic_reason = ""
                 if _TABLE_CELL_PARAGRAPH_SENTINEL_RE.match(text_patch.selector.match_text):
@@ -369,7 +370,7 @@ class UKReplayTextActionApplyMixin:
                                 blocking=False,
                                 quirks_disposition="apply",
                                 selector=dict(table_cell_selector),
-                                **table_cell_detail,
+                                **table_cell_result.detail,
                                 **symbolic_detail,
                                 family="source_table_elaboration",
                             ),
@@ -391,7 +392,7 @@ class UKReplayTextActionApplyMixin:
                             blocking=True,
                             selector=dict(table_cell_selector),
                             reason_code=symbolic_reason or "cell_text_preimage_gap",
-                            **table_cell_detail,
+                            **table_cell_result.detail,
                             **symbolic_detail,
                             family="source_table_elaboration",
                         ),
