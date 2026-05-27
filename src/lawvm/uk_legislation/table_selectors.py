@@ -4,7 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 import weakref
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
@@ -81,6 +81,11 @@ _NORMALIZED_ELEMENT_TEXT_CACHE: weakref.WeakKeyDictionary[
     ET.Element,
     str,
 ] = weakref.WeakKeyDictionary()
+
+
+class _TableCellSourceTargetContext(NamedTuple):
+    source_names_containing_target: bool
+    source_parent_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,18 +179,27 @@ def _source_or_parent_names_containing_target_for_table_cell(
     target: LegalAddress,
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],
-) -> tuple[bool, str]:
+) -> _TableCellSourceTargetContext:
     if _source_names_containing_target_for_table_cell(text, target):
-        return True, ""
+        return _TableCellSourceTargetContext(
+            source_names_containing_target=True,
+            source_parent_id="",
+        )
     matched_parent_without_id = False
     for ancestor in _source_ancestor_chain(source_root, extracted_el):
         ancestor_text = _normalized_element_text(ancestor)
         if _source_names_containing_target_for_table_cell(ancestor_text, target):
             source_parent_id = str(ancestor.get("id") or "")
             if source_parent_id:
-                return True, source_parent_id
+                return _TableCellSourceTargetContext(
+                    source_names_containing_target=True,
+                    source_parent_id=source_parent_id,
+                )
             matched_parent_without_id = True
-    return matched_parent_without_id, ""
+    return _TableCellSourceTargetContext(
+        source_names_containing_target=matched_parent_without_id,
+        source_parent_id="",
+    )
 
 
 def _uk_table_entry_inline_text_selector(
@@ -537,15 +551,17 @@ def _uk_table_column_entry_text_patch_claim(
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
     if not target_names_table and "table" not in text.lower():
         return None
-    source_names_containing_target, source_parent_id = (
-        _source_or_parent_names_containing_target_for_table_cell(
-            text=text,
-            target=target,
-            extracted_el=extracted_el,
-            source_root=source_root,
-        )
+    source_target_context = _source_or_parent_names_containing_target_for_table_cell(
+        text=text,
+        target=target,
+        extracted_el=extracted_el,
+        source_root=source_root,
     )
-    if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
+    source_names_containing_target = source_target_context.source_names_containing_target
+    source_parent_id = source_target_context.source_parent_id
+    if not target_names_table and not (
+        "table" in text.lower() and source_names_containing_target
+    ):
         return None
     column_match = re.search(
         r"\bin\s+(?:the\s+)?"
@@ -605,15 +621,17 @@ def _uk_table_column_entry_omission_text_patch_claim(
     if not text:
         return None
     target_names_table = "table" in " ".join((target_ref, str(target))).lower()
-    source_names_containing_target, source_parent_id = (
-        _source_or_parent_names_containing_target_for_table_cell(
-            text=text,
-            target=target,
-            extracted_el=extracted_el,
-            source_root=source_root,
-        )
+    source_target_context = _source_or_parent_names_containing_target_for_table_cell(
+        text=text,
+        target=target,
+        extracted_el=extracted_el,
+        source_root=source_root,
     )
-    if not target_names_table and not ("table" in text.lower() and source_names_containing_target):
+    source_names_containing_target = source_target_context.source_names_containing_target
+    source_parent_id = source_target_context.source_parent_id
+    if not target_names_table and not (
+        "table" in text.lower() and source_names_containing_target
+    ):
         return None
     column = (
         r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
@@ -1040,14 +1058,14 @@ def _uk_table_target_column_text_patch_claim(
     )
     if not target_names_table and "table" not in text.lower() and not column_only_metadata_target:
         return None
-    source_names_containing_target, source_parent_id = (
-        _source_or_parent_names_containing_target_for_table_cell(
-            text=text,
-            target=target,
-            extracted_el=extracted_el,
-            source_root=source_root,
-        )
+    source_target_context = _source_or_parent_names_containing_target_for_table_cell(
+        text=text,
+        target=target,
+        extracted_el=extracted_el,
+        source_root=source_root,
     )
+    source_names_containing_target = source_target_context.source_names_containing_target
+    source_parent_id = source_target_context.source_parent_id
     if not target_names_table and not (
         ("table" in text.lower() and source_names_containing_target)
         or column_only_metadata_target
