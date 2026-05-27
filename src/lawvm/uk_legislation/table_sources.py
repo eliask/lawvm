@@ -1090,11 +1090,16 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 occurrence = 0
                 end_occurrence = 0
                 if not structural_definition_entry_effect:
-                    (
-                        original,
-                        occurrence,
-                        end_occurrence,
-                    ) = _uk_repeal_table_quoted_words_selector(extent_clause)
+                    original = _uk_repeal_table_mixed_clause_word_selector(
+                        extent_clause,
+                        target=target,
+                    )
+                    if not original:
+                        (
+                            original,
+                            occurrence,
+                            end_occurrence,
+                        ) = _uk_repeal_table_quoted_words_selector(extent_clause)
                 if not original:
                     definition_originals = _uk_repeal_table_definition_entry_selectors(extent_clause)
                     if definition_originals:

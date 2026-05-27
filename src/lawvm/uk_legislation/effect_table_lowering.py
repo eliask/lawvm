@@ -1139,7 +1139,10 @@ def try_lower_repeal_table_effect(
             ops=_build_repeal_table_text_ops(
                 effect=effect,
                 sequence=sequence,
-                target=target,
+                target=_uk_contextual_word_repeal_text_target(
+                    target,
+                    originals=repeal_table_originals,
+                ),
                 originals=repeal_table_originals,
                 occurrence=repeal_table_text_repeal.occurrence,
                 end_occurrence=repeal_table_text_repeal.end_occurrence,
@@ -1776,6 +1779,18 @@ def _build_repeal_table_text_ops(
             )
         )
     return tuple(ops)
+
+
+def _uk_contextual_word_repeal_text_target(
+    target: LegalAddress,
+    *,
+    originals: tuple[str, ...],
+) -> LegalAddress:
+    """Contextual sibling-boundary word selectors replay against the parent carrier."""
+    if not any(original.startswith("TEXT_WORD_") for original in originals):
+        return target
+    parent = target.parent()
+    return parent if parent is not None else target
 
 
 def _build_table_payload_op(
