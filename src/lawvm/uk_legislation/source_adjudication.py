@@ -2013,6 +2013,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The extracted source is a payload fragment without the owning operative instruction; replay requires exact source-context recovery before lowering.",
         }
 
+    if "uk_effect_child_qualified_word_omission_target_mismatch_rejected" in blocking_rules:
+        return {
+            "status": "source_or_feed_target_conflict",
+            "rule_id": "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
+            "reason": "The source explicitly scopes a quoted word omission to a child provision that differs from the effect-feed target; replay needs a source-feed target adjudication before lowering.",
+        }
+
     if "uk_effect_mixed_structural_text_rewrite_rejected" in blocking_rules:
         return {
             "status": "deterministic_frontend_candidate",

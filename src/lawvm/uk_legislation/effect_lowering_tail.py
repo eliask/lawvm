@@ -361,6 +361,16 @@ def append_unlowered_overlap_substitution_rejection(
             "an anchor or ordering rule; lowering requires a validated placement "
             "claim and must not infer the insertion point from live text or oracle order."
         )
+    elif unlowered_overlap_substitution_reason == "child_qualified_word_omission_target_mismatch":
+        lowering_rule_id = "uk_effect_child_qualified_word_omission_target_mismatch_rejected"
+        family = "target_resolution_recovery"
+        reason_code = "child_qualified_word_omission_target_mismatch"
+        reason = (
+            "UK source explicitly scopes the quoted word omission to a child "
+            "provision that does not match the effect-feed target; lowering "
+            "blocks instead of applying a broad quoted-word deletion to the "
+            "feed target."
+        )
     else:
         (
             lowering_rule_id,

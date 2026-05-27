@@ -63,7 +63,10 @@ from lawvm.uk_legislation.source_fragment_context import (
 from lawvm.uk_legislation.source_table_entry_paragraph import (
     append_source_carried_table_entry_paragraph_observation,
 )
-from lawvm.uk_legislation.source_text_reclassifications import lower_quote_only_word_omission
+from lawvm.uk_legislation.source_text_reclassifications import (
+    lower_quote_only_word_omission,
+    source_claims_child_qualified_word_omission,
+)
 from lawvm.uk_legislation.table_sources import (
     lower_uk_table_driven_corresponding_entry_word_substitution,
 )
@@ -253,6 +256,52 @@ def lower_uk_text_fragment_rewrite(
             op_text_end_occurrence=op_text_end_occurrence,
             skip_effect=True,
         )
+
+    if is_word_level:
+        quote_only_omission_lowering = lower_quote_only_word_omission(
+            effect=effect,
+            effect_type=effect_type,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            is_word_level=is_word_level,
+            targets_str=targets_str,
+            target=target,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        if quote_only_omission_lowering.applied:
+            return UKTextFragmentLowering(
+                target=target,
+                curr_action=quote_only_omission_lowering.curr_action,
+                content_ir=quote_only_omission_lowering.content_ir,
+                fragment_subs=quote_only_omission_lowering.fragment_subs,
+                op_text_match=quote_only_omission_lowering.op_text_match,
+                op_text_replacement=quote_only_omission_lowering.op_text_replacement,
+                op_text_occurrence=(
+                    quote_only_omission_lowering.op_text_occurrence
+                    if quote_only_omission_lowering.op_text_occurrence is not None
+                    else op_text_occurrence
+                ),
+                op_text_end_occurrence=op_text_end_occurrence,
+            )
+        if source_claims_child_qualified_word_omission(
+            effect_type=effect_type,
+            extracted_text=extracted_text,
+        ):
+            return UKTextFragmentLowering(
+                target=target,
+                curr_action=None,
+                content_ir=content_ir,
+                fragment_subs=fragment_subs,
+                op_text_match=op_text_match,
+                op_text_replacement=op_text_replacement,
+                op_text_occurrence=op_text_occurrence,
+                op_text_end_occurrence=op_text_end_occurrence,
+                unlowered_overlap_reason="child_qualified_word_omission_target_mismatch",
+            )
 
     subs = _extract_text_fragment_substitutions(
         effect=effect,
