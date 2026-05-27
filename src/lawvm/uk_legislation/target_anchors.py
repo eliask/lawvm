@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import (
@@ -18,13 +18,18 @@ from lawvm.uk_legislation.canonicalize import canonicalize_uk_address, uk_kind_m
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+class UKInsertionAnchorResult(NamedTuple):
+    eid: Optional[str]
+    source: Optional[str]
+
+
 def _source_after_insertion_anchor(
     text: str,
     target: Optional[LegalAddress] = None,
-) -> tuple[Optional[str], Optional[str]]:
+) -> UKInsertionAnchorResult:
     lead = " ".join(str(text or "").split())
     if not lead:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     after_target = (
         r"after\s+(?P<kind>sub-?paragraph|paragraph|subsection|section|ss\.|s\.)\s*"
         r"\(?(?P<label>[0-9a-zA-Z]+)\)?\b"
@@ -44,19 +49,22 @@ def _source_after_insertion_anchor(
         match = re.search(rf"\b{after_target}", lead, flags=re.I)
         anchor_source = "extracted_source_after_clause"
     if match is None:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     kind = str(match.group("kind") or "").lower()
     label = str(match.group("label") or "")
     if not label:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     if target is not None and len(target.path) > 1:
         parent = target.parent()
         sibling_kind = _addr_leaf_kind(target)
         if parent is not None and sibling_kind:
             sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
-            return _fallback_target_eid(sibling), anchor_source
+            return UKInsertionAnchorResult(
+                eid=_fallback_target_eid(sibling),
+                source=anchor_source,
+            )
     prefix = "p1" if kind == "paragraph" else "section"
-    return f"{prefix}-{label}", anchor_source
+    return UKInsertionAnchorResult(eid=f"{prefix}-{label}", source=anchor_source)
 
 
 def _fallback_target_eid(addr: LegalAddress) -> str:
@@ -107,10 +115,10 @@ def _body_target_eid_suffixes(addr: LegalAddress) -> list[str]:
 def _source_before_insertion_anchor(
     text: str,
     target: LegalAddress,
-) -> tuple[Optional[str], Optional[str]]:
+) -> UKInsertionAnchorResult:
     lead = " ".join(str(text or "").split())
     if not lead:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     match = re.search(
         r"\bbefore\s+(?P<kind>sub-?paragraph|paragraph|subsection|item)\s*"
         r"\(?(?P<label>[0-9a-zA-Z]+)\)?\s+insert\b",
@@ -118,20 +126,23 @@ def _source_before_insertion_anchor(
         flags=re.I,
     )
     if match is None:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     if len(target.path) < 2:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     label = str(match.group("label") or "")
     if not label:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     parent = target.parent()
     if parent is None:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     sibling_kind = _addr_leaf_kind(target)
     if not sibling_kind:
-        return None, None
+        return UKInsertionAnchorResult(eid=None, source=None)
     sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
-    return _fallback_target_eid(sibling), "extracted_source_before_clause"
+    return UKInsertionAnchorResult(
+        eid=_fallback_target_eid(sibling),
+        source="extracted_source_before_clause",
+    )
 
 
 def _target_anchor_eid(target: LegalAddress) -> Optional[str]:
