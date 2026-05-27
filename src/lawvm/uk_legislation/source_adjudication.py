@@ -1240,6 +1240,13 @@ def _looks_like_structural_child_range_substitution_instruction(text: str) -> bo
             r"(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute)\b",
             norm,
         )
+        or re.search(
+            r"\bfor\s+(?:paragraphs|sub-?paragraphs|subsections)\s+"
+            r"\([0-9A-Za-z]+\)\s+to\s+\([0-9A-Za-z]+\)"
+            r"(?:\s+of\s+the\s+definition\s+of\s+[\"“][^\"”]+[\"”])?"
+            r".*\bsubstitute\b",
+            norm,
+        )
     )
 
 
@@ -2159,7 +2166,7 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
         }
 
-    if (
+    if "uk_effect_structural_child_range_substitution_rejected" in blocking_rules or (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and _looks_like_structural_child_range_substitution_instruction(extracted_text_norm)
     ):

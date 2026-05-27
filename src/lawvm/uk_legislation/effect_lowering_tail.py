@@ -283,6 +283,24 @@ def _unlowered_overlap_source_shape_classification(
                 "an owned split into separate canonical operations before replay."
             ),
         )
+    if re.search(
+        r"\bfor\s+(?:paragraphs|sub-?paragraphs|subsections)\s+"
+        r"\([0-9A-Za-z]+\)\s+(?:and|to)\s+\([0-9A-Za-z]+\)"
+        r"(?:\s+of\s+the\s+definition\s+of\s+[“\"'‘][^”\"'’]+[”\"'’])?"
+        r".*\bsubstitute\b",
+        text,
+        re.I,
+    ):
+        return UnloweredOverlapSourceShapeClassification(
+            "uk_effect_structural_child_range_substitution_rejected",
+            "source_payload_elaboration",
+            "structural_child_range_substitution_requires_owned_payload",
+            (
+                "UK source substitutes a structural child range; lowering "
+                "requires ownership of removed child identities, replacement "
+                "payload shape, and connector/tail semantics before replay."
+            ),
+        )
     if (
         re.search(r"\bfor\s+[“\"'‘][^”\"'’]+[”\"'’].*\bsubstitute\b", text, re.I)
         and (
