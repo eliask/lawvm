@@ -28,6 +28,19 @@ class UKNumericListTrailingCommaSubtreeReplacement:
     anchor: str
 
 
+@dataclass(frozen=True, slots=True)
+class _UKTextNodeWalkEntry:
+    path: tuple[int, ...]
+    node: UKMutableNode
+
+
+@dataclass(frozen=True, slots=True)
+class _UKTextMatchCandidate:
+    path: tuple[int, ...]
+    node: UKMutableNode
+    match: re.Match[str]
+
+
 def _normalize_text(text: str) -> str:
     """Normalize text for fuzzy matching (squash whitespace)."""
     if not text:
@@ -101,15 +114,17 @@ def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
     return bool(re.search(r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])", match))
 
 
-def _walk_text_nodes(node: UKMutableNode) -> list[tuple[tuple[int, ...], UKMutableNode]]:
-    text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
-    stack: list[tuple[tuple[int, ...], UKMutableNode]] = [((), node)]
+def _walk_text_nodes(node: UKMutableNode) -> list[_UKTextNodeWalkEntry]:
+    text_nodes: list[_UKTextNodeWalkEntry] = []
+    stack: list[_UKTextNodeWalkEntry] = [_UKTextNodeWalkEntry((), node)]
     while stack:
-        path, current = stack.pop()
+        walk_entry = stack.pop()
+        path = walk_entry.path
+        current = walk_entry.node
         if current.text:
-            text_nodes.append((path, current))
+            text_nodes.append(_UKTextNodeWalkEntry(path, current))
         for index in range(len(current.children) - 1, -1, -1):
-            stack.append((path + (index,), current.children[index]))
+            stack.append(_UKTextNodeWalkEntry(path + (index,), current.children[index]))
     return text_nodes
 
 
@@ -157,8 +172,8 @@ def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> O
     body_pattern_re = re.compile(rf"(?<![A-Za-z0-9]){body_pattern}(?![A-Za-z0-9])", flags=re.I)
     rotated_matches: list[str] = []
     body_matches = 0
-    for _, current in _walk_text_nodes(node):
-        text = current.text or ""
+    for walk_entry in _walk_text_nodes(node):
+        text = walk_entry.node.text or ""
         rotated_matches.extend(match_obj.group("delete") for match_obj in rotated_pattern.finditer(text))
         body_matches += len(tuple(body_pattern_re.finditer(text)))
 
@@ -223,20 +238,20 @@ def _numeric_list_trailing_comma_subtree_replacement(
     if anchor_pattern is None:
         return None
     text_nodes = _walk_text_nodes(node)
-    if any(match in text_node.text for _, text_node in text_nodes):
+    if any(match in text_node.node.text for text_node in text_nodes):
         return None
-    matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
-    for path, text_node in text_nodes:
+    matches: list[_UKTextMatchCandidate] = []
+    for text_node in text_nodes:
         matches.extend(
-            (path, text_node, match_obj)
-            for match_obj in anchor_pattern.pattern.finditer(text_node.text)
+            _UKTextMatchCandidate(text_node.path, text_node.node, match_obj)
+            for match_obj in anchor_pattern.pattern.finditer(text_node.node.text)
         )
     if len(matches) != 1:
         return None
-    path, text_node, match_obj = matches[0]
+    match_candidate = matches[0]
     return UKNumericListTrailingCommaSubtreeReplacement(
-        path=path,
-        new_text=_splice_text_match_replacement(text_node.text, match_obj, replacement),
+        path=match_candidate.path,
+        new_text=_splice_text_match_replacement(match_candidate.node.text, match_candidate.match, replacement),
         anchor=anchor_pattern.anchor,
     )
 
