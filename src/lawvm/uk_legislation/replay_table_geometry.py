@@ -76,6 +76,24 @@ class UKTableCellsResolution:
     detail: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class _UKTableAnchorRowMatch:
+    insert_index: int
+    row_preview: str
+
+
+@dataclass(frozen=True, slots=True)
+class _UKTableAnchorTableMatch:
+    table: UKMutableNode
+    matches: tuple[_UKTableAnchorRowMatch, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _UKTableEntryCellMatch:
+    cell: UKMutableNode
+    row_preview: str
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
 
@@ -424,10 +442,10 @@ def resolve_uk_table_entry_row_insert_index(
     carrier_detail = table_selection.detail
     if len(tables) != 1:
         if selector_mode == "column_entry":
-            anchor_table_matches: list[tuple[UKMutableNode, tuple[tuple[int, str], ...]]] = []
+            anchor_table_matches: list[_UKTableAnchorTableMatch] = []
             for candidate_table in tables:
                 candidate_rows = expanded_uk_table_rows_with_physical_index(candidate_table)
-                candidate_matches: list[tuple[int, str]] = []
+                candidate_matches: list[_UKTableAnchorRowMatch] = []
                 last_candidate_cell: UKMutableNode | None = None
                 for row_index, row_cells in candidate_rows:
                     target_cell = row_cells.get(column_index)
@@ -439,9 +457,9 @@ def resolve_uk_table_entry_row_insert_index(
                         continue
                     last_candidate_cell = target_cell
                     candidate_matches.append(
-                        (
-                            row_index if direction == "before" else row_index + 1,
-                            " | ".join(
+                        _UKTableAnchorRowMatch(
+                            insert_index=row_index if direction == "before" else row_index + 1,
+                            row_preview=" | ".join(
                                 str(row_cells[col].text or "")
                                 for col in sorted(row_cells)
                                 if str(row_cells[col].text or "")
@@ -449,9 +467,9 @@ def resolve_uk_table_entry_row_insert_index(
                         )
                     )
                 if candidate_matches:
-                    anchor_table_matches.append((candidate_table, tuple(candidate_matches)))
-            if len(anchor_table_matches) == 1 and len(anchor_table_matches[0][1]) == 1:
-                table = anchor_table_matches[0][0]
+                    anchor_table_matches.append(_UKTableAnchorTableMatch(candidate_table, tuple(candidate_matches)))
+            if len(anchor_table_matches) == 1 and len(anchor_table_matches[0].matches) == 1:
+                table = anchor_table_matches[0].table
                 carrier_detail = {
                     **carrier_detail,
                     "table_carrier": "anchor_filtered_descendant_table",
@@ -468,10 +486,10 @@ def resolve_uk_table_entry_row_insert_index(
                         "anchor_filtered_table_count": len(anchor_table_matches),
                         "anchor_filtered_matches": tuple(
                             {
-                                "matching_entry_count": len(matches),
-                                "matching_rows": tuple(row for _index, row in matches[:5]),
+                                "matching_entry_count": len(table_match.matches),
+                                "matching_rows": tuple(match.row_preview for match in table_match.matches[:5]),
                             }
-                            for _table, matches in anchor_table_matches[:5]
+                            for table_match in anchor_table_matches[:5]
                         ),
                         **carrier_detail,
                     },
@@ -1011,7 +1029,7 @@ def resolve_unique_uk_table_entry_cells(
     if len(tables) != 1:
         return result([], "table_not_unique", {"table_count": len(tables), **carrier_detail})
 
-    matches_by_label: dict[str, list[tuple[UKMutableNode, str]]] = {label: [] for label in entry_labels}
+    matches_by_label: dict[str, list[_UKTableEntryCellMatch]] = {label: [] for label in entry_labels}
     for row_cells in expanded_uk_table_rows(tables[0]):
         row_texts = [
             str(row_cells[col].text or "")
@@ -1025,8 +1043,8 @@ def resolve_unique_uk_table_entry_cells(
             if not any(_compact_normalized_text(text) == label for text in row_texts):
                 continue
             row_preview = " | ".join(row_texts)[:240]
-            if not matches_by_label[label] or matches_by_label[label][-1][0] is not target_cell:
-                matches_by_label[label].append((target_cell, row_preview))
+            if not matches_by_label[label] or matches_by_label[label][-1].cell is not target_cell:
+                matches_by_label[label].append(_UKTableEntryCellMatch(target_cell, row_preview))
 
     missing = tuple(label for label, matches in matches_by_label.items() if not matches)
     ambiguous = tuple(label for label, matches in matches_by_label.items() if len(matches) > 1)
@@ -1038,19 +1056,19 @@ def resolve_unique_uk_table_entry_cells(
                 "missing_entry_labels": missing,
                 "ambiguous_entry_labels": ambiguous,
                 "matching_rows": tuple(
-                    row_preview
+                    match.row_preview
                     for matches in matches_by_label.values()
-                    for _cell, row_preview in matches[:2]
+                    for match in matches[:2]
                 )[:5],
                 **carrier_detail,
             },
         )
     return result(
-        [matches_by_label[label][0][0] for label in entry_labels],
+        [matches_by_label[label][0].cell for label in entry_labels],
         "",
         {
             "matching_cell_count": len(entry_labels),
-            "matched_rows": tuple(matches_by_label[label][0][1] for label in entry_labels),
+            "matched_rows": tuple(matches_by_label[label][0].row_preview for label in entry_labels),
             **carrier_detail,
         },
     )
