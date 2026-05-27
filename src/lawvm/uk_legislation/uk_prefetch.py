@@ -18,7 +18,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
@@ -115,6 +115,13 @@ class UKPrefetchReport:
             "blocking_event_rule_counts": dict(sorted(blocking_event_rule_counts.items())),
             "events": [dict(event) for event in self.events],
         }
+
+
+class _EnactedSourcePrefetchResult(NamedTuple):
+    fetched_count: int
+    already_cached_count: int
+    error_count: int
+    events: tuple[dict[str, Any], ...]
 
 
 def _missing_affecting_locator(act_id: str) -> str:
@@ -284,14 +291,14 @@ def fetch_missing_for_statute(
     errors = source_error_count
     seen_acts: set[str] = set()
 
-    def _ensure_enacted_cached(act_id: str) -> tuple[int, int, int, tuple[dict[str, Any], ...]]:
+    def _ensure_enacted_cached(act_id: str) -> _EnactedSourcePrefetchResult:
         if not include_enacted:
-            return 0, 0, 0, ()
+            return _EnactedSourcePrefetchResult(0, 0, 0, ())
 
         enacted_url = f"{_LEG_BASE}/{act_id}/enacted/data.xml"
         missing_enacted_locator = _missing_affecting_enacted_locator(act_id)
         if archive.has(missing_enacted_locator):
-            return (
+            return _EnactedSourcePrefetchResult(
                 0,
                 1,
                 0,
@@ -310,7 +317,7 @@ def fetch_missing_for_statute(
 
         enacted_xml = get_affecting_act_enacted_xml_from_archive(act_id, archive)
         if enacted_xml:
-            return (
+            return _EnactedSourcePrefetchResult(
                 0,
                 1,
                 0,
@@ -326,7 +333,7 @@ def fetch_missing_for_statute(
 
         if dry_run:
             print(f"  DRY-RUN would fetch enacted: {enacted_url}")
-            return (
+            return _EnactedSourcePrefetchResult(
                 1,
                 0,
                 0,
@@ -347,7 +354,7 @@ def fetch_missing_for_statute(
                 http_status = getattr(resp, "status", None)
             source_state = classify_uk_source_blob(data)
             if source_state.status is not UKSourceStatus.AVAILABLE:
-                return (
+                return _EnactedSourcePrefetchResult(
                     0,
                     0,
                     1,
@@ -364,7 +371,7 @@ def fetch_missing_for_statute(
                     ),
                 )
             archive.store(enacted_url, data, storage_class="xml")
-            return (
+            return _EnactedSourcePrefetchResult(
                 1,
                 0,
                 0,
@@ -382,7 +389,7 @@ def fetch_missing_for_statute(
         except urllib.error.HTTPError as exc:
             if exc.code in {404, 410}:
                 archive.store(missing_enacted_locator, b"404", storage_class="text")
-                return (
+                return _EnactedSourcePrefetchResult(
                     0,
                     1,
                     0,
@@ -398,7 +405,7 @@ def fetch_missing_for_statute(
                         ),
                     ),
                 )
-            return (
+            return _EnactedSourcePrefetchResult(
                 0,
                 0,
                 1,
@@ -415,7 +422,7 @@ def fetch_missing_for_statute(
                 ),
             )
         except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-            return (
+            return _EnactedSourcePrefetchResult(
                 0,
                 0,
                 1,
@@ -472,11 +479,11 @@ def fetch_missing_for_statute(
             )
             if verbose:
                 print(f"  CACHED  {act_id}", file=sys.stderr)
-            enacted_fetched, enacted_cached, enacted_errors, enacted_events = _ensure_enacted_cached(act_id)
-            fetched += enacted_fetched
-            cached += enacted_cached
-            errors += enacted_errors
-            events.extend(enacted_events)
+            enacted_result = _ensure_enacted_cached(act_id)
+            fetched += enacted_result.fetched_count
+            cached += enacted_result.already_cached_count
+            errors += enacted_result.error_count
+            events.extend(enacted_result.events)
             continue
 
         if dry_run:
@@ -530,11 +537,11 @@ def fetch_missing_for_statute(
                 fetched += 1
                 if verbose:
                     print(f"  FETCHED {act_id}  ({len(data):,} bytes)", file=sys.stderr)
-                enacted_fetched, enacted_cached, enacted_errors, enacted_events = _ensure_enacted_cached(act_id)
-                fetched += enacted_fetched
-                cached += enacted_cached
-                errors += enacted_errors
-                events.extend(enacted_events)
+                enacted_result = _ensure_enacted_cached(act_id)
+                fetched += enacted_result.fetched_count
+                cached += enacted_result.already_cached_count
+                errors += enacted_result.error_count
+                events.extend(enacted_result.events)
         except urllib.error.HTTPError as exc:
             if exc.code in {404, 410}:
                 archive.store(missing_locator, b"404", storage_class="text")
