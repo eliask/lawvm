@@ -27354,7 +27354,7 @@ def test_compile_malformed_overlap_substitution_records_unlowered_rejection() ->
     assert "relevant words are changed" in rejection["extracted_text_preview"]
 
 
-def test_compile_mixed_body_heading_text_substitution_records_split_rejection() -> None:
+def test_compile_mixed_body_heading_text_substitution_lowers_current_body_lane() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P1 xmlns="{_LEG_NS}">
@@ -27386,28 +27386,28 @@ def test_compile_mixed_body_heading_text_substitution_records_split_rejection() 
     )
     lowering_rejections: list[dict[str, Any]] = []
 
-    assert (
-        compile_effect_to_ir_ops(
-            effect,
-            extracted_el,
-            sequence=0,
-            lowering_rejections_out=lowering_rejections,
-        )
-        == []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
     )
-    assert len(lowering_rejections) == 1
-    rejection = lowering_rejections[0]
-    assert rejection["rule_id"] == "uk_effect_mixed_body_heading_text_substitution_rejected"
-    assert rejection["family"] == "unsupported_target_facet"
-    assert (
-        rejection["reason_code"]
-        == "mixed_body_heading_text_substitution_requires_split"
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "82"),)
+    assert ops[0].text_patch == _replace_patch("Commissioner", "appointed person")
+    assert any(
+        record["rule_id"]
+        == "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+        and record["target"] == "section:82"
+        and record["blocking"] is False
+        for record in lowering_rejections
     )
-    assert rejection["blocking"] is True
-    assert rejection["strict_disposition"] == "block"
+    assert not any(record["blocking"] is True for record in lowering_rejections)
 
 
-def test_compile_mixed_subsection_heading_text_substitution_records_split_rejection() -> None:
+def test_compile_mixed_subsection_heading_text_substitution_lowers_current_body_lane() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P1 xmlns="{_LEG_NS}">
@@ -27440,21 +27440,82 @@ def test_compile_mixed_subsection_heading_text_substitution_records_split_reject
     )
     lowering_rejections: list[dict[str, Any]] = []
 
-    assert (
-        compile_effect_to_ir_ops(
-            effect,
-            extracted_el,
-            sequence=0,
-            lowering_rejections_out=lowering_rejections,
-        )
-        == []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
     )
-    assert len(lowering_rejections) == 1
-    rejection = lowering_rejections[0]
-    assert rejection["rule_id"] == "uk_effect_mixed_body_heading_text_substitution_rejected"
-    assert rejection["reason_code"] == "mixed_body_heading_text_substitution_requires_split"
-    assert rejection["blocking"] is True
-    assert rejection["strict_disposition"] == "block"
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "83"), ("subsection", "1"))
+    assert ops[0].text_patch == _replace_patch("Commissioner", "appointed person")
+    assert any(
+        record["rule_id"]
+        == "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+        and record["target"] == "section:83/subsection:1"
+        and record["blocking"] is False
+        for record in lowering_rejections
+    )
+    assert not any(record["blocking"] is True for record in lowering_rejections)
+
+
+def test_compile_mixed_body_heading_text_substitution_lowers_current_heading_lane() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>35</Pnumber>
+          <Text>2 In subsections (1) and (3), in the heading, and in the italic
+          heading immediately preceding the section, for \u201cCommissioner\u201d
+          (in each place, including in the word \u201cCommissioner's\u201d) substitute
+          \u201c appointed person \u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_body_heading_text_substitution_heading_lane",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-01",
+        affected_uri="/id/ukpga/2008/29/section/83",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions="s. 83 heading",
+        affecting_uri="/id/ukpga/2011/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="20",
+        affecting_provisions="Sch. 13 para. 35(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("section", "83"),),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch("Commissioner", "appointed person")
+    assert any(
+        record["rule_id"]
+        == "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+        and record["target"] == "section:83/heading"
+        and record["blocking"] is False
+        for record in lowering_rejections
+    )
+    assert not any(record["blocking"] is True for record in lowering_rejections)
 
 
 def test_compile_payload_fragment_overlap_records_source_context_rejection() -> None:

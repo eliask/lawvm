@@ -105,6 +105,7 @@ UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
     {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_all_occurrences_substitution_text_patch",
+        "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch",
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
     }

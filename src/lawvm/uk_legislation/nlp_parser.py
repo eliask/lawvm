@@ -126,6 +126,9 @@ UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID = (
 UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID = (
     "uk_effect_sibling_first_then_each_other_place_substitution_text_patch"
 )
+UK_MIXED_BODY_HEADING_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
+    "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -372,6 +375,28 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
                 "source_child_kind": m.group("child_kind").strip().lower(),
                 "source_child_label": m.group("child_label").strip(),
                 "rule_id": "uk_effect_child_qualified_quoted_substitution_text_patch",
+            }
+        )
+
+    matches_mixed_body_heading_all_occurrences_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s*"
+        r"\((?P<scope>[^)]*\bin\s+each\s+place\b[^)]*)\)\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I | re.S,
+    )
+    for m in matches_mixed_body_heading_all_occurrences_substituted:
+        heading_scope = r"\bin\s+(?:the\s+)?(?:italic\s+)?heading\b"
+        if not (
+            re.search(heading_scope, m.group("scope"), re.I)
+            or re.search(heading_scope, text[: m.start()], re.I)
+        ):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_MIXED_BODY_HEADING_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
             }
         )
 
