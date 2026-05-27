@@ -41,6 +41,7 @@ from lawvm.uk_legislation.lowering_actions import (
     _is_uk_word_level_effect_type,
     _uk_effect_type_action,
 )
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
 from lawvm.uk_legislation.metadata_rewrites import (
     _uk_affected_target_corrected_renumber_targets,
     _uk_metadata_renumber_targets,
@@ -323,6 +324,24 @@ def compile_effect_to_ir_ops(
         affected_provisions=effect.affected_provisions,
     )
     if action == "insert" and definition_child_structural_insert is not None:
+        if definition_child_structural_insert.get("blocking"):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=str(definition_child_structural_insert["rule_id"]),
+                family=str(definition_child_structural_insert["family"]),
+                reason_code=str(definition_child_structural_insert["reason_code"]),
+                reason=str(definition_child_structural_insert["reason"]),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    key: value
+                    for key, value in definition_child_structural_insert.items()
+                    if key not in {"rule_id", "family", "reason_code", "reason"}
+                },
+            )
+            _mark_lower_phase("compile_lower_special")
+            return []
         ops = lower_uk_definition_child_structural_sibling_insert(
             effect=effect,
             extracted_el=extracted_el,

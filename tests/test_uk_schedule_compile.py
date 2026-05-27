@@ -3754,8 +3754,8 @@ def test_compile_broad_structural_sibling_insert_rejects_without_parent_claim() 
 
     assert len(lowering_records) == 1
     rejection = lowering_records[0]
-    assert rejection["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
-    assert rejection["reason_code"] == "structural_sibling_insert_requires_owned_parent_anchor_payload"
+    assert rejection["rule_id"] == "uk_effect_definition_child_structural_insert_rejected"
+    assert rejection["reason_code"] == "definition_child_structural_insert_requires_child_and_tail_claim"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 
@@ -3922,10 +3922,123 @@ def test_compile_child_tail_sibling_insert_rejects_non_contiguous_label() -> Non
 
     assert len(lowering_records) == 1
     rejection = lowering_records[0]
-    assert rejection["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
-    assert rejection["reason_code"] == "structural_sibling_insert_requires_owned_parent_anchor_payload"
+    assert rejection["rule_id"] == "uk_effect_definition_child_structural_insert_rejected"
+    assert rejection["reason_code"] == "definition_child_structural_insert_requires_child_and_tail_claim"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
+
+
+def test_compile_definition_child_structural_insert_before_tail_connector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-22-paragraph-37">
+          <Pnumber>37</Pnumber>
+          <P1para>
+            <Text>37 In section 374, in the definition of \u201ccustodial sentence\u201d,
+            after paragraph (e) (but before the \u201cor\u201d at the end of that
+            paragraph) insert\u2014 ea a sentence of detention under section 226B; .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_insert_rejected",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-12-03",
+        affected_uri="/id/ukpga/2006/52/section/374",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 374",
+        affecting_uri="/id/ukpga/2012/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="10",
+        affecting_provisions="Sch. 22 para. 37",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-12-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.INSERT,
+    ]
+    assert ops[0].target.path == (("section", "374"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_custodial sentence"
+        f"{US}e{US}FINAL{US}or"
+    )
+    assert ops[0].text_patch.replacement == ""
+    assert ops[1].target.path == (("section", "374"), ("item", "ea"))
+    assert ops[1].payload is not None
+    assert ops[1].payload.text == "a sentence of detention under section 226B; or"
+    assert len(lowering_records) == 1
+    assert (
+        lowering_records[0]["rule_id"]
+        == "uk_effect_definition_child_structural_insert_before_tail_connector_lowered"
+    )
+    assert lowering_records[0]["tail_connector"] == "or"
+    assert lowering_records[0]["blocking"] is False
+
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="374",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.ITEM,
+                            label="e",
+                            text="a sentence of detention under section 221; or",
+                            attrs={
+                                "definition_term": "custodial sentence",
+                                "definition_child_label": "e",
+                                "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                            },
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.ITEM,
+                            label="f",
+                            text="a sentence of detention under section 222;",
+                            attrs={
+                                "definition_term": "custodial sentence",
+                                "definition_child_label": "f",
+                                "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    section = replayed.body.children[0]
+    assert [(child.label, child.text) for child in section.children] == [
+        ("e", "a sentence of detention under section 221;"),
+        ("ea", "a sentence of detention under section 226B; or"),
+        ("f", "a sentence of detention under section 222;"),
+    ]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_final_connector_rewrite_applied",
+        "uk_replay_definition_child_structural_sibling_insert_applied",
+    ]
 
 
 def test_compile_definition_child_structural_insert_rejects_without_tail_claim() -> None:
@@ -3935,8 +4048,7 @@ def test_compile_definition_child_structural_insert_rejects_without_tail_claim()
           <Pnumber>37</Pnumber>
           <P1para>
             <Text>37 In section 374, in the definition of \u201ccustodial sentence\u201d,
-            after paragraph (e) (but before the \u201cor\u201d at the end of that
-            paragraph) insert\u2014 ea a sentence of detention under section 226B; .</Text>
+            after paragraph (e) insert\u2014 ea a sentence of detention under section 226B; .</Text>
           </P1para>
         </P1>
         """
