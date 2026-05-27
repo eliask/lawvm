@@ -19,6 +19,7 @@ from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_obs
 from lawvm.uk_legislation.metadata_rewrites import UKMetadataRenumberTargets
 from lawvm.uk_legislation.source_parent_payloads import (
     UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID,
+    UK_AT_END_SECTION_SUBSECTION_INSERT_BLOCK_AMENDMENT_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
     UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
@@ -369,16 +370,24 @@ def lower_uk_after_section_subsection_range_insert_block_amendment(  # noqa: PLR
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> list[LegalOperation]:
     """Lower a source-owned contiguous subsection range insert."""
-    rule_id = UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID
+    rule_id = str(
+        after_section_subsection_range_insert.get("rule_id")
+        or UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID
+    )
+    at_end_single = rule_id == UK_AT_END_SECTION_SUBSECTION_INSERT_BLOCK_AMENDMENT_RULE_ID
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
         rule_id=rule_id,
         family="source_context_elaboration",
-        reason_code="after_section_subsection_range_insert_block_amendment",
+        reason_code=(
+            "at_end_section_subsection_insert_block_amendment"
+            if at_end_single
+            else "after_section_subsection_range_insert_block_amendment"
+        ),
         reason=(
-            "UK source row inserts a contiguous labelled subsection range after "
-            "an existing subsection; lowering emits typed sibling inserts "
-            "instead of treating the instruction prose as one range payload."
+            "UK source row inserts labelled subsection payloads after an "
+            "existing subsection; lowering emits typed sibling inserts "
+            "instead of treating the instruction prose as the target payload."
         ),
         effect=effect,
         extracted_el=extracted_el,
