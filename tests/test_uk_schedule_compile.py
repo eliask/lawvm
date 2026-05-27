@@ -28672,14 +28672,29 @@ def test_compile_table_row_number_insert_rejects_without_row_claim() -> None:
 
 
 def test_compile_table_child_anchor_insert_rejects_without_table_claim() -> None:
-    extracted_el = ET.fromstring(
+    source_root = ET.fromstring(
         f"""
-        <P3 xmlns="{_LEG_NS}">
-          <Pnumber>a</Pnumber>
-          <Text>a after paragraph (a) insert\u2014 corporal in the Royal Marines; ;</Text>
-        </P3>
+        <P1 xmlns="{_LEG_NS}" id="section-13">
+          <Pnumber>13</Pnumber>
+          <P1para>
+            <Text>In subsection (1), in row 1 of the table, in the third column\u2014</Text>
+            <P3 id="section-13-2-a">
+              <Pnumber>a</Pnumber>
+              <Text>after paragraph (a) insert\u2014</Text>
+              <BlockAmendment>
+                <OrderedList Type="alpha" Decoration="parens">
+                  <ListItem NumberOverride="aa">
+                    <Para><Text>corporal in the Royal Marines;</Text></Para>
+                  </ListItem>
+                </OrderedList>
+              </BlockAmendment>
+            </P3>
+          </P1para>
+        </P1>
         """
     )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
     effect = UKEffectRecord(
         effect_id="uk_test_table_child_anchor_insert",
         effect_type="words inserted",
@@ -28707,6 +28722,7 @@ def test_compile_table_child_anchor_insert_rejects_without_table_claim() -> None
             extracted_el,
             sequence=0,
             lowering_rejections_out=lowering_rejections,
+            source_root=source_root,
         )
         == []
     )
@@ -28716,6 +28732,19 @@ def test_compile_table_child_anchor_insert_rejects_without_table_claim() -> None
     assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
     assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
     assert rejection["entry_shape"] == "table_child_structural_insert"
+    assert rejection["source_table_row_number"] == 1
+    assert rejection["source_table_column_index"] == 3
+    assert rejection["table_child_insert_direction"] == "after"
+    assert rejection["table_child_anchor_kind"] == "paragraph"
+    assert rejection["table_child_anchor_label"] == "a"
+    assert rejection["inserted_ordered_list_units"] == (
+        {
+            "source_list_type": "alpha",
+            "source_list_decoration": "parens",
+            "label": "aa",
+            "text": "corporal in the Royal Marines;",
+        },
+    )
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 

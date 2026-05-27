@@ -27,7 +27,11 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.source_fragment_context import (
     _source_local_instruction_text_for_carried_payload,
 )
-from lawvm.uk_legislation.uk_grafter import _clean_num, _parse_table as _parse_uk_table_payload
+from lawvm.uk_legislation.uk_grafter import (
+    _alpha_label,
+    _clean_num,
+    _parse_table as _parse_uk_table_payload,
+)
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
 
@@ -74,6 +78,19 @@ _UK_COLUMN_TOKEN_PATTERN = (
 _UK_EXPLICIT_ENTRY_LABEL_COLUMN_CLAIM_RE = re.compile(
     rf"\bin\s+entr(?:y|ies)\s+[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)*,?\s+"
     rf"in\s+{_UK_COLUMN_TOKEN_PATTERN}\b",
+    re.I,
+)
+_UK_TABLE_ROW_COLUMN_CONTEXT_RE = re.compile(
+    r"\bin\s+row\s+(?P<row>\d+)\s+of\s+(?:the\s+)?table,\s+"
+    r"in\s+(?:the\s+)?"
+    r"(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)"
+    r"\s+column\b",
+    re.I,
+)
+_UK_TABLE_CHILD_ANCHOR_INSERT_RE = re.compile(
+    r"\b(?P<direction>after|before)\s+"
+    r"(?P<anchor_kind>paragraph|sub-?paragraph)\s*"
+    r"\((?P<anchor>[0-9A-Za-z]+)\)\s+insert(?:\b|\s*[—-])",
     re.I,
 )
 
@@ -134,6 +151,106 @@ def _inserted_table_payload_rows(extracted_el: Optional[ET.Element]) -> tuple[tu
         if cells:
             rows.append(cells)
     return tuple(rows)
+
+
+def _inserted_ordered_list_units(extracted_el: Optional[ET.Element]) -> tuple[dict[str, str], ...]:
+    """Return source-owned ordered-list items carried by a table-cell child insertion."""
+    if extracted_el is None:
+        return ()
+    units: list[dict[str, str]] = []
+    for ordered_list in extracted_el.iter():
+        if _tag(ordered_list) != "OrderedList":
+            continue
+        item_index = 0
+        for child in ordered_list:
+            if _tag(child) != "ListItem":
+                continue
+            label = (child.get("NumberOverride") or "").strip().strip("()")
+            if not label:
+                label = _clean_num(_direct_structural_num(child))
+            if not label:
+                label = _clean_num(_alpha_label(item_index))
+            item_index += 1
+            text = _normalized_element_text(child)
+            if not text:
+                continue
+            units.append(
+                {
+                    "source_list_type": str(ordered_list.get("Type") or ""),
+                    "source_list_decoration": str(ordered_list.get("Decoration") or ""),
+                    "label": label,
+                    "text": text,
+                }
+            )
+    return tuple(units)
+
+
+def _source_parent_table_instruction_text(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> tuple[str, str]:
+    """Return nearest source-local table instruction context for a carried child row."""
+    for ancestor in _source_ancestor_chain(source_root, extracted_el):
+        instruction = " ".join(
+            _source_local_instruction_text_for_carried_payload(ancestor).split()
+        ).strip()
+        if not instruction:
+            continue
+        if "table" not in instruction.lower():
+            continue
+        return instruction, str(ancestor.get("id") or "")
+    return "", ""
+
+
+def _uk_table_child_structural_insert_detail(
+    *,
+    extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> dict[str, Any]:
+    """Extract non-executable evidence for table-cell nested child insertions."""
+    child_text = " ".join((extracted_text or "").split()).strip()
+    source_parent_instruction, source_parent_id = _source_parent_table_instruction_text(
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+    combined_text = " ".join(
+        part for part in (source_parent_instruction, child_text) if part
+    ).strip()
+    detail: dict[str, Any] = {}
+    context_match = _UK_TABLE_ROW_COLUMN_CONTEXT_RE.search(combined_text)
+    if context_match is not None:
+        row_number = int(context_match.group("row"))
+        column_token = context_match.group("column")
+        column_index = _uk_ordinal_to_int(column_token)
+        detail.update(
+            {
+                "source_table_row_number": row_number,
+                "source_table_column_text": column_token,
+            }
+        )
+        if column_index is not None:
+            detail["source_table_column_index"] = column_index
+    anchor_match = _UK_TABLE_CHILD_ANCHOR_INSERT_RE.search(child_text)
+    if anchor_match is None:
+        anchor_match = _UK_TABLE_CHILD_ANCHOR_INSERT_RE.search(combined_text)
+    if anchor_match is not None:
+        detail.update(
+            {
+                "table_child_insert_direction": anchor_match.group("direction").lower(),
+                "table_child_anchor_kind": anchor_match.group("anchor_kind").replace("-", ""),
+                "table_child_anchor_label": _clean_num(anchor_match.group("anchor")),
+            }
+        )
+    inserted_units = _inserted_ordered_list_units(extracted_el)
+    if inserted_units:
+        detail["inserted_ordered_list_units"] = inserted_units
+    if source_parent_instruction:
+        detail["source_parent_instruction"] = source_parent_instruction
+    if source_parent_id:
+        detail["source_parent_id"] = source_parent_id
+    return detail
 
 
 def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
@@ -2049,6 +2166,7 @@ def _uk_broad_table_entry_instruction(
     target: LegalAddress,
     extracted_text: Optional[str],
     extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
     effect_type: str = "",
 ) -> dict[str, Any] | None:
     """Detect table-entry instructions that are unsafe as broad host mutations."""
@@ -2161,6 +2279,15 @@ def _uk_broad_table_entry_instruction(
             "source_text"
             if source_supplies_action
             else f"effect_type:{effect_type_norm}"
+        ),
+        **(
+            _uk_table_child_structural_insert_detail(
+                extracted_text=extracted_text,
+                extracted_el=extracted_el,
+                source_root=source_root,
+            )
+            if entry_shape == "table_child_structural_insert"
+            else {}
         ),
     }
 

@@ -1382,6 +1382,7 @@ def prepare_table_cell_text_patch_context(
             target=target,
             extracted_text=extracted_text,
             extracted_el=extracted_el,
+            source_root=source_root,
             effect_type=effect.effect_type,
         )
         if table_entry_instruction:
