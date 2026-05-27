@@ -48,6 +48,11 @@ class DefinitionChildTailSelectorParts(NamedTuple):
     anchor: str
 
 
+class TextRangeStartIndex(NamedTuple):
+    start_index: int
+    recovery_rule_ids: tuple[str, ...]
+
+
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
 means
 |have\s+the\s+same\s+meaning\s+as
@@ -1041,7 +1046,7 @@ def _find_text_range_start_index(
     occurrence: int,
     allow_punctuation_spacing: bool,
     allow_word_punctuation_elision: bool,
-) -> tuple[int, tuple[str, ...]]:
+) -> TextRangeStartIndex:
     ordinal = occurrence if occurrence > 0 else 1
     if occurrence > 0:
         range_matches, used_word_anchor = _range_anchor_matches(full_text, start_text)
@@ -1054,7 +1059,7 @@ def _find_text_range_start_index(
             if used_word_anchor
             else ()
         )
-        return range_matches[ordinal - 1].start(), recovery_rule_ids
+        return TextRangeStartIndex(range_matches[ordinal - 1].start(), recovery_rule_ids)
     pattern = _text_patch_pattern(
         start_text,
         allow_punctuation_spacing=allow_punctuation_spacing,
@@ -1062,8 +1067,8 @@ def _find_text_range_start_index(
     )
     matches = list(re.finditer(pattern, full_text, flags=re.I | re.S))
     if len(matches) < ordinal:
-        return -1, ()
-    return matches[ordinal - 1].start(), ()
+        return TextRangeStartIndex(-1, ())
+    return TextRangeStartIndex(matches[ordinal - 1].start(), ())
 
 
 class UKReplayTextApplyMixin:
@@ -1502,21 +1507,21 @@ class UKReplayTextApplyMixin:
         start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
         if not start_text:
             return node, False
-        tail_start_idx, tail_recovery_rule_ids = _find_text_range_start_index(
+        tail_start = _find_text_range_start_index(
             post_child_tail,
             start_text,
             occurrence=occurrence,
             allow_punctuation_spacing=allow_punctuation_spacing,
             allow_word_punctuation_elision=allow_word_punctuation_elision,
         )
-        if tail_start_idx == -1:
+        if tail_start.start_index == -1:
             return node, False
         tail_offset = text.rfind(post_child_tail)
         if tail_offset == -1:
             return node, False
-        if recovery_rule_ids_out is not None and tail_recovery_rule_ids:
-            recovery_rule_ids_out.extend(tail_recovery_rule_ids)
-        rewrite_start = tail_offset + tail_start_idx
+        if recovery_rule_ids_out is not None and tail_start.recovery_rule_ids:
+            recovery_rule_ids_out.extend(tail_start.recovery_rule_ids)
+        rewrite_start = tail_offset + tail_start.start_index
         rebuilt = dc_replace(node, text=f"{text[:rewrite_start]}{replacement}".strip())
         self._replace_node_in_statute(node, rebuilt)
         if recovery_rule_ids_out is not None:
@@ -2986,18 +2991,18 @@ class UKReplayTextApplyMixin:
 
             if match.endswith("_TO_END"):
                 start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
-                start_idx, start_recovery_rule_ids = _find_text_range_start_index(
+                start_result = _find_text_range_start_index(
                     full_text,
                     start_text,
                     occurrence=occurrence,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
                 )
-                if start_recovery_rule_ids and recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.extend(start_recovery_rule_ids)
-                if start_idx == -1:
+                if start_result.recovery_rule_ids and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.extend(start_result.recovery_rule_ids)
+                if start_result.start_index == -1:
                     return node, False
-                new_text = full_text[:start_idx] + replacement
+                new_text = full_text[: start_result.start_index] + replacement
                 rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
                 self._replace_node_in_statute(node, rebuilt)
                 if recovery_rule_ids_out is not None:
@@ -3009,15 +3014,16 @@ class UKReplayTextApplyMixin:
                 if len(parts) == 2:
                     start_text, end_text = parts[0], parts[1]
                     if start_text:
-                        start_idx, start_recovery_rule_ids = _find_text_range_start_index(
+                        start_result = _find_text_range_start_index(
                             full_text,
                             start_text,
                             occurrence=occurrence,
                             allow_punctuation_spacing=allow_punctuation_spacing,
                             allow_word_punctuation_elision=allow_word_punctuation_elision,
                         )
-                        if start_recovery_rule_ids and recovery_rule_ids_out is not None:
-                            recovery_rule_ids_out.extend(start_recovery_rule_ids)
+                        start_idx = start_result.start_index
+                        if start_result.recovery_rule_ids and recovery_rule_ids_out is not None:
+                            recovery_rule_ids_out.extend(start_result.recovery_rule_ids)
                         start_len = len(start_text)
                     else:
                         start_idx = 0
