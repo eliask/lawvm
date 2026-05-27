@@ -671,10 +671,15 @@ def _bench_text_ratio(source_text: str, oracle_text: str) -> float:
     return Levenshtein.ratio(source_text, oracle_text)
 
 
+class _TextSimilarityScore(NamedTuple):
+    score: float
+    compared_count: int
+
+
 def _text_similarity_score(
     source_texts: Dict[str, str],
     oracle_texts: Dict[str, str],
-) -> tuple[float, int]:
+) -> _TextSimilarityScore:
     """Average Levenshtein ratio across common EIDs that have non-empty text.
 
     Returns (score, n_compared).  score is -1.0 when no EIDs are comparable.
@@ -691,8 +696,8 @@ def _text_similarity_score(
         total += _bench_text_ratio(source_text, oracle_text)
         compared += 1
     if not compared:
-        return -1.0, 0
-    return total / compared, compared
+        return _TextSimilarityScore(-1.0, 0)
+    return _TextSimilarityScore(total / compared, compared)
 
 
 # ---------------------------------------------------------------------------
@@ -1793,7 +1798,9 @@ def _score_statute(
         oracle_text_map: Dict[str, str] = oracle_eid_data.get("text_map", {})
         if score_text:
             enacted_texts = _extract_eid_texts(enacted_ir, common)
-            text_score, n_text_compared = _text_similarity_score(enacted_texts, oracle_text_map)
+            text_similarity_score = _text_similarity_score(enacted_texts, oracle_text_map)
+            text_score = text_similarity_score.score
+            n_text_compared = text_similarity_score.compared_count
             _mark_phase("text_score_enacted")
         else:
             text_score = -1.0
@@ -2093,7 +2100,10 @@ def _score_statute(
                 _mark_phase("replay_residuals")
                 if score_text:
                     replayed_texts = _extract_eid_texts(replayed_ir, replayed_eids & oracle_eids)
-                    replay_text_score, _ = _text_similarity_score(replayed_texts, oracle_text_map)
+                    replay_text_score = _text_similarity_score(
+                        replayed_texts,
+                        oracle_text_map,
+                    ).score
                     _mark_phase("text_score_replay")
             except Exception as replay_exc:
                 # Replay failure is non-fatal — record it but keep enacted score.
