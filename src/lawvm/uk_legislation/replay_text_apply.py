@@ -1066,18 +1066,18 @@ class UKReplayTextApplyMixin:
         """Recover a unique numeric list item whose source selector adds a comma."""
 
         text = node.text or ""
-        new_text, anchor = _numeric_list_trailing_comma_replacement_text(
+        text_replacement = _numeric_list_trailing_comma_replacement_text(
             text,
             match,
             replacement,
             occurrence,
             end_occurrence,
         )
-        if new_text is None or anchor is None:
+        if text_replacement is None:
             return node, False, None
-        rebuilt = dc_replace(node, text=new_text)
+        rebuilt = dc_replace(node, text=text_replacement.new_text)
         self._replace_node_in_statute(node, rebuilt)
-        return rebuilt, True, anchor
+        return rebuilt, True, text_replacement.anchor
 
     def _apply_numeric_list_trailing_comma_anchor_on_subtree(
         self,
@@ -1098,20 +1098,19 @@ class UKReplayTextApplyMixin:
         )
         if subtree_replacement is None:
             return node, False, None
-        path, new_text, anchor = subtree_replacement
         text_node = node
-        for index in path:
+        for index in subtree_replacement.path:
             text_node = text_node.children[index]
         rebuilt = self._replace_descendant_at_path(
             node,
-            path,
+            subtree_replacement.path,
             dc_replace(
                 text_node,
-                text=new_text,
+                text=subtree_replacement.new_text,
             ),
         )
         self._replace_node_in_statute(node, rebuilt)
-        return rebuilt, True, anchor
+        return rebuilt, True, subtree_replacement.anchor
 
     def _apply_text_replace_on_node_text_only(
         self,

@@ -2,10 +2,30 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from typing import Optional
 
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
+
+
+@dataclass(frozen=True, slots=True)
+class UKNumericListTrailingCommaAnchorPattern:
+    anchor: str
+    pattern: re.Pattern[str]
+
+
+@dataclass(frozen=True, slots=True)
+class UKNumericListTrailingCommaTextReplacement:
+    new_text: str
+    anchor: str
+
+
+@dataclass(frozen=True, slots=True)
+class UKNumericListTrailingCommaSubtreeReplacement:
+    path: tuple[int, ...]
+    new_text: str
+    anchor: str
 
 
 def _normalize_text(text: str) -> str:
@@ -150,7 +170,7 @@ def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> O
 def _numeric_list_trailing_comma_anchor_pattern(
     match: str,
     replacement: str | None,
-) -> tuple[str, re.Pattern[str]] | None:
+) -> UKNumericListTrailingCommaAnchorPattern | None:
     """Return a bounded pattern for insertion anchors quoted as `28,`."""
 
     match_obj = re.fullmatch(r"\s*(?P<anchor>\d+[A-Za-z]?)\s*,\s*", match or "")
@@ -164,7 +184,7 @@ def _numeric_list_trailing_comma_anchor_pattern(
         rf"(?<![A-Za-z0-9]){re.escape(anchor)}(?![A-Za-z0-9])(?=\s+(?:and|or)\b)",
         flags=re.I,
     )
-    return anchor, pattern
+    return UKNumericListTrailingCommaAnchorPattern(anchor=anchor, pattern=pattern)
 
 
 def _numeric_list_trailing_comma_replacement_text(
@@ -173,19 +193,21 @@ def _numeric_list_trailing_comma_replacement_text(
     replacement: str,
     occurrence: int,
     end_occurrence: int,
-) -> tuple[str | None, str | None]:
+) -> UKNumericListTrailingCommaTextReplacement | None:
     if occurrence not in (0, 1) or end_occurrence:
-        return None, None
+        return None
     anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
     if anchor_pattern is None:
-        return None, None
-    anchor, pattern = anchor_pattern
+        return None
     if not text or match in text:
-        return None, None
-    matches = list(pattern.finditer(text))
+        return None
+    matches = list(anchor_pattern.pattern.finditer(text))
     if len(matches) != 1:
-        return None, None
-    return _splice_text_match_replacement(text, matches[0], replacement), anchor
+        return None
+    return UKNumericListTrailingCommaTextReplacement(
+        new_text=_splice_text_match_replacement(text, matches[0], replacement),
+        anchor=anchor_pattern.anchor,
+    )
 
 
 def _numeric_list_trailing_comma_subtree_replacement(
@@ -194,23 +216,29 @@ def _numeric_list_trailing_comma_subtree_replacement(
     replacement: str,
     occurrence: int,
     end_occurrence: int,
-) -> tuple[tuple[int, ...], str, str] | None:
+) -> UKNumericListTrailingCommaSubtreeReplacement | None:
     if occurrence not in (0, 1) or end_occurrence:
         return None
     anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
     if anchor_pattern is None:
         return None
-    anchor, pattern = anchor_pattern
     text_nodes = _walk_text_nodes(node)
     if any(match in text_node.text for _, text_node in text_nodes):
         return None
     matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
     for path, text_node in text_nodes:
-        matches.extend((path, text_node, match_obj) for match_obj in pattern.finditer(text_node.text))
+        matches.extend(
+            (path, text_node, match_obj)
+            for match_obj in anchor_pattern.pattern.finditer(text_node.text)
+        )
     if len(matches) != 1:
         return None
     path, text_node, match_obj = matches[0]
-    return path, _splice_text_match_replacement(text_node.text, match_obj, replacement), anchor
+    return UKNumericListTrailingCommaSubtreeReplacement(
+        path=path,
+        new_text=_splice_text_match_replacement(text_node.text, match_obj, replacement),
+        anchor=anchor_pattern.anchor,
+    )
 
 
 def _splice_text_match_replacement(text: str, match_obj: re.Match[str], replacement: str) -> str:
