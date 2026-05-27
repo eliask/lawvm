@@ -2364,6 +2364,24 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap
     assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
 
 
+def test_classify_uk_manual_compile_frontier_marks_text_patch_target_source_chain_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text='after "397(1)" insert "or 397A(2)".',
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+        compare_shape="text_patch_target_absent_from_enacted_source_chain",
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
+    assert "target absent from the enacted source" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_marks_instruction_header_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -4342,6 +4360,38 @@ def test_classify_uk_effect_text_patch_preimage_consumed_requires_absent_base_ta
     )
 
     assert compare_shape == "text_patch_preimage_absent_from_target_surfaces"
+    assert is_core_uk_effect_compare_candidate(compare_shape) is False
+
+
+def test_classify_uk_effect_text_patch_target_absent_from_enacted_source_chain() -> None:
+    compare_shape = classify_uk_effect_compare_shape(
+        effect_type="words inserted",
+        op_actions=["text_replace"],
+        payload_texts=[],
+        resolver_eids=["section-12aa-1a-b"],
+        base_target_hits=[False],
+        oracle_target_hits=[True],
+        base_descendant_hits=[False],
+        oracle_descendant_hits=[False],
+        base_parent_hits=[False],
+        oracle_parent_hits=[True],
+        base_target_texts=[],
+        oracle_target_texts=[
+            "the amount payable by a partner by way of income tax is the "
+            "difference between the amount in which he is chargeable to income "
+            "tax and the aggregate amount of any income tax deducted at source"
+        ],
+        base_parent_texts=[],
+        oracle_parent_texts=[],
+        text_patch_matches=["397(1)"],
+        text_patch_replacements=["397(1) or 397A(2)"],
+        base_has_text=False,
+        base_has_children=False,
+        oracle_has_text=True,
+        oracle_has_children=False,
+    )
+
+    assert compare_shape == "text_patch_target_absent_from_enacted_source_chain"
     assert is_core_uk_effect_compare_candidate(compare_shape) is False
 
 
