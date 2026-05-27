@@ -1326,6 +1326,12 @@ Current bench replay-regime invariant:
 - Batch tools such as `uk-effects` and `uk-candidates` therefore pass the compiled `LegalAddress` into target-shape collection. This prevents source-explicit heading edits from being misrouted into `uk_manual_frontier_text_patch_preimage_chain_gap` merely because the quoted preimage is absent from the section body.
 - Witness: `ukpga/1970/9` effect `key-b6072e10e73303a108588062d11eb4bb`, whose source says `In the sidenote after "banks" insert ", building societies"`. The source-explicit facet lowering targets `section:17/heading`; compare evidence must inspect the heading carrier text containing `banks`.
 
+## UK Text-Patch Postimage Chain Gaps
+
+- Compare shape `text_patch_replacement_present_without_preimage` means a lowered text replacement has no quoted preimage on the available enacted/current target surfaces, but the replacement text is already visible on one of those surfaces.
+- This remains `source_insufficient` under `uk_manual_frontier_text_patch_postimage_chain_gap`. It is evidence that the visible current postimage may be downstream of an omitted intermediate amendment chain; it is not authority to mark the row replay-supported or to skip preimage verification.
+- The shape exists to keep the generic `text_patch_preimage_absent_from_target_surfaces` bucket for rows where neither side of the text patch is visible. Agents should triage postimage-present rows as source-chain/acquisition questions before changing parser or replay code.
+
 ## UK EID Lookup Scope Discipline
 
 - Cached suffix EID lookup is a target-resolution accelerator only. A top-scoped target such as `section-2-9` may not be satisfied by an indexed suffix alias carried by a node outside the exact `section-2` subtree, even if an unrelated source EID happens to end in the same suffix.
