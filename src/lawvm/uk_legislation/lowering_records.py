@@ -265,6 +265,34 @@ def append_source_pathology_filter_lowering_rejections(
             }
         )
         appended = True
+    if (
+        structural_for_replay
+        and compiled_ops
+        and source_pathology in _SOURCE_PATHOLOGY_NONREPLAY_OUT_OF_SCOPE
+    ):
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_source_pathology_out_of_scope_observed",
+                "family": "source_pathology_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": (
+                    "UK source-pathology classification proves this row is outside "
+                    "direct text/tree replay; compiled operations are recorded as "
+                    "evidence but not replayed."
+                ),
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+                "source_pathology": source_pathology,
+                "compiled_op_count": len(compiled_ops),
+            }
+        )
+        appended = True
     return appended
 
 
