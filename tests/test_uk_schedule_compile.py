@@ -12690,6 +12690,119 @@ def test_compile_source_carried_structured_tail_substitution_to_child_replaces()
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_source_carried_parent_quoted_child_substitution_to_parent_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-3-paragraph-8">
+          <Pnumber>8</Pnumber>
+          <P1para>
+            <Text>8 In section 130(3) of AFA 2006, for "if the charge is amended after referral." substitute - a where the charge is amended after referral; b to any charge substituted for or added to the charge after referral; or c where extended powers are obtained after referral.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-parent-quoted-child-substitution",
+        effect_type="substituted for words",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-06",
+        affected_uri="/id/ukpga/2006/52",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 130(3)(a)-(c)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 3 para. 8",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "130"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "if the charge is amended after referral."
+    assert ops[0].text_patch.replacement.startswith(
+        "a where the charge is amended after referral; b to any charge"
+    )
+    assert ops[0].witness_rule_id == "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
+    assert any(
+        tag == "text_rewrite_rule:uk_effect_source_carried_quoted_text_substitution_text_patch"
+        for tag in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_parent_quoted_child_substitution_lowered",
+    ]
+    assert lowering_records[0]["metadata_targets"] == (
+        "section:130/subsection:3/paragraph:a",
+        "section:130/subsection:3/paragraph:b",
+        "section:130/subsection:3/paragraph:c",
+    )
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_carried_parent_quoted_child_substitution_rejects_label_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-3-paragraph-8">
+          <Pnumber>8</Pnumber>
+          <P1para>
+            <Text>8 In section 130(3) of AFA 2006, for "old words" substitute - a first replacement; b second replacement; or c third replacement.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-parent-quoted-child-substitution-mismatch",
+        effect_type="substituted for words",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-06",
+        affected_uri="/id/ukpga/2006/52",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 130(3)(a)-(b)",
+        affecting_uri="/id/ukpga/2011/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 3 para. 8",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert all(
+        op.witness_rule_id != "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
+        for op in ops
+    )
+    assert all(
+        row["rule_id"] != "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
+        for row in lowering_records
+    )
+
+
 def test_compile_source_carried_structured_tail_substitution_with_descriptive_parenthetical() -> None:
     extracted_el = ET.fromstring(
         f"""

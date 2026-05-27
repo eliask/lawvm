@@ -33,6 +33,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
     UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID,
+    UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID,
     UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
 )
 from lawvm.uk_legislation.target_anchors import _target_anchor_eid
@@ -1079,3 +1080,94 @@ def lower_uk_source_carried_structured_tail_substitution(  # noqa: PLR0913
             )
         )
     return ops
+
+
+def lower_uk_source_carried_parent_quoted_child_substitution(  # noqa: PLR0913
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    parent_child_substitution: dict[str, Any],
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> list[LegalOperation]:
+    """Lower parent quoted substitutions carrying visible child paragraphs."""
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID,
+        family="source_context_elaboration",
+        reason_code="source_carried_parent_quoted_child_substitution",
+        reason=(
+            "UK source substitutes a parent quoted preimage with visibly labelled "
+            "child paragraphs; lowering keeps the source-named parent target so "
+            "replay can materialize the child carriers from source labels."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            key: value
+            for key, value in parent_child_substitution.items()
+            if key != "rule_id"
+        },
+    )
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    target = _parse_affected_target(str(parent_child_substitution["target_ref"]))
+    replacement = str(parent_child_substitution["replacement"])
+    match_text = str(parent_child_substitution["source_anchor"])
+    text_patch = TextPatchSpec(
+        kind=TextPatchKindEnum.REPLACE,
+        selector=TextSelector(match_text=match_text, occurrence=0),
+        replacement=replacement,
+    )
+    text_rewrite = _uk_text_rewrite_spec(
+        fragment_subs=[
+            {
+                "original": match_text,
+                "replacement": replacement,
+                "rule_id": "uk_effect_source_carried_quoted_text_substitution_text_patch",
+            }
+        ],
+        text_patch=text_patch,
+        op_text_match=match_text,
+        op_text_replacement=replacement,
+        op_text_occurrence=0,
+    )
+    witness = UKLoweredOperationWitness(
+        op_id=f"{effect.effect_id}_parent_child_substitution",
+        sequence=sequence,
+        action=StructuralAction.TEXT_REPLACE,
+        target=target,
+        payload=None,
+        source=src,
+        effect_witness=effect_witness,
+        extraction_witness=extraction_witness,
+        target_expansion_witness=_uk_target_expansion_witness(
+            effect.affected_provisions,
+            [str(parent_child_substitution["target_ref"])],
+            original_targets_str=[effect.affected_provisions],
+        ),
+        text_rewrite_witness=text_rewrite,
+        insertion_anchor_witness=None,
+    )
+    return [
+        LegalOperation(
+            op_id=witness.op_id,
+            sequence=witness.sequence,
+            action=witness.action,
+            target=target,
+            payload=None,
+            source=src,
+            group_id=_uk_temporal_group_id(effect),
+            provenance_tags=_uk_lowered_op_provenance_tags(witness),
+            text_patch=text_patch,
+            witness_rule_id=UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID,
+        )
+    ]

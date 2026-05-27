@@ -12,6 +12,11 @@ _ROMAN_CHILD_LABEL_RE = re.compile(
     r"(?P<label>viii|vii|vi|iv|iii|ii|ix|x|v|i)\s+",
     flags=re.I,
 )
+_ALPHA_CHILD_LABEL_RE = re.compile(
+    r"(?P<prefix>^|(?:[;,]\s*(?:and|or)?\s+)|(?:\b(?:and|or)\s+)|(?:[-–—]\s*))"
+    r"(?P<label>[a-z])\s+",
+    flags=re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -35,12 +40,15 @@ def _source_carried_labeled_child_replacement_shape(
     live-state guessing.
     """
     parent_kind_norm = str(parent_kind or "").lower()
-    if parent_kind_norm not in {"paragraph", "subparagraph", "item"}:
+    if parent_kind_norm not in {"subsection", "paragraph", "subparagraph", "item"}:
         return SourceCarriedLabeledChildReplacement("", "", ())
     text = " ".join(str(replacement or "").split()).strip()
     if not text:
         return SourceCarriedLabeledChildReplacement("", "", ())
-    matches = list(_ROMAN_CHILD_LABEL_RE.finditer(text))
+    if parent_kind_norm == "subsection":
+        matches = list(_ALPHA_CHILD_LABEL_RE.finditer(text))
+    else:
+        matches = list(_ROMAN_CHILD_LABEL_RE.finditer(text))
     if len(matches) < 2:
         return SourceCarriedLabeledChildReplacement("", "", ())
     parent_prefix = ""
@@ -53,14 +61,19 @@ def _source_carried_labeled_child_replacement_shape(
         if not parent_prefix:
             return SourceCarriedLabeledChildReplacement("", "", ())
     labels = tuple(match.group("label").lower() for match in matches)
-    label_ordinals = tuple(_shared_roman_to_arabic(label) for label in labels)
-    if any(value is None for value in label_ordinals):
-        return SourceCarriedLabeledChildReplacement("", "", ())
-    ordinals = tuple(cast(int, value) for value in label_ordinals)
+    if parent_kind_norm == "subsection":
+        ordinals = tuple(ord(label) - ord("a") + 1 for label in labels)
+    else:
+        label_ordinals = tuple(_shared_roman_to_arabic(label) for label in labels)
+        if any(value is None for value in label_ordinals):
+            return SourceCarriedLabeledChildReplacement("", "", ())
+        ordinals = tuple(cast(int, value) for value in label_ordinals)
     if ordinals != tuple(range(1, len(ordinals) + 1)):
         return SourceCarriedLabeledChildReplacement("", "", ())
 
-    if parent_kind_norm == "paragraph":
+    if parent_kind_norm == "subsection":
+        child_kind = "paragraph"
+    elif parent_kind_norm == "paragraph":
         child_kind = "subparagraph"
     elif parent_kind_norm == "subparagraph":
         child_kind = "item"

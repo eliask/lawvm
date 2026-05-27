@@ -16,7 +16,7 @@ from lawvm.uk_legislation.source_context import (
     _unique_source_ancestor_chain_by_tag_text,
 )
 from lawvm.uk_legislation.source_fragment_context import _source_local_instruction_text_for_carried_payload
-from lawvm.uk_legislation.target_parser import _parse_affected_target
+from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_metadata_provisions
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
 from lawvm.uk_legislation.xml_helpers import _text_content
 
@@ -50,6 +50,9 @@ UK_AT_END_SECTION_SUBSECTION_INSERT_BLOCK_AMENDMENT_RULE_ID = (
 )
 UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_carried_structured_tail_substitution_lowered"
+)
+UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
 )
 
 SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE = re.compile(
@@ -206,6 +209,17 @@ _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"(?:(?:to\s+the\s+end(?:\s+of\s+the\s+subsection)?)|onwards)\s+"
     r"(?:(?:there\s+(?:shall\s+be|is|are)\s+substituted)|substitute)\s*"
     r"[“\"'‘]?(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<subsection>[0-9A-Za-z]+)\)"
+    r"(?:\s+of\s+[^,]+)?"
+    r"(?:\s+\(.*?\))?,?\s+"
+    r"for\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+    r"(?:(?:there\s+(?:shall\s+be|is|are)\s+substituted)|substitute)\s*"
+    r"[“\"'‘]?[—–-]\s*(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE = re.compile(
@@ -1249,4 +1263,61 @@ def _source_carried_structured_tail_substitution(
         "source_scope_context": source_scope_context,
         "affecting_row_label": affecting_row_label,
         "payloads": tuple(payloads),
+    }
+
+
+def _source_carried_parent_quoted_child_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Recognize a parent quoted substitution carrying labelled child paragraphs."""
+    if extracted_el is None or _tag(extracted_el) not in {"P1", "P2", "P3", "P4"}:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    section = _source_parent_range_label(match.group("section"))
+    subsection = _source_parent_range_label(match.group("subsection"))
+    anchor = " ".join(match.group("anchor").split()).strip()
+    payload_tail = re.sub(r"^[—–-]\s*", "", " ".join(match.group("payload").split()).strip())
+    if not section or not subsection or not anchor or not payload_tail:
+        return None
+    target_refs = _split_metadata_provisions(affected_provisions)
+    if len(target_refs) < 2:
+        return None
+    targets: list[LegalAddress] = []
+    for target_ref in target_refs:
+        try:
+            targets.append(canonicalize_uk_address(_parse_affected_target(target_ref)))
+        except ValueError:
+            return None
+    parent_path = (("section", section), ("subsection", subsection))
+    if any(tuple(target.path[:-1]) != parent_path for target in targets):
+        return None
+    if any(str(_addr_leaf_kind(target) or "").lower() != "paragraph" for target in targets):
+        return None
+    matches = _source_carried_top_level_alpha_matches(payload_tail)
+    if not matches or len(matches) != len(targets):
+        return None
+    payload_labels = tuple(_source_parent_range_label(match.group("label")) for match in matches)
+    target_labels = tuple(_source_parent_range_label(_addr_leaf_label(target) or "") for target in targets)
+    if payload_labels != target_labels:
+        return None
+    return {
+        "rule_id": UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": text[: match.start("payload")].strip(),
+        "target_ref": f"s. {section}({subsection})",
+        "target": f"section:{section}/subsection:{subsection}",
+        "section": section,
+        "subsection": subsection,
+        "source_anchor": anchor,
+        "replacement": payload_tail,
+        "payload_labels": payload_labels,
+        "metadata_targets": tuple(str(target) for target in targets),
     }
