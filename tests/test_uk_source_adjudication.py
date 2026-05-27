@@ -2558,6 +2558,24 @@ def test_classify_uk_effect_compare_shape_marks_table_cell_surface_gap() -> None
     assert not is_core_uk_effect_compare_candidate(result)
 
 
+def test_classify_uk_effect_compare_shape_marks_table_entry_column_surface_gap() -> None:
+    result = classify_uk_effect_compare_shape(
+        effect_type="words inserted",
+        op_actions=("text_replace",),
+        resolver_eids=("section-98",),
+        base_target_hits=(True,),
+        oracle_target_hits=(True,),
+        base_target_texts=("Section 98 penalty table carrier text",),
+        oracle_target_texts=("Section 98 penalty table carrier text",),
+        text_patch_matches=("45G(4) and (5),",),
+        text_patch_replacements=("45G(4) and (5), 45R(5) and (6),"),
+        lowering_rule_ids=("uk_effect_table_entry_relating_column_text_patch",),
+    )
+
+    assert result == "table_cell_text_patch_requires_table_surface"
+    assert not is_core_uk_effect_compare_candidate(result)
+
+
 def test_manual_frontier_keeps_owned_table_cell_surface_gap_deterministic() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="word substituted",
