@@ -84,6 +84,7 @@ UK_EFFECT_COMPARE_SHAPE_CLASSES = frozenset(
         "retained_repeal_oracle_branch",
         "table_cell_text_patch_requires_table_surface",
         "text_patch_target_absent_from_enacted_source_chain",
+        "text_patch_replacement_present_without_preimage",
         "text_patch_preimage_absent_from_target_surfaces",
         "territorial_extension_oracle_gap",
     }
@@ -1848,6 +1849,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source instruction lowers to a text patch against a target absent from the enacted source but present in the current oracle; acquire or prove the amendment-created target chain before replaying or claiming the row in isolation.",
         }
 
+    if compare_shape_norm == "text_patch_replacement_present_without_preimage":
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_text_patch_postimage_chain_gap",
+            "reason": "The quoted preimage is absent from available target surfaces while the replacement text is already visible; acquire or prove the intermediate amendment chain before treating the current postimage as replay evidence.",
+        }
+
     if compare_shape_norm == "range_to_container_target_absent":
         return {
             "status": "manual_compile_candidate",
@@ -2476,6 +2484,19 @@ def classify_uk_effect_compare_shape(
         return "text_patch_target_absent_from_enacted_source_chain"
     if text_patch_preimage_absent and lowering_rules & UK_COMPARE_TABLE_CELL_TEXT_PATCH_RULE_IDS:
         return "table_cell_text_patch_requires_table_surface"
+    if (
+        text_patch_preimage_absent
+        and "text_replace" in actions
+        and text_patch_replacement_texts
+        and any(
+            _literal_text_patch_match_present(
+                replacement,
+                (*base_target_text_surfaces, *oracle_target_text_surfaces),
+            )
+            for replacement in text_patch_replacement_texts
+        )
+    ):
+        return "text_patch_replacement_present_without_preimage"
     if text_patch_preimage_absent:
         return "text_patch_preimage_absent_from_target_surfaces"
     if (

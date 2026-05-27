@@ -4356,6 +4356,51 @@ def test_classify_uk_effect_text_patch_preimage_absent_from_target_surfaces() ->
     assert is_core_uk_effect_compare_candidate(compare_shape) is False
 
 
+def test_classify_uk_effect_text_patch_replacement_present_without_preimage() -> None:
+    compare_shape = classify_uk_effect_compare_shape(
+        effect_type="words substituted",
+        op_actions=["text_replace"],
+        payload_texts=[],
+        resolver_eids=["section-27-7"],
+        base_target_hits=[True],
+        oracle_target_hits=[True],
+        base_descendant_hits=[False],
+        oracle_descendant_hits=[False],
+        base_parent_hits=[True],
+        oracle_parent_hits=[True],
+        base_target_texts=["paragraphs (a) to (dd) above"],
+        oracle_target_texts=["paragraphs (a) to (dd) above"],
+        base_parent_texts=[],
+        oracle_parent_texts=[],
+        text_patch_matches=["paragraphs (a) to (d) above"],
+        text_patch_replacements=["paragraphs (a) to (dd) above"],
+        base_has_text=True,
+        base_has_children=False,
+        oracle_has_text=True,
+        oracle_has_children=False,
+    )
+
+    assert compare_shape == "text_patch_replacement_present_without_preimage"
+    assert is_core_uk_effect_compare_candidate(compare_shape) is False
+
+
+def test_manual_frontier_keeps_postimage_without_preimage_source_insufficient() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="",
+        extracted_tag="P2",
+        extracted_text='for "old" substitute "new"',
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+        compare_shape="text_patch_replacement_present_without_preimage",
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_text_patch_postimage_chain_gap"
+
+
 def test_classify_uk_effect_text_patch_preimage_consumed_by_replay_chain_stays_core() -> None:
     compare_shape = classify_uk_effect_compare_shape(
         effect_type="words substituted",
@@ -4410,7 +4455,7 @@ def test_classify_uk_effect_text_patch_preimage_consumed_requires_absent_base_ta
         oracle_has_children=False,
     )
 
-    assert compare_shape == "text_patch_preimage_absent_from_target_surfaces"
+    assert compare_shape == "text_patch_replacement_present_without_preimage"
     assert is_core_uk_effect_compare_candidate(compare_shape) is False
 
 
