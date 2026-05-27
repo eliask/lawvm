@@ -88,6 +88,9 @@ class UKSourceExtractionResult(NamedTuple):
     observations: tuple[dict[str, Any], ...]
 
 
+_NO_SOURCE_EXTRACTION = UKSourceExtractionResult(extracted_element=None, observations=())
+
+
 @dataclass(frozen=True, slots=True)
 class UKEnactedScheduleTableRowMatch:
     row: ET.Element
@@ -537,10 +540,10 @@ def _compound_payload_only_amendment_container(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
     el: ET.Element,
-) -> tuple[ET.Element, tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     """Select a nested amendment payload when the source row is only a carrier label."""
     if _tag(el) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}:
-        return el, ()
+        return UKSourceExtractionResult(el, ())
     amendment_containers: list[ET.Element] = []
     outside_text: list[str] = []
 
@@ -558,9 +561,9 @@ def _compound_payload_only_amendment_container(
 
     _walk(el, inside_amendment=False)
     if len(amendment_containers) != 1:
-        return el, ()
+        return UKSourceExtractionResult(el, ())
     if re.search(r"[0-9A-Za-z]", " ".join(outside_text)):
-        return el, ()
+        return UKSourceExtractionResult(el, ())
     payload = amendment_containers[0]
     observation = uk_affecting_act_compound_payload_only_block_amendment_selected(
         effect_id=str(effect.effect_id or ""),
@@ -574,7 +577,7 @@ def _compound_payload_only_amendment_container(
         payload_container_tag=_tag(payload),
         payload_text_preview=_source_preview(_text_content(payload)),
     )
-    return payload, (observation,)
+    return UKSourceExtractionResult(payload, (observation,))
 
 
 def _payload_source_instruction_ancestor(
@@ -722,24 +725,24 @@ def _unique_root_schedule_payload(context: UKAffectingSourceContext) -> Optional
 def _extract_article_schedule_payload_source(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     article_ref = _article_schedule_payload_ref(str(effect.affecting_provisions or ""))
     if article_ref is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
 
     article_el = _extract_from_affecting_source_context(context, article_ref)
     if article_el is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
 
     article_text = _text_content(article_el)
     affecting_prov = str(effect.affecting_provisions or "")
     has_explicit_sch = re.search(r"\bSch(?:edule)?\b", affecting_prov, flags=re.I) is not None
     if not has_explicit_sch and not re.search(r"\bset\s+out\s+in\s+the\s+Schedule\b", article_text, flags=re.I):
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
 
     schedule_el = _unique_root_schedule_payload(context)
     if schedule_el is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
 
     observation = uk_affecting_act_article_schedule_payload_source_extracted(
         effect_id=str(effect.effect_id or ""),
@@ -752,7 +755,7 @@ def _extract_article_schedule_payload_source(
         schedule_element_id=str(schedule_el.get("id") or schedule_el.get("Id") or ""),
         article_text_preview=_source_preview(article_text),
     )
-    return schedule_el, (observation,)
+    return UKSourceExtractionResult(schedule_el, (observation,))
 
 
 def _has_matching_part_ancestor(
@@ -821,7 +824,7 @@ def _expand_source_child_label_range(start: str, end: str) -> tuple[str, ...]:
 def _extract_parenthesized_range_source(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     return _extract_parenthesized_range_source_ref(
         context,
         effect,
@@ -833,9 +836,9 @@ def _outdented_child_source_ref(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
     provision_ref: str,
-) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     if context.parent_map is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     match = re.fullmatch(
         r"\s*s(?:ection)?\.?\s*(?P<section>[0-9]+[A-Za-z]?)"
         r"\s*\(\s*(?P<parent>[0-9]+[A-Za-z]?)\s*\)"
@@ -844,7 +847,7 @@ def _outdented_child_source_ref(
         flags=re.I,
     )
     if match is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     section_label = match.group("section")
     parent_label = match.group("parent")
     child_label = match.group("child")
@@ -853,18 +856,18 @@ def _outdented_child_source_ref(
     requested_parent = context.sequence_map.get(_get_id_sequence(requested_parent_id))
     selected_child = context.sequence_map.get(_get_id_sequence(selected_child_id))
     if requested_parent is None or selected_child is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     if context.parent_map.get(requested_parent) is not context.parent_map.get(selected_child):
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     if _clean_num(_direct_structural_num(selected_child)).lower() != child_label.lower():
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     selected_text = _text_content(selected_child)
     parent_pattern = re.compile(
         rf"\bsubsection\s*\(?\s*{re.escape(parent_label)}\s*\)?",
         flags=re.I,
     )
     if parent_pattern.search(selected_text) is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     observation = uk_affecting_act_outdented_child_source_selected(
         effect_id=str(effect.effect_id or ""),
         affecting_act_id=str(effect.affecting_act_id or ""),
@@ -877,21 +880,21 @@ def _outdented_child_source_ref(
         selected_child_text_preview=_source_preview(selected_text),
         carried_parent_label=parent_label,
     )
-    return selected_child, (observation,)
+    return UKSourceExtractionResult(selected_child, (observation,))
 
 
 def _extract_parenthesized_range_source_ref(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
     provision_ref: str,
-) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     parsed = _parenthesized_range_source_ref(provision_ref)
     if parsed is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     parent_ref, start_label, end_label = parsed
     wanted_labels = _expand_source_child_label_range(start_label, end_label)
     if not wanted_labels:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     selected: list[ET.Element] = []
     for label in wanted_labels:
         child = _extract_source_ref_with_schedule_part_context(
@@ -904,7 +907,7 @@ def _extract_parenthesized_range_source_ref(
     if len(selected) != len(wanted_labels):
         parent_el = _extract_source_ref_with_schedule_part_context(context, parent_ref)
         if parent_el is None:
-            return None, ()
+            return _NO_SOURCE_EXTRACTION
         by_label: dict[str, ET.Element] = {}
         for child in parent_el.iter():
             if child is parent_el:
@@ -918,7 +921,7 @@ def _extract_parenthesized_range_source_ref(
         for label in wanted_labels:
             child = by_label.get(label)
             if child is None:
-                return None, ()
+                return _NO_SOURCE_EXTRACTION
             selected.append(child)
     wrapper = ET.Element("SourceRange")
     wrapper.set("rule_id", "uk_affecting_act_parenthesized_range_source_extracted")
@@ -939,7 +942,7 @@ def _extract_parenthesized_range_source_ref(
         requested_end_label=wanted_labels[-1],
         extracted_element_ids=[str(child.get("id") or child.get("Id") or "") for child in selected],
     )
-    return wrapper, (observation,)
+    return UKSourceExtractionResult(wrapper, (observation,))
 
 
 def _schedule_paragraph_ref_parts(ref: str) -> tuple[str, str] | None:
@@ -1022,20 +1025,20 @@ def _synthetic_schedule_table_row_paragraph_source(
 def _extract_enacted_schedule_table_row_source(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSourceExtractionResult:
     effect_type = (effect.effect_type or "").strip().lower()
     if effect_type not in {"added", "inserted"}:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     target_parts = _schedule_paragraph_ref_parts(str(effect.affected_provisions or ""))
     if target_parts is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     target_schedule_label, target_paragraph_label = target_parts
     source_schedule_label = _schedule_ref_label(str(effect.affecting_provisions or ""))
     if source_schedule_label != target_schedule_label:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     schedule_el = _extract_from_affecting_source_context(context, effect.affecting_provisions)
     if schedule_el is None or _tag(schedule_el) != "Schedule":
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
 
     matches: list[UKEnactedScheduleTableRowMatch] = []
     for part in schedule_el.iter():
@@ -1062,7 +1065,7 @@ def _extract_enacted_schedule_table_row_source(
                     )
                 )
     if len(matches) != 1:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
 
     match = matches[0]
     synthetic = _synthetic_schedule_table_row_paragraph_source(
@@ -1073,7 +1076,7 @@ def _extract_enacted_schedule_table_row_source(
         cells=match.cells,
     )
     if synthetic is None:
-        return None, ()
+        return _NO_SOURCE_EXTRACTION
     observation = uk_affecting_act_enacted_schedule_table_row_source_extracted(
         effect_id=str(effect.effect_id or ""),
         affecting_act_id=str(effect.affecting_act_id or ""),
@@ -1086,7 +1089,7 @@ def _extract_enacted_schedule_table_row_source(
         target_label=target_paragraph_label,
         source_row_text=_text_content(match.row),
     )
-    return synthetic, (observation,)
+    return UKSourceExtractionResult(synthetic, (observation,))
 
 
 def _extract_from_affecting_source_context_with_observations(
