@@ -832,6 +832,12 @@ class _EffectRowCounts(NamedTuple):
     observations: tuple[dict[str, Any], ...]
 
 
+class _ResidualClaimClassification(NamedTuple):
+    tier: str
+    kind: str
+    section_claim_count: int
+
+
 def _coerce_effect_row_counts(value: _EffectRowCounts | tuple[Any, ...]) -> _EffectRowCounts:
     if isinstance(value, _EffectRowCounts):
         return value
@@ -2063,17 +2069,16 @@ def _score_statute(
                 uk_residual_claim_core_comparison = is_core_uk_comparison(
                     uk_residual_claim_comparison_class
                 )
-                (
-                    uk_residual_claim_tier,
-                    uk_residual_claim_kind,
-                    uk_residual_section_claim_count,
-                ) = _classify_uk_residual_claim_for_bench(
+                residual_claim = _classify_uk_residual_claim_for_bench(
                     comparison_class=uk_residual_claim_comparison_class,
                     only_in_replayed=only_in_replayed,
                     only_in_oracle=only_in_oracle,
                     replay_adjudication_kind_counts=replay_adjudication_kind_counts,
                     lowering_observations=lowering_rejections,
                 )
+                uk_residual_claim_tier = residual_claim.tier
+                uk_residual_claim_kind = residual_claim.kind
+                uk_residual_section_claim_count = residual_claim.section_claim_count
                 uk_residual_only_in_replayed_count = len(only_in_replayed)
                 uk_residual_only_in_oracle_count = len(only_in_oracle)
                 uk_residual_section_claim_emitted = bool(uk_residual_section_claim_count)
@@ -2115,17 +2120,16 @@ def _score_statute(
                         replay_adjudication_records,
                     )
                     _record_compile_diagnostics()
-                    (
-                        uk_residual_claim_tier,
-                        uk_residual_claim_kind,
-                        uk_residual_section_claim_count,
-                    ) = _classify_uk_residual_claim_for_bench(
+                    residual_claim = _classify_uk_residual_claim_for_bench(
                         comparison_class="commensurable",
                         only_in_replayed=set(),
                         only_in_oracle=set(),
                         replay_adjudication_kind_counts=replay_adjudication_kind_counts,
                         lowering_observations=lowering_rejections,
                     )
+                    uk_residual_claim_tier = residual_claim.tier
+                    uk_residual_claim_kind = residual_claim.kind
+                    uk_residual_section_claim_count = residual_claim.section_claim_count
                     uk_residual_claim_comparison_class = "replay_exception"
                     uk_residual_claim_core_comparison = False
                     uk_residual_section_claim_emitted = bool(uk_residual_section_claim_count)
@@ -2257,17 +2261,16 @@ def _score_statute(
             uk_residual_claim_core_comparison = is_core_uk_comparison(
                 uk_residual_claim_comparison_class
             )
-            (
-                uk_residual_claim_tier,
-                uk_residual_claim_kind,
-                uk_residual_section_claim_count,
-            ) = _classify_uk_residual_claim_for_bench(
+            residual_claim = _classify_uk_residual_claim_for_bench(
                 comparison_class=uk_residual_claim_comparison_class,
                 only_in_replayed=replay_compare_eids - oracle_compare_eids,
                 only_in_oracle=oracle_compare_eids - replay_compare_eids,
                 replay_adjudication_kind_counts=replay_adjudication_kind_counts,
                 lowering_observations=lowering_rejections,
             )
+            uk_residual_claim_tier = residual_claim.tier
+            uk_residual_claim_kind = residual_claim.kind
+            uk_residual_section_claim_count = residual_claim.section_claim_count
             uk_residual_section_claim_emitted = bool(uk_residual_section_claim_count)
         source_parse_rejections = _blocking_source_parse_rows(source_parse_observations)
 
@@ -3275,12 +3278,20 @@ def _classify_uk_residual_claim_for_bench(
     only_in_oracle: Set[str],
     replay_adjudication_kind_counts: dict[str, int],
     lowering_observations: Sequence[dict[str, Any]] = (),
-) -> tuple[str, str, int]:
+) -> _ResidualClaimClassification:
     """Classify replay residuals for bench reporting without changing scoring."""
     if not comparison_class:
-        return ("UNRESOLVED", "not_run", 0)
+        return _ResidualClaimClassification(
+            tier="UNRESOLVED",
+            kind="not_run",
+            section_claim_count=0,
+        )
     if not is_core_uk_comparison(comparison_class):
-        return ("UNRESOLVED", comparison_class, 0)
+        return _ResidualClaimClassification(
+            tier="UNRESOLVED",
+            kind=comparison_class,
+            section_claim_count=0,
+        )
     adjudication_kinds = tuple(
         kind for kind, count in replay_adjudication_kind_counts.items() if int(count) > 0
     )
@@ -3297,9 +3308,21 @@ def _classify_uk_residual_claim_for_bench(
                 lowering_observations=lowering_observations,
             )
             if source_backed_kind:
-                return ("UNRESOLVED", source_backed_kind, 0)
-        return (tier, kind, 1 if tier == "PROVED_REPLAY_BUG" else 0)
-    return ("UNRESOLVED", "no_strong_claim", 0)
+                return _ResidualClaimClassification(
+                    tier="UNRESOLVED",
+                    kind=source_backed_kind,
+                    section_claim_count=0,
+                )
+        return _ResidualClaimClassification(
+            tier=tier,
+            kind=kind,
+            section_claim_count=1 if tier == "PROVED_REPLAY_BUG" else 0,
+        )
+    return _ResidualClaimClassification(
+        tier="UNRESOLVED",
+        kind="no_strong_claim",
+        section_claim_count=0,
+    )
 
 
 _UK_REPLAY_TEXT_PATCH_PREIMAGE_FRONTIER_KINDS = frozenset(
