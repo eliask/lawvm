@@ -480,9 +480,19 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> _UKRepealTableQu
                 0,
             )
         return _UKRepealTableQuotedWordsSelector("", 0, 0)
+    occurrence = (
+        -1
+        if re.search(
+            r"\bat\s+the\s+end\s+of\s+"
+            r"(?:paragraph|sub-?paragraph|subsection|item|point)\s*\([^)]+\)",
+            text,
+            re.I,
+        )
+        else 0
+    )
     return _UKRepealTableQuotedWordsSelector(
         _uk_first_quote_group(match, "quoted_double", "quoted_single"),
-        0,
+        occurrence,
         0,
     )
 
