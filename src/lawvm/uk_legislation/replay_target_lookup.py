@@ -21,6 +21,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_action_target_detail,
     uk_replay_recovery_action_target_detail,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_existing_target_insert_gap,
     uk_is_explicit_direct_section_paragraph_target,
@@ -114,7 +115,7 @@ class UKReplayTargetLookupMixin:
         allow_compound_subsection_alias: bool = False,
         allow_recursive_match: bool = True,
         target_resolution_op: LegalOperation | None = None,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         """Find a node and its parent by LegalAddress path."""
         cache_key = None
         if target_resolution_op is None:
@@ -133,11 +134,11 @@ class UKReplayTargetLookupMixin:
                     allow_sequence_match=False,
                 )
                 if node is not None and self._eid_candidate_matches_target_leaf(node, target):
-                    result = (node, parent, idx)
+                    result = NodeLookupResult(node=node, parent=parent, index=idx)
                     self._store_target_lookup_cache(cache_key, result)
                     return result
 
-        def _find(address: LegalAddress) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+        def _find(address: LegalAddress) -> NodeLookupResult:
             path = list(address.path)
             container = _addr_container(address)
 
@@ -155,15 +156,15 @@ class UKReplayTargetLookupMixin:
                 )
                 if sched_label and roots and not remaining:
                     sch, _, idx = roots[0]
-                    return cast(UKMutableNode, sch), None, idx
+                    return NodeLookupResult(node=cast(UKMutableNode, sch), parent=None, index=idx)
                 if not sched_label and len(roots) == 1 and not remaining:
                     sch, _, idx = roots[0]
-                    return cast(UKMutableNode, sch), None, idx
+                    return NodeLookupResult(node=cast(UKMutableNode, sch), parent=None, index=idx)
                 path = remaining
             else:
                 roots = [(cast(IRNode, self.statute.body), None, None)]
             if not roots:
-                return None, None, None
+                return NodeLookupResult(node=None, parent=None, index=None)
 
             is_eur = bool(self.statute.metadata.get("is_eur", False))
             curr_cands = roots
@@ -231,12 +232,15 @@ class UKReplayTargetLookupMixin:
                                     if res_node:
                                         next_cands.append((res_node, res_p, res_i))
                 if not next_cands:
-                    return None, None, None
+                    return NodeLookupResult(node=None, parent=None, index=None)
                 curr_cands = next_cands
-            return (
-                cast(tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]], curr_cands[0])
-                if curr_cands
-                else (None, None, None)
+            if not curr_cands:
+                return NodeLookupResult(node=None, parent=None, index=None)
+            node, parent, idx = curr_cands[0]
+            return NodeLookupResult(
+                node=cast(UKMutableNode, node),
+                parent=cast(Optional[UKMutableNode], parent),
+                index=idx,
             )
 
         if uk_is_explicit_direct_section_paragraph_target(target):
@@ -254,7 +258,7 @@ class UKReplayTargetLookupMixin:
         self,
         target: LegalAddress,
         op: LegalOperation,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         """Resolve feed `Sch. N para. (d)` shape to a unique schedule item.
 
         This recovery is available only for ops whose lowering witness proved a
@@ -262,19 +266,19 @@ class UKReplayTargetLookupMixin:
         schedule paragraph-to-item fallback.
         """
         if op.witness_rule_id != _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID:
-            return None, None, None
+            return NodeLookupResult(node=None, parent=None, index=None)
         if _addr_container(target) != "schedule" or len(tuple(target.path)) != 2:
-            return None, None, None
+            return NodeLookupResult(node=None, parent=None, index=None)
         schedule_label = target.path[0][1]
         target_kind, target_label_raw = target.path[1]
         target_label = _source_parent_range_label(target_label_raw)
         if target_kind != "paragraph" or not re.fullmatch(r"[a-z]", target_label, re.I):
-            return None, None, None
+            return NodeLookupResult(node=None, parent=None, index=None)
         if op.payload is not None:
             payload_kind = _uk_kind_value(op.payload.kind).lower()
             payload_label = _source_parent_range_label(op.payload.label or "")
             if payload_kind != "item" or payload_label != target_label:
-                return None, None, None
+                return NodeLookupResult(node=None, parent=None, index=None)
 
         roots = uk_schedule_root_candidates(
             cast(list[IRNode], self.statute.supplements),
@@ -296,7 +300,7 @@ class UKReplayTargetLookupMixin:
         for root, _root_parent, _root_idx in roots:
             _walk(cast(UKMutableNode, root))
         if len(candidates) != 1:
-            return None, None, None
+            return NodeLookupResult(node=None, parent=None, index=None)
         recovered_node, recovered_parent, recovered_idx = candidates[0]
         _append_uk_replay_adjudication(
             self.adjudications_out,
@@ -315,11 +319,15 @@ class UKReplayTargetLookupMixin:
                 source_rule_id=_UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
             ),
         )
-        return recovered_node, recovered_parent, recovered_idx
+        return NodeLookupResult(
+            node=recovered_node,
+            parent=recovered_parent,
+            index=recovered_idx,
+        )
 
     def _find_recursive_match(
         self, node: UKMutableNode, kind: str, label: str
-    ) -> tuple[Optional[IRNode], Optional[IRNode], Optional[int]]:
+    ) -> NodeLookupResult:
         cache_key = self._recursive_match_cache_key(node, kind=kind, label=label)
         cached = self._cached_recursive_match(cache_key)
         if cached is not None:
@@ -330,9 +338,13 @@ class UKReplayTargetLookupMixin:
             label=label,
             match_kind_label=uk_match_kind_label,
         )
-        typed_result = cast(tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]], result)
+        typed_result = NodeLookupResult(
+            node=cast(Optional[UKMutableNode], result[0]),
+            parent=cast(Optional[UKMutableNode], result[1]),
+            index=result[2],
+        )
         self._store_recursive_match_cache(cache_key, typed_result)
-        return result
+        return typed_result
 
     def _empty_schedule_root_shape_gap(self, target: LegalAddress) -> bool:
         """Return True when a descendant target lands under an empty schedule root."""
