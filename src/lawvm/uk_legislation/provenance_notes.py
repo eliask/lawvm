@@ -20,6 +20,7 @@ NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
 NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
 NOTE_TABLE_ROW_REPLACE_SELECTOR = "table_row_replace_selector:"
 NOTE_TABLE_COLUMN_INSERT_SELECTOR = "table_column_insert_selector:"
+NOTE_TABLE_CELL_CHILD_LIST_INSERT_SELECTOR = "table_cell_child_list_insert_selector:"
 NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
 NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR = "schedule_list_entry_table_rows_selector:"
 NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR = "schedule_table_end_rows_selector:"
@@ -65,6 +66,11 @@ def _table_row_replace_selector(op: LegalOperation) -> dict[str, Any] | None:
 def _table_column_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
     """Return UK table-column insertion selector data carried on a lowered insert op."""
     return _json_dict_note(op, NOTE_TABLE_COLUMN_INSERT_SELECTOR)
+
+
+def _table_cell_child_list_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK table-cell child-list insertion selector data."""
+    return _json_dict_note(op, NOTE_TABLE_CELL_CHILD_LIST_INSERT_SELECTOR)
 
 
 def _schedule_list_entry_table_rows_selector(op: LegalOperation) -> dict[str, Any] | None:

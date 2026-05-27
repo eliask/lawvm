@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import replace as dc_replace
 from typing import Any, NamedTuple
@@ -13,6 +14,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_blocking_action_target_detail,
 )
 from lawvm.uk_legislation.replay_table_geometry import (
+    expanded_uk_table_rows_with_physical_index,
     resolve_uk_table_entry_row_replace_span,
     resolve_uk_table_entry_row_insert_index,
     strip_uk_identity_attrs_recursive,
@@ -40,6 +42,12 @@ _UK_REPLAY_TABLE_ENTRY_ROW_REPLACE_UNRESOLVED_RULE_ID = (
 _UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID = (
     "uk_replay_table_column_insert_unresolved"
 )
+_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID = (
+    "uk_replay_table_cell_child_list_insert_unresolved"
+)
+_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_RESOLVED_RULE_ID = (
+    "uk_replay_table_cell_child_list_insert_resolved"
+)
 _UNSIGNED_INT_RE = re.compile(r"[0-9]+")
 _TABLE_CELL_PARAGRAPH_SPLIT_RE = re.compile(r"(\n{6,})")
 _TABLE_CELL_FIRST_SUBPARAGRAPH_RE = re.compile(
@@ -56,7 +64,254 @@ class _TableCellParagraphSubstitutionResult(NamedTuple):
     detail: dict[str, Any]
 
 
+def _table_cell_ordered_list_units(cell: UKMutableNode) -> list[dict[str, str]]:
+    raw = cell.attrs.get("source_ordered_list_units_json")
+    if not isinstance(raw, str) or not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    units: list[dict[str, str]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            return []
+        label = str(item.get("label") or "").strip()
+        text = str(item.get("text") or "").strip()
+        if not label or not text:
+            return []
+        units.append(
+            {
+                "source_list_type": str(item.get("source_list_type") or ""),
+                "source_list_decoration": str(item.get("source_list_decoration") or ""),
+                "label": label,
+                "text": text,
+            }
+        )
+    return units
+
+
+def _replace_table_cell_ordered_list_text(
+    cell: UKMutableNode,
+    old_units: list[dict[str, str]],
+    new_units: list[dict[str, str]],
+) -> bool:
+    if not old_units:
+        return False
+    text = str(cell.text or "")
+    first_text = old_units[0]["text"]
+    last_text = old_units[-1]["text"]
+    first_index = text.find(first_text)
+    if first_index < 0:
+        return False
+    last_index = text.rfind(last_text)
+    if last_index < first_index:
+        return False
+    last_end = last_index + len(last_text)
+    list_region = text[first_index:last_end]
+    separator = "\n\n\n\n" if "\n\n\n\n" in list_region else "\n\n"
+    cell.text = f"{text[:first_index]}{separator.join(unit['text'] for unit in new_units)}{text[last_end:]}"
+    cell.attrs["source_ordered_list_units_json"] = json.dumps(
+        new_units,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return True
+
+
 class UKReplayTableApplyMixin:
+    def _insert_table_cell_child_list_item(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        node, _, _ = self._find_node_by_target(target)
+        if node is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve the table-cell child-list containing target.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="target_not_found",
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        table_selection = uk_table_selector_tables(node, selector)
+        if len(table_selection.tables) != 1:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve a unique table for table-cell child-list insertion.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="table_not_unique",
+                    table_count=len(table_selection.tables),
+                    **table_selection.detail,
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        try:
+            source_row_number = int(selector.get("source_table_row_number") or 0)
+            source_column_index = int(selector.get("source_table_column_index") or 0)
+        except (TypeError, ValueError):
+            source_row_number = 0
+            source_column_index = 0
+        anchor_label = _clean_num(str(selector.get("table_child_anchor_label") or ""))
+        direction = str(selector.get("table_child_insert_direction") or "")
+        if (
+            _uk_kind_value(new_node.kind).lower() != "item"
+            or not new_node.label
+            or not new_node.text
+            or source_row_number < 1
+            or source_column_index < 1
+            or not anchor_label
+            or direction not in {"before", "after"}
+        ):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay skipped table-cell child-list insertion with an invalid selector or payload.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="invalid_selector_or_payload",
+                    payload_kind=_uk_kind_value(new_node.kind),
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        row_matches: list[tuple[int, dict[int, UKMutableNode]]] = []
+        for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table_selection.tables[0]):
+            first_cell = row_cells.get(1)
+            if first_cell is None:
+                continue
+            if _clean_num(str(first_cell.text or "")) == str(source_row_number):
+                row_matches.append((physical_row_index, row_cells))
+        if len(row_matches) != 1:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve a unique source-numbered table row.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="row_number_not_unique",
+                    row_match_count=len(row_matches),
+                    **table_selection.detail,
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        physical_row_index, row_cells = row_matches[0]
+        cell = row_cells.get(source_column_index)
+        if cell is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve the source-named table column.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="column_not_found",
+                    physical_row_index=physical_row_index,
+                    **table_selection.detail,
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        old_units = _table_cell_ordered_list_units(cell)
+        anchor_indexes = [
+            index
+            for index, unit in enumerate(old_units)
+            if _clean_num(unit["label"]) == anchor_label
+        ]
+        if len(anchor_indexes) != 1 or any(_clean_num(unit["label"]) == _clean_num(new_node.label) for unit in old_units):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve a unique ordered-list child anchor in the table cell.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="ordered_list_child_anchor_not_unique_or_duplicate_payload",
+                    anchor_match_count=len(anchor_indexes),
+                    ordered_list_unit_count=len(old_units),
+                    physical_row_index=physical_row_index,
+                    **table_selection.detail,
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        insert_index = anchor_indexes[0] if direction == "before" else anchor_indexes[0] + 1
+        new_units = [
+            *old_units[:insert_index],
+            {
+                "source_list_type": str(new_node.attrs.get("source_list_type") or ""),
+                "source_list_decoration": str(new_node.attrs.get("source_list_decoration") or ""),
+                "label": str(new_node.label),
+                "text": str(new_node.text),
+            },
+            *old_units[insert_index:],
+        ]
+        if not _replace_table_cell_ordered_list_text(cell, old_units, new_units):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not splice the ordered-list text region in the selected table cell.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="cell_text_units_not_found",
+                    physical_row_index=physical_row_index,
+                    **table_selection.detail,
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        self._note_structure_mutation()
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_RESOLVED_RULE_ID,
+            message="UK replay inserted a source-owned ordered-list child into one resolved table cell.",
+            op=op,
+            detail=uk_replay_action_target_detail(
+                op,
+                target,
+                blocking=False,
+                selector=dict(selector),
+                reason_code="source_named_row_column_child_anchor_unique",
+                physical_row_index=physical_row_index,
+                insert_index=insert_index,
+                ordered_list_unit_count=len(new_units),
+                **table_selection.detail,
+                family="source_table_elaboration",
+            ),
+        )
+        return True
+
     def _insert_table_column(
         self,
         target: LegalAddress,
