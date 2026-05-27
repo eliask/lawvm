@@ -4,6 +4,7 @@ import hashlib
 import json
 import xml.etree.ElementTree as ET
 from argparse import Namespace
+from types import SimpleNamespace
 
 import pytest
 
@@ -826,6 +827,135 @@ def test_collect_target_shape_uses_heading_facet_carrier_text() -> None:
     assert has_text is True
     assert has_children is True
     assert texts == ["Reduced rates of SDLT on residential property for a temporary period"]
+
+
+def test_summarize_uk_effect_uses_heading_facet_text_for_batch_compare(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Batch uk-effects must compare heading-facet ops against heading text, not host body."""
+    from lawvm.uk_legislation import effects as uk_effects_model
+    from lawvm.uk_legislation import source_adjudication
+    from lawvm.uk_legislation import uk_amendment_replay
+
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="17",
+        text="Body text without the quoted heading anchor.",
+        attrs={"id": "section-17"},
+        children=(),
+    )
+    statute = IRStatute(
+        statute_id="ukpga/test",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.P1GROUP,
+                    label=None,
+                    text="Interest paid or credited by banks etc. without deduction of income tax",
+                    children=(section,),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    op = LegalOperation(
+        op_id="op-heading",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "17"),), special=FacetKind.HEADING),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector("banks"),
+            replacement="banks, building societies",
+        ),
+    )
+    effect = UKEffectRecord(
+        effect_id="eff-heading",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/1970/9/section/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 17",
+        affecting_uri="/id/ukpga/2025/1/schedule/1/paragraph/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="Sch. 1 para. 1",
+        affecting_title="Test Amendment Act",
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/test",
+        enacted_ir=statute,
+        oracle_ir=statute,
+        base_eids={"section-17"},
+        oracle_eids={"section-17"},
+        base_text_map={"section-17": "Body text without the quoted heading anchor."},
+        oracle_eid_map={},
+        oracle_text_map={"section-17": "Body text without the quoted heading anchor."},
+        resolver=SimpleNamespace(_derive_target_eid=lambda target: "section-17"),
+        affecting_xml_cache={},
+    )
+    source_context = SimpleNamespace(
+        source_status="absent",
+        source_size=0,
+        xml_bytes=None,
+        root=None,
+        authority_layer="EFFECT_FEED_INDEX",
+    )
+
+    monkeypatch.setattr(
+        uk_effects_model,
+        "uk_effect_requires_affecting_source_for_replay",
+        lambda _effect, *, applicability_mode: False,
+    )
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "_build_affecting_source_context",
+        lambda **_kwargs: (source_context, None),
+    )
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "_select_enacted_source_for_current_shell",
+        lambda **_kwargs: (source_context, None, ()),
+    )
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "compile_effect_to_ir_ops",
+        lambda *_args, **_kwargs: [op],
+    )
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "mark_nonreplay_lowering_rejections_nonblocking",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "mark_source_pathology_nonreplay_lowering_rejections_nonblocking",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "append_source_pathology_filter_lowering_rejections",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        source_adjudication,
+        "classify_uk_effect_source_pathology",
+        lambda **_kwargs: "",
+    )
+
+    summary = summarize_uk_effect(effect, archive=object(), context=context)
+
+    assert summary.compare_shape == ""
+    assert summary.manual_compile_rule_id == "uk_manual_frontier_deterministic_supported"
 
 
 def test_lowering_rejection_rule_counts_are_stable() -> None:

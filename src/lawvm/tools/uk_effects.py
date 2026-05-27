@@ -556,6 +556,7 @@ def summarize_uk_effect(
                 eid=target_presence.eid,
                 text_map=context.base_text_map,
                 descendant_hit=base_descendant_hit,
+                target=op.target,
             )
             base_has_text = base_has_text or target_shape.has_text
             base_has_children = base_has_children or target_shape.has_children
@@ -566,6 +567,7 @@ def summarize_uk_effect(
                 eid=target_presence.eid,
                 text_map=context.oracle_text_map,
                 descendant_hit=oracle_descendant_hit,
+                target=op.target,
             )
             oracle_has_text = oracle_has_text or target_shape.has_text
             oracle_has_children = oracle_has_children or target_shape.has_children
