@@ -3760,6 +3760,126 @@ def test_compile_broad_structural_sibling_insert_rejects_without_parent_claim() 
     assert rejection["strict_disposition"] == "block"
 
 
+def test_compile_source_parent_definition_child_structural_sibling_insert() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-25-paragraph-78-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>In the definition of “custodial sentence”—</Text>
+            <P3 id="schedule-25-paragraph-78-3-c">
+              <Pnumber>c</Pnumber>
+              <P3para>
+                <Text>c after paragraph (f) insert— g a sentence of detention in a young offender institution imposed under or as a result of this Act; h a sentence of custody for life imposed under or as a result of this Act; .</Text>
+              </P3para>
+            </P3>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_sibling_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-01",
+        affected_uri="/id/ukpga/2006/52/section/374",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 374",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 25 para. 78(3)(c)",
+        affecting_title="Sentencing Act 2020",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT, StructuralAction.INSERT]
+    assert [str(op.target) for op in ops] == ["section:374/item:g", "section:374/item:h"]
+    assert [op.witness_rule_id for op in ops] == [
+        "uk_effect_definition_child_structural_sibling_insert_lowered",
+        "uk_effect_definition_child_structural_sibling_insert_lowered",
+    ]
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.attrs["definition_term"] == "custodial sentence"
+    assert ops[0].payload.attrs["definition_child_label"] == "g"
+    assert ops[0].payload.attrs["source_anchor_child_label"] == "f"
+    assert ops[1].payload is not None
+    assert ops[1].payload.attrs["source_anchor_child_label"] == "g"
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["reason_code"] == "source_parent_definition_child_structural_sibling_series"
+    assert rows[0]["blocking"] is False
+
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="374",
+                    attrs={"id": "section-374"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.ITEM,
+                            text="a sentence of detention under section 228 of that Act;",
+                            attrs={
+                                "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                "definition_term": "custodial sentence",
+                                "definition_child_label": "f",
+                            },
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.ITEM,
+                            text="all persons engaged in armed operations;",
+                            attrs={
+                                "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                "definition_term": "enemy",
+                                "definition_child_label": "a",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    section = replayed.body.children[0]
+    assert [
+        child.attrs.get("definition_child_label")
+        for child in section.children
+        if child.attrs.get("definition_term") == "custodial sentence"
+    ] == ["f", "g", "h"]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_structural_sibling_insert_applied",
+        "uk_replay_definition_child_structural_sibling_insert_applied",
+    ]
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_compile_child_tail_sibling_insert_rejects_non_contiguous_label() -> None:
     extracted_el = ET.fromstring(
         f"""
