@@ -2,45 +2,69 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
 
-def _uk_op_allowed_by_authority_mode(op: LegalOperation, authority_mode: str) -> tuple[bool, Optional[str]]:
+class UKAuthorityModeDecision(NamedTuple):
+    allowed: bool
+    rejection_reason: Optional[str]
+
+
+class UKAuthorityModePartition(NamedTuple):
+    kept_ops: list[LegalOperation]
+    rejected_ops: list[LegalOperation]
+    rejected_reason_counts: dict[str, int]
+
+
+def _uk_op_allowed_by_authority_mode(
+    op: LegalOperation,
+    authority_mode: str,
+) -> UKAuthorityModeDecision:
     if authority_mode != "source_text_only":
-        return True, None
+        return UKAuthorityModeDecision(allowed=True, rejection_reason=None)
     witness = _witness_for_op(op)
     extraction_witness = getattr(witness, "extraction_witness", None)
     target_expansion_witness = getattr(witness, "target_expansion_witness", None)
     authority_layer = str(getattr(extraction_witness, "authority_layer", "") or "")
     if authority_layer not in {"AFFECTING_ACT_TEXT", "AFFECTING_ACT_ENACTED_TEXT"}:
-        return False, "extraction_authority"
+        return UKAuthorityModeDecision(
+            allowed=False,
+            rejection_reason="extraction_authority",
+        )
     if str(getattr(target_expansion_witness, "expansion_source", "") or "") == "metadata_split":
-        return False, "metadata_target_expansion"
-    return True, None
+        return UKAuthorityModeDecision(
+            allowed=False,
+            rejection_reason="metadata_target_expansion",
+        )
+    return UKAuthorityModeDecision(allowed=True, rejection_reason=None)
 
 
 def _partition_uk_ops_by_authority_mode(
     ops: Sequence[LegalOperation],
     authority_mode: str,
-) -> tuple[list[LegalOperation], list[LegalOperation], dict[str, int]]:
+) -> UKAuthorityModePartition:
     kept_ops: list[LegalOperation] = []
     rejected_ops: list[LegalOperation] = []
     rejected_reason_counts: dict[str, int] = {}
     for op in ops:
-        allowed, rejection_reason = _uk_op_allowed_by_authority_mode(op, authority_mode)
-        if allowed:
+        decision = _uk_op_allowed_by_authority_mode(op, authority_mode)
+        if decision.allowed:
             kept_ops.append(op)
             continue
         rejected_ops.append(op)
-        if rejection_reason:
-            rejected_reason_counts[rejection_reason] = (
-                rejected_reason_counts.get(rejection_reason, 0) + 1
+        if decision.rejection_reason:
+            rejected_reason_counts[decision.rejection_reason] = (
+                rejected_reason_counts.get(decision.rejection_reason, 0) + 1
             )
-    return kept_ops, rejected_ops, rejected_reason_counts
+    return UKAuthorityModePartition(
+        kept_ops=kept_ops,
+        rejected_ops=rejected_ops,
+        rejected_reason_counts=rejected_reason_counts,
+    )
 
 
 def _uk_authority_filter_diagnostic(
@@ -115,18 +139,18 @@ def _apply_uk_authority_mode(
     blocking: bool = True,
     reason: str = "UK source-text-only authority mode rejected non-source-text replay operations",
 ) -> list[LegalOperation]:
-    kept_ops, rejected_ops, rejected_reason_counts = _partition_uk_ops_by_authority_mode(
+    partition = _partition_uk_ops_by_authority_mode(
         ops,
         authority_mode,
     )
-    if rejected_ops and diagnostics_out is not None:
+    if partition.rejected_ops and diagnostics_out is not None:
         diagnostics_out.append(
             _uk_authority_filter_diagnostic(
                 effect=effect,
                 authority_mode=authority_mode,
                 compiled_op_count=len(ops),
-                rejected_ops=rejected_ops,
-                rejected_reason_counts=rejected_reason_counts,
+                rejected_ops=partition.rejected_ops,
+                rejected_reason_counts=partition.rejected_reason_counts,
                 replay_applicable=replay_applicable,
                 structural_for_replay=structural_for_replay,
                 rule_id=rule_id,
@@ -134,7 +158,7 @@ def _apply_uk_authority_mode(
                 reason=reason,
             )
         )
-    return kept_ops
+    return partition.kept_ops
 
 
 def _preceding_eid(op: LegalOperation) -> Optional[str]:
