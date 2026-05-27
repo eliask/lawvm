@@ -1224,6 +1224,8 @@ def _uk_repeal_table_clause_is_structural_repeal(extent_clause: str) -> bool:
     text = " ".join((extent_clause or "").split()).strip()
     if not text:
         return False
+    if re.search(r'(?:["“][^"”]*["”]|‘[^’]*’)', text):
+        return False
     norm = text.lower()
     if re.search(r"\b(?:word|words|definition|entry|entries)\b", norm):
         return False
@@ -1895,6 +1897,31 @@ def _uk_parenthesized_label_in_simple_range(
     return False
 
 
+def _uk_parenthesized_label_in_bare_simple_range(text: str, *, label: str) -> bool:
+    """Return true for source-owned bare ranges like `(3) to (5)`."""
+    wanted_label = re.sub(r"[^0-9a-z]", "", (label or "").lower())
+    if not wanted_label:
+        return False
+    for match in re.finditer(
+        r"\(\s*(?P<start>\d+[a-z]?)\s*\)\s*(?:to|-|–|—)\s*"
+        r"\(\s*(?P<end>\d+[a-z]?)\s*\)",
+        text or "",
+        flags=re.I,
+    ):
+        start_label = match.group("start").lower()
+        end_label = match.group("end").lower()
+        if wanted_label in {start_label, end_label}:
+            return True
+        if not (wanted_label.isdigit() and start_label.isdigit() and end_label.isdigit()):
+            continue
+        wanted = int(wanted_label)
+        start = int(start_label)
+        end = int(end_label)
+        if min(start, end) <= wanted <= max(start, end):
+            return True
+    return False
+
+
 def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
     is_numeric = schedule_pat.isdigit()
     wanted_num = int(schedule_pat) if is_numeric else None
@@ -1980,6 +2007,11 @@ def _uk_cell_has_section_descendant_scope(
             segment,
             label=wanted[0],
             word_pattern=r"subsections?",
+        ):
+            return True
+        if len(wanted) == 1 and _uk_parenthesized_label_in_bare_simple_range(
+            segment,
+            label=wanted[0],
         ):
             return True
 
@@ -2204,13 +2236,13 @@ def _uk_table_cell_mentions_target(
         section_pat = re.escape(section.lower())
         direct_section_match = re.search(
             rf"\b(?:section|sections|s)\.?\s*{section_pat}\b",
-            text,
+            scope_text,
         )
-        section_range_match = _uk_section_label_in_simple_range(text, section)
-        section_list_match = _uk_section_label_in_simple_list(text, section)
+        section_range_match = _uk_section_label_in_simple_range(scope_text, section)
+        section_list_match = _uk_section_label_in_simple_list(scope_text, section)
         listed_section_match = (
-            re.search(r"\bsections\b", text) is not None
-            and re.search(rf"\b{section_pat}\s*\(", text) is not None
+            re.search(r"\bsections\b", scope_text) is not None
+            and re.search(rf"\b{section_pat}\s*\(", scope_text) is not None
         )
         if (
             not direct_section_match
@@ -2227,7 +2259,7 @@ def _uk_table_cell_mentions_target(
             if label and label.lower() != "table"
         ]
         if descendant_labels and not _uk_cell_has_section_descendant_scope(
-            text,
+            scope_text,
             section=section,
             descendant_labels=descendant_labels,
         ):

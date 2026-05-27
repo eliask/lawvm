@@ -17420,6 +17420,80 @@ def test_compile_repeal_table_structural_section_range_member_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_structural_section_range_ignores_quoted_target_references() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Social Security Act 1998 (c. 14)</td>
+                  <td>In section 9(1), “Subject to section 36(3) below,”.</td>
+                </tr>
+                <tr>
+                  <td>Social Security Act 1998 (c. 14)</td>
+                  <td>In section 10(1), “and section 36(3)”.</td>
+                </tr>
+                <tr>
+                  <td>Social Security Act 1998 (c. 14)</td>
+                  <td>Sections 36 to 38.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_range_quoted_target_references",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2013-04-01",
+        affected_uri="/id/ukpga/1998/14/section/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="s. 36",
+        affecting_uri="/id/ukpga/2012/5",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="5",
+        affecting_provisions="Sch. 14 Pt. 8",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2013-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "36"),)
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["target"] == "section:36"
+        and record["extent_cell"] == "Sections 36 to 38."
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(
+        record.get("rule_id") == "uk_effect_repeal_table_structural_repeal_unresolved"
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_subsection_range_member_repeal() -> None:
     source_root = ET.fromstring(
         """
@@ -17494,6 +17568,154 @@ def test_compile_repeal_table_structural_subsection_range_member_repeal() -> Non
         and record["blocking"] is False
         for record in lowering_records
     )
+
+
+@pytest.mark.parametrize(("subsection_label", "expected_ops"), [("4", 1), ("6", 0)])
+def test_compile_repeal_table_structural_bare_subsection_range_member_repeal(
+    subsection_label: str,
+    expected_ops: int,
+) -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Test Act 2012 (c. 5)</td>
+                  <td>Section 44(3) to (5).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id=f"uk_test_repeal_table_structural_bare_subsection_{subsection_label}",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2023-01-01",
+        affected_uri=f"/id/ukpga/2012/5/section/44/subsection/{subsection_label}",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2012",
+        affected_number="5",
+        affected_provisions=f"s. 44({subsection_label})",
+        affecting_uri="/id/ukpga/2023/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="1",
+        affecting_provisions="Sch. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2023-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == expected_ops
+    if expected_ops:
+        assert ops[0].action is StructuralAction.REPEAL
+        assert ops[0].target.path == (("section", "44"), ("subsection", subsection_label))
+        assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+        assert any(
+            record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+            and record["target"] == f"section:44/subsection:{subsection_label}"
+            and record["extent_cell"] == "Section 44(3) to (5)."
+            and record["blocking"] is False
+            for record in lowering_records
+        )
+    else:
+        assert any(
+            record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+            and record["target"] == f"section:44/subsection:{subsection_label}"
+            and record["blocking"] is True
+            for record in lowering_records
+        )
+
+
+@pytest.mark.parametrize(("subsection_label", "expected_ops"), [("3", 1), ("6", 1), ("4", 0)])
+def test_compile_repeal_table_structural_mixed_bare_subsection_list_and_range(
+    subsection_label: str,
+    expected_ops: int,
+) -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Test Act 2008 (c. 29)</td>
+                  <td>Section 102(3) and (5) to (7).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id=f"uk_test_repeal_table_structural_mixed_bare_subsection_{subsection_label}",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2023-01-01",
+        affected_uri=f"/id/ukpga/2008/29/section/102/subsection/{subsection_label}",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="29",
+        affected_provisions=f"s. 102({subsection_label})",
+        affecting_uri="/id/ukpga/2023/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="1",
+        affecting_provisions="Sch. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2023-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == expected_ops
+    if expected_ops:
+        assert ops[0].action is StructuralAction.REPEAL
+        assert ops[0].target.path == (("section", "102"), ("subsection", subsection_label))
+        assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+        assert any(
+            record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+            and record["target"] == f"section:102/subsection:{subsection_label}"
+            and record["extent_cell"] == "Section 102(3) and (5) to (7)."
+            and record["blocking"] is False
+            for record in lowering_records
+        )
+    else:
+        assert any(
+            record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+            and record["target"] == f"section:102/subsection:{subsection_label}"
+            and record["blocking"] is True
+            for record in lowering_records
+        )
 
 
 def test_compile_repeal_table_structural_alphanumeric_range_endpoint_repeal() -> None:
