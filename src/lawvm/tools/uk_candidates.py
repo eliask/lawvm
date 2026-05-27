@@ -9,7 +9,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Sequence, cast
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Sequence, cast
 
 from lawvm.core.compile_records import is_blocking_compile_record
 
@@ -689,19 +689,24 @@ def _count_map_jsonable(counts: Mapping[str, int]) -> dict[str, int]:
     return {str(key): int(value) for key, value in sorted(counts.items())}
 
 
+class _LimitedCountMap(NamedTuple):
+    jsonable_counts: dict[str, int]
+    omitted_count: int
+
+
 def _limited_count_map_jsonable(
     counts: Mapping[str, int],
     *,
     limit: int | None,
-) -> tuple[dict[str, int], int]:
+) -> _LimitedCountMap:
     if limit is None:
-        return _count_map_jsonable(counts), 0
+        return _LimitedCountMap(_count_map_jsonable(counts), 0)
     items = sorted(
         ((str(key), int(value)) for key, value in counts.items()),
         key=lambda item: (-item[1], item[0]),
     )
     emitted = items[:limit]
-    return dict(emitted), max(0, len(items) - len(emitted))
+    return _LimitedCountMap(dict(emitted), max(0, len(items) - len(emitted)))
 
 
 def _limit_summary_count_maps(
@@ -716,10 +721,10 @@ def _limit_summary_count_maps(
     for key, value in tuple(summary.items()):
         if not key.endswith("_counts") or not isinstance(value, Mapping):
             continue
-        limited_map, omitted = _limited_count_map_jsonable(value, limit=limit)
-        limited[key] = limited_map
-        if omitted:
-            omissions[key] = omitted
+        limited_count_map = _limited_count_map_jsonable(value, limit=limit)
+        limited[key] = limited_count_map.jsonable_counts
+        if limited_count_map.omitted_count:
+            omissions[key] = limited_count_map.omitted_count
     if omissions:
         limited["summary_count_map_omissions"] = dict(sorted(omissions.items()))
     return limited
@@ -737,10 +742,10 @@ def _limit_row_count_maps(
     for key, value in tuple(row.items()):
         if not str(key).endswith("_counts") or not isinstance(value, Mapping):
             continue
-        limited_map, omitted = _limited_count_map_jsonable(value, limit=limit)
-        limited[str(key)] = limited_map
-        if omitted:
-            omissions[str(key)] = omitted
+        limited_count_map = _limited_count_map_jsonable(value, limit=limit)
+        limited[str(key)] = limited_count_map.jsonable_counts
+        if limited_count_map.omitted_count:
+            omissions[str(key)] = limited_count_map.omitted_count
     if omissions:
         limited["row_count_map_omissions"] = dict(sorted(omissions.items()))
     return limited
