@@ -45,6 +45,9 @@ def build_uk_text_patch_items(
     separate_compound_lettered_replacements = (
         _separate_compound_lettered_text_replace_fragments(fragment_subs)
     )
+    separate_compound_text_insertions = _separate_compound_target_local_text_insertions(
+        fragment_subs
+    )
     separate_multi_quoted_word_repeals = _separate_multi_quoted_word_repeal_fragments(
         fragment_subs
     )
@@ -167,6 +170,22 @@ def build_uk_text_patch_items(
                     [fragment],
                 )
             )
+    elif curr_action == "text_replace" and separate_compound_text_insertions:
+        for fragment in separate_compound_text_insertions:
+            original = fragment["original"]
+            if original == "TEXT_FROM__TO_END":
+                text_patch = TextPatchSpec(
+                    kind=TextPatchKindEnum.APPEND,
+                    selector=TextSelector(match_text="TEXT_END", occurrence=0),
+                    replacement=fragment["replacement"],
+                )
+            else:
+                text_patch = TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=TextSelector(match_text=original, occurrence=0),
+                    replacement=fragment["replacement"],
+                )
+            text_patch_items.append(UKTextPatchItem(text_patch, [fragment]))
     elif curr_action == "text_repeal" and op_text_match:
         text_patch_items.append(
             UKTextPatchItem(
@@ -217,3 +236,35 @@ def build_uk_text_patch_items(
     else:
         text_patch_items.append(UKTextPatchItem(None, fragment_subs))
     return text_patch_items
+
+
+def _separate_compound_target_local_text_insertions(
+    fragment_subs: Optional[list[dict[str, Any]]],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    allowed_rules = {
+        "uk_effect_after_quoted_anchor_insert_text_patch",
+        "uk_effect_at_end_text_insertion_patch",
+        "uk_effect_compound_lettered_text_patch_instruction",
+    }
+    fragments: list[dict[str, str]] = []
+    saw_append = False
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if rule_id not in allowed_rules or not original or not replacement:
+            return ()
+        if original == "TEXT_FROM__TO_END":
+            saw_append = True
+        fragments.append(
+            {
+                "original": original,
+                "replacement": replacement,
+                "rule_id": rule_id,
+            }
+        )
+    if not saw_append:
+        return ()
+    return tuple(fragments)
