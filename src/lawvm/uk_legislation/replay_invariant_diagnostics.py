@@ -7,6 +7,8 @@ tree.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from lawvm.core import tree_ops
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.semantic_types import StructuralAction
@@ -47,6 +49,16 @@ _ORDERED_INVARIANT_KINDS = frozenset(
 )
 
 
+class _InvariantWalkEntry(NamedTuple):
+    node: UKMutableNode
+    path: str
+
+
+class _OrderStateEntry(NamedTuple):
+    sort_key: tuple[int, str, int]
+    label: str
+
+
 def _invariant_detail(
     op: LegalOperation,
     scoped_violation: str,
@@ -71,13 +83,15 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
     paying for discarded checks.
     """
     violations: list[str] = []
-    stack: list[tuple[UKMutableNode, str]] = [(root, initial_path or root.kind.value)]
+    stack: list[_InvariantWalkEntry] = [_InvariantWalkEntry(root, initial_path or root.kind.value)]
     while stack:
-        node, path = stack.pop()
+        walk_entry = stack.pop()
+        node = walk_entry.node
+        path = walk_entry.path
         children = node.children
         if len(children) >= 2:
             seen: dict[tuple[str, str], int] = {}
-            order_state: dict[str, tuple[tuple[int, str, int], str]] = {}
+            order_state: dict[str, _OrderStateEntry] = {}
             order_violations: list[str] = []
             for child in children:
                 child_kind = child.kind.value
@@ -88,11 +102,11 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
                     if child_kind in _ORDERED_INVARIANT_KINDS:
                         sort_key = tree_ops._default_sort_key(label)
                         previous = order_state.get(child_kind)
-                        if previous is not None and previous[0] > sort_key:
+                        if previous is not None and previous.sort_key > sort_key:
                             order_violations.append(
-                                f"{path}: {child_kind} out of order: {previous[1]} > {label}"
+                                f"{path}: {child_kind} out of order: {previous.label} > {label}"
                             )
-                        order_state[child_kind] = (sort_key, label)
+                        order_state[child_kind] = _OrderStateEntry(sort_key, label)
             for (kind, label), count in seen.items():
                 if count > 1:
                     violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
@@ -101,7 +115,7 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
             if not child.children:
                 continue
             child_path = f"{path}/{child.kind.value}:{child.label or '?'}"
-            stack.append((child, child_path))
+            stack.append(_InvariantWalkEntry(child, child_path))
     return violations
 
 
