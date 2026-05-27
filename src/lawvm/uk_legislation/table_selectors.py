@@ -1245,6 +1245,28 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    row_number_insert_match = re.search(
+        r"\b(?P<direction>after|before)\s+row\s+(?P<row>\d+)"
+        r"(?:\s*\([^)]*\))?\s+insert(?:ed)?\s*[—–-]?",
+        text,
+        re.I,
+    )
+    if target_names_table and row_number_insert_match is not None:
+        try:
+            row_number = int(row_number_insert_match.group("row"))
+        except ValueError:
+            row_number = 0
+        if row_number >= 1:
+            return {
+                "rule_id": UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "row_number",
+                "direction": row_number_insert_match.group("direction").lower(),
+                "row_number": row_number,
+                "source_payload_mode": "table_rows",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     entry_for_insert_match = re.search(
         r"\b(?P<direction>after|before)\s+(?:the\s+)?entry\s+"
         r"(?:for|relating\s+to)\s+(?:the\s+)?(?P<anchor>.+?)\s+"

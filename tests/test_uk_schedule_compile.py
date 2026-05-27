@@ -28209,11 +28209,15 @@ def test_compile_table_row_number_insert_rejects_without_row_claim() -> None:
 
     assert len(lowering_rejections) == 1
     rejection = lowering_rejections[0]
-    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
-    assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
+    assert rejection["rule_id"] == "uk_effect_table_entry_row_insert"
+    assert (
+        rejection["reason_code"]
+        == "explicit_table_entry_group_insert_without_table_payload"
+    )
     assert rejection["target_ref"] == "Sch. 3 para. 1(1) Table"
-    assert rejection["entry_shape"] == "numbered_row"
-    assert rejection["source_action"] == "source_text"
+    assert rejection["selector_mode"] == "row_number"
+    assert rejection["row_number"] == 8
+    assert rejection["source_payload_mode"] == "table_rows"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 
@@ -30481,6 +30485,95 @@ def test_replay_table_entry_label_row_insert_mutates_table_only() -> None:
         "uk_effect_table_entry_row_insert"
     ]
     assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_row_number_insert_mutates_table_only() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "row_number",
+        "direction": "after",
+        "row_number": 2,
+        "source_payload_mode": "table_rows",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_row_number_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "132"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="3"),
+                        IRNode(kind=IRNodeKind.CELL, text="a deprivation order"),
+                    ),
+                ),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="132",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="The following table has effect.",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="admonition"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="2"),
+                                                IRNode(kind=IRNodeKind.CELL, text="fine"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="4"),
+                                                IRNode(kind=IRNodeKind.CELL, text="detention"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert [row.children[0].text for row in table.children] == ["1", "2", "3", "4"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["row_number"] == 2
 
 
 def test_replay_table_entry_group_insert_inserts_source_rows_after_group() -> None:
@@ -32999,6 +33092,82 @@ def test_compile_direct_table_relating_entry_instruction_uses_owned_selector() -
     assert selector["column_index"] == 1
     assert selector["entry_index"] == 1
     assert selector["relating_text"] == "drug rehabilitation requirement"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_rejections
+    )
+
+
+def test_compile_direct_table_row_number_insert_preserves_source_table_row() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In section 132(1), in the table, after row 8 insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <table xmlns="http://www.w3.org/1999/xhtml">
+                  <tbody>
+                    <tr>
+                      <td>9</td>
+                      <td>a deprivation order (defined by section 177B)</td>
+                      <td>only if section 177C permits</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_row_number_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2006/52/section/132/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 132(1) Table",
+        affecting_uri="/id/ukpga/2021/35",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="35",
+        affecting_provisions="s. 14(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "132"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [cell.text for cell in ops[0].payload.children[0].children] == [
+        "9",
+        "a deprivation order (defined by section 177B)",
+        "only if section 177C permits",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "row_number"
+    assert selector["direction"] == "after"
+    assert selector["row_number"] == 8
+    assert selector["source_payload_mode"] == "table_rows"
     assert any(
         record["rule_id"] == "uk_effect_table_entry_row_insert"
         and record["reason_code"] == "explicit_table_entry_row_insert_selector"

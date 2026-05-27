@@ -405,6 +405,13 @@ def resolve_uk_table_entry_row_insert_index(
     if selector_mode == "entry_label":
         if not anchor_entry_label:
             return result(None, None, "invalid_selector", {})
+    elif selector_mode == "row_number":
+        try:
+            row_number = int(selector.get("row_number") or 0)
+        except (TypeError, ValueError):
+            row_number = 0
+        if row_number < 1:
+            return result(None, None, "invalid_selector", {})
     elif selector_mode == "entry_group_heading":
         if not relating_norm:
             return result(None, None, "invalid_selector", {})
@@ -429,6 +436,7 @@ def resolve_uk_table_entry_row_insert_index(
         "ordinal_column",
         "relating_entry",
         "entry_label",
+        "row_number",
         "entry_group_heading",
         "column_entry",
         "each_column_entry",
@@ -504,6 +512,37 @@ def resolve_uk_table_entry_row_insert_index(
     else:
         table = tables[0]
     expanded_rows = expanded_uk_table_rows_with_physical_index(table)
+    if selector_mode == "row_number":
+        row_number = int(selector["row_number"])
+        if row_number > len(table.children):
+            return result(
+                None,
+                None,
+                "row_number_not_found",
+                {
+                    "row_number": row_number,
+                    "table_row_count": len(table.children),
+                    **carrier_detail,
+                },
+            )
+        physical_index = row_number - 1
+        row = table.children[physical_index]
+        insert_index = physical_index if direction == "before" else physical_index + 1
+        return result(
+            table,
+            insert_index,
+            "",
+            {
+                "row_number": row_number,
+                "table_row_count": len(table.children),
+                "matched_row": " | ".join(
+                    str(cell.text or "")
+                    for cell in row.children
+                    if str(cell.text or "")
+                )[:240],
+                **carrier_detail,
+            },
+        )
     if selector_mode == "each_column_final_entry":
         column_count = max((max(row_cells) for _row_index, row_cells in expanded_rows if row_cells), default=0)
         if column_count < 1:
