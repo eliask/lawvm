@@ -7,7 +7,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 import xml.etree.ElementTree as ET
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -16,6 +16,11 @@ import yaml
 
 
 USER_AGENT = "LawVM UK bootstrap/0.1 (+https://www.legislation.gov.uk/)"
+
+
+class _UKDownloadResult(NamedTuple):
+    data: bytes
+    final_url: str
 
 
 @dataclass
@@ -146,10 +151,10 @@ def _safe_relative_path(path_text: str) -> Path:
     return normalized
 
 
-def _download(url: str) -> tuple[bytes, str]:
+def _download(url: str) -> _UKDownloadResult:
     request = Request(url, headers={"User-Agent": USER_AGENT})
     with urlopen(request) as response:
-        return response.read(), response.geturl()
+        return _UKDownloadResult(response.read(), response.geturl())
 
 
 def _load_xml_root(path: Path) -> ET.Element:
@@ -186,13 +191,17 @@ def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             try:
-                data, final_url = _download(url)
+                download_result = _download(url)
             except (HTTPError, URLError) as exc:
                 failures += 1
                 print(f"    ERROR: {exc}", file=sys.stderr)
                 continue
-            dest.write_bytes(data)
-            meta = _download_metadata(requested_url=url, final_url=final_url, data=data)
+            dest.write_bytes(download_result.data)
+            meta = _download_metadata(
+                requested_url=url,
+                final_url=download_result.final_url,
+                data=download_result.data,
+            )
             meta_path = dest.with_suffix(dest.suffix + ".meta.json")
             meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     return failures
@@ -257,15 +266,19 @@ def fetch_effects_pages(seed_feed: Path, out_dir: Path, dry_run: bool = False) -
         if dry_run:
             continue
         try:
-            data, final_url = _download(url)
+            download_result = _download(url)
         except (HTTPError, URLError) as exc:
             failures += 1
             print(f"ERROR: {exc}", file=sys.stderr)
             continue
-        dest.write_bytes(data)
+        dest.write_bytes(download_result.data)
         dest.with_suffix(dest.suffix + ".meta.json").write_text(
             json.dumps(
-                _download_metadata(requested_url=url, final_url=final_url, data=data),
+                _download_metadata(
+                    requested_url=url,
+                    final_url=download_result.final_url,
+                    data=download_result.data,
+                ),
                 indent=2,
             )
             + "\n",
