@@ -90,6 +90,9 @@ UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID = (
 UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_definition_child_and_tail_substitution_text_patch"
 )
+UK_IN_DEFINITION_AFTER_ANCHOR_INSERT_RULE_ID = (
+    "uk_effect_in_definition_after_anchor_insert_text_patch"
+)
 UK_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RULE_ID = (
     "uk_effect_amendment_inserted_text_substitution_text_patch"
 )
@@ -316,6 +319,28 @@ def append_basic_text_rewrite_observations(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_IN_DEFINITION_AFTER_ANCHOR_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_IN_DEFINITION_AFTER_ANCHOR_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_definition_scoped_after_anchor_insert_text_patch",
+            reason=(
+                "UK source text inserts words after a quoted anchor inside a "
+                "named definition; lowering preserves the definition-scoped "
+                "selector instead of rewriting every matching anchor in the host target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+                "occurrence": op_text_occurrence,
+            },
+        )
     if UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID in rule_ids:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,

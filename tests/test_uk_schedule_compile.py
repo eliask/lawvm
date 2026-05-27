@@ -22722,6 +22722,69 @@ def test_compile_definition_scoped_all_occurrences_insert_and_replay() -> None:
     assert adjudications[0].detail["source_shape"] == "definition_after_each_anchor_selector"
 
 
+def test_compile_definition_scoped_after_words_insert_with_parenthetical_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-3-paragraph-40">
+          <Pnumber>40</Pnumber>
+          <Text>40 In section 11(3) (regulations with respect to decisions), in the definition of
+          \u201ccurrent legislation\u201d, after the words \u201cWelfare Reform Act 2012\u201d
+          (inserted by Schedule 2 to this Act) there is inserted \u201cand Part 4 of that Act\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_scoped_after_words_insert_with_parenthetical_context",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-03-08",
+        affected_uri="/id/ukpga/1998/14/section/11/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="14",
+        affected_provisions="s. 11(3)",
+        affecting_uri="/id/ukpga/2012/5",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="5",
+        affecting_provisions="Sch. 3 para. 40",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2012-03-08", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "11"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_IN_DEFINITION_current legislation\x1fAFTER\x1fWelfare Reform Act 2012"
+    )
+    assert (
+        ops[0].text_patch.replacement
+        == "Welfare Reform Act 2012 and Part 4 of that Act"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_in_definition_after_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_in_definition_after_anchor_insert_text_patch"
+    ] == ["uk_effect_in_definition_after_anchor_insert_text_patch"]
+    assert not any(record["blocking"] is True for record in lowering_records)
+
+
 def test_compile_opening_words_substitution_preserves_children() -> None:
     extracted_el = ET.fromstring(
         f"""

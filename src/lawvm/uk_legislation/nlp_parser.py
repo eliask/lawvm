@@ -2196,7 +2196,8 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
 
     matches_in_definition_after_insert = re.finditer(
         r"in the definition of [“\"'‘](.*?)[”\"'’],?\s+"
-        r"after\s+[“\"'‘](.*?)[”\"'’],?\s+"
+        r"after\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](.*?)[”\"'’]"
+        r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?,?\s+"
         r"(?:there is inserted|there are inserted|there shall be inserted|insert)"
         r"(?:\s+(?:the\s+)?words?)?\s*;?\s+[“\"'‘](.+?)[”\"'’]"
         r"\s*(?:[,;]\s*(?:and)?|\.)?\s*$",
