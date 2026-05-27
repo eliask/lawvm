@@ -326,13 +326,15 @@ class UKReplayTextActionApplyMixin:
                 symbolic_detail: dict[str, Any] = {}
                 symbolic_reason = ""
                 if _TABLE_CELL_PARAGRAPH_SENTINEL_RE.match(text_patch.selector.match_text):
-                    table_cell, applied, symbolic_reason, symbolic_detail = (
-                        self._apply_source_carried_table_cell_paragraph_substitution(
-                            table_cell,
-                            text_patch.selector.match_text,
-                            replacement,
-                        )
+                    substitution_result = self._apply_source_carried_table_cell_paragraph_substitution(
+                        table_cell,
+                        text_patch.selector.match_text,
+                        replacement,
                     )
+                    table_cell = substitution_result.cell
+                    applied = substitution_result.applied
+                    symbolic_reason = substitution_result.reason_code
+                    symbolic_detail = substitution_result.detail
                 elif (
                     text_patch.kind is TextPatchKindEnum.APPEND
                     and text_patch.selector.match_text == "TEXT_END"

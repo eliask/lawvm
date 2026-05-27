@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Any
+from typing import Any, NamedTuple
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import _uk_kind_value
@@ -47,6 +47,13 @@ _TABLE_CELL_FIRST_SUBPARAGRAPH_RE = re.compile(
     re.S,
 )
 _TABLE_CELL_SUBPARAGRAPH_SPLIT_RE = re.compile(r"(\n{4,})")
+
+
+class _TableCellParagraphSubstitutionResult(NamedTuple):
+    cell: UKMutableNode
+    applied: bool
+    reason_code: str
+    detail: dict[str, Any]
 
 
 class UKReplayTableApplyMixin:
@@ -452,24 +459,39 @@ class UKReplayTableApplyMixin:
         cell: UKMutableNode,
         match_text: str,
         replacement: str,
-    ) -> tuple[UKMutableNode, bool, str, dict[str, Any]]:
+    ) -> _TableCellParagraphSubstitutionResult:
         match = _TABLE_CELL_PARAGRAPH_SENTINEL_RE.match(match_text)
         if match is None:
-            return cell, False, "not_source_carried_table_cell_selector", {}
+            return _TableCellParagraphSubstitutionResult(
+                cell,
+                False,
+                "not_source_carried_table_cell_selector",
+                {},
+            )
         text = cell.text or ""
         paragraph_label = _clean_num(match.group("paragraph"))
         subparagraph_label = _clean_num(match.group("subparagraph") or "")
         try:
             paragraph_index = int(paragraph_label) - 1
         except ValueError:
-            return cell, False, "invalid_paragraph_label", {"source_paragraph_label": paragraph_label}
+            return _TableCellParagraphSubstitutionResult(
+                cell,
+                False,
+                "invalid_paragraph_label",
+                {"source_paragraph_label": paragraph_label},
+            )
         parts = _TABLE_CELL_PARAGRAPH_SPLIT_RE.split(text)
         paragraph_slots = [index for index in range(0, len(parts), 2)]
         if paragraph_index < 0 or paragraph_index >= len(paragraph_slots):
-            return cell, False, "paragraph_not_found", {
-                "source_paragraph_label": paragraph_label,
-                "paragraph_count": len(paragraph_slots),
-            }
+            return _TableCellParagraphSubstitutionResult(
+                cell,
+                False,
+                "paragraph_not_found",
+                {
+                    "source_paragraph_label": paragraph_label,
+                    "paragraph_count": len(paragraph_slots),
+                },
+            )
         slot = paragraph_slots[paragraph_index]
         old_paragraph = parts[slot]
         if not subparagraph_label:
@@ -477,23 +499,38 @@ class UKReplayTableApplyMixin:
             old_fragment = old_paragraph
         else:
             if len(subparagraph_label) != 1 or not subparagraph_label.isalpha():
-                return cell, False, "unsupported_subparagraph_label", {
-                    "source_paragraph_label": paragraph_label,
-                    "source_subparagraph_label": subparagraph_label,
-                }
+                return _TableCellParagraphSubstitutionResult(
+                    cell,
+                    False,
+                    "unsupported_subparagraph_label",
+                    {
+                        "source_paragraph_label": paragraph_label,
+                        "source_subparagraph_label": subparagraph_label,
+                    },
+                )
             sub_index = ord(subparagraph_label.lower()) - ord("a")
             if sub_index < 0:
-                return cell, False, "invalid_subparagraph_label", {
-                    "source_paragraph_label": paragraph_label,
-                    "source_subparagraph_label": subparagraph_label,
-                }
+                return _TableCellParagraphSubstitutionResult(
+                    cell,
+                    False,
+                    "invalid_subparagraph_label",
+                    {
+                        "source_paragraph_label": paragraph_label,
+                        "source_subparagraph_label": subparagraph_label,
+                    },
+                )
             if sub_index == 0:
                 sub_match = _TABLE_CELL_FIRST_SUBPARAGRAPH_RE.search(old_paragraph)
                 if sub_match is None:
-                    return cell, False, "subparagraph_not_found", {
-                        "source_paragraph_label": paragraph_label,
-                        "source_subparagraph_label": subparagraph_label,
-                    }
+                    return _TableCellParagraphSubstitutionResult(
+                        cell,
+                        False,
+                        "subparagraph_not_found",
+                        {
+                            "source_paragraph_label": paragraph_label,
+                            "source_subparagraph_label": subparagraph_label,
+                        },
+                    )
                 old_fragment = sub_match.group("old")
                 parts[slot] = (
                     old_paragraph[: sub_match.start("old")]
@@ -504,27 +541,42 @@ class UKReplayTableApplyMixin:
                 subparts = _TABLE_CELL_SUBPARAGRAPH_SPLIT_RE.split(old_paragraph)
                 sub_slots = [index for index in range(2, len(subparts), 2)]
                 if sub_index - 1 < 0 or sub_index - 1 >= len(sub_slots):
-                    return cell, False, "subparagraph_not_found", {
-                        "source_paragraph_label": paragraph_label,
-                        "source_subparagraph_label": subparagraph_label,
-                        "subparagraph_count": len(sub_slots) + 1,
-                    }
+                    return _TableCellParagraphSubstitutionResult(
+                        cell,
+                        False,
+                        "subparagraph_not_found",
+                        {
+                            "source_paragraph_label": paragraph_label,
+                            "source_subparagraph_label": subparagraph_label,
+                            "subparagraph_count": len(sub_slots) + 1,
+                        },
+                    )
                 sub_slot = sub_slots[sub_index - 1]
                 old_fragment = subparts[sub_slot]
                 subparts[sub_slot] = replacement
                 parts[slot] = "".join(subparts)
         new_text = "".join(parts)
         if new_text == text:
-            return cell, False, "replacement_noop", {
-                "source_paragraph_label": paragraph_label,
-                "source_subparagraph_label": subparagraph_label,
-            }
+            return _TableCellParagraphSubstitutionResult(
+                cell,
+                False,
+                "replacement_noop",
+                {
+                    "source_paragraph_label": paragraph_label,
+                    "source_subparagraph_label": subparagraph_label,
+                },
+            )
         old_cell = cell
         cell = dc_replace(cell, text=new_text)
         self._replace_node_in_statute(old_cell, cell)
-        return cell, True, "", {
-            "source_paragraph_label": paragraph_label,
-            "source_subparagraph_label": subparagraph_label,
-            "old_fragment": " ".join(old_fragment.split())[:240],
-            "replacement_fragment": " ".join(replacement.split())[:240],
-        }
+        return _TableCellParagraphSubstitutionResult(
+            cell,
+            True,
+            "",
+            {
+                "source_paragraph_label": paragraph_label,
+                "source_subparagraph_label": subparagraph_label,
+                "old_fragment": " ".join(old_fragment.split())[:240],
+                "replacement_fragment": " ".join(replacement.split())[:240],
+            },
+        )
