@@ -34,7 +34,19 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Set, Generator
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+)
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRStatute
@@ -811,6 +823,36 @@ class _BenchScoreWitnessRow:
     score_value: float
 
 
+class _EffectRowCounts(NamedTuple):
+    n_effect_rows: int
+    rejection_count: int
+    rejection_rule_counts: dict[str, int]
+    observation_count: int
+    observation_rule_counts: dict[str, int]
+    observations: tuple[dict[str, Any], ...]
+
+
+def _coerce_effect_row_counts(value: _EffectRowCounts | tuple[Any, ...]) -> _EffectRowCounts:
+    if isinstance(value, _EffectRowCounts):
+        return value
+    (
+        n_effect_rows,
+        rejection_count,
+        rejection_rule_counts,
+        observation_count,
+        observation_rule_counts,
+        observations,
+    ) = value
+    return _EffectRowCounts(
+        n_effect_rows=int(n_effect_rows),
+        rejection_count=int(rejection_count),
+        rejection_rule_counts=dict(rejection_rule_counts),
+        observation_count=int(observation_count),
+        observation_rule_counts=dict(observation_rule_counts),
+        observations=tuple(dict(obs) for obs in observations),
+    )
+
+
 @dataclass
 class _BenchResult:
     statute_id: str
@@ -1443,7 +1485,7 @@ def _normalize_uk_bench_replay_regime(args: Any) -> UKReplayRegime:
 def _load_effect_row_counts(
     statute_id: str,
     archive: Farchive,
-) -> tuple[int, int, dict[str, int], int, dict[str, int], tuple[dict[str, Any], ...]]:
+) -> _EffectRowCounts:
     """Return parsed effect rows plus visible feed rejection/observation counts.
 
     ``n_effects`` in old bench CSVs means archived effect-feed pages.  Benchmark
@@ -1461,13 +1503,13 @@ def _load_effect_row_counts(
     blocking_observations = [obs for obs in feed_observations if is_blocking_compile_record(obs)]
     feed_rejection_rule_counts = Counter(str(obs.get("rule_id") or "unknown") for obs in blocking_observations)
     feed_observation_rule_counts = Counter(str(obs.get("rule_id") or "unknown") for obs in feed_observations)
-    return (
-        len(effects),
-        len(blocking_observations),
-        dict(feed_rejection_rule_counts),
-        len(feed_observations),
-        dict(feed_observation_rule_counts),
-        tuple(dict(obs) for obs in feed_observations),
+    return _EffectRowCounts(
+        n_effect_rows=len(effects),
+        rejection_count=len(blocking_observations),
+        rejection_rule_counts=dict(feed_rejection_rule_counts),
+        observation_count=len(feed_observations),
+        observation_rule_counts=dict(feed_observation_rule_counts),
+        observations=tuple(dict(obs) for obs in feed_observations),
     )
 
 
@@ -1546,14 +1588,15 @@ def _score_statute(
 
     try:
         try:
-            (
-                n_effect_rows,
-                effect_feed_rejection_count,
-                effect_feed_rejection_rule_counts,
-                effect_feed_observation_count,
-                effect_feed_observation_rule_counts,
-                effect_feed_observations,
-            ) = _load_effect_row_counts(sid, archive)
+            effect_row_counts = _coerce_effect_row_counts(
+                _load_effect_row_counts(sid, archive)
+            )
+            n_effect_rows = effect_row_counts.n_effect_rows
+            effect_feed_rejection_count = effect_row_counts.rejection_count
+            effect_feed_rejection_rule_counts = effect_row_counts.rejection_rule_counts
+            effect_feed_observation_count = effect_row_counts.observation_count
+            effect_feed_observation_rule_counts = effect_row_counts.observation_rule_counts
+            effect_feed_observations = effect_row_counts.observations
         except Exception as effect_count_exc:
             # Bench row scoring should survive acquisition/parse diagnostics,
             # but the source-fact loss must remain visible in saved runs.
