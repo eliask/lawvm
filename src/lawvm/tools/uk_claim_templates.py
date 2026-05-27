@@ -1230,6 +1230,10 @@ def manual_compile_suggested_claim_template(
             != "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
         ):
             return {}
+    detail = _first_lowering_rejection_detail(
+        row=row,
+        rule_id="uk_effect_appropriate_place_definition_entry_insert_rejected",
+    )
     source_preview = summary.source_extracted_text_preview or ""
     source_norm = " ".join(source_preview.split())
     match = re.search(
@@ -1283,6 +1287,10 @@ def manual_compile_suggested_claim_template(
         "inserted_definition_terms": list(terms),
         "inserted_definition_entry_preview": payload[:500],
         "candidate_target_surface": effect.affected_provisions,
+        "source_parent_id": str(detail.get("source_parent_id") or ""),
+        "source_parent_context_preview": str(
+            detail.get("source_parent_context_preview") or ""
+        ),
         "required_validator_checks": [
             (
                 "effect_metadata_names_pseudo_definition_target"
