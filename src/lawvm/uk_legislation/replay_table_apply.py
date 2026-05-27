@@ -91,7 +91,9 @@ class UKReplayTableApplyMixin:
             detail: dict[str, Any] = {}
             table = None
         else:
-            tables, carrier_detail = uk_table_selector_tables(node, selector)
+            table_selection = uk_table_selector_tables(node, selector)
+            tables = table_selection.tables
+            carrier_detail = table_selection.detail
             table = tables[0] if len(tables) == 1 else None
             reason = "" if table is not None else "table_not_unique"
             detail = {"table_count": len(tables), **carrier_detail} if table is None else carrier_detail

@@ -56,9 +56,14 @@ class UKTableRowReplaceSpanResolution:
     detail: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class UKTableSelectorTables:
+    tables: list[UKMutableNode]
+    detail: dict[str, Any]
+
+
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
 ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
-TableSelectorTablesResult: TypeAlias = tuple[list[UKMutableNode], dict[str, Any]]
 TableCellResult: TypeAlias = tuple[UKMutableNode | None, str, dict[str, Any]]
 TableCellsResult: TypeAlias = tuple[list[UKMutableNode], str, dict[str, Any]]
 
@@ -230,33 +235,42 @@ def uk_table_column_insert_plans(
 def uk_table_selector_tables(
     node: UKMutableNode,
     selector: dict[str, Any],
-) -> TableSelectorTablesResult:
+) -> UKTableSelectorTables:
     tables = [
         child
         for child in node.children
         if _uk_kind_value(child.kind).lower() == "table"
     ]
     if tables:
-        return tables, {"table_carrier": "target"}
+        return UKTableSelectorTables(tables=tables, detail={"table_carrier": "target"})
     if bool(selector.get("allow_unique_descendant_table")):
-        descendant_tables, descendant_detail = _unique_descendant_uk_tables(node)
-        if descendant_tables:
-            return descendant_tables, descendant_detail
+        descendant_result = _unique_descendant_uk_tables(node)
+        if descendant_result.tables:
+            return descendant_result
     if not bool(selector.get("allow_implicit_subsection_one_table")):
-        return [], {"table_carrier": "target"}
+        return UKTableSelectorTables(tables=[], detail={"table_carrier": "target"})
     subsection_ones = [
         child
         for child in node.children
         if _uk_kind_value(child.kind).lower() == "subsection" and _clean_num(child.label or "") == "1"
     ]
     if len(subsection_ones) != 1:
-        return [], {"table_carrier": "implicit_subsection_one", "subsection_one_count": len(subsection_ones)}
+        return UKTableSelectorTables(
+            tables=[],
+            detail={
+                "table_carrier": "implicit_subsection_one",
+                "subsection_one_count": len(subsection_ones),
+            },
+        )
     tables = [
         child
         for child in subsection_ones[0].children
         if _uk_kind_value(child.kind).lower() == "table"
     ]
-    return tables, {"table_carrier": "implicit_subsection_one", "subsection_one_count": 1}
+    return UKTableSelectorTables(
+        tables=tables,
+        detail={"table_carrier": "implicit_subsection_one", "subsection_one_count": 1},
+    )
 
 
 def _unique_row_cells(row_cells: dict[int, UKMutableNode]) -> list[UKMutableNode]:
@@ -294,7 +308,7 @@ def _table_entry_article_tolerant_anchor_variants(text: str) -> tuple[str, ...]:
 
 def _unique_descendant_uk_tables(
     node: UKMutableNode,
-) -> TableSelectorTablesResult:
+) -> UKTableSelectorTables:
     matches: list[tuple[UKMutableNode, tuple[str, ...]]] = []
 
     def _walk(candidate: UKMutableNode, path: tuple[str, ...]) -> None:
@@ -313,10 +327,13 @@ def _unique_descendant_uk_tables(
             _walk(child, child_path)
 
     _walk(node, ())
-    return [table for table, _path in matches], {
-        "table_carrier": "unique_descendant_table",
-        "descendant_table_paths": tuple("/".join(path) for _table, path in matches[:5]),
-    }
+    return UKTableSelectorTables(
+        tables=[table for table, _path in matches],
+        detail={
+            "table_carrier": "unique_descendant_table",
+            "descendant_table_paths": tuple("/".join(path) for _table, path in matches[:5]),
+        },
+    )
 
 
 def resolve_uk_table_entry_row_insert_index(
@@ -390,7 +407,9 @@ def resolve_uk_table_entry_row_insert_index(
     }:
         return result(None, None, "invalid_selector", {})
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     if len(tables) != 1:
         if selector_mode == "column_entry":
             anchor_table_matches: list[tuple[UKMutableNode, tuple[tuple[int, str], ...]]] = []
@@ -743,7 +762,9 @@ def resolve_uk_table_entry_row_replace_span(
     if len(relating_anchor_variants) < 2:
         return result(None, None, None, "invalid_selector", {})
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     if len(tables) != 1:
         return result(
             None,
@@ -856,7 +877,9 @@ def resolve_unique_uk_table_relating_cell(
     if column_index < 1 or not relating_norm:
         return None, "invalid_selector", {}
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     candidate_tables = tables
     if len(candidate_tables) != 1:
         filtered_tables: list[UKMutableNode] = []
@@ -944,7 +967,9 @@ def resolve_unique_uk_table_entry_cells(
     if column_index < 1 or not entry_labels or any(not label for label in entry_labels):
         return [], "invalid_selector", {}
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     if len(tables) != 1:
         return [], "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
@@ -998,7 +1023,9 @@ def resolve_unique_uk_table_entry_text_cell(
     ) or (selector_mode == "unique_entry_text" and not entry_label_norm):
         return None, "invalid_selector", {}
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     candidate_tables = tables
     if len(candidate_tables) != 1:
         filtered_tables: list[UKMutableNode] = []
@@ -1101,7 +1128,9 @@ def resolve_unique_uk_table_entry_cell(
     if column_index < 1 or not entry_label_norm:
         return None, "invalid_selector", {}
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     if len(tables) != 1:
         return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
@@ -1153,7 +1182,9 @@ def resolve_unique_uk_table_column_text_cell(
     if column_index < 1 or not match_norm:
         return None, "invalid_selector", {}
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     candidate_tables = tables
     if len(candidate_tables) != 1:
         filtered_tables: list[UKMutableNode] = []
@@ -1264,7 +1295,9 @@ def resolve_uk_table_entry_inline_cell(
     if column_index < 1 or entry_index < 1 or not relating_norm:
         return None, "invalid_selector", {}
 
-    tables, carrier_detail = uk_table_selector_tables(node, selector)
+    table_selection = uk_table_selector_tables(node, selector)
+    tables = table_selection.tables
+    carrier_detail = table_selection.detail
     if len(tables) != 1:
         return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
