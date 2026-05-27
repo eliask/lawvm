@@ -1000,6 +1000,26 @@ def test_classify_uk_effect_source_pathology_accepts_lowered_anchor_to_end_block
     assert is_core_uk_effect_source_candidate(pathology) is True
 
 
+def test_classify_uk_effect_source_pathology_marks_words_treated_as_substituted_out_of_scope() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "17 In section 200(5) of AFA 2006, in paragraph (b) of the words "
+            "treated as substituted, for “ in the British Islands ” substitute "
+            "“under the law of any part of the British Islands”."
+        ),
+        op_actions=["text_replace"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:200/subsection:5/paragraph:b"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "as_if_application_modification_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_keeps_flat_tail_substitution_core() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",
