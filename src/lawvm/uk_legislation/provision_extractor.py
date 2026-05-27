@@ -5,7 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 from weakref import WeakKeyDictionary
 
 from lawvm.uk_legislation.xml_helpers import _tag, _text_content
@@ -13,6 +13,12 @@ from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 _INSTRUCTION_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
 _NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
+
+
+class UKExtractionContext(NamedTuple):
+    parent_map: dict[ET.Element, ET.Element]
+    exact_id_map: dict[str, ET.Element]
+    sequence_map: dict[tuple[str, ...], ET.Element]
 
 
 def _instruction_text_before_amendment_container(el: ET.Element) -> str:
@@ -136,7 +142,7 @@ def _get_ref_sequence(path: list[tuple[Optional[str], str]] | tuple[tuple[Option
 
 def _build_extraction_context(
     root: ET.Element,
-) -> tuple[dict[ET.Element, ET.Element], dict[str, ET.Element], dict[tuple[str, ...], ET.Element]]:
+) -> UKExtractionContext:
     parent_map: dict[ET.Element, ET.Element] = {}
     exact_id_map: dict[str, ET.Element] = {}
     sequence_map: dict[tuple[str, ...], ET.Element] = {}
@@ -151,7 +157,7 @@ def _build_extraction_context(
                 sequence_map[seq] = el
         for child in el:
             parent_map[child] = el
-    return parent_map, exact_id_map, sequence_map
+    return UKExtractionContext(parent_map, exact_id_map, sequence_map)
 
 
 @lru_cache(maxsize=65536)
