@@ -65,7 +65,7 @@ def test_fetch_manifest_writes_sha256_metadata(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr(
         bootstrap,
         "_download",
-        lambda url: (b"<xml>source</xml>", f"{url}?final=1"),
+        lambda url: bootstrap._UKDownloadResult(b"<xml>source</xml>", f"{url}?final=1"),
     )
 
     assert fetch_manifest(manifest) == 0
@@ -95,7 +95,7 @@ def test_fetch_effects_pages_writes_sha256_metadata(monkeypatch, tmp_path: Path)
     monkeypatch.setattr(
         bootstrap,
         "_download",
-        lambda url: (b"<feed>page 2</feed>", f"{url}&resolved=1"),
+        lambda url: bootstrap._UKDownloadResult(b"<feed>page 2</feed>", f"{url}&resolved=1"),
     )
 
     assert fetch_effects_pages(feed, out_dir) == 0
