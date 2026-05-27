@@ -89,6 +89,13 @@ _UK_FEE_SUM_PATTERN = re.compile(
     r"|\bten\s+shillings\b",
     flags=re.I,
 )
+_UK_AMENDMENT_PROGRAM_NEXT_LINE_LABEL_PATTERN = re.compile(
+    r"(?m)(?:^|\n)[ \t]*(?:[0-9]+[A-Za-z]?|[A-Za-z]{1,4})[ \t]*(?=\n|$)"
+)
+_UK_AMENDMENT_PROGRAM_INSERTED_PARENT_PATTERN = re.compile(
+    r"TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_([0-9A-Za-z]+)_(BEFORE|AFTER)_([0-9A-Za-z]+)"
+)
+_UK_BRACKETED_TEXT_PATTERN = re.compile(r"\([^()]*\)")
 
 
 def _uk_amendment_program_line_label_matches(text: str, label: str) -> list[re.Match[str]]:
@@ -109,10 +116,7 @@ def _uk_amendment_program_next_line_label_match(
     *,
     start: int,
 ) -> re.Match[str] | None:
-    label_pattern = re.compile(
-        r"(?m)(?:^|\n)[ \t]*(?:[0-9]+[A-Za-z]?|[A-Za-z]{1,4})[ \t]*(?=\n|$)"
-    )
-    for match in label_pattern.finditer(text, pos=start):
+    for match in _UK_AMENDMENT_PROGRAM_NEXT_LINE_LABEL_PATTERN.finditer(text, pos=start):
         return match
     return None
 
@@ -1151,7 +1155,7 @@ class UKReplayTextApplyMixin:
             self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
         if match == "TEXT_IN_BRACKETS":
-            bracket_matches = list(re.finditer(r"\([^()]*\)", text))
+            bracket_matches = list(_UK_BRACKETED_TEXT_PATTERN.finditer(text))
             if occurrence > 0:
                 if occurrence > len(bracket_matches):
                     return node, False
@@ -1681,10 +1685,7 @@ class UKReplayTextApplyMixin:
         text_nodes = _text_nodes_in_document_order(node)
 
         if match.startswith("TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_"):
-            program_match = re.fullmatch(
-                r"TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_([0-9A-Za-z]+)_(BEFORE|AFTER)_([0-9A-Za-z]+)",
-                match,
-            )
+            program_match = _UK_AMENDMENT_PROGRAM_INSERTED_PARENT_PATTERN.fullmatch(match)
             if program_match is None or not replacement:
                 return node, False
             candidate_replacements: list[TextNodeRewriteCandidate] = []
@@ -1777,7 +1778,7 @@ class UKReplayTextApplyMixin:
         if match == "TEXT_IN_BRACKETS":
             all_matches: list[TextNodeRegexMatch] = []
             for path, text_node in text_nodes:
-                for bracket_match in re.finditer(r"\([^()]*\)", text_node.text or ""):
+                for bracket_match in _UK_BRACKETED_TEXT_PATTERN.finditer(text_node.text or ""):
                     all_matches.append((path, text_node, bracket_match))
             if occurrence > 0:
                 if occurrence > len(all_matches):
@@ -2044,10 +2045,7 @@ class UKReplayTextApplyMixin:
             return rebuilt, True
 
         if match.startswith("TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_"):
-            program_match = re.fullmatch(
-                r"TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_([0-9A-Za-z]+)_(BEFORE|AFTER)_([0-9A-Za-z]+)",
-                match,
-            )
+            program_match = _UK_AMENDMENT_PROGRAM_INSERTED_PARENT_PATTERN.fullmatch(match)
             if program_match is None or not replacement:
                 return node, False
             text = node.text or ""
