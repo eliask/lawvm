@@ -12,7 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
@@ -35,6 +35,23 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _LEG_BASE = "https://www.legislation.gov.uk"
 _DEFAULT_APPLICABILITY_MODE = "effective_date_plus_feed_applied"
+
+
+class _EIDPresence(NamedTuple):
+    eid: str
+    base_present: bool
+    oracle_present: bool
+
+
+class _DescendantPresence(NamedTuple):
+    base_present: bool
+    oracle_present: bool
+
+
+class _TargetShape(NamedTuple):
+    has_text: bool
+    has_children: bool
+    texts: list[str]
 
 
 def _tag(el: ET.Element) -> str:
@@ -379,14 +396,14 @@ def _resolve_target_presence(
     resolver,  # noqa: ANN001
     base_eids: set[str],
     oracle_eids: set[str],
-) -> tuple[str, bool, bool]:
+) -> _EIDPresence:
     resolver_eid = resolver._derive_target_eid(target) if resolver is not None else ""
     if not resolver_eid:
-        return "", False, False
-    return (
-        resolver_eid,
-        _eid_present(resolver_eid, base_eids),
-        _eid_present(resolver_eid, oracle_eids),
+        return _EIDPresence(eid="", base_present=False, oracle_present=False)
+    return _EIDPresence(
+        eid=resolver_eid,
+        base_present=_eid_present(resolver_eid, base_eids),
+        oracle_present=_eid_present(resolver_eid, oracle_eids),
     )
 
 
@@ -395,14 +412,14 @@ def _resolve_parent_presence(
     *,
     base_eids: set[str],
     oracle_eids: set[str],
-) -> tuple[str, bool, bool]:
+) -> _EIDPresence:
     parent_eid = _parent_eid(resolver_eid)
     if not parent_eid:
-        return "", False, False
-    return (
-        parent_eid,
-        _eid_present(parent_eid, base_eids),
-        _eid_present(parent_eid, oracle_eids),
+        return _EIDPresence(eid="", base_present=False, oracle_present=False)
+    return _EIDPresence(
+        eid=parent_eid,
+        base_present=_eid_present(parent_eid, base_eids),
+        oracle_present=_eid_present(parent_eid, oracle_eids),
     )
 
 
@@ -411,13 +428,13 @@ def _resolve_descendant_presence(
     *,
     base_eids: set[str],
     oracle_eids: set[str],
-) -> tuple[bool, bool]:
+) -> _DescendantPresence:
     if not resolver_eid:
-        return False, False
+        return _DescendantPresence(base_present=False, oracle_present=False)
     prefix = resolver_eid.lower() + "-"
     base_hit = any(eid.lower().startswith(prefix) for eid in base_eids)
     oracle_hit = any(eid.lower().startswith(prefix) for eid in oracle_eids)
-    return base_hit, oracle_hit
+    return _DescendantPresence(base_present=base_hit, oracle_present=oracle_hit)
 
 
 def _find_node_by_eid(statute: "IRStatute", eid: str):  # noqa: ANN001
@@ -512,7 +529,7 @@ def _collect_target_shape(
     text_map: dict[str, str],
     descendant_hit: bool,
     target: "LegalAddress | None" = None,
-) -> tuple[bool, bool, list[str]]:
+) -> _TargetShape:
     has_text = False
     has_children = bool(descendant_hit)
     texts: list[str] = []
@@ -523,7 +540,11 @@ def _collect_target_shape(
     if node is not None:
         if target is not None and target.special is FacetKind.HEADING:
             texts = _target_heading_texts(node, parent)
-            return bool(texts), bool(descendant_hit), texts
+            return _TargetShape(
+                has_text=bool(texts),
+                has_children=bool(descendant_hit),
+                texts=texts,
+            )
         norm_text = " ".join((node.text or "").split())
         has_text = bool(norm_text)
         has_children = has_children or bool(node.children)
@@ -544,7 +565,7 @@ def _collect_target_shape(
             if descendant_text and descendant_text not in texts:
                 has_text = True
                 texts.append(descendant_text)
-        return has_text, has_children, texts
+        return _TargetShape(has_text=has_text, has_children=has_children, texts=texts)
 
     mapped_text = _text_map_get_casefold(text_map, eid)
     norm_mapped = " ".join(mapped_text.split())
@@ -556,7 +577,7 @@ def _collect_target_shape(
         if descendant_text and descendant_text not in texts:
             has_text = True
             texts.append(descendant_text)
-    return has_text, has_children, texts
+    return _TargetShape(has_text=has_text, has_children=has_children, texts=texts)
 
 
 def _parent_eid(eid: str) -> str:
@@ -874,7 +895,7 @@ def main(args: "argparse.Namespace") -> None:
         if op.text_patch is not None:
             text_patch_matches.append(op.text_patch.selector.match_text)
             text_patch_replacements.append(op.text_patch.replacement or "")
-        resolver_eid, base_hit, oracle_hit = _resolve_target_presence(
+        target_presence = _resolve_target_presence(
             op.target,
             resolver=resolver,
             base_eids=base_eids,
@@ -885,48 +906,53 @@ def main(args: "argparse.Namespace") -> None:
         parent_eid = ""
         base_parent_hit = False
         oracle_parent_hit = False
-        if resolver_eid:
-            resolver_eids.append(resolver_eid)
-            base_target_hits.append(base_hit)
-            oracle_target_hits.append(oracle_hit)
-            base_descendant_hit, oracle_descendant_hit = _resolve_descendant_presence(
-                resolver_eid,
+        if target_presence.eid:
+            resolver_eids.append(target_presence.eid)
+            base_target_hits.append(target_presence.base_present)
+            oracle_target_hits.append(target_presence.oracle_present)
+            descendant_presence = _resolve_descendant_presence(
+                target_presence.eid,
                 base_eids=base_eids,
                 oracle_eids=oracle_eids,
             )
+            base_descendant_hit = descendant_presence.base_present
+            oracle_descendant_hit = descendant_presence.oracle_present
             base_descendant_hits.append(base_descendant_hit)
             oracle_descendant_hits.append(oracle_descendant_hit)
-            parent_eid, base_parent_hit, oracle_parent_hit = _resolve_parent_presence(
-                resolver_eid,
+            parent_presence = _resolve_parent_presence(
+                target_presence.eid,
                 base_eids=base_eids,
                 oracle_eids=oracle_eids,
             )
+            parent_eid = parent_presence.eid
+            base_parent_hit = parent_presence.base_present
+            oracle_parent_hit = parent_presence.oracle_present
             base_parent_hits.append(base_parent_hit)
             oracle_parent_hits.append(oracle_parent_hit)
-            if base_hit:
-                hit_has_text, hit_has_children, hit_texts = _collect_target_shape(
+            if target_presence.base_present:
+                target_shape = _collect_target_shape(
                     enacted_ir,
-                    eid=resolver_eid,
+                    eid=target_presence.eid,
                     text_map=base_text_map,
                     descendant_hit=base_descendant_hit,
                     target=op.target,
                 )
-                base_has_text = base_has_text or hit_has_text
-                base_has_children = base_has_children or hit_has_children
-                base_target_texts.extend(hit_texts)
+                base_has_text = base_has_text or target_shape.has_text
+                base_has_children = base_has_children or target_shape.has_children
+                base_target_texts.extend(target_shape.texts)
             if base_parent_hit and base_text_map.get(parent_eid):
                 base_parent_texts.append(base_text_map[parent_eid])
-            if oracle_hit:
-                hit_has_text, hit_has_children, hit_texts = _collect_target_shape(
+            if target_presence.oracle_present:
+                target_shape = _collect_target_shape(
                     oracle_ir,
-                    eid=resolver_eid,
+                    eid=target_presence.eid,
                     text_map=oracle_text_map,
                     descendant_hit=oracle_descendant_hit,
                     target=op.target,
                 )
-                oracle_has_text = oracle_has_text or hit_has_text
-                oracle_has_children = oracle_has_children or hit_has_children
-                oracle_target_texts.extend(hit_texts)
+                oracle_has_text = oracle_has_text or target_shape.has_text
+                oracle_has_children = oracle_has_children or target_shape.has_children
+                oracle_target_texts.extend(target_shape.texts)
             if oracle_parent_hit and oracle_text_map.get(parent_eid):
                 oracle_parent_texts.append(oracle_text_map[parent_eid])
         op_rows.append({
@@ -934,9 +960,9 @@ def main(args: "argparse.Namespace") -> None:
             "action": op.action.value,
             "target": _fmt_target(op.target),
             "payload_kind": str(payload_kind),
-            "resolver_eid": resolver_eid,
-            "base_target_present": base_hit,
-            "oracle_target_present": oracle_hit,
+            "resolver_eid": target_presence.eid,
+            "base_target_present": target_presence.base_present,
+            "oracle_target_present": target_presence.oracle_present,
             "base_descendant_present": base_descendant_hit,
             "oracle_descendant_present": oracle_descendant_hit,
             "parent_eid": parent_eid,
