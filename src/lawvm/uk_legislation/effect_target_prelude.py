@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.semantic_types import FacetKind
 from lawvm.uk_legislation.addressing import (
     _addr_container,
     _addr_field,
@@ -20,6 +21,7 @@ from lawvm.uk_legislation.heading_facets import (
     _expand_heading_facet_section_range_ref,
     _is_heading_facet_word_patch_supported,
     _is_heading_only_ref,
+    _source_explicit_heading_facet_word_patch_supported,
     _is_direct_section_paragraph_ref,
     _is_schedule_part_abbreviation_ref,
     _is_schedule_note_ref,
@@ -539,6 +541,34 @@ def resolve_effect_target_context(
     heading_facet_target = _is_heading_only_ref(t_str)
     parsed_target = _parse_affected_target(t_str)
     target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+    if (
+        not heading_facet_target
+        and not re.search(r"\bcross[-\s]?heading\b", t_str, flags=re.I)
+        and _source_explicit_heading_facet_word_patch_supported(
+            effect.effect_type,
+            extracted_text,
+            extracted_el=extracted_el,
+            source_root=None,
+        )
+    ):
+        heading_facet_target = True
+        target = LegalAddress(path=target.path, special=FacetKind.HEADING)
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_heading_facet_target_refined",
+            family="target_shape_normalization",
+            reason_code="source_explicit_heading_facet_target",
+            reason=(
+                "UK source text explicitly targets a heading/title/sidenote "
+                "facet while the effect feed names only the host provision; "
+                "lowering refines the target to the typed facet instead of "
+                "mutating host body text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target": str(target)},
+        )
     if any(kind == "subsection" and label == "proviso" for kind, label in target.path):
         new_path = []
         for kind, label in target.path:

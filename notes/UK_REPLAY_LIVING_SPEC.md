@@ -1202,6 +1202,7 @@ Current bench replay-regime invariant:
 - Undashed at-end unquoted text insertions may lower under `uk_effect_at_end_unquoted_text_insertion_patch` only when the inserted sentence is bounded by an explicit source boundary, such as a following source row label.
   The carried sibling row is not admitted into the text patch.
   Current witness: `ukpga/2006/52` affected `s. 276(3)` by `ukpga/2008/4` `Sch. 25 para. 29(3)`.
+- When the effect feed target names only a host provision but the source formula itself begins with an explicit heading/title/sidenote facet target such as `In the sidenote after "X" insert "Y"`, lowering records `uk_effect_source_heading_facet_target_refined` and refines the target to the typed heading facet before emitting the ordinary heading-facet text-patch observation. This is source-explicit target refinement, not live-tree fallback, and it prevents replay from mutating host body text. Current witness: `ukpga/1970/9` affected `s. 17` by `ukpga/2009/4 Sch. 1 para. 247(5)`.
 
 ## UK Effect Ordering
 

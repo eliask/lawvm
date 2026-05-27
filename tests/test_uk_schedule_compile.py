@@ -39421,6 +39421,47 @@ def test_compile_heading_facet_after_anchor_insert_targets_heading_carrier() -> 
     ]
 
 
+def test_compile_source_explicit_sidenote_with_host_target_refines_to_heading_facet() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P xmlns="{_LEG_NS}">
+          <Text>In the sidenote after \u201cbanks\u201d insert \u201c, building societies\u201d.</Text>
+        </P>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_explicit_sidenote_host_target",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-04-01",
+        affected_uri="/id/ukpga/1970/9/section/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 17",
+        affecting_uri="/id/ukpga/2009/4",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="4",
+        affecting_provisions="Sch. 1 para. 247(5)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2009-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "17"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch == _replace_patch("banks", "banks, building societies")
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_source_heading_facet_target_refined",
+        "uk_effect_heading_facet_after_anchor_insert_lowered",
+    ]
+
+
 def test_compile_schedule_heading_after_anchor_insert_targets_heading_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
