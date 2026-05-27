@@ -2067,7 +2067,8 @@ def _uk_broad_table_entry_instruction(
     has_row_instruction = (
         target_names_table
         and re.search(
-            r"\b(?:after|before)\s+row\s+[0-9A-Za-z]+\s+insert(?:ed)?\b",
+            r"\b(?:after|before)\s+row\s+[0-9A-Za-z]+"
+            r"(?:\s+\([^)]*\))?\s+insert(?:ed)?\b",
             norm,
         )
         is not None

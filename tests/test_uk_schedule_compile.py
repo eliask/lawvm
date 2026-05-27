@@ -27309,8 +27309,9 @@ def test_compile_table_row_number_insert_rejects_without_row_claim() -> None:
         f"""
         <P3 xmlns="{_LEG_NS}">
           <Pnumber>a</Pnumber>
-          <Text>a in paragraph 1(1), in the table, after row 7 insert\u2014
-          8 a deprivation order only if section 177C permits ;</Text>
+          <Text>a in paragraph 1(1), in the table, after row 8
+          (as inserted by section 14 above) insert\u2014
+          9 a driving disqualification order only if subsection (5A) permits ;</Text>
         </P3>
         """
     )
