@@ -121,6 +121,7 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_after_quoted_anchor_each_occasion_insert_text_patch",
         "uk_effect_all_occurrences_substitution_text_patch",
+        "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch",
         UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
         "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
