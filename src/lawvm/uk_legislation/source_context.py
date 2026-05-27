@@ -77,6 +77,12 @@ class UKAffectingSourceContextBuild(NamedTuple):
     parse_error: Optional[ET.ParseError]
 
 
+class UKSelectedAffectingSource(NamedTuple):
+    source_context: UKAffectingSourceContext
+    extracted_element: Optional[ET.Element]
+    observations: tuple[dict[str, Any], ...]
+
+
 @dataclass(frozen=True, slots=True)
 class UKEnactedScheduleTableRowMatch:
     row: ET.Element
@@ -1288,15 +1294,15 @@ def _select_enacted_source_for_current_shell(
     current_el: Optional[ET.Element],
     enacted_context_cache: dict[str, UKAffectingSourceContext],
     enacted_xml_loader: Callable[[str, Any], Optional[bytes]] = get_affecting_act_enacted_xml_from_archive,
-) -> tuple[UKAffectingSourceContext, Optional[ET.Element], tuple[dict[str, Any], ...]]:
+) -> UKSelectedAffectingSource:
     current_missing = current_el is None
     current_shell = _looks_like_non_substantive_shell_element(current_el)
     if not current_missing and not current_shell:
-        return current_context, current_el, ()
+        return UKSelectedAffectingSource(current_context, current_el, ())
 
     act_id = str(effect.affecting_act_id or "")
     if not act_id:
-        return current_context, current_el, ()
+        return UKSelectedAffectingSource(current_context, current_el, ())
     if act_id in enacted_context_cache:
         enacted_context = enacted_context_cache[act_id]
     else:
@@ -1314,13 +1320,17 @@ def _select_enacted_source_for_current_shell(
         effect,
     )
     if schedule_row_el is not None:
-        return enacted_context, schedule_row_el, schedule_row_observations
+        return UKSelectedAffectingSource(
+            enacted_context,
+            schedule_row_el,
+            schedule_row_observations,
+        )
     if (
         current_missing
         and _schedule_paragraph_ref_parts(str(effect.affected_provisions or "")) is not None
         and _schedule_ref_label(str(effect.affecting_provisions or ""))
     ):
-        return current_context, current_el, ()
+        return UKSelectedAffectingSource(current_context, current_el, ())
 
     provision_ref = str(effect.affecting_provisions or "")
     enacted_source_observations: tuple[dict[str, Any], ...] = ()
@@ -1345,10 +1355,14 @@ def _select_enacted_source_for_current_shell(
         enacted_el,
     )
     if enacted_payload_descendant_rejection is not None:
-        return current_context, current_el, (enacted_payload_descendant_rejection,)
+        return UKSelectedAffectingSource(
+            current_context,
+            current_el,
+            (enacted_payload_descendant_rejection,),
+        )
     enacted_text = _extracted_element_text(enacted_el)
     if enacted_el is None or _looks_like_non_substantive_shell_element(enacted_el):
-        return current_context, current_el, ()
+        return UKSelectedAffectingSource(current_context, current_el, ())
 
     if current_missing:
         observation = uk_affecting_act_missing_current_enacted_source_selected(
@@ -1374,4 +1388,8 @@ def _select_enacted_source_for_current_shell(
             current_text_preview=_preview_source_text(current_text),
             enacted_text_preview=_preview_source_text(enacted_text),
         )
-    return enacted_context, enacted_el, (observation, *enacted_source_observations)
+    return UKSelectedAffectingSource(
+        enacted_context,
+        enacted_el,
+        (observation, *enacted_source_observations),
+    )
