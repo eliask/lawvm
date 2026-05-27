@@ -32,6 +32,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_blocking_action_target_detail,
     uk_replay_recovery_action_target_detail,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_crossheading_insert_target_gap,
     uk_existing_target_insert_already_materialized,
@@ -690,13 +691,13 @@ class UKReplayInsertApplyMixin:
     def _eid_top_scope_lookup(
         self,
         eid: str,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         parts = str(eid or "").split("-")
         if len(parts) < 3:
-            return None, None, None
+            return NodeLookupResult(node=None, parent=None, index=None)
         prefix = parts[0]
         if prefix not in _TOP_SCOPED_EID_PREFIXES:
-            return None, None, None
+            return NodeLookupResult(node=None, parent=None, index=None)
         top_eid = f"{prefix}-{parts[1]}"
         return self._cached_exact_eid_lookup(top_eid)
 
@@ -709,7 +710,7 @@ class UKReplayInsertApplyMixin:
         eid: str,
         *,
         allow_sequence_match: bool = True,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         cached_node, cached_parent, cached_idx = self._cached_exact_eid_lookup(eid)
         if cached_node is not None:
             return cached_node, cached_parent, cached_idx
@@ -730,7 +731,7 @@ class UKReplayInsertApplyMixin:
                 allow_sequence_match=allow_sequence_match,
             )
             if node:
-                result = (node, parent, idx)
+                result = NodeLookupResult(node=node, parent=parent, index=idx)
                 self._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
@@ -738,7 +739,7 @@ class UKReplayInsertApplyMixin:
                 )
                 return result
             if self._eid_has_strict_top_scope(eid):
-                result = (None, None, None)
+                result = NodeLookupResult(node=None, parent=None, index=None)
                 self._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
@@ -746,7 +747,7 @@ class UKReplayInsertApplyMixin:
                 )
                 return result
         elif self._eid_has_strict_top_scope(eid):
-            result = (None, None, None)
+            result = NodeLookupResult(node=None, parent=None, index=None)
             self._store_eid_search_cache(
                 eid,
                 allow_sequence_match=allow_sequence_match,
@@ -759,7 +760,7 @@ class UKReplayInsertApplyMixin:
             allow_sequence_match=allow_sequence_match,
         )
         if node:
-            result = (node, parent, idx)
+            result = NodeLookupResult(node=node, parent=parent, index=idx)
             self._store_eid_search_cache(
                 eid,
                 allow_sequence_match=allow_sequence_match,
@@ -768,7 +769,7 @@ class UKReplayInsertApplyMixin:
             return result
         for sched_idx, sched in enumerate(self.statute.supplements):
             if sched.attrs.get("eId") == eid:
-                result = (sched, None, sched_idx)
+                result = NodeLookupResult(node=sched, parent=None, index=sched_idx)
                 self._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
@@ -781,14 +782,14 @@ class UKReplayInsertApplyMixin:
                 allow_sequence_match=allow_sequence_match,
             )
             if node:
-                result = (node, parent, idx)
+                result = NodeLookupResult(node=node, parent=parent, index=idx)
                 self._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
                     result=result,
                 )
                 return result
-        result = (None, None, None)
+        result = NodeLookupResult(node=None, parent=None, index=None)
         self._store_eid_search_cache(
             eid,
             allow_sequence_match=allow_sequence_match,
@@ -804,7 +805,7 @@ class UKReplayInsertApplyMixin:
         allow_sequence_match: bool = True,
         target_seq: tuple[str, ...] | None = None,
         suffix_eids: tuple[str, str] | None = None,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+    ) -> NodeLookupResult:
         if target_seq is None:
             target_seq = _get_id_sequence(eid)
         if suffix_eids is None:
@@ -813,11 +814,11 @@ class UKReplayInsertApplyMixin:
             c_eid = child.attrs.get("eId") or child.attrs.get("id")
             if c_eid:
                 if c_eid == eid:
-                    return child, node, i
+                    return NodeLookupResult(node=child, parent=node, index=i)
                 if c_eid.endswith(suffix_eids):
-                    return child, node, i
+                    return NodeLookupResult(node=child, parent=node, index=i)
                 if allow_sequence_match and _get_id_sequence(c_eid) == target_seq:
-                    return child, node, i
+                    return NodeLookupResult(node=child, parent=node, index=i)
             if not child.children:
                 continue
             res_node, res_parent, res_idx = self._find_node_and_parent(
@@ -828,5 +829,5 @@ class UKReplayInsertApplyMixin:
                 suffix_eids=suffix_eids,
             )
             if res_node:
-                return res_node, res_parent, res_idx
-        return None, None, None
+                return NodeLookupResult(node=res_node, parent=res_parent, index=res_idx)
+        return NodeLookupResult(node=None, parent=None, index=None)
