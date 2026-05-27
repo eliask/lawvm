@@ -200,10 +200,21 @@ _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
 _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\)"
+    r"(?:\s+of\s+section\s+[0-9A-Za-z]+\b[^,]*)?"
     r"(?:\s+\(.*?\))?,?\s+"
     r"for\s+the\s+words\s+from\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
-    r"to\s+the\s+end(?:\s+of\s+the\s+subsection)?\s+"
-    r"substitute\s*[“\"'‘]?(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    r"(?:(?:to\s+the\s+end(?:\s+of\s+the\s+subsection)?)|onwards)\s+"
+    r"(?:(?:there\s+(?:shall\s+be|is|are)\s+substituted)|substitute)\s*"
+    r"[“\"'‘]?(?P<payload>.+?)[”\"'’]?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE = re.compile(
+    r"\bin\s+subsection\s+\([0-9A-Za-z]+\)"
+    r"(?:\s+of\s+section\s+[0-9A-Za-z]+\b[^,]*)?"
+    r"(?:\s+\(.*?\))?,?\s+"
+    r"for\s+the\s+words\s+from\s+[“\"'‘].*?[”\"'’]\s+"
+    r"(?:(?:to\s+the\s+end(?:\s+of\s+the\s+subsection)?)|onwards)\s+"
+    r"(?:(?:there\s+(?:shall\s+be|is|are)\s+substituted)|substitute)\s*$",
     flags=re.I | re.S,
 )
 _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE = re.compile(
@@ -1056,6 +1067,7 @@ def _source_carried_structured_tail_substitution(
     extracted_text: Optional[str],
     affected_provisions: str,
     affecting_provisions: str = "",
+    source_root: Optional[ET.Element] = None,
 ) -> Optional[dict[str, Any]]:
     """Lower parent-tail word substitutions carrying visible child labels.
 
@@ -1063,11 +1075,32 @@ def _source_carried_structured_tail_substitution(
     the effect target must be the same subsection named by source, and every
     replacement child label must be visibly present in the source row.
     """
-    if extracted_el is None or _tag(extracted_el) not in {"P1", "P2", "P3", "P4"}:
+    if extracted_el is None or _tag(extracted_el) not in {
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "BlockAmendment",
+        "InlineAmendment",
+    }:
         return None
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return None
+    source_parent_id = ""
+    source_parent_instruction = ""
+    if _tag(extracted_el) in {"BlockAmendment", "InlineAmendment"}:
+        combined = _source_parent_instruction_with_payload(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            instruction_pattern=_UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE,
+        )
+        if combined is None:
+            return None
+        text = combined["combined_text"]
+        source_parent_id = combined["source_parent_id"]
+        source_parent_instruction = combined["source_parent_instruction"]
     text_match = _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE.match(text)
     subparagraph_text_match = _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE.match(text)
     subparagraph_effect_context_match = (
@@ -1205,6 +1238,8 @@ def _source_carried_structured_tail_substitution(
         "rule_id": UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
         "source_id": str(extracted_el.get("id") or ""),
         "source_instruction": text[: active_match.start("payload")].strip(),
+        "source_parent_id": source_parent_id,
+        "source_parent_instruction": source_parent_instruction,
         "target_ref": affected_provisions,
         "target": str(target),
         target_label_key: _source_parent_range_label(_addr_leaf_label(target) or ""),

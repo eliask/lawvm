@@ -12621,6 +12621,139 @@ def test_compile_source_carried_structured_tail_substitution_with_descriptive_pa
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_source_parent_carried_structured_tail_block_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-252-1">
+              <Pnumber>252</Pnumber>
+              <P1para>
+                <Text>In subsection (1) of section 86 of the 1990 Act
+                (period of licences), for the words from \u201cfor such period\u201d
+                onwards there shall be substituted</Text>
+                <BlockAmendment id="section-252-1-block">
+                  <Text>(subject to a suspension of the licence under section 111B)\u2014
+                  a in the case of a licence to provide radio licensable content
+                  services, until it is surrendered or revoked; and b in any
+                  other case, until the earlier specified date.</Text>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-parent-structured-tail",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42/section/86/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 86(1)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="s. 252(1)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE, StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [
+        (("section", "86"), ("subsection", "1"), ("paragraph", "a")),
+        (("section", "86"), ("subsection", "1"), ("paragraph", "b")),
+    ]
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "in the case of a licence to provide radio licensable content services, until it is surrendered or revoked",
+        "in any other case, until the earlier specified date",
+    ]
+    assert {op.witness_rule_id for op in ops} == {
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
+    }
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_structured_tail_substitution_lowered",
+    ]
+    assert lowering_records[0]["source_parent_id"] == "section-252-1"
+    assert lowering_records[0]["trim_selector"] == "TEXT_FROM_for such period_TO_END"
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_parent_carried_structured_tail_rejects_non_tail_range() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-372-7">
+              <Pnumber>372</Pnumber>
+              <P1para>
+                <Text>In subsection (8), for the words from the beginning to
+                \u201cassist\u201d in paragraph (a) there shall be substituted\u2014</Text>
+                <BlockAmendment id="section-372-7-block">
+                  <Text>8 Where the OFT proposes to exercise powers, it must
+                  give particulars\u2014 a it considers will assist.</Text>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-parent-structured-tail-non-tail",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1990/42/section/194A/subsection/8",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="42",
+        affected_provisions="s. 194A(8)",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="s. 372(7)",
+        affecting_title="Communications Act 2003",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_payload_without_instruction_context_rejected"
+    ]
+    assert lowering_records[0]["reason_code"] == "source_payload_without_instruction_context"
+    assert lowering_records[0]["strict_disposition"] == "block"
+
+
 def test_compile_source_carried_structured_subparagraph_tail_substitution_to_items() -> None:
     extracted_el = ET.fromstring(
         f"""
