@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.roman import roman_to_arabic
@@ -31,6 +31,12 @@ _UK_BODY_SECTIONLIKE_KINDS = frozenset({"section", "article", "rule", "regulatio
 _UK_BODY_DESCENDANT_KINDS = frozenset(
     {"paragraph", "subsection", "subparagraph", "item", "point", "p2", "p3", "p4"}
 )
+
+
+class UKCanonicalNodeMatch(NamedTuple):
+    node: Optional[IRNode]
+    parent: Optional[IRNode]
+    index: Optional[int]
 
 
 def _clean_num(s: str) -> str:
@@ -87,55 +93,55 @@ def uk_schedule_root_candidates(
     sched_label: Optional[str],
     remaining_path: tuple[tuple[str, str], ...],
     match_kind_label,
-) -> list[tuple[IRNode, Optional[IRNode], Optional[int]]]:
-    roots: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
+) -> list[UKCanonicalNodeMatch]:
+    roots: list[UKCanonicalNodeMatch] = []
     if sched_label:
         for i, sch in enumerate(schedules):
             if match_kind_label(sch, "schedule", sched_label):
-                roots.append((sch, None, i))
+                roots.append(UKCanonicalNodeMatch(sch, None, i))
                 break
         if not roots and len(schedules) == 1:
             sch = schedules[0]
             if not _clean_num(str(sch.label or "")):
-                roots.append((sch, None, 0))
+                roots.append(UKCanonicalNodeMatch(sch, None, 0))
         return roots
 
-    unlabeled: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = [
-        (sch, None, i)
+    unlabeled: list[UKCanonicalNodeMatch] = [
+        UKCanonicalNodeMatch(sch, None, i)
         for i, sch in enumerate(schedules)
         if not _clean_num(str(sch.label or ""))
     ]
     if len(unlabeled) == 1:
         sch, _, idx = unlabeled[0]
-        return [(sch, None, idx)]
+        return [UKCanonicalNodeMatch(sch, None, idx)]
     if remaining_path:
-        return [(sch, None, i) for i, sch in enumerate(schedules)]
+        return [UKCanonicalNodeMatch(sch, None, i) for i, sch in enumerate(schedules)]
     return []
 
 
 def uk_schedule_ordinal_paragraph_matches(
-    curr_cands: list[tuple[IRNode, Optional[IRNode], Optional[int]]],
+    curr_cands: list[UKCanonicalNodeMatch],
     *,
     p_kind: Optional[str],
     p_label: Optional[str],
-) -> list[tuple[IRNode, Optional[IRNode], Optional[int]]]:
+) -> list[UKCanonicalNodeMatch]:
     if p_kind is None or str(p_kind).lower() not in {"paragraph", "p1"} or not p_label:
         return []
     clean = _clean_num(str(p_label))
     if not clean.isdigit():
         return []
     ordinal = int(clean)
-    ordinal_matches: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
+    ordinal_matches: list[UKCanonicalNodeMatch] = []
     for curr_node, _, _ in curr_cands:
         paragraph_children = [
-            (child, curr_node, i)
+            UKCanonicalNodeMatch(child, curr_node, i)
             for i, child in enumerate(curr_node.children)
             if str(child.kind) == "p1group" and not _clean_num(str(child.label or ""))
         ]
         if 1 <= ordinal <= len(paragraph_children):
             wrapper, wrapper_parent, wrapper_idx = paragraph_children[ordinal - 1]
             wrapper_paragraph_children = [
-                (child, wrapper, i)
+                UKCanonicalNodeMatch(child, wrapper, i)
                 for i, child in enumerate(wrapper.children)
                 if str(child.kind) == "paragraph"
             ]
@@ -147,7 +153,7 @@ def uk_schedule_ordinal_paragraph_matches(
             if len(wrapper_paragraph_children) == 1 and len(exact_children) == 1:
                 ordinal_matches.append(exact_children[0])
             else:
-                ordinal_matches.append((wrapper, wrapper_parent, wrapper_idx))
+                ordinal_matches.append(UKCanonicalNodeMatch(wrapper, wrapper_parent, wrapper_idx))
     return ordinal_matches
 
 
@@ -156,7 +162,7 @@ def uk_compound_subsection_candidate(
     label: str,
     *,
     match_kind_label,
-) -> tuple[Optional[IRNode], Optional[IRNode], Optional[int]]:
+) -> UKCanonicalNodeMatch:
     clean = _clean_num(label)
     suffix_start = -1
     for idx, ch in enumerate(clean):
@@ -164,7 +170,7 @@ def uk_compound_subsection_candidate(
             suffix_start = idx
             break
     if suffix_start <= 0:
-        return None, None, None
+        return UKCanonicalNodeMatch(None, None, None)
     base, suffix = clean[:suffix_start], clean[suffix_start:]
     for i, child in enumerate(curr_node.children):
         if not match_kind_label(child, "subsection", base):
@@ -175,8 +181,8 @@ def uk_compound_subsection_candidate(
                 or match_kind_label(grandchild, "item", suffix)
                 or match_kind_label(grandchild, "point", suffix)
             ):
-                return grandchild, child, j
-    return None, None, None
+                return UKCanonicalNodeMatch(grandchild, child, j)
+    return UKCanonicalNodeMatch(None, None, None)
 
 
 def uk_recursive_kind_match(
@@ -185,10 +191,10 @@ def uk_recursive_kind_match(
     kind: str,
     label: str,
     match_kind_label,
-) -> tuple[Optional[IRNode], Optional[IRNode], Optional[int]]:
+) -> UKCanonicalNodeMatch:
     for i, child in enumerate(node.children):
         if match_kind_label(child, kind, label):
-            return child, node, i
+            return UKCanonicalNodeMatch(child, node, i)
         if not child.children:
             continue
         res_n, res_p, res_i = uk_recursive_kind_match(
@@ -198,8 +204,8 @@ def uk_recursive_kind_match(
             match_kind_label=match_kind_label,
         )
         if res_n is not None:
-            return res_n, res_p, res_i
-    return None, None, None
+            return UKCanonicalNodeMatch(res_n, res_p, res_i)
+    return UKCanonicalNodeMatch(None, None, None)
 
 
 def _roman_suffix_sort_key(text: str) -> Optional[tuple[int, str]]:

@@ -9,6 +9,7 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
+    UKCanonicalNodeMatch,
     canonicalize_uk_address,
     uk_compound_subsection_candidate,
     uk_recursive_kind_match,
@@ -100,7 +101,7 @@ class UKReplayTargetLookupMixin:
         self,
         curr_node: UKMutableNode,
         label: str,
-    ) -> tuple[Optional[IRNode], Optional[IRNode], Optional[int]]:
+    ) -> UKCanonicalNodeMatch:
         """Match malformed UK shapes like legal subsection 8A stored as 8 -> a."""
         return uk_compound_subsection_candidate(
             cast(IRNode, curr_node),
@@ -143,7 +144,7 @@ class UKReplayTargetLookupMixin:
             container = _addr_container(address)
 
             # 1. Resolve top-level container
-            roots: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
+            roots: list[UKCanonicalNodeMatch] = []
             if container == "schedule":
                 # First path segment is ("schedule", label)
                 sched_label = path[0][1] if path else None
@@ -162,14 +163,14 @@ class UKReplayTargetLookupMixin:
                     return NodeLookupResult(node=cast(UKMutableNode, sch), parent=None, index=idx)
                 path = remaining
             else:
-                roots = [(cast(IRNode, self.statute.body), None, None)]
+                roots = [UKCanonicalNodeMatch(cast(IRNode, self.statute.body), None, None)]
             if not roots:
                 return NodeLookupResult(node=None, parent=None, index=None)
 
             is_eur = bool(self.statute.metadata.get("is_eur", False))
             curr_cands = roots
             for p_kind, p_label in path:
-                next_cands: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
+                next_cands: list[UKCanonicalNodeMatch] = []
                 for curr_node, _, _ in curr_cands:
                     for i, child in enumerate(curr_node.children):
                         if is_eur:
@@ -180,11 +181,11 @@ class UKReplayTargetLookupMixin:
                             if nk == "subsection" and tk == "paragraph":
                                 continue
                         if uk_match_kind_label(child, p_kind, p_label):
-                            next_cands.append((child, curr_node, i))
+                            next_cands.append(UKCanonicalNodeMatch(child, curr_node, i))
                     if not next_cands and allow_compound_subsection_alias and p_kind.lower() == "subsection" and p_label:
                         compound = self._find_compound_subsection_candidate(cast(UKMutableNode, curr_node), p_label)
                         if compound[0] is not None:
-                            next_cands.append(cast(tuple[IRNode, Optional[IRNode], Optional[int]], compound))
+                            next_cands.append(compound)
                 if not next_cands:
                     if container == "schedule":
                         ordinal_matches = uk_schedule_ordinal_paragraph_matches(
@@ -230,7 +231,7 @@ class UKReplayTargetLookupMixin:
                                         cast(UKMutableNode, child), p_kind, p_label
                                     )
                                     if res_node:
-                                        next_cands.append((res_node, res_p, res_i))
+                                        next_cands.append(UKCanonicalNodeMatch(res_node, res_p, res_i))
                 if not next_cands:
                     return NodeLookupResult(node=None, parent=None, index=None)
                 curr_cands = next_cands
