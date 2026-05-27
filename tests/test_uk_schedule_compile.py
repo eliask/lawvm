@@ -19488,6 +19488,7 @@ def test_compile_repeal_table_definition_entry_text_repeal() -> None:
         """
         <Legislation>
           <Schedule>
+            <P>In the heading before section 99, for “old” substitute “new”.</P>
             <Table>
               <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
               <tbody>
