@@ -32145,22 +32145,28 @@ def test_compile_subsection_table_entry_group_insert_preserves_source_table_rows
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.INSERT
-    assert ops[0].target.path == (("section", "379"),)
+    assert ops[0].target.path == (("section", "379"), ("subsection", "1"))
     assert ops[0].payload is not None
     assert ops[0].payload.kind is IRNodeKind.TABLE
     assert [row.children[0].text for row in ops[0].payload.children] == [
         "Elections Act 2022",
         "section 30",
     ]
-    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
-    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
-    assert selector["selector_mode"] == "entry_group_heading"
-    assert selector["source_payload_mode"] == "table_rows"
-    assert selector["allow_implicit_subsection_one_table"] is True
-    assert selector["relating_text"] == "Psychoactive Substances Act 2016"
+    selector_tag = next(
+        tag
+        for tag in ops[0].provenance_tags
+        if tag.startswith(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR)
+    )
+    selector = json.loads(selector_tag.removeprefix(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+    assert selector["direction"] == "after"
+    assert selector["anchor_text"] == "the Psychoactive Substances Act 2016"
+    assert selector["target"] == "section:379/subsection:1"
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert ops[0].witness_rule_id == "uk_effect_schedule_list_entry_table_rows_lowered"
     assert any(
-        record["rule_id"] == "uk_effect_table_entry_row_insert"
-        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        record["rule_id"] == "uk_effect_schedule_list_entry_table_rows_lowered"
+        and record["reason_code"] == "explicit_schedule_entry_insert_table_payload"
         and record["blocking"] is False
         for record in lowering_records
     )
