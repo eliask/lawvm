@@ -59,6 +59,14 @@ class UKInsertionAnchorContext:
     used_chained_insert_anchor: bool
 
 
+@dataclass(frozen=True)
+class UnloweredOverlapSourceShapeClassification:
+    rule_id: str
+    family: str
+    reason_code: str
+    reason: str
+
+
 def _looks_like_appropriate_place_insert_text(text: str) -> bool:
     normalized = " ".join((text or "").split())
     if not normalized:
@@ -181,7 +189,7 @@ def _source_payload_parent_instruction_context(
 def _unlowered_overlap_source_shape_classification(
     extracted_text: Optional[str],
     original_targets_str: list[str],
-) -> tuple[str, str, str, str]:
+) -> UnloweredOverlapSourceShapeClassification:
     text = " ".join(str(extracted_text or "").split()).strip()
     lowered = text.lower()
     target_surface = " ".join(str(target or "") for target in original_targets_str).lower()
@@ -192,7 +200,7 @@ def _unlowered_overlap_source_shape_classification(
         r".*\binsert(?:ed)?\b",
         lowered,
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_table_entry_placement_insert_rejected",
             "source_table_elaboration",
             "table_entry_insert_requires_row_or_cell_placement_model",
@@ -206,7 +214,7 @@ def _unlowered_overlap_source_shape_classification(
         re.search(r"\bomit\s+subsections?\b", lowered)
         and re.search(r"\bwords?\s+from\b", lowered)
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_mixed_structural_text_rewrite_rejected",
             "source_payload_elaboration",
             "mixed_structural_and_text_rewrite_requires_split",
@@ -220,7 +228,7 @@ def _unlowered_overlap_source_shape_classification(
         re.search(r"\bomit\s+subsections?\b", lowered)
         and re.search(r"\bdefinition\s+in\s+subsection\b", lowered)
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_mixed_structural_definition_repeal_rejected",
             "source_payload_elaboration",
             "mixed_structural_and_definition_repeal_requires_split",
@@ -235,7 +243,7 @@ def _unlowered_overlap_source_shape_classification(
         r"(?:first|second)\s+column\s+of\s+the\s+table\b",
         lowered,
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_table_deictic_this_subsection_insert_rejected",
             "source_table_elaboration",
             "table_deictic_this_subsection_insert_requires_source_context",
@@ -251,7 +259,7 @@ def _unlowered_overlap_source_shape_classification(
         text,
         re.I,
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_multi_enactment_specified_provisions_text_patch_rejected",
             "source_payload_elaboration",
             "multi_enactment_specified_provisions_text_patch_requires_target_row_claim",
@@ -267,7 +275,7 @@ def _unlowered_overlap_source_shape_classification(
         r"does\s+not\s+apply\b",
         lowered,
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_scoped_occurrence_substitution_with_exclusions_rejected",
             "text_rewrite_lowering",
             "scoped_occurrence_substitution_with_exclusions_requires_selector_model",
@@ -283,7 +291,7 @@ def _unlowered_overlap_source_shape_classification(
         r".*\bcolumn\s+1\b.*\bcolumn\s+2\b",
         lowered,
     ):
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_amendment_table_payload_without_row_context_rejected",
             "source_extraction_context",
             "amendment_table_payload_without_row_context",
@@ -294,7 +302,7 @@ def _unlowered_overlap_source_shape_classification(
             ),
         )
     if text and _UK_OVERLAP_ACTION_WORD_RE.search(text) is None:
-        return (
+        return UnloweredOverlapSourceShapeClassification(
             "uk_effect_source_payload_without_instruction_context_rejected",
             "source_extraction_context",
             "source_payload_without_instruction_context",
@@ -304,7 +312,7 @@ def _unlowered_overlap_source_shape_classification(
                 "of replaying the fragment as a broad text patch."
             ),
         )
-    return (
+    return UnloweredOverlapSourceShapeClassification(
         "uk_effect_overlap_substitution_unlowered",
         "lowering_filter",
         "overlap_substitution_parse_failed",
@@ -372,15 +380,14 @@ def append_unlowered_overlap_substitution_rejection(
             "feed target."
         )
     else:
-        (
-            lowering_rule_id,
-            family,
-            reason_code,
-            reason,
-        ) = _unlowered_overlap_source_shape_classification(
+        source_shape_classification = _unlowered_overlap_source_shape_classification(
             extracted_text,
             original_targets_str,
         )
+        lowering_rule_id = source_shape_classification.rule_id
+        family = source_shape_classification.family
+        reason_code = source_shape_classification.reason_code
+        reason = source_shape_classification.reason
         if lowering_rule_id == "uk_effect_overlap_substitution_unlowered":
             reason_code = unlowered_overlap_substitution_reason
     source_payload_parent_context = (
