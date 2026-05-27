@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, cast
+from typing import NamedTuple, Optional, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
@@ -39,6 +39,13 @@ _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID = (
 )
 
 
+class _ExistingInsertTargetResolution(NamedTuple):
+    node: Optional[UKMutableNode]
+    parent: Optional[UKMutableNode]
+    index: Optional[int]
+    reason: str
+
+
 class UKReplayTargetLookupMixin:
     statute: UKMutableStatute
     adjudications_out: list[CompileAdjudication]
@@ -47,14 +54,14 @@ class UKReplayTargetLookupMixin:
         self,
         target: LegalAddress,
         op: LegalOperation,
-    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int], str]:
+    ) -> _ExistingInsertTargetResolution:
         if _action_name(op.action) != "insert" or op.payload is None:
-            return None, None, None, ""
+            return _ExistingInsertTargetResolution(None, None, None, "")
         parent_addr = target.parent() if len(target.path) > 1 else None
         leaf_kind = _addr_leaf_kind(target)
         leaf_label = _addr_leaf_label(target)
         if parent_addr is None or not leaf_kind or not leaf_label:
-            return None, None, None, ""
+            return _ExistingInsertTargetResolution(None, None, None, "")
         parent_candidate: Optional[UKMutableNode] = None
         parent_eid = self._derive_target_eid(parent_addr)
         if parent_eid:
@@ -73,15 +80,20 @@ class UKReplayTargetLookupMixin:
                 allow_recursive_match=False,
             )
         if parent_candidate is None:
-            return None, None, None, ""
+            return _ExistingInsertTargetResolution(None, None, None, "")
         for child_idx, child in enumerate(parent_candidate.children):
             if uk_match_kind_label(child, leaf_kind, leaf_label) and uk_existing_target_insert_gap(
                 target,
                 child,
                 op,
             ):
-                return child, parent_candidate, child_idx, "explicit_parent_leaf_same_kind_label"
-        return None, None, None, ""
+                return _ExistingInsertTargetResolution(
+                    child,
+                    parent_candidate,
+                    child_idx,
+                    "explicit_parent_leaf_same_kind_label",
+                )
+        return _ExistingInsertTargetResolution(None, None, None, "")
 
     def _find_compound_subsection_candidate(
         self,
