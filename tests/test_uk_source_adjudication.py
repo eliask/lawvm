@@ -2427,6 +2427,30 @@ def test_classify_uk_manual_compile_frontier_marks_active_structural_child_range
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_to_range_definition_child_substitution() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "for paragraphs (a) to (c) of the definition of "
+            '"Northern Ireland department", substitute- a ... b ... c ...'
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_structural_child_range_substitution_rejected",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_deictic_text_patch_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",

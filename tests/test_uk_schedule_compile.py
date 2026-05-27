@@ -27329,6 +27329,14 @@ def test_compile_table_paragraph_at_end_insert_stays_blocked_without_note_model(
             "multi_enactment_specified_provisions_text_patch_requires_target_row_claim",
         ),
         (
+            "61 In section 127(7), for paragraphs (a) to (c) of the definition "
+            "of “Northern Ireland department”, substitute— a the Department for "
+            "Communities; b the Department of Finance; c the Department for the Economy.",
+            "s. 127(7)",
+            "uk_effect_structural_child_range_substitution_rejected",
+            "structural_child_range_substitution_requires_owned_payload",
+        ),
+        (
             "b for “exit charge payment plan”, in each case where it occurs without "
             "“an” before it, substitute “CT exit charge payment plan” (but this does "
             "not apply to paragraph 10(2A)).",
