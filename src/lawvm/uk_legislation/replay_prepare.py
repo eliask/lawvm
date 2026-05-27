@@ -71,11 +71,7 @@ def prepare_replay_uk_ops(
 ) -> UKReplayPrepareResult:
     """Normalize replay ops so every UK replay entry point applies the same semantics."""
     prepared_input_ops = tuple(_canonicalize_uk_operation_address_aliases(op) for op in ops)
-    (
-        overlapping_text_patch_op_ids,
-        disjoint_text_patch_overlap_op_ids,
-        disjoint_text_patch_before_edges,
-    ) = _classify_same_source_text_patch_overlaps(
+    overlap_classification = _classify_same_source_text_patch_overlaps(
         prepared_input_ops,
         base_executor=base_executor,
     )
@@ -93,15 +89,15 @@ def prepare_replay_uk_ops(
                 )
             )
             continue
-        if op.op_id in disjoint_text_patch_overlap_op_ids:
+        if op.op_id in overlap_classification.disjoint_overlap_op_ids:
             append_same_source_text_patch_overlap_disjoint_adjudication(
                 adjudications_out,
                 op=op,
                 ordered_before_op_ids=tuple(
-                    sorted(disjoint_text_patch_before_edges.get(op.op_id, ()))
+                    sorted(overlap_classification.disjoint_before_edges.get(op.op_id, ()))
                 ),
             )
-        if op.op_id in overlapping_text_patch_op_ids:
+        if op.op_id in overlap_classification.overlapping_op_ids:
             if verbose:
                 print("  replay_uk_ops: skipping overlapping same-source ordinal text patch")
             rejected_adjudications.append(
@@ -125,7 +121,10 @@ def prepare_replay_uk_ops(
             )
             continue
         filtered_ops.append(op)
-    filtered_ops = _order_ops_by_before_edges(filtered_ops, disjoint_text_patch_before_edges)
+    filtered_ops = _order_ops_by_before_edges(
+        filtered_ops,
+        overlap_classification.disjoint_before_edges,
+    )
     return UKReplayPrepareResult(
         accepted_ops=tuple(filtered_ops),
         rejected_adjudications=tuple(rejected_adjudications),
