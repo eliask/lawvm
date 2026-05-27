@@ -2486,6 +2486,17 @@ def classify_uk_effect_compare_shape(
         return "table_cell_text_patch_requires_table_surface"
     if (
         text_patch_preimage_absent
+        and actions & {"text_replace", "text_repeal"}
+        and (base_hits or oracle_hits)
+        and any(base_hits)
+        and not any(oracle_hits)
+        and (base_parents or oracle_parents)
+        and any(base_parents)
+        and not any(oracle_parents)
+    ):
+        return "oracle_missing_live_branch"
+    if (
+        text_patch_preimage_absent
         and "text_replace" in actions
         and text_patch_replacement_texts
         and any(

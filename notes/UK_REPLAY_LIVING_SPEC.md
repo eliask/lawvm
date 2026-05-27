@@ -1331,6 +1331,7 @@ Current bench replay-regime invariant:
 - Compare shape `text_patch_replacement_present_without_preimage` means a lowered text replacement has no quoted preimage on the available enacted/current target surfaces, but the replacement text is already visible on one of those surfaces.
 - This remains `source_insufficient` under `uk_manual_frontier_text_patch_postimage_chain_gap`. It is evidence that the visible current postimage may be downstream of an omitted intermediate amendment chain; it is not authority to mark the row replay-supported or to skip preimage verification.
 - The shape exists to keep the generic `text_patch_preimage_absent_from_target_surfaces` bucket for rows where neither side of the text patch is visible. Agents should triage postimage-present rows as source-chain/acquisition questions before changing parser or replay code.
+- If the text-patch target and parent exist in enacted source but both are absent from the current oracle, compare shape `oracle_missing_live_branch` takes precedence over generic preimage absence. The immediate problem is that the current oracle no longer exposes the target surface, so preimage verification against that surface is not possible.
 
 ## UK EID Lookup Scope Discipline
 
