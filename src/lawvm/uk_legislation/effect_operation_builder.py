@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
 from lawvm.uk_legislation.heading_facets import _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE
@@ -41,6 +41,11 @@ from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.text_patch_lowering import UKTextPatchItem
 
 
+class UKLoweredOperationProvenance(NamedTuple):
+    provenance_tags: tuple[str, ...]
+    witness_rule_id: Optional[str]
+
+
 def build_lowered_operation_provenance(
     *,
     lowered_witness: UKLoweredOperationWitness,
@@ -53,7 +58,7 @@ def build_lowered_operation_provenance(
     source_parent_substitution_range_payload: Optional[dict[str, Any]],
     source_parent_at_end_added_payload: Optional[dict[str, Any]],
     target_index: int,
-) -> tuple[tuple[str, ...], Optional[str]]:
+) -> UKLoweredOperationProvenance:
     provenance_tags = _uk_lowered_op_provenance_tags(lowered_witness)
     if table_cell_selector is not None:
         provenance_tags = (
@@ -100,7 +105,10 @@ def build_lowered_operation_provenance(
         op_witness_rule_id = _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
     if source_parent_at_end_added_payload is not None and curr_action == "insert":
         op_witness_rule_id = _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID
-    return provenance_tags, op_witness_rule_id
+    return UKLoweredOperationProvenance(
+        provenance_tags=provenance_tags,
+        witness_rule_id=op_witness_rule_id,
+    )
 
 
 def build_lowered_operations_for_text_patches(
@@ -178,7 +186,7 @@ def build_lowered_operations_for_text_patches(
             text_rewrite_witness=text_rewrite_witness,
             insertion_anchor_witness=insertion_anchor_witness,
         )
-        provenance_tags, op_witness_rule_id = build_lowered_operation_provenance(
+        operation_provenance = build_lowered_operation_provenance(
             lowered_witness=lowered_witness,
             table_cell_selector=table_cell_selector,
             crossheading_group_repeal_selector=crossheading_group_repeal_selector,
@@ -202,9 +210,9 @@ def build_lowered_operations_for_text_patches(
                 ),
                 source=lowered_witness.source,
                 group_id=_uk_temporal_group_id(effect),
-                provenance_tags=provenance_tags,
+                provenance_tags=operation_provenance.provenance_tags,
                 text_patch=text_patch_item,
-                witness_rule_id=op_witness_rule_id,
+                witness_rule_id=operation_provenance.witness_rule_id,
             )
         )
     return lowered_ops
