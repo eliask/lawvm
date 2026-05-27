@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from typing import Any, Optional
 
 from lawvm.core.ir import (
@@ -17,18 +18,31 @@ from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.metadata_rewrites import UKMetadataRenumberTargets
 from lawvm.uk_legislation.source_parent_payloads import (
+    UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
     UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
 )
 from lawvm.uk_legislation.target_anchors import _target_anchor_eid
 from lawvm.uk_legislation.target_parser import _parse_affected_target
+from lawvm.uk_legislation.uk_grafter import _parse_p2
 from lawvm.uk_legislation.witness_builders import (
     _uk_insertion_anchor_witness,
     _uk_target_expansion_witness,
     _uk_temporal_group_id,
     _uk_text_rewrite_spec,
 )
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
+
+
+def _strip_payload_leading_label(node: IRNode) -> IRNode:
+    label = str(node.label or "").strip()
+    text = str(node.text or "")
+    if label and text.lower().startswith(label.lower()) and len(text) > len(label):
+        tail = text[len(label) :]
+        if tail[:1].isspace():
+            return replace(node, text=tail.strip())
+    return node
 from lawvm.uk_legislation.witness_sidecars import (
     _payload_with_rewrite_witness,
     _uk_lowered_op_provenance_tags,
@@ -341,6 +355,122 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
             witness_rule_id=rule_id,
         )
     ]
+
+
+def lower_uk_after_section_subsection_range_insert_block_amendment(  # noqa: PLR0913
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    after_section_subsection_range_insert: dict[str, Any],
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> list[LegalOperation]:
+    """Lower a source-owned contiguous subsection range insert."""
+    rule_id = UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=rule_id,
+        family="source_context_elaboration",
+        reason_code="after_section_subsection_range_insert_block_amendment",
+        reason=(
+            "UK source row inserts a contiguous labelled subsection range after "
+            "an existing subsection; lowering emits typed sibling inserts "
+            "instead of treating the instruction prose as one range payload."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            key: value
+            for key, value in after_section_subsection_range_insert.items()
+            if key != "rule_id"
+        },
+    )
+    if extracted_el is None:
+        return []
+    amendment = next(
+        (
+            candidate
+            for candidate in extracted_el.iter()
+            if _tag(candidate) == "BlockAmendment"
+        ),
+        None,
+    )
+    if amendment is None:
+        return []
+    payload_children = tuple(child for child in list(amendment) if _tag(child) == "P2")
+    expected_labels = tuple(
+        str(label) for label in after_section_subsection_range_insert["payload_labels"]
+    )
+    payload_by_label = {
+        str(_direct_structural_num(child) or "").strip().strip("()").lower(): child
+        for child in payload_children
+    }
+    if tuple(payload_by_label) != expected_labels:
+        return []
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    custom_ops: list[LegalOperation] = []
+    preceding_target = _parse_affected_target(
+        f"s. {after_section_subsection_range_insert['section']}"
+        f"({after_section_subsection_range_insert['anchor_label']})"
+    )
+    for index, label in enumerate(expected_labels):
+        payload_el = payload_by_label[label]
+        payload_node = _strip_payload_leading_label(
+            irnode_from_dict(
+                _parse_p2(
+                    payload_el,
+                    "body",
+                    force_active=True,
+                    pit_date=None,
+                ).to_dict()
+            )
+        )
+        target_ref = f"s. {after_section_subsection_range_insert['section']}({label})"
+        payload_target = _parse_affected_target(target_ref)
+        insert_witness = UKLoweredOperationWitness(
+            op_id=f"{effect.effect_id}_insert_{index}",
+            sequence=sequence,
+            action=StructuralAction.INSERT,
+            target=payload_target,
+            payload=payload_node,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=_uk_target_expansion_witness(
+                effect.affected_provisions,
+                [target_ref],
+                original_targets_str=[effect.affected_provisions],
+            ),
+            text_rewrite_witness=None,
+            insertion_anchor_witness=_uk_insertion_anchor_witness(
+                _target_anchor_eid(preceding_target),
+                anchor_source=rule_id,
+            ),
+        )
+        custom_ops.append(
+            LegalOperation(
+                op_id=insert_witness.op_id,
+                sequence=insert_witness.sequence,
+                action=insert_witness.action,
+                target=payload_target,
+                payload=_payload_with_rewrite_witness(payload_node, insert_witness),
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(insert_witness),
+                witness_rule_id=rule_id,
+            )
+        )
+        preceding_target = payload_target
+    return custom_ops
 
 
 def lower_uk_source_carried_structured_tail_substitution(  # noqa: PLR0913

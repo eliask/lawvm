@@ -39,6 +39,9 @@ UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID = (
 UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_RULE_ID = (
     "uk_effect_after_paragraph_insert_block_amendment_lowered"
 )
+UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID = (
+    "uk_effect_after_section_subsection_range_insert_block_amendment_lowered"
+)
 UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_carried_structured_tail_substitution_lowered"
 )
@@ -148,6 +151,17 @@ _UK_AFTER_PARAGRAPH_INSERT_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
     r"\bafter\s+paragraph\s+\((?P<anchor>[a-z]+)\),?\s*insert\s*[—–-]?\s*$",
     flags=re.I | re.S,
 )
+_UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_REF_RE = re.compile(
+    r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<start>[0-9A-Za-z]+)\s*-\s*(?P<end>[0-9A-Za-z]+)\)\s*$",
+    flags=re.I,
+)
+_UK_AFTER_SECTION_SUBSECTION_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
+    r"\bafter\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<anchor>[0-9A-Za-z]+)\),?\s*"
+    r"(?:there\s+(?:is|are|shall\s+be)\s+)?insert(?:ed)?\s*[—–-]?\s*$",
+    flags=re.I | re.S,
+)
 _UK_LABELLED_SERIES_ITEM_RE = re.compile(
     r"(?:^|;\s+(?:or\s+)?)(?P<label>[a-z])\s+",
     flags=re.I,
@@ -204,6 +218,33 @@ def _next_alpha_label(label: str) -> str:
         chars[index] = "a"
         index -= 1
     return "a" + "".join(chars)
+
+
+def _next_same_stem_alnum_label(label: str) -> str:
+    value = label.strip().lower()
+    if re.fullmatch(r"[0-9]+", value):
+        return f"{value}a"
+    match = re.fullmatch(r"(?P<stem>[0-9]+)(?P<suffix>[a-z]+)", value)
+    if match is None:
+        return ""
+    next_suffix = _next_alpha_label(match.group("suffix"))
+    if not next_suffix or len(next_suffix) != len(match.group("suffix")):
+        return ""
+    return f"{match.group('stem')}{next_suffix}"
+
+
+def _same_stem_alnum_range(start_label: str, end_label: str) -> tuple[str, ...]:
+    start = start_label.strip().lower()
+    end = end_label.strip().lower()
+    if not start or not end:
+        return ()
+    labels = [start]
+    while labels[-1] != end:
+        next_label = _next_same_stem_alnum_label(labels[-1])
+        if not next_label or len(labels) > 100:
+            return ()
+        labels.append(next_label)
+    return tuple(labels)
 
 
 def _source_carried_top_level_alpha_matches(payload_tail: str) -> list[re.Match[str]]:
@@ -796,6 +837,69 @@ def _source_after_paragraph_insert_block_amendment(
             "target_ref": target_ref,
             "target": f"section:{section}/subsection:{subsection}/paragraph:{target_label}",
         },
+    }
+
+
+def _source_after_section_subsection_range_insert_block_amendment(
+    *,
+    extracted_el: Optional[ET.Element],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Lower `After section N(M) insert <BlockAmendment>` subsection ranges."""
+    if extracted_el is None or _tag(extracted_el) not in {"P1", "P2"}:
+        return None
+    ref_match = _UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_REF_RE.match(
+        affected_provisions or ""
+    )
+    if ref_match is None:
+        return None
+    instruction_text = " ".join(
+        _instruction_text_before_amendment_container(extracted_el).split()
+    ).strip()
+    instruction_match = (
+        _UK_AFTER_SECTION_SUBSECTION_BLOCK_AMENDMENT_INSTRUCTION_RE.search(
+            instruction_text
+        )
+    )
+    if instruction_match is None:
+        return None
+    section = ref_match.group("section")
+    if _source_parent_range_label(instruction_match.group("section")) != (
+        _source_parent_range_label(section)
+    ):
+        return None
+    anchor_label = _source_parent_range_label(instruction_match.group("anchor"))
+    start_label = _source_parent_range_label(ref_match.group("start"))
+    end_label = _source_parent_range_label(ref_match.group("end"))
+    expected_labels = _same_stem_alnum_range(start_label, end_label)
+    if not anchor_label or not expected_labels:
+        return None
+    if _next_same_stem_alnum_label(anchor_label) != expected_labels[0]:
+        return None
+    amendment = _first_amendment_container(extracted_el)
+    if amendment is None or _tag(amendment) != "BlockAmendment":
+        return None
+    payload_children = tuple(child for child in list(amendment) if _tag(child) == "P2")
+    payload_labels = tuple(
+        _source_parent_range_label(_direct_structural_num(child))
+        for child in payload_children
+    )
+    if payload_labels != expected_labels:
+        return None
+    return {
+        "rule_id": UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": instruction_text,
+        "target_ref": affected_provisions,
+        "section": section,
+        "anchor_label": anchor_label,
+        "anchor_target": f"section:{section}/subsection:{anchor_label}",
+        "start_label": start_label,
+        "end_label": end_label,
+        "payload_labels": expected_labels,
+        "payload_targets": tuple(
+            f"section:{section}/subsection:{label}" for label in expected_labels
+        ),
     }
 
 

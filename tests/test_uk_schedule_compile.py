@@ -47446,6 +47446,153 @@ def test_compile_after_paragraph_insert_block_amendment_emits_lowering_observati
     )
 
 
+def test_compile_after_section_subsection_range_insert_block_amendment() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-7">
+          <Pnumber>7</Pnumber>
+          <P2para>
+            <Text>After section 14(4) there is inserted–</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>4A</Pnumber>
+                <P2para><Text>Subsections (3) and (4) above do not apply.</Text></P2para>
+              </P2>
+              <P2>
+                <Pnumber>4B</Pnumber>
+                <P2para>
+                  <Text>The Board shall have the power–</Text>
+                  <P3><Pnumber>a</Pnumber><P3para><Text>for purpose A; and</Text></P3para></P3>
+                  <P3><Pnumber>b</Pnumber><P3para><Text>for purpose B,</Text></P3para></P3>
+                  <Text>to lend money.</Text>
+                </P2para>
+              </P2>
+              <P2>
+                <Pnumber>4C</Pnumber>
+                <P2para><Text>The Board may acquire securities.</Text></P2para>
+              </P2>
+              <P2>
+                <Pnumber>4D</Pnumber>
+                <P2para><Text>The Minister shall consult before giving consent.</Text></P2para>
+              </P2>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_section_subsection_range_insert",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/14/4A-4D",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 14(4A-4D)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(7)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    assert [op.target for op in ops] == [
+        LegalAddress(path=(("section", "14"), ("subsection", "4a"))),
+        LegalAddress(path=(("section", "14"), ("subsection", "4b"))),
+        LegalAddress(path=(("section", "14"), ("subsection", "4c"))),
+        LegalAddress(path=(("section", "14"), ("subsection", "4d"))),
+    ]
+    assert [op.witness_rule_id for op in ops] == [
+        "uk_effect_after_section_subsection_range_insert_block_amendment_lowered"
+    ] * 4
+    assert [op.payload.label if op.payload is not None else "" for op in ops] == [
+        "4A",
+        "4B",
+        "4C",
+        "4D",
+    ]
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == "Subsections (3) and (4) above do not apply."
+    assert ops[1].payload is not None
+    assert [child.label for child in ops[1].payload.children] == ["a", "b"]
+    assert f"{_NOTE_PRECEDING_EID}section-14-4" in ops[0].provenance_tags
+    assert f"{_NOTE_PRECEDING_EID}section-14-4a" in ops[1].provenance_tags
+    assert f"{_NOTE_PRECEDING_EID}section-14-4b" in ops[2].provenance_tags
+    assert f"{_NOTE_PRECEDING_EID}section-14-4c" in ops[3].provenance_tags
+    assert any(
+        row.get("rule_id")
+        == "uk_effect_after_section_subsection_range_insert_block_amendment_lowered"
+        and row.get("blocking") is False
+        for row in observations
+    )
+    assert all(
+        row.get("rule_id") != "uk_effect_instruction_text_payload_rejected"
+        for row in observations
+    )
+
+
+def test_compile_after_section_subsection_range_insert_requires_contiguous_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-2-7">
+          <Pnumber>7</Pnumber>
+          <P2para>
+            <Text>After section 14(4) there is inserted–</Text>
+            <BlockAmendment>
+              <P2><Pnumber>4A</Pnumber><P2para><Text>First.</Text></P2para></P2>
+              <P2><Pnumber>4C</Pnumber><P2para><Text>Gap.</Text></P2para></P2>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_section_subsection_range_insert_gap",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2016-07-11",
+        affected_uri="/id/ukpga/1962/46/section/14/4A-4D",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1962",
+        affected_number="46",
+        affected_provisions="s. 14(4A-4D)",
+        affecting_uri="/id/uksi/2000/3251/article/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="3251",
+        affecting_provisions="art. 2 Sch. 2 para. 2(7)",
+        affecting_title="Test Transfer Order",
+        in_force_dates=[{"date": "2016-07-11", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    assert all(
+        row.get("rule_id")
+        != "uk_effect_after_section_subsection_range_insert_block_amendment_lowered"
+        for row in observations
+    )
+
+
 def test_pipeline_compile_ops_does_not_select_ambiguous_amendment_child_from_shell_source(
     monkeypatch,
 ) -> None:

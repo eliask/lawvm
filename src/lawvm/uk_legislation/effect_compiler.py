@@ -23,6 +23,7 @@ from lawvm.uk_legislation.effect_single_target_lowering import (
     _lower_effect_target,
 )
 from lawvm.uk_legislation.effect_special_lowering import (
+    lower_uk_after_section_subsection_range_insert_block_amendment,
     lower_uk_after_paragraph_insert_labelled_series,
     lower_uk_after_paragraph_insert_single_label,
     lower_uk_metadata_renumber_effect,
@@ -47,6 +48,7 @@ from lawvm.uk_legislation.source_action_inference import (
     infer_uk_effect_action_from_source,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
+    _source_after_section_subsection_range_insert_block_amendment,
     _source_after_paragraph_insert_block_amendment,
     _source_after_paragraph_insert_labelled_series,
     _source_after_paragraph_insert_single_label,
@@ -331,6 +333,25 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             sequence=sequence,
             after_paragraph_insert=after_paragraph_insert,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        _mark_lower_phase("compile_lower_special")
+        return ops
+    after_section_subsection_range_insert = (
+        _source_after_section_subsection_range_insert_block_amendment(
+            extracted_el=extracted_el,
+            affected_provisions=effect.affected_provisions,
+        )
+    )
+    if action == "insert" and after_section_subsection_range_insert is not None:
+        ops = lower_uk_after_section_subsection_range_insert_block_amendment(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            after_section_subsection_range_insert=after_section_subsection_range_insert,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
             lowering_rejections_out=lowering_rejections_out,
