@@ -104,21 +104,23 @@ def resolve_uk_insertion_anchor_context(
         source_anchor_text = _instruction_text_before_amendment_container(extracted_el) or (
             extracted_text or ""
         )
-    source_preceding_eid, source_preceding_eid_source = _source_after_insertion_anchor(
+    source_preceding_anchor = _source_after_insertion_anchor(
         source_anchor_text,
         target,
     )
-    if source_preceding_eid and not preceding_eid:
-        preceding_eid = source_preceding_eid
-        preceding_eid_source = source_preceding_eid_source or preceding_eid_source
+    if source_preceding_anchor.eid and not preceding_eid:
+        preceding_eid = source_preceding_anchor.eid
+        preceding_eid_source = source_preceding_anchor.source or preceding_eid_source
 
     following_eid = None
     following_eid_source = None
     if curr_action == "insert":
-        following_eid, following_eid_source = _source_before_insertion_anchor(
+        following_anchor = _source_before_insertion_anchor(
             source_anchor_text,
             target,
         )
+        following_eid = following_anchor.eid
+        following_eid_source = following_anchor.source
 
     if "after " in effect.comments.lower():
         rel_m = re.search(
