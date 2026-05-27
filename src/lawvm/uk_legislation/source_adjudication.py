@@ -83,6 +83,7 @@ UK_EFFECT_COMPARE_SHAPE_CLASSES = frozenset(
         "range_to_container_target_absent",
         "retained_repeal_oracle_branch",
         "table_cell_text_patch_requires_table_surface",
+        "text_patch_target_absent_from_enacted_source_chain",
         "text_patch_preimage_absent_from_target_surfaces",
         "territorial_extension_oracle_gap",
     }
@@ -1836,6 +1837,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source instruction lowers to a text patch, but the quoted preimage is absent from available enacted/oracle target surfaces; acquire or prove the missing intermediate source chain before replaying or claiming it.",
         }
 
+    if compare_shape_norm == "text_patch_target_absent_from_enacted_source_chain":
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_text_patch_preimage_chain_gap",
+            "reason": "The source instruction lowers to a text patch against a target absent from the enacted source but present in the current oracle; acquire or prove the amendment-created target chain before replaying or claiming the row in isolation.",
+        }
+
     if compare_shape_norm == "range_to_container_target_absent":
         return {
             "status": "manual_compile_candidate",
@@ -2460,6 +2468,8 @@ def classify_uk_effect_compare_shape(
         )
     ):
         return "uk_compare_text_patch_preimage_consumed_by_replay_chain"
+    if text_patch_preimage_absent and base_hits and oracle_hits and not any(base_hits) and any(oracle_hits):
+        return "text_patch_target_absent_from_enacted_source_chain"
     if text_patch_preimage_absent and lowering_rules & UK_COMPARE_TABLE_CELL_TEXT_PATCH_RULE_IDS:
         return "table_cell_text_patch_requires_table_surface"
     if text_patch_preimage_absent:
