@@ -1320,6 +1320,12 @@ Current bench replay-regime invariant:
 - `--summary-only` suppresses per-row stdout output while preserving aggregate counts and any requested JSONL exports. It is intended for dashboards and automation over large work queues where the JSONL artifacts, not stdout, carry the detailed row evidence.
 - Validator summaries include remaining/stale manual-rule count maps, current and remaining source-pathology count maps, and current blocking-lowering count maps. This makes summary-only output a usable next-action selector: agents should pick from `remaining_manual_rule_counts` and `remaining_source_pathology_counts` rather than scanning stale rows by hand.
 
+## UK Effect Compare Facet Surfaces
+
+- Effect-summary compare evidence must use the same target-surface semantics as single-effect inspection. If a compiled text patch targets `FacetKind.HEADING`, the compared text surface is the heading/title/sidenote carrier, not the host provision body.
+- Batch tools such as `uk-effects` and `uk-candidates` therefore pass the compiled `LegalAddress` into target-shape collection. This prevents source-explicit heading edits from being misrouted into `uk_manual_frontier_text_patch_preimage_chain_gap` merely because the quoted preimage is absent from the section body.
+- Witness: `ukpga/1970/9` effect `key-b6072e10e73303a108588062d11eb4bb`, whose source says `In the sidenote after "banks" insert ", building societies"`. The source-explicit facet lowering targets `section:17/heading`; compare evidence must inspect the heading carrier text containing `banks`.
+
 ## UK EID Lookup Scope Discipline
 
 - Cached suffix EID lookup is a target-resolution accelerator only. A top-scoped target such as `section-2-9` may not be satisfied by an indexed suffix alias carried by a node outside the exact `section-2` subtree, even if an unrelated source EID happens to end in the same suffix.
