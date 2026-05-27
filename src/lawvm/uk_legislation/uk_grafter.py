@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+import json
 import re
 import warnings
 from dataclasses import dataclass
@@ -524,6 +525,14 @@ def _parse_table_row(el: ET.Element, *, header_context: bool) -> UKMutableNode |
             child,
             ("eId", "id", "rowspan", "colspan", "morerows", "namest", "nameend"),
         )
+        ordered_list_units = _table_cell_ordered_list_units(child)
+        if ordered_list_units:
+            attrs["source_ordered_list_units_json"] = json.dumps(
+                ordered_list_units,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            attrs["source_rule_id"] = "uk_table_cell_ordered_list_units_preserved"
         cells.append(
             UKMutableNode(
                 kind=cell_kind,
@@ -538,6 +547,31 @@ def _parse_table_row(el: ET.Element, *, header_context: bool) -> UKMutableNode |
         attrs=_table_attrs(el, ("eId", "id")),
         children=cells,
     )
+
+
+def _table_cell_ordered_list_units(el: ET.Element) -> list[dict[str, str]]:
+    units: list[dict[str, str]] = []
+    for ordered_list in el.iter():
+        if _tag(ordered_list) != "OrderedList":
+            continue
+        item_index = 0
+        for child in ordered_list:
+            if _tag(child) != "ListItem":
+                continue
+            label = (child.get("NumberOverride") or "").strip() or _alpha_label(item_index)
+            item_index += 1
+            text = _text_content(child)
+            if not label or not text:
+                continue
+            units.append(
+                {
+                    "source_list_type": str(ordered_list.get("Type") or ""),
+                    "source_list_decoration": str(ordered_list.get("Decoration") or ""),
+                    "label": label.strip().strip("()"),
+                    "text": text,
+                }
+            )
+    return units
 
 
 def _parse_table_rows(el: ET.Element, *, header_context: bool = False) -> list[UKMutableNode]:
