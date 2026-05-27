@@ -36,6 +36,12 @@ class DefinitionTextRewriteResult(NamedTuple):
     recovery_rule_ids: tuple[str, ...]
 
 
+class NumericListTrailingCommaApplyResult(NamedTuple):
+    node: UKMutableNode
+    applied: bool
+    anchor: str | None
+
+
 _UK_DEFINITION_PREDICATE_PATTERN = r"""
 means
 |have\s+the\s+same\s+meaning\s+as
@@ -1062,7 +1068,7 @@ class UKReplayTextApplyMixin:
         replacement: str,
         occurrence: int,
         end_occurrence: int,
-    ) -> tuple[UKMutableNode, bool, str | None]:
+    ) -> NumericListTrailingCommaApplyResult:
         """Recover a unique numeric list item whose source selector adds a comma."""
 
         text = node.text or ""
@@ -1074,10 +1080,14 @@ class UKReplayTextApplyMixin:
             end_occurrence,
         )
         if text_replacement is None:
-            return node, False, None
+            return NumericListTrailingCommaApplyResult(node=node, applied=False, anchor=None)
         rebuilt = dc_replace(node, text=text_replacement.new_text)
         self._replace_node_in_statute(node, rebuilt)
-        return rebuilt, True, text_replacement.anchor
+        return NumericListTrailingCommaApplyResult(
+            node=rebuilt,
+            applied=True,
+            anchor=text_replacement.anchor,
+        )
 
     def _apply_numeric_list_trailing_comma_anchor_on_subtree(
         self,
@@ -1086,7 +1096,7 @@ class UKReplayTextApplyMixin:
         replacement: str,
         occurrence: int,
         end_occurrence: int = 0,
-    ) -> tuple[UKMutableNode, bool, str | None]:
+    ) -> NumericListTrailingCommaApplyResult:
         """Recover one unique numeric list item across a resolved target subtree."""
 
         subtree_replacement = _numeric_list_trailing_comma_subtree_replacement(
@@ -1097,7 +1107,7 @@ class UKReplayTextApplyMixin:
             end_occurrence,
         )
         if subtree_replacement is None:
-            return node, False, None
+            return NumericListTrailingCommaApplyResult(node=node, applied=False, anchor=None)
         text_node = node
         for index in subtree_replacement.path:
             text_node = text_node.children[index]
@@ -1110,7 +1120,11 @@ class UKReplayTextApplyMixin:
             ),
         )
         self._replace_node_in_statute(node, rebuilt)
-        return rebuilt, True, subtree_replacement.anchor
+        return NumericListTrailingCommaApplyResult(
+            node=rebuilt,
+            applied=True,
+            anchor=subtree_replacement.anchor,
+        )
 
     def _apply_text_replace_on_node_text_only(
         self,

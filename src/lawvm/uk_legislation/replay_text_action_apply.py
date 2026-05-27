@@ -556,32 +556,26 @@ class UKReplayTextActionApplyMixin:
                 and bool(replacement)
             ):
                 if heading_carrier is not None:
-                    (
-                        heading_carrier,
-                        numeric_comma_applied,
-                        numeric_comma_anchor,
-                    ) = self._apply_numeric_list_trailing_comma_anchor_on_node_text_only(
+                    numeric_comma_result = self._apply_numeric_list_trailing_comma_anchor_on_node_text_only(
                         heading_carrier,
                         text_patch.selector.match_text,
                         replacement,
                         text_patch.selector.occurrence,
                         text_patch.selector.end_occurrence,
                     )
+                    heading_carrier = numeric_comma_result.node
                 else:
-                    (
-                        node,
-                        numeric_comma_applied,
-                        numeric_comma_anchor,
-                    ) = self._apply_numeric_list_trailing_comma_anchor_on_subtree(
+                    numeric_comma_result = self._apply_numeric_list_trailing_comma_anchor_on_subtree(
                         node,
                         text_patch.selector.match_text,
                         replacement,
                         text_patch.selector.occurrence,
                         text_patch.selector.end_occurrence,
                     )
-                if numeric_comma_applied:
+                    node = numeric_comma_result.node
+                if numeric_comma_result.applied:
                     applied = True
-                    applied_match = numeric_comma_anchor or text_patch.selector.match_text
+                    applied_match = numeric_comma_result.anchor or text_patch.selector.match_text
                     applied_rule_id = "uk_replay_numeric_list_trailing_comma_anchor_normalized"
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
