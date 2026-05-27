@@ -242,6 +242,16 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="structured_in_definition_child_selector",
     ),
+    "uk_replay_definition_child_final_connector_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay removed a source-claimed final connector from a "
+            "preserved structured definition child before a structural child "
+            "insertion."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="structured_definition_child_final_connector_selector",
+    ),
     "uk_replay_in_definition_child_flat_ordinal_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a scoped in-definition-child text rewrite "

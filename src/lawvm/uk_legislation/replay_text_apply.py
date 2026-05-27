@@ -1044,6 +1044,24 @@ def _rewrite_definition_child_tail_after_anchor_to_end_text(
     return DefinitionTextRewriteResult(rewritten, True, fallback_recovery_rule_ids)
 
 
+def _remove_final_definition_child_connector(text: str, connector: str) -> tuple[str, bool]:
+    connector = connector.strip().lower()
+    if connector not in {"and", "or"}:
+        return text, False
+    match = re.search(
+        rf"(?P<separator>[;,:]?)\s*\b{re.escape(connector)}\b\s*$",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return text, False
+    rewritten = text[: match.start()].rstrip()
+    separator = match.group("separator")
+    if separator and not rewritten.endswith(separator):
+        rewritten = f"{rewritten}{separator}"
+    return " ".join(rewritten.split()).strip(), True
+
+
 def _definition_child_tail_after_anchor_selector_parts(
     match: str,
 ) -> DefinitionChildTailSelectorParts | None:
@@ -2632,9 +2650,13 @@ class UKReplayTextApplyMixin:
             child_selector = match[len("TEXT_IN_DEFINITION_CHILD_") :]
             child_parts = child_selector.split(US)
             child_after_anchor = ""
+            child_final_connector = ""
             child_at_end = False
             if len(child_parts) == 4 and child_parts[2] == "AFTER":
                 kind_and_term, child_label, _, child_after_anchor = child_parts
+                original = ""
+            elif len(child_parts) == 4 and child_parts[2] == "FINAL":
+                kind_and_term, child_label, _, child_final_connector = child_parts
                 original = ""
             elif len(child_parts) == 3:
                 kind_and_term, child_label, original = child_parts
@@ -2649,9 +2671,19 @@ class UKReplayTextApplyMixin:
             child_label = child_label.strip()
             original = original.strip()
             child_after_anchor = child_after_anchor.strip()
+            child_final_connector = child_final_connector.strip().lower()
             if child_kind != "paragraph" or not term or not child_label:
                 return node, False
-            if (child_after_anchor and original) or (not child_after_anchor and not original and not child_at_end):
+            if (
+                (child_after_anchor and original)
+                or (child_final_connector and original)
+                or (
+                    not child_after_anchor
+                    and not child_final_connector
+                    and not original
+                    and not child_at_end
+                )
+            ):
                 return node, False
 
             structured_child_matches = _definition_child_nodes(
@@ -2659,7 +2691,9 @@ class UKReplayTextApplyMixin:
                 term=term,
                 child_label=child_label,
             )
-            if child_after_anchor:
+            if child_final_connector:
+                pattern = ""
+            elif child_after_anchor:
                 pattern = _text_patch_pattern(
                     child_after_anchor,
                     allow_punctuation_spacing=allow_punctuation_spacing,
@@ -2679,7 +2713,14 @@ class UKReplayTextApplyMixin:
                 child_text = child_node.text or ""
                 if not child_text:
                     return node, False
-                if child_at_end:
+                if child_final_connector:
+                    new_text, changed = _remove_final_definition_child_connector(
+                        child_text,
+                        child_final_connector,
+                    )
+                    if not changed:
+                        return node, False
+                elif child_at_end:
                     new_text = _append_definition_child_suffix_text(child_text, replacement_text)
                 elif child_after_anchor:
                     required_occurrence = occurrence if occurrence > 0 else 1
@@ -2701,9 +2742,14 @@ class UKReplayTextApplyMixin:
                 self._replace_node_in_statute(node, rebuilt)
                 if recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append(
-                        "uk_replay_in_definition_child_structured_text_rewrite_applied"
+                        "uk_replay_definition_child_final_connector_rewrite_applied"
+                        if child_final_connector
+                        else "uk_replay_in_definition_child_structured_text_rewrite_applied"
                     )
                 return rebuilt, True
+
+            if child_final_connector:
+                return node, False
 
             candidate_rewrites: list[TextNodeRewriteCandidate] = []
             for text_path, text_node in text_nodes:

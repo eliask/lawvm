@@ -42,6 +42,7 @@ from lawvm.uk_legislation.replay_target_gaps import (
 )
 from lawvm.uk_legislation.target_anchors import _body_target_eid_suffixes, uk_match_kind_label
 from lawvm.uk_legislation.source_definition_structural_insert import (
+    UK_DEFINITION_CHILD_STRUCTURAL_INSERT_BEFORE_TAIL_CONNECTOR_RULE_ID,
     UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -644,10 +645,10 @@ class UKReplayInsertApplyMixin:
         new_node: UKMutableNode,
         op: LegalOperation,
     ) -> bool:
-        if (
-            new_node.attrs.get("source_rule_id")
-            != UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID
-        ):
+        if new_node.attrs.get("source_rule_id") not in {
+            UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
+            UK_DEFINITION_CHILD_STRUCTURAL_INSERT_BEFORE_TAIL_CONNECTOR_RULE_ID,
+        }:
             return False
         parent_addr = target.parent() if len(target.path) > 1 else None
         if parent_addr is None:

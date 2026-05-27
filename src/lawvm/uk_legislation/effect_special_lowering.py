@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import replace
 from typing import Any, Optional
@@ -21,8 +22,10 @@ from lawvm.uk_legislation.source_definition_fragments import (
     UK_DEFINITION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
 )
 from lawvm.uk_legislation.source_definition_structural_insert import (
+    UK_DEFINITION_CHILD_STRUCTURAL_INSERT_BEFORE_TAIL_CONNECTOR_RULE_ID,
     UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
 )
+from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.source_parent_payloads import (
     UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_BLOCK_AMENDMENT_RULE_ID,
     UK_AT_END_SECTION_SUBSECTION_INSERT_BLOCK_AMENDMENT_RULE_ID,
@@ -287,18 +290,31 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> list[LegalOperation]:
     """Lower source-owned definition child sibling insertions."""
-    rule_id = UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID
+    rule_id = str(definition_child_insert.get("rule_id") or UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID)
+    tail_connector = str(definition_child_insert.get("tail_connector") or "").strip().lower()
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
         rule_id=rule_id,
         family="source_context_elaboration",
-        reason_code="source_parent_definition_child_structural_sibling_series",
+        reason_code=(
+            "definition_child_structural_insert_before_tail_connector"
+            if tail_connector
+            else "source_parent_definition_child_structural_sibling_series"
+        ),
         reason=(
-            "UK source parent names a definition term and the child row "
-            "inserts contiguous labelled definition-child siblings after a "
-            "named child; lowering emits typed sibling inserts scoped by "
-            "definition term and child label instead of appending text to the "
-            "broad section target."
+            "UK source inserts contiguous labelled definition-child siblings "
+            "before an explicitly named final child-tail connector; lowering "
+            "first removes the connector from the source-named anchor child "
+            "and then inserts the new child siblings scoped by definition term "
+            "and child label."
+            if tail_connector
+            else (
+                "UK source parent names a definition term and the child row "
+                "inserts contiguous labelled definition-child siblings after a "
+                "named child; lowering emits typed sibling inserts scoped by "
+                "definition term and child label instead of appending text to "
+                "the broad section target."
+            )
         ),
         effect=effect,
         extracted_el=extracted_el,
@@ -322,6 +338,65 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
             ("item", str(definition_child_insert["anchor_label"])),
         )
     )
+    if tail_connector:
+        connector_target = LegalAddress(
+            path=(("section", str(definition_child_insert["section"])),)
+        )
+        connector_selector = (
+            "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_"
+            f"{definition_child_insert['definition_term']}{US}"
+            f"{definition_child_insert['anchor_label']}{US}FINAL{US}{tail_connector}"
+        )
+        connector_patch = TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text=connector_selector, occurrence=0),
+            replacement="",
+        )
+        connector_rewrite = _uk_text_rewrite_spec(
+            fragment_subs=[
+                {
+                    "original": connector_selector,
+                    "replacement": "",
+                    "rule_id": UK_DEFINITION_CHILD_STRUCTURAL_INSERT_BEFORE_TAIL_CONNECTOR_RULE_ID,
+                    "tail_connector": tail_connector,
+                }
+            ],
+            text_patch=connector_patch,
+            op_text_match=connector_selector,
+            op_text_replacement="",
+            op_text_occurrence=0,
+        )
+        connector_witness = UKLoweredOperationWitness(
+            op_id=f"{effect.effect_id}_definition_child_tail_connector",
+            sequence=sequence,
+            action=StructuralAction.TEXT_REPLACE,
+            target=connector_target,
+            payload=None,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=_uk_target_expansion_witness(
+                effect.affected_provisions,
+                [effect.affected_provisions],
+                original_targets_str=[effect.affected_provisions],
+            ),
+            text_rewrite_witness=connector_rewrite,
+            insertion_anchor_witness=None,
+        )
+        custom_ops.append(
+            LegalOperation(
+                op_id=connector_witness.op_id,
+                sequence=connector_witness.sequence,
+                action=connector_witness.action,
+                target=connector_target,
+                payload=None,
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(connector_witness),
+                text_patch=connector_patch,
+                witness_rule_id=rule_id,
+            )
+        )
     for payload_index, payload in enumerate(definition_child_insert["payloads"]):
         payload_target = LegalAddress(
             path=(
@@ -329,10 +404,14 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
                 ("item", str(payload["label"])),
             )
         )
+        payload_text = str(payload["text"])
+        if tail_connector and payload_index == len(definition_child_insert["payloads"]) - 1:
+            if not re.search(rf"\b{re.escape(tail_connector)}\b\s*$", payload_text, flags=re.I):
+                payload_text = f"{payload_text.rstrip()} {tail_connector}".strip()
         payload_node = IRNode(
             kind=IRNodeKind.ITEM,
             label=str(payload["label"]),
-            text=str(payload["text"]),
+            text=payload_text,
             attrs={
                 "source_rule_id": rule_id,
                 "definition_term": str(definition_child_insert["definition_term"]),

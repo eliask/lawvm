@@ -401,6 +401,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_definition_anchor_qualifier_phrase_normalized",
         "uk_replay_definition_entry_already_absent_observed",
         "uk_replay_definition_child_flat_ordinal_text_rewrite_applied",
+        "uk_replay_definition_child_final_connector_rewrite_applied",
         "uk_replay_definition_child_structured_text_rewrite_applied",
         "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied",
         "uk_replay_definition_entry_orphan_separator_normalized",
