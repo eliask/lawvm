@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
+
+
+class UKSameSourceTextPatchOverlapClassification(NamedTuple):
+    overlapping_op_ids: set[str]
+    disjoint_overlap_op_ids: set[str]
+    disjoint_before_edges: dict[str, set[str]]
 
 
 def _literal_text_spans_in_subtree(
@@ -81,7 +87,7 @@ def _classify_same_source_text_patch_overlaps(
     ops: Sequence[LegalOperation],
     *,
     base_executor: Optional[Any],
-) -> tuple[set[str], set[str], dict[str, set[str]]]:
+) -> UKSameSourceTextPatchOverlapClassification:
     """Classify same-source text patch overlaps before replay ordering."""
     overlapping_text_patch_op_ids: set[str] = set()
     disjoint_text_patch_overlap_op_ids: set[str] = set()
@@ -136,10 +142,10 @@ def _classify_same_source_text_patch_overlaps(
                 )
             else:
                 overlapping_text_patch_op_ids.add(op.op_id)
-    return (
-        overlapping_text_patch_op_ids,
-        disjoint_text_patch_overlap_op_ids,
-        disjoint_text_patch_before_edges,
+    return UKSameSourceTextPatchOverlapClassification(
+        overlapping_op_ids=overlapping_text_patch_op_ids,
+        disjoint_overlap_op_ids=disjoint_text_patch_overlap_op_ids,
+        disjoint_before_edges=disjoint_text_patch_before_edges,
     )
 
 
