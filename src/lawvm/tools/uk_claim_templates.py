@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from lawvm.uk_legislation.manual_claim_templates import (
     UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS,
@@ -12,7 +12,12 @@ from lawvm.uk_legislation.manual_claim_templates import (
 UK_CLAIM_TEMPLATE_RULE_IDS = UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS
 
 
-def _quoted_for_substitute_pair(source_preview: str) -> tuple[str, str]:
+class _QuotedSubstitutionPair(NamedTuple):
+    text_match: str
+    replacement: str
+
+
+def _quoted_for_substitute_pair(source_preview: str) -> _QuotedSubstitutionPair:
     """Return the quoted preimage/replacement pair from a simple formula."""
     replacement_match = re.search(
         r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
@@ -20,10 +25,10 @@ def _quoted_for_substitute_pair(source_preview: str) -> tuple[str, str]:
         flags=re.I,
     )
     if replacement_match is None:
-        return "", ""
-    return (
-        " ".join(replacement_match.group("old").split()),
-        " ".join(replacement_match.group("new").split()),
+        return _QuotedSubstitutionPair(text_match="", replacement="")
+    return _QuotedSubstitutionPair(
+        text_match=" ".join(replacement_match.group("old").split()),
+        replacement=" ".join(replacement_match.group("new").split()),
     )
 
 
@@ -212,11 +217,11 @@ def _table_crossheading_rewrite_parts(source_preview: str) -> dict[str, str]:
             "table_crossheading_anchor": " ".join(becomes_match.group("anchor").split()),
         }
 
-    text_match, replacement = _quoted_for_substitute_pair(source_norm)
+    quoted_substitution = _quoted_for_substitute_pair(source_norm)
     return {
-        "text_match": text_match,
-        "replacement": replacement,
-        "source_formula": "substitute" if replacement else "",
+        "text_match": quoted_substitution.text_match,
+        "replacement": quoted_substitution.replacement,
+        "source_formula": "substitute" if quoted_substitution.replacement else "",
         "table_crossheading_anchor": "",
     }
 
@@ -295,7 +300,7 @@ def _surface_text_rewrite_claim_template(
     summary = row.summary
     effect = row.effect
     source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-    text_match, replacement = _quoted_for_substitute_pair(source_preview)
+    quoted_substitution = _quoted_for_substitute_pair(source_preview)
     return {
         "schema": "lawvm.uk_semantic_compile_claim_template.v1",
         "claim_kind": "semantic_compile",
@@ -312,8 +317,8 @@ def _surface_text_rewrite_claim_template(
         "source_pathology": summary.source_pathology or "",
         "candidate_target_surface": effect.affected_provisions,
         "candidate_source_preview": source_preview[:500],
-        "text_match": text_match,
-        "replacement": replacement,
+        "text_match": quoted_substitution.text_match,
+        "replacement": quoted_substitution.replacement,
         "required_validator_checks": required_validator_checks,
         "executable": False,
     }
