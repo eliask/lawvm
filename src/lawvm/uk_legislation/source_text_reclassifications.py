@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 import xml.etree.ElementTree as ET
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
@@ -20,6 +20,12 @@ from lawvm.uk_legislation.provision_extractor import _instruction_text_before_am
 from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _tag
+
+
+class StructuredTailSubstitutionTrimSelector(NamedTuple):
+    selector: str
+    anchor: str
+    mode: str
 
 
 @dataclass(frozen=True)
@@ -432,23 +438,33 @@ def source_following_anchor_structured_substitution_anchor(source_text: str) -> 
     return " ".join(match.group("anchor").split()).strip()
 
 
-def source_structured_tail_substitution_trim_selector(source_text: str) -> tuple[str, str, str]:
+def source_structured_tail_substitution_trim_selector(
+    source_text: str,
+) -> StructuredTailSubstitutionTrimSelector:
     """Return replay selector, anchor, and range mode for source-carried children."""
     text = str(source_text or "")
     if not text:
-        return "", "", ""
+        return StructuredTailSubstitutionTrimSelector("", "", "")
     from_match = SOURCE_FROM_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(text)
     if from_match is not None:
         anchor = " ".join(from_match.group("anchor").split()).strip()
         if anchor:
-            return f"TEXT_FROM_{anchor}_TO_END", anchor, "from_quoted_text_to_end"
+            return StructuredTailSubstitutionTrimSelector(
+                f"TEXT_FROM_{anchor}_TO_END",
+                anchor,
+                "from_quoted_text_to_end",
+            )
     following_match = SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(text)
     if following_match is None:
-        return "", "", ""
+        return StructuredTailSubstitutionTrimSelector("", "", "")
     anchor = " ".join(following_match.group("anchor").split()).strip()
     if not anchor:
-        return "", "", ""
-    return f"TEXT_AFTER_{anchor}_TO_END", anchor, "after_quoted_text_to_end"
+        return StructuredTailSubstitutionTrimSelector("", "", "")
+    return StructuredTailSubstitutionTrimSelector(
+        f"TEXT_AFTER_{anchor}_TO_END",
+        anchor,
+        "after_quoted_text_to_end",
+    )
 
 
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(

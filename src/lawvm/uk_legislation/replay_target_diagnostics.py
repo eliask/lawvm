@@ -644,8 +644,8 @@ class UKReplayTargetDiagnosticsMixin:
         witness = _witness_for_op(op)
         extraction = getattr(witness, "extraction_witness", None)
         source_text = str(getattr(extraction, "extracted_text", "") or getattr(op.source, "raw_text", "") or "")
-        trim_selector, anchor, trim_mode = source_structured_tail_substitution_trim_selector(source_text)
-        if not trim_selector:
+        trim_selector_context = source_structured_tail_substitution_trim_selector(source_text)
+        if not trim_selector_context.selector:
             return False
         path = tuple(getattr(target, "path", ()) or ())
         if len(path) < 2:
@@ -674,7 +674,7 @@ class UKReplayTargetDiagnosticsMixin:
         if not parent_had_children:
             parent_node, parent_tail_trimmed = self._apply_text_replace_on_node_text_only(
                 parent_node,
-                trim_selector,
+                trim_selector_context.selector,
                 "",
                 occurrence=0,
             )
@@ -704,9 +704,9 @@ class UKReplayTargetDiagnosticsMixin:
                 target,
                 family="source_carried_structured_tail_substitution",
                 recovery_target=str(parent_target),
-                source_anchor=anchor,
-                trim_selector=trim_selector,
-                trim_mode=trim_mode,
+                source_anchor=trim_selector_context.anchor,
+                trim_selector=trim_selector_context.selector,
+                trim_mode=trim_selector_context.mode,
                 payload_kind=str(new_node.kind),
                 payload_label=str(new_node.label or ""),
                 parent_had_children_before=parent_had_children,
