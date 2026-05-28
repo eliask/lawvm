@@ -164,6 +164,9 @@ Recent improvement:
   collision guard as sorted insertion, so routed, predecessor-based, and
   definition-child sibling inserts cannot introduce duplicate labelled
   structural siblings by bypassing the sorted helper.
+- UK source-carried structured-tail recovery now respects the guarded insert
+  helper's refusal result before recording a child insertion event or
+  successful recovery adjudication.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
