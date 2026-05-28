@@ -184,6 +184,7 @@ def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None
         ),
     )
     adjudications: list[CompileAdjudication] = []
+    mutation_events: list[MutationEvent] = []
     op = LegalOperation(
         op_id="uk-test-label-changing-replace",
         action=StructuralAction.REPLACE,
@@ -193,14 +194,26 @@ def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None
         sequence=1,
     )
 
-    replayed = replay_uk_ops(statute, [op], adjudications_out=adjudications)
+    replayed = replay_uk_ops(
+        statute,
+        [op],
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
 
     assert [child.label for child in replayed.body.children] == ["2", "2"]
-    assert any(
-        adjudication.kind == "uk_replay_tree_invariant_violation"
-        and "duplicate section:2" in str(adjudication.detail["violation"])
+    invariant_adjudication = next(
+        adjudication
         for adjudication in adjudications
+        if adjudication.kind == "uk_replay_tree_invariant_violation"
     )
+    assert "duplicate section:2" in str(invariant_adjudication.detail["violation"])
+    assert invariant_adjudication.detail["mutation_event_helper"] == "_replace_node_in_statute"
+    assert invariant_adjudication.detail["mutation_event_outcome"] == "replaced_node"
+    assert invariant_adjudication.detail["mutation_event_touched_paths"] == [
+        [("section", "2")],
+        [("section", "1")],
+    ]
 
 
 def test_replay_uk_ops_can_emit_core_mutation_event_for_node_repeal() -> None:
