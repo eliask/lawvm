@@ -10,6 +10,8 @@ from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = "LawVM UK replay/0.1 (+https://github.com/lawvm)"
 
@@ -43,6 +45,24 @@ _COMMENCEMENT_EFFECT_TYPES = frozenset(
         "commencement order",
     }
 )
+
+
+def _uk_effect_feed_diagnostic(
+    *,
+    rule_id: str,
+    phase: str,
+    reason: str,
+    blocking: bool,
+    **detail: Any,
+) -> dict[str, Any]:
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase=phase,
+        reason=reason,
+        blocking=blocking,
+        detail=detail,
+    )
 
 
 def _is_uk_renumber_effect_type(effect_type: str) -> bool:
@@ -235,17 +255,14 @@ def parse_effects_from_feeds(
         for feed_index, ff in enumerate(feed_files):
             if not ff.exists():
                 parse_rejections_out.append(
-                    {
-                        "rule_id": "uk_effect_feed_file_missing_rejected",
-                        "family": "source_pathology",
-                        "phase": "acquisition",
-                        "feed_index": feed_index,
-                        "feed_path": str(ff),
-                        "reason": "UK local effect feed file was listed but missing on disk.",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
+                    _uk_effect_feed_diagnostic(
+                        rule_id="uk_effect_feed_file_missing_rejected",
+                        phase="acquisition",
+                        reason="UK local effect feed file was listed but missing on disk.",
+                        blocking=True,
+                        feed_index=feed_index,
+                        feed_path=str(ff),
+                    )
                 )
                 continue
             feed_bytes_list.append(ff.read_bytes())
@@ -318,17 +335,14 @@ def parse_effects_from_bytes(
             root = ET.fromstring(raw)
         except ET.ParseError as exc:
             if parse_rejections_out is not None:
-                rejection: dict[str, Any] = {
-                    "rule_id": "uk_effect_feed_xml_parse_rejected",
-                    "family": "source_pathology",
-                    "phase": "parse",
-                    "feed_index": feed_index,
-                    "reason": "UK effect feed page is not well-formed XML.",
-                    "parse_error": str(exc),
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                rejection = _uk_effect_feed_diagnostic(
+                    rule_id="uk_effect_feed_xml_parse_rejected",
+                    phase="parse",
+                    reason="UK effect feed page is not well-formed XML.",
+                    blocking=True,
+                    feed_index=feed_index,
+                    parse_error=str(exc),
+                )
                 if feed_locators is not None and feed_index < len(feed_locators):
                     rejection["feed_locator"] = feed_locators[feed_index]
                 parse_rejections_out.append(rejection)
@@ -337,19 +351,16 @@ def parse_effects_from_bytes(
             effect = entry.find(".//ukm:Effect", ns)
             if effect is None:
                 if parse_rejections_out is not None:
-                    rejection = {
-                        "rule_id": "uk_effect_feed_entry_missing_effect_rejected",
-                        "family": "source_pathology",
-                        "phase": "parse",
-                        "feed_index": feed_index,
-                        "entry_index": entry_index,
-                        "entry_id": entry.findtext("atom:id", default="", namespaces=ns),
-                        "entry_title": entry.findtext("atom:title", default="", namespaces=ns),
-                        "reason": "UK effect feed entry did not contain a ukm:Effect payload.",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
+                    rejection = _uk_effect_feed_diagnostic(
+                        rule_id="uk_effect_feed_entry_missing_effect_rejected",
+                        phase="parse",
+                        reason="UK effect feed entry did not contain a ukm:Effect payload.",
+                        blocking=True,
+                        feed_index=feed_index,
+                        entry_index=entry_index,
+                        entry_id=entry.findtext("atom:id", default="", namespaces=ns),
+                        entry_title=entry.findtext("atom:title", default="", namespaces=ns),
+                    )
                     if feed_locators is not None and feed_index < len(feed_locators):
                         rejection["feed_locator"] = feed_locators[feed_index]
                     parse_rejections_out.append(rejection)
@@ -403,17 +414,14 @@ def load_effects_for_statute_from_archive(
 
     if not rows and parse_rejections_out is not None:
         parse_rejections_out.append(
-            {
-                "rule_id": "uk_effect_feed_pages_absent_recorded",
-                "family": "source_pathology",
-                "phase": "acquisition",
-                "statute_id": statute_id,
-                "feed_pattern": pattern,
-                "reason": "No UK effect feed page locators were present in the archive for this statute.",
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            }
+            _uk_effect_feed_diagnostic(
+                rule_id="uk_effect_feed_pages_absent_recorded",
+                phase="acquisition",
+                reason="No UK effect feed page locators were present in the archive for this statute.",
+                blocking=False,
+                statute_id=statute_id,
+                feed_pattern=pattern,
+            )
         )
 
     feed_bytes_list: list[bytes] = []
@@ -426,17 +434,14 @@ def load_effects_for_statute_from_archive(
             continue
         if parse_rejections_out is not None:
             parse_rejections_out.append(
-                {
-                    "rule_id": "uk_effect_feed_locator_payload_missing_rejected",
-                    "family": "source_pathology",
-                    "phase": "acquisition",
-                    "statute_id": statute_id,
-                    "feed_locator": url,
-                    "reason": "UK effect feed locator was indexed but payload bytes were missing from the archive.",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                _uk_effect_feed_diagnostic(
+                    rule_id="uk_effect_feed_locator_payload_missing_rejected",
+                    phase="acquisition",
+                    reason="UK effect feed locator was indexed but payload bytes were missing from the archive.",
+                    blocking=True,
+                    statute_id=statute_id,
+                    feed_locator=url,
+                )
             )
 
     return parse_effects_from_bytes(
@@ -479,18 +484,15 @@ def parse_effects_from_metadata(
         root = ET.parse(xml_path).getroot()
     except ET.ParseError as exc:
         if parse_rejections_out is not None:
-            rejection: dict[str, Any] = {
-                "rule_id": "uk_metadata_xml_parse_failed_rejected",
-                "family": "source_pathology",
-                "phase": "parse",
-                "metadata_path": str(xml_path),
-                "reason": "UK legislation metadata XML was not well-formed; metadata-only effects were not parsed.",
-                "exception_type": type(exc).__name__,
-                "parse_error": str(exc),
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-            }
+            rejection = _uk_effect_feed_diagnostic(
+                rule_id="uk_metadata_xml_parse_failed_rejected",
+                phase="parse",
+                reason="UK legislation metadata XML was not well-formed; metadata-only effects were not parsed.",
+                blocking=True,
+                metadata_path=str(xml_path),
+                exception_type=type(exc).__name__,
+                parse_error=str(exc),
+            )
             if statute_id:
                 rejection["statute_id"] = statute_id
             parse_rejections_out.append(rejection)
