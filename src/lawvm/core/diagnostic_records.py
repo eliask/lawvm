@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 
-_BLOCKING_STRICT_DISPOSITIONS = frozenset({"block", "reject", "fail", "hard_fail", "strict_block"})
+BLOCKING_STRICT_DISPOSITIONS = frozenset({"block", "reject", "fail", "hard_fail", "strict_block"})
 
 
 def diagnostic_detail(
@@ -77,7 +77,7 @@ def validate_diagnostic_detail(row: Mapping[str, Any]) -> tuple[str, ...]:
     blocking = row.get("blocking")
     if not isinstance(blocking, bool):
         issues.append("blocking must be a boolean")
-    elif blocking and row.get("strict_disposition") not in _BLOCKING_STRICT_DISPOSITIONS:
+    elif blocking and row.get("strict_disposition") not in BLOCKING_STRICT_DISPOSITIONS:
         issues.append("blocking diagnostic must have blocking strict_disposition")
     return tuple(issues)
 

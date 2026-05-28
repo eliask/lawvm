@@ -16,6 +16,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 
+from lawvm.core.diagnostic_records import BLOCKING_STRICT_DISPOSITIONS
+
 
 @dataclass(frozen=True)
 class EvidenceSummary:
@@ -108,7 +110,6 @@ class CorpusFindingEvidenceRow:
         return data
 
 
-_BLOCKING_STRICT_DISPOSITIONS = frozenset({"block", "reject", "fail", "hard_fail", "strict_block"})
 _NON_CLAIM_STATUSES = frozenset({
     CorpusRowStatus.REJECTED.value,
     CorpusRowStatus.SKIPPED.value,
@@ -149,7 +150,7 @@ def validate_corpus_operation_evidence_row(row: Mapping[str, Any]) -> tuple[str,
     blocking = row.get("blocking", False)
     if not isinstance(blocking, bool):
         issues.append("blocking must be a boolean")
-    elif blocking and row.get("strict_disposition") not in _BLOCKING_STRICT_DISPOSITIONS:
+    elif blocking and row.get("strict_disposition") not in BLOCKING_STRICT_DISPOSITIONS:
         issues.append("blocking row must have blocking strict_disposition")
     if status == CorpusRowStatus.MATCHED.value and blocking and not detail.get("blocking_justification"):
         issues.append("matched row cannot be blocking without blocking_justification detail")
@@ -176,7 +177,7 @@ def validate_corpus_finding_evidence_row(row: Mapping[str, Any]) -> tuple[str, .
     blocking = row.get("blocking", False)
     if not isinstance(blocking, bool):
         issues.append("blocking must be a boolean")
-    elif blocking and row.get("strict_disposition") not in _BLOCKING_STRICT_DISPOSITIONS:
+    elif blocking and row.get("strict_disposition") not in BLOCKING_STRICT_DISPOSITIONS:
         issues.append("blocking finding must have blocking strict_disposition")
     return tuple(issues)
 

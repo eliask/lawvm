@@ -66,6 +66,8 @@ Recent improvement:
   outward envelope defaults to `diagnostic_detail`.
 - `validate_diagnostic_detail(...)` now validates the shared diagnostic
   envelope independently of frontend-local payload fields.
+- blocking strict-disposition vocabulary is now shared between diagnostic
+  envelope validation and corpus evidence-row validation.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
