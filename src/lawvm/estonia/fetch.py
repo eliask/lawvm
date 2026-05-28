@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 
 _BASE_URL = "https://www.riigiteataja.ee"
 _UA = (
@@ -92,6 +93,23 @@ class RedactionsFeedDiagnostic:
             grupi_id=self.grupi_id,
             url=self.url,
             exception_type=self.exception_type,
+            source_lane_selection=SourceLaneSelectionEvidence(
+                rule_id=self.rule_id,
+                phase=self.phase,
+                reason=self.reason,
+                selected_lane="no_source_lane_selected_fetch_failed",
+                selected_locator="",
+                attempts=(
+                    SourceLaneAttempt(
+                        lane="riigi_teataja_redactions_feed",
+                        locator=self.url,
+                        status="fetch_failed",
+                    ),
+                ),
+                blocking=self.blocking,
+                strict_disposition=self.strict_disposition,
+                quirks_disposition=self.quirks_disposition,
+            ).to_diagnostic_detail(),
         )
 
 

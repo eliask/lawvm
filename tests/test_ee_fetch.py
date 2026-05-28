@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from lawvm.estonia.fetch import (
     AmendmentRef,
     RTXmlMetadataDiagnostic,
@@ -56,6 +58,16 @@ def test_fetch_redactions_feed_records_fetch_failure_diagnostic(monkeypatch) -> 
     assert diagnostic.exception_type == "RuntimeError"
     assert diagnostic.strict_disposition == "block"
     assert diagnostic.as_detail()["rule_id"] == "ee_redactions_feed_fetch_failed"
+    source_lane = cast(dict[str, Any], diagnostic.as_detail()["source_lane_selection"])
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "no_source_lane_selected_fetch_failed"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "riigi_teataja_redactions_feed",
+            "status": "fetch_failed",
+            "locator": "https://www.riigiteataja.ee/akti_redaktsioonid.xml?grupiId=123",
+        },
+    )
 
 
 def test_get_oracle_aktviide_for_pit_threads_redactions_feed_diagnostics(monkeypatch) -> None:
