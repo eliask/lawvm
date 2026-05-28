@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, replace as dc_replace
 from typing import List, Tuple
 
-from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.core.clause_ast import ItemShiftClause, NamedRowClause
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.finland.johtolause.clause_patterns import (
@@ -213,7 +213,7 @@ def _tag_explicit_item_shift_after_repeal_hints(
                 op.op_type == "REPEAL"
                 and op.target_section == clause.target_section
                 and op.target_paragraph == clause.target_paragraph
-                and _tops._norm(op.target_item or "") == repealed
+                and normalized_label_key(op.target_item or "") == repealed
             ):
                 op.post_repeal_item_shift_label = repealed
     return tagged_ops

@@ -30,6 +30,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
 from lawvm.finland.source_pathology import build_container_membership_mismatch_pathology
 from lawvm.finland.source_pathology import build_destructive_shape_loss_risk_pathology
@@ -2427,7 +2428,7 @@ def _rebase_sparse_stale_predecessor_replace(
         (
             idx
             for idx, sub in enumerate(live_subsecs)
-            if sub.label and _tops._norm(sub.label) == str(op.target_paragraph)
+            if sub.label and normalized_label_key(sub.label) == str(op.target_paragraph)
         ),
         None,
     )
