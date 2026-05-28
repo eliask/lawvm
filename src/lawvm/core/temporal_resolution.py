@@ -34,6 +34,23 @@ TEMPORAL_UNRESOLVED_CONTINGENT: TemporalResolutionStatus = "unresolved_contingen
 TEMPORAL_UNKNOWN_EFFECTIVE_DATE: TemporalResolutionStatus = "unknown_effective_date"
 TEMPORAL_FUTURE_EFFECTIVE_DATE: TemporalResolutionStatus = "future_effective_date"
 
+_VALID_TEMPORAL_RESOLUTION_STATUSES = frozenset(
+    {
+        TEMPORAL_FIXED_DATE,
+        TEMPORAL_IMMEDIATE,
+        TEMPORAL_SOURCE_BACKED_OVERRIDE,
+        TEMPORAL_CERTIFIED_UNTRIGGERED,
+        TEMPORAL_UNRESOLVED_CONTINGENT,
+        TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+        TEMPORAL_FUTURE_EFFECTIVE_DATE,
+    }
+)
+_VALID_TEMPORAL_FAMILIES = frozenset(
+    {
+        TEMPORAL_RESOLUTION_FAMILY,
+        TEMPORAL_RECOVERY_FAMILY,
+    }
+)
 _RESERVED_TEMPORAL_KEYS = frozenset(
     {
         "temporal_resolution_status",
@@ -72,6 +89,16 @@ class TemporalResolutionEvidence:
             raise ValueError("TemporalResolutionEvidence.reason must be non-empty")
         if not str(self.status or "").strip():
             raise ValueError("TemporalResolutionEvidence.status must be non-empty")
+        if self.status not in _VALID_TEMPORAL_RESOLUTION_STATUSES:
+            raise ValueError(
+                f"TemporalResolutionEvidence.status must be one of "
+                f"{sorted(_VALID_TEMPORAL_RESOLUTION_STATUSES)}"
+            )
+        if self.family not in _VALID_TEMPORAL_FAMILIES:
+            raise ValueError(
+                f"TemporalResolutionEvidence.family must be one of "
+                f"{sorted(_VALID_TEMPORAL_FAMILIES)}"
+            )
         if self.status in {
             TEMPORAL_FIXED_DATE,
             TEMPORAL_SOURCE_BACKED_OVERRIDE,
@@ -79,6 +106,16 @@ class TemporalResolutionEvidence:
         } and not self.effective_date:
             raise ValueError(
                 f"TemporalResolutionEvidence(status={self.status!r}) requires effective_date"
+            )
+        if (
+            self.status == TEMPORAL_CERTIFIED_UNTRIGGERED
+            and not self.source_locator
+            and not self.authority_layer
+            and not self.detail.get("trigger_coverage_certificate")
+        ):
+            raise ValueError(
+                "TemporalResolutionEvidence(status='certified_untriggered') "
+                "requires source_locator, authority_layer, or trigger_coverage_certificate"
             )
         _reject_temporal_overrides(self.detail)
 
