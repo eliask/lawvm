@@ -107,6 +107,75 @@ def _classify_violation(violation: str) -> tuple[str, str, str]:
     return "other", path, message[:200]
 
 
+def _classify_typed_tree_violation(record: dict[str, object]) -> tuple[str, str, str]:
+    """Return audit classification from typed TreeInvariantViolation metadata."""
+    kind = str(record.get("kind") or "")
+    path = str(record.get("path") or "")
+    child_kind = str(record.get("child_kind") or "")
+    parent_kind = str(record.get("parent_kind") or "")
+    label = str(record.get("label") or "")
+    normalized_label = str(record.get("normalized_label") or "")
+    previous_label = str(record.get("previous_label") or "")
+    next_label = str(record.get("next_label") or "")
+
+    if kind == "duplicate_label":
+        return "duplicate_label", path, f"{child_kind}:{label}"
+    if kind == "normalized_duplicate_label":
+        return "normalized_duplicate", path, f"{child_kind}:{normalized_label}"
+    if kind == "sort_order":
+        return "sort_order", path, f"{child_kind}: {previous_label} > {next_label}"
+    if kind == "unexpected_child_kind":
+        detail = f"{child_kind} inside {parent_kind}"
+        if (child_kind.lower(), parent_kind.lower()) in _ILLEGAL_EDGE_PAIRS:
+            return "illegal_edge", path, detail
+        return "nesting_violation", path, detail
+
+    message = str(record.get("message") or "")
+    return "other", path, message[:200]
+
+
+def _coerce_typed_tree_violation_records(raw: object) -> list[dict[str, object]]:
+    if not isinstance(raw, list):
+        return []
+    records: list[dict[str, object]] = []
+    for record in raw:
+        if isinstance(record, dict):
+            records.append({str(key): value for key, value in record.items()})
+    return records
+
+
+def _append_violation_row(
+    rows: list[dict[str, str]],
+    seen: set[tuple[str, str, str]],
+    *,
+    norm_id: str,
+    violation_type: str,
+    path: str,
+    detail: str,
+    source: str,
+    adj_kind: str,
+    phase: str,
+    chain_length: str,
+    oracle_suspect: str,
+) -> None:
+    key = (violation_type, path, detail)
+    if key in seen:
+        return
+    rows.append({
+        "statute_id": norm_id,
+        "status": "violation",
+        "violation_type": violation_type,
+        "path": path,
+        "detail": detail,
+        "source": source,
+        "adj_kind": adj_kind,
+        "phase": phase,
+        "chain_length": chain_length,
+        "oracle_suspect": oracle_suspect,
+    })
+    seen.add(key)
+
+
 def _infer_phase(row: dict[str, str]) -> str:
     """Return a stable phase bucket for one audit row."""
     explicit_phase = str(row.get("phase") or "").strip()
@@ -256,28 +325,71 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
             violation_str = str(raw_detail.get("violation") or raw_detail.get("message") or "")
             phase = str(raw_detail.get("phase") or "")
             vtype, path, detail = _classify_violation(violation_str)
-            key = (vtype, path, detail)
-            if key not in seen:
-                rows.append({
-                    "statute_id": norm_id,
-                    "status": "violation",
-                    "violation_type": vtype,
-                    "path": path,
-                    "detail": detail,
-                    "source": "finding_ledger",
-                    "adj_kind": barrier_code,
-                    "phase": phase,
-                    "chain_length": chain_length,
-                    "oracle_suspect": oracle_suspect,
-                })
-                seen.add(key)
+            _append_violation_row(
+                rows,
+                seen,
+                norm_id=norm_id,
+                violation_type=vtype,
+                path=path,
+                detail=detail,
+                source="finding_ledger",
+                adj_kind=barrier_code,
+                phase=phase,
+                chain_length=chain_length,
+                oracle_suspect=oracle_suspect,
+            )
 
-        # Signal 2: direct invariant lists preserved in replay metadata
+        # Signal 2: typed invariant metadata preferred over legacy strings
+        typed_replay_violations = _coerce_typed_tree_violation_records(
+            replay_meta.get("typed_invariant_violations")
+        )
+        for record in typed_replay_violations:
+            vtype, path, detail = _classify_typed_tree_violation(record)
+            _append_violation_row(
+                rows,
+                seen,
+                norm_id=norm_id,
+                violation_type=vtype,
+                path=path,
+                detail=detail,
+                source="replay_meta_tree",
+                adj_kind="APPLY.TREE_INVARIANT_VIOLATION",
+                phase="",
+                chain_length=chain_length,
+                oracle_suspect=oracle_suspect,
+            )
+
+        typed_product_raw = replay_meta.get("typed_product_tree_invariant_violations")
+        typed_product_violations: list[dict[str, object]] = []
+        if isinstance(typed_product_raw, dict):
+            for product_phase, records in typed_product_raw.items():
+                for record in _coerce_typed_tree_violation_records(records):
+                    record = dict(record)
+                    record["product_phase"] = str(product_phase)
+                    typed_product_violations.append(record)
+        for record in typed_product_violations:
+            vtype, path, detail = _classify_typed_tree_violation(record)
+            product_phase = str(record.get("product_phase") or "")
+            _append_violation_row(
+                rows,
+                seen,
+                norm_id=norm_id,
+                violation_type=vtype,
+                path=path,
+                detail=detail,
+                source="replay_meta_product",
+                adj_kind="APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION",
+                phase="materialized" if product_phase == "materialized_tree" else "replay_fold",
+                chain_length=chain_length,
+                oracle_suspect=oracle_suspect,
+            )
+
+        # Signal 3: direct legacy invariant lists preserved in replay metadata
         for source_name, barrier_code, violations_raw in (
             (
                 "replay_meta_tree",
                 "APPLY.TREE_INVARIANT_VIOLATION",
-                replay_meta.get("invariant_violations"),
+                None if typed_replay_violations else replay_meta.get("invariant_violations"),
             ),
             (
                 "replay_meta_product",
@@ -289,22 +401,29 @@ def _audit_one(norm_id: str) -> list[dict[str, str]]:
                 continue
             for raw_violation in violations_raw:
                 violation_str = str(raw_violation)
+                if (
+                    source_name == "replay_meta_product"
+                    and typed_product_violations
+                    and (
+                        violation_str.startswith("replay_fold_tree:")
+                        or violation_str.startswith("materialized_tree:")
+                    )
+                ):
+                    continue
                 vtype, path, detail = _classify_violation(violation_str)
-                key = (vtype, path, detail)
-                if key not in seen:
-                    rows.append({
-                        "statute_id": norm_id,
-                        "status": "violation",
-                        "violation_type": vtype,
-                        "path": path,
-                        "detail": detail,
-                        "source": source_name,
-                        "adj_kind": barrier_code,
-                        "phase": "",
-                        "chain_length": chain_length,
-                        "oracle_suspect": oracle_suspect,
-                    })
-                    seen.add(key)
+                _append_violation_row(
+                    rows,
+                    seen,
+                    norm_id=norm_id,
+                    violation_type=vtype,
+                    path=path,
+                    detail=detail,
+                    source=source_name,
+                    adj_kind=barrier_code,
+                    phase="",
+                    chain_length=chain_length,
+                    oracle_suspect=oracle_suspect,
+                )
 
         return rows
 

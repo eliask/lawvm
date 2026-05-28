@@ -201,6 +201,62 @@ def test_audit_invariants_classifies_illegal_edge() -> None:
     assert detail == "paragraph inside section"
 
 
+def test_audit_invariants_prefers_typed_replay_meta(monkeypatch) -> None:
+    def fake_build_replay_plan_inspection(args: SimpleNamespace) -> dict[str, object]:
+        return {"amendment_chain": [], "oracle_suspect": ""}
+
+    def fake_replay_xml(
+        sid: str,
+        mode: str = "legal_pit",
+        *,
+        quiet: bool,
+        replay_meta_out: dict[str, object],
+    ) -> SimpleNamespace:
+        replay_meta_out["typed_invariant_violations"] = [
+            {
+                "kind": "unexpected_child_kind",
+                "path": "body/section:1",
+                "parent_kind": "section",
+                "child_kind": "paragraph",
+            },
+        ]
+        replay_meta_out["invariant_violations"] = [
+            "body/section:99: duplicate section:5a (2 times)",
+        ]
+        replay_meta_out["typed_product_tree_invariant_violations"] = {
+            "materialized_tree": [
+                {
+                    "kind": "sort_order",
+                    "path": "body",
+                    "child_kind": "section",
+                    "previous_label": "5",
+                    "next_label": "2",
+                },
+            ],
+        }
+        replay_meta_out["product_invariant_violations"] = [
+            "materialized_tree:body/section:99: duplicate section:6 (2 times)",
+        ]
+        return SimpleNamespace(findings=())
+
+    monkeypatch.setattr(
+        "lawvm.finland.grafter.replay_xml",
+        fake_replay_xml,
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.replay_plan.build_replay_plan_inspection",
+        fake_build_replay_plan_inspection,
+    )
+
+    rows = audit_invariants._annotate_phase_scope(audit_invariants._audit_one("1994/1472"))
+
+    assert [(row["violation_type"], row["path"], row["detail"], row["source"]) for row in rows] == [
+        ("illegal_edge", "body/section:1", "paragraph inside section", "replay_meta_tree"),
+        ("sort_order", "body", "section: 5 > 2", "replay_meta_product"),
+    ]
+    assert rows[1]["inferred_phase"] == "materialized"
+
+
 def test_audit_invariants_error_row_marks_status_error(monkeypatch) -> None:
     def fake_build_replay_plan_inspection(args: SimpleNamespace) -> dict[str, object]:
         return {"amendment_chain": [], "oracle_suspect": ""}

@@ -1096,6 +1096,21 @@ class TreeInvariantViolation:
             return f"{self.path_text}: {self.child_kind} out of order: {self.previous_label} > {self.next_label}"
         return f"{self.path_text}: unexpected {self.child_kind} inside {self.parent_kind}"
 
+    def to_dict(self) -> dict[str, object]:
+        """Return a stable machine-readable projection for audit metadata."""
+        return {
+            "kind": self.kind,
+            "path": self.path_text,
+            "message": self.message,
+            "parent_kind": self.parent_kind,
+            "child_kind": self.child_kind,
+            "label": self.label,
+            "normalized_label": self.normalized_label,
+            "count": self.count,
+            "previous_label": self.previous_label,
+            "next_label": self.next_label,
+        }
+
 
 def iter_tree_invariant_violations(
     tree: TreeInvariantNode,

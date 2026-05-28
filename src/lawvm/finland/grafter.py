@@ -38,6 +38,7 @@ from lawvm.core.replay_lints import build_text_duplication_findings
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
+from lawvm.core.tree_ops import iter_tree_invariant_violations as _iter_tree_invariant_violations
 from lawvm.core.elaboration_context import (
     ReplayLookups,
     build_payload_elaboration_context,
@@ -7378,9 +7379,13 @@ def replay_xml(
         replay_fold_state = replay_fold_state.with_ir(
             _tops.resort_children(replay_fold_state.ir)
         )
-        invariant_violations = _check_tree_invariants(replay_fold_state.ir)
+        typed_invariant_violations = tuple(_iter_tree_invariant_violations(replay_fold_state.ir))
+        invariant_violations = [violation.message for violation in typed_invariant_violations]
         if replay_meta_out is not None and invariant_violations:
             replay_meta_out["invariant_violations"] = list(invariant_violations)
+            replay_meta_out["typed_invariant_violations"] = [
+                violation.to_dict() for violation in typed_invariant_violations
+            ]
         if invariant_violations:
             for violation in invariant_violations:
                 replay_findings.append(
@@ -7813,6 +7818,16 @@ def replay_xml(
                 products.materialized_state = products.materialized_state.with_ir(patched_ir)
         product_violations: List[str] = []
         if build_full_products:
+            typed_product_tree_violations = {
+                "replay_fold_tree": [
+                    violation.to_dict()
+                    for violation in _iter_tree_invariant_violations(products.replay_fold_state.ir)
+                ],
+                "materialized_tree": [
+                    violation.to_dict()
+                    for violation in _iter_tree_invariant_violations(products.materialized_state.ir)
+                ],
+            }
             product_violations = validate_replay_products(
                 plan.ctx,
                 products,
@@ -7820,6 +7835,7 @@ def replay_xml(
             )
             if replay_meta_out is not None and product_violations:
                 replay_meta_out["product_invariant_violations"] = list(product_violations)
+                replay_meta_out["typed_product_tree_invariant_violations"] = typed_product_tree_violations
             if product_violations:
                 for violation in product_violations:
                     replay_findings.append(
