@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import pytest
+
+from lawvm.core.authority import (
+    BranchContext,
+    BranchGraphEdge,
+    LegalBranch,
+    PROPOSAL_AUTHORITY,
+    UNKNOWN_STATUS,
+    enacted_materialization_ops,
+    branch_materialization_ops,
+)
+from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.provenance import OperationSource
+from lawvm.core.semantic_types import StructuralAction
+
+
+def _op(op_id: str, *, source: OperationSource | None = None) -> LegalOperation:
+    return LegalOperation(
+        op_id=op_id,
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "1"),)),
+        source=source,
+    )
+
+
+def test_default_operation_source_is_enacted_materialization_context() -> None:
+    enacted = _op("enacted", source=OperationSource(statute_id="2025/1"))
+    sourceless = _op("sourceless")
+
+    assert enacted_materialization_ops([enacted, sourceless]) == (enacted, sourceless)
+
+
+def test_proposal_operation_does_not_leak_into_enacted_materialization() -> None:
+    enacted = _op("enacted", source=OperationSource(statute_id="2025/1"))
+    proposal_source = OperationSource(
+        statute_id="proposal/example/2026/1",
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id="proposal:example:2026-1",
+        scenario_id="if_enacted_as_introduced",
+    )
+    proposal = _op("proposal", source=proposal_source)
+    context = BranchContext(
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id="proposal:example:2026-1",
+        scenario_id="if_enacted_as_introduced",
+    )
+
+    assert enacted_materialization_ops([enacted, proposal]) == (enacted,)
+    assert branch_materialization_ops([enacted, proposal], context) == (proposal,)
+
+
+def test_non_enacted_branch_context_requires_branch_id() -> None:
+    with pytest.raises(ValueError, match="requires a branch_id"):
+        BranchContext(authority_layer=PROPOSAL_AUTHORITY)
+
+
+def test_terminated_branch_requires_terminating_source() -> None:
+    with pytest.raises(ValueError, match="requires terminated_by"):
+        LegalBranch(
+            branch_id="proposal:example:dead",
+            authority_layer=PROPOSAL_AUTHORITY,
+            legal_status="failed",
+        )
+
+
+def test_branch_graph_edge_projects_branch_export_shape() -> None:
+    edge = BranchGraphEdge(
+        branch_id="proposal:example:2026-1",
+        edge_kind="would_amend",
+        source_artifact_id="proposal/example/2026/1",
+        source_statute_id="proposal/example/2026/1",
+        source_unit_id="clause:1",
+        target_statute_id="2025/1",
+        target_address="section:1",
+        operation_id="proposal-op-1",
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+    )
+
+    assert edge.to_dict() == {
+        "branch_id": "proposal:example:2026-1",
+        "edge_kind": "would_amend",
+        "source_artifact_id": "proposal/example/2026/1",
+        "source_statute_id": "proposal/example/2026/1",
+        "source_unit_id": "clause:1",
+        "target_statute_id": "2025/1",
+        "target_address": "section:1",
+        "operation_id": "proposal-op-1",
+        "authority_layer": "proposal",
+        "legal_status": "unknown",
+    }

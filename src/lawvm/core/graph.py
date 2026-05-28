@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
+from lawvm.core.authority import BranchGraphEdge, LegalBranch
 from lawvm.core.timeline import Timelines
 
 
@@ -98,6 +99,8 @@ class StatuteGraph:
     timelines: Timelines = field(default_factory=dict)
     delegations: list = field(default_factory=list)    # List[DelegationEdge]
     citations: list = field(default_factory=list)      # List[CrossRefEdge]
+    branches: List[LegalBranch] = field(default_factory=list)
+    branch_edges: List[BranchGraphEdge] = field(default_factory=list)
     amendment_chain: List[str] = field(default_factory=list)
     title: str = ""
     statute_type: str = ""
@@ -116,6 +119,8 @@ class CorpusGraph:
     timelines: Dict[str, Timelines] = field(default_factory=dict)
     delegations: list = field(default_factory=list)    # List[DelegationEdge]
     citations: list = field(default_factory=list)      # List[CrossRefEdge]
+    branches: List[LegalBranch] = field(default_factory=list)
+    branch_edges: List[BranchGraphEdge] = field(default_factory=list)
     amendment_index: Dict[str, List[str]] = field(default_factory=dict)
     statute_meta: Dict[str, dict] = field(default_factory=dict)
     build_failures: List[dict] = field(default_factory=list)
@@ -167,6 +172,16 @@ class CorpusGraph:
                 [c for c in self.citations if c.source_statute_id == sid],
                 key=_citation_sort_key,
             ),
+            branches=sorted(
+                [
+                    branch
+                    for branch in self.branches
+                    if branch.source_artifact_id == sid
+                    or any(edge.branch_id == branch.branch_id for edge in self.branch_edges_for_statute(sid))
+                ],
+                key=lambda branch: branch.branch_id,
+            ),
+            branch_edges=self.branch_edges_for_statute(sid),
             amendment_chain=sorted(self.amendment_index.get(sid, [])),
             title=meta.get("title", ""),
             statute_type=meta.get("statute_type", ""),
@@ -194,6 +209,27 @@ class CorpusGraph:
         if section:
             edges = [d for d in edges if d.section == section]
         return sorted(edges, key=_delegation_sort_key)
+
+    def branch_edges_for_statute(self, sid: str) -> List[BranchGraphEdge]:
+        """Return branch/proposal graph edges touching ``sid``."""
+
+        return sorted(
+            [
+                edge
+                for edge in self.branch_edges
+                if edge.source_statute_id == sid or edge.target_statute_id == sid
+            ],
+            key=lambda edge: (
+                edge.branch_id,
+                edge.edge_kind,
+                edge.source_artifact_id,
+                edge.source_statute_id,
+                edge.source_unit_id,
+                edge.target_statute_id,
+                edge.target_address,
+                edge.operation_id,
+            ),
+        )
 
     def silent_breakage(
         self,
@@ -350,12 +386,34 @@ class CorpusGraph:
                 "timeline_statutes": len(self.timelines),
                 "delegations": len(self.delegations),
                 "citations": len(self.citations),
+                "branches": len(self.branches),
+                "branch_edges": len(self.branch_edges),
                 "amendment_index": len(self.amendment_index),
                 "statute_meta": len(self.statute_meta),
                 "build_failures": len(self.build_failures),
             },
             "loaded_statutes": tuple(sorted(self.statute_meta)),
             "amendment_index_statutes": tuple(sorted(self.amendment_index)),
+            "branches": tuple(
+                to_wire_jsonable(branch.to_dict())
+                for branch in sorted(self.branches, key=lambda branch: branch.branch_id)
+            ),
+            "branch_edges": tuple(
+                to_wire_jsonable(edge.to_dict())
+                for edge in sorted(
+                    self.branch_edges,
+                    key=lambda edge: (
+                        edge.branch_id,
+                        edge.edge_kind,
+                        edge.source_artifact_id,
+                        edge.source_statute_id,
+                        edge.source_unit_id,
+                        edge.target_statute_id,
+                        edge.target_address,
+                        edge.operation_id,
+                    ),
+                )
+            ),
             "build_failures": tuple(
                 sorted(
                     (

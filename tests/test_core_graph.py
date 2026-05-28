@@ -1,6 +1,9 @@
 from __future__ import annotations
+from typing import Any, Mapping, cast
+
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 
+from lawvm.core.authority import BranchGraphEdge, LegalBranch
 from lawvm.core.graph import CorpusGraph
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -111,3 +114,46 @@ def test_graph_query_helpers_return_canonical_ordering() -> None:
     assert [edge.source_section for edge in statute.citations] == ["1"]
     assert [edge.section for edge in statute.delegations] == ["1", "9"]
     assert statute.amendment_chain == []
+
+
+def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        legal_status="unknown",
+        scenario_id="if_enacted_as_introduced",
+        source_artifact_id="proposal/example/2026/1",
+        title="Example proposal 2026/1",
+    )
+    edge = BranchGraphEdge(
+        branch_id=branch.branch_id,
+        edge_kind="would_replace",
+        source_artifact_id="proposal/example/2026/1",
+        source_statute_id="proposal/example/2026/1",
+        source_unit_id="clause:1",
+        target_statute_id="fi/target",
+        target_address="section:5",
+        operation_id="proposal-op-1",
+        authority_layer="proposal",
+        legal_status="unknown",
+    )
+    graph = CorpusGraph(
+        branches=[branch],
+        branch_edges=[edge],
+        statute_meta={"fi/target": {"title": "Target", "statute_type": "act"}},
+    )
+
+    statute = graph.get_statute("fi/target")
+    artifact_payload = cast(Mapping[str, Any], graph.to_wire_artifact().payload)
+    counts = cast(Mapping[str, Any], artifact_payload["counts"])
+    branches = cast(tuple[Mapping[str, Any], ...], artifact_payload["branches"])
+    branch_edges = cast(tuple[Mapping[str, Any], ...], artifact_payload["branch_edges"])
+
+    assert statute is not None
+    assert statute.branches == [branch]
+    assert statute.branch_edges == [edge]
+    assert graph.branch_edges_for_statute("fi/target") == [edge]
+    assert counts["branches"] == 1
+    assert counts["branch_edges"] == 1
+    assert branches[0]["authority_layer"] == "proposal"
+    assert branch_edges[0]["edge_kind"] == "would_replace"

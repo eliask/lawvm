@@ -169,6 +169,10 @@ Recent improvement:
   source-backed SI commencement-date recovery and Norway temporal replay skips
   emit the shared status/date/source projection while keeping date extraction
   and commencement policy local.
+- the legal branch/authority axis now has an initial core contract:
+  default enacted materialization remains branchless, while proposal/draft
+  operations require a branch id and are excluded by the default enacted
+  operation filter.
 
 ## Ranked Promotion Candidates
 
