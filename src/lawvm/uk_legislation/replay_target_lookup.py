@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import NamedTuple, Optional, cast
+from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
@@ -22,7 +22,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_action_target_detail,
     uk_replay_recovery_action_target_detail,
 )
-from lawvm.uk_legislation.replay_state import NodeLookupResult
+from lawvm.uk_legislation.replay_state import NodeLookupResult, TargetLookupKey
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_existing_target_insert_gap,
     uk_is_explicit_direct_section_paragraph_target,
@@ -54,12 +54,74 @@ class _ScheduleItemTargetCandidate(NamedTuple):
     index: int
 
 
+class _TargetLookupSelf(Protocol):
+    statute: UKMutableStatute
+    adjudications_out: list[CompileAdjudication]
+
+    def _derive_target_eid(self, addr: LegalAddress) -> str: ...
+
+    def _find_node_and_parent_statute(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool = True,
+    ) -> NodeLookupResult: ...
+
+    def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool: ...
+
+    def _target_lookup_cache_key(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool,
+        allow_recursive_match: bool,
+    ) -> TargetLookupKey: ...
+
+    def _cached_target_lookup(self, key: TargetLookupKey) -> NodeLookupResult | None: ...
+
+    def _store_target_lookup_cache(self, key: TargetLookupKey, result: NodeLookupResult) -> None: ...
+
+    def _recursive_match_cache_key(
+        self,
+        node: UKMutableNode,
+        *,
+        kind: str,
+        label: str,
+    ) -> tuple[int, str, str]: ...
+
+    def _cached_recursive_match(self, key: tuple[int, str, str]) -> NodeLookupResult | None: ...
+
+    def _store_recursive_match_cache(self, key: tuple[int, str, str], result: NodeLookupResult) -> None: ...
+
+    def _find_node_by_target(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> NodeLookupResult: ...
+
+    def _find_compound_subsection_candidate(
+        self,
+        curr_node: UKMutableNode,
+        label: str,
+    ) -> UKCanonicalNodeMatch: ...
+
+    def _find_recursive_match(
+        self,
+        node: UKMutableNode,
+        kind: str,
+        label: str,
+    ) -> NodeLookupResult: ...
+
+
 class UKReplayTargetLookupMixin:
     statute: UKMutableStatute
     adjudications_out: list[CompileAdjudication]
 
     def _find_existing_insert_target_by_explicit_parent_leaf(
-        self,
+        self: _TargetLookupSelf,
         target: LegalAddress,
         op: LegalOperation,
     ) -> _ExistingInsertTargetResolution:
@@ -116,7 +178,7 @@ class UKReplayTargetLookupMixin:
         )
 
     def _find_node_by_target(
-        self,
+        self: _TargetLookupSelf,
         target: LegalAddress,
         *,
         allow_compound_subsection_alias: bool = False,
@@ -178,6 +240,8 @@ class UKReplayTargetLookupMixin:
             for p_kind, p_label in path:
                 next_cands: list[UKCanonicalNodeMatch] = []
                 for curr_node, _, _ in curr_cands:
+                    if curr_node is None:
+                        continue
                     for i, child in enumerate(curr_node.children):
                         if is_eur:
                             nk = _uk_kind_value(child.kind).lower()
@@ -202,6 +266,8 @@ class UKReplayTargetLookupMixin:
                         if ordinal_matches:
                             if target_resolution_op is not None:
                                 for resolved_node, resolved_parent, _resolved_idx in ordinal_matches:
+                                    if resolved_node is None:
+                                        continue
                                     if (
                                         _uk_kind_value(resolved_node.kind) == "paragraph"
                                         and resolved_parent is not None
@@ -231,19 +297,29 @@ class UKReplayTargetLookupMixin:
                             next_cands = ordinal_matches
                     if not next_cands:
                         for curr_node, _, _ in curr_cands:
+                            if curr_node is None:
+                                continue
                             if allow_recursive_match:
                                 for child in curr_node.children:
                                     res_node, res_p, res_i = self._find_recursive_match(
                                         cast(UKMutableNode, child), p_kind, p_label
                                     )
                                     if res_node:
-                                        next_cands.append(UKCanonicalNodeMatch(res_node, res_p, res_i))
+                                        next_cands.append(
+                                            UKCanonicalNodeMatch(
+                                                cast(IRNode, res_node),
+                                                cast(Optional[IRNode], res_p),
+                                                res_i,
+                                            )
+                                        )
                 if not next_cands:
                     return NodeLookupResult(node=None, parent=None, index=None)
                 curr_cands = next_cands
             if not curr_cands:
                 return NodeLookupResult(node=None, parent=None, index=None)
             node, parent, idx = curr_cands[0]
+            if node is None:
+                return NodeLookupResult(node=None, parent=None, index=None)
             return NodeLookupResult(
                 node=cast(UKMutableNode, node),
                 parent=cast(Optional[UKMutableNode], parent),
@@ -262,7 +338,7 @@ class UKReplayTargetLookupMixin:
         return result
 
     def _find_unique_schedule_item_for_source_parent_substitution_range_target(
-        self,
+        self: _TargetLookupSelf,
         target: LegalAddress,
         op: LegalOperation,
     ) -> NodeLookupResult:
@@ -333,7 +409,7 @@ class UKReplayTargetLookupMixin:
         )
 
     def _find_recursive_match(
-        self, node: UKMutableNode, kind: str, label: str
+        self: _TargetLookupSelf, node: UKMutableNode, kind: str, label: str
     ) -> NodeLookupResult:
         cache_key = self._recursive_match_cache_key(node, kind=kind, label=label)
         cached = self._cached_recursive_match(cache_key)
