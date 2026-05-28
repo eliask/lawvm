@@ -22,6 +22,7 @@ from typing import Any, Iterator, Optional, cast
 
 from lxml import etree
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -475,27 +476,27 @@ def load_no_current_law_ids(
                     else "no_current_law_id_parse_skipped"
                 )
                 diagnostics_out.append(
-                    {
-                        "rule_id": rule_id,
-                        "phase": "parse",
-                        "family": "source_pathology",
-                        "reason": (
+                    diagnostic_detail(
+                        rule_id=rule_id,
+                        phase="parse",
+                        family="source_pathology",
+                        reason=(
                             "Norway current-law ID loader retained an artifact via operative marker fallback "
                             "after statute parsing failed."
                             if has_marker_fallback
                             else "Norway current-law ID loader skipped an artifact because statute parsing failed."
                         ),
-                        "statute_id": artifact.logical_id,
-                        "locator": artifact.locator,
-                        "source_name": artifact.source_name,
-                        "member_name": artifact.member_name,
-                        "exception_type": type(exc).__name__,
-                        "error": str(exc),
-                        "retained_by_marker_fallback": has_marker_fallback,
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
+                        blocking=True,
+                        strict_disposition="block",
+                        quirks_disposition="record",
+                        statute_id=artifact.logical_id,
+                        locator=artifact.locator,
+                        source_name=artifact.source_name,
+                        member_name=artifact.member_name,
+                        exception_type=type(exc).__name__,
+                        error=str(exc),
+                        retained_by_marker_fallback=has_marker_fallback,
+                    )
                 )
             if has_marker_fallback:
                 current_ids.add(artifact.logical_id)
@@ -524,21 +525,21 @@ def load_no_current_law_titles(
         except Exception as exc:
             if diagnostics_out is not None:
                 diagnostics_out.append(
-                    {
-                        "rule_id": "no_current_law_title_parse_skipped",
-                        "phase": "parse",
-                        "family": "source_pathology",
-                        "reason": "Norway current-law title extraction skipped an artifact because statute parsing failed.",
-                        "statute_id": artifact.logical_id,
-                        "locator": artifact.locator,
-                        "source_name": artifact.source_name,
-                        "member_name": artifact.member_name,
-                        "exception_type": type(exc).__name__,
-                        "error": str(exc),
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
+                    diagnostic_detail(
+                        rule_id="no_current_law_title_parse_skipped",
+                        phase="parse",
+                        family="source_pathology",
+                        reason="Norway current-law title extraction skipped an artifact because statute parsing failed.",
+                        blocking=True,
+                        strict_disposition="block",
+                        quirks_disposition="record",
+                        statute_id=artifact.logical_id,
+                        locator=artifact.locator,
+                        source_name=artifact.source_name,
+                        member_name=artifact.member_name,
+                        exception_type=type(exc).__name__,
+                        error=str(exc),
+                    )
                 )
             continue
     return titles
@@ -617,20 +618,20 @@ def ingest_no_public_archives(
     def _record_skipped_unmapped(artifact: NOLocatedArtifact, *, kind: str) -> None:
         report["skipped_unmapped"] = cast(int, report["skipped_unmapped"]) + 1
         skipped_unmapped_entries.append(
-            {
-                "rule_id": "no_ingest_unmapped_xml_member",
-                "phase": "acquisition",
-                "family": "source_pathology",
-                "reason": "Norway Lovdata XML member filename could not be mapped to a legal source id",
-                "kind": kind,
-                "locator": artifact.locator,
-                "logical_id": artifact.logical_id,
-                "source_name": artifact.source_name,
-                "member_name": artifact.member_name,
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-            }
+            diagnostic_detail(
+                rule_id="no_ingest_unmapped_xml_member",
+                phase="acquisition",
+                family="source_pathology",
+                reason="Norway Lovdata XML member filename could not be mapped to a legal source id",
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+                kind=kind,
+                locator=artifact.locator,
+                logical_id=artifact.logical_id,
+                source_name=artifact.source_name,
+                member_name=artifact.member_name,
+            )
         )
 
     def _record_duplicate_locator(
@@ -642,29 +643,29 @@ def ingest_no_public_archives(
         identical_payloads = existing_payload == artifact.payload
         report["duplicate_locator_count"] = cast(int, report["duplicate_locator_count"]) + 1
         duplicate_locator_entries.append(
-            {
-                "rule_id": "no_acquisition_duplicate_logical_locator",
-                "phase": "acquisition",
-                "family": "source_pathology",
-                "reason": (
+            diagnostic_detail(
+                rule_id="no_acquisition_duplicate_logical_locator",
+                phase="acquisition",
+                family="source_pathology",
+                reason=(
                     "Norway Farchive ingest found a byte-identical duplicate logical source locator; "
                     "the existing witness was retained."
                     if identical_payloads
                     else "Norway Farchive ingest found a conflicting duplicate logical source locator; "
                     "the existing witness was retained and the new payload was not stored."
                 ),
-                "kind": kind,
-                "locator": artifact.locator,
-                "logical_id": artifact.logical_id,
-                "source_name": artifact.source_name,
-                "member_name": artifact.member_name,
-                "existing_payload_digest": hashlib.sha256(existing_payload).hexdigest(),
-                "new_payload_digest": hashlib.sha256(artifact.payload).hexdigest(),
-                "identical_payloads": identical_payloads,
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "select_existing_identical" if identical_payloads else "block",
-            }
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="select_existing_identical" if identical_payloads else "block",
+                kind=kind,
+                locator=artifact.locator,
+                logical_id=artifact.logical_id,
+                source_name=artifact.source_name,
+                member_name=artifact.member_name,
+                existing_payload_digest=hashlib.sha256(existing_payload).hexdigest(),
+                new_payload_digest=hashlib.sha256(artifact.payload).hexdigest(),
+                identical_payloads=identical_payloads,
+            )
         )
 
     try:
