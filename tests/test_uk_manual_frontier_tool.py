@@ -149,6 +149,8 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
         "still_manual_frontier",
         "effect_not_found",
     ]
+    assert {row["family"] for row in rows} == {"manual_frontier_validation"}
+    assert {row["phase"] for row in rows} == {"tooling_diagnostic"}
     assert rows[0]["rule_id"] == (
         "uk_manual_frontier_validator_currently_deterministic_supported"
     )
