@@ -3267,6 +3267,49 @@ def test_apply_no_ops_collects_missing_target_adjudication() -> None:
     assert updated.body.children[0].label == "1"
 
 
+def test_apply_no_ops_tree_invariant_adjudication_uses_typed_violation_detail() -> None:
+    statute = IRStatute(
+        statute_id="no/lov/2025-01-01-1",
+        title="Invariant detail test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="old 2"),
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="old 1"),
+            ),
+        ),
+    )
+    source = OperationSource(
+        statute_id="no/lovtid/2025-06-20-90",
+        enacted="2025-06-20",
+        effective="2025-06-20",
+    )
+    op = LegalOperation(
+        op_id="replace-section-2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="new 2"),
+        source=source,
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications, strict_invariants=False)
+
+    invariant_adjudications = [
+        adjudication for adjudication in adjudications if adjudication.kind == "replay_tree_invariant_violation"
+    ]
+    assert updated.body.children[0].text == "new 2"
+    assert len(invariant_adjudications) == 1
+    detail = invariant_adjudications[0].detail
+    assert detail["family"] == "tree_invariant_violation"
+    assert "section out of order: 2 > 1" in detail["violations"]
+    assert detail["invariant_violations"][0]["kind"] == "sort_order"
+    assert detail["invariant_violations"][0]["path"] == "body"
+    assert detail["invariant_violations"][0]["previous_label"] == "2"
+    assert detail["invariant_violations"][0]["next_label"] == "1"
+
+
 def test_apply_no_ops_collects_noop_for_empty_target_path() -> None:
     statute = IRStatute(
         statute_id="no/lov/2025-01-01-1",

@@ -83,6 +83,8 @@ Implemented progress:
   of reparsing `"duplicate ..."` / `"out of order ..."` messages.
 - EU replay invariant adjudications consume typed duplicate/order invariant
   records while preserving the legacy `violation` string in evidence details.
+- Norway replay invariant adjudications consume typed duplicate/order invariant
+  records while preserving their legacy joined `violations` string.
 - core now has a small typed detector-result adapter that preserves legacy
   detector messages while giving tools a typed `InvariantDetectorResult`
   surface.
