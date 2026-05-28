@@ -696,6 +696,30 @@ class UKReplayStateMixin:
             )
         )
 
+    def _record_remove_node_mutation_event(
+        self,
+        *,
+        removed_path: TreePath | None,
+    ) -> None:
+        if self.mutation_events_out is None or removed_path is None:
+            return
+        op = self._current_mutation_op
+        if op is None:
+            return
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper="_remove_node",
+                outcome="removed_node",
+                resolved_target_path=tree_path_from_legal_address(op.target),
+                parent_path=removed_path[:-1] if removed_path else (),
+                removed_paths=(removed_path,),
+            )
+        )
+
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
@@ -759,16 +783,19 @@ class UKReplayStateMixin:
         return False
 
     def _remove_node(self, node: UKMutableNode, parent: Optional[UKMutableNode], idx: Optional[int]) -> bool:
+        removed_path = self._tree_path_for_mutable_node(node) if self.mutation_events_out is not None else None
         if parent is not None and idx is not None:
             self._remove_eid_lookup_subtree(node)
             parent.children.pop(idx)
             self._note_structure_mutation()
+            self._record_remove_node_mutation_event(removed_path=removed_path)
             return True
         for s_idx, root in enumerate(self.statute.supplements):
             if root is node:
                 self._remove_eid_lookup_subtree(node)
                 self.statute.supplements.pop(s_idx)
                 self._note_structure_mutation()
+                self._record_remove_node_mutation_event(removed_path=removed_path)
                 return True
         return False
 
