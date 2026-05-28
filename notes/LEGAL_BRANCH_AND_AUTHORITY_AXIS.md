@@ -76,6 +76,14 @@ operations to enacted law.
 `CorpusGraph` rejects duplicate branch ids and branch edges or lifecycle events
 whose `branch_id` is not registered in `CorpusGraph.branches`.
 
+The Neo4j CSV export writes:
+
+- `nodes_branches.csv`
+- `rels_branch_edges.csv`
+- `events_branch_lifecycle.csv`
+
+These files may be empty for jurisdictions that do not yet emit branch facts.
+
 `BranchImpactProjection` is the UI/API-facing summary layer for these edges:
 it can say which provisions a branch would affect, optionally with current and
 branch-specific text supplied by a frontend. The projection itself does not
