@@ -598,7 +598,7 @@ class TestParseSurfaceRoundTrip:
         resolved = resolve(clause)
         if len(resolved) != len(direct):
             return False, f"LEN {len(resolved)} vs {len(direct)}"
-        for i, (r, d) in enumerate(zip(resolved, direct)):
+        for i, (r, d) in enumerate(zip(resolved, direct, strict=True)):
             if r.code() != d.code():
                 return False, f"TOK{i} {r.code()} vs {d.code()}"
         return True, "OK"
@@ -659,5 +659,5 @@ class TestResolveRoundTrip:
         parser_ops = parse(filtered)
 
         assert len(parser_ops) == len(ops)
-        for p, r in zip(parser_ops, ops):
+        for p, r in zip(parser_ops, ops, strict=True):
             assert p.code() == r.code(), f"Parser={p.code()} Resolver={r.code()}"

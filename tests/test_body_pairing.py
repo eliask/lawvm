@@ -1022,7 +1022,7 @@ class TestClauseAstFromAmendmentOps:
         ast_claims = build_clause_claims(ast, "1994/1280")
 
         assert len(ast_claims) == len(legacy_claims)
-        for lc, ac in zip(legacy_claims, ast_claims):
+        for lc, ac in zip(legacy_claims, ast_claims, strict=True):
             assert lc.target_address == ac.target_address
             assert lc.claim_kind == ac.claim_kind
             assert lc.chapter == ac.chapter

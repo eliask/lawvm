@@ -158,5 +158,5 @@ def test_omission_markers_do_not_authorize_undeclared_deletion(
     untouched_result = [c for c in result_paras if c.label in untouched_labels]
     untouched_master = [c for c in master_paras if c.label in untouched_labels]
     assert len(untouched_result) == len(untouched_master)
-    for got, want in zip(untouched_result, untouched_master):
+    for got, want in zip(untouched_result, untouched_master, strict=True):
         assert _node_signature(got) == _node_signature(want)
