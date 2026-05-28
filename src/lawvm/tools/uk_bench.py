@@ -56,6 +56,7 @@ if TYPE_CHECKING:
 import Levenshtein
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import is_zombie
 from lawvm.replay_adjudication import CompileAdjudication
@@ -478,18 +479,16 @@ def _blocking_source_parse_rows(rows: Sequence[dict[str, Any]]) -> tuple[dict[st
 
 
 def _uk_bench_exception_observation(statute_id: str, exc: Exception) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_bench_unclassified_exception",
-        "family": "benchmark_execution",
-        "phase": "benchmark",
-        "statute_id": statute_id,
-        "exception_type": type(exc).__name__,
-        "exception_message": str(exc),
-        "reason": "UK benchmark row failed outside a narrower source/replay diagnostic lane.",
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id="uk_bench_unclassified_exception",
+        family="benchmark_execution",
+        phase="benchmark",
+        reason="UK benchmark row failed outside a narrower source/replay diagnostic lane.",
+        blocking=True,
+        statute_id=statute_id,
+        exception_type=type(exc).__name__,
+        exception_message=str(exc),
+    )
 
 
 def _bench_exception_result(
@@ -1632,18 +1631,16 @@ def _score_statute(
             effect_feed_observation_rule_counts = {"uk_effect_feed_count_error": 1}
             effect_feed_count_error = f"{type(effect_count_exc).__name__}: {effect_count_exc}"[:200]
             effect_feed_observations = (
-                {
-                    "rule_id": "uk_effect_feed_count_error",
-                    "family": "source_pathology",
-                    "phase": "acquisition",
-                    "statute_id": sid,
-                    "reason": "UK effect feed count failed during benchmark preflight.",
-                    "exception_type": type(effect_count_exc).__name__,
-                    "exception_message": str(effect_count_exc),
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                diagnostic_detail(
+                    rule_id="uk_effect_feed_count_error",
+                    family="source_pathology",
+                    phase="acquisition",
+                    reason="UK effect feed count failed during benchmark preflight.",
+                    blocking=True,
+                    statute_id=sid,
+                    exception_type=type(effect_count_exc).__name__,
+                    exception_message=str(effect_count_exc),
+                ),
             )
             print(
                 f"  EFFECT FEED COUNT ERROR {sid}: {effect_feed_count_error}",

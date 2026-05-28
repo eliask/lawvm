@@ -62,6 +62,8 @@ Recent improvement:
 - UK bootstrap effect-feed acquisition diagnostics now delegate their outward
   envelope defaults to `diagnostic_detail` while preserving nested source
   details.
+- UK benchmark exception and effect-feed-count diagnostics now delegate their
+  outward envelope defaults to `diagnostic_detail`.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
