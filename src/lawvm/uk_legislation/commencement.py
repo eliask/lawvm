@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
     uk_is_transparent_wrapper_kind,
@@ -93,7 +94,7 @@ def _collect_all_eids(node: IRNode) -> set[str]:
 
 def _nodes_matching_address(
     nodes: Sequence[IRNode],
-    path: tuple[tuple[str, str], ...],
+    path: TreePath,
     depth: int = 0,
     *,
     observations_out: Optional[list[dict[str, Any]]] = None,

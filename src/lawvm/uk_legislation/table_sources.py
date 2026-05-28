@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -1745,7 +1746,7 @@ def _uk_repeal_table_explicit_child_structural_targets(
         ("point", r"points?"),
     )
     targets: list[LegalAddress] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
+    seen: set[TreePath] = set()
     for child_kind, kind_pattern in child_kind_patterns:
         for list_match in re.finditer(
             rf"(?:[,;]|\band\b)\s*(?:the\s+)?{kind_pattern}\s+"
