@@ -9,7 +9,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, cast
 
 from lawvm.core.compile_records import is_blocking_compile_record
 
@@ -211,11 +211,18 @@ def _uk_residual_claim_has_reviewable_evidence(claim: Mapping[str, object]) -> b
     if not kind or kind in {"no_strong_claim", "unknown_legacy_missing"}:
         return False
     return (
-        int(claim.get("only_in_replayed_count") or 0) > 0
-        or int(claim.get("only_in_oracle_count") or 0) > 0
-        or int(claim.get("section_claim_count") or 0) > 0
+        _int_claim_field(claim, "only_in_replayed_count") > 0
+        or _int_claim_field(claim, "only_in_oracle_count") > 0
+        or _int_claim_field(claim, "section_claim_count") > 0
         or _bool_bench_field(claim.get("section_claim_emitted"), default=False)
     )
+
+
+def _int_claim_field(claim: Mapping[str, object], key: str) -> int:
+    value = claim.get(key)
+    if value is None or value == "":
+        return 0
+    return int(str(value))
 
 
 def _uk_residual_claim_work_item_id(
@@ -763,7 +770,8 @@ def _load_saved_bench_run(
     *,
     include_diagnostics: bool,
 ) -> list[Any]:
-    signature = inspect.signature(load_run)
+    callable_load_run = cast(Callable[..., Any], load_run)
+    signature = inspect.signature(callable_load_run)
     supports_include_diagnostics = (
         "include_diagnostics" in signature.parameters
         or any(
@@ -772,8 +780,8 @@ def _load_saved_bench_run(
         )
     )
     if supports_include_diagnostics:
-        return cast(Any, load_run)(label, include_diagnostics=include_diagnostics)
-    return cast(Any, load_run)(label)
+        return callable_load_run(label, include_diagnostics=include_diagnostics)
+    return callable_load_run(label)
 
 
 def _short_replay_adjudication_sample_value(value: object, *, limit: int = 120) -> str:
