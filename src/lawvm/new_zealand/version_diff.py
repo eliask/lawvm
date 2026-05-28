@@ -72,6 +72,7 @@ class NZArchivedVersionDateWindow:
     on_or_after: NZArchivedVersion | None
     rule_id: str = "nz_archived_xml_version_date_window_source_only"
     truth_claim: str = "source_version_date_window_not_effective_date"
+    replay_claims: bool = False
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -79,7 +80,7 @@ class NZArchivedVersionDateWindow:
             "requested_version_date": self.requested_version_date,
             "rule_id": self.rule_id,
             "truth_claim": self.truth_claim,
-            "replay_claims": False,
+            "replay_claims": self.replay_claims,
             "on_or_before": self.on_or_before.to_jsonable() if self.on_or_before else None,
             "on_or_after": self.on_or_after.to_jsonable() if self.on_or_after else None,
         }
@@ -93,6 +94,7 @@ class NZArchivedVersionChangeWindow:
     on_or_after: NZArchivedVersion | None
     rule_id: str = "nz_archived_xml_version_change_window_source_only"
     truth_claim: str = "source_change_window_not_effective_date"
+    replay_claims: bool = False
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -100,7 +102,7 @@ class NZArchivedVersionChangeWindow:
             "requested_version_date": self.requested_version_date,
             "rule_id": self.rule_id,
             "truth_claim": self.truth_claim,
-            "replay_claims": False,
+            "replay_claims": self.replay_claims,
             "before": self.before.to_jsonable() if self.before else None,
             "on_or_after": self.on_or_after.to_jsonable() if self.on_or_after else None,
         }

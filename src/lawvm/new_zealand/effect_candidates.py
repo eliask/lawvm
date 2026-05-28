@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -22,6 +22,7 @@ from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperat
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec, TextSelector
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import FacetKind, StructuralAction, TextPatchKindEnum
+from lawvm.core.source_version_window import source_version_date_window_diagnostic_detail
 from lawvm.new_zealand.effect_readiness import (
     NZEffectReadinessReport,
     build_archived_work_effect_readiness_surface,
@@ -36,7 +37,7 @@ from lawvm.new_zealand.operation_surface import NZOperationSurfaceReport, NZOper
 from lawvm.new_zealand.payload_surface import NZPayloadSurfaceReport, NZPayloadWitnessRow
 from lawvm.new_zealand.source_tree import parse_nz_source_document
 from lawvm.new_zealand.text_comparison import normalized_nz_inline_occurrence_count
-from lawvm.new_zealand.version_diff import NZArchivedVersionDateWindow, archived_xml_version_date_window
+from lawvm.new_zealand.version_diff import NZArchivedVersion, NZArchivedVersionDateWindow, archived_xml_version_date_window
 from lawvm.new_zealand.version_diff import archived_xml_version_change_window
 
 
@@ -133,6 +134,7 @@ class NZCanonicalEffectCandidateRow:
     source_version_date_window_rule_id: str = ""
     source_version_date_window_truth_claim: str = ""
     source_version_date_window_requested_date: str = ""
+    source_version_date_window: Mapping[str, Any] = field(default_factory=dict)
     source_version_on_or_before_version_id: str = ""
     source_version_on_or_before_xml_locator: str = ""
     source_version_on_or_before_date: str = ""
@@ -226,6 +228,7 @@ class NZCanonicalEffectCandidateRow:
             "source_version_date_window_rule_id": self.source_version_date_window_rule_id,
             "source_version_date_window_truth_claim": self.source_version_date_window_truth_claim,
             "source_version_date_window_requested_date": self.source_version_date_window_requested_date,
+            "source_version_date_window": dict(self.source_version_date_window),
             "source_version_on_or_before_version_id": self.source_version_on_or_before_version_id,
             "source_version_on_or_before_xml_locator": self.source_version_on_or_before_xml_locator,
             "source_version_on_or_before_date": self.source_version_on_or_before_date,
@@ -1702,6 +1705,10 @@ def _source_version_date_window_fields(
         "source_version_date_window_rule_id": window.rule_id,
         "source_version_date_window_truth_claim": window.truth_claim,
         "source_version_date_window_requested_date": window.requested_version_date,
+        "source_version_date_window": source_version_date_window_diagnostic_detail(
+            window,
+            witness_detail=_archived_version_detail,
+        ),
         "source_version_on_or_before_version_id": (
             window.on_or_before.version_id if window.on_or_before else ""
         ),
@@ -1716,6 +1723,14 @@ def _source_version_date_window_fields(
             window.on_or_after.xml_locator if window.on_or_after else ""
         ),
         "source_version_on_or_after_date": window.on_or_after.version_date if window.on_or_after else "",
+    }
+
+
+def _archived_version_detail(version: NZArchivedVersion) -> dict[str, str]:
+    return {
+        "version_id": version.version_id,
+        "xml_locator": version.xml_locator,
+        "version_date": version.version_date,
     }
 
 
@@ -1788,6 +1803,7 @@ def _source_witness_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]
         "source_version_date_window_rule_id": row.source_version_date_window_rule_id,
         "source_version_date_window_truth_claim": row.source_version_date_window_truth_claim,
         "source_version_date_window_requested_date": row.source_version_date_window_requested_date,
+        "source_version_date_window": dict(row.source_version_date_window),
         "source_version_on_or_before_version_id": row.source_version_on_or_before_version_id,
         "source_version_on_or_before_xml_locator": row.source_version_on_or_before_xml_locator,
         "source_version_on_or_before_date": row.source_version_on_or_before_date,

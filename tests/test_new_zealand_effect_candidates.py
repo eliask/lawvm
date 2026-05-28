@@ -468,6 +468,28 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_owned_
     assert evidence_row["detail"]["latest_oracle_text_status"] == "oracle_new_text_only"
     assert evidence_row["detail"]["source_version_date_window_status"] == "source_version_date_window_available"
     assert evidence_row["detail"]["source_version_on_or_after_version_id"] == "act_public_2020_1_en_2025-01-02"
+    assert evidence_row["detail"]["source_version_date_window"] == {
+        "rule_id": "nz_archived_xml_version_date_window_source_only",
+        "phase": "source_version_window",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "family": "source_version_window",
+        "reason": "source_version_date_window_source_only",
+        "requested_version_date": "2025-01-01",
+        "truth_claim": "source_version_date_window_not_effective_date",
+        "replay_claims": False,
+        "on_or_before": {
+            "version_id": "act_public_2020_1_en_2024-12-31",
+            "xml_locator": "before.xml",
+            "version_date": "2024-12-31",
+        },
+        "on_or_after": {
+            "version_id": "act_public_2020_1_en_2025-01-02",
+            "xml_locator": "after.xml",
+            "version_date": "2025-01-02",
+        },
+    }
     assert evidence_row["detail"]["source_change_text_witness_status"] == "observed_single_replacement"
     assert evidence_row["detail"]["source_change_text_change_window_truth_claim"] == (
         "source_change_window_not_effective_date"
