@@ -130,6 +130,10 @@ Done in the core/demo layer:
   operation lanes;
 - branch impact rows can be built from operations and enriched with
   frontend-supplied current/branch text.
+- branch graph edges and branch impact rows carry `scenario_id`; corpus graph
+  construction rejects branch edges whose scenario does not match the
+  registered branch scenario.
+- branch impact row ids include the scenario id when present.
 
 Remaining:
 

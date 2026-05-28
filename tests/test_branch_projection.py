@@ -44,6 +44,7 @@ def test_branch_impact_projection_from_edges_filters_and_orders_branch_rows() ->
     branch = LegalBranch(
         branch_id="proposal:example:2026-1",
         authority_layer="proposal",
+        scenario_id="if_enacted_as_introduced",
         source_artifact_id="proposal/example/2026/1",
     )
     other_branch = LegalBranch(
@@ -54,6 +55,7 @@ def test_branch_impact_projection_from_edges_filters_and_orders_branch_rows() ->
     later_edge = BranchGraphEdge(
         branch_id=branch.branch_id,
         edge_kind="would_replace",
+        scenario_id=branch.scenario_id,
         source_artifact_id="proposal/example/2026/1",
         source_unit_id="clause:2",
         target_statute_id="base/1",
@@ -63,6 +65,7 @@ def test_branch_impact_projection_from_edges_filters_and_orders_branch_rows() ->
     earlier_edge = BranchGraphEdge(
         branch_id=branch.branch_id,
         edge_kind="would_insert",
+        scenario_id=branch.scenario_id,
         source_artifact_id="proposal/example/2026/1",
         source_unit_id="clause:1",
         target_statute_id="base/1",
@@ -83,10 +86,11 @@ def test_branch_impact_projection_from_edges_filters_and_orders_branch_rows() ->
     data = projection.to_dict()
 
     assert [row.row_id for row in projection.rows] == [
-        "proposal:example:2026-1:would_insert:op-1",
-        "proposal:example:2026-1:would_replace:op-2",
+        "proposal:example:2026-1:if_enacted_as_introduced:would_insert:op-1",
+        "proposal:example:2026-1:if_enacted_as_introduced:would_replace:op-2",
     ]
     assert data["branch"]["branch_id"] == "proposal:example:2026-1"
+    assert data["rows"][0]["scenario_id"] == "if_enacted_as_introduced"
     assert data["rows"][0]["target_address"] == "section:1"
     assert data["rows"][1]["source_unit_id"] == "clause:2"
 
@@ -105,6 +109,7 @@ def test_branch_impact_projection_from_operations_uses_branch_edge_mapping() -> 
     branch = LegalBranch(
         branch_id="proposal:example:2026-1",
         authority_layer="proposal",
+        scenario_id="if_enacted_as_introduced",
         source_artifact_id="proposal/example/2026/1",
     )
     source = _branch_source(branch.branch_id)
@@ -121,6 +126,7 @@ def test_branch_impact_projection_from_operations_uses_branch_edge_mapping() -> 
         ("would_replace", "op-replace", "section:1"),
         ("would_insert", "op-insert", "section:2"),
     ]
+    assert {row.scenario_id for row in projection.rows} == {"if_enacted_as_introduced"}
 
 
 def test_enrich_branch_impact_projection_texts_uses_target_keys_without_lookup() -> None:

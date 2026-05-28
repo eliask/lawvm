@@ -19,6 +19,7 @@ class BranchImpactRow:
     branch_id: str
     edge_kind: str
     target_statute_id: str
+    scenario_id: str = ""
     target_address: str = ""
     operation_id: str = ""
     source_artifact_id: str = ""
@@ -78,6 +79,7 @@ def branch_impact_projection_from_edges(
             row_id=_branch_impact_row_id(edge, index),
             branch_id=edge.branch_id,
             edge_kind=edge.edge_kind,
+            scenario_id=edge.scenario_id,
             target_statute_id=edge.target_statute_id,
             target_address=edge.target_address,
             operation_id=edge.operation_id,
@@ -130,6 +132,7 @@ def enrich_branch_impact_projection_texts(
             row_id=row.row_id,
             branch_id=row.branch_id,
             edge_kind=row.edge_kind,
+            scenario_id=row.scenario_id,
             target_statute_id=row.target_statute_id,
             target_address=row.target_address,
             operation_id=row.operation_id,
@@ -157,11 +160,17 @@ def _selected_branch_edges(
 ) -> tuple[BranchGraphEdge, ...]:
     return tuple(
         sorted(
-            (edge for edge in edges if edge.branch_id == branch.branch_id),
+            (
+                edge
+                for edge in edges
+                if edge.branch_id == branch.branch_id
+                and (not branch.scenario_id or edge.scenario_id == branch.scenario_id)
+            ),
             key=lambda edge: (
                 edge.target_statute_id,
                 edge.target_address,
                 edge.edge_kind,
+                edge.scenario_id,
                 edge.source_artifact_id,
                 edge.source_unit_id,
                 edge.operation_id,
@@ -172,6 +181,8 @@ def _selected_branch_edges(
 
 def _branch_impact_row_id(edge: BranchGraphEdge, index: int) -> str:
     suffix = edge.operation_id or edge.source_unit_id or str(index + 1)
+    if edge.scenario_id:
+        return f"{edge.branch_id}:{edge.scenario_id}:{edge.edge_kind}:{suffix}"
     return f"{edge.branch_id}:{edge.edge_kind}:{suffix}"
 
 

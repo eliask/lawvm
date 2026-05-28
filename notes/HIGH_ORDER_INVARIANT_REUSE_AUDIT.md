@@ -296,6 +296,10 @@ Recent improvement:
 - `CorpusGraph` now rejects duplicate branch ids and dangling branch edge or
   lifecycle references, keeping proposal/draft graph claims internally
   referentially sound.
+- branch graph edges and branch-impact projection rows now carry `scenario_id`,
+  and `CorpusGraph` rejects branch-edge scenario mismatches against the
+  registered branch so proposal variants cannot merge by branch id alone;
+  branch-impact row ids include scenario ids when present.
 - Neo4j graph export now includes branch nodes, branch would-affect edges, and
   branch lifecycle event tables so proposal/draft graph facts have a persistent
   export lane.

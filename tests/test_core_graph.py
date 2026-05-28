@@ -130,6 +130,7 @@ def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() 
     edge = BranchGraphEdge(
         branch_id=branch.branch_id,
         edge_kind="would_replace",
+        scenario_id=branch.scenario_id,
         source_artifact_id="proposal/example/2026/1",
         source_statute_id="proposal/example/2026/1",
         source_unit_id="clause:1",
@@ -170,6 +171,7 @@ def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() 
     assert counts["branch_lifecycle_events"] == 1
     assert branches[0]["authority_layer"] == "proposal"
     assert branch_edges[0]["edge_kind"] == "would_replace"
+    assert branch_edges[0]["scenario_id"] == "if_enacted_as_introduced"
     assert artifact_payload["branch_lifecycle_events"][0]["event_kind"] == "introduced"
 
 
@@ -193,6 +195,24 @@ def test_corpus_graph_rejects_branch_edges_without_registered_branch() -> None:
 
     with pytest.raises(ValueError, match="branch_edges reference unknown"):
         CorpusGraph(branch_edges=[edge])
+
+
+def test_corpus_graph_rejects_branch_edge_scenario_mismatch() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        scenario_id="if_enacted_as_introduced",
+        source_artifact_id="proposal/example/2026/1",
+    )
+    edge = BranchGraphEdge(
+        branch_id=branch.branch_id,
+        edge_kind="would_amend",
+        scenario_id="if_enacted_as_amended",
+        target_statute_id="base/1",
+    )
+
+    with pytest.raises(ValueError, match="scenario_id must match"):
+        CorpusGraph(branches=[branch], branch_edges=[edge])
 
 
 def test_corpus_graph_rejects_lifecycle_events_without_registered_branch() -> None:

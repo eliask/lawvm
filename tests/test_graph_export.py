@@ -73,6 +73,7 @@ def test_export_neo4j_writes_branch_graph_tables(tmp_path, monkeypatch) -> None:
         {
             "branch_id": "proposal:example:2026-1",
             "edge_kind": "would_replace",
+            "scenario_id": "",
             "source_artifact_id": "proposal/example/2026/1",
             "source_statute_id": "proposal/example/2026/1",
             "source_unit_id": "clause:1",
@@ -142,4 +143,5 @@ def test_export_jsonld_includes_branch_graph_resources(tmp_path, monkeypatch) ->
     by_type = {row["@type"]: row for row in data["@graph"]}
     assert by_type["lawvm:LegalBranch"]["lawvm:branchId"] == "proposal:example:2026-1"
     assert by_type["lawvm:BranchGraphEdge"]["lawvm:edgeKind"] == "would_replace"
+    assert by_type["lawvm:BranchGraphEdge"]["lawvm:scenarioId"] == ""
     assert by_type["lawvm:BranchLifecycleEvent"]["lawvm:eventKind"] == "introduced"

@@ -141,6 +141,7 @@ class CorpusGraph:
             branch_id for branch_id in set(branch_ids) if branch_ids.count(branch_id) > 1
         )
         registered_branch_ids = set(branch_ids)
+        branch_scenarios = {branch.branch_id: branch.scenario_id for branch in self.branches}
 
         if self.build_meta is not None and self.build_meta.failed_statutes != failure_count:
             raise ValueError(
@@ -159,6 +160,22 @@ class CorpusGraph:
             raise ValueError(
                 "CorpusGraph.branch_edges reference unknown branch_id values: "
                 f"{', '.join(unknown_edge_branches)}"
+            )
+        scenario_mismatches = sorted(
+            {
+                edge.branch_id
+                for edge in self.branch_edges
+                if (
+                    edge.branch_id in branch_scenarios
+                    and (edge.scenario_id or branch_scenarios[edge.branch_id])
+                    and edge.scenario_id != branch_scenarios[edge.branch_id]
+                )
+            }
+        )
+        if scenario_mismatches:
+            raise ValueError(
+                "CorpusGraph.branch_edges scenario_id must match registered branch scenario_id: "
+                f"{', '.join(scenario_mismatches)}"
             )
         unknown_lifecycle_branches = sorted(
             {
@@ -457,6 +474,7 @@ class CorpusGraph:
                     self.branch_edges,
                     key=lambda edge: (
                         edge.branch_id,
+                        edge.scenario_id,
                         edge.edge_kind,
                         edge.source_artifact_id,
                         edge.source_statute_id,
