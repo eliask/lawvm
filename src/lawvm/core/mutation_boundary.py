@@ -151,7 +151,7 @@ def _diff_ir_paths(before: IRNode, after: IRNode, path: TreePath) -> list[TreePa
     if before_keys != after_keys:
         return [path]
     out: list[TreePath] = []
-    for before_child, after_child, key in zip(before.children, after.children, before_keys):
+    for before_child, after_child, key in zip(before.children, after.children, before_keys, strict=True):
         out.extend(_diff_ir_paths(before_child, after_child, path + (key,)))
     return out
 

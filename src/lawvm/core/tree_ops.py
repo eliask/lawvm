@@ -248,7 +248,7 @@ def normalize_text(tree: IRNode) -> IRNode:
             return tree
     if tree.children:
         new_children = [normalize_text(c) for c in tree.children]
-        if any(nc is not oc for nc, oc in zip(new_children, tree.children)):
+        if any(nc is not oc for nc, oc in zip(new_children, tree.children, strict=True)):
             return _with_children(tree, new_children)
     return tree
 
@@ -893,9 +893,9 @@ def resort_children(
             indices = [idx for idx, _ in entries]
             nodes = [n for _, n in entries]
             sorted_nodes = sorted(nodes, key=lambda n: sort_key_fn(n.label))
-            if any(orig is not repl for orig, repl in zip(nodes, sorted_nodes)):
+            if any(orig is not repl for orig, repl in zip(nodes, sorted_nodes, strict=True)):
                 any_changed = True
-                for idx, repl_node in zip(indices, sorted_nodes):
+                for idx, repl_node in zip(indices, sorted_nodes, strict=True):
                     replacement[idx] = repl_node
 
         if not any_changed:
@@ -1243,7 +1243,7 @@ def find_text_duplication_warnings(
 
     def _shared_prefix_len(lhs: List[str], rhs: List[str]) -> int:
         n = 0
-        for left, right in zip(lhs, rhs):
+        for left, right in zip(lhs, rhs, strict=False):
             if left != right:
                 break
             n += 1
@@ -1251,7 +1251,7 @@ def find_text_duplication_warnings(
 
     def _shared_suffix_len(lhs: List[str], rhs: List[str]) -> int:
         n = 0
-        for left, right in zip(reversed(lhs), reversed(rhs)):
+        for left, right in zip(reversed(lhs), reversed(rhs), strict=False):
             if left != right:
                 break
             n += 1
@@ -1439,7 +1439,7 @@ def find_flattened_sublist_warnings(
             dominant = max(set(non_mixed), key=non_mixed.count)
             ords = [
                 _fs_ordinal(l, dominant)
-                for l, f in zip(labels, families)
+                for l, f in zip(labels, families, strict=True)
                 if f == dominant
             ]
             if len(ords) < min_children:
@@ -1450,7 +1450,7 @@ def find_flattened_sublist_warnings(
                 if ordinal > 0:
                     if ordinal <= 2 and max_so_far >= 3:
                         # Sequence restarted near ordinal 1 — strong reset signal
-                        reset_label = [l for l, f in zip(labels, families) if f == dominant][i]
+                        reset_label = [l for l, f in zip(labels, families, strict=True) if f == dominant][i]
                         warnings.append({
                             "kind": "flattened_sublist_reset",
                             "path": path,
