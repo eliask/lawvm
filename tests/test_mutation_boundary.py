@@ -1,8 +1,22 @@
 from __future__ import annotations
 
-from lawvm.core.ir import IRNode
-from lawvm.core.mutation_boundary import build_mutation_boundary_report, diff_ir_paths, unexplained_changed_paths
+from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.mutation_boundary import (
+    build_mutation_boundary_report,
+    diff_ir_paths,
+    tree_path_from_legal_address,
+    unexplained_changed_paths,
+)
 from lawvm.core.semantic_types import IRNodeKind
+
+
+def test_tree_path_from_legal_address_uses_boundary_path_shape() -> None:
+    address = LegalAddress(path=(("section", "1"), ("subsection", "2")))
+
+    assert tree_path_from_legal_address(address) == (
+        ("section", "1"),
+        ("subsection", "2"),
+    )
 
 
 def test_diff_ir_paths_reports_leaf_text_change() -> None:
