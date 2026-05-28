@@ -52,6 +52,22 @@ def validate_comparison_normalization_rule(rule: ComparisonNormalizationRule) ->
     return tuple(issues)
 
 
+def validate_comparison_normalization_rules(
+    rules: tuple[ComparisonNormalizationRule, ...],
+) -> tuple[str, ...]:
+    """Return rule-shape issues for an ordered comparison-normalization pipeline."""
+
+    issues: list[str] = []
+    seen_names: set[str] = set()
+    for rule in rules:
+        issues.extend(validate_comparison_normalization_rule(rule))
+        if rule.name in seen_names:
+            issues.append(f"comparison normalization rule {rule.name!r} is duplicated")
+        elif rule.name:
+            seen_names.add(rule.name)
+    return tuple(issues)
+
+
 def normalize_comparison_text(
     text: str,
     rules: tuple[ComparisonNormalizationRule, ...],
