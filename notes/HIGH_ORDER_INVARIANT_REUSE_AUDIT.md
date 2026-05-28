@@ -142,6 +142,13 @@ Recent improvement:
 - UK source-carried labelled-child text-substitution recovery now rebuilds the
   recovered parent through the same central node-replacement helper instead of
   mutating text and children in place.
+- UK node replacement now treats kind/label changes as structural mutations,
+  so label-changing replacements rescan post-op invariants instead of relying
+  only on child-shape changes.
+- UK post-op invariant adjudications now include the latest same-op mutation
+  event accounting summary when mutation events are being collected, making
+  the causal helper, touched paths, and allowed/unexplained path partition
+  visible without changing replay control flow.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
@@ -907,15 +914,15 @@ These are jurisdiction source semantics, not shared invariants.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
    table/schedule children-splice recorder.
-3. Design a post-mutation invariant delta tracker that can explain which
-   mutation event or allowed recovery region accounts for newly introduced
-   invariant violations, without making the replay executor silently repair
-   them.
+3. Promote the UK post-op invariant attribution shape into a small core
+   invariant-delta carrier only after another frontend has a concrete consumer;
+   for now UK owns the local projection because its invariant scope pruning is
+   frontend-specific.
 4. Centralize UK target-gap/absent-target diagnostic ladders only after a
    family-level shape is clear from real witnesses; do not collapse UK drafting
    semantics into core.
 
-The highest-value order is now post-mutation invariant attribution, remaining
-UK mutation-event/debug gaps, cautious comparison-normalization reuse where a
-frontend already has named projection rules, and small type-surface cleanup
-batches.
+The highest-value order is now remaining UK mutation-event/debug gaps,
+target-gap family centralization once real witnesses justify it, cautious
+comparison-normalization reuse where a frontend already has named projection
+rules, and small type-surface cleanup batches.
