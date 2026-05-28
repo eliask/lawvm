@@ -62,6 +62,19 @@ class SourceLaneSelectionEvidence:
             raise ValueError("SourceLaneSelectionEvidence.selected_lane must be non-empty")
         if not self.attempts:
             raise ValueError("SourceLaneSelectionEvidence.attempts must be non-empty")
+        attempt_lanes = {attempt.lane for attempt in self.attempts}
+        has_selected_attempt = any(
+            str(attempt.status).startswith("selected") for attempt in self.attempts
+        )
+        if (
+            self.selected_lane not in attempt_lanes
+            and not has_selected_attempt
+            and not self.selected_lane.startswith("no_source_lane_selected_")
+        ):
+            raise ValueError(
+                "SourceLaneSelectionEvidence.selected_lane must match an attempted lane, "
+                "have a selected attempt, or use no_source_lane_selected_*"
+            )
         _reject_source_lane_overrides(
             "SourceLaneSelectionEvidence.detail",
             self.detail,
