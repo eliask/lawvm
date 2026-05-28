@@ -258,7 +258,14 @@ Risk:
 
 ### P1. Public Label And Path Utility Surface
 
-Problem:
+Status:
+
+- public wrappers now exist in `src/lawvm/core/tree_ops.py`:
+  `normalized_label_key` and `default_label_sort_key`;
+- frontend/tool call sites no longer import or call the private
+  `_norm` / `_default_sort_key` helpers directly.
+
+Original problem:
 
 - frontends call private core helpers like `_default_sort_key` and `_norm`;
 - each frontend/tool has local path dedupe and prefix helpers.
@@ -266,8 +273,8 @@ Problem:
 Evidence:
 
 - `src/lawvm/core/tree_ops.py::_default_sort_key`
-- `src/lawvm/uk_legislation/replay_invariant_diagnostics.py`
-- `src/lawvm/finland/apply_typed_dispatch.py`
+- `src/lawvm/core/tree_ops.py::default_label_sort_key`
+- `src/lawvm/core/tree_ops.py::normalized_label_key`
 - `src/lawvm/estonia/grafter.py`
 - `src/lawvm/core/mutation_boundary.py`
 
@@ -367,10 +374,10 @@ These are jurisdiction source semantics, not shared invariants.
 
 1. Extend UK mutation-event emission from central replace/remove/insert helpers
    to direct table/schedule-list row edits.
-2. Continue replacing private `_norm` / `_default_sort_key` frontend imports
-   with the public `normalized_label_key` / `default_label_sort_key` wrappers
-   in small, testable batches.
+2. Continue replacing local path tuple spellings with shared aliases such as
+   `TreePath` / `TreePaths` where that reduces type noise without changing
+   serialized evidence.
 
 The highest-value order is now UK mutation-event/debug emission, cautious
-comparison-normalization reuse for additional frontends, and small
-public-helper migration batches.
+comparison-normalization reuse for additional frontends, and small type-surface
+cleanup batches.
