@@ -55,6 +55,8 @@ Recent improvement:
 - UK lowering filter, source-pathology filter, manual-frontier, PIT-date,
   metadata-only, source-pathology classification, and applicability-filter
   records now delegate their outward envelope defaults to `diagnostic_detail`.
+- UK source-backed temporal recovery records now delegate their outward
+  envelope defaults to `diagnostic_detail`.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber

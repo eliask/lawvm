@@ -4,6 +4,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any, NamedTuple, Optional, Sequence
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.uk_legislation.effects import UKEffectRecord
 
 
@@ -92,26 +93,24 @@ def resolve_uk_effective_date_overrides_for_replay(
         overrides[effect.effect_id] = metadata.effective_date
         if diagnostics_out is not None:
             diagnostics_out.append(
-                {
-                    "rule_id": UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
-                    "family": "temporal_recovery",
-                    "phase": "lowering",
-                    "effect_id": effect.effect_id,
-                    "affecting_act_id": act_id,
-                    "affected_provisions": effect.affected_provisions,
-                    "affecting_provisions": effect.affecting_provisions,
-                    "effect_type": effect.effect_type,
-                    "effective_date": metadata.effective_date,
-                    "source_locator": metadata.source_locator,
-                    "authority_layer": "AFFECTING_ACT_METADATA",
-                    "reason": (
+                diagnostic_detail(
+                    rule_id=UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
+                    family="temporal_recovery",
+                    phase="lowering",
+                    reason=(
                         "UK effect feed marked this statutory-instrument effect as applied "
                         "but omitted an effect-level in-force date; LawVM used the single "
                         "official instrument commencement date from affecting-act metadata."
                     ),
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                }
+                    blocking=False,
+                    effect_id=effect.effect_id,
+                    affecting_act_id=act_id,
+                    affected_provisions=effect.affected_provisions,
+                    affecting_provisions=effect.affecting_provisions,
+                    effect_type=effect.effect_type,
+                    effective_date=metadata.effective_date,
+                    source_locator=metadata.source_locator,
+                    authority_layer="AFFECTING_ACT_METADATA",
+                )
             )
     return overrides
