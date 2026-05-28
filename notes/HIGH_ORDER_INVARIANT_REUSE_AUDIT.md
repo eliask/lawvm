@@ -104,6 +104,8 @@ Recent improvement:
 - core comparison normalization now exposes an ordered rule-set validator with
   duplicate-name detection, and current Estonia, Norway, Sweden, Finland, and
   Open Law comparison rule sets are pinned by that shared validator.
+- comparison normalization execution now runs the ordered rule-set validator,
+  so duplicate rule names cannot produce ambiguous `fired_rules` output.
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;

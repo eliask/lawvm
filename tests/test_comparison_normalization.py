@@ -103,6 +103,8 @@ def test_validate_comparison_normalization_rules_rejects_duplicate_names() -> No
     assert validate_comparison_normalization_rules((TYPOGRAPHY_RULE, duplicate)) == (
         "comparison normalization rule 'quote_typography' is duplicated",
     )
+    with pytest.raises(ValueError, match="quote_typography"):
+        normalize_comparison_text("\u201cquoted\u201d", (TYPOGRAPHY_RULE, duplicate))
 
 
 def test_current_comparison_rule_sets_validate() -> None:
