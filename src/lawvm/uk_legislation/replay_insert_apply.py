@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, cast
+from typing import Any, Optional, Protocol, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import (
@@ -34,6 +34,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_recovery_action_target_detail,
 )
 from lawvm.uk_legislation.replay_state import NodeLookupResult
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_crossheading_insert_target_gap,
     uk_existing_target_insert_already_materialized,
@@ -50,6 +51,127 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 _TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
 )
+
+
+class _InsertReplaySelf(Protocol):
+    statute: UKMutableStatute
+    eid_map: dict[str, str]
+    adjudications_out: list[CompileAdjudication]
+
+    def _record_invariant_violations(self, op: LegalOperation) -> None: ...
+
+    def _emit_top_section_snapshot(self, op: LegalOperation) -> None: ...
+
+    def _malformed_target_gap(self, target: LegalAddress) -> bool: ...
+
+    def _malformed_target_gap_kind(self, target: LegalAddress) -> str: ...
+
+    def _missing_parent_shape_gap(self, target: LegalAddress) -> bool: ...
+
+    def _missing_parent_shape_gap_kind(self, target: LegalAddress) -> str: ...
+
+    def _schedule_paragraph_carrier_gap(self, target: LegalAddress) -> bool: ...
+
+    def _schedule_paragraph_carrier_gap_kind(self, target: LegalAddress) -> str: ...
+
+    def _leading_blank_subparagraph_gap(self, target: LegalAddress) -> bool: ...
+
+    def _missing_sibling_range_gap(self, target: LegalAddress) -> bool: ...
+
+    def _empty_descendant_shape_gap(self, target: LegalAddress) -> bool: ...
+
+    def _insert_schedule_list_entry_table_rows(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _insert_schedule_list_entry(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _insert_table_cell_child_list_item(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _insert_table_column(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _insert_table_entry_row(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _find_node_by_target(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> NodeLookupResult: ...
+
+    def _find_node_and_parent_statute(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool = True,
+    ) -> NodeLookupResult: ...
+
+    def _log(self, message: str) -> None: ...
+
+    def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+
+    def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool: ...
+
+    def _replace_statute(
+        self,
+        *,
+        body: Optional[UKMutableNode] = None,
+        supplements: Optional[list[UKMutableNode]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None: ...
+
+    def _cached_exact_eid_lookup(self, eid: str) -> NodeLookupResult: ...
+
+    def _cached_suffix_eid_lookup(self, eid: str) -> NodeLookupResult: ...
+
+    def _cached_eid_search_lookup(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool,
+    ) -> NodeLookupResult | None: ...
+
+    def _store_eid_search_cache(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool,
+        result: NodeLookupResult,
+    ) -> None: ...
+
+
+def _insert_replay_self(replay: object) -> _InsertReplaySelf:
+    return cast(_InsertReplaySelf, replay)
 
 
 def _normalized_definition_text(text: object) -> str:
@@ -75,6 +197,7 @@ class UKReplayInsertApplyMixin:
         op: LegalOperation,
         target_resolution_recovery: str,
     ) -> bool:
+        replay = _insert_replay_self(self)
         leaf_kind = _addr_leaf_kind(target)
         leaf_label = _addr_leaf_label(target)
         if not leaf_kind or not leaf_label:
@@ -99,7 +222,7 @@ class UKReplayInsertApplyMixin:
             return False
         if uk_existing_target_insert_already_materialized(existing_child, op):
             _append_uk_replay_adjudication(
-                self.adjudications_out,
+                replay.adjudications_out,
                 kind="uk_replay_existing_target_already_materialized",
                 message=(
                     "UK replay skipped insert: target child already exists under "
@@ -118,7 +241,7 @@ class UKReplayInsertApplyMixin:
             return True
         conflict_detail = uk_existing_target_insert_conflict_detail(existing_child, op)
         _append_uk_replay_adjudication(
-            self.adjudications_out,
+            replay.adjudications_out,
             kind="uk_replay_existing_target_conflict_gap" if conflict_detail else "uk_replay_existing_target_gap",
             message=(
                 "UK replay skipped insert: resolved parent already contains "
@@ -143,10 +266,11 @@ class UKReplayInsertApplyMixin:
         node: UKMutableNode | None,
         insert_existing_target_resolution: str,
     ) -> None:
+        replay = _insert_replay_self(self)
         if op.payload is not None:
             if uk_crossheading_insert_target_gap(target, op):
                 _append_uk_replay_adjudication(
-                    self.adjudications_out,
+                    replay.adjudications_out,
                     kind="uk_replay_crossheading_target_gap",
                     message=(
                         "UK replay skipped crossheading insert: target has no explicit "
@@ -164,7 +288,7 @@ class UKReplayInsertApplyMixin:
             if uk_existing_target_insert_gap(target, node, op):
                 if uk_existing_target_insert_already_materialized(node, op):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
+                        replay.adjudications_out,
                         kind="uk_replay_existing_target_already_materialized",
                         message=(
                             "UK replay skipped insert: target already exists with the same "
@@ -183,7 +307,7 @@ class UKReplayInsertApplyMixin:
                     return
                 if conflict_detail := uk_existing_target_insert_conflict_detail(node, op):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
+                        replay.adjudications_out,
                         kind="uk_replay_existing_target_conflict_gap",
                         message=(
                             "UK replay skipped insert: target path already exists with "
@@ -201,7 +325,7 @@ class UKReplayInsertApplyMixin:
                     )
                     return
                 _append_uk_replay_adjudication(
-                    self.adjudications_out,
+                    replay.adjudications_out,
                     kind="uk_replay_existing_target_gap",
                     message="UK replay skipped insert: target path already exists before applying the op.",
                     op=op,
@@ -221,8 +345,8 @@ class UKReplayInsertApplyMixin:
                 op,
             )
             if inserted:
-                self._record_invariant_violations(op)
-                self._emit_top_section_snapshot(op)
+                replay._record_invariant_violations(op)
+                replay._emit_top_section_snapshot(op)
             else:
                 if _schedule_list_entry_table_rows_selector(op) is not None:
                     return
@@ -236,10 +360,10 @@ class UKReplayInsertApplyMixin:
                     return
                 if _table_row_insert_selector(op) is not None:
                     return
-                if self._malformed_target_gap(target):
+                if replay._malformed_target_gap(target):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
-                        kind=self._malformed_target_gap_kind(target),
+                        replay.adjudications_out,
+                        kind=replay._malformed_target_gap_kind(target),
                         message="UK replay skipped insert: lowered target path is malformed.",
                         op=op,
                         detail=uk_replay_blocking_action_target_detail(
@@ -250,10 +374,10 @@ class UKReplayInsertApplyMixin:
                         ),
                     )
                     return
-                if self._missing_parent_shape_gap(target):
+                if replay._missing_parent_shape_gap(target):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
-                        kind=self._missing_parent_shape_gap_kind(target),
+                        replay.adjudications_out,
+                        kind=replay._missing_parent_shape_gap_kind(target),
                         message="UK replay skipped insert: immediate parent target path is structurally absent.",
                         op=op,
                         detail=uk_replay_blocking_action_target_detail(
@@ -264,10 +388,10 @@ class UKReplayInsertApplyMixin:
                         ),
                     )
                     return
-                if self._schedule_paragraph_carrier_gap(target):
+                if replay._schedule_paragraph_carrier_gap(target):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
-                        kind=self._schedule_paragraph_carrier_gap_kind(target),
+                        replay.adjudications_out,
+                        kind=replay._schedule_paragraph_carrier_gap_kind(target),
                         message="UK replay skipped insert: schedule target expects a paragraph carrier that is absent or wrapped by legacy p1group structure.",
                         op=op,
                         detail=uk_replay_blocking_action_target_detail(
@@ -278,9 +402,9 @@ class UKReplayInsertApplyMixin:
                         ),
                     )
                     return
-                if self._leading_blank_subparagraph_gap(target):
+                if replay._leading_blank_subparagraph_gap(target):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
+                        replay.adjudications_out,
                         kind="uk_replay_absent_sibling_range_gap",
                         message="UK replay skipped insert: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                         op=op,
@@ -292,9 +416,9 @@ class UKReplayInsertApplyMixin:
                         ),
                     )
                     return
-                if self._missing_sibling_range_gap(target):
+                if replay._missing_sibling_range_gap(target):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
+                        replay.adjudications_out,
                         kind="uk_replay_absent_sibling_range_gap",
                         message="UK replay skipped insert: target falls inside an absent sibling range under the parent path.",
                         op=op,
@@ -306,9 +430,9 @@ class UKReplayInsertApplyMixin:
                         ),
                     )
                     return
-                if self._empty_descendant_shape_gap(target):
+                if replay._empty_descendant_shape_gap(target):
                     _append_uk_replay_adjudication(
-                        self.adjudications_out,
+                        replay.adjudications_out,
                         kind="uk_replay_empty_descendant_shape_gap",
                         message="UK replay skipped insert: parent target exists but has no descendant structural shape.",
                         op=op,
@@ -321,7 +445,7 @@ class UKReplayInsertApplyMixin:
                     )
                     return
                 _append_uk_replay_adjudication(
-                    self.adjudications_out,
+                    replay.adjudications_out,
                     kind="uk_replay_payload_mismatch",
                     message="UK replay skipped insert: payload could not be inserted by target path.",
                     op=op,
@@ -334,7 +458,7 @@ class UKReplayInsertApplyMixin:
                 )
         else:
             _append_uk_replay_adjudication(
-                self.adjudications_out,
+                replay.adjudications_out,
                 kind="uk_replay_payload_missing",
                 message="UK replay skipped insert: payload missing.",
                 op=op,
@@ -347,6 +471,7 @@ class UKReplayInsertApplyMixin:
         new_node: UKMutableNode,
         op: LegalOperation,
     ) -> bool:
+        replay = _insert_replay_self(self)
         from lawvm.uk_legislation.canonicalize import (
             uk_insert_into_children,
             uk_resolve_insertion_parent,
@@ -354,7 +479,7 @@ class UKReplayInsertApplyMixin:
 
         schedule_list_entry_table_rows_selector = _schedule_list_entry_table_rows_selector(op)
         if schedule_list_entry_table_rows_selector is not None:
-            return self._insert_schedule_list_entry_table_rows(
+            return replay._insert_schedule_list_entry_table_rows(
                 target,
                 new_node,
                 op,
@@ -362,7 +487,7 @@ class UKReplayInsertApplyMixin:
             )
         schedule_table_end_rows_selector = _schedule_table_end_rows_selector(op)
         if schedule_table_end_rows_selector is not None:
-            return self._insert_schedule_list_entry_table_rows(
+            return replay._insert_schedule_list_entry_table_rows(
                 target,
                 new_node,
                 op,
@@ -370,10 +495,10 @@ class UKReplayInsertApplyMixin:
             )
         schedule_list_entry_selector = _schedule_list_entry_selector(op)
         if schedule_list_entry_selector is not None:
-            return self._insert_schedule_list_entry(target, new_node, op, schedule_list_entry_selector)
+            return replay._insert_schedule_list_entry(target, new_node, op, schedule_list_entry_selector)
         table_cell_child_list_insert_selector = _table_cell_child_list_insert_selector(op)
         if table_cell_child_list_insert_selector is not None:
-            return self._insert_table_cell_child_list_item(
+            return replay._insert_table_cell_child_list_item(
                 target,
                 new_node,
                 op,
@@ -381,10 +506,10 @@ class UKReplayInsertApplyMixin:
             )
         table_column_insert_selector = _table_column_insert_selector(op)
         if table_column_insert_selector is not None:
-            return self._insert_table_column(target, new_node, op, table_column_insert_selector)
+            return replay._insert_table_column(target, new_node, op, table_column_insert_selector)
         table_row_insert_selector = _table_row_insert_selector(op)
         if table_row_insert_selector is not None:
-            return self._insert_table_entry_row(target, new_node, op, table_row_insert_selector)
+            return replay._insert_table_entry_row(target, new_node, op, table_row_insert_selector)
         if self._insert_definition_child_structural_sibling(target, new_node, op):
             return True
 
@@ -397,7 +522,7 @@ class UKReplayInsertApplyMixin:
             node_label=new_node.label,
             preceding_eid=prec_eid,
             following_eid=following_eid,
-            find_node_by_target=self._find_node_by_target,
+            find_node_by_target=replay._find_node_by_target,
             find_node_and_parent_statute=self._find_node_and_parent_statute,
             label_sort_key=_label_sort_key,
         )
@@ -432,11 +557,11 @@ class UKReplayInsertApplyMixin:
             ):
                 return True
             new_node = _inherit_parent_local_eid(parent_node, new_node)
-            self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} at routed index {insert_idx}")
+            replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} at routed index {insert_idx}")
             children = list(parent_node.children)
             children.insert(insert_idx, new_node)
             uk_replace_children(parent_node, children)
-            self._record_child_inserted(parent_node, new_node)
+            replay._record_child_inserted(parent_node, new_node)
             return True
         if parent_node:
             if self._skip_insert_if_parent_already_has_target_child(
@@ -447,12 +572,12 @@ class UKReplayInsertApplyMixin:
             ):
                 return True
             new_node = _inherit_parent_local_eid(parent_node, new_node)
-            self._log(
+            replay._log(
                 f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {parent_node.kind} {parent_node.label}"
             )
             inserted = uk_insert_child_sorted(parent_node, new_node)
             if inserted:
-                self._record_child_inserted(parent_node, new_node)
+                replay._record_child_inserted(parent_node, new_node)
             return inserted
 
         # Build parent address by dropping the last path segment.
@@ -463,7 +588,7 @@ class UKReplayInsertApplyMixin:
         parent_addr = target.parent() if len(target.path) > 1 else None
 
         if parent_addr is not None:
-            p_node, _, _ = self._find_node_by_target(parent_addr)
+            p_node, _, _ = replay._find_node_by_target(parent_addr)
             if p_node is not None and ("definition_term" in p_node.attrs or "definition_child_label" in p_node.attrs):
                 p_node = None
 
@@ -476,10 +601,12 @@ class UKReplayInsertApplyMixin:
                 ):
                     return True
                 new_node = _inherit_parent_local_eid(p_node, new_node)
-                self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {p_node.kind} {p_node.label}")
+                replay._log(
+                    f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {p_node.kind} {p_node.label}"
+                )
                 inserted = uk_insert_child_sorted(p_node, new_node)
                 if inserted:
-                    self._record_child_inserted(p_node, new_node)
+                    replay._record_child_inserted(p_node, new_node)
                 return inserted
         elif container == "schedule":
             # Single-segment schedule target: the target IS the schedule — insert payload into it,
@@ -499,10 +626,10 @@ class UKReplayInsertApplyMixin:
             _sch_structural = {"part", "chapter", "section", "article", "p1group", "crossheading"}
             new_kind = str(new_node.kind).lower()
             if new_kind == "schedule":
-                self._log(f"  EXECUTOR: inserting schedule {new_node.label} at top-level")
-                return self._insert_supplement_sorted(new_node)
+                replay._log(f"  EXECUTOR: inserting schedule {new_node.label} at top-level")
+                return replay._insert_supplement_sorted(new_node)
             if new_kind in _sch_structural:
-                sch_node, _, _ = self._find_node_by_target(target)
+                sch_node, _, _ = replay._find_node_by_target(target)
                 if sch_node:
                     sch_node = cast(UKMutableNode, sch_node)
                     if self._skip_insert_if_parent_already_has_target_child(
@@ -513,10 +640,12 @@ class UKReplayInsertApplyMixin:
                     ):
                         return True
                     new_node = _inherit_parent_local_eid(sch_node, new_node)
-                    self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into schedule {sch_node.label}")
+                    replay._log(
+                        f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into schedule {sch_node.label}"
+                    )
                     inserted = uk_insert_child_sorted(sch_node, new_node)
                     if inserted:
-                        self._record_child_inserted(sch_node, new_node)
+                        replay._record_child_inserted(sch_node, new_node)
                     return inserted
                 return False
         else:
@@ -539,16 +668,18 @@ class UKReplayInsertApplyMixin:
                     target_resolution_recovery="body_predecessor_parent_child_duplicate_guard",
                 ):
                     return True
-                self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} after body predecessor {pred_label}")
+                replay._log(
+                    f"  EXECUTOR: inserting {new_node.kind} {new_node.label} after body predecessor {pred_label}"
+                )
                 children: list[UKMutableNode] = list(pred_parent.children)
                 children.insert(pred_idx + 1, new_node)
                 uk_replace_children(pred_parent, children)
-                self._record_child_inserted(pred_parent, new_node)
+                replay._record_child_inserted(pred_parent, new_node)
                 return True
 
             # No suitable predecessor exists in the body tree: fall back to a
             # true body-root insertion.
-            self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into body (top-level)")
+            replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into body (top-level)")
             body_children: list[UKMutableNode] = list(self.statute.body.children)
             uk_insert_into_children(
                 cast(list[IRNode], body_children),
@@ -556,7 +687,7 @@ class UKReplayInsertApplyMixin:
                 label_sort_key=_label_sort_key,
             )
             self.statute.body.children = body_children
-            self._record_child_inserted(self.statute.body, new_node)
+            replay._record_child_inserted(self.statute.body, new_node)
             return True
 
         if "-" in target_eid:
@@ -571,15 +702,15 @@ class UKReplayInsertApplyMixin:
                 ):
                     return True
                 new_node = _inherit_parent_local_eid(p_node, new_node)
-                self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
+                replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
                 parent_node = cast(UKMutableNode, p_node)
                 inserted = uk_insert_child_sorted(parent_node, new_node)
                 if inserted:
-                    self._record_child_inserted(parent_node, new_node)
+                    replay._record_child_inserted(parent_node, new_node)
                 return inserted
 
         if container == "schedule" and len(target.path) > 1:
-            self._log(
+            replay._log(
                 "  EXECUTOR: refusing body-root fallback for schedule descendant "
                 f"{new_node.kind} {new_node.label} target {target}"
             )
@@ -600,14 +731,14 @@ class UKReplayInsertApplyMixin:
         }
         new_kind = str(new_node.kind).lower()
         if new_kind not in body_root_kinds:
-            self._log(
+            replay._log(
                 "  EXECUTOR: WARN refusing impossible body-root fallback for "
                 f"{new_node.kind} {new_node.label} target {target}"
             )
             return False
-        self._log(f"  EXECUTOR: fallback inserting {new_node.kind} {new_node.label} into body")
+        replay._log(f"  EXECUTOR: fallback inserting {new_node.kind} {new_node.label} into body")
         _append_uk_replay_adjudication(
-            self.adjudications_out,
+            replay.adjudications_out,
             kind="uk_replay_body_root_fallback_insert_resolved",
             message=(
                 "UK replay inserted a payload at body/supplement root after "
@@ -626,7 +757,7 @@ class UKReplayInsertApplyMixin:
         if new_kind == "schedule":
             supplements = list(self.statute.supplements)
             supplements.append(new_node)
-            self._replace_statute(supplements=supplements)
+            replay._replace_statute(supplements=supplements)
             return True
         else:
             body_children: list[UKMutableNode] = list(self.statute.body.children)
@@ -636,7 +767,7 @@ class UKReplayInsertApplyMixin:
                 label_sort_key=_label_sort_key,
             )
             self.statute.body.children = body_children
-            self._record_child_inserted(self.statute.body, new_node)
+            replay._record_child_inserted(self.statute.body, new_node)
             return True
 
     def _insert_definition_child_structural_sibling(
@@ -645,6 +776,7 @@ class UKReplayInsertApplyMixin:
         new_node: UKMutableNode,
         op: LegalOperation,
     ) -> bool:
+        replay = _insert_replay_self(self)
         if new_node.attrs.get("source_rule_id") not in {
             UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
             UK_DEFINITION_CHILD_STRUCTURAL_INSERT_BEFORE_TAIL_CONNECTOR_RULE_ID,
@@ -653,10 +785,10 @@ class UKReplayInsertApplyMixin:
         parent_addr = target.parent() if len(target.path) > 1 else None
         if parent_addr is None:
             return False
-        parent_node, _, _ = self._find_node_by_target(parent_addr)
+        parent_node, _, _ = replay._find_node_by_target(parent_addr)
         if parent_node is None:
             _append_uk_replay_adjudication(
-                self.adjudications_out,
+                replay.adjudications_out,
                 kind="uk_replay_definition_child_structural_sibling_parent_gap",
                 message="UK replay skipped definition-child sibling insert: definition section parent was absent.",
                 op=op,
@@ -669,12 +801,11 @@ class UKReplayInsertApplyMixin:
                 ),
             )
             return True
-        parent_node = cast(UKMutableNode, parent_node)
         definition_term, inserted_label = _definition_child_identity(new_node)
         anchor_label = _clean_num(str(new_node.attrs.get("source_anchor_child_label") or ""))
         if not definition_term or not inserted_label or not anchor_label:
             _append_uk_replay_adjudication(
-                self.adjudications_out,
+                replay.adjudications_out,
                 kind="uk_replay_definition_child_structural_sibling_anchor_gap",
                 message="UK replay skipped definition-child sibling insert: payload lacks scoped definition-child identity.",
                 op=op,
@@ -697,7 +828,7 @@ class UKReplayInsertApplyMixin:
             existing = parent_node.children[existing_indexes[0]]
             if _normalized_definition_text(existing.text) == _normalized_definition_text(new_node.text):
                 _append_uk_replay_adjudication(
-                    self.adjudications_out,
+                    replay.adjudications_out,
                     kind="uk_replay_definition_child_structural_sibling_already_materialized",
                     message=(
                         "UK replay skipped definition-child sibling insert: target definition child "
@@ -714,7 +845,7 @@ class UKReplayInsertApplyMixin:
                 )
                 return True
             _append_uk_replay_adjudication(
-                self.adjudications_out,
+                replay.adjudications_out,
                 kind="uk_replay_definition_child_structural_sibling_conflict_gap",
                 message=(
                     "UK replay skipped definition-child sibling insert: target definition child "
@@ -740,7 +871,7 @@ class UKReplayInsertApplyMixin:
         ]
         if len(anchor_indexes) != 1:
             _append_uk_replay_adjudication(
-                self.adjudications_out,
+                replay.adjudications_out,
                 kind="uk_replay_definition_child_structural_sibling_anchor_gap",
                 message=(
                     "UK replay skipped definition-child sibling insert: source-named "
@@ -762,9 +893,9 @@ class UKReplayInsertApplyMixin:
         children = list(parent_node.children)
         children.insert(anchor_indexes[0] + 1, new_node)
         uk_replace_children(parent_node, children)
-        self._record_child_inserted(parent_node, new_node)
+        replay._record_child_inserted(parent_node, new_node)
         _append_uk_replay_adjudication(
-            self.adjudications_out,
+            replay.adjudications_out,
             kind="uk_replay_definition_child_structural_sibling_insert_applied",
             message=(
                 "UK replay inserted a source-owned definition child after the "
@@ -864,6 +995,7 @@ class UKReplayInsertApplyMixin:
         self,
         eid: str,
     ) -> NodeLookupResult:
+        replay = _insert_replay_self(self)
         parts = str(eid or "").split("-")
         if len(parts) < 3:
             return NodeLookupResult(node=None, parent=None, index=None)
@@ -871,7 +1003,7 @@ class UKReplayInsertApplyMixin:
         if prefix not in _TOP_SCOPED_EID_PREFIXES:
             return NodeLookupResult(node=None, parent=None, index=None)
         top_eid = f"{prefix}-{parts[1]}"
-        return self._cached_exact_eid_lookup(top_eid)
+        return replay._cached_exact_eid_lookup(top_eid)
 
     def _eid_has_strict_top_scope(self, eid: str) -> bool:
         parts = str(eid or "").split("-")
@@ -883,13 +1015,14 @@ class UKReplayInsertApplyMixin:
         *,
         allow_sequence_match: bool = True,
     ) -> NodeLookupResult:
-        cached_node, cached_parent, cached_idx = self._cached_exact_eid_lookup(eid)
+        replay = _insert_replay_self(self)
+        cached_node, cached_parent, cached_idx = replay._cached_exact_eid_lookup(eid)
         if cached_node is not None:
-            return cached_node, cached_parent, cached_idx
-        suffix_node, suffix_parent, suffix_idx = self._cached_suffix_eid_lookup(eid)
+            return NodeLookupResult(node=cached_node, parent=cached_parent, index=cached_idx)
+        suffix_node, suffix_parent, suffix_idx = replay._cached_suffix_eid_lookup(eid)
         if suffix_node is not None:
-            return suffix_node, suffix_parent, suffix_idx
-        cached_search = self._cached_eid_search_lookup(
+            return NodeLookupResult(node=suffix_node, parent=suffix_parent, index=suffix_idx)
+        cached_search = replay._cached_eid_search_lookup(
             eid,
             allow_sequence_match=allow_sequence_match,
         )
@@ -904,7 +1037,7 @@ class UKReplayInsertApplyMixin:
             )
             if node:
                 result = NodeLookupResult(node=node, parent=parent, index=idx)
-                self._store_eid_search_cache(
+                replay._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
                     result=result,
@@ -912,7 +1045,7 @@ class UKReplayInsertApplyMixin:
                 return result
             if self._eid_has_strict_top_scope(eid):
                 result = NodeLookupResult(node=None, parent=None, index=None)
-                self._store_eid_search_cache(
+                replay._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
                     result=result,
@@ -920,7 +1053,7 @@ class UKReplayInsertApplyMixin:
                 return result
         elif self._eid_has_strict_top_scope(eid):
             result = NodeLookupResult(node=None, parent=None, index=None)
-            self._store_eid_search_cache(
+            replay._store_eid_search_cache(
                 eid,
                 allow_sequence_match=allow_sequence_match,
                 result=result,
@@ -933,7 +1066,7 @@ class UKReplayInsertApplyMixin:
         )
         if node:
             result = NodeLookupResult(node=node, parent=parent, index=idx)
-            self._store_eid_search_cache(
+            replay._store_eid_search_cache(
                 eid,
                 allow_sequence_match=allow_sequence_match,
                 result=result,
@@ -942,7 +1075,7 @@ class UKReplayInsertApplyMixin:
         for sched_idx, sched in enumerate(self.statute.supplements):
             if sched.attrs.get("eId") == eid:
                 result = NodeLookupResult(node=sched, parent=None, index=sched_idx)
-                self._store_eid_search_cache(
+                replay._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
                     result=result,
@@ -955,14 +1088,14 @@ class UKReplayInsertApplyMixin:
             )
             if node:
                 result = NodeLookupResult(node=node, parent=parent, index=idx)
-                self._store_eid_search_cache(
+                replay._store_eid_search_cache(
                     eid,
                     allow_sequence_match=allow_sequence_match,
                     result=result,
                 )
                 return result
         result = NodeLookupResult(node=None, parent=None, index=None)
-        self._store_eid_search_cache(
+        replay._store_eid_search_cache(
             eid,
             allow_sequence_match=allow_sequence_match,
             result=result,
