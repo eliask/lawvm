@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, TextPatchKindEnum, TextPatchSpec, TextSelector, StructuralAction
+from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.tree_ops import TreeInvariantViolation
 
 from lawvm.core.ir import IRNode
@@ -81,6 +82,34 @@ def _duplicate_text_statute() -> IRStatute:
         ),
         supplements=(),
     )
+
+
+def test_replay_uk_ops_can_emit_core_mutation_event_for_node_replace() -> None:
+    mutation_events: list[MutationEvent] = []
+    op = LegalOperation(
+        op_id="uk-test-replace-section-1",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Replacement text."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(_base_statute(), [op], mutation_events_out=mutation_events)
+
+    assert replayed.body.children[0].text == "Replacement text."
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-replace-section-1"
+    assert event.source_statute == "ukpga/2026/1"
+    assert event.action == "replace"
+    assert event.helper == "_replace_node_in_statute"
+    assert event.outcome == "replaced_node"
+    assert event.resolved_target_path == (("section", "1"),)
+    assert event.parent_path == ()
+    assert event.replaced_paths == ((("section", "1"),),)
+    assert event.created_paths == ()
+    assert event.removed_paths == ()
 
 
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:

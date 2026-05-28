@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple, Optional, TypeAlias, cast
 
+from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.mutation_boundary import TreePath, tree_path_from_legal_address
+from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
@@ -46,6 +49,8 @@ _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
 class UKReplayStateMixin:
     statute: UKMutableStatute
     lo_ops_out: Optional[list[LegalOperation]]
+    mutation_events_out: Optional[list[MutationEvent]]
+    _current_mutation_op: Optional[LegalOperation]
     _repealed_target_prefixes: set[str]
     _structure_mutation_serial: int
     _eid_lookup_index: Optional[dict[str, NodeIndexEntry]]
@@ -623,8 +628,77 @@ class UKReplayStateMixin:
             parent = parent.children[child_idx]
         return ParentIndexEntry(parent=parent, index=path[-1])
 
+    def _find_tree_path_to_node(
+        self,
+        root: UKMutableNode,
+        target_node: UKMutableNode,
+        prefix: TreePath = (),
+    ) -> TreePath | None:
+        if root is target_node:
+            return prefix
+        for child in root.children:
+            child_path = prefix + ((_kind_str(child.kind), child.label or ""),)
+            if child is target_node:
+                return child_path
+            if not child.children:
+                continue
+            found = self._find_tree_path_to_node(child, target_node, child_path)
+            if found is not None:
+                return found
+        return None
+
+    def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None:
+        if self.statute.body is node:
+            return ()
+        found = self._find_tree_path_to_node(self.statute.body, node)
+        if found is not None:
+            return found
+        for supplement in self.statute.supplements:
+            supplement_path = ((_kind_str(supplement.kind), supplement.label or ""),)
+            found = self._find_tree_path_to_node(supplement, node, supplement_path)
+            if found is not None:
+                return found
+        return None
+
+    def _record_replace_node_mutation_event(
+        self,
+        *,
+        old_path: TreePath | None,
+        new_node: UKMutableNode,
+    ) -> None:
+        if self.mutation_events_out is None or old_path is None:
+            return
+        op = self._current_mutation_op
+        if op is None:
+            return
+        parent_path = old_path[:-1] if old_path else ()
+        new_path = parent_path + ((_kind_str(new_node.kind), new_node.label or ""),) if old_path else ()
+        removed_paths: tuple[TreePath, ...] = ()
+        created_paths: tuple[TreePath, ...] = ()
+        replaced_paths: tuple[TreePath, ...] = (old_path,)
+        if new_path != old_path:
+            removed_paths = (old_path,)
+            created_paths = (new_path,)
+            replaced_paths = ()
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper="_replace_node_in_statute",
+                outcome="replaced_node",
+                resolved_target_path=tree_path_from_legal_address(op.target),
+                parent_path=parent_path,
+                created_paths=created_paths,
+                removed_paths=removed_paths,
+                replaced_paths=replaced_paths,
+            )
+        )
+
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
+        old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
         if self.statute.body is old_node:
             self._remove_eid_lookup_subtree(old_node)
             self.statute.body = new_node
@@ -632,6 +706,7 @@ class UKReplayStateMixin:
             self._clear_eid_lookup_index()
             if structure_changed:
                 self._note_structure_mutation()
+            self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
             return True
         parent_entry = self._eid_lookup_parent_entry(old_node)
         if parent_entry is not None:
@@ -642,6 +717,7 @@ class UKReplayStateMixin:
                 self._add_eid_lookup_subtree(new_node, parent, idx)
                 if structure_changed:
                     self._note_structure_mutation()
+                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
                 return True
             if idx is not None:
                 self._remove_eid_lookup_subtree(old_node)
@@ -649,6 +725,7 @@ class UKReplayStateMixin:
                 self._add_eid_lookup_subtree(new_node, None, idx)
                 if structure_changed:
                     self._note_structure_mutation()
+                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
                 return True
         body_path = self._find_path_to_node(self.statute.body, old_node)
         if body_path is not None:
@@ -658,6 +735,7 @@ class UKReplayStateMixin:
             self._add_eid_lookup_subtree(new_node, parent, idx)
             if structure_changed:
                 self._note_structure_mutation()
+            self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
             return True
         for idx, root in enumerate(self.statute.supplements):
             if root is old_node:
@@ -666,6 +744,7 @@ class UKReplayStateMixin:
                 self._add_eid_lookup_subtree(new_node, None, idx)
                 if structure_changed:
                     self._note_structure_mutation()
+                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
                 return True
             sub_path = self._find_path_to_node(root, old_node)
             if sub_path is not None:
@@ -675,6 +754,7 @@ class UKReplayStateMixin:
                 self._add_eid_lookup_subtree(new_node, parent, child_idx)
                 if structure_changed:
                     self._note_structure_mutation()
+                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
                 return True
         return False
 
