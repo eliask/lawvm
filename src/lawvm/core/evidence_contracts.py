@@ -17,6 +17,7 @@ from enum import Enum
 from typing import Any, Mapping
 
 from lawvm.core.diagnostic_records import validate_blocking_disposition
+from lawvm.core.frozen_values import freeze_mapping
 
 
 @dataclass(frozen=True)
@@ -44,8 +45,11 @@ class EvidenceSummary:
         for field_name in ("claim_count", "divergence_count", "actionable_count", "unresolved_count"):
             if getattr(self, field_name) < 0:
                 raise ValueError(f"EvidenceSummary.{field_name} must be non-negative")
+        for field_name in ("tiers", "claim_kinds", "trigger_sources", "artifact_families"):
+            object.__setattr__(self, field_name, tuple(str(value) for value in getattr(self, field_name)))
         if not isinstance(self.detail, Mapping):
             raise ValueError("EvidenceSummary.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -94,6 +98,7 @@ class CorpusOperationEvidenceRow:
         if not isinstance(self.detail, Mapping):
             raise ValueError("CorpusOperationEvidenceRow.detail must be a mapping")
         object.__setattr__(self, "finding_ids", tuple(str(value) for value in self.finding_ids))
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
         _raise_if_issues(
             validate_corpus_operation_evidence_row(self.to_dict()),
             subject="CorpusOperationEvidenceRow",
@@ -132,6 +137,7 @@ class CorpusFindingEvidenceRow:
             "related_row_ids",
             tuple(str(value) for value in self.related_row_ids),
         )
+        object.__setattr__(self, "evidence", freeze_mapping(self.evidence))
         _raise_if_issues(
             validate_corpus_finding_evidence_row(self.to_dict()),
             subject="CorpusFindingEvidenceRow",

@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Mapping
 
+from lawvm.core.frozen_values import freeze_mapping
+
 
 VerifySeverity = Literal["error", "warning", "info"]
 VERIFY_SEVERITIES = frozenset({"error", "warning", "info"})
@@ -37,6 +39,7 @@ class VerifyIssue:
             raise ValueError(f"VerifyIssue.severity must be one of {sorted(VERIFY_SEVERITIES)}")
         if not isinstance(self.detail, Mapping):
             raise ValueError("VerifyIssue.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -64,6 +67,7 @@ class DivergenceRecord:
             raise ValueError("DivergenceRecord.score must be between 0 and 1")
         if not isinstance(self.detail, Mapping):
             raise ValueError("DivergenceRecord.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -115,6 +119,7 @@ class CoverageAttribution:
                 raise ValueError(f"CoverageAttribution.{field_name} must be non-negative")
         if not isinstance(self.detail, Mapping):
             raise ValueError("CoverageAttribution.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -148,8 +153,19 @@ class VerifySummary:
         for field_name in ("issue_count", "divergence_count", "op_count"):
             if getattr(self, field_name) < 0:
                 raise ValueError(f"VerifySummary.{field_name} must be non-negative")
+        issues = tuple(self.issues)
+        if not all(isinstance(issue, VerifyIssue) for issue in issues):
+            raise ValueError("VerifySummary.issues must contain VerifyIssue records")
+        object.__setattr__(self, "issues", issues)
+        divergences = tuple(self.divergences)
+        if not all(isinstance(divergence, DivergenceRecord) for divergence in divergences):
+            raise ValueError("VerifySummary.divergences must contain DivergenceRecord records")
+        object.__setattr__(self, "divergences", divergences)
+        if self.coverage is not None and not isinstance(self.coverage, CoverageAttribution):
+            raise ValueError("VerifySummary.coverage must be a CoverageAttribution")
         if not isinstance(self.detail, Mapping):
             raise ValueError("VerifySummary.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

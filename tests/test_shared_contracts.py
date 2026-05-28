@@ -168,6 +168,40 @@ def test_verify_contracts_reject_invalid_envelope_shapes() -> None:
         VerifySummary(jurisdiction="", base_id="base")
 
 
+def test_verify_contracts_freeze_detail_and_normalize_lanes() -> None:
+    issue_detail = {"paths": ["section:1"]}
+    divergence_detail = {"rules": ["oracle_projection"]}
+    coverage_detail = {"sources": ["op-1"]}
+    issue = VerifyIssue(code="parse.bad", message="bad parse", detail=issue_detail)
+    divergence = DivergenceRecord(address="section:1", kind="MISMATCH", detail=divergence_detail)
+    coverage = CoverageAttribution(detail=coverage_detail)
+    issues = [issue]
+    divergences = [divergence]
+
+    summary = VerifySummary(
+        jurisdiction="ee",
+        base_id="base",
+        issues=cast(Any, issues),
+        divergences=cast(Any, divergences),
+        coverage=coverage,
+        detail={"summary": {"ids": ["base"]}},
+    )
+
+    issues.clear()
+    divergences.clear()
+    issue_detail["paths"].append("mutated")
+    divergence_detail["rules"].append("mutated")
+    coverage_detail["sources"].append("mutated")
+
+    assert summary.issues == (issue,)
+    assert summary.divergences == (divergence,)
+    assert isinstance(issue.detail, FrozenDict)
+    assert issue.detail["paths"] == ("section:1",)
+    assert divergence.detail["rules"] == ("oracle_projection",)
+    assert coverage.detail["sources"] == ("op-1",)
+    assert summary.detail["summary"]["ids"] == ("base",)
+
+
 def test_divergence_partition_preserves_filtered_rule_evidence() -> None:
     divergence = DivergenceRecord(address="section:1", kind="MISMATCH")
 
@@ -245,6 +279,47 @@ def test_corpus_finding_evidence_row_to_dict_is_json_friendly() -> None:
     assert data["rule_id"] == "open_law_expire_lifecycle_not_replayed"
     assert data["evidence"] == {"path": ("a", "b")}
     assert validate_corpus_finding_evidence_row(data) == ()
+
+
+def test_evidence_contracts_freeze_detail_lanes() -> None:
+    summary = EvidenceSummary(
+        jurisdiction="fi",
+        base_id="1991/1707",
+        tiers=cast(Any, ["oracle_ready"]),
+        detail={"nested": {"ids": ["summary"]}},
+    )
+    op_detail = {"reason": "unsupported", "ids": ["row-1"]}
+    op_row = CorpusOperationEvidenceRow(
+        row_id="row-1",
+        frontend_id="starter",
+        source_artifact_id="act.xml",
+        status=CorpusRowStatus.UNSUPPORTED,
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        detail=op_detail,
+    )
+    finding_evidence = {"path": ["a", "b"]}
+    finding_row = CorpusFindingEvidenceRow(
+        finding_id="row-1:finding",
+        frontend_id="starter",
+        family="unsupported",
+        rule_id="starter.rule",
+        phase="parse",
+        message="recorded",
+        strict_disposition="record",
+        quirks_disposition="record",
+        evidence=finding_evidence,
+    )
+
+    op_detail["ids"].append("mutated")
+    finding_evidence["path"].append("mutated")
+
+    assert summary.tiers == ("oracle_ready",)
+    assert summary.detail["nested"]["ids"] == ("summary",)
+    assert isinstance(op_row.detail, FrozenDict)
+    assert op_row.detail["ids"] == ("row-1",)
+    assert finding_row.evidence["path"] == ("a", "b")
 
 
 def test_corpus_operation_evidence_validation_rejects_unexplained_non_claim() -> None:
