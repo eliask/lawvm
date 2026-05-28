@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
+from lawvm.core.adjudication_evidence import adjudication_diagnostic_detail
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem, filter_result_from_parts
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
@@ -44,7 +45,7 @@ class UKReplayPrepareResult:
                     item=op,
                     reason=_prepare_rejection_reason(adjudication),
                     reason_code=str(adjudication.kind or ""),
-                    blocking=bool(adjudication.detail.get("blocking", True)),
+                    blocking=bool(adjudication_diagnostic_detail(adjudication)["blocking"]),
                 )
                 for op, adjudication in zip(
                     self.rejected_ops,
