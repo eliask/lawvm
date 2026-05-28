@@ -17,6 +17,7 @@ import subprocess
 from typing import Any, Callable, Protocol, Optional, cast
 from urllib.parse import urlencode, urljoin
 
+from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
@@ -353,12 +354,41 @@ def _json_bytes(data: object) -> bytes:
     return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
 
+_SE_COMPARE_NORMALIZATION_RULES = (
+    ComparisonNormalizationRule(
+        name="se_compare_dash_glyph_equivalence",
+        rule_class="presentation_cleanup",
+        kind="translation",
+        description="Project Swedish comparison text dash variants to ASCII hyphen.",
+        translation=str.maketrans({"–": "-", "—": "-", "\u2212": "-"}),
+    ),
+    ComparisonNormalizationRule(
+        name="se_compare_editorial_attribution_suffix",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Ignore trailing Förordning attribution suffixes in comparison text.",
+        pattern=re.compile(r"\s*Förordning\s+\(\d{4}:\d+\)\.\s*$"),
+    ),
+    ComparisonNormalizationRule(
+        name="se_compare_leading_section_number",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Ignore publisher-leading section numbers before capitalized text.",
+        pattern=re.compile(r"^\d+\s+(?=[A-ZÅÄÖ])"),
+    ),
+    ComparisonNormalizationRule(
+        name="se_compare_inline_list_numbering",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Ignore inline list numbering inserted after whitespace before lowercase text.",
+        pattern=re.compile(r"(?<=\s)\d+\.\s+(?=[a-zåäö])"),
+    ),
+)
+
+
 def _normalize_compare_text(text: str) -> str:
-    text = text.replace("–", "-").replace("—", "-").replace("\u2212", "-")
-    text = re.sub(r"\s*Förordning\s+\(\d{4}:\d+\)\.\s*$", "", text.strip())
-    text = re.sub(r"^\d+\s+(?=[A-ZÅÄÖ])", "", text)
-    text = re.sub(r"(?<=\s)\d+\.\s+(?=[a-zåäö])", "", text)
-    return " ".join(text.split())
+    normalized = normalize_comparison_text(text.strip(), _SE_COMPARE_NORMALIZATION_RULES).text
+    return " ".join(normalized.split())
 
 
 def _classify_replay_row(replay_text: str, post_text: str) -> str:

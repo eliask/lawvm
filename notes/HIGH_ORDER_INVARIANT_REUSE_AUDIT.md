@@ -49,6 +49,9 @@ Recent improvement:
 - core comparison normalization supports placeholder-equivalence rules, and
   Estonia comparison text normalization delegates execution to the core
   pipeline while keeping the EE rule taxonomy local.
+- Sweden comparison-only dash/editorial/inline-numbering projection now
+  delegates its named presentation rules to the core comparison-normalization
+  pipeline while keeping Sweden's rule taxonomy local.
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
@@ -241,6 +244,9 @@ Low-risk first migration:
   Open Law/Maryland snapshot semantics;
 - later adapt Estonia's local rule dataclass to the core carrier while leaving
   `_EE_NORMALIZATION_RULES` local.
+- Sweden comparison text normalization now uses the core rule carrier for dash
+  equivalence, editorial attribution suffixes, leading section numbers, and
+  inline list numbering.
 
 ### P1. Diagnostic Envelope / Disposition Builder
 
