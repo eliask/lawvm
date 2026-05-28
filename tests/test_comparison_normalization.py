@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from lawvm.core.comparison_normalization import (
     ComparisonNormalizationRule,
     normalize_comparison_text,
@@ -42,3 +44,19 @@ def test_project_ir_comparison_text_rebuilds_changed_text() -> None:
 
     assert projected is not node
     assert projected.children[0].text == '"quoted"'
+
+
+def test_normalize_comparison_text_supports_placeholder_equivalence() -> None:
+    rule = ComparisonNormalizationRule(
+        name="bare_dash_placeholder",
+        rule_class="placeholder_equivalence",
+        kind="placeholder",
+        description="Treat a bare dash placeholder as empty for comparison.",
+        pattern=re.compile(r"^-$"),
+        replacement="",
+    )
+
+    result = normalize_comparison_text(" - ", (rule,))
+
+    assert result.text == ""
+    assert result.fired_rules == ("bare_dash_placeholder",)

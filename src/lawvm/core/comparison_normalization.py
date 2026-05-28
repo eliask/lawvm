@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Callable, Literal, Mapping, Optional
+from typing import Callable, Literal, Mapping, Optional, cast
 
 from lawvm.core.ir import IRNode
 
-ComparisonRuleKind = Literal["translation", "literal", "regex"]
+ComparisonRuleKind = Literal["translation", "literal", "regex", "placeholder"]
 TranslationTable = Mapping[int, str | int | None]
 
 
@@ -54,6 +54,11 @@ def normalize_comparison_text(
             if rule.pattern is None:
                 continue
             normalized = rule.pattern.sub(rule.replacement, normalized)
+        elif rule.kind == "placeholder":
+            if rule.pattern is None:
+                continue
+            if rule.pattern.fullmatch(normalized.strip()):
+                normalized = cast(str, rule.replacement)
         if normalized != before:
             fired.append(rule.name)
     return ComparisonNormalizationResult(text=normalized, fired_rules=tuple(fired))
