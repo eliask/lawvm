@@ -111,6 +111,61 @@ class UKReplayGroundingMixin:
         # Collect the full set of oracle EID values (the canonical IDs we want to
         # assign).  Used both for pre-seeding and in the main matching loop.
         oracle_id_values: set = set(self.eid_map.values())
+        pending_cleared_events: dict[int, dict[str, object]] = {}
+
+        def _alignment_event(
+            node: UKMutableNode,
+            *,
+            before_eid: Optional[str],
+            after_eid: Optional[str],
+            match_method: str,
+            match_key: Optional[str],
+        ) -> dict[str, object]:
+            return {
+                "rule_id": "uk_oracle_eid_alignment_adapter",
+                "phase": "oracle_alignment",
+                "family": "oracle_alignment_adapter",
+                "kind": str(node.kind),
+                "label": node.label,
+                "before_eid": before_eid,
+                "after_eid": after_eid,
+                "match_method": match_method,
+                "match_key": match_key,
+            }
+
+        def _queue_cleared_alignment_event(
+            node: UKMutableNode,
+            *,
+            before_eid: Optional[str],
+            match_method: str,
+        ) -> None:
+            if before_eid:
+                pending_cleared_events[id(node)] = _alignment_event(
+                    node,
+                    before_eid=before_eid,
+                    after_eid=None,
+                    match_method=match_method,
+                    match_key=None,
+                )
+
+        def _append_alignment_event(
+            node: UKMutableNode,
+            *,
+            before_eid: Optional[str],
+            after_eid: Optional[str],
+            match_method: str,
+            match_key: Optional[str],
+        ) -> None:
+            pending_cleared_events.pop(id(node), None)
+            self.oracle_alignment_events.append(
+                _alignment_event(
+                    node,
+                    before_eid=before_eid,
+                    after_eid=after_eid,
+                    match_method=match_method,
+                    match_key=match_key,
+                )
+            )
 
         # Pre-seed seen_oracle_ids with EIDs that are already correct.
         # These nodes already carry an oracle-canonical EID and must NOT be
@@ -139,6 +194,15 @@ class UKReplayGroundingMixin:
                 for key in ("eId", "id"):
                     if key in node.attrs:
                         del node.attrs[key]
+                _queue_cleared_alignment_event(
+                    node,
+                    before_eid=eid,
+                    match_method=(
+                        "schedule_entry_public_eid_cleared"
+                        if _uk_kind_value(node.kind) == "schedule_entry"
+                        else "non_oracle_eid_cleared"
+                    ),
+                )
             # Children may need grounding even if the parent is already correct.
             for c in node.children:
                 _clear_eids(c)
@@ -157,8 +221,14 @@ class UKReplayGroundingMixin:
             if is_eur and kind_value == "section":
                 kind_value = "article"
             if kind_value == "schedule_entry":
+                before_eid = _grounding_eid(node)
                 for key in ("eId", "id"):
                     node.attrs.pop(key, None)
+                _queue_cleared_alignment_event(
+                    node,
+                    before_eid=before_eid,
+                    match_method="schedule_entry_public_eid_cleared",
+                )
             elif "eId" not in node.attrs and "id" not in node.attrs and kind_value != "body":
                 clean_label = _grounding_clean_label(kind_value, node.label)
                 if clean_label:
@@ -184,8 +254,14 @@ class UKReplayGroundingMixin:
             nonlocal seen_oracle_ids
             parent_eid = _uk_eid_value(parent_eid)
             if _uk_kind_value(node.kind) == "schedule_entry":
+                before_eid = _grounding_eid(node)
                 for key in ("eId", "id"):
                     node.attrs.pop(key, None)
+                _queue_cleared_alignment_event(
+                    node,
+                    before_eid=before_eid,
+                    match_method="schedule_entry_public_eid_cleared",
+                )
                 return
             # Fast path: if this node already has a correct oracle EID (preserved
             # from the pre-seed pass), skip the multi-pass matching for this node
@@ -492,18 +568,12 @@ class UKReplayGroundingMixin:
                 oracle_path = _find_best_oracle_path(oracle_id, self.eid_map, context)
                 if oracle_path:
                     next_path_key = oracle_path
-                self.oracle_alignment_events.append(
-                    {
-                        "rule_id": "uk_oracle_eid_alignment_adapter",
-                        "phase": "oracle_alignment",
-                        "family": "oracle_alignment_adapter",
-                        "kind": str(node.kind),
-                        "label": node.label,
-                        "before_eid": before_eid,
-                        "after_eid": oracle_id,
-                        "match_method": str(matched_cand).split(":", 1)[0] if matched_cand else "oracle_preserved",
-                        "match_key": matched_cand,
-                    }
+                _append_alignment_event(
+                    node,
+                    before_eid=before_eid,
+                    after_eid=oracle_id,
+                    match_method=str(matched_cand).split(":", 1)[0] if matched_cand else "oracle_preserved",
+                    match_key=matched_cand,
                 )
                 if matched_cand:
                     self._log(f"  Matched {node.kind} {node.label or ''} to {oracle_id} via {matched_cand}")
@@ -512,18 +582,12 @@ class UKReplayGroundingMixin:
                     if "eId" in node.attrs:
                         before_eid = _uk_eid_value(node.attrs.get("eId"))
                         del node.attrs["eId"]
-                        self.oracle_alignment_events.append(
-                            {
-                                "rule_id": "uk_oracle_eid_alignment_adapter",
-                                "phase": "oracle_alignment",
-                                "family": "oracle_alignment_adapter",
-                                "kind": str(node.kind),
-                                "label": node.label,
-                                "before_eid": before_eid,
-                                "after_eid": None,
-                                "match_method": "transparent_wrapper_cleared",
-                                "match_key": None,
-                            }
+                        _append_alignment_event(
+                            node,
+                            before_eid=before_eid,
+                            after_eid=None,
+                            match_method="transparent_wrapper_cleared",
+                            match_key=None,
                         )
                 elif parent_eid:
                     before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
@@ -570,33 +634,21 @@ class UKReplayGroundingMixin:
                     if not clean_label and kind_name not in {"schedule", "part", "chapter"}:
                         for key in ("eId", "id"):
                             node.attrs.pop(key, None)
-                        self.oracle_alignment_events.append(
-                            {
-                                "rule_id": "uk_oracle_eid_alignment_adapter",
-                                "phase": "oracle_alignment",
-                                "family": "oracle_alignment_adapter",
-                                "kind": str(node.kind),
-                                "label": node.label,
-                                "before_eid": before_eid,
-                                "after_eid": None,
-                                "match_method": "local_fallback_unlabeled_blocked",
-                                "match_key": None,
-                            }
+                        _append_alignment_event(
+                            node,
+                            before_eid=before_eid,
+                            after_eid=None,
+                            match_method="local_fallback_unlabeled_blocked",
+                            match_key=None,
                         )
                     else:
                         node.attrs["eId"] = fallback_eid
-                        self.oracle_alignment_events.append(
-                            {
-                                "rule_id": "uk_oracle_eid_alignment_adapter",
-                                "phase": "oracle_alignment",
-                                "family": "oracle_alignment_adapter",
-                                "kind": str(node.kind),
-                                "label": node.label,
-                                "before_eid": before_eid,
-                                "after_eid": fallback_eid,
-                                "match_method": "local_fallback",
-                                "match_key": None,
-                            }
+                        _append_alignment_event(
+                            node,
+                            before_eid=before_eid,
+                            after_eid=fallback_eid,
+                            match_method="local_fallback",
+                            match_key=None,
                         )
 
             kind_counts = {}
@@ -635,4 +687,5 @@ class UKReplayGroundingMixin:
             _ground_node(sch, "", None, ordinal=i + 1, context="schedule")
             _visit_count(sch)
 
+        self.oracle_alignment_events.extend(pending_cleared_events.values())
         self._log(f"  EXECUTOR: grounded {grounded_count} nodes against Oracle map")

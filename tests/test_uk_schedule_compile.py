@@ -44840,6 +44840,92 @@ def test_oracle_grounding_does_not_create_public_schedule_entry_eids() -> None:
     assert schedule_entry.label is None
     assert "eId" not in schedule_entry.attrs
     assert "id" not in schedule_entry.attrs
+    assert executor.oracle_alignment_events == []
+
+
+def test_oracle_grounding_records_public_schedule_entry_eid_clear() -> None:
+    statute = IRStatute(
+        statute_id="asp/2000/7",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 3",
+                text="Devolved public bodies",
+                attrs={"eId": "schedule-3"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SCHEDULE_ENTRY,
+                        label=None,
+                        text="Scottish Legal Aid Board",
+                        attrs={
+                            "eId": "schedule-entry-1",
+                            "source_rule_id": "uk_schedule_list_entry_preserved",
+                            "source_ordinal": "1",
+                        },
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(
+        statute,
+        eid_map={"schedule-3": "schedule-3"},
+        text_map={},
+    )
+
+    executor.ground_ids()
+
+    schedule_entry = executor.statute.supplements[0].children[0]
+    assert "eId" not in schedule_entry.attrs
+    assert executor.oracle_alignment_events == [
+        {
+            "rule_id": "uk_oracle_eid_alignment_adapter",
+            "phase": "oracle_alignment",
+            "family": "oracle_alignment_adapter",
+            "kind": "schedule_entry",
+            "label": None,
+            "before_eid": "schedule-entry-1",
+            "after_eid": None,
+            "match_method": "schedule_entry_public_eid_cleared",
+            "match_key": None,
+        }
+    ]
+
+
+def test_oracle_grounding_drops_pending_clear_when_node_gets_oracle_assignment() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Section 1",
+                    attrs={"eId": "local-stale-section"},
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(
+        statute,
+        eid_map={"body:section-1": "section-1"},
+        text_map={},
+    )
+
+    executor.ground_ids()
+
+    section = executor.statute.body.children[0]
+    assert section.attrs["eId"] == "section-1"
+    assert [event["match_method"] for event in executor.oracle_alignment_events] == ["flat"]
+    assert executor.oracle_alignment_events[0]["before_eid"] == "section-1"
+    assert executor.oracle_alignment_events[0]["after_eid"] == "section-1"
 
 
 def test_compile_schedule_list_entry_insert_lowers_to_typed_schedule_entry() -> None:
