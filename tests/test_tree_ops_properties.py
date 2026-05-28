@@ -38,6 +38,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.core.tree_ops import (
     Path,
+    TreeInvariantViolation,
     _default_sort_key,
     build_label_index,
     check_invariants,
@@ -1424,6 +1425,29 @@ def test_iter_tree_invariant_violations_projects_legacy_messages() -> None:
         "sort_order",
     }
     assert format_invariant_path(typed[0].path) == typed[0].path_text == "body"
+
+
+def test_tree_invariant_violation_dict_projection_is_stable() -> None:
+    violation = TreeInvariantViolation(
+        kind="sort_order",
+        path=(("body", None),),
+        child_kind="section",
+        previous_label="5",
+        next_label="2",
+    )
+
+    assert violation.to_dict() == {
+        "kind": "sort_order",
+        "path": "body",
+        "message": "body: section out of order: 5 > 2",
+        "parent_kind": None,
+        "child_kind": "section",
+        "label": None,
+        "normalized_label": None,
+        "count": None,
+        "previous_label": "5",
+        "next_label": "2",
+    }
 
 
 def test_iter_tree_invariant_violations_can_filter_families() -> None:

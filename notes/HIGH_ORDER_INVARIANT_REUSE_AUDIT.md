@@ -35,6 +35,9 @@ Recent improvement:
 - core mutation events now expose a shared path-set report that partitions
   touched paths through target, recovery, and migration regions; Finland apply
   accounting projects this shared report into its existing report shape.
+- `TreeInvariantViolation` now exposes a stable dict projection; Finland replay
+  metadata emits typed tree-invariant records beside legacy strings, and
+  `scripts/audit_invariants.py` prefers typed metadata when available.
 
 ## Ranked Promotion Candidates
 
@@ -100,7 +103,9 @@ Compatibility path:
    invariant-gap classification.
 3. migrate `diagnose-phase`, `audit_invariants.py`, and materialization tests
    away from regex/string reconstruction after the typed records are stable;
-   `diagnose-phase` is done for tree invariant detectors.
+   `diagnose-phase` is done for tree invariant detectors, and
+   `audit_invariants.py` now consumes typed replay metadata with a legacy-string
+   fallback.
 
 ### P0. Generic Mutation Event Accounting
 
@@ -350,18 +355,15 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Migrate remaining detector consumers to `core.invariant_detectors` while
-   preserving their current JSON/text output; `diagnose-phase` and
-   `invariant-bisect` already use this compatibility projection.
-2. Migrate `scripts/audit_invariants.py` and materialization helper tests away
-   from regex/string reconstruction where typed records are available.
-3. Add a small diagnostic envelope/disposition helper without collapsing
-   frontend-specific finding classes.
-4. Promote a core mutation-event report shape, then adapt Finland as a
-   projection and add an opt-in UK debug path.
-5. Add a small comparison-normalization pipeline and migrate Open Law
-   typography projection first, then Estonia comparison rules later.
+1. Migrate materialization helper tests away from regex/string reconstruction
+   where typed records are available.
+2. Add an opt-in UK replay debug path that emits core mutation-event records
+   from mutation sites without whole-tree snapshots.
+3. Adapt Estonia's comparison-normalization rule registry to the core
+   comparison carrier while keeping EE rule taxonomy local.
+4. Continue replacing private `_norm` / `_default_sort_key` frontend imports
+   with the public `normalized_label_key` / `default_label_sort_key` wrappers
+   in small, testable batches.
 
-The highest-value order is detector-result consolidation next, then the
-diagnostic envelope and mutation-event surfaces, then comparison-normalization
-cleanup.
+The highest-value order is now UK mutation-event/debug emission, typed
+materialization-test cleanup, and cautious comparison-normalization reuse.
