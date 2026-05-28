@@ -127,6 +127,9 @@ Recent improvement:
 - UK same-parent sibling renumber replay now also reindexes the moved subtree
   and bumps the structure-mutation serial, so warm eId lookups and
   post-renumber invariant diagnostics observe the changed tree.
+- UK table-column insertion now stages spanning-cell and row-child edits until
+  the whole column boundary is proven, so an unresolved short payload cannot
+  leave partial table mutations outside an applied mutation event.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
   the core mutation-boundary surface instead of Finland-local apply helpers.
 - selected UK production path annotations now use the shared `TreePath` alias

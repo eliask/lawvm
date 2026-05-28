@@ -412,6 +412,8 @@ class UKReplayTableApplyMixin:
         adjusted_spans = 0
         inserted_cells = 0
         matched_rows: list[str] = []
+        pending_span_attrs: list[tuple[UKMutableNode, dict[str, Any]]] = []
+        pending_cell_insertions: list[tuple[UKMutableNode, int, UKMutableNode]] = []
         plans = uk_table_column_insert_plans(table)
         for plan in plans:
             row = plan.row
@@ -435,7 +437,7 @@ class UKReplayTableApplyMixin:
                     reason = "unsupported_colspan_value"
                     break
                 old_colspan = int(old_colspan_raw)
-                spanner.attrs = {**spanner.attrs, "colspan": str(old_colspan + 1)}
+                pending_span_attrs.append((spanner, {**spanner.attrs, "colspan": str(old_colspan + 1)}))
                 adjusted_spans += 1
                 matched_rows.append(str(spanner.text or "")[:160])
                 continue
@@ -457,9 +459,7 @@ class UKReplayTableApplyMixin:
             else:
                 reason = "column_boundary_not_found"
                 break
-            row.children[insert_index:insert_index] = [
-                payload_cells_result.cells[payload_index]
-            ]
+            pending_cell_insertions.append((row, insert_index, payload_cells_result.cells[payload_index]))
             inserted_cells += 1
             payload_index += 1
             matched_rows.append(
@@ -484,13 +484,20 @@ class UKReplayTableApplyMixin:
                     reason_code=reason or "payload_row_count_too_large",
                     payload_row_count=len(payload_cells_result.cells),
                     payload_rows_consumed=payload_index,
-                    adjusted_spans=adjusted_spans,
-                    inserted_cells=inserted_cells,
+                    adjusted_spans=0,
+                    inserted_cells=0,
+                    planned_adjusted_spans=adjusted_spans,
+                    planned_inserted_cells=inserted_cells,
+                    partial_mutation_applied=False,
                     matched_rows=tuple(matched_rows[:5]),
                     family="source_table_elaboration",
                 ),
             )
             return False
+        for spanner, attrs in pending_span_attrs:
+            spanner.attrs = attrs
+        for row, insert_index, cell in pending_cell_insertions:
+            row.children[insert_index:insert_index] = [cell]
         self._record_children_splice_mutation_event(
             container=table,
             helper="_insert_table_column",
