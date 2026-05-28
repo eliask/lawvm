@@ -108,6 +108,20 @@ def partition_changed_paths(
 ) -> ChangedPathPartition:
     """Partition changed paths into covered and unexplained paths."""
 
+    issues = (
+        *(
+            issue
+            for path in changed_paths
+            for issue in validate_tree_path(path, field_name="changed path")
+        ),
+        *(
+            issue
+            for path in allowed_prefixes
+            for issue in validate_tree_path(path, field_name="allowed prefix")
+        ),
+    )
+    if issues:
+        raise ValueError("; ".join(issues))
     allowed = tuple(allowed_prefixes)
     covered = tuple(path for path in changed_paths if path_has_prefix(path, allowed))
     unexplained = tuple(path for path in changed_paths if not path_has_prefix(path, allowed))

@@ -139,6 +139,22 @@ def test_unexplained_changed_paths_filters_allowed_prefixes() -> None:
     )
 
 
+def test_partition_changed_paths_rejects_malformed_changed_paths_and_allowed_prefixes() -> None:
+    try:
+        partition_changed_paths(((("", "1"),),), ())
+    except ValueError as exc:
+        assert "changed path step 0 requires a non-empty kind" in str(exc)
+    else:  # pragma: no cover - explicit failure branch
+        raise AssertionError("expected malformed changed path rejection")
+
+    try:
+        partition_changed_paths((), ((("", "1"),),))
+    except ValueError as exc:
+        assert "allowed prefix step 0 requires a non-empty kind" in str(exc)
+    else:  # pragma: no cover - explicit failure branch
+        raise AssertionError("expected malformed allowed prefix rejection")
+
+
 @settings(max_examples=100)
 @given(
     st.lists(TREE_PATHS, max_size=12).map(tuple),
