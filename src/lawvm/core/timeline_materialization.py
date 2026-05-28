@@ -49,7 +49,7 @@ def clean_timeline_content(content: Optional[IRNode]) -> Optional[IRNode]:
             continue
         cleaned = clean_timeline_content(c)
         filtered.append(cleaned if cleaned is not None else c)
-    if len(filtered) == len(content.children) and all(f is o for f, o in zip(filtered, content.children)):
+    if len(filtered) == len(content.children) and all(f is o for f, o in zip(filtered, content.children, strict=True)):
         return content
     return IRNode(
         kind=content.kind,
