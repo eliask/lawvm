@@ -5,6 +5,12 @@ from collections import Counter
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from lawvm.core.mutation_accounting import (
+    MutationAccountingResult,
+    MutationInvariantReport,
+    build_mutation_invariant_reports,
+    check_mutation_accounting,
+)
 from lawvm.core.mutation_boundary import path_has_prefix
 from lawvm.core.mutation_events import (
     DeclaredMutationAllowance,
@@ -312,3 +318,71 @@ def test_mutation_event_path_set_report_partition_invariant(
     assert not any(path_has_prefix(path, report.permitted_paths) for path in report.unexplained_changed_paths)
     assert report.path_set_invariant_holds == (not report.unexplained_changed_paths)
     assert all(path_has_prefix(path, report.declared_allowance_paths) for path in report.allowed_non_target_paths)
+
+
+def test_core_mutation_accounting_flags_out_of_scope_touches() -> None:
+    event = MutationEvent(
+        op_id="op",
+        source_statute="src",
+        action="replace",
+        helper="helper",
+        outcome="applied",
+        resolved_target_path=(("section", "1"),),
+        replaced_paths=((("section", "2"),),),
+    )
+
+    assert check_mutation_accounting([event]) == [
+        "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET op_id=op helper=helper touched=1"
+    ]
+    assert build_mutation_invariant_reports([event]) == (
+        MutationInvariantReport(
+            op_id="op",
+            helper="helper",
+            outcome="applied",
+            touched_paths=((("section", "2"),),),
+            changed_paths=((("section", "2"),),),
+            allowed_roots=((("section", "1"),),),
+            allowed_effect_region_paths=((("section", "1"),),),
+            permitted_paths=((("section", "1"),),),
+            unexplained_changed_paths=((("section", "2"),),),
+            out_of_scope_paths=((("section", "2"),),),
+            path_set_invariant_holds=False,
+            results=(
+                MutationAccountingResult(
+                    code="REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+                    op_id="op",
+                    helper="helper",
+                    touched_count=1,
+                    allowed_roots=((("section", "1"),),),
+                    out_of_scope_paths=((("section", "2"),),),
+                ),
+            ),
+        ),
+    )
+
+
+def test_core_mutation_accounting_parent_boundary_helpers_are_configurable() -> None:
+    event = MutationEvent(
+        op_id="op",
+        source_statute="src",
+        action="replace",
+        helper="dispatch",
+        outcome="applied",
+        resolved_target_path=(("section", "1"), ("subsection", "2")),
+        parent_path=(("section", "1"),),
+        replaced_paths=((("section", "1"),),),
+    )
+
+    default_report = build_mutation_invariant_reports([event])[0]
+    configured_report = build_mutation_invariant_reports(
+        [event],
+        parent_boundary_helpers=frozenset({"dispatch"}),
+    )[0]
+
+    assert default_report.allowed_roots == (
+        (("section", "1"), ("subsection", "2")),
+        (("section", "1"),),
+    )
+    assert default_report.path_set_invariant_holds is True
+    assert configured_report.allowed_roots == ((("section", "1"), ("subsection", "2")),)
+    assert configured_report.path_set_invariant_holds is False
