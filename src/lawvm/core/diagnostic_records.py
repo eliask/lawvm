@@ -10,6 +10,9 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 
+_BLOCKING_STRICT_DISPOSITIONS = frozenset({"block", "reject", "fail", "hard_fail", "strict_block"})
+
+
 def diagnostic_detail(
     *,
     rule_id: str,
@@ -49,3 +52,37 @@ def diagnostic_detail(
         payload.update(dict(detail))
     payload.update(extra)
     return payload
+
+
+def validate_diagnostic_detail(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return validation issues for the shared diagnostic detail envelope.
+
+    This validates only the common projection fields. Frontend-local payload
+    fields remain additive and phase-owned.
+    """
+    issues: list[str] = []
+    _require_non_empty_string(row, "rule_id", issues)
+    _require_non_empty_string(row, "phase", issues)
+    _require_non_empty_string(row, "strict_disposition", issues)
+    _require_non_empty_string(row, "quirks_disposition", issues)
+    family = row.get("family", "")
+    if family is not None and family != "" and not isinstance(family, str):
+        issues.append("family must be a string when present")
+    reason = row.get("reason", "")
+    if reason is not None and reason != "" and not isinstance(reason, str):
+        issues.append("reason must be a string when present")
+    message = row.get("message", "")
+    if message is not None and message != "" and not isinstance(message, str):
+        issues.append("message must be a string when present")
+    blocking = row.get("blocking")
+    if not isinstance(blocking, bool):
+        issues.append("blocking must be a boolean")
+    elif blocking and row.get("strict_disposition") not in _BLOCKING_STRICT_DISPOSITIONS:
+        issues.append("blocking diagnostic must have blocking strict_disposition")
+    return tuple(issues)
+
+
+def _require_non_empty_string(row: Mapping[str, Any], key: str, issues: list[str]) -> None:
+    value = row.get(key)
+    if not isinstance(value, str) or not value:
+        issues.append(f"{key} is required")

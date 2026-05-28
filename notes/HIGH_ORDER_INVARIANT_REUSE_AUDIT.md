@@ -64,6 +64,8 @@ Recent improvement:
   details.
 - UK benchmark exception and effect-feed-count diagnostics now delegate their
   outward envelope defaults to `diagnostic_detail`.
+- `validate_diagnostic_detail(...)` now validates the shared diagnostic
+  envelope independently of frontend-local payload fields.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
