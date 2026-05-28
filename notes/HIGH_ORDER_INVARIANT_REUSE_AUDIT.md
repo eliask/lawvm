@@ -40,9 +40,10 @@ Recent improvement:
 - core mutation events now expose a shared path-set report that partitions
   touched paths through target, recovery, and migration regions; Finland apply
   accounting projects this shared report into its existing report shape.
-- `TreeInvariantViolation` now exposes a stable dict projection; Finland replay
-  metadata emits typed tree-invariant records beside legacy strings, and
-  `scripts/audit_invariants.py` prefers typed metadata when available.
+- `TreeInvariantViolation` now exposes a stable dict projection; Finland and
+  Sweden replay metadata emit typed tree-invariant records beside legacy
+  strings, and `scripts/audit_invariants.py` prefers typed metadata when
+  available.
 - materialization duplicate regression helpers now consume typed tree invariant
   records instead of maintaining a parallel duplicate-child scanner.
 - core comparison normalization supports placeholder-equivalence rules, and
@@ -88,6 +89,9 @@ Implemented progress:
   records while preserving the legacy `violation` string in evidence details.
 - Norway replay invariant adjudications consume typed duplicate/order invariant
   records while preserving their legacy joined `violations` string.
+- Sweden replay now emits typed invariant metadata beside the existing string
+  list; Sweden's expected-shape tolerances are keyed from typed
+  `unexpected_child_kind` fields rather than substring matches.
 - core now has a small typed detector-result adapter that preserves legacy
   detector messages while giving tools a typed `InvariantDetectorResult`
   surface.
@@ -133,9 +137,9 @@ Compatibility path:
    invariant-gap classification.
 3. migrate `diagnose-phase`, `audit_invariants.py`, and materialization tests
    away from regex/string reconstruction after the typed records are stable;
-   `diagnose-phase` is done for tree invariant detectors, and
-   `audit_invariants.py` now consumes typed replay metadata with a legacy-string
-   fallback.
+   `diagnose-phase` is done for tree invariant detectors, Sweden/Finland replay
+   metadata expose typed records, and `audit_invariants.py` now consumes typed
+   replay metadata with a legacy-string fallback.
 
 ### P0. Generic Mutation Event Accounting
 

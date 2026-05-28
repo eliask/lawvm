@@ -2882,11 +2882,22 @@ def _lower_se_official_effects_plan(
     return ops
 
 
-def se_statute_invariant_violations(statute: IRStatute) -> list[str]:
-    violations = [f"body:{violation}" for violation in _check_se_invariants(statute.body)]
+def se_statute_invariant_violation_records(statute: IRStatute) -> list[tree_ops.TreeInvariantViolation]:
+    violations = list(_check_se_invariant_records(statute.body))
     for supplement in statute.supplements:
-        for violation in _check_se_invariants(supplement):
-            violations.append(f"supplement:{supplement.label or ''}:{violation}")
+        root_path = (
+            ("supplement", supplement.label or ""),
+            (str(supplement.kind), supplement.label),
+        )
+        violations.extend(_check_se_invariant_records(supplement, root_path=root_path))
+    return violations
+
+
+def se_statute_invariant_violations(statute: IRStatute) -> list[str]:
+    violations = [f"body:{violation.message}" for violation in _check_se_invariant_records(statute.body)]
+    for supplement in statute.supplements:
+        for violation in _check_se_invariant_records(supplement):
+            violations.append(f"supplement:{supplement.label or ''}:{violation.message}")
     return violations
 
 
@@ -3151,17 +3162,35 @@ def _insert_se_appendix_sorted(supplements: list[IRNode], appendix: IRNode) -> l
     return out
 
 
+def _is_expected_se_invariant_tolerance(violation: tree_ops.TreeInvariantViolation) -> bool:
+    return (
+        violation.kind == "unexpected_child_kind"
+        and (
+            (violation.parent_kind == "body" and violation.child_kind == "heading")
+            or (violation.parent_kind == "subsection" and violation.child_kind == "item")
+            or (violation.parent_kind == "appendix" and violation.child_kind == "subsection")
+        )
+    )
+
+
+def _check_se_invariant_records(
+    node: IRNode,
+    *,
+    root_path: tree_ops.InvariantPath | None = None,
+) -> list[tree_ops.TreeInvariantViolation]:
+    return [
+        violation
+        for violation in tree_ops.iter_tree_invariant_violations(node, root_path=root_path)
+        if not _is_expected_se_invariant_tolerance(violation)
+    ]
+
+
 def _check_se_invariants(node: IRNode) -> list[str]:
-    filtered: list[str] = []
-    for violation in tree_ops.check_invariants(node):
-        if "unexpected heading inside body" in violation:
-            continue
-        if "unexpected item inside subsection" in violation:
-            continue
-        if "unexpected subsection inside appendix" in violation:
-            continue
-        filtered.append(violation)
-    return filtered
+    return [violation.message for violation in _check_se_invariant_records(node)]
+
+
+def _se_invariant_record_dicts(violations: list[tree_ops.TreeInvariantViolation]) -> list[dict[str, object]]:
+    return [violation.to_dict() for violation in violations]
 
 
 def _clone_se_node_with_label(node: IRNode, label: str) -> IRNode:
@@ -3493,17 +3522,18 @@ def apply_se_ops(
         )
     metadata = dict(statute.metadata)
     metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + applied_op_count
-    invariant_violations = se_statute_invariant_violations(
-        IRStatute(
-            statute_id=statute.statute_id,
-            title=statute.title,
-            body=body,
-            supplements=supplements,
-            metadata={},
-        )
+    replayed_for_invariants = IRStatute(
+        statute_id=statute.statute_id,
+        title=statute.title,
+        body=body,
+        supplements=supplements,
+        metadata={},
     )
+    typed_invariant_violations = se_statute_invariant_violation_records(replayed_for_invariants)
+    invariant_violations = se_statute_invariant_violations(replayed_for_invariants)
     if invariant_violations:
         metadata["invariant_violations"] = invariant_violations
+        metadata["typed_invariant_violations"] = _se_invariant_record_dicts(typed_invariant_violations)
     return IRStatute(
         statute_id=statute.statute_id,
         title=statute.title,

@@ -101,6 +101,8 @@ from lawvm.sweden.grafter import (
     se_appendix_text_map,
     se_heading_before_section_map,
     se_section_text_map,
+    se_statute_invariant_violation_records,
+    se_statute_invariant_violations,
 )
 
 
@@ -139,6 +141,46 @@ class _FakeArchive(_ArchiveLike):
 @pytest.fixture(autouse=True)
 def _disable_sweden_fetch_retry_sleep(monkeypatch) -> None:
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
+
+
+def test_se_statute_invariant_violations_include_typed_records() -> None:
+    statute = IRStatute(
+        statute_id="se-test",
+        title="",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="Second."),
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="First."),
+            ),
+        ),
+    )
+
+    records = se_statute_invariant_violation_records(statute)
+    replayed = apply_se_ops(statute, [])
+
+    assert se_statute_invariant_violations(statute) == ["body:body: section out of order: 2 > 1"]
+    assert records[0].to_dict()["kind"] == "sort_order"
+    assert records[0].to_dict()["path"] == "body"
+    assert records[0].to_dict()["previous_label"] == "2"
+    assert replayed.metadata["typed_invariant_violations"][0]["kind"] == "sort_order"
+
+
+def test_se_expected_invariant_tolerances_are_filtered_from_typed_records() -> None:
+    statute = IRStatute(
+        statute_id="se-test",
+        title="",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.HEADING, text="Rubrik"),
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="Text."),
+            ),
+        ),
+    )
+
+    assert se_statute_invariant_violation_records(statute) == []
+    assert se_statute_invariant_violations(statute) == []
 
 
 def test_fetch_se_official_artifacts_fetches_doc_and_pdf_and_stores_text(monkeypatch) -> None:

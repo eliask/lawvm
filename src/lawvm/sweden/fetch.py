@@ -48,6 +48,7 @@ from lawvm.sweden.grafter import (
     _lower_se_official_effects_plan,
     se_legal_operation_from_dict,
     se_section_text_map,
+    se_statute_invariant_violation_records,
     se_legal_operation_to_dict,
     se_statute_invariant_violations,
     se_official_doc_url,
@@ -2481,6 +2482,9 @@ def check_se_official_replay(
                 "historical replay requires an older base surface or reverse patching"
             )
     baseline_invariants = set(se_statute_invariant_violations(replay_base_statute))
+    baseline_typed_invariant_messages = {
+        violation.message for violation in se_statute_invariant_violation_records(replay_base_statute)
+    }
     replay_adjudications: list = []
     replayed = apply_se_ops(replay_base_statute, ops, adjudications_out=replay_adjudications)
     skipped_op_ids = {item.op_id for item in replay_adjudications if item.op_id}
@@ -2623,6 +2627,11 @@ def check_se_official_replay(
             violation
             for violation in replayed.metadata.get("invariant_violations", [])
             if violation not in baseline_invariants
+        ],
+        "typed_invariant_violations": [
+            violation.to_dict()
+            for violation in se_statute_invariant_violation_records(replayed)
+            if violation.message not in baseline_typed_invariant_messages
         ],
         "adjudications": [asdict(item) for item in replay_adjudications],
         "evidence": {
