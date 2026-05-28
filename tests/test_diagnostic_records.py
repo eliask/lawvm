@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.diagnostic_records import diagnostic_detail, validate_diagnostic_detail
 
 
 def test_diagnostic_detail_defaults_strict_and_quirks_dispositions() -> None:
@@ -47,3 +47,50 @@ def test_diagnostic_detail_requires_rule_id_and_phase() -> None:
         diagnostic_detail(rule_id="", phase="replay", blocking=True)
     with pytest.raises(ValueError, match="phase"):
         diagnostic_detail(rule_id="rule", phase="", blocking=True)
+
+
+def test_validate_diagnostic_detail_accepts_shared_envelope() -> None:
+    row = diagnostic_detail(
+        rule_id="uk_replay_rule",
+        phase="replay",
+        family="target_resolution_recovery",
+        reason="exact target selected",
+        blocking=False,
+        strict_disposition="block",
+    )
+
+    assert validate_diagnostic_detail(row) == ()
+
+
+def test_validate_diagnostic_detail_rejects_bad_envelope_shapes() -> None:
+    issues = validate_diagnostic_detail(
+        {
+            "rule_id": "",
+            "phase": "lowering",
+            "blocking": True,
+            "strict_disposition": "record",
+            "quirks_disposition": "",
+            "family": 3,
+            "reason": [],
+            "message": {},
+        }
+    )
+
+    assert "rule_id is required" in issues
+    assert "quirks_disposition is required" in issues
+    assert "family must be a string when present" in issues
+    assert "reason must be a string when present" in issues
+    assert "message must be a string when present" in issues
+    assert "blocking diagnostic must have blocking strict_disposition" in issues
+
+
+def test_validate_diagnostic_detail_requires_boolean_blocking() -> None:
+    assert "blocking must be a boolean" in validate_diagnostic_detail(
+        {
+            "rule_id": "rule",
+            "phase": "parse",
+            "blocking": "yes",
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
