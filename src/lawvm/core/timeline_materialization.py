@@ -562,7 +562,7 @@ def overlay_on_container(
     for addr in sorted(active.keys(), key=lambda a: _sort_label_key(a.path[-1][1])):
         if len(addr.path) != len(parent_path) + 1:
             continue
-        if addr.path[: len(parent_path)] != parent_path:
+        if not addr.has_path_prefix(parent_path):
             continue
         if addr.path in seen:
             continue
