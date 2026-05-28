@@ -234,6 +234,9 @@ Recent improvement:
 - UK single-child amendment payload, enacted schedule-table row payload, and
   compound BlockAmendment payload-only extraction diagnostics now use the same
   source-lane carrier while preserving their existing UK-local fields.
+- source-lane selection evidence now validates that selected lanes are tied to
+  an attempted lane, an explicitly selected attempt, or an explicit
+  `no_source_lane_selected_*` failure lane.
 - Estonia replay orchestration now nests shared source-lane selection evidence
   inside amendment fetch, amendment parse, temporal source scan, pending
   cancellation, and pending source-act commencement failures while preserving
@@ -328,6 +331,9 @@ Recent improvement:
   shared target-resolution certificates for blocked address candidates,
   end-skeleton duplicate recovery, and attached-heading context recovery while
   preserving the existing NZ witness rows and disabled replay/effect claims.
+- target-resolution certificates now validate the shared status and
+  scope-confidence vocabulary at construction, and resolved/recovered statuses
+  must carry a counted selected candidate.
 - UK replay recovery action/target details now attach a nested shared
   target-resolution certificate when the recovery explicitly names an alternate
   `recovery_target`, avoiding fabricated target evidence for recoveries that
