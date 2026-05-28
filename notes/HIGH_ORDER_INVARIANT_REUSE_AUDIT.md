@@ -131,6 +131,8 @@ Recent improvement:
   intentionally ignore facets.
 - UK replay preparation now preserves rejected operation objects beside their
   blocking adjudications, making the prepare filter lossless for audit tooling.
+- mutation-event path-set reporting now validates declared allowances before
+  classification, so non-target allowances with paths must carry named rule IDs.
 
 ## Ranked Promotion Candidates
 
