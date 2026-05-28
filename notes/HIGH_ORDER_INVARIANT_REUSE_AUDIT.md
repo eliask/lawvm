@@ -32,6 +32,9 @@ Recent improvement:
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
   child-list mutations show up at parent paths.
+- core mutation events now expose a shared path-set report that partitions
+  touched paths through target, recovery, and migration regions; Finland apply
+  accounting projects this shared report into its existing report shape.
 
 ## Ranked Promotion Candidates
 
@@ -123,6 +126,16 @@ Promotion:
   `changed_paths`, `declared_recovery_paths`, `declared_migration_paths`;
 - expose a helper that partitions event-touched paths through
   `operation_storage_boundary_prefixes`.
+
+Implemented progress:
+
+- core already owns `MutationEvent` and `DeclaredMutationAllowance`;
+- core now owns `MutationEventPathSetReport` plus helpers for touched paths,
+  allowance paths/rule IDs, matched allowance rule IDs, and path-set
+  partitioning;
+- Finland apply accounting now delegates target/recovery/migration path-set
+  classification to the core report while preserving its frontend-specific
+  accounting result codes and compatibility report fields.
 
 Why high value:
 
