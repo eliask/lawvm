@@ -150,6 +150,8 @@ class BranchContext:
             raise ValueError(
                 f"authority_layer={self.authority_layer!r} requires a branch_id"
             )
+        if self.scenario_id and not self.branch_id:
+            raise ValueError("scenario_id requires a branch_id")
 
     @property
     def is_enacted_default(self) -> bool:
@@ -278,6 +280,20 @@ class BranchLifecycleEvent:
             raise ValueError(f"unsupported branch lifecycle kind: {self.event_kind!r}")
         if self.resulting_status not in _STATUS_VALUES:
             raise ValueError(f"unsupported resulting_status: {self.resulting_status!r}")
+        terminal_status_by_event = {
+            BRANCH_WITHDRAWN: WITHDRAWN_STATUS,
+            BRANCH_FAILED: FAILED_STATUS,
+            BRANCH_SUPERSEDED: SUPERSEDED_STATUS,
+            BRANCH_ENACTED: COMMENCED_STATUS,
+        }
+        if (
+            self.event_kind in terminal_status_by_event
+            and self.resulting_status != terminal_status_by_event[self.event_kind]
+        ):
+            raise ValueError(
+                f"BranchLifecycleEvent(kind={self.event_kind!r}) requires "
+                f"resulting_status={terminal_status_by_event[self.event_kind]!r}"
+            )
         if self.event_kind in {BRANCH_ENACTED, BRANCH_SUPERSEDED} and not self.derived_enacted_source_id:
             raise ValueError(
                 f"BranchLifecycleEvent(kind={self.event_kind!r}) requires derived_enacted_source_id"
@@ -360,7 +376,7 @@ def branch_graph_edge_from_operation(
     """
 
     context = branch_context_from_operation(op)
-    if context.is_enacted_default:
+    if context.authority_layer not in NON_ENACTED_AUTHORITIES:
         return None
     if not target_statute_id:
         raise ValueError("branch_graph_edge_from_operation requires target_statute_id")

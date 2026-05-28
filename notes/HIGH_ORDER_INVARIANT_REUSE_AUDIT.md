@@ -331,6 +331,12 @@ Recent improvement:
   selectors, so proposal/draft/consultation operations without explicit
   branch identity fail at the provenance boundary instead of later
   materialization or graph projection.
+- branch contexts now reject scenario ids without branch ids; branch graph
+  edges are projected only from proposal/draft/consultation operations;
+  `CorpusGraph` requires branch-edge authority/status to match the registered
+  branch; terminal lifecycle events require matching terminal status; JSON-LD
+  branch-edge ids include scenario and target context to avoid graph-resource
+  collisions.
 - target-resolution evidence now has a neutral core carrier for source target,
   candidate count, selected target, status, confidence, and strict/quirks
   disposition; frontends still own candidate discovery and local fallback
