@@ -1,6 +1,7 @@
 """lawvm ee-chain-quality — consecutive Estonia redaction-pair replay quality."""
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,7 +43,7 @@ def run_chain(grupi_id: str, label: str, archive) -> dict[str, int]:
         "perfect": 0,
     }
 
-    for base_r, next_r in zip(redactions, redactions[1:], strict=False):
+    for base_r, next_r in pairwise(redactions):
         result = replay_ee_to_pit(
             base_r.aktViide,
             next_r.effective,

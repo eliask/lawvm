@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Tuple
 
 from lawvm.open_law.codify import parse_open_law_codify_ops
@@ -98,7 +99,7 @@ def plan_maryland_publication_transitions(inventory: MarylandInventory) -> Tuple
         candidates.append(item)
 
     transitions: list[MarylandTransitionPlan] = []
-    for before, after in zip(candidates, candidates[1:], strict=False):
+    for before, after in pairwise(candidates):
         before_actions = set(before.included_editorial_actions)
         after_actions = set(after.included_editorial_actions)
         if not before_actions.issubset(after_actions):

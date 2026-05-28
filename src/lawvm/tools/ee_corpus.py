@@ -11,6 +11,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -464,7 +465,7 @@ def select_replayable_pairs(
                 schema = preferred
                 break
         version_count = len(tvs)
-        for version_index, (base, oracle) in enumerate(zip(tvs, tvs[1:], strict=False), start=1):
+        for version_index, (base, oracle) in enumerate(pairwise(tvs), start=1):
             base_id, _, base_effective = base
             oracle_id, _, oracle_effective = oracle
             pairs.append(

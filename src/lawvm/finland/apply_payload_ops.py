@@ -9,6 +9,7 @@ outside ``apply.py`` once the executor starts splitting structurally.
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from typing import List, Optional
 
 from lawvm.core.ir import IRNode
@@ -28,7 +29,7 @@ def _has_consecutive_numeric_labels(labels: List[str]) -> bool:
     if not all(label.isdigit() for label in labels):
         return False
     numbers = [int(label) for label in labels]
-    return all(cur == prev + 1 for prev, cur in zip(numbers, numbers[1:], strict=False))
+    return all(cur == prev + 1 for prev, cur in pairwise(numbers))
 
 
 def _is_plain_intro_only_subsection(sub: IRNode) -> bool:
