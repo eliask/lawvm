@@ -148,6 +148,8 @@ Recent improvement:
   ignored-container and symbolic-label policy.
 - filtered divergence partition records now live in core verification contracts;
   Norway verification aliases them while keeping local suppression rules.
+- duplicate-preserving source-path indexing now has a core helper; New Zealand
+  agreement and version-diff surfaces reuse it to avoid source-path overwrites.
 
 ## Ranked Promotion Candidates
 
