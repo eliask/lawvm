@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Mapping, Protocol
 
+from lawvm.core.frozen_values import freeze_mapping
+
 
 @dataclass(frozen=True)
 class ReplayAmendmentStep:
@@ -30,6 +32,7 @@ class ReplayAmendmentStep:
             raise ValueError("ReplayAmendmentStep.op_count must be non-negative")
         if not isinstance(self.detail, Mapping):
             raise ValueError("ReplayAmendmentStep.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -86,12 +89,15 @@ class ReplaySummary:
                 raise ValueError(f"ReplaySummary.{field_name} must be non-negative")
         if self.divergence_count is not None and self.divergence_count < 0:
             raise ValueError("ReplaySummary.divergence_count must be non-negative")
-        if not all(isinstance(step, ReplayAmendmentStep) for step in self.steps):
+        steps = tuple(self.steps)
+        if not all(isinstance(step, ReplayAmendmentStep) for step in steps):
             raise ValueError("ReplaySummary.steps must contain ReplayAmendmentStep records")
+        object.__setattr__(self, "steps", steps)
         if self.text_view is not None and not isinstance(self.text_view, ReplayTextView):
             raise ValueError("ReplaySummary.text_view must be a ReplayTextView")
         if not isinstance(self.detail, Mapping):
             raise ValueError("ReplaySummary.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
