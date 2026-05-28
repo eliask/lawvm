@@ -320,6 +320,10 @@ Recent improvement:
   branch lifecycle events under the `lawvm:` namespace.
 - `lawvm branch-demo` now emits a synthetic branch/authority payload for
   demonstrating default enacted vs selected proposal operation lanes.
+- `OperationSource` now validates the same branch context invariant as branch
+  selectors, so proposal/draft/consultation operations without explicit
+  branch identity fail at the provenance boundary instead of later
+  materialization or graph projection.
 - target-resolution evidence now has a neutral core carrier for source target,
   candidate count, selected target, status, confidence, and strict/quirks
   disposition; frontends still own candidate discovery and local fallback
