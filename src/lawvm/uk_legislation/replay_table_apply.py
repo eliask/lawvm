@@ -498,6 +498,8 @@ class UKReplayTableApplyMixin:
             spanner.attrs = attrs
         for row, insert_index, cell in pending_cell_insertions:
             row.children[insert_index:insert_index] = [cell]
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
         self._record_children_splice_mutation_event(
             container=table,
             helper="_insert_table_column",

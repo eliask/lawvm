@@ -130,6 +130,9 @@ Recent improvement:
 - UK table-column insertion now stages spanning-cell and row-child edits until
   the whole column boundary is proven, so an unresolved short payload cannot
   leave partial table mutations outside an applied mutation event.
+- UK table-column insertion now also clears replay lookup state and bumps the
+  structure-mutation serial after applying the proven splice, so post-op
+  invariant diagnostics do not treat the table-column mutation as invisible.
 - UK content-payload structural replacements now route through the central
   node-replacement helper, so lead-text replacement events are visible on the
   shared mutation-event stream.
