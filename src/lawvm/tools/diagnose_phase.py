@@ -61,21 +61,26 @@ def _run_tree_detector(
     violations whose path contains the target components are returned.
     """
     from lawvm.core.tree_ops import (
-        check_invariants,
+        TreeInvariantKind,
         find_text_duplication_warnings,
+        iter_tree_invariant_violations,
     )
     from lawvm.core.replay_lints import build_flattened_sublist_findings
 
     violations: List[str] = []
 
     if detector in ("duplicate_label", "illegal_edge", "all_tree"):
-        raw = check_invariants(ir)
+        selected_families: set[TreeInvariantKind] | None = None
         if detector == "duplicate_label":
-            violations = [v for v in raw if "duplicate" in v]
+            selected_families = {"duplicate_label", "normalized_duplicate_label"}
         elif detector == "illegal_edge":
-            violations = [v for v in raw if "unexpected" in v]
-        else:
-            violations = raw
+            selected_families = {"unexpected_child_kind"}
+        typed = iter_tree_invariant_violations(ir, families=selected_families)
+        violations = [
+            violation.message
+            for violation in typed
+            if not target_path or _path_matches_target(violation.path_text, target_path)
+        ]
     elif detector == "text_duplication":
         for w in find_text_duplication_warnings(ir):
             kind = w.get("kind", "?")
@@ -106,12 +111,29 @@ def _run_tree_detector(
                 violations.append(f"{path}: {wkind} {node_kind} [{sample_str}]")
     else:
         # Unrecognised — fall back to all_tree
-        violations = check_invariants(ir)
+        violations = [
+            violation.message
+            for violation in iter_tree_invariant_violations(ir)
+            if not target_path or _path_matches_target(violation.path_text, target_path)
+        ]
 
     if target_path and violations:
         violations = [v for v in violations if _matches_target(v, target_path)]
 
     return violations
+
+
+def _path_matches_target(path_text: str, target_path: str) -> bool:
+    """Return true when an invariant path contains the requested target path."""
+    if not target_path:
+        return True
+    path_parts = path_text.split("/")
+    target_parts = target_path.split("/")
+    n, m = len(path_parts), len(target_parts)
+    for i in range(n - m + 1):
+        if path_parts[i : i + m] == target_parts:
+            return True
+    return False
 
 
 def _matches_target(violation: str, target_path: str) -> bool:

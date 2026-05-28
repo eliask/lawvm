@@ -50,3 +50,31 @@ def test_diagnose_phase_flattened_sublist_detector_uses_typed_lint_bridge() -> N
     result = diagnose_phase._run_tree_detector(tree, "flattened_sublist_family")
 
     assert result == ["body/section:1: flattened paragraph family interleaved (alpha) [a, b, 1, 2, a, b]"]
+
+
+def test_diagnose_phase_tree_detector_uses_typed_invariant_target_paths() -> None:
+    tree = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                ),
+            ),
+        ),
+    )
+
+    result = diagnose_phase._run_tree_detector(tree, "duplicate_label", target_path="section:2")
+
+    assert result == ["body/section:2: duplicate subsection:1 (2 times)"]
