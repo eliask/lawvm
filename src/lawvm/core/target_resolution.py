@@ -38,6 +38,26 @@ SCOPE_CONFIDENCE_INFERRED_FROM_PAYLOAD = "inferred_from_payload"
 SCOPE_CONFIDENCE_INFERRED_FROM_LIVE_UNIQUE = "inferred_from_live_unique"
 SCOPE_CONFIDENCE_FALLBACK = "fallback"
 
+_VALID_TARGET_RESOLUTION_STATUSES = frozenset(
+    {
+        TARGET_RESOLVED,
+        TARGET_UNRESOLVED,
+        TARGET_AMBIGUOUS,
+        TARGET_FALLBACK_RESOLVED,
+        TARGET_RECOVERED,
+        TARGET_REJECTED,
+    }
+)
+_VALID_SCOPE_CONFIDENCES = frozenset(
+    {
+        SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+        SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+        SCOPE_CONFIDENCE_INFERRED_FROM_GROUP,
+        SCOPE_CONFIDENCE_INFERRED_FROM_PAYLOAD,
+        SCOPE_CONFIDENCE_INFERRED_FROM_LIVE_UNIQUE,
+        SCOPE_CONFIDENCE_FALLBACK,
+    }
+)
 _RESERVED_TARGET_RESOLUTION_KEYS = frozenset(
     {
         "target_resolution_status",
@@ -101,6 +121,11 @@ class TargetResolutionCertificate:
             raise ValueError("TargetResolutionCertificate.reason must be non-empty")
         if not str(self.status or "").strip():
             raise ValueError("TargetResolutionCertificate.status must be non-empty")
+        if self.status not in _VALID_TARGET_RESOLUTION_STATUSES:
+            raise ValueError(
+                f"TargetResolutionCertificate.status must be one of "
+                f"{sorted(_VALID_TARGET_RESOLUTION_STATUSES)}"
+            )
         if not str(self.source_target or "").strip():
             raise ValueError("TargetResolutionCertificate.source_target must be non-empty")
         if self.candidate_count < 0:
@@ -114,6 +139,15 @@ class TargetResolutionCertificate:
                 raise ValueError(
                     f"TargetResolutionCertificate(status={self.status!r}) requires selected_target"
                 )
+            if self.candidate_count < 1:
+                raise ValueError(
+                    f"TargetResolutionCertificate(status={self.status!r}) requires candidate_count >= 1"
+                )
+        if self.scope_confidence and self.scope_confidence not in _VALID_SCOPE_CONFIDENCES:
+            raise ValueError(
+                f"TargetResolutionCertificate.scope_confidence must be one of "
+                f"{sorted(_VALID_SCOPE_CONFIDENCES)}"
+            )
         _reject_target_resolution_overrides(self.detail)
 
     def to_diagnostic_detail(self) -> dict[str, Any]:
