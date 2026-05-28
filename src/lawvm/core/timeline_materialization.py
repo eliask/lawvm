@@ -13,6 +13,7 @@ from lawvm.core.duplicate_child_classification import (
 )
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionVersion
 from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_addresses import (
@@ -154,7 +155,7 @@ def _record_duplicate_child_family_classification(
 
 def _node_has_relative_address(
     node: IRNode,
-    relative_path: tuple[tuple[str, str], ...],
+    relative_path: TreePath,
 ) -> bool:
     """Return whether ``node`` contains the given labeled descendant path."""
     if not relative_path:
@@ -174,12 +175,12 @@ def _node_has_relative_address(
 
 def _base_child_matches_active_descendant(
     child: IRNode,
-    child_path: tuple[tuple[str, str], ...],
+    child_path: TreePath,
     active: dict[LegalAddress, Optional[IRNode]],
-    active_prefixes: Optional[set[tuple[tuple[str, str], ...]]],
+    active_prefixes: Optional[set[TreePath]],
 ) -> bool:
     """Return whether active descendant overlays structurally belong under ``child``."""
-    candidate_paths: set[tuple[tuple[str, str], ...]] = set()
+    candidate_paths: set[TreePath] = set()
     if active_prefixes is not None:
         candidate_paths.update(active_prefixes)
     candidate_paths.update(addr.path for addr in active)
@@ -196,12 +197,12 @@ def _base_child_matches_active_descendant(
 
 def _filtered_active_for_base_child(
     child: IRNode,
-    child_path: tuple[tuple[str, str], ...],
+    child_path: TreePath,
     active: dict[LegalAddress, Optional[IRNode]],
-) -> tuple[dict[LegalAddress, Optional[IRNode]], set[tuple[tuple[str, str], ...]]]:
+) -> tuple[dict[LegalAddress, Optional[IRNode]], set[TreePath]]:
     """Return active entries whose descendant paths structurally belong under ``child``."""
     filtered_active: dict[LegalAddress, Optional[IRNode]] = {}
-    filtered_prefixes: set[tuple[tuple[str, str], ...]] = set()
+    filtered_prefixes: set[TreePath] = set()
     prefix_len = len(child_path)
     for address, content in active.items():
         if len(address.path) <= prefix_len:
@@ -221,7 +222,7 @@ def apply_overlays(
     parent_address: LegalAddress,
     active: dict[LegalAddress, Optional[IRNode]],
     label_norm: Optional[Callable[[str], str]] = None,
-    active_prefixes: Optional[set[tuple[tuple[str, str], ...]]] = None,
+    active_prefixes: Optional[set[TreePath]] = None,
     issue_sink: Any = None,
     emit_warnings: bool = True,
     *,
@@ -399,9 +400,9 @@ def overlay_on_container(
     base_children: Sequence[IRNode],
     active: dict[LegalAddress, Optional[IRNode]],
     top_keys: set[LegalAddress],
-    parent_path: tuple[tuple[str, str], ...],
-    active_prefixes: Optional[set[tuple[tuple[str, str], ...]]] = None,
-    seen_keys: Optional[set[tuple[tuple[str, str], ...]]] = None,
+    parent_path: TreePath,
+    active_prefixes: Optional[set[TreePath]] = None,
+    seen_keys: Optional[set[TreePath]] = None,
     label_norm: Optional[Callable[[str], str]] = None,
     issue_sink: Any = None,
     emit_warnings: bool = True,
@@ -409,7 +410,7 @@ def overlay_on_container(
     record_issue: Callable[..., None],
 ) -> tuple[IRNode, ...]:
     """Walk base container children, replacing labeled nodes with timeline versions."""
-    seen: set[tuple[tuple[str, str], ...]] = seen_keys if seen_keys is not None else set()
+    seen: set[TreePath] = seen_keys if seen_keys is not None else set()
     children: list[IRNode] = []
     duplicate_raw_counts: dict[tuple[str, str], int] = {}
     for child in base_children:
@@ -654,7 +655,7 @@ def materialize_body(
             )
         return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(children))
 
-    active_prefixes: set[tuple[tuple[str, str], ...]] = set()
+    active_prefixes: set[TreePath] = set()
     for addr in active:
         for depth in range(1, len(addr.path)):
             active_prefixes.add(addr.path[:depth])
@@ -704,7 +705,7 @@ def materialize_root_nodes(
             )
         return tuple(materialized)
 
-    active_prefixes: set[tuple[tuple[str, str], ...]] = set()
+    active_prefixes: set[TreePath] = set()
     for addr in active:
         for depth in range(1, len(addr.path)):
             active_prefixes.add(addr.path[:depth])
