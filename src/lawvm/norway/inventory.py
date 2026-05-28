@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.norway.commencement import (
     apply_no_commencement_overrides,
     load_no_commencement_overrides,
@@ -184,19 +185,17 @@ def build_no_inventory(
         fallback_ids = {artifact.logical_id for artifact in iter_no_current_artifacts(data_dir)}
         if fallback_ids:
             current_law_source_diagnostics.append(
-                {
-                    "rule_id": "no_inventory_current_law_id_artifact_fallback_used",
-                    "family": "source_pathology",
-                    "phase": "acquisition",
-                    "reason": (
+                diagnostic_detail(
+                    rule_id="no_inventory_current_law_id_artifact_fallback_used",
+                    family="source_pathology",
+                    phase="acquisition",
+                    blocking=True,
+                    reason=(
                         "Norway inventory used current artifact locators as a fallback because the current-law ID "
                         "parser returned no retained IDs."
                     ),
-                    "fallback_current_law_count": len(fallback_ids),
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                    fallback_current_law_count=len(fallback_ids),
+                )
             )
         inventory.current_law_ids = fallback_ids
     inventory.current_law_source_diagnostics = current_law_source_diagnostics
