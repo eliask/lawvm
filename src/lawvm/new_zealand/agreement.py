@@ -10,11 +10,11 @@ blocked rather than treating source-vs-source comparison as replay success.
 from __future__ import annotations
 
 import json
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from lawvm.core.source_path_index import duplicate_preserving_source_path_index
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.source_tree import NZSourceDocument, parse_nz_source_document
 
@@ -177,18 +177,11 @@ def _node_agreement_status(candidate: Any, oracle: Any) -> str:
 
 
 def _node_index(document: NZSourceDocument) -> dict[tuple[str, ...], Any]:
-    path_counts: Counter[tuple[str, ...]] = Counter(node.path for node in document.nodes)
-    seen: Counter[tuple[str, ...]] = Counter()
-    indexed: dict[tuple[str, ...], Any] = {}
-    for node in document.nodes:
-        if path_counts[node.path] == 1:
-            key = node.path
-        else:
-            seen[node.path] += 1
-            suffix = node.xml_id or f"ordinal:{seen[node.path]}"
-            key = (*node.path, f"source-duplicate:{suffix}")
-        indexed[key] = node
-    return indexed
+    return duplicate_preserving_source_path_index(
+        document.nodes,
+        path_of=lambda node: node.path,
+        duplicate_id_of=lambda node: node.xml_id,
+    )
 
 
 def main(args: Any) -> None:
