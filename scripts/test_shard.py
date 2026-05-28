@@ -211,6 +211,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_shared_contracts.py",
         "test_source_lane.py",
         "test_source_path_index.py",
+        "test_source_version_window.py",
         "test_span_anchor.py",
         "test_statute_facets.py",
         "test_target_scope.py",

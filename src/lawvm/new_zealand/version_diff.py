@@ -9,12 +9,16 @@ frontiers before lowering amendment Acts.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from lawvm.core.source_path_index import duplicate_preserving_source_path_index
+from lawvm.core.source_version_window import (
+    iso_date_prefix,
+    select_source_version_change_window,
+    select_source_version_date_window,
+)
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
 from lawvm.new_zealand.source_tree import NZSourceDocument, parse_nz_source_document
@@ -305,27 +309,16 @@ def archived_xml_version_date_window(
     selector and must not be used as legal replay proof by itself.
     """
 
-    requested = _iso_date_prefix(version_date)
-    on_or_before: NZArchivedVersion | None = None
-    on_or_after: NZArchivedVersion | None = None
-    dated_versions = tuple(
-        (date_prefix, version)
-        for version in archived_xml_versions_for_work(archive, work_id)
-        if (date_prefix := _iso_date_prefix(version.version_date))
+    window = select_source_version_date_window(
+        archived_xml_versions_for_work(archive, work_id),
+        requested_version_date=version_date,
+        version_date=lambda version: version.version_date,
     )
-    for date_prefix, version in dated_versions:
-        if date_prefix <= requested:
-            on_or_before = version
-            break
-    for date_prefix, version in reversed(dated_versions):
-        if date_prefix >= requested:
-            on_or_after = version
-            break
     return NZArchivedVersionDateWindow(
         work_id=work_id,
-        requested_version_date=requested,
-        on_or_before=on_or_before,
-        on_or_after=on_or_after,
+        requested_version_date=window.requested_version_date,
+        on_or_before=window.on_or_before,
+        on_or_after=window.on_or_after,
     )
 
 
@@ -342,27 +335,16 @@ def archived_xml_version_change_window(
     It is still not a commencement/effect selector or replay proof.
     """
 
-    requested = _iso_date_prefix(version_date)
-    before: NZArchivedVersion | None = None
-    on_or_after: NZArchivedVersion | None = None
-    dated_versions = tuple(
-        (date_prefix, version)
-        for version in archived_xml_versions_for_work(archive, work_id)
-        if (date_prefix := _iso_date_prefix(version.version_date))
+    window = select_source_version_change_window(
+        archived_xml_versions_for_work(archive, work_id),
+        requested_version_date=version_date,
+        version_date=lambda version: version.version_date,
     )
-    for date_prefix, version in dated_versions:
-        if date_prefix < requested:
-            before = version
-            break
-    for date_prefix, version in reversed(dated_versions):
-        if date_prefix >= requested:
-            on_or_after = version
-            break
     return NZArchivedVersionChangeWindow(
         work_id=work_id,
-        requested_version_date=requested,
-        before=before,
-        on_or_after=on_or_after,
+        requested_version_date=window.requested_version_date,
+        before=window.before,
+        on_or_after=window.on_or_after,
     )
 
 
@@ -402,11 +384,7 @@ def _version_date_from_version_id(version_id: str) -> str:
 
 
 def _iso_date_prefix(value: str) -> str:
-    match = _ISO_DATE_PREFIX_RE.match(value.strip())
-    return match.group(1) if match else ""
-
-
-_ISO_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+    return iso_date_prefix(value)
 
 
 def main(args: Any) -> None:
