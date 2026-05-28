@@ -512,6 +512,10 @@ class UKReplayStateMixin:
             idx = None
         self._add_eid_lookup_subtree(node, parent, idx)
         self._note_structure_mutation()
+        self._record_insert_node_mutation_event(
+            created_path=self._tree_path_for_mutable_node(node),
+            helper="_record_child_inserted",
+        )
 
     def _record_supplement_inserted(self, node: UKMutableNode) -> None:
         try:
@@ -520,6 +524,10 @@ class UKReplayStateMixin:
             idx = None
         self._add_eid_lookup_subtree(node, None, idx)
         self._note_structure_mutation()
+        self._record_insert_node_mutation_event(
+            created_path=self._tree_path_for_mutable_node(node),
+            helper="_record_supplement_inserted",
+        )
 
     def _child_shape(self, node: UKMutableNode) -> tuple[tuple[object, Optional[str]], ...]:
         return tuple((child.kind, child.label) for child in node.children)
@@ -717,6 +725,31 @@ class UKReplayStateMixin:
                 resolved_target_path=tree_path_from_legal_address(op.target),
                 parent_path=removed_path[:-1] if removed_path else (),
                 removed_paths=(removed_path,),
+            )
+        )
+
+    def _record_insert_node_mutation_event(
+        self,
+        *,
+        created_path: TreePath | None,
+        helper: str,
+    ) -> None:
+        if self.mutation_events_out is None or created_path is None:
+            return
+        op = self._current_mutation_op
+        if op is None:
+            return
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper=helper,
+                outcome="inserted_node",
+                resolved_target_path=tree_path_from_legal_address(op.target),
+                parent_path=created_path[:-1] if created_path else (),
+                created_paths=(created_path,),
             )
         )
 

@@ -139,6 +139,34 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_repeal() -> None:
     assert event.replaced_paths == ()
 
 
+def test_replay_uk_ops_can_emit_core_mutation_event_for_node_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    op = LegalOperation(
+        op_id="uk-test-insert-section-2",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Inserted text."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(_base_statute(), [op], mutation_events_out=mutation_events)
+
+    assert [child.label for child in replayed.body.children] == ["1", "2"]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-insert-section-2"
+    assert event.source_statute == "ukpga/2026/1"
+    assert event.action == "insert"
+    assert event.helper == "_record_child_inserted"
+    assert event.outcome == "inserted_node"
+    assert event.resolved_target_path == (("section", "2"),)
+    assert event.parent_path == ()
+    assert event.created_paths == ((("section", "2"),),)
+    assert event.removed_paths == ()
+    assert event.replaced_paths == ()
+
+
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
     assert _uk_definition_term_lexical_variants("") == ()
     assert _uk_definition_term_lexical_variants("education") == ("educational",)
