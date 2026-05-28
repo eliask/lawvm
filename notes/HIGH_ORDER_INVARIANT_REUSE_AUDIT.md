@@ -47,10 +47,10 @@ Recent improvement:
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
   whole-act repeal is also recorded as a root-path removal.
-- UK direct table row, table column, and schedule-table row splices now emit
-  conservative container-scoped mutation events. The event records the table
-  path instead of inventing row-level identity for unlabeled duplicate table
-  rows.
+- UK direct table row, table column, schedule-table row, and schedule-list
+  entry splices now emit conservative container-scoped mutation events. Table
+  row events record the table path instead of inventing row-level identity for
+  unlabeled duplicate table rows.
 
 ## Ranked Promotion Candidates
 
@@ -155,10 +155,11 @@ Implemented progress:
   classification to the core report while preserving its frontend-specific
   accounting result codes and compatibility report fields.
 - UK replay emits opt-in core mutation events for central node
-  replace/remove/insert helpers, whole-act repeal, and direct table/schedule
-  children-splice helpers. Table/schedule splices intentionally record the
-  table container as the changed path because row identity may be unlabeled and
-  non-unique in source XML.
+  replace/remove/insert helpers, whole-act repeal, direct table/schedule-table
+  children-splice helpers, and schedule-list entry insert/repeal/replace
+  helpers. Table row splices intentionally record the table container as the
+  changed path because row identity may be unlabeled and non-unique in source
+  XML.
 
 Why high value:
 

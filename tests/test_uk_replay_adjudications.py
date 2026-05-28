@@ -69,6 +69,24 @@ def _source() -> OperationSource:
     )
 
 
+def _schedule_entry_statute() -> IRStatute:
+    return IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Alpha entry"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Beta entry"),
+                ),
+            ),
+        ),
+    )
+
+
 def _duplicate_text_statute() -> IRStatute:
     shared_text = " ".join(["same", "text"] * 45)
     return IRStatute(
@@ -354,6 +372,99 @@ def test_replay_uk_ops_emit_mutation_event_for_schedule_table_row_insert() -> No
     assert event.parent_path == table_path
     assert event.replaced_paths == (table_path,)
     assert event.reason_code == "explicit_schedule_end_unique_table"
+
+
+def test_replay_uk_ops_emit_mutation_event_for_schedule_list_entry_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    selector = {
+        "direction": "end",
+        "placement_family": "definition_list_end_from_source_range",
+    }
+    op = LegalOperation(
+        op_id="uk-test-insert-schedule-entry",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Gamma entry"),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"schedule_list_entry_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(_schedule_entry_statute(), [op], mutation_events_out=mutation_events)
+
+    assert [child.text for child in replayed.supplements[0].children] == [
+        "Alpha entry",
+        "Beta entry",
+        "Gamma entry",
+    ]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    schedule_path = (("schedule", "1"),)
+    assert event.op_id == "uk-test-insert-schedule-entry"
+    assert event.helper == "_insert_schedule_list_entry"
+    assert event.outcome == "schedule_list_entry_inserted"
+    assert event.resolved_target_path == schedule_path
+    assert event.parent_path == schedule_path
+    assert event.replaced_paths == (schedule_path,)
+    assert event.reason_code == "definition_list_end_direct_entry_boundary"
+
+
+def test_replay_uk_ops_emit_mutation_event_for_schedule_list_entry_repeal() -> None:
+    mutation_events: list[MutationEvent] = []
+    selector = {"anchors": ["Alpha entry"]}
+    op = LegalOperation(
+        op_id="uk-test-repeal-schedule-entry",
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"schedule_list_entry_repeal_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(_schedule_entry_statute(), [op], mutation_events_out=mutation_events)
+
+    assert [child.text for child in replayed.supplements[0].children] == ["Beta entry"]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    schedule_path = (("schedule", "1"),)
+    assert event.op_id == "uk-test-repeal-schedule-entry"
+    assert event.helper == "_repeal_schedule_list_entries"
+    assert event.outcome == "schedule_list_entries_repealed"
+    assert event.resolved_target_path == schedule_path
+    assert event.parent_path == schedule_path
+    assert event.replaced_paths == (schedule_path,)
+    assert event.reason_code == "explicit_entry_anchors_unique"
+
+
+def test_replay_uk_ops_emit_mutation_event_for_schedule_list_entry_replace() -> None:
+    mutation_events: list[MutationEvent] = []
+    selector = {"anchor": "Beta entry"}
+    op = LegalOperation(
+        op_id="uk-test-replace-schedule-entry",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Beta replacement"),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"schedule_list_entry_replace_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(_schedule_entry_statute(), [op], mutation_events_out=mutation_events)
+
+    assert [child.text for child in replayed.supplements[0].children] == [
+        "Alpha entry",
+        "Beta replacement",
+    ]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    schedule_path = (("schedule", "1"),)
+    assert event.op_id == "uk-test-replace-schedule-entry"
+    assert event.helper == "_replace_schedule_list_entry"
+    assert event.outcome == "schedule_list_entry_replaced"
+    assert event.resolved_target_path == schedule_path
+    assert event.parent_path == schedule_path
+    assert event.replaced_paths == (schedule_path,)
+    assert event.reason_code == "explicit_entry_anchor_unique"
 
 
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
