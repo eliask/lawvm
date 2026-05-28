@@ -46,6 +46,8 @@ from typing import (
     Optional,
     Sequence,
     Set,
+    TypedDict,
+    cast,
 )
 
 if TYPE_CHECKING:
@@ -128,6 +130,13 @@ _CORPUS_FIELDNAMES = [
     "enacted_source_sha256",
     "oracle_source_sha256",
 ]
+
+
+class _UKBenchReplayRegimeResultFields(TypedDict):
+    uk_source_purity_lane: str
+    uk_source_semantics_clean: bool
+    uk_source_first_candidate: bool
+    uk_source_first_candidate_reasons: tuple[str, ...]
 
 _PHASE_TIMING_KEYS = (
     "effect_counts",
@@ -557,7 +566,7 @@ def _uk_bench_replay_regime_result_fields(
     applicability_mode: str,
     authority_mode: str,
     source_unavailable_reason: str = "",
-) -> dict[str, object]:
+) -> _UKBenchReplayRegimeResultFields:
     if source_unavailable_reason:
         source_purity_lane = "not_run_source_unavailable"
     else:
@@ -3041,7 +3050,7 @@ def _run_bench_parallel_entries(
     progress_start_offset: int = 0,
     progress_total: int | None = None,
 ) -> Generator[_BenchResult, None, None]:
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 
     worker_config = (
         str(archive._db_path),
@@ -3058,18 +3067,20 @@ def _run_bench_parallel_entries(
     )
     # Fast fork-backed default: child workers inherit these globals.
     _configure_uk_bench_worker(*worker_config)
-    pool_kwargs: dict[str, object] = {}
     if worker_max_tasks_per_child is not None:
         # max_tasks_per_child may use spawn; initializer makes worker config
         # explicit instead of relying on fork-inherited module globals.
-        pool_kwargs = {
-            "initializer": _configure_uk_bench_worker,
-            "initargs": worker_config,
-            "max_tasks_per_child": worker_max_tasks_per_child,
-        }
+        pool = ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_configure_uk_bench_worker,
+            initargs=worker_config,
+            max_tasks_per_child=worker_max_tasks_per_child,
+        )
+    else:
+        pool = ProcessPoolExecutor(max_workers=workers)
 
-    with ProcessPoolExecutor(max_workers=workers, **pool_kwargs) as pool:
-        future_to_entry: dict[object, dict] = {}
+    with pool:
+        future_to_entry: dict[Future[_BenchResult], dict] = {}
         submission_order = sorted(
             entries,
             key=_uk_bench_parallel_submission_cost,
@@ -4914,7 +4925,8 @@ def _print_bench_diagnostic_samples(
             )
         )
     for row in samples:
-        record = row.get("record") if isinstance(row.get("record"), dict) else {}
+        raw_record = row.get("record")
+        record: Mapping[str, Any] = raw_record if isinstance(raw_record, dict) else {}
         pattern_part = (
             f"pattern={_diagnostic_preview_pattern(record)} "
             if pattern_summary
@@ -7012,11 +7024,12 @@ def _filter_replay_source_closed_entries(
     raw_statuses = source_closure_summary.get("row_closure_statuses")
     if not isinstance(raw_statuses, Mapping):
         return list(entries)
+    status_by_statute = cast(Mapping[str, object], raw_statuses)
     allowed_statuses = {"full", "not_required"}
     selected: list[dict[str, object]] = []
     for entry in entries:
         statute_id = str(entry.get("statute_id") or "")
-        if str(raw_statuses.get(statute_id) or "") in allowed_statuses:
+        if str(status_by_statute.get(statute_id) or "") in allowed_statuses:
             selected.append(dict(entry))
     return selected
 
@@ -7054,10 +7067,8 @@ def _stratified_source_complete_sample(
 
     def hard_group_key(key: tuple[str, str, str]) -> tuple[int, int, int, int, tuple[str, str, str]]:
         head = groups[key][0]
-        return (
-            *(-value for value in _uk_bench_parallel_submission_cost(dict(head))),
-            key,
-        )
+        cost = _uk_bench_parallel_submission_cost(dict(head))
+        return (-cost[0], -cost[1], -cost[2], -cost[3], key)
 
     selected: list[dict[str, object]] = []
     group_keys = sorted(groups, key=hard_group_key) if hard else sorted(groups)
@@ -7425,7 +7436,7 @@ def main(args) -> None:  # noqa: ANN001
                 f"{len(replay_heavy_entries)} heavy row(s) will run in a "
                 f"single recycled worker lane ({examples})"
             )
-    run_kwargs: dict[str, object] = {
+    run_kwargs: dict[str, Any] = {
         "do_replay": do_replay,
         "repo_root": _REPO_ROOT,
         "workers": workers,
@@ -7476,6 +7487,9 @@ def main(args) -> None:  # noqa: ANN001
             )
 
             if do_save:
+                assert csv_writer is not None
+                assert witness_writer is not None
+                assert diag_file is not None
                 csv_row = _get_csv_row(
                     r,
                     has_commencement=do_commencement,
