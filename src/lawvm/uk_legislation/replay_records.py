@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_flattened_sublist_findings, build_text_duplication_findings
@@ -78,14 +79,17 @@ def uk_replay_action_target_detail(
     **extra: Any,
 ) -> dict[str, Any]:
     """Build the standard action/target detail payload for replay adjudications."""
-    detail: dict[str, Any] = {
-        "action": _action_name(op.action),
-        "target": str(target),
-        "blocking": bool(blocking),
-        "strict_disposition": "block" if blocking else "record",
-        "quirks_disposition": "record",
-    }
-    detail.update(extra)
+    explicit_rule_id = str(extra.pop("rule_id", "") or "")
+    detail = diagnostic_detail(
+        rule_id=explicit_rule_id or "_pending_uk_replay_rule",
+        phase="replay",
+        blocking=blocking,
+        action=_action_name(op.action),
+        target=str(target),
+        **extra,
+    )
+    if not explicit_rule_id:
+        detail.pop("rule_id", None)
     return detail
 
 

@@ -28,6 +28,11 @@ Already useful:
 
 Recent improvement:
 
+- `src/lawvm/core/diagnostic_records.py::diagnostic_detail` now owns the
+  shared detail-envelope defaults for `rule_id`, `phase`, `blocking`,
+  `strict_disposition`, and `quirks_disposition`; UK lowering and the central
+  UK replay action/target detail builder use it while keeping their local
+  adjudication carriers.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
@@ -247,12 +252,21 @@ Evidence:
 
 Promotion:
 
-- add a small core `diagnostic_records.py` helper for envelope detail dicts;
-- possible records: `DiagnosticDisposition` and `DiagnosticEnvelope`;
+- use the existing small core `diagnostic_records.py` helper for envelope
+  detail dicts;
+- possible future records: `DiagnosticDisposition` and `DiagnosticEnvelope`;
 - standardize only `rule_id`, `family`, `phase`, `reason/message`,
   `blocking`, `strict_disposition`, `quirks_disposition`, optional source/op
   IDs, and `detail`;
 - keep frontend-local finding classes, but make wire fields consistent.
+
+Implemented progress:
+
+- `diagnostic_detail(...)` exists in core and is covered by tests;
+- UK lowering records build their base details through `diagnostic_detail`;
+- the central UK replay action/target detail builder now delegates envelope
+  defaults to `diagnostic_detail` while letting `_build_uk_replay_adjudication`
+  attach the final replay rule ID.
 
 Why high value:
 
