@@ -2323,7 +2323,7 @@ def _uk_schedule_in_cell_text(text: str, schedule_pat: str) -> bool:
         ):
             return True
 
-        if is_numeric:
+        if is_numeric and wanted_num is not None:
             for match in re.finditer(
                 r"\b(?P<start>\d+)\s*(?:to|-|–|—)\s*(?P<end>\d+)\b",
                 segment,

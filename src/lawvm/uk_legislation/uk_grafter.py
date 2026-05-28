@@ -216,8 +216,9 @@ def _clean_num(raw: str) -> str:
     return _clean_num_cached(str(raw))
 
 
-_clean_num.cache_clear = _clean_num_cached.cache_clear  # type: ignore[attr-defined]
-_clean_num.cache_info = _clean_num_cached.cache_info  # type: ignore[attr-defined]
+_clean_num_with_cache_attrs = cast(Any, _clean_num)
+_clean_num_with_cache_attrs.cache_clear = _clean_num_cached.cache_clear
+_clean_num_with_cache_attrs.cache_info = _clean_num_cached.cache_info
 
 
 def _infer_container_number_from_source_uri(el: ET.Element, *, prefix: str) -> str:

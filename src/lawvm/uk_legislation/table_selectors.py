@@ -2397,13 +2397,13 @@ def _uk_embedded_table_payload_structural_insertion(
 
 
 def _uk_parent_target_before_table_marker(target: LegalAddress) -> LegalAddress | None:
-    path: list[tuple[str, str | None]] = []
+    path: list[tuple[str, str]] = []
     for kind, label in target.path:
         kind_norm = str(kind or "").lower()
         label_norm = str(label or "").lower()
         if kind_norm in {"table", "cell", "row"} or label_norm == "table":
             break
-        path.append((kind, label))
+        path.append((str(kind), str(label or "")))
     if not path or len(path) == len(target.path):
         return None
     return LegalAddress(path=tuple(path), special=target.special)

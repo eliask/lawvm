@@ -1066,7 +1066,8 @@ def _schedule_table_row_label_key(label: str) -> str:
 
 
 def _source_part_label_from_element(part_el: ET.Element) -> str:
-    number_text = _text_content(part_el.find(f"./{{{_LEG_NS}}}Number"))
+    number_el = part_el.find(f"./{{{_LEG_NS}}}Number")
+    number_text = _text_content(number_el) if number_el is not None else ""
     match = re.search(r"\bpart\s+(?P<label>[0-9A-Za-zIVXLC]+)\b", number_text, flags=re.I)
     if match is not None:
         return _clean_num(match.group("label"))
@@ -1207,7 +1208,7 @@ def _extract_from_affecting_source_context_with_observations(
                         effect,
                         second_part,
                     )
-                if _compound_first_instruction_overrides_broad_repeal_part(
+                if first_el is not None and _compound_first_instruction_overrides_broad_repeal_part(
                     context,
                     first_el=first_el,
                     second_el=second_el,
@@ -1231,6 +1232,8 @@ def _extract_from_affecting_source_context_with_observations(
                         effect,
                         second_el,
                     )
+                    if second_el is None:
+                        return _NO_SOURCE_EXTRACTION
                     payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
                         context,
                         effect,
@@ -1348,6 +1351,8 @@ def _extract_from_affecting_source_context_with_observations(
                 effect,
                 split_el,
             )
+            if split_el is None:
+                return _NO_SOURCE_EXTRACTION
             payload_descendant_rejection = _block_amendment_payload_descendant_source_rejection(
                 context,
                 effect,
