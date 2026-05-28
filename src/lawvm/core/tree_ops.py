@@ -70,6 +70,11 @@ def _norm(s: str) -> str:
     return _NON_ALNUM_RE.sub("", s).lower()
 
 
+def normalized_label_key(label: Optional[str]) -> str:
+    """Return the shared default normalized label key used by tree lookups."""
+    return _norm(label or "")
+
+
 def _with_children(node: IRNode, children: Sequence[IRNode]) -> IRNode:
     """Create a new IRNode with different children, sharing everything else."""
     return IRNode(
@@ -109,6 +114,15 @@ def _default_sort_key(label: Optional[str]) -> Tuple[int, str, int]:
         return (int(m.group(1)), m.group(2), 0)
     digits = _NON_DIGIT_RE.sub("", s)
     return (int(digits), "", 0) if digits else (-1, s, 0)
+
+
+def default_label_sort_key(label: Optional[str]) -> Tuple[int, str, int]:
+    """Return the shared default structural-label sort key.
+
+    This is the core default, not a jurisdiction-specific legal ordering rule.
+    Jurisdiction frontends may still pass their own sort key where needed.
+    """
+    return _default_sort_key(label)
 
 
 def _insert_child_sorted(

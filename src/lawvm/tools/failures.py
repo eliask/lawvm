@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.grafter import FailedOp, XMLStatute, replay_xml
 from lawvm.tools.classify import _classify_statute
-from lawvm.core.tree_ops import _norm
+from lawvm.core.tree_ops import normalized_label_key
 
 
 # ---------------------------------------------------------------------------
@@ -385,8 +385,8 @@ def _categorize_failure(
             return "kohta_no_paras"
 
         # Check if matching label exists
-        item_norm = _norm(target_item)
-        matching = [p for p in paras if _norm(p.label or "") == item_norm]
+        item_norm = normalized_label_key(target_item)
+        matching = [p for p in paras if normalized_label_key(p.label or "") == item_norm]
         if matching:
             return "kohta_amend_extract_fail"
 
