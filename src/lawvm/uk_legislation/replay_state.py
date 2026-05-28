@@ -784,6 +784,34 @@ class UKReplayStateMixin:
             )
         )
 
+    def _record_renumber_node_mutation_event(
+        self,
+        *,
+        old_path: TreePath | None,
+        new_node: UKMutableNode,
+        helper: str,
+    ) -> None:
+        if self.mutation_events_out is None or old_path is None:
+            return
+        op = self._current_mutation_op
+        if op is None:
+            return
+        parent_path = old_path[:-1] if old_path else ()
+        new_path = parent_path + ((_kind_str(new_node.kind), new_node.label or ""),)
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper=helper,
+                outcome="renumbered_node",
+                resolved_target_path=tree_path_from_legal_address(op.target),
+                parent_path=parent_path,
+                renumbered_paths=((old_path, new_path),),
+            )
+        )
+
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None

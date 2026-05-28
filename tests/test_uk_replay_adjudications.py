@@ -467,6 +467,44 @@ def test_replay_uk_ops_emit_mutation_event_for_schedule_list_entry_replace() -> 
     assert event.reason_code == "explicit_entry_anchor_unique"
 
 
+def test_replay_uk_ops_emit_mutation_event_for_sibling_renumber() -> None:
+    mutation_events: list[MutationEvent] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="9", text="Section 9 text."),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk-test-renumber-section",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "9"),)),
+        destination=LegalAddress(path=(("section", "8"),)),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    assert [child.label for child in replayed.body.children] == ["8"]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-renumber-section"
+    assert event.action == "renumber"
+    assert event.helper == "_apply_same_parent_sibling_renumber"
+    assert event.outcome == "renumbered_node"
+    assert event.resolved_target_path == (("section", "9"),)
+    assert event.parent_path == ()
+    assert event.renumbered_paths == (((("section", "9"),), (("section", "8"),)),)
+    assert event.created_paths == ()
+    assert event.removed_paths == ()
+    assert event.replaced_paths == ()
+
+
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
     assert _uk_definition_term_lexical_variants("") == ()
     assert _uk_definition_term_lexical_variants("education") == ("educational",)
