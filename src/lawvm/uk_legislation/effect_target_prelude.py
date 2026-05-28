@@ -9,6 +9,11 @@ from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    TARGET_RECOVERED,
+    TargetResolutionCertificate,
+)
 from lawvm.uk_legislation.addressing import (
     _addr_container,
     _addr_field,
@@ -742,6 +747,23 @@ def refine_source_text_schedule_paragraph_target(
             "target_ref": t_str,
             "metadata_target": str(target),
             "source_target": str(refined_target),
+            "target_resolution": TargetResolutionCertificate(
+                rule_id=_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID,
+                phase="lowering",
+                reason=(
+                    "UK source text explicitly names the affected schedule "
+                    "paragraph and overrides the effect metadata target."
+                ),
+                status=TARGET_RECOVERED,
+                source_target=t_str,
+                selected_target=str(refined_target),
+                candidate_count=1,
+                scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+                detail={
+                    "metadata_target": str(target),
+                    "jurisdiction_status": "explicit_source_schedule_paragraph_overrides_metadata",
+                },
+            ).to_diagnostic_detail(),
         },
     )
     return refined_target

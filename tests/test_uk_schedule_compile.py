@@ -3018,12 +3018,35 @@ def test_compile_words_substituted_uses_explicit_source_schedule_paragraph_targe
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "rent assessment"
     assert ops[0].text_patch.replacement == " private rented housing "
-    assert any(
-        record["rule_id"] == "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
-        and record["metadata_target"] == "schedule:3/paragraph:11"
-        and record["source_target"] == "schedule:3/paragraph:5"
+    override_record = next(
+        record
         for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
     )
+    assert (
+        override_record["metadata_target"] == "schedule:3/paragraph:11"
+        and override_record["source_target"] == "schedule:3/paragraph:5"
+    )
+    assert override_record["target_resolution"] == {
+        "rule_id": "uk_effect_source_text_schedule_paragraph_target_overrides_metadata",
+        "family": "target_resolution",
+        "phase": "lowering",
+        "reason": (
+            "UK source text explicitly names the affected schedule paragraph "
+            "and overrides the effect metadata target."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "target_resolution_status": "recovered",
+        "source_target": "Sch. 3 para. 11",
+        "candidate_count": 1,
+        "selected_target": "schedule:3/paragraph:5",
+        "selected_target_differs_from_source": True,
+        "scope_confidence": "explicit_source",
+        "metadata_target": "schedule:3/paragraph:11",
+        "jurisdiction_status": "explicit_source_schedule_paragraph_overrides_metadata",
+    }
 
 
 def test_repeal_tail_for_substituted_series_single_new_subsection() -> None:

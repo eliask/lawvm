@@ -218,6 +218,9 @@ Recent improvement:
   candidate count, selected target, status, confidence, and strict/quirks
   disposition; frontends still own candidate discovery and local fallback
   policy.
+- UK source-text schedule-paragraph target overrides now include a nested core
+  target-resolution certificate while preserving the existing UK lowering
+  observation fields and authority policy.
 - New Zealand instruction-workqueue evidence now projects its latest-oracle
   target lookup through the shared target-resolution carrier while preserving
   NZ-local status names and keeping replay/effect claims disabled.
