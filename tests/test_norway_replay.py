@@ -409,6 +409,10 @@ def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:
     assert evidence_row["rule_id"] == "no_replay_future_effective_skipped"
     assert evidence_row["phase"] == "temporal"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["evidence"]["detail"]["family"] == "temporal_resolution"
+    assert evidence_row["evidence"]["detail"]["temporal_resolution_status"] == "future_effective_date"
+    assert evidence_row["evidence"]["detail"]["effective_date"] == "2025-02-10"
+    assert evidence_row["evidence"]["detail"]["as_of"] == "2025-02-01"
     assert evidence_row["blocking"] is False
     assert evidence_row["strict_disposition"] == "record"
     assert evidence_row["quirks_disposition"] == "record"
@@ -454,6 +458,8 @@ def test_replay_no_to_pit_marks_unknown_effective_dates(tmp_path) -> None:
     assert evidence_row["rule_id"] == "no_replay_unknown_effective_skipped"
     assert evidence_row["phase"] == "temporal"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["evidence"]["detail"]["family"] == "temporal_resolution"
+    assert evidence_row["evidence"]["detail"]["temporal_resolution_status"] == "unknown_effective_date"
     assert evidence_row["blocking"] is True
     assert evidence_row["strict_disposition"] == "block"
     assert evidence_row["quirks_disposition"] == "record"
@@ -503,6 +509,8 @@ def test_replay_no_to_pit_surfaces_contingent_commencement_skip(tmp_path) -> Non
     assert evidence_row["rule_id"] == "no_replay_contingent_commencement_skipped"
     assert evidence_row["phase"] == "temporal"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["evidence"]["detail"]["family"] == "temporal_resolution"
+    assert evidence_row["evidence"]["detail"]["temporal_resolution_status"] == "unresolved_contingent"
     assert evidence_row["blocking"] is True
     assert evidence_row["strict_disposition"] == "block"
     assert evidence_row["quirks_disposition"] == "record"

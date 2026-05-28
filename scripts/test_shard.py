@@ -215,6 +215,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_span_anchor.py",
         "test_statute_facets.py",
         "test_target_scope.py",
+        "test_temporal_resolution.py",
         "test_unit_registry.py",
     ),
     "core_tree_apply": (
