@@ -23,6 +23,7 @@ from lxml import etree
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.compile_result import CompileFailure
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.finland.corrigendum_records import load_patch_records, load_source_records
 from lawvm.finland.corpus import get_consolidated_oracle_suspect_cache_only
@@ -4137,18 +4138,16 @@ def build_uk_evidence_bundle(
         except Exception as exc:
             n_effects = 0
             effect_feed_count_observations.append(
-                {
-                    "rule_id": "uk_effect_feed_count_error",
-                    "family": "source_pathology",
-                    "phase": "parse",
-                    "statute_id": statute_id,
-                    "reason": "UK evidence effect-feed count load failed before replay compile.",
-                    "exception_type": type(exc).__name__,
-                    "exception_message": str(exc),
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                diagnostic_detail(
+                    rule_id="uk_effect_feed_count_error",
+                    family="source_pathology",
+                    phase="parse",
+                    reason="UK evidence effect-feed count load failed before replay compile.",
+                    blocking=True,
+                    statute_id=statute_id,
+                    exception_type=type(exc).__name__,
+                    exception_message=str(exc),
+                )
             )
 
         pipeline = UKReplayPipeline(_REPO_ROOT)
