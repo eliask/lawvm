@@ -2918,6 +2918,10 @@ def _append_no_replay_adjudication(
     if adjudications_out is None:
         return
     raw_detail = dict(detail or {})
+    detail_rule_id = str(raw_detail.pop("rule_id", "") or "")
+    detail_family = str(raw_detail.pop("family", "") or "")
+    detail_reason = str(raw_detail.pop("reason", "") or "")
+    detail_message = str(raw_detail.pop("message", "") or "")
     if kind in {"replay_unsupported_action", "replay_unresolved_target", "replay_noop"}:
         family = "unsupported_or_unresolved_action"
     elif kind == "replay_tree_invariant_violation":
@@ -2927,10 +2931,12 @@ def _append_no_replay_adjudication(
     else:
         family = ""
     normalized_detail = diagnostic_detail(
-        rule_id=kind,
+        rule_id=detail_rule_id or kind,
         phase="replay",
         blocking=True,
-        family=family,
+        family=detail_family or family,
+        reason=detail_reason,
+        message=detail_message,
         detail=raw_detail,
     )
     adjudications_out.append(

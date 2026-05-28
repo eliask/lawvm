@@ -4,6 +4,7 @@ import pytest
 
 from lawvm.core.diagnostic_records import (
     BLOCKING_STRICT_DISPOSITIONS,
+    DIAGNOSTIC_DETAIL_ENVELOPE_KEYS,
     diagnostic_detail,
     validate_blocking_disposition,
     validate_diagnostic_detail,
@@ -52,6 +53,16 @@ def test_diagnostic_detail_requires_rule_id_and_phase() -> None:
         diagnostic_detail(rule_id="", phase="replay", blocking=True)
     with pytest.raises(ValueError, match="phase"):
         diagnostic_detail(rule_id="rule", phase="", blocking=True)
+
+
+def test_diagnostic_detail_rejects_local_detail_envelope_overrides() -> None:
+    with pytest.raises(ValueError, match="must not override envelope keys: phase, rule_id"):
+        diagnostic_detail(
+            rule_id="rule",
+            phase="replay",
+            blocking=False,
+            detail={"rule_id": "other", "phase": "parse"},
+        )
 
 
 def test_validate_diagnostic_detail_accepts_shared_envelope() -> None:
@@ -103,6 +114,12 @@ def test_validate_diagnostic_detail_requires_boolean_blocking() -> None:
 
 def test_blocking_strict_dispositions_are_shared_contract_surface() -> None:
     assert {"block", "reject", "fail", "hard_fail", "strict_block"} <= BLOCKING_STRICT_DISPOSITIONS
+
+
+def test_diagnostic_detail_envelope_keys_are_shared_contract_surface() -> None:
+    assert {"rule_id", "phase", "blocking", "strict_disposition", "quirks_disposition"} <= (
+        DIAGNOSTIC_DETAIL_ENVELOPE_KEYS
+    )
 
 
 def test_validate_blocking_disposition_is_shared_contract_surface() -> None:
