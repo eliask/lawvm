@@ -24,12 +24,9 @@ public semantic authority layer.
 
 Note on field naming
 --------------------
-``preamble_raw`` and ``preamble_normalized`` replace the earlier
-``johtolause_raw`` / ``johtolause_normalized`` names. ``johtolause`` is the
-Finnish legal term for the enacting clause of an amending act. The generic
-term ``preamble`` applies to any jurisdiction's equivalent enacting clause.
-``CaptureStore.load`` transparently migrates old DB records that carry the
-Finnish field names.
+``preamble_raw`` and ``preamble_normalized`` replace earlier
+frontend-specific field names. ``CaptureStore.load`` transparently migrates
+old DB records that carry those legacy names.
 """
 from __future__ import annotations
 
@@ -48,10 +45,8 @@ class AmendmentCapture:
     statute_id: str
     amendment_id: str
 
-    # Step 1: preamble (enacting clause) extraction.
-    # Called "johtolause" in Finnish law; generic term used here so core stays
-    # jurisdiction-neutral (§1.5 boundary).
-    preamble_raw: str = ""          # from get_johtolause() / equivalent
+    # Step 1: amendment preamble / enacting-clause extraction.
+    preamble_raw: str = ""          # from frontend preamble extraction
     preamble_normalized: str = ""   # after verb-normalization pass
     used_sec1_fallback: bool = False
 
@@ -60,7 +55,7 @@ class AmendmentCapture:
     extraction_path: str = ""  # "peg" | "fallback_heuristic" | "title_fallback" | "sec1"
 
     # Step 3: citation routing
-    citation_match: bool = True    # did johtolause reference parent?
+    citation_match: bool = True    # did the preamble reference the parent?
     citation_action: str = ""      # "pass" | "skip_num_collision" | "skip_citation_mismatch"
 
     # Step 4: op normalization
@@ -148,7 +143,7 @@ class CaptureStore:
         result = []
         for (data_json,) in rows:
             d = json.loads(data_json)
-            # Migrate legacy Finnish field names produced by older captures.
+            # Migrate legacy frontend-specific field names produced by older captures.
             if "johtolause_raw" in d and "preamble_raw" not in d:
                 d["preamble_raw"] = d.pop("johtolause_raw")
             if "johtolause_normalized" in d and "preamble_normalized" not in d:
@@ -168,7 +163,7 @@ class CaptureStore:
         if not row:
             return None
         d = json.loads(row[0])
-        # Migrate legacy Finnish field names (see load() for rationale).
+        # Migrate legacy frontend-specific field names (see load() for rationale).
         if "johtolause_raw" in d and "preamble_raw" not in d:
             d["preamble_raw"] = d.pop("johtolause_raw")
         if "johtolause_normalized" in d and "preamble_normalized" not in d:

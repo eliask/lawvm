@@ -8,8 +8,8 @@ clauses that ClauseAST represents as MetaClause nodes.
 Five effect kinds are defined, modelling common commencement, expiry,
 applicability, suspension, and revival clause patterns:
 
-  Commencement   — "Tämä laki tulee voimaan [date]"
-  Expiry         — "Tämä laki on voimassa [until date]"
+  Commencement   — this instrument or provision comes into force on a date
+  Expiry         — this instrument or provision remains in force until a date
   Suspension     — a provision is temporarily suspended
   Applicability  — applicability scope restriction or extension
   Revival        — re-entry into force of a previously expired provision
@@ -78,7 +78,7 @@ class Commencement:
 
     is_contingent
         True when the text indicates a decree-set or conditional commencement
-        date (e.g. "tulee voimaan asetuksella säädettävänä ajankohtana").
+        date, such as a date to be appointed by later instrument.
 
     raw_text
         The source clause text for traceability.

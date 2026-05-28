@@ -192,7 +192,7 @@ class PhaseResult(Generic[T]):
 
     Usage::
 
-        result = normalize_and_compile_ops_pr(johto, tree, master, mid, ...)
+        result = normalize_and_compile_ops_pr(preamble_text, tree, master, mid, ...)
         if result.has_blocking:
             # surface before continuing
             for finding in result.findings():
