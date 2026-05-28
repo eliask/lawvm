@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import csv
+import json
 import types
 
 from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
 from lawvm.core.graph import CorpusGraph
-from lawvm.tools.export import export_neo4j
+from lawvm.tools.export import export_jsonld, export_neo4j
 
 
 def _read_csv(path):
@@ -93,3 +94,52 @@ def test_export_neo4j_writes_branch_graph_tables(tmp_path, monkeypatch) -> None:
             "derived_enacted_source_id": "",
         }
     ]
+
+
+def test_export_jsonld_includes_branch_graph_resources(tmp_path, monkeypatch) -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        source_artifact_id="proposal/example/2026/1",
+        title="Example proposal",
+    )
+    edge = BranchGraphEdge(
+        branch_id=branch.branch_id,
+        edge_kind="would_replace",
+        source_artifact_id="proposal/example/2026/1",
+        target_statute_id="2026/1",
+        target_address="section:1",
+        operation_id="op-1",
+    )
+    event = BranchLifecycleEvent(
+        event_id="event-1",
+        branch_id=branch.branch_id,
+        event_kind="introduced",
+        source_artifact_id="proposal/example/2026/1",
+    )
+
+    async def fake_build_corpus_graph(corpus, *, with_timelines=False):
+        assert corpus == ["2026/1"]
+        assert with_timelines is False
+        return CorpusGraph(
+            statute_meta={"2026/1": {"title": "Base", "statute_type": "act"}},
+            branches=[branch],
+            branch_edges=[edge],
+            branch_lifecycle_events=[event],
+        )
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "lawvm.graph_build",
+        types.SimpleNamespace(build_corpus_graph=fake_build_corpus_graph),
+    )
+    output = tmp_path / "graph.jsonld"
+
+    export_jsonld(output, ["2026/1"])
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data["@context"]["lawvm"] == "https://lawvm.org/ns#"
+    by_type = {row["@type"]: row for row in data["@graph"]}
+    assert by_type["lawvm:LegalBranch"]["lawvm:branchId"] == "proposal:example:2026-1"
+    assert by_type["lawvm:BranchGraphEdge"]["lawvm:edgeKind"] == "would_replace"
+    assert by_type["lawvm:BranchLifecycleEvent"]["lawvm:eventKind"] == "introduced"

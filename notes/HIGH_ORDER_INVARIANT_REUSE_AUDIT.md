@@ -192,6 +192,8 @@ Recent improvement:
 - Neo4j graph export now includes branch nodes, branch would-affect edges, and
   branch lifecycle event tables so proposal/draft graph facts have a persistent
   export lane.
+- JSON-LD graph export now includes branch resources, branch graph edges, and
+  branch lifecycle events under the `lawvm:` namespace.
 
 ## Ranked Promotion Candidates
 

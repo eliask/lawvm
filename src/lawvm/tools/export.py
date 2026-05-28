@@ -238,16 +238,70 @@ def export_jsonld(output_file: Path, corpus: List[str], verbose: bool = False) -
                 "eli:id_local": amend,
             })
         statutes.append(obj)
+    branches = [
+        {
+            "@type": "lawvm:LegalBranch",
+            "@id": f"lawvm:branch/{branch.branch_id}",
+            "lawvm:branchId": branch.branch_id,
+            "lawvm:authorityLayer": branch.authority_layer,
+            "lawvm:legalStatus": branch.legal_status,
+            "lawvm:scenarioId": branch.scenario_id,
+            "lawvm:parentBranchId": branch.parent_branch_id,
+            "lawvm:sourceArtifactId": branch.source_artifact_id,
+            "dcterms:title": branch.title,
+            "lawvm:terminatedBy": branch.terminated_by,
+        }
+        for branch in cg.branches
+    ]
+    branch_edges = [
+        {
+            "@type": "lawvm:BranchGraphEdge",
+            "@id": (
+                f"lawvm:branch-edge/{edge.branch_id}/"
+                f"{edge.edge_kind}/{edge.operation_id or edge.source_unit_id}"
+            ),
+            "lawvm:branchId": edge.branch_id,
+            "lawvm:edgeKind": edge.edge_kind,
+            "lawvm:sourceArtifactId": edge.source_artifact_id,
+            "lawvm:sourceStatuteId": edge.source_statute_id,
+            "lawvm:sourceUnitId": edge.source_unit_id,
+            "lawvm:targetStatuteId": edge.target_statute_id,
+            "lawvm:targetAddress": edge.target_address,
+            "lawvm:operationId": edge.operation_id,
+            "lawvm:authorityLayer": edge.authority_layer,
+            "lawvm:legalStatus": edge.legal_status,
+        }
+        for edge in cg.branch_edges
+    ]
+    lifecycle_events = [
+        {
+            "@type": "lawvm:BranchLifecycleEvent",
+            "@id": f"lawvm:branch-event/{event.event_id}",
+            "lawvm:eventId": event.event_id,
+            "lawvm:branchId": event.branch_id,
+            "lawvm:eventKind": event.event_kind,
+            "lawvm:sourceArtifactId": event.source_artifact_id,
+            "lawvm:eventDate": event.event_date,
+            "lawvm:resultingStatus": event.resulting_status,
+            "lawvm:derivedEnactedSourceId": event.derived_enacted_source_id,
+        }
+        for event in cg.branch_lifecycle_events
+    ]
 
     doc = {
         "@context": {
             "eli": "http://data.europa.eu/eli/ontology#",
             "dcterms": "http://purl.org/dc/terms/",
+            "lawvm": "https://lawvm.org/ns#",
         },
-        "@graph": statutes,
+        "@graph": statutes + branches + branch_edges + lifecycle_events,
     }
     output_file.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"  {len(statutes)} statute resources → {output_file}")
+    print(
+        f"  {len(statutes)} statute resources, {len(branches)} branch resources, "
+        f"{len(branch_edges)} branch edges, {len(lifecycle_events)} branch lifecycle events "
+        f"→ {output_file}"
+    )
 
 
 # ---------------------------------------------------------------------------

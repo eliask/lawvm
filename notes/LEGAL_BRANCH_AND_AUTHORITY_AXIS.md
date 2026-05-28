@@ -84,6 +84,10 @@ The Neo4j CSV export writes:
 
 These files may be empty for jurisdictions that do not yet emit branch facts.
 
+The JSON-LD export also includes branch resources, branch graph edges, and
+branch lifecycle events using the `lawvm:` namespace. ELI statute resources
+remain separate from these branch/proposal graph facts.
+
 `BranchImpactProjection` is the UI/API-facing summary layer for these edges:
 it can say which provisions a branch would affect, optionally with current and
 branch-specific text supplied by a frontend. The projection itself does not
