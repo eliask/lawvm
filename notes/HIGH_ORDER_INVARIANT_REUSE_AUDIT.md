@@ -44,6 +44,8 @@ Recent improvement:
   `diagnostic_detail`.
 - UK affecting-act prefetch source-pathology and source-witness event builders
   now delegate their outward envelope defaults to `diagnostic_detail`.
+- UK authority-filter lowering diagnostics now delegate their outward envelope
+  defaults to `diagnostic_detail` while preserving authority-mode payloads.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple, Optional, Sequence
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
@@ -80,24 +81,26 @@ def _uk_authority_filter_diagnostic(
     blocking: bool = True,
     reason: str = "UK source-text-only authority mode rejected non-source-text replay operations",
 ) -> dict[str, Any]:
-    return {
-        "rule_id": rule_id,
-        "family": "authority_filter",
-        "phase": "lowering",
-        "effect_id": effect.effect_id,
-        "affecting_act_id": effect.affecting_act_id,
-        "affected_provisions": effect.affected_provisions,
-        "affecting_provisions": effect.affecting_provisions,
-        "effect_type": effect.effect_type,
-        "authority_mode": authority_mode,
-        "replay_applicable": replay_applicable,
-        "structural_for_replay": structural_for_replay,
-        "applied": effect.applied,
-        "requires_applied": effect.requires_applied,
-        "metadata_only": bool(getattr(effect, "metadata_only", False)),
-        "rejected_op_count": len(rejected_ops),
-        "kept_op_count": compiled_op_count - len(rejected_ops),
-        "rejected_authority_layers": sorted(
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="authority_filter",
+        phase="lowering",
+        reason=reason,
+        blocking=blocking,
+        effect_id=effect.effect_id,
+        affecting_act_id=effect.affecting_act_id,
+        affected_provisions=effect.affected_provisions,
+        affecting_provisions=effect.affecting_provisions,
+        effect_type=effect.effect_type,
+        authority_mode=authority_mode,
+        replay_applicable=replay_applicable,
+        structural_for_replay=structural_for_replay,
+        applied=effect.applied,
+        requires_applied=effect.requires_applied,
+        metadata_only=bool(getattr(effect, "metadata_only", False)),
+        rejected_op_count=len(rejected_ops),
+        kept_op_count=compiled_op_count - len(rejected_ops),
+        rejected_authority_layers=sorted(
             {
                 str(
                     getattr(
@@ -118,13 +121,9 @@ def _uk_authority_filter_diagnostic(
                 )
             }
         ),
-        "rejected_reasons": sorted(rejected_reason_counts),
-        "rejected_reason_counts": rejected_reason_counts,
-        "reason": reason,
-        "blocking": blocking,
-        "strict_disposition": "block" if blocking else "record",
-        "quirks_disposition": "record",
-    }
+        rejected_reasons=sorted(rejected_reason_counts),
+        rejected_reason_counts=rejected_reason_counts,
+    )
 
 
 def _apply_uk_authority_mode(
