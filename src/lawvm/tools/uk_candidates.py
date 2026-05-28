@@ -1035,10 +1035,12 @@ def _replay_adjudication_evidence_row_jsonable(
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_replay_adjudication_bucket,
     )
+    from lawvm.core.adjudication_evidence import adjudication_record_diagnostic_detail
 
     kind = str(record.get("kind") or "unknown")
     detail = record.get("detail")
     detail_payload = dict(detail) if isinstance(detail, Mapping) else {}
+    diagnostic = adjudication_record_diagnostic_detail(record)
     return {
         "schema": "lawvm.uk_replay_adjudication_frontier.v1",
         "rule_id": "uk_replay_adjudication_frontier_workqueue",
@@ -1072,11 +1074,10 @@ def _replay_adjudication_evidence_row_jsonable(
         "source_statute": str(record.get("source_statute") or ""),
         "op_id": str(record.get("op_id") or ""),
         "detail": detail_payload,
-        "blocking": is_blocking_compile_record(
-            {"rule_id": kind, **detail_payload, "kind": kind}
-        ),
-        "strict_disposition": str(detail_payload.get("strict_disposition") or "record"),
-        "quirks_disposition": str(detail_payload.get("quirks_disposition") or "record"),
+        "diagnostic_detail": diagnostic,
+        "blocking": bool(diagnostic["blocking"]),
+        "strict_disposition": str(diagnostic["strict_disposition"]),
+        "quirks_disposition": str(diagnostic["quirks_disposition"]),
         "uk_replay_regime": _uk_replay_regime_kwargs_from_bench_row(result),
         "uk_replay_regime_claim": _uk_replay_regime_claim_from_bench_row(result),
         "uk_residual_claim": _uk_residual_claim_from_bench_row(result),
