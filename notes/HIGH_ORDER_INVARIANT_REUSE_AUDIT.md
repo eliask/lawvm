@@ -274,6 +274,10 @@ Recent improvement:
   title and statute-fragment payloads.
 - Estonia instruction-waist `exclude_paths` now uses shared tree-path aliases
   while keeping Estonia-local numeric and label range tuples local.
+- source-version bracketing now has shared diagnostic projections for
+  date-window and change-window evidence; New Zealand effect-candidate rows
+  nest the date-window projection beside existing flat fields so the
+  source-only/non-effectivity truth claim is queryable.
 
 ## Ranked Promotion Candidates
 
