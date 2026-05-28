@@ -494,6 +494,28 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_owned_
     assert evidence_row["detail"]["source_change_text_change_window_truth_claim"] == (
         "source_change_window_not_effective_date"
     )
+    assert evidence_row["detail"]["source_change_text_change_window"] == {
+        "rule_id": "nz_archived_xml_version_change_window_source_only",
+        "phase": "source_version_window",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "family": "source_version_window",
+        "reason": "source_version_change_window_source_only",
+        "requested_version_date": "2025-01-01",
+        "truth_claim": "source_change_window_not_effective_date",
+        "replay_claims": False,
+        "before": {
+            "version_id": "act_public_2020_1_en_2024-12-31",
+            "xml_locator": "before.xml",
+            "version_date": "",
+        },
+        "on_or_after": {
+            "version_id": "act_public_2020_1_en_2025-01-02",
+            "xml_locator": "after.xml",
+            "version_date": "",
+        },
+    }
     assert evidence_row["detail"]["text_replace_witness_support_status"] == (
         "latest_oracle_and_source_change_observed"
     )

@@ -22,7 +22,11 @@ from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperat
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec, TextSelector
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import FacetKind, StructuralAction, TextPatchKindEnum
-from lawvm.core.source_version_window import source_version_date_window_diagnostic_detail
+from lawvm.core.source_version_window import (
+    SourceVersionChangeWindow,
+    source_version_change_window_diagnostic_detail,
+    source_version_date_window_diagnostic_detail,
+)
 from lawvm.new_zealand.effect_readiness import (
     NZEffectReadinessReport,
     build_archived_work_effect_readiness_surface,
@@ -98,6 +102,7 @@ class _SourceChangeTextWitness:
     status: str
     rule_id: str
     truth_claim: str = "source_text_change_witness_not_replay_proof"
+    change_window_rule_id: str = "nz_archived_xml_version_change_window_source_only"
     change_window_truth_claim: str = ""
     requested_date: str = ""
     before_version_id: str = ""
@@ -183,6 +188,7 @@ class NZCanonicalEffectCandidateRow:
     source_change_text_witness_status: str = ""
     source_change_text_witness_rule_id: str = ""
     source_change_text_witness_truth_claim: str = ""
+    source_change_text_change_window: Mapping[str, Any] = field(default_factory=dict)
     source_change_text_change_window_truth_claim: str = ""
     source_change_text_witness_requested_date: str = ""
     source_change_text_before_version_id: str = ""
@@ -277,6 +283,7 @@ class NZCanonicalEffectCandidateRow:
             "source_change_text_witness_status": self.source_change_text_witness_status,
             "source_change_text_witness_rule_id": self.source_change_text_witness_rule_id,
             "source_change_text_witness_truth_claim": self.source_change_text_witness_truth_claim,
+            "source_change_text_change_window": dict(self.source_change_text_change_window),
             "source_change_text_change_window_truth_claim": self.source_change_text_change_window_truth_claim,
             "source_change_text_witness_requested_date": self.source_change_text_witness_requested_date,
             "source_change_text_before_version_id": self.source_change_text_before_version_id,
@@ -1751,6 +1758,7 @@ def _source_change_text_witness_fields(
         "source_change_text_witness_status": witness.status,
         "source_change_text_witness_rule_id": witness.rule_id,
         "source_change_text_witness_truth_claim": witness.truth_claim,
+        "source_change_text_change_window": _source_change_window_detail(witness),
         "source_change_text_change_window_truth_claim": witness.change_window_truth_claim,
         "source_change_text_witness_requested_date": witness.requested_date,
         "source_change_text_before_version_id": witness.before_version_id,
@@ -1788,6 +1796,34 @@ def _operation_context_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, A
     }
 
 
+def _source_change_window_detail(witness: _SourceChangeTextWitness) -> dict[str, Any]:
+    if not witness.change_window_truth_claim:
+        return {}
+    return source_version_change_window_diagnostic_detail(
+        SourceVersionChangeWindow(
+            requested_version_date=witness.requested_date,
+            before=_source_change_window_version(
+                version_id=witness.before_version_id,
+                xml_locator=witness.before_xml_locator,
+            ),
+            on_or_after=_source_change_window_version(
+                version_id=witness.on_or_after_version_id,
+                xml_locator=witness.on_or_after_xml_locator,
+            ),
+            rule_id=witness.change_window_rule_id,
+            truth_claim=witness.change_window_truth_claim,
+            replay_claims=False,
+        ),
+        witness_detail=_archived_version_detail,
+    )
+
+
+def _source_change_window_version(*, version_id: str, xml_locator: str) -> NZArchivedVersion | None:
+    if not version_id and not xml_locator:
+        return None
+    return NZArchivedVersion(version_id=version_id, xml_locator=xml_locator, version_date="")
+
+
 def _source_witness_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]:
     return {
         "source_path": row.source_path,
@@ -1816,6 +1852,7 @@ def _source_witness_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]
         "source_change_text_witness_status": row.source_change_text_witness_status,
         "source_change_text_witness_rule_id": row.source_change_text_witness_rule_id,
         "source_change_text_witness_truth_claim": row.source_change_text_witness_truth_claim,
+        "source_change_text_change_window": dict(row.source_change_text_change_window),
         "source_change_text_change_window_truth_claim": row.source_change_text_change_window_truth_claim,
         "source_change_text_witness_requested_date": row.source_change_text_witness_requested_date,
         "source_change_text_before_version_id": row.source_change_text_before_version_id,
