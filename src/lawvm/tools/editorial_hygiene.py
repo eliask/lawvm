@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
+
 
 _REPEAL_CITATION_RE = (
     r'(?:[LAP](?:\:ll[äa])?\s+(?:\d{1,2}\.\d{1,2}\.\d{4}/\d+|\d+/\d{4})(?:\s+v\.\s+\d{4})?)'
@@ -64,6 +66,30 @@ _KUMOTTU_STUBS_RE = re.compile(
     rf'|[a-zäöåA-ZÄÖÅ\-]*lailla'                                       # lailla / Rakennuslailla
     rf')[^.]*\.?',
     re.DOTALL | re.IGNORECASE,
+)
+_FINLEX_ORACLE_COMPARISON_RULES = (
+    ComparisonNormalizationRule(
+        name="fi_oracle_kumottu_stub_sentence",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove Finlex kumottu stub sentences from oracle comparison text.",
+        pattern=_KUMOTTU_STUBS_RE,
+    ),
+    ComparisonNormalizationRule(
+        name="fi_oracle_amendment_date_parenthetical",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove Finlex amendment-date parenthetical residue from oracle comparison text.",
+        pattern=re.compile(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)'),
+    ),
+    ComparisonNormalizationRule(
+        name="fi_oracle_aiempi_sanamuoto_marker",
+        rule_class="presentation_cleanup",
+        kind="literal",
+        description="Remove Finlex previous-wording marker from oracle comparison text.",
+        old_text='Aiempi sanamuoto kuuluu:',
+        new_text='',
+    ),
 )
 
 # Byte patterns for heuristic kumottu-fraction counting in raw oracle XML bytes.
@@ -130,9 +156,7 @@ def normalize_finlex_oracle_comparison_text(text: str, *, strip_editorial: bool 
     ``Aiempi sanamuoto kuuluu:`` marker.  Callers that historically applied the
     broader editorial cleanup can opt into ``strip_editorial`` explicitly.
     """
-    text = normalize_kumottu_stubs(text)
-    text = re.sub(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)', '', text)
-    text = re.sub(r'Aiempi sanamuoto kuuluu:', '', text)
+    text = normalize_comparison_text(text, _FINLEX_ORACLE_COMPARISON_RULES).text
     if strip_editorial:
         text = strip_editorial_annotations(text)
     return text

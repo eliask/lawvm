@@ -56,6 +56,10 @@ Recent improvement:
   dash-tail projection now delegates its named presentation rules to the core
   comparison-normalization pipeline while keeping Norway's suppression logic
   local.
+- Finland Finlex oracle comparison-only kumottu-stub, amendment-date
+  parenthetical, and previous-wording marker cleanup now delegates its named
+  presentation rules to the core comparison-normalization pipeline while
+  keeping broader editorial cleanup opt-in.
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
@@ -254,6 +258,9 @@ Low-risk first migration:
 - Norway comparison text normalization now uses the core rule carrier for
   bounded whitespace, punctuation, footnote-marker, numeric hyphen, and
   other-laws placeholder presentation cleanup.
+- Finland oracle comparison text normalization now uses the core rule carrier
+  for the shared Finlex presentation residue cleanup used by bench and oracle
+  check paths.
 
 ### P1. Diagnostic Envelope / Disposition Builder
 
