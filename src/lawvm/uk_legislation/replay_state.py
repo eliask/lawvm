@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace as dc_replace
-from typing import Any, NamedTuple, Optional, Sequence, TypeAlias
+from typing import NamedTuple, Optional, Sequence, TypeAlias
 
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -582,25 +582,6 @@ class UKReplayStateMixin:
             )
             return ParentIndexEntry(parent=None, index=current_idx)
         return None
-
-    def _replace_statute(
-        self,
-        *,
-        body: Optional[UKMutableNode] = None,
-        supplements: Optional[list[UKMutableNode]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> None:
-        """Replace the UK-local mutable runtime state."""
-        if body is not None:
-            self.statute.body = body
-            self._clear_eid_lookup_index()
-            self._note_structure_mutation()
-        if supplements is not None:
-            self.statute.supplements = list(supplements)
-            self._clear_eid_lookup_index()
-            self._note_structure_mutation()
-        if metadata is not None:
-            self.statute.metadata = dict(metadata)
 
     def _find_path_to_node(
         self,

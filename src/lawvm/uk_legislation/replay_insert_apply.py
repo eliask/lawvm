@@ -150,14 +150,6 @@ class _InsertReplaySelf(Protocol):
 
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool: ...
 
-    def _replace_statute(
-        self,
-        *,
-        body: Optional[UKMutableNode] = None,
-        supplements: Optional[list[UKMutableNode]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> None: ...
-
     def _cached_exact_eid_lookup(self, eid: str) -> NodeLookupResult: ...
 
     def _cached_suffix_eid_lookup(self, eid: str) -> NodeLookupResult: ...
