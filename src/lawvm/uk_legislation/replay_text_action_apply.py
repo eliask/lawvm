@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind
 from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
@@ -79,6 +80,150 @@ def _text_patch_detail(
 
 
 class UKReplayTextActionApplyMixin:
+    adjudications_out: list[CompileAdjudication]
+    _applied_text_patch_targets: dict[str, list[str]]
+
+    if TYPE_CHECKING:
+
+        def _log(self, message: str) -> None: ...
+
+        def _record_invariant_violations(self, op: LegalOperation) -> None: ...
+
+        def _emit_top_section_snapshot(self, op: LegalOperation) -> None: ...
+
+        def _apply_text_replace_on_node_text_only(
+            self,
+            node: UKMutableNode,
+            match: str,
+            replacement: str,
+            occurrence: int,
+            end_occurrence: int = 0,
+            *,
+            allow_punctuation_spacing: bool = False,
+            allow_word_punctuation_elision: bool = False,
+            recovery_rule_ids_out: Optional[list[str]] = None,
+        ) -> tuple[UKMutableNode, bool]: ...
+
+        def _apply_text_replace_on_subtree(
+            self,
+            node: UKMutableNode,
+            match: str,
+            replacement: str,
+            occurrence: int,
+            end_occurrence: int = 0,
+            *,
+            allow_punctuation_spacing: bool = False,
+            allow_word_punctuation_elision: bool = False,
+            recovery_rule_ids_out: Optional[list[str]] = None,
+        ) -> tuple[UKMutableNode, bool]: ...
+
+        def _apply_text_append_on_node_text_only(
+            self,
+            node: UKMutableNode,
+            replacement: str,
+        ) -> tuple[UKMutableNode, bool]: ...
+
+        def _apply_text_append_on_subtree_text_end(
+            self,
+            node: UKMutableNode,
+            replacement: str,
+        ) -> tuple[UKMutableNode, bool]: ...
+
+        def _apply_source_carried_table_cell_paragraph_substitution(
+            self,
+            cell: UKMutableNode,
+            match_text: str,
+            replacement: str,
+        ) -> Any: ...
+
+        def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
+            self,
+            node: UKMutableNode,
+            match: str,
+            replacement: str,
+            occurrence: int,
+            end_occurrence: int,
+        ) -> Any: ...
+
+        def _apply_numeric_list_trailing_comma_anchor_on_subtree(
+            self,
+            node: UKMutableNode,
+            match: str,
+            replacement: str,
+            occurrence: int,
+            end_occurrence: int = 0,
+        ) -> Any: ...
+
+        def _recover_text_patch_on_implicit_first_subparagraph_parent_text(
+            self,
+            op: LegalOperation,
+            target: LegalAddress,
+            text_patch: TextPatchSpec,
+            replacement: str,
+        ) -> bool: ...
+
+        def _recover_source_carried_labeled_child_text_substitution(
+            self,
+            op: LegalOperation,
+            target: LegalAddress,
+            node: UKMutableNode,
+            text_patch: TextPatchSpec,
+            replacement: str,
+        ) -> bool: ...
+
+        def _recover_text_patch_on_empty_descendant_parent(
+            self,
+            op: LegalOperation,
+            target: LegalAddress,
+            text_patch: TextPatchSpec,
+            replacement: str,
+        ) -> bool: ...
+
+        def _recover_text_patch_on_direct_section_paragraph_child_text(
+            self,
+            op: LegalOperation,
+            target: LegalAddress,
+            text_patch: TextPatchSpec,
+            replacement: str,
+        ) -> bool: ...
+
+        def _empty_descendant_shape_gap(self, target: LegalAddress) -> bool: ...
+
+        def _target_under_repealed_prefix(self, target: LegalAddress) -> bool: ...
+
+        def _doubled_alpha_gap(self, target: LegalAddress) -> bool: ...
+
+        def _missing_sibling_range_gap(self, target: LegalAddress) -> bool: ...
+
+        def _annex_schedule_mismatch_gap(self, op: LegalOperation) -> bool: ...
+
+        def _container_text_target_gap(self, op: LegalOperation) -> bool: ...
+
+        def _subsection_alpha_text_target_gap(self, op: LegalOperation) -> bool: ...
+
+        def _malformed_target_gap(self, target: LegalAddress) -> bool: ...
+
+        def _malformed_target_gap_kind(self, target: LegalAddress) -> str: ...
+
+        def _missing_schedule_branch_gap(self, target: LegalAddress) -> bool: ...
+
+        def _missing_parent_shape_gap(self, target: LegalAddress) -> bool: ...
+
+        def _missing_parent_shape_gap_kind(self, target: LegalAddress) -> str: ...
+
+        def _schedule_paragraph_carrier_gap(self, target: LegalAddress) -> bool: ...
+
+        def _schedule_paragraph_carrier_gap_kind(self, target: LegalAddress) -> str: ...
+
+        def _direct_section_paragraph_carrier_gap(self, target: LegalAddress) -> bool: ...
+
+        def _leading_blank_subparagraph_gap(self, target: LegalAddress) -> bool: ...
+
+        def _missing_sectionlike_gap(self, target: LegalAddress) -> bool: ...
+
+        def _missing_schedule_root_gap(self, target: LegalAddress) -> bool: ...
+
+        def _prior_same_target_gap_kind(self, target: LegalAddress) -> str | None: ...
 
     def _apply_text_action_op(
         self,
