@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 
 _API_BASE = "https://api.legislation.govt.nz"
@@ -128,6 +129,15 @@ class NZAcquisitionDiagnostic:
     quirks_disposition: str = "record"
     metadata: Mapping[str, Any] = field(default_factory=dict)
     source_lane_selection: Mapping[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", freeze_mapping(self.metadata))
+        if self.source_lane_selection is not None:
+            object.__setattr__(
+                self,
+                "source_lane_selection",
+                freeze_mapping(self.source_lane_selection),
+            )
 
     def to_jsonable(self) -> dict[str, Any]:
         payload = diagnostic_detail(

@@ -1,10 +1,32 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any, cast
+
+import pytest
 
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction, TextPatchSpec, TextSelector
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.tools.capture import build_capture
+from lawvm.tools.capture_models import CaptureSourcePathologyView
+
+
+def test_capture_source_pathology_view_freezes_detail_recursively() -> None:
+    detail: dict[str, Any] = {"nested": {"paths": ["section:1"]}}
+
+    view = CaptureSourcePathologyView(
+        code="source_shape",
+        message="source shape issue",
+        source_statute="2020/1",
+        target_label="1",
+        detail=detail,
+    )
+    detail["nested"]["paths"].append("mutated")
+
+    assert view.detail == {"nested": {"paths": ("section:1",)}}
+    frozen_detail = cast(Any, view.detail)
+    with pytest.raises(TypeError, match="immutable"):
+        frozen_detail["extra"] = "blocked"
 
 
 def test_build_capture_preserves_replay_meta_observation_streams(monkeypatch) -> None:
