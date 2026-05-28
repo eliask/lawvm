@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Any, Dict, SupportsIndex
 
 
 class FrozenDict(dict[str, Any]):
@@ -40,7 +40,7 @@ class FrozenDict(dict[str, Any]):
         memo[id(self)] = frozen
         return frozen
 
-    def __reduce_ex__(self, protocol: int) -> tuple[type["FrozenDict"], tuple[dict[str, Any]]]:
+    def __reduce_ex__(self, protocol: SupportsIndex) -> tuple[type["FrozenDict"], tuple[dict[str, Any]]]:
         return (FrozenDict, (dict(self),))
 
 
