@@ -6,6 +6,7 @@ from typing import Any, cast
 import pytest
 from lxml import etree
 
+from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import FrozenDict, IRNode, IRStatute
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.contracts import to_wire_jsonable
@@ -55,6 +56,16 @@ def test_irnode_freezes_nested_attrs_recursively() -> None:
     nested_set.add("z")
     assert node.attrs["meta"]["items"] == ("a", FrozenDict({"inner": ("b", "c")}))
     assert node.attrs["meta"]["tags"] == frozenset({"x", "y"})
+
+
+def test_freeze_mapping_public_helper_freezes_nested_values() -> None:
+    source = {"items": [{"inner": ["a"]}]}
+
+    frozen = freeze_mapping(source)
+    source["items"][0]["inner"].append("mutated")
+
+    assert isinstance(frozen, FrozenDict)
+    assert frozen["items"] == (FrozenDict({"inner": ("a",)}),)
 
 
 def test_frozen_dict_round_trips_through_pickle_without_losing_immutability() -> None:
