@@ -8,7 +8,7 @@ from typing import Sequence, Tuple
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, project_ir_comparison_text
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.mutation_boundary import TreePath, TreePaths, build_mutation_boundary_report
+from lawvm.core.mutation_boundary import TreePath, TreePaths, TreePathStep, build_mutation_boundary_report
 from lawvm.core.tree_ops import insert_sorted_required, replace_at_required, resolve_required
 from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
 
@@ -373,7 +373,7 @@ def resolve_open_law_path(tree: IRNode, open_law_path: Sequence[str]) -> OpenLaw
     """
 
     current = tree
-    tree_path: list[tuple[str, str]] = []
+    tree_path: list[TreePathStep] = []
     for segment in open_law_path:
         matches = _segment_matches(current, segment)
         if not matches:

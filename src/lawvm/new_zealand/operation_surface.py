@@ -18,6 +18,7 @@ from typing import Any, Iterable, Mapping
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import LegalAddress
+from lawvm.core.mutation_boundary import TreePath, TreePathStep
 from lawvm.core.semantic_types import FacetKind
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
@@ -78,7 +79,7 @@ class NZTargetHint:
 class NZTargetAddressCandidate:
     status: str
     address: str = ""
-    path: tuple[tuple[str, str], ...] = ()
+    path: TreePath = ()
     special: str = ""
     blocking_rule_id: str = ""
 
@@ -597,9 +598,9 @@ def _target_address_candidate(
             status=f"blocked_target_hint_{target_hint.status}",
             blocking_rule_id=f"nz_target_address_hint_{target_hint.status}",
         )
-    path: tuple[tuple[str, str], ...]
+    path: TreePath
     if target_hint.kind == "section":
-        path_parts: list[tuple[str, str]] = [("section", target_hint.label)]
+        path_parts: list[TreePathStep] = [("section", target_hint.label)]
         if target_hint.subsection:
             path_parts.append(("subsection", target_hint.subsection))
         path_parts.extend(("paragraph", paragraph) for paragraph in target_hint.paragraphs)
@@ -624,7 +625,7 @@ def _target_address_candidate(
 
 
 def _attached_heading_address_candidate(source_path: tuple[str, ...]) -> NZTargetAddressCandidate:
-    path_parts: list[tuple[str, str]] = []
+    path_parts: list[TreePathStep] = []
     for segment in source_path:
         path_part = _address_part_from_source_segment(segment)
         if path_part is None:

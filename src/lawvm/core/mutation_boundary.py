@@ -9,7 +9,8 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.semantic_types import StructuralAction
 
-TreePath = Tuple[Tuple[str, str], ...]
+TreePathStep: TypeAlias = Tuple[str, str]
+TreePath: TypeAlias = Tuple[TreePathStep, ...]
 TreePaths: TypeAlias = Tuple[TreePath, ...]
 RenumberedTreePaths: TypeAlias = Tuple[Tuple[TreePath, TreePath], ...]
 
