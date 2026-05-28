@@ -115,6 +115,15 @@ def test_target_resolution_certificate_rejects_reserved_detail_keys() -> None:
         )
 
 
+def test_target_resolution_candidate_rejects_reserved_detail_keys() -> None:
+    with pytest.raises(ValueError, match="target"):
+        TargetResolutionCandidate(
+            target="section:5",
+            reason="exact",
+            detail={"target": "section:6"},
+        )
+
+
 def test_target_resolution_certificate_requires_selected_target_for_resolved_status() -> None:
     with pytest.raises(ValueError, match="requires selected_target"):
         TargetResolutionCertificate(

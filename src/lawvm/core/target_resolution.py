@@ -49,6 +49,7 @@ _RESERVED_TARGET_RESOLUTION_KEYS = frozenset(
         "selected_target_differs_from_source",
     }
 )
+_RESERVED_TARGET_CANDIDATE_KEYS = frozenset({"target", "reason"})
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class TargetResolutionCandidate:
     def __post_init__(self) -> None:
         if not str(self.target or "").strip():
             raise ValueError("TargetResolutionCandidate.target must be non-empty")
+        _reject_target_candidate_overrides(self.detail)
         _reject_target_resolution_overrides(self.detail)
 
     def to_dict(self) -> dict[str, Any]:
@@ -160,3 +162,10 @@ def _reject_target_resolution_overrides(values: Mapping[str, Any]) -> None:
         raise ValueError(
             f"target resolution detail must not override target-resolution keys: {joined}"
         )
+
+
+def _reject_target_candidate_overrides(values: Mapping[str, Any]) -> None:
+    overlaps = sorted(_RESERVED_TARGET_CANDIDATE_KEYS.intersection(values.keys()))
+    if overlaps:
+        joined = ", ".join(overlaps)
+        raise ValueError(f"target resolution candidate detail must not override candidate keys: {joined}")
