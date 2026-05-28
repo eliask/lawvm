@@ -306,6 +306,8 @@ Implemented progress:
 - Norway replay skip/adjudication helpers and Estonia orchestration/unsupported
   replay adjudication helpers now delegate their shared envelope defaults to
   `diagnostic_detail` while preserving frontend-local adjudication carriers.
+- Norway amendment-index acquisition and parser-adjudication diagnostics now
+  delegate their shared envelope defaults to `diagnostic_detail`.
 - Estonia RT acquisition diagnostic record projections now delegate their
   shared envelope fields to `diagnostic_detail`.
 - Sweden replay adjudication helpers now delegate the same replay envelope
