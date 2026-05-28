@@ -46,6 +46,7 @@ Implemented:
 - `CorpusGraph.branches`
 - `CorpusGraph.branch_edges`
 - `src/lawvm/core/branch_projection.py::BranchImpactProjection`
+- `branch_impact_projection_from_operations(...)`
 
 The implementation is metadata-first. It does not parse proposal or bill
 language yet.
@@ -74,6 +75,9 @@ instances can call `branch_graph_edges_from_operations(...)` to get conservative
 would-affect graph facts. Core maps insert/replace/repeal actions to
 `would_insert`, `would_replace`, and `would_repeal`; other structural actions
 fall back to `would_amend`.
+
+For UI/API payloads, `branch_impact_projection_from_operations(...)` is the
+one-step projection from typed branch operations to branch impact rows.
 
 ## Next Steps
 

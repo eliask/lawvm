@@ -179,6 +179,8 @@ Recent improvement:
 - branch graph edges can now be projected from typed non-enacted operations,
   giving proposal/draft frontends a shared path from `LegalOperation` to
   would-affect graph export facts.
+- branch impact projections can now be built directly from typed non-enacted
+  operations, which is the minimal UI/API handoff for proposal-style demos.
 
 ## Ranked Promotion Candidates
 
