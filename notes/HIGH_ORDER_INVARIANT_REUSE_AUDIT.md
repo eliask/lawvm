@@ -204,6 +204,9 @@ Recent improvement:
 - EU Cellar manifest request failures now nest shared source-lane selection
   evidence for the failed notice request lane while preserving the existing
   source-pathology row.
+- New Zealand latest XML locator candidate rejections now nest shared
+  source-lane selection evidence for rejected API version-detail lanes while
+  preserving the existing NZ diagnostic rows.
 - Estonia target-resolution parse rejection helpers now delegate shared
   diagnostic envelope fields to `diagnostic_detail` while preserving their
   local target-title and source-fragment payload.
@@ -316,8 +319,9 @@ Promotion:
 - lane policy remains local to each frontend;
 - current users include Finland operative-text acquisition, Sweden official-PDF
   fallback acquisition, Norway duplicate logical locator diagnostics, UK
-  affecting-source selection, Estonia RT XML/feed acquisition diagnostics, and
-  EU Cellar manifest request failures.
+  affecting-source selection, Estonia RT XML/feed acquisition diagnostics, EU
+  Cellar manifest request failures, and New Zealand latest-XML locator
+  candidate rejections.
 
 Why high value:
 

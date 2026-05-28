@@ -126,6 +126,17 @@ def test_latest_xml_locator_selection_records_rejected_newer_source_lanes() -> N
         "detail_json_invalid",
         "xml_not_archived",
     ]
+    assert [diag["source_lane_selection"]["selected_source_lane"] for diag in selection.diagnostics] == [
+        "no_source_lane_selected_candidate_rejected",
+        "no_source_lane_selected_candidate_rejected",
+    ]
+    assert [diag["source_lane_selection"]["source_lane_attempts"][0]["status"] for diag in selection.diagnostics] == [
+        "detail_json_invalid",
+        "xml_not_archived",
+    ]
+    assert selection.diagnostics[1]["source_lane_selection"]["source_lane_attempts"][0]["xml_locator"] == (
+        "https://www.legislation.govt.nz/act/public/2020/1/en/2025-01-01.xml"
+    )
     assert all(diag["rule_id"] == "nz_latest_xml_locator_candidate_rejected" for diag in selection.diagnostics)
     assert all(diag["strict_disposition"] == "block" for diag in selection.diagnostics)
 
