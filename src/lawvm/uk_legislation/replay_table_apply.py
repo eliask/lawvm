@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import replace as dc_replace
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children
 from lawvm.uk_legislation.replay_records import (
@@ -13,6 +14,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows_with_physical_index,
     resolve_uk_table_entry_row_replace_span,
@@ -62,6 +64,25 @@ class _TableCellParagraphSubstitutionResult(NamedTuple):
     applied: bool
     reason_code: str
     detail: dict[str, Any]
+
+
+class _TableReplaySelf(Protocol):
+    adjudications_out: list[CompileAdjudication]
+
+    def _find_node_by_target(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> NodeLookupResult: ...
+
+    def _clear_eid_lookup_index(self) -> None: ...
+
+    def _note_structure_mutation(self) -> None: ...
+
+    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
 
 
 def _table_cell_ordered_list_units(cell: UKMutableNode) -> list[dict[str, str]]:
@@ -123,7 +144,7 @@ def _replace_table_cell_ordered_list_text(
 
 class UKReplayTableApplyMixin:
     def _insert_table_cell_child_list_item(
-        self,
+        self: _TableReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -313,7 +334,7 @@ class UKReplayTableApplyMixin:
         return True
 
     def _insert_table_column(
-        self,
+        self: _TableReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -477,7 +498,7 @@ class UKReplayTableApplyMixin:
         return True
 
     def _insert_table_entry_row(
-        self,
+        self: _TableReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -622,7 +643,7 @@ class UKReplayTableApplyMixin:
         return True
 
     def _replace_table_entry_rows(
-        self,
+        self: _TableReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -714,7 +735,7 @@ class UKReplayTableApplyMixin:
         return True
 
     def _apply_source_carried_table_cell_paragraph_substitution(
-        self,
+        self: _TableReplaySelf,
         cell: UKMutableNode,
         match_text: str,
         replacement: str,
