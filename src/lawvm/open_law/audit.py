@@ -8,7 +8,7 @@ from typing import Sequence, Tuple
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, project_ir_comparison_text
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.mutation_boundary import TreePath, build_mutation_boundary_report
+from lawvm.core.mutation_boundary import TreePath, TreePaths, build_mutation_boundary_report
 from lawvm.core.tree_ops import insert_sorted_required, replace_at_required, resolve_required
 from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
 
@@ -38,8 +38,8 @@ class OpenLawSnapshotAuditResult:
 
     replay: OpenLawReplayResult
     snapshot_matches_replay: bool
-    changed_paths: Tuple[TreePath, ...]
-    unexplained_paths: Tuple[TreePath, ...]
+    changed_paths: TreePaths
+    unexplained_paths: TreePaths
     findings: Tuple[OpenLawFinding, ...]
 
 

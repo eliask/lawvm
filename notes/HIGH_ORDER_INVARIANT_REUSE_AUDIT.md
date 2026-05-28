@@ -59,6 +59,8 @@ Recent improvement:
 - UK same-parent sibling renumber replay now emits a renumber-specific mutation
   event with old and new paths instead of reporting the destination as an
   ordinary insertion.
+- mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
+  the core mutation-boundary surface instead of Finland-local apply helpers.
 
 ## Ranked Promotion Candidates
 
@@ -405,7 +407,8 @@ These are jurisdiction source semantics, not shared invariants.
 
 1. Continue replacing local path tuple spellings with shared aliases such as
    `TreePath` / `TreePaths` where that reduces type noise without changing
-   serialized evidence.
+   serialized evidence. The shared aliases now live in core; remaining work is
+   opportunistic call-site cleanup rather than semantic promotion.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
    table/schedule children-splice recorder.

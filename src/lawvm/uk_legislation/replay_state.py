@@ -6,7 +6,7 @@ from typing import Any, NamedTuple, Optional, TypeAlias, cast
 
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
-from lawvm.core.mutation_boundary import TreePath, tree_path_from_legal_address
+from lawvm.core.mutation_boundary import TreePath, TreePaths, tree_path_from_legal_address
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
@@ -681,9 +681,9 @@ class UKReplayStateMixin:
             return
         parent_path = old_path[:-1] if old_path else ()
         new_path = parent_path + ((_kind_str(new_node.kind), new_node.label or ""),) if old_path else ()
-        removed_paths: tuple[TreePath, ...] = ()
-        created_paths: tuple[TreePath, ...] = ()
-        replaced_paths: tuple[TreePath, ...] = (old_path,)
+        removed_paths: TreePaths = ()
+        created_paths: TreePaths = ()
+        replaced_paths: TreePaths = (old_path,)
         if new_path != old_path:
             removed_paths = (old_path,)
             created_paths = (new_path,)
