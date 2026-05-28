@@ -1560,8 +1560,8 @@ def test_compile_se_official_act_ops_records_renumber_arity_mismatch() -> None:
     assert len(mismatch) == 1
     assert mismatch[0].kind == "se_official_clause_surface_skipped"
     assert mismatch[0].detail["phase"] == "parse"
-    assert mismatch[0].detail["source_labels"] == ["2", "3"]
-    assert mismatch[0].detail["destination_labels"] == ["4"]
+    assert mismatch[0].detail["source_labels"] == ("2", "3")
+    assert mismatch[0].detail["destination_labels"] == ("4",)
     assert mismatch[0].detail["strict_disposition"] == "block"
 
 
