@@ -474,10 +474,7 @@ class UKReplayInsertApplyMixin:
         op: LegalOperation,
     ) -> bool:
         replay = _insert_replay_self(self)
-        from lawvm.uk_legislation.canonicalize import (
-            uk_insert_into_children,
-            uk_resolve_insertion_parent,
-        )
+        from lawvm.uk_legislation.canonicalize import uk_resolve_insertion_parent
 
         schedule_list_entry_table_rows_selector = _schedule_list_entry_table_rows_selector(op)
         if schedule_list_entry_table_rows_selector is not None:
@@ -682,15 +679,10 @@ class UKReplayInsertApplyMixin:
             # No suitable predecessor exists in the body tree: fall back to a
             # true body-root insertion.
             replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into body (top-level)")
-            body_children: list[UKMutableNode] = list(self.statute.body.children)
-            uk_insert_into_children(
-                cast(list[IRNode], body_children),
-                cast(IRNode, new_node),
-                label_sort_key=_label_sort_key,
-            )
-            self.statute.body.children = body_children
-            replay._record_child_inserted(self.statute.body, new_node)
-            return True
+            inserted = uk_insert_child_sorted(self.statute.body, new_node)
+            if inserted:
+                replay._record_child_inserted(self.statute.body, new_node)
+            return inserted
 
         if "-" in target_eid:
             parent_eid = "-".join(target_eid.split("-")[:-1])
@@ -763,15 +755,10 @@ class UKReplayInsertApplyMixin:
             replay._record_supplement_inserted(new_node)
             return True
         else:
-            body_children: list[UKMutableNode] = list(self.statute.body.children)
-            uk_insert_into_children(
-                cast(list[IRNode], body_children),
-                cast(IRNode, new_node),
-                label_sort_key=_label_sort_key,
-            )
-            self.statute.body.children = body_children
-            replay._record_child_inserted(self.statute.body, new_node)
-            return True
+            inserted = uk_insert_child_sorted(self.statute.body, new_node)
+            if inserted:
+                replay._record_child_inserted(self.statute.body, new_node)
+            return inserted
 
     def _insert_definition_child_structural_sibling(
         self,
