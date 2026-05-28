@@ -9,7 +9,7 @@ A. tree_ops primitives:
     1. replace_at preserves child count at non-replaced levels
     2. remove_at reduces child count by exactly 1 at parent level
     3. insert_sorted increases child count by exactly 1
-    4. insert_sorted maintains sort order (using _default_sort_key)
+    4. insert_sorted maintains sort order (using default_label_sort_key)
     5. replace_at([]) returns replacement (identity on empty path)
 
 B. check_invariants:
@@ -39,7 +39,6 @@ from lawvm.finland.target_kind import TargetKind
 from lawvm.core.tree_ops import (
     Path,
     TreeInvariantViolation,
-    _default_sort_key,
     build_label_index,
     check_invariants,
     default_label_sort_key,
@@ -228,7 +227,7 @@ def chapter_with_sorted_sections(draw) -> IRNode:
                 unique=True,
             )
         ),
-        key=_default_sort_key,
+        key=default_label_sort_key,
     )
     sections: List[IRNode] = []
     for sl in section_labels:
@@ -261,7 +260,7 @@ def well_formed_body(draw) -> IRNode:
                 unique=True,
             )
         ),
-        key=_default_sort_key,
+        key=default_label_sort_key,
     )
     chapters: List[IRNode] = []
     for cl in chapter_labels:
@@ -275,7 +274,7 @@ def well_formed_body(draw) -> IRNode:
                     unique=True,
                 )
             ),
-            key=_default_sort_key,
+            key=default_label_sort_key,
         )
         sections: List[IRNode] = []
         for sl in section_labels:
@@ -302,7 +301,7 @@ def flat_body_unique_sections(draw) -> IRNode:
                 unique=True,
             )
         ),
-        key=_default_sort_key,
+        key=default_label_sort_key,
     )
     sections = [IRNode(kind=IRNodeKind.SECTION, label=lbl, text=draw(SHORT_TEXT)) for lbl in labels]
     return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(sections))
@@ -324,7 +323,7 @@ def _collect_labels(node: IRNode, kind: str) -> List[Optional[str]]:
 
 def _all_sort_keys(node: IRNode, kind: str) -> List[Tuple[int, str, int]]:
     """Collect sort keys for children of given kind."""
-    return [_default_sort_key(c.label) for c in node.children if c.kind == kind and c.label is not None]
+    return [default_label_sort_key(c.label) for c in node.children if c.kind == kind and c.label is not None]
 
 
 def _has_omission(node: IRNode) -> bool:
@@ -1403,7 +1402,9 @@ def test_check_invariants_no_false_positive_for_distinct_normalized_labels() -> 
 
 def test_public_label_helpers_project_legacy_core_behavior() -> None:
     assert normalized_label_key(" 1-A ") == "1a"
-    assert default_label_sort_key("12b") == _default_sort_key("12b")
+    assert default_label_sort_key("12b") == (12, "b", 0)
+    assert default_label_sort_key("26_1") == (26, "", 1)
+    assert default_label_sort_key(None) == (-1, "", 0)
 
 
 def test_iter_tree_invariant_violations_projects_legacy_messages() -> None:
