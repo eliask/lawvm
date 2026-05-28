@@ -38,6 +38,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import ExpiryOverride
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline import (
@@ -215,7 +216,7 @@ def _expiry_chain_violations(
 
 def _collect_addressed_nodes(
     node: IRNode,
-    current_path: tuple[tuple[str, str], ...] = (),
+    current_path: TreePath = (),
 ) -> Dict[LegalAddress, IRNode]:
     """Collect all addressable nodes from an IR tree with their addresses."""
     result: Dict[LegalAddress, IRNode] = {}

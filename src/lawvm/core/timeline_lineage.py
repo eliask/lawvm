@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol
 
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent, migration_event_sort_key
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.timeline_results import (
@@ -384,7 +385,7 @@ def current_address_with_prefix_migrations_from_events(
         wave_start = normalize(current)
         applicable_wave_events: list[MigrationEvent] = []
         applied_specificity: list[int] = []
-        allowed_destination_source_prefixes: set[tuple[tuple[str, str], ...]] = set()
+        allowed_destination_source_prefixes: set[TreePath] = set()
         for event in sorted(
             wave_events,
             key=lambda item: (

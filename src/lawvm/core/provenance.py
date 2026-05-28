@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, FrozenSet, Literal, Tuple
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalAddress
+    from lawvm.core.mutation_boundary import TreePath
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ class MigrationEvent:
 
 def migration_event_sort_key(
     event: MigrationEvent,
-) -> tuple[str, int, tuple[tuple[str, str], ...], tuple[tuple[str, str], ...], str, str]:
+) -> tuple[str, int, TreePath, TreePath, str, str]:
     """Return the deterministic canonical ordering key for lineage waves."""
     return (
         event.effective,
