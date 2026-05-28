@@ -1014,6 +1014,9 @@ Risk:
   row/count payloads at construction time. The JSON-facing `to_dict()` surface
   remains compatibility-oriented, but in-process captures can no longer be
   mutated after emission by downstream debug/report code.
+- `FrozenDict` now rejects in-place union (`|=`), closing the remaining dict
+  mutator path for supposedly frozen core attrs, metadata, and evidence
+  detail mappings.
 
 ## Keep Local For Now
 
