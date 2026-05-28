@@ -120,6 +120,25 @@ def test_article_schedule_payload_source_observation_is_typed_source_diagnostic(
     assert observation["phase"] == "extraction"
     assert observation["blocking"] is False
     assert observation["strict_disposition"] == "record"
+    assert observation["selected_source_lane"] == "attached_schedule_payload"
+    assert observation["selected_source_locator"] == (
+        "https://www.legislation.gov.uk/uksi/2003/3076/data.xml#schedule"
+    )
+    assert observation["source_lane_attempts"] == (
+        {
+            "lane": "article_source_context",
+            "status": "context_selected_not_payload",
+            "locator": "https://www.legislation.gov.uk/uksi/2003/3076/data.xml#article-2",
+            "article_ref": "art. 2",
+            "article_text_preview": "For Part 1 of Schedule 3A, substitute the text set out in the Schedule.",
+        },
+        {
+            "lane": "attached_schedule_payload",
+            "status": "selected",
+            "locator": "https://www.legislation.gov.uk/uksi/2003/3076/data.xml#schedule",
+            "schedule_element_id": "schedule",
+        },
+    )
     assert is_uk_affecting_act_xml_source_observation(observation) is True
     assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
 

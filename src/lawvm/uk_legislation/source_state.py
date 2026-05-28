@@ -360,26 +360,44 @@ def uk_affecting_act_article_schedule_payload_source_extracted(
     schedule_element_id: str,
     article_text_preview: str,
 ) -> dict[str, Any]:
-    return _uk_source_diagnostic(
-        rule_id="uk_affecting_act_article_schedule_payload_source_extracted",
-        family="source_lane_selection",
-        phase="extraction",
-        reason=(
-            "UK effects metadata cited an article plus an attached Schedule payload; "
-            "the article text explicitly points to text set out in the Schedule, so "
-            "the unnumbered source Schedule is used as the amendment payload."
-        ),
-        blocking=False,
-        effect_id=effect_id,
-        affecting_act_id=affecting_act_id,
-        affecting_provisions=affecting_provisions,
-        locator=locator,
-        authority_layer=authority_layer,
-        article_ref=article_ref,
-        article_element_id=article_element_id,
-        schedule_element_id=schedule_element_id,
-        article_text_preview=article_text_preview,
+    reason = (
+        "UK effects metadata cited an article plus an attached Schedule payload; "
+        "the article text explicitly points to text set out in the Schedule, so "
+        "the unnumbered source Schedule is used as the amendment payload."
     )
+    return SourceLaneSelectionEvidence(
+        rule_id="uk_affecting_act_article_schedule_payload_source_extracted",
+        phase="extraction",
+        reason=reason,
+        selected_lane="attached_schedule_payload",
+        selected_locator=f"{locator}#{schedule_element_id}",
+        blocking=False,
+        attempts=(
+            SourceLaneAttempt(
+                lane="article_source_context",
+                locator=f"{locator}#{article_element_id}",
+                status="context_selected_not_payload",
+                detail={"article_ref": article_ref, "article_text_preview": article_text_preview},
+            ),
+            SourceLaneAttempt(
+                lane="attached_schedule_payload",
+                locator=f"{locator}#{schedule_element_id}",
+                status="selected",
+                detail={"schedule_element_id": schedule_element_id},
+            ),
+        ),
+        detail={
+            "effect_id": effect_id,
+            "affecting_act_id": affecting_act_id,
+            "affecting_provisions": affecting_provisions,
+            "locator": locator,
+            "authority_layer": authority_layer,
+            "article_ref": article_ref,
+            "article_element_id": article_element_id,
+            "schedule_element_id": schedule_element_id,
+            "article_text_preview": article_text_preview,
+        },
+    ).to_diagnostic_detail()
 
 
 def uk_affecting_act_implicit_first_subparagraph_context_ignored(

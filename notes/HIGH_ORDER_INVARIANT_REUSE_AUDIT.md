@@ -177,6 +177,9 @@ Recent improvement:
 - UK affecting-act current-vs-enacted XML source selection now uses the shared
   source-lane evidence carrier for selected and rejected lane attempts while
   preserving UK-local locators, sizes, and previews.
+- UK article-plus-attached-schedule affecting-source extraction now uses the
+  shared source-lane carrier to show the article context lane and selected
+  schedule-payload lane without changing extraction policy.
 - Norway amendment-index duplicate logical locator diagnostics now include a
   nested shared source-lane selection projection for both deterministic
   byte-identical duplicate selection and conflicting-duplicate blocking,
