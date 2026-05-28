@@ -18,6 +18,7 @@ from typing import Any, Iterable, Mapping, Protocol, cast
 from lxml import etree
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.new_zealand.acquisition import open_farchive
 
 
@@ -232,6 +233,7 @@ def _latest_xml_locator_candidate_diagnostic(
     reason: str,
     detail: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    local_detail = dict(detail or {})
     diagnostic = diagnostic_detail(
         rule_id="nz_latest_xml_locator_candidate_rejected",
         phase="acquisition",
@@ -243,8 +245,30 @@ def _latest_xml_locator_candidate_diagnostic(
         work_id=work_id,
         version_id=version_id,
         version_locator=version_locator,
+        source_lane_selection=SourceLaneSelectionEvidence(
+            rule_id="nz_latest_xml_locator_candidate_rejected",
+            phase="acquisition",
+            reason=reason,
+            selected_lane="no_source_lane_selected_candidate_rejected",
+            selected_locator="",
+            attempts=(
+                SourceLaneAttempt(
+                    lane="nz_api_v0_version_detail",
+                    locator=version_locator,
+                    status=reason_code,
+                    detail={
+                        "work_id": work_id,
+                        "version_id": version_id,
+                        **local_detail,
+                    },
+                ),
+            ),
+            blocking=True,
+            strict_disposition="block",
+            quirks_disposition="record",
+        ).to_diagnostic_detail(),
     )
-    diagnostic["detail"] = {"reason_code": reason_code, **dict(detail or {})}
+    diagnostic["detail"] = {"reason_code": reason_code, **local_detail}
     return diagnostic
 
 
