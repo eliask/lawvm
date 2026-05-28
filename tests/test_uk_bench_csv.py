@@ -7,7 +7,7 @@ import json
 from argparse import Namespace
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from farchive import Farchive
 from lawvm.core.ir import IRNode, IRStatute
@@ -15,6 +15,20 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.tools import uk_bench
 from lawvm.tools.uk_bench import _BenchResult, _BenchScoreWitnessRow, _primary_score_mode
+
+
+def _fake_bench_result_from_entry(entry: dict[str, object]) -> _BenchResult:
+    return _BenchResult(
+        statute_id=str(entry["statute_id"]),
+        act_type=str(entry["type"]),
+        year=int(cast(Any, entry["year"])),
+        n_effects=int(cast(Any, entry["n_effects"])),
+        n_enacted_eids=1,
+        n_oracle_eids=1,
+        n_common=1,
+        score=1.0,
+        status="OK",
+    )
 
 
 def test_uk_bench_commencement_score_requires_commenced_eid_evidence() -> None:
@@ -30,19 +44,19 @@ def test_uk_bench_default_workers_are_memory_safe_for_replay() -> None:
 
 
 def test_uk_bench_replay_heavy_rows_are_partitioned_for_isolated_lane() -> None:
-    ordinary = {
+    ordinary: dict[str, object] = {
         "statute_id": "ukpga/2000/1",
         "n_effects": "4",
         "n_effect_feed_pages": "4",
         "enacted_source_size": "1000",
         "oracle_source_size": "2000",
     }
-    effect_heavy = {
+    effect_heavy: dict[str, object] = {
         **ordinary,
         "statute_id": "ukpga/1988/1",
         "n_effects": "274",
     }
-    source_heavy = {
+    source_heavy: dict[str, object] = {
         **ordinary,
         "statute_id": "ukpga/2010/4",
         "enacted_source_size": str(6 * 1024 * 1024),
@@ -1031,7 +1045,7 @@ def test_uk_bench_curated_sample_keeps_only_source_complete_rows() -> None:
         },
     ]
 
-    selected = uk_bench._stratified_source_complete_sample(rows, size=10)
+    selected = uk_bench._stratified_source_complete_sample(cast(list[dict[str, object]], rows), size=10)
 
     assert [row["statute_id"] for row in selected] == ["asp/2000/1", "ukpga/1990/42"]
 
@@ -1097,11 +1111,12 @@ def test_uk_bench_corpus_source_closure_summary_separates_affecting_xml(
         }[act_id],
     )
 
-    summary = uk_bench._corpus_source_closure_summary(
-        (
+    entries: tuple[dict[str, object], ...] = (
             {"statute_id": "ukpga/2000/1"},
             {"statute_id": "ukpga/2000/2"},
-        ),
+    )
+    summary = uk_bench._corpus_source_closure_summary(
+        entries,
         archive=cast(Farchive, object()),
         applicability_mode="effective_date_plus_feed_applied",
     )
@@ -1127,7 +1142,7 @@ def test_uk_bench_filter_replay_source_closed_entries_keeps_full_or_not_required
     ]
 
     filtered = uk_bench._filter_replay_source_closed_entries(
-        rows,
+        cast(list[dict[str, object]], rows),
         source_closure_summary={
             "row_closure_statuses": {
                 "ukpga/2000/1": "full",
@@ -1188,7 +1203,7 @@ def test_uk_bench_hard_curated_sample_keeps_source_complete_effectful_heavy_rows
         },
     ]
 
-    selected = uk_bench._stratified_source_complete_sample(rows, size=10, hard=True)
+    selected = uk_bench._stratified_source_complete_sample(cast(list[dict[str, object]], rows), size=10, hard=True)
 
     assert [row["statute_id"] for row in selected] == ["ukpga/2000/2", "ukpga/2000/1"]
 
@@ -1215,7 +1230,7 @@ def test_uk_bench_hard_curated_sample_orders_strata_by_heaviest_available_row() 
         },
     ]
 
-    selected = uk_bench._stratified_source_complete_sample(rows, size=1, hard=True)
+    selected = uk_bench._stratified_source_complete_sample(cast(list[dict[str, object]], rows), size=1, hard=True)
 
     assert [row["statute_id"] for row in selected] == ["ukpga/1990/42"]
 
@@ -1242,7 +1257,7 @@ def test_uk_bench_write_curated_corpus_uses_full_corpus_schema(tmp_path) -> None
         }
     ]
 
-    selected = uk_bench._write_curated_corpus(rows, output=output, size=1)
+    selected = uk_bench._write_curated_corpus(cast(list[dict[str, object]], rows), output=output, size=1)
 
     assert selected == rows
     text = output.read_text(encoding="utf-8")
@@ -2582,7 +2597,7 @@ def test_uk_bench_history_formats_incremental_current_headers(monkeypatch, tmp_p
             "max_process_maxrss_statute_id",
         }
     ]
-    row = {field: "" for field in previous_current_header}
+    row: dict[str, str] = {str(field): "" for field in previous_current_header}
     row.update(
         {
             "label": "previous-current",
@@ -4885,18 +4900,7 @@ def test_uk_bench_parallel_submits_predicted_heavy_rows_first(monkeypatch) -> No
             self.entry = entry
 
         def result(self) -> _BenchResult:
-            statute_id = str(self.entry["statute_id"])
-            return _BenchResult(
-                statute_id=statute_id,
-                act_type=str(self.entry["type"]),
-                year=int(self.entry["year"]),
-                n_effects=int(self.entry["n_effects"]),
-                n_enacted_eids=1,
-                n_oracle_eids=1,
-                n_common=1,
-                score=1.0,
-                status="OK",
-            )
+            return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
         def __init__(self, max_workers: int):
@@ -4969,18 +4973,7 @@ def test_uk_bench_parallel_reports_row_start_on_submission(monkeypatch) -> None:
             self.entry = entry
 
         def result(self) -> _BenchResult:
-            statute_id = str(self.entry["statute_id"])
-            return _BenchResult(
-                statute_id=statute_id,
-                act_type=str(self.entry["type"]),
-                year=int(self.entry["year"]),
-                n_effects=int(self.entry["n_effects"]),
-                n_enacted_eids=1,
-                n_oracle_eids=1,
-                n_common=1,
-                score=1.0,
-                status="OK",
-            )
+            return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
         def __init__(self, max_workers: int):
@@ -5053,18 +5046,7 @@ def test_uk_bench_parallel_releases_completed_futures_before_result(monkeypatch)
         def result(self) -> _BenchResult:
             assert live_future_mapping is not None
             assert self not in live_future_mapping
-            statute_id = str(self.entry["statute_id"])
-            return _BenchResult(
-                statute_id=statute_id,
-                act_type=str(self.entry["type"]),
-                year=int(self.entry["year"]),
-                n_effects=int(self.entry["n_effects"]),
-                n_enacted_eids=1,
-                n_oracle_eids=1,
-                n_common=1,
-                score=1.0,
-                status="OK",
-            )
+            return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
         def __init__(self, max_workers: int):
@@ -5117,18 +5099,7 @@ def test_uk_bench_parallel_bounds_in_flight_futures(monkeypatch) -> None:
             self.entry = entry
 
         def result(self) -> _BenchResult:
-            statute_id = str(self.entry["statute_id"])
-            return _BenchResult(
-                statute_id=statute_id,
-                act_type=str(self.entry["type"]),
-                year=int(self.entry["year"]),
-                n_effects=int(self.entry["n_effects"]),
-                n_enacted_eids=1,
-                n_oracle_eids=1,
-                n_common=1,
-                score=1.0,
-                status="OK",
-            )
+            return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
         def __init__(self, max_workers: int):
@@ -5181,18 +5152,7 @@ def test_uk_bench_parallel_worker_recycling_sets_initializer(monkeypatch) -> Non
             self.entry = entry
 
         def result(self) -> _BenchResult:
-            statute_id = str(self.entry["statute_id"])
-            return _BenchResult(
-                statute_id=statute_id,
-                act_type=str(self.entry["type"]),
-                year=int(self.entry["year"]),
-                n_effects=int(self.entry["n_effects"]),
-                n_enacted_eids=1,
-                n_oracle_eids=1,
-                n_common=1,
-                score=1.0,
-                status="OK",
-            )
+            return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
         def __init__(self, max_workers: int, **kwargs: object):
@@ -5204,7 +5164,7 @@ def test_uk_bench_parallel_worker_recycling_sets_initializer(monkeypatch) -> Non
             initargs = pool_kwargs_seen.get("initargs")
             assert initializer is uk_bench._configure_uk_bench_worker
             assert isinstance(initargs, tuple)
-            initializer(*initargs)
+            cast(Any, initializer)(*initargs)
             return self
 
         def __exit__(self, exc_type, exc, tb) -> None:
@@ -5250,18 +5210,7 @@ def test_uk_bench_worker_recycling_uses_process_pool_with_one_worker(monkeypatch
             self.entry = entry
 
         def result(self) -> _BenchResult:
-            statute_id = str(self.entry["statute_id"])
-            return _BenchResult(
-                statute_id=statute_id,
-                act_type=str(self.entry["type"]),
-                year=int(self.entry["year"]),
-                n_effects=int(self.entry["n_effects"]),
-                n_enacted_eids=1,
-                n_oracle_eids=1,
-                n_common=1,
-                score=1.0,
-                status="OK",
-            )
+            return _fake_bench_result_from_entry(self.entry)
 
     class FakePool:
         def __init__(self, max_workers: int, **kwargs: object):
@@ -5274,7 +5223,7 @@ def test_uk_bench_worker_recycling_uses_process_pool_with_one_worker(monkeypatch
             initargs = pool_kwargs_seen.get("initargs")
             assert initializer is uk_bench._configure_uk_bench_worker
             assert isinstance(initargs, tuple)
-            initializer(*initargs)
+            cast(Any, initializer)(*initargs)
             return self
 
         def __exit__(self, exc_type, exc, tb) -> None:
