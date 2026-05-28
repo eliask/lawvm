@@ -5,10 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence, Tuple
 
-from lawvm.core.ir import IRNode
+from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import _kind_str
 
 TreePath = Tuple[Tuple[str, str], ...]
+
+
+def tree_path_from_legal_address(address: LegalAddress) -> TreePath:
+    """Project a legal node address into mutation-boundary path form."""
+
+    return tuple((str(kind), str(label)) for kind, label in address.path)
 
 
 @dataclass(frozen=True)

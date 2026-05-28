@@ -51,7 +51,7 @@ bug class it catches. Addresses Pro adversarial review attack #23
 | UK replay invariant scan equivalence | pytest | tests/test_uk_schedule_compile.py | CI | Yes | Fast UK invariant scanner diverging from persisted generic subset |
 | Replay text-duplication lints | replay_lints + frontend projection | src/lawvm/core/replay_lints.py; src/lawvm/uk_legislation/replay_records.py | FI/EU/UK replay fold | No, observation | Large duplicate text tracts after replay |
 | Flattened sublist-family lints | replay_lints + diagnose-phase | src/lawvm/core/replay_lints.py; src/lawvm/tools/diagnose_phase.py | Manual/debug | No, observation | Nested list accidentally flattened to one sibling list |
-| Shared mutation-boundary report | mutation_boundary | src/lawvm/core/mutation_boundary.py | Open Law audit; reusable by frontends | No, primitive | Snapshot/op changed outside declared target region |
+| Shared mutation-boundary report | mutation_boundary | src/lawvm/core/mutation_boundary.py | Open Law audit; reusable by frontends | No, primitive | Snapshot/op changed outside declared target/address region |
 | Phase-local invariant attribution | diagnose-phase | src/lawvm/tools/diagnose_phase.py | Manual/debug | No | Whether a structural violation arose before apply, in apply, fold post-process, or materialization |
 | First-bad invariant bisection | invariant-bisect | src/lawvm/tools/invariant_bisect.py | Manual/debug | No | First amendment introducing duplicate/order/illegal-edge/text-dup/flattened-list symptoms |
 | Apply mutation-boundary accounting | Finland apply_events | src/lawvm/finland/apply_events.py | Finland replay | No, finding/evidence | Successful/failed op mutated outside declared target boundary |
@@ -77,7 +77,7 @@ Good candidates:
 - duplicate siblings or wrong local ordering: use `check_invariants` or the UK replay invariant adjudication lane
 - large repeated wording after replay: use `build_text_duplication_findings`
 - suspicious flat repeated list families: use `build_flattened_sublist_findings` / `diagnose-phase --detector flattened_sublist_family`
-- unexplained sibling/parent mutation: use `build_mutation_boundary_report` before adding more late replay special cases
+- unexplained sibling/parent mutation: use `tree_path_from_legal_address` + `build_mutation_boundary_report` before adding more late replay special cases
 - phase attribution for Finland-style chains: run `invariant-bisect` then `diagnose-phase --certificate`
 
 UK-specific next opportunities:
