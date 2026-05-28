@@ -717,6 +717,9 @@ Implemented progress:
   `diagnostic_detail`.
 - Estonia RT acquisition diagnostic record projections now delegate their
   shared envelope fields to `diagnostic_detail`.
+- Estonia grafter source-local global text-replace selector exclusions and
+  old-format reference-slice filter adjudications now delegate their shared
+  envelope fields to `diagnostic_detail`.
 - Sweden replay adjudication helpers now delegate the same replay envelope
   defaults to `diagnostic_detail`.
 - Sweden acquisition diagnostics for official artifacts and RK current JSON now
