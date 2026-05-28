@@ -17,6 +17,13 @@ from lawvm.uk_legislation.replay_text import _normalized_replay_subtree_text
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
+_PAYLOAD_SHAPE_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
+    {
+        "duplicate_label",
+        "sort_order",
+    }
+)
+
 
 def _strip_order_kind_prefix(text: str, kind: str) -> str:
     return re.sub(rf"^(?:{re.escape(kind)})\s*", "", text.strip(), flags=re.I)
@@ -98,12 +105,13 @@ def uk_payload_shape_invariant_violations(op: LegalOperation) -> list[str]:
     payload = getattr(op, "payload", None)
     if payload is None or _action_name(op.action) not in {"insert", "replace"}:
         return []
-    violations: list[str] = []
-    for violation in tree_ops.check_invariants(payload):
-        if "duplicate " not in violation and " out of order:" not in violation:
-            continue
-        violations.append(violation)
-    return violations
+    return [
+        violation.message
+        for violation in tree_ops.iter_tree_invariant_violations(
+            payload,
+            families=_PAYLOAD_SHAPE_INVARIANT_FAMILIES,
+        )
+    ]
 
 
 def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
