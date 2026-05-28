@@ -1484,7 +1484,12 @@ def test_uk_nested_quote_definition_after_anchor_insert_lowers_to_text_replace()
         "\u201cClass 1 contributions\u201d includes any interest or penalty in respect "
         "of Class 1 contributions)"
     )
-    assert lowering_records == []
+    assert len(lowering_records) == 1
+    observation = lowering_records[0]
+    assert observation["rule_id"] == "uk_effect_in_definition_after_anchor_insert_text_patch"
+    assert observation["reason_code"] == "explicit_definition_scoped_after_anchor_insert_text_patch"
+    assert observation["blocking"] is False
+    assert observation["strict_disposition"] == "record"
 
 
 def test_uk_compound_subsection_child_insert_lowers_to_child_selector() -> None:

@@ -76,6 +76,19 @@ ignore = [
 # Test files can be looser
 "**/test_*.py" = ["F841"]
 
+[tool.ty.rules]
+# LawVM's typed records, findings, and async acquisition paths are audit
+# surfaces. These rules are warnings/ignored upstream but should fail here.
+division-by-zero = "error"
+ignore-comment-unknown-rule = "error"
+invalid-enum-member-annotation = "error"
+invalid-ignore-comment = "error"
+undefined-reveal = "error"
+unresolved-global = "error"
+unused-awaitable = "error"
+unused-ignore-comment = "error"
+unused-type-ignore-comment = "error"
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
