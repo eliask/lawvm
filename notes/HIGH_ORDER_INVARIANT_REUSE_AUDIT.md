@@ -42,6 +42,8 @@ Recent improvement:
 - UK lowering-order diagnostics for source-citation ordering and same-target
   text-patch preimage chains now delegate their outward envelope defaults to
   `diagnostic_detail`.
+- UK affecting-act prefetch source-pathology and source-witness event builders
+  now delegate their outward envelope defaults to `diagnostic_detail`.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber

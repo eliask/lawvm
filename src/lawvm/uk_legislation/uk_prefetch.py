@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
 
 _LEG_BASE = "https://www.legislation.gov.uk"
@@ -144,20 +145,18 @@ def _prefetch_event(
     reason: str,
     blocking: bool,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": rule_id,
-        "phase": "acquisition",
-        "family": "source_pathology",
-        "statute_id": statute_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": _missing_affecting_locator(affecting_act_id),
-        "url": url,
-        "status": status,
-        "reason": reason,
-        "blocking": blocking,
-        "strict_disposition": "block" if blocking else "record",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase="acquisition",
+        reason=reason,
+        blocking=blocking,
+        statute_id=statute_id,
+        affecting_act_id=affecting_act_id,
+        locator=_missing_affecting_locator(affecting_act_id),
+        url=url,
+        status=status,
+    )
 
 
 def _prefetch_fetched_event(
@@ -169,23 +168,21 @@ def _prefetch_fetched_event(
     final_url: str,
     http_status: int | None,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_prefetch_affecting_act_fetched",
-        "phase": "acquisition",
-        "family": "source_witness",
-        "statute_id": statute_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": url,
-        "url": url,
-        "final_url": final_url,
-        "http_status": http_status,
-        "status": "fetched",
-        "bytes": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id="uk_prefetch_affecting_act_fetched",
+        family="source_witness",
+        phase="acquisition",
+        blocking=False,
+        statute_id=statute_id,
+        affecting_act_id=affecting_act_id,
+        locator=url,
+        url=url,
+        final_url=final_url,
+        http_status=http_status,
+        status="fetched",
+        bytes=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+    )
 
 
 def _prefetch_cached_event(
@@ -195,21 +192,19 @@ def _prefetch_cached_event(
     url: str,
     data: bytes,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_prefetch_affecting_act_cached",
-        "phase": "acquisition",
-        "family": "source_witness",
-        "statute_id": statute_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": url,
-        "url": url,
-        "status": "cached",
-        "bytes": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id="uk_prefetch_affecting_act_cached",
+        family="source_witness",
+        phase="acquisition",
+        blocking=False,
+        statute_id=statute_id,
+        affecting_act_id=affecting_act_id,
+        locator=url,
+        url=url,
+        status="cached",
+        bytes=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+    )
 
 
 def _prefetch_would_fetch_event(
@@ -218,19 +213,17 @@ def _prefetch_would_fetch_event(
     affecting_act_id: str,
     url: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_prefetch_affecting_act_would_fetch",
-        "phase": "acquisition",
-        "family": "source_witness",
-        "statute_id": statute_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": url,
-        "url": url,
-        "status": "dry_run_would_fetch",
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id="uk_prefetch_affecting_act_would_fetch",
+        family="source_witness",
+        phase="acquisition",
+        blocking=False,
+        statute_id=statute_id,
+        affecting_act_id=affecting_act_id,
+        locator=url,
+        url=url,
+        status="dry_run_would_fetch",
+    )
 
 
 def fetch_missing_for_statute(
