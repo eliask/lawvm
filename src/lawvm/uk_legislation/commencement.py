@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
@@ -26,6 +27,24 @@ _UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID = (
 _UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID = (
     "uk_commencement_unnumbered_single_schedule_target_resolved"
 )
+
+
+def _uk_commencement_diagnostic(
+    *,
+    rule_id: str,
+    family: str,
+    reason: str,
+    **detail: Any,
+) -> dict[str, Any]:
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family=family,
+        phase="commencement_filter",
+        reason=reason,
+        blocking=False,
+        detail=detail,
+    )
+
 
 # Kind aliases used in LegalAddress paths that map to IR node kinds.
 _ADDR_KIND_ALIASES: dict[str, set[str]] = {
@@ -115,24 +134,20 @@ def _nodes_matching_address(
             unique_unnumbered_schedule = schedule_candidates[0]
             if observations_out is not None:
                 observations_out.append(
-                    {
-                        "rule_id": _UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
-                        "family": "target_resolution_recovery",
-                        "phase": "commencement_filter",
-                        "effect_id": effect.effect_id if effect is not None else "",
-                        "affecting_act_id": effect.affecting_act_id if effect is not None else "",
-                        "affected_provisions": effect.affected_provisions if effect is not None else source_ref,
-                        "affecting_provisions": effect.affecting_provisions if effect is not None else "",
-                        "effect_type": effect.effect_type if effect is not None else "",
-                        "reason": (
+                    _uk_commencement_diagnostic(
+                        rule_id=_UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
+                        family="target_resolution_recovery",
+                        reason=(
                             "UK commencement metadata named an unnumbered schedule target; "
                             "the enacted source has exactly one schedule root."
                         ),
-                        "source_ref": source_ref,
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    }
+                        effect_id=effect.effect_id if effect is not None else "",
+                        affecting_act_id=effect.affecting_act_id if effect is not None else "",
+                        affected_provisions=effect.affected_provisions if effect is not None else source_ref,
+                        affecting_provisions=effect.affecting_provisions if effect is not None else "",
+                        effect_type=effect.effect_type if effect is not None else "",
+                        source_ref=source_ref,
+                    )
                 )
 
     matched: list[IRNode] = []
@@ -243,27 +258,23 @@ def commencement_eid_set(
         if commencement_like_effects:
             if observations_out is not None:
                 observations_out.append(
-                    {
-                        "rule_id": _UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID,
-                        "family": "temporal_recovery",
-                        "phase": "commencement_filter",
-                        "effect_count": len(commencement_like_effects),
-                        "effect_types": sorted(
+                    _uk_commencement_diagnostic(
+                        rule_id=_UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID,
+                        family="temporal_recovery",
+                        reason=(
+                            "UK source has commencement-style effect rows, but none "
+                            "has a replay-applicable effective date; LawVM will not "
+                            "silently treat the whole instrument as commenced."
+                        ),
+                        effect_count=len(commencement_like_effects),
+                        effect_types=sorted(
                             {
                                 (effect.effect_type or "").strip()
                                 for effect in commencement_like_effects
                                 if (effect.effect_type or "").strip()
                             }
                         ),
-                        "reason": (
-                            "UK source has commencement-style effect rows, but none "
-                            "has a replay-applicable effective date; LawVM will not "
-                            "silently treat the whole instrument as commenced."
-                        ),
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    }
+                    )
                 )
             return set()
         # No commencement orders found: treat all provisions as in force.

@@ -46,6 +46,9 @@ Recent improvement:
   now delegate their outward envelope defaults to `diagnostic_detail`.
 - UK authority-filter lowering diagnostics now delegate their outward envelope
   defaults to `diagnostic_detail` while preserving authority-mode payloads.
+- UK commencement-filter observations now delegate their outward envelope
+  defaults to `diagnostic_detail` while preserving commencement target/date
+  payloads.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
