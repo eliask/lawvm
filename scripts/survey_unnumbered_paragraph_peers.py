@@ -28,7 +28,6 @@ from typing import Optional
 from lxml import etree
 
 from lawvm.corpus_store import get_corpus_store, statute_url
-from lawvm.finland.grafter import _amendment_children_by_parent
 
 
 @dataclass(frozen=True)

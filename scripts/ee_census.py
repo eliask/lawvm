@@ -217,7 +217,6 @@ def _read_corpus(
     acts: list[dict] = []
     t_start = time.time()
 
-    url_set = set(all_urls)
     n_total = len(all_urls)
     n_done = 0
     n_failed = 0

@@ -347,7 +347,6 @@ def run_triage(
 
     # Separate filtered vs passing
     passing = [c for c in candidates if not c["filtered_out"]]
-    filtered = [c for c in candidates if c["filtered_out"]]
 
     # Sort passing by score desc
     passing.sort(key=lambda x: x["score"], reverse=True)

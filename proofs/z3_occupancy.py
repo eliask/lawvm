@@ -19,7 +19,6 @@ from __future__ import annotations
 from z3 import (
     And,
     If,
-    Int,
     Not,
     Or,
     Solver,
@@ -57,9 +56,6 @@ def _transition(state: int, action: int) -> int:
 
 def _build_z3_transition():
     """Build Z3 function encoding the transition table."""
-    state = Int("state")
-    action = Int("action")
-
     # Encode as nested If chain
     def t(s, a):
         """Z3 expression for transition(s, a)."""
@@ -79,7 +75,6 @@ def prove_p5_insert_on_absent() -> bool:
     """P5: INSERT on ABSENT -> SUBSTANTIVE (and INSERT is only valid from ABSENT or TOMBSTONE)."""
     s = Solver()
     t = _build_z3_transition()
-    state = Int("state")
 
     # Part 1: INSERT on ABSENT gives SUBSTANTIVE
     s.push()
