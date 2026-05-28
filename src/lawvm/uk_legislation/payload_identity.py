@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import _addr_container, _addr_field, _canonicalize_eid_tail_label
@@ -16,6 +17,23 @@ UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID = (
     "uk_whole_schedule_payload_descendant_eid_synthesis"
 )
 UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID = "uk_payload_descendant_eid_synthesis"
+
+
+def _payload_identity_diagnostic(
+    *,
+    rule_id: str,
+    reason: str,
+    blocking: bool,
+    **detail: Any,
+) -> dict[str, Any]:
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="payload_identity_normalization",
+        phase="payload_normalization",
+        reason=reason,
+        blocking=blocking,
+        detail=detail,
+    )
 
 
 def _whole_schedule_target_root_eid(target: LegalAddress) -> str:
@@ -85,24 +103,20 @@ def _synthesize_whole_schedule_payload_descendant_eids(
     if not allow_payload_identity_synthesis:
         if lowering_records_out is not None:
             lowering_records_out.append(
-                {
-                    "rule_id": UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
-                    "family": "payload_identity_normalization",
-                    "phase": "payload_normalization",
-                    "effect_id": effect.effect_id,
-                    "affecting_act_id": effect.affecting_act_id,
-                    "affected_provisions": effect.affected_provisions,
-                    "affecting_provisions": effect.affecting_provisions,
-                    "effect_type": effect.effect_type,
-                    "target": str(target),
-                    "reason": (
+                _payload_identity_diagnostic(
+                    rule_id=UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                    reason=(
                         "Whole-schedule payload has descendants without source EIDs; "
                         "strict lowering did not synthesize local descendant identity"
                     ),
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                    blocking=True,
+                    effect_id=effect.effect_id,
+                    affecting_act_id=effect.affecting_act_id,
+                    affected_provisions=effect.affected_provisions,
+                    affecting_provisions=effect.affecting_provisions,
+                    effect_type=effect.effect_type,
+                    target=str(target),
+                )
             )
         return payload_node
 
@@ -149,29 +163,25 @@ def _synthesize_whole_schedule_payload_descendant_eids(
     _walk(root_eid, payload_node)
     if synthesized and lowering_records_out is not None:
         lowering_records_out.append(
-            {
-                "rule_id": UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
-                "family": "payload_identity_normalization",
-                "phase": "payload_normalization",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "target": str(target),
-                "root_eid": root_eid,
-                "synthesized_count": len(synthesized),
-                "skipped_ambiguous_count": skipped_ambiguous,
-                "skipped_duplicate_count": skipped_duplicate,
-                "sample": synthesized[:8],
-                "reason": (
+            _payload_identity_diagnostic(
+                rule_id=UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                reason=(
                     "Whole-schedule payload descendants lacked source EIDs; "
                     "lowering synthesized deterministic local IDs from the explicit schedule target"
                 ),
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            }
+                blocking=False,
+                effect_id=effect.effect_id,
+                affecting_act_id=effect.affecting_act_id,
+                affected_provisions=effect.affected_provisions,
+                affecting_provisions=effect.affecting_provisions,
+                effect_type=effect.effect_type,
+                target=str(target),
+                root_eid=root_eid,
+                synthesized_count=len(synthesized),
+                skipped_ambiguous_count=skipped_ambiguous,
+                skipped_duplicate_count=skipped_duplicate,
+                sample=synthesized[:8],
+            )
         )
     return payload_node
 
@@ -198,24 +208,20 @@ def _synthesize_payload_descendant_eids(
     if not allow_payload_identity_synthesis:
         if lowering_records_out is not None:
             lowering_records_out.append(
-                {
-                    "rule_id": UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
-                    "family": "payload_identity_normalization",
-                    "phase": "payload_normalization",
-                    "effect_id": effect.effect_id,
-                    "affecting_act_id": effect.affecting_act_id,
-                    "affected_provisions": effect.affected_provisions,
-                    "affecting_provisions": effect.affecting_provisions,
-                    "effect_type": effect.effect_type,
-                    "target": str(target),
-                    "reason": (
+                _payload_identity_diagnostic(
+                    rule_id=UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                    reason=(
                         "Source-backed payload has descendants without source EIDs; "
                         "strict lowering did not synthesize local descendant identity"
                     ),
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                    blocking=True,
+                    effect_id=effect.effect_id,
+                    affecting_act_id=effect.affecting_act_id,
+                    affected_provisions=effect.affected_provisions,
+                    affecting_provisions=effect.affecting_provisions,
+                    effect_type=effect.effect_type,
+                    target=str(target),
+                )
             )
         return payload_node
 
@@ -253,27 +259,23 @@ def _synthesize_payload_descendant_eids(
     _walk(root_eid, payload_node)
     if synthesized and lowering_records_out is not None:
         lowering_records_out.append(
-            {
-                "rule_id": UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
-                "family": "payload_identity_normalization",
-                "phase": "payload_normalization",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "target": str(target),
-                "root_eid": root_eid,
-                "synthesized_count": len(synthesized),
-                "skipped_duplicate_count": skipped_duplicate,
-                "sample": synthesized[:8],
-                "reason": (
+            _payload_identity_diagnostic(
+                rule_id=UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                reason=(
                     "Source-backed payload descendants lacked source EIDs; "
                     "lowering synthesized deterministic local IDs from the explicit target"
                 ),
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            }
+                blocking=False,
+                effect_id=effect.effect_id,
+                affecting_act_id=effect.affecting_act_id,
+                affected_provisions=effect.affected_provisions,
+                affecting_provisions=effect.affecting_provisions,
+                effect_type=effect.effect_type,
+                target=str(target),
+                root_eid=root_eid,
+                synthesized_count=len(synthesized),
+                skipped_duplicate_count=skipped_duplicate,
+                sample=synthesized[:8],
+            )
         )
     return payload_node
