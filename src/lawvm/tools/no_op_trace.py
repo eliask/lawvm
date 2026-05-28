@@ -6,11 +6,13 @@ import json
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from lawvm.core.mutation_boundary import TreePath
+
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalOperation
 
 
-def _parse_path_filter(raw: str) -> tuple[tuple[str, str], ...]:
+def _parse_path_filter(raw: str) -> TreePath:
     parts: list[tuple[str, str]] = []
     for chunk in raw.split("/"):
         chunk = chunk.strip()
@@ -34,15 +36,15 @@ def _parse_path_filter(raw: str) -> tuple[tuple[str, str], ...]:
     return tuple(parts)
 
 
-def _format_path(path: tuple[tuple[str, str], ...]) -> str:
+def _format_path(path: TreePath) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
 
 
-def _path_matches(filter_path: tuple[tuple[str, str], ...], target_path: tuple[tuple[str, str], ...]) -> bool:
+def _path_matches(filter_path: TreePath, target_path: TreePath) -> bool:
     return len(filter_path) <= len(target_path) and target_path[: len(filter_path)] == filter_path
 
 
-def _op_touches_filters(op: "LegalOperation", filters: list[tuple[tuple[str, str], ...]]) -> bool:
+def _op_touches_filters(op: "LegalOperation", filters: list[TreePath]) -> bool:
     if not filters:
         return True
     target_paths = [tuple(op.target.path)] + [tuple(target.path) for target in getattr(op, "targets", [])]

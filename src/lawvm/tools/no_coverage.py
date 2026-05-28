@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from lawvm.core.mutation_boundary import TreePath
+
 if TYPE_CHECKING:
     pass
 
@@ -18,7 +20,7 @@ def _normalize_base_id(base_id: str) -> str:
     return base_id
 
 
-def _format_path(path: tuple[tuple[str, str], ...]) -> str:
+def _format_path(path: TreePath) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
 
 

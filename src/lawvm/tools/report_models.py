@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from lawvm.core.mutation_boundary import TreePath
+
 
 @dataclass(frozen=True)
 class NorwayTraceSourceRow:
@@ -45,7 +47,7 @@ class NorwayTraceOpRow:
 
 @dataclass(frozen=True)
 class NorwayDivergenceItem:
-    address: tuple[tuple[str, str], ...]
+    address: TreePath
     address_text: str
     divergence_type: str
     hint: str
@@ -68,7 +70,7 @@ class NorwayCompareProjectionItem:
     surface: str
     rule_id: str
     reason: str
-    address: tuple[tuple[str, str], ...]
+    address: TreePath
     before_kind: str
     before_label: str | None
     before_text: str
