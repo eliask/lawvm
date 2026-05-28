@@ -1,0 +1,84 @@
+# Legal Branch And Authority Axis
+
+Status: initial core contract.
+Date: 2026-05-28.
+
+Purpose:
+
+- represent drafts, proposals, consultation texts, and other non-enacted claims
+  in the same legal graph as enacted law;
+- prevent those claims from mutating ordinary enacted point-in-time state;
+- make materialization/export queries explicit about authority layer and branch.
+
+## Core Rule
+
+Draft/proposal material is executable as a claim, not as current law.
+
+Ordinary point-in-time materialization selects only the default enacted context:
+
+```text
+authority_layer = enacted
+legal_status = commenced
+branch_id = ""
+scenario_id = ""
+```
+
+Proposal/draft operations must carry a non-empty `branch_id`.
+They are available to branch/scenario materialization, graph export, and diff
+views, but they must not leak into enacted/current materialization without an
+explicit enactment or derivation event.
+
+## Current Core Surface
+
+Implemented:
+
+- `src/lawvm/core/authority.py::BranchContext`
+- `src/lawvm/core/authority.py::LegalBranch`
+- `src/lawvm/core/authority.py::BranchGraphEdge`
+- `OperationSource.authority_layer`
+- `OperationSource.legal_status`
+- `OperationSource.branch_id`
+- `OperationSource.scenario_id`
+- `enacted_materialization_ops(...)`
+- `branch_materialization_ops(...)`
+- `CorpusGraph.branches`
+- `CorpusGraph.branch_edges`
+
+The implementation is metadata-first. It does not parse proposal or bill
+language yet.
+
+## Export Semantics
+
+Branch graph edges are intended for claims such as:
+
+- `would_amend`
+- `would_insert`
+- `would_replace`
+- `would_repeal`
+- `targets`
+- `derived_from`
+- `terminated_by`
+
+These edges are graph facts, not enacted-state mutations.
+
+## Next Steps
+
+1. Add a small synthetic proposal demo corpus:
+   enacted base statute plus one proposal-branch operation.
+2. Add a branch-aware materialization/demo command:
+   default view excludes proposal ops; branch view includes only selected branch
+   ops.
+3. Add proposal diff payloads:
+   current provision, proposed operation, proposed branch result, provenance.
+4. Add lifecycle events:
+   introduced, amended, passed, withdrawn, failed, enacted.
+5. Prototype one real frontend lane:
+   pick the jurisdiction/source family with the cleanest proposal or bill
+   source extraction, otherwise build a synthetic-to-real bridge first.
+
+## Non-Goals For This Layer
+
+- no legal interpretation;
+- no claim that proposals are law;
+- no automatic promotion from proposal to enacted;
+- no language-specific proposal or bill parsing in core.

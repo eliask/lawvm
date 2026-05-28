@@ -195,6 +195,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "core_ir_contracts": (
         "test_address_parse.py",
         "test_admissible_binding.py",
+        "test_authority.py",
         "test_canonical_intent_kinds.py",
         "test_clause_ast.py",
         "test_coordination_parser.py",

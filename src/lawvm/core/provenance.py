@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, FrozenSet, Literal, Tuple
 
+from lawvm.core.authority import AuthorityLayer, COMMENCED_STATUS, ENACTED_AUTHORITY, LegalStatus
+
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalAddress
     from lawvm.core.mutation_boundary import TreePath
@@ -42,6 +44,11 @@ class OperationSource:
     # UK commencement provenance: text-writing act vs force-activating SI
     commencement_source: str = ""  # SI/order that brings this into force
     commencement_title: str = ""  # title of the commencement instrument
+    # Authority/branch provenance: default empty branch is enacted/current law.
+    authority_layer: AuthorityLayer = ENACTED_AUTHORITY
+    legal_status: LegalStatus = COMMENCED_STATUS
+    branch_id: str = ""
+    scenario_id: str = ""
 
 
 @dataclass(frozen=True)
