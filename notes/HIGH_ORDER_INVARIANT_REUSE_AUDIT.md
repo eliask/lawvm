@@ -153,6 +153,9 @@ Recent improvement:
 - UK mutable sorted child insertion now refuses same-kind/same-normalized-label
   replacement instead of inheriting the lower-level canonical insertion
   helper's destructive replacement semantics.
+- UK body-root insertion fallbacks now route through the guarded mutable insert
+  helper, and same-parent sibling renumber now checks for a destination sibling
+  collision before removing the source node.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
@@ -920,8 +923,8 @@ These are jurisdiction source semantics, not shared invariants.
    table/schedule children-splice recorder.
 3. Continue caller-specific audit of same-label sorted insertion paths where a
    refusal should emit a more precise conflict diagnostic. The shared mutable
-   helper now refuses destructive replacement; remaining work is diagnostic
-   quality, not silent mutation prevention.
+   helper and main body-root/renumber callers now prevent destructive
+   replacement; remaining work is diagnostic quality for rarer refusal paths.
 4. Promote the UK post-op invariant attribution shape into a small core
    invariant-delta carrier only after another frontend has a concrete consumer;
    for now UK owns the local projection because its invariant scope pruning is
