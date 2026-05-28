@@ -11,12 +11,11 @@ from typing import Tuple
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.mutation_boundary import unexplained_changed_paths
+from lawvm.core.mutation_boundary import build_mutation_boundary_report
 from lawvm.core.tree_ops import resolve_required
 from lawvm.open_law.audit import (
     OpenLawSnapshotAuditResult,
     audit_open_law_snapshot,
-    diff_ir_paths,
     replay_open_law_ops,
     resolve_open_law_path,
 )
@@ -336,9 +335,10 @@ def _audit_metadata_operation(
             status="metadata_diverged",
             findings=tuple(findings),
         )
-    changed_paths = diff_ir_paths(projected_before, projected_after)
     allowed_prefixes = tuple(mutation.tree_path for mutation in replay.mutations)
-    unexplained_paths = unexplained_changed_paths(changed_paths, allowed_prefixes)
+    boundary = build_mutation_boundary_report(projected_before, projected_after, allowed_prefixes)
+    changed_paths = boundary.changed_paths
+    unexplained_paths = boundary.unexplained_changed_paths
     replay_resolved = resolve_open_law_path(projected_replay, op.path)
     if replay_resolved.status != "resolved":
         findings.append(

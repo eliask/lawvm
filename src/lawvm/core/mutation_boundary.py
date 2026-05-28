@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Sequence, Tuple
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
 
 TreePath = Tuple[Tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class MutationBoundaryReport:
+    """Changed-path accounting against declared legal mutation regions."""
+
+    changed_paths: Tuple[TreePath, ...]
+    allowed_prefixes: Tuple[TreePath, ...]
+    covered_changed_paths: Tuple[TreePath, ...]
+    unexplained_changed_paths: Tuple[TreePath, ...]
+
+
+def build_mutation_boundary_report(
+    before: IRNode,
+    after: IRNode,
+    allowed_prefixes: Sequence[TreePath],
+) -> MutationBoundaryReport:
+    """Diff two IR trees and classify changes by declared mutation boundaries."""
+
+    changed_paths = diff_ir_paths(before, after)
+    allowed = tuple(allowed_prefixes)
+    covered = tuple(path for path in changed_paths if path_has_prefix(path, allowed))
+    unexplained = tuple(path for path in changed_paths if not path_has_prefix(path, allowed))
+    return MutationBoundaryReport(
+        changed_paths=changed_paths,
+        allowed_prefixes=allowed,
+        covered_changed_paths=covered,
+        unexplained_changed_paths=unexplained,
+    )
 
 
 def diff_ir_paths(before: IRNode, after: IRNode) -> Tuple[TreePath, ...]:
