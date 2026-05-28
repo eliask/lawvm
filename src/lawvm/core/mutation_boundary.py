@@ -183,6 +183,18 @@ def path_has_prefix(path: TreePath, allowed_prefixes: Sequence[TreePath]) -> boo
     return False
 
 
+def path_is_strict_prefix(prefix: TreePath, full: TreePath) -> bool:
+    """Return true when *prefix* is a proper ancestor path of *full*."""
+
+    issues = (
+        *validate_tree_path(prefix, field_name="prefix path"),
+        *validate_tree_path(full, field_name="full path"),
+    )
+    if issues:
+        raise ValueError("; ".join(issues))
+    return len(prefix) < len(full) and full[: len(prefix)] == prefix
+
+
 def normalize_tree_path_for_relation(
     path: TreePath,
     *,
