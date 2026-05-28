@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Optional, Sequence
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
+from lawvm.core.mutation_boundary import TreePath, TreePaths, TreePathStep
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.estonia.peg import extract_ee_ops
 
@@ -45,7 +46,7 @@ class EETextRewrite:
     mode: EETextReplaceMode = EETextReplaceMode.replace
     case_inflected: bool = False
     scope_chapters: tuple[str, ...] = ()
-    exclude_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+    exclude_paths: TreePaths = ()
     generic_minister_plural: bool = False
     old_titles: tuple[str, ...] = ()
     source_family: str = ""
@@ -123,14 +124,14 @@ class EEParsedInstruction:
     provenance_tags: tuple[str, ...] = ()
 
 
-def _normalize_paths(raw_paths: object) -> tuple[tuple[tuple[str, str], ...], ...]:
+def _normalize_paths(raw_paths: object) -> TreePaths:
     if not raw_paths or not isinstance(raw_paths, (list, tuple)):
         return ()
-    normalized: list[tuple[tuple[str, str], ...]] = []
+    normalized: list[TreePath] = []
     for item in raw_paths:
         if not isinstance(item, (list, tuple)) or not item:
             continue
-        path: list[tuple[str, str]] = []
+        path: list[TreePathStep] = []
         for p in item:
             if not isinstance(p, (list, tuple)) or len(p) != 2:
                 break
