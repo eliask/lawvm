@@ -64,6 +64,9 @@ Recent improvement:
   details.
 - UK benchmark exception and effect-feed-count diagnostics now delegate their
   outward envelope defaults to `diagnostic_detail`.
+- UK manual-frontier validation JSONL rows now delegate their outward envelope
+  defaults to `diagnostic_detail`, including input-error and stale-effect
+  rows, while preserving the workqueue/reporting schema fields.
 - `validate_diagnostic_detail(...)` now validates the shared diagnostic
   envelope independently of frontend-local payload fields.
 - blocking strict-disposition vocabulary is now shared between diagnostic
@@ -170,6 +173,9 @@ Recent improvement:
   override shared envelope fields such as `rule_id`, `phase`, or dispositions.
 - mutation-event accounting result/report logic now has a core home; Finland
   apply events re-export the shared accounting surface for compatibility.
+- mutation-event accounting now classifies applied/failed/skipped outcome
+  families centrally, so frontend-local outcome strings can feed shared
+  accounting without being rewritten at the source event.
 - lossless filter results now have a small core carrier; UK authority filtering
   uses it while preserving existing diagnostics and returned kept-op lists.
 - UK replay preparation now exposes its existing accepted/rejected operation
@@ -748,6 +754,15 @@ Implemented progress:
   `adjudication_diagnostic_detail(...)` and
   `adjudication_record_diagnostic_detail(...)`, so object and persisted-record
   adjudications get the same normalized diagnostic envelope in evidence rows.
+- UK replay-adjudication candidate rows and UK prepare-filter rejection
+  projections now use the shared replay-adjudication envelope adapters where
+  they need outward JSON/reporting details.
+- UK manual-frontier validation rows now use the shared diagnostic envelope
+  helper for normal, input-error, and effect-not-found validation results while
+  keeping the validator row schema stable.
+- UK effect-feed count diagnostics in evidence bundles and Norway Statsrad
+  diagnostics now delegate their shared envelope fields to
+  `diagnostic_detail`.
 - Open Law corpus finding evidence rows now derive their shared disposition
   envelope fields through `diagnostic_detail`.
 - New Zealand acquisition diagnostics, latest-XML locator rejection diagnostics,
@@ -892,11 +907,15 @@ These are jurisdiction source semantics, not shared invariants.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
    table/schedule children-splice recorder.
-3. Opportunistically route replay-adjudication JSON/reporting workqueue rows
-   through `adjudication_record_diagnostic_detail(...)` when they currently
-   recompute blocking and strict/quirks dispositions locally.
+3. Design a post-mutation invariant delta tracker that can explain which
+   mutation event or allowed recovery region accounts for newly introduced
+   invariant violations, without making the replay executor silently repair
+   them.
+4. Centralize UK target-gap/absent-target diagnostic ladders only after a
+   family-level shape is clear from real witnesses; do not collapse UK drafting
+   semantics into core.
 
-The highest-value order is now cautious comparison-normalization reuse for
-additional frontends, replay-adjudication projection cleanup at reporting
-boundaries, remaining UK mutation-event/debug gaps, and small type-surface
-cleanup batches.
+The highest-value order is now post-mutation invariant attribution, remaining
+UK mutation-event/debug gaps, cautious comparison-normalization reuse where a
+frontend already has named projection rules, and small type-surface cleanup
+batches.
