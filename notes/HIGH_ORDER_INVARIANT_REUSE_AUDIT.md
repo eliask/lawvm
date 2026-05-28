@@ -168,6 +168,9 @@ Recent improvement:
 - Finland operative-text acquisition now exposes its preamble/body/fallback
   lane decision through the shared source-lane evidence carrier in phase
   witnesses while leaving lane policy local.
+- UK affecting-act current-vs-enacted XML source selection now uses the shared
+  source-lane evidence carrier for selected and rejected lane attempts while
+  preserving UK-local locators, sizes, and previews.
 - source-version bracketing now has shared source-only window selectors; New
   Zealand archived XML date/change windows delegate the bracketing invariant
   while preserving NZ-specific row classes and truth-claim names.

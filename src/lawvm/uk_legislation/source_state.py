@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 
 MIN_UK_XML_SOURCE_BYTES = 100
 UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
@@ -191,26 +192,43 @@ def uk_affecting_act_current_shell_enacted_source_selected(
     current_text_preview: str,
     enacted_text_preview: str,
 ) -> dict[str, Any]:
-    return _uk_source_diagnostic(
+    return SourceLaneSelectionEvidence(
         rule_id="uk_affecting_act_current_shell_enacted_source_selected",
-        family="source_lane_selection",
         phase="acquisition",
         reason=(
             "UK current affecting-act XML extracted only a non-substantive dot-leader "
             "shell, while the official enacted XML contained substantive text for the "
             "same affecting provision."
         ),
+        selected_lane="enacted_xml",
+        selected_locator=enacted_locator,
         blocking=False,
-        effect_id=effect_id,
-        affecting_act_id=affecting_act_id,
-        affecting_provisions=affecting_provisions,
-        current_locator=current_locator,
-        enacted_locator=enacted_locator,
-        current_source_size=int(current_source_size),
-        enacted_source_size=int(enacted_source_size),
-        current_text_preview=current_text_preview,
-        enacted_text_preview=enacted_text_preview,
-    )
+        attempts=(
+            SourceLaneAttempt(
+                lane="current_xml",
+                locator=current_locator,
+                status="rejected_non_substantive_shell",
+                detail={"source_size": int(current_source_size), "text_preview": current_text_preview},
+            ),
+            SourceLaneAttempt(
+                lane="enacted_xml",
+                locator=enacted_locator,
+                status="selected",
+                detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
+            ),
+        ),
+        detail={
+            "effect_id": effect_id,
+            "affecting_act_id": affecting_act_id,
+            "affecting_provisions": affecting_provisions,
+            "current_locator": current_locator,
+            "enacted_locator": enacted_locator,
+            "current_source_size": int(current_source_size),
+            "enacted_source_size": int(enacted_source_size),
+            "current_text_preview": current_text_preview,
+            "enacted_text_preview": enacted_text_preview,
+        },
+    ).to_diagnostic_detail()
 
 
 def uk_affecting_act_missing_current_enacted_source_selected(
@@ -224,25 +242,42 @@ def uk_affecting_act_missing_current_enacted_source_selected(
     enacted_source_size: int,
     enacted_text_preview: str,
 ) -> dict[str, Any]:
-    return _uk_source_diagnostic(
+    return SourceLaneSelectionEvidence(
         rule_id="uk_affecting_act_missing_current_enacted_source_selected",
-        family="source_lane_selection",
         phase="acquisition",
         reason=(
             "UK current affecting-act XML did not expose an extractable same-provision "
             "source node, while the official enacted XML contained substantive text for "
             "that exact affecting provision."
         ),
+        selected_lane="enacted_xml",
+        selected_locator=enacted_locator,
         blocking=False,
-        effect_id=effect_id,
-        affecting_act_id=affecting_act_id,
-        affecting_provisions=affecting_provisions,
-        current_locator=current_locator,
-        enacted_locator=enacted_locator,
-        current_source_size=int(current_source_size),
-        enacted_source_size=int(enacted_source_size),
-        enacted_text_preview=enacted_text_preview,
-    )
+        attempts=(
+            SourceLaneAttempt(
+                lane="current_xml",
+                locator=current_locator,
+                status="missing_same_provision_source",
+                detail={"source_size": int(current_source_size)},
+            ),
+            SourceLaneAttempt(
+                lane="enacted_xml",
+                locator=enacted_locator,
+                status="selected",
+                detail={"source_size": int(enacted_source_size), "text_preview": enacted_text_preview},
+            ),
+        ),
+        detail={
+            "effect_id": effect_id,
+            "affecting_act_id": affecting_act_id,
+            "affecting_provisions": affecting_provisions,
+            "current_locator": current_locator,
+            "enacted_locator": enacted_locator,
+            "current_source_size": int(current_source_size),
+            "enacted_source_size": int(enacted_source_size),
+            "enacted_text_preview": enacted_text_preview,
+        },
+    ).to_diagnostic_detail()
 
 
 def uk_affecting_act_single_amendment_child_source_selected(
