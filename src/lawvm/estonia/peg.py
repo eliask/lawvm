@@ -1118,7 +1118,7 @@ def _extract_section_renumber_pairs(text: str) -> tuple[tuple[str, str], ...]:
         old_labels = _split_section_renumber_labels(plural.group("old"))
         new_labels = _split_section_renumber_labels(plural.group("new"))
         if len(old_labels) == len(new_labels) and old_labels:
-            return tuple(zip(old_labels, new_labels))
+            return tuple(zip(old_labels, new_labels, strict=True))
 
     singular = re.search(
         r'\bparagrahv\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+'
@@ -6845,7 +6845,7 @@ def extract_ee_ops(
                 and len(explicit_target.path) == 1
                 and explicit_target.path[0][0] == "section"
             }
-            for pair_target, (old_t, new_t) in zip(pair_targets, target_pairs):
+            for pair_target, (old_t, new_t) in zip(pair_targets, target_pairs, strict=True):
                 pair_payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
                 pair_payload, _rewrite_witness = _set_text_replace_payload_attrs(pair_payload, clean, old_t, new_t)
                 pair_payload = _sentence_scoped_text_replace_payload_for_target(
@@ -7599,7 +7599,7 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
     if result and fallback_result and len(fallback_result) == len(result):
         return [
             rich if len(rich) >= len(fallback) else fallback
-            for rich, fallback in zip(result, fallback_result)
+            for rich, fallback in zip(result, fallback_result, strict=True)
         ]
     if len(fallback_result) > 1 or not result:
         return fallback_result

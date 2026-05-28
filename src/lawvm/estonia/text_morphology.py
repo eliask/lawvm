@@ -289,7 +289,7 @@ def sentence_indexes_from_notes(note_text: str) -> list[int]:
         (r"kaheks(?:as|anda|andat|andas|andast)", 7),
         (r"viima(?:ne|se|st|ses|sest)", 1_000_000),
     ]
-    for (left_pat, left_idx), (right_pat, right_idx) in zip(ordinal_patterns, ordinal_patterns[1:]):
+    for (left_pat, left_idx), (right_pat, right_idx) in zip(ordinal_patterns, ordinal_patterns[1:], strict=False):
         if re.search(
             rf"\b{left_pat}\s+ja\s+{right_pat}\s+lause(?:t|s|st|ga)?\b",
             note_text,
