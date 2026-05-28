@@ -131,6 +131,29 @@ class _ScheduleListReplaySelf(Protocol):
     def _target_under_repealed_prefix(self, target: LegalAddress) -> bool: ...
 
 
+def _replace_schedule_list_children_with_event(
+    self: _ScheduleListReplaySelf,
+    *,
+    container: UKMutableNode,
+    children: list[UKMutableNode],
+    helper: str,
+    outcome: str,
+    reason_code: str,
+    mark_structure_mutation: bool = True,
+) -> None:
+    uk_replace_children(container, children)
+    self._record_children_splice_mutation_event(
+        container=container,
+        helper=helper,
+        outcome=outcome,
+        reason_code=reason_code,
+    )
+    if not mark_structure_mutation:
+        return
+    self._clear_eid_lookup_index()
+    self._note_structure_mutation()
+
+
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_table_rows_insert_resolved"
 )
@@ -601,11 +624,10 @@ class UKReplayScheduleListApplyMixin:
                 new_node.attrs.pop(key, None)
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
-            uk_replace_children(carrier_node, children)
-            self._clear_eid_lookup_index()
-            self._note_structure_mutation()
-            self._record_children_splice_mutation_event(
+            _replace_schedule_list_children_with_event(
+                self,
                 container=carrier_node,
+                children=children,
                 helper="_insert_schedule_list_entry",
                 outcome="schedule_list_entry_inserted",
                 reason_code="definition_list_end_direct_entry_boundary",
@@ -666,11 +688,10 @@ class UKReplayScheduleListApplyMixin:
                 new_node.attrs.pop(key, None)
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
-            uk_replace_children(carrier_node, children)
-            self._clear_eid_lookup_index()
-            self._note_structure_mutation()
-            self._record_children_splice_mutation_event(
+            _replace_schedule_list_children_with_event(
+                self,
                 container=carrier_node,
+                children=children,
                 helper="_insert_schedule_list_entry",
                 outcome="schedule_list_entry_inserted",
                 reason_code="explicit_alphabetical_order",
@@ -818,11 +839,10 @@ class UKReplayScheduleListApplyMixin:
                     new_node.attrs.pop(key, None)
                 group_children = list(grouped_match.group.children)
                 group_children.insert(insert_index, new_node)
-                grouped_match.group.children = group_children
-                self._clear_eid_lookup_index()
-                self._note_structure_mutation()
-                self._record_children_splice_mutation_event(
+                _replace_schedule_list_children_with_event(
+                    self,
                     container=grouped_match.group,
+                    children=group_children,
                     helper="_insert_schedule_list_entry",
                     outcome="schedule_list_entry_inserted",
                     reason_code="anchor_unique_in_schedule_child_group",
@@ -934,11 +954,10 @@ class UKReplayScheduleListApplyMixin:
             new_node.attrs.pop(key, None)
         children = list(carrier_node.children)
         children.insert(insert_index, new_node)
-        uk_replace_children(carrier_node, children)
-        self._clear_eid_lookup_index()
-        self._note_structure_mutation()
-        self._record_children_splice_mutation_event(
+        _replace_schedule_list_children_with_event(
+            self,
             container=carrier_node,
+            children=children,
             helper="_insert_schedule_list_entry",
             outcome="schedule_list_entry_inserted",
             reason_code="explicit_entry_anchor_unique",
@@ -1154,12 +1173,14 @@ class UKReplayScheduleListApplyMixin:
             children = list(delete_group.parent.children)
             for idx in sorted(delete_group.indices, reverse=True):
                 children.pop(idx)
-            uk_replace_children(delete_group.parent, children)
-            self._record_children_splice_mutation_event(
+            _replace_schedule_list_children_with_event(
+                self,
                 container=delete_group.parent,
+                children=children,
                 helper="_repeal_schedule_list_entries",
                 outcome="schedule_list_entries_repealed",
                 reason_code="explicit_entry_anchors_unique",
+                mark_structure_mutation=False,
             )
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
@@ -1341,11 +1362,10 @@ class UKReplayScheduleListApplyMixin:
             new_node.attrs.pop(key, None)
         children = list(carrier_node.children)
         children[replace_idx] = new_node
-        uk_replace_children(carrier_node, children)
-        self._clear_eid_lookup_index()
-        self._note_structure_mutation()
-        self._record_children_splice_mutation_event(
+        _replace_schedule_list_children_with_event(
+            self,
             container=carrier_node,
+            children=children,
             helper="_replace_schedule_list_entry",
             outcome="schedule_list_entry_replaced",
             reason_code="explicit_entry_anchor_unique",

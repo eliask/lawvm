@@ -56,6 +56,9 @@ Recent improvement:
   entry splices now emit conservative container-scoped mutation events. Table
   row events record the table path instead of inventing row-level identity for
   unlabeled duplicate table rows.
+- UK schedule-list entry insert/repeal/replace helpers now route child-list
+  replacement plus mutation-event recording through one local wrapper; grouped
+  schedule-entry insertion is covered by a mutation-event regression.
 - UK same-parent sibling renumber replay now emits a renumber-specific mutation
   event with old and new paths instead of reporting the destination as an
   ordinary insertion.

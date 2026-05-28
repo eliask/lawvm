@@ -409,6 +409,64 @@ def test_replay_uk_ops_emit_mutation_event_for_schedule_list_entry_insert() -> N
     assert event.reason_code == "definition_list_end_direct_entry_boundary"
 
 
+def test_replay_uk_ops_emit_mutation_event_for_grouped_schedule_list_entry_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    selector = {
+        "direction": "after",
+        "anchor_text": "Scottish Environment Protection Agency",
+        "inserted_text": "Scottish Fire and Rescue Service",
+    }
+    op = LegalOperation(
+        op_id="uk-test-insert-grouped-schedule-entry",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Scottish Fire and Rescue Service"),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"schedule_list_entry_selector:{json.dumps(selector)}",),
+    )
+    statute = IRStatute(
+        statute_id="asp/2010/8",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        text="Scottish public authorities with mixed functions or no reserved functions",
+                        children=(
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Scottish Environment Protection Agency"),
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Scottish Legal Aid Board"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    group = replayed.supplements[0].children[0]
+    assert [child.text for child in group.children] == [
+        "Scottish Environment Protection Agency",
+        "Scottish Fire and Rescue Service",
+        "Scottish Legal Aid Board",
+    ]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    group_path = (("schedule", "SCHEDULE 5"), ("p1group", ""))
+    assert event.op_id == "uk-test-insert-grouped-schedule-entry"
+    assert event.helper == "_insert_schedule_list_entry"
+    assert event.outcome == "schedule_list_entry_inserted"
+    assert event.resolved_target_path == (("schedule", "5"),)
+    assert event.parent_path == group_path
+    assert event.replaced_paths == (group_path,)
+    assert event.reason_code == "anchor_unique_in_schedule_child_group"
+
+
 def test_replay_uk_ops_emit_mutation_event_for_schedule_list_entry_repeal() -> None:
     mutation_events: list[MutationEvent] = []
     selector = {"anchors": ["Alpha entry"]}
