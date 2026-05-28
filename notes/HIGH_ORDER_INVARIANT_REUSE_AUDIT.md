@@ -156,6 +156,10 @@ Recent improvement:
 - UK body-root insertion fallbacks now route through the guarded mutable insert
   helper, and same-parent sibling renumber now checks for a destination sibling
   collision before removing the source node.
+- UK top-level supplement insertion now uses the same guarded sorted-insert
+  surface as child insertion, so duplicate schedule fallback insertion cannot
+  replace or append over an existing same-label supplement while emitting a
+  successful recovery adjudication.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
