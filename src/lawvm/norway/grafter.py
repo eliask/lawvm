@@ -735,20 +735,18 @@ def _split_move_attr(
                 kind=NO_PARSE_MALFORMED_STRUCTURED_RENUMBER_ATTR_SKIPPED,
                 message="Norway parser skipped malformed structured renumber token.",
                 source_id=source_id,
-                detail={
-                    "rule_id": NO_PARSE_MALFORMED_STRUCTURED_RENUMBER_ATTR_SKIPPED,
-                    "phase": "parse",
-                    "family": "source_pathology",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                    "base_id": base_id,
-                    "source_doc": source_doc,
-                    "attr_name": "data-move-part",
-                    "raw_token": token,
-                    "reason": reason,
-                    "raw_text": raw_text,
-                },
+                detail=diagnostic_detail(
+                    rule_id=NO_PARSE_MALFORMED_STRUCTURED_RENUMBER_ATTR_SKIPPED,
+                    phase="parse",
+                    family="source_pathology",
+                    blocking=True,
+                    reason=reason,
+                    base_id=base_id,
+                    source_doc=source_doc,
+                    attr_name="data-move-part",
+                    raw_token=token,
+                    raw_text=raw_text,
+                ),
             )
             continue
         src, dst = token.split(";;", 1)

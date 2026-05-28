@@ -711,6 +711,10 @@ Implemented progress:
   delegate their shared envelope defaults to `diagnostic_detail`.
 - Norway source-loader and public-archive ingest diagnostics now delegate their
   shared envelope defaults to `diagnostic_detail`.
+- Norway inventory current-law fallback diagnostics, malformed structured
+  renumber-token parse diagnostics, and replay action-family recovery
+  diagnostics now also delegate their shared envelope defaults to
+  `diagnostic_detail`.
 - Estonia RT acquisition diagnostic record projections now delegate their
   shared envelope fields to `diagnostic_detail`.
 - Sweden replay adjudication helpers now delegate the same replay envelope
