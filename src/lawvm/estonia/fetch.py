@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 _BASE_URL = "https://www.riigiteataja.ee"
 _UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -79,18 +81,18 @@ class RedactionsFeedDiagnostic:
     quirks_disposition: str = "record"
 
     def as_detail(self) -> dict[str, object]:
-        return {
-            "rule_id": self.rule_id,
-            "family": self.family,
-            "phase": self.phase,
-            "reason": self.reason,
-            "grupi_id": self.grupi_id,
-            "url": self.url,
-            "exception_type": self.exception_type,
-            "blocking": self.blocking,
-            "strict_disposition": self.strict_disposition,
-            "quirks_disposition": self.quirks_disposition,
-        }
+        return diagnostic_detail(
+            rule_id=self.rule_id,
+            family=self.family,
+            phase=self.phase,
+            reason=self.reason,
+            blocking=self.blocking,
+            strict_disposition=self.strict_disposition,
+            quirks_disposition=self.quirks_disposition,
+            grupi_id=self.grupi_id,
+            url=self.url,
+            exception_type=self.exception_type,
+        )
 
 
 @dataclass(frozen=True)
@@ -110,19 +112,20 @@ class RTXmlMetadataDiagnostic:
     quirks_disposition: str = "record"
 
     def as_detail(self) -> dict[str, object]:
-        return {
-            "rule_id": self.rule_id,
-            "family": self.family,
-            "phase": self.phase,
-            "reason": self.reason,
-            "extractor": self.extractor,
-            "exception_type": self.exception_type,
-            "element_name": self.element_name,
-            "detail": self.detail,
-            "blocking": self.blocking,
-            "strict_disposition": self.strict_disposition,
-            "quirks_disposition": self.quirks_disposition,
-        }
+        payload = diagnostic_detail(
+            rule_id=self.rule_id,
+            family=self.family,
+            phase=self.phase,
+            reason=self.reason,
+            blocking=self.blocking,
+            strict_disposition=self.strict_disposition,
+            quirks_disposition=self.quirks_disposition,
+            extractor=self.extractor,
+            exception_type=self.exception_type,
+            element_name=self.element_name,
+        )
+        payload["detail"] = self.detail
+        return payload
 
 
 # ---------------------------------------------------------------------------
