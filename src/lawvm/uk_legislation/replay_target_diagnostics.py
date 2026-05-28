@@ -17,7 +17,6 @@ from lawvm.uk_legislation.mutable_ir import (
     UKMutableStatute,
     uk_insert_child_sorted,
     uk_ir_node_kind,
-    uk_replace_text_and_children,
 )
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.replay_records import (
@@ -865,7 +864,8 @@ class UKReplayTargetDiagnosticsMixin:
         if not children:
             return False
 
-        uk_replace_text_and_children(node, text=rebuilt_text, children=children)
+        if not self._replace_node_in_statute(node, dc_replace(node, text=rebuilt_text, children=children)):
+            return False
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID,
