@@ -392,12 +392,15 @@ def _ee_orchestration_adjudication(
     blocking: bool = False,
     op_id: str = "",
 ) -> CompileAdjudication:
+    local_detail = dict(detail)
+    reason = str(local_detail.pop("reason", "") or "")
     normalized_detail = diagnostic_detail(
         rule_id=kind,
         phase=phase,
         family=family,
+        reason=reason,
         blocking=blocking,
-        detail=detail,
+        detail=local_detail,
     )
     return CompileAdjudication(
         kind=kind,

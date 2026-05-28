@@ -11,6 +11,18 @@ from typing import Any, Mapping, Optional
 
 
 BLOCKING_STRICT_DISPOSITIONS = frozenset({"block", "reject", "fail", "hard_fail", "strict_block"})
+DIAGNOSTIC_DETAIL_ENVELOPE_KEYS = frozenset(
+    {
+        "rule_id",
+        "phase",
+        "blocking",
+        "strict_disposition",
+        "quirks_disposition",
+        "family",
+        "reason",
+        "message",
+    }
+)
 
 
 def diagnostic_detail(
@@ -35,6 +47,8 @@ def diagnostic_detail(
         raise ValueError("diagnostic_detail requires a non-empty rule_id")
     if not phase:
         raise ValueError("diagnostic_detail requires a non-empty phase")
+    _reject_envelope_overrides("detail", detail or {})
+    _reject_envelope_overrides("extra", extra)
     payload: dict[str, Any] = {
         "rule_id": str(rule_id),
         "phase": str(phase),
@@ -52,6 +66,13 @@ def diagnostic_detail(
         payload.update(dict(detail))
     payload.update(extra)
     return payload
+
+
+def _reject_envelope_overrides(source: str, values: Mapping[str, Any]) -> None:
+    overlaps = sorted(DIAGNOSTIC_DETAIL_ENVELOPE_KEYS.intersection(values.keys()))
+    if overlaps:
+        joined = ", ".join(overlaps)
+        raise ValueError(f"diagnostic_detail {source} must not override envelope keys: {joined}")
 
 
 def validate_diagnostic_detail(row: Mapping[str, Any]) -> tuple[str, ...]:

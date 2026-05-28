@@ -137,6 +137,8 @@ Recent improvement:
   touched paths and allowed effect-region paths before evidence classification.
 - shared changed-path partitioning now validates changed-path and allowed-prefix
   shape before classifying boundary coverage.
+- diagnostic detail payloads now reject frontend-local `detail` keys that would
+  override shared envelope fields such as `rule_id`, `phase`, or dispositions.
 
 ## Ranked Promotion Candidates
 
