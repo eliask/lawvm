@@ -98,6 +98,9 @@ Recent improvement:
   parenthetical, and previous-wording marker cleanup now delegates its named
   presentation rules to the core comparison-normalization pipeline while
   keeping broader editorial cleanup opt-in.
+- core comparison normalization now validates rule shapes before applying
+  them, so missing regex patterns, translation tables, or literal preimages
+  fail loudly instead of becoming silent no-op projection rules.
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
