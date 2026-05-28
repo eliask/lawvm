@@ -31,6 +31,8 @@ non-commensurability remains.
 - **Canonical execution:** typed operation/effect contract consumed by replay.
 - **Temporal graph/timeline:** executable state over time, including PIT
   materialization.
+- **Authority/branch axis:** enacted law remains the default materialization
+  context; draft/proposal/consultation claims live on explicit branches.
 
 The target direction is that replay applies typed contracts and does not
 rediscover legal meaning from raw source text.
@@ -43,6 +45,9 @@ rediscover legal meaning from raw source text.
 - `src/lawvm/core/canonical_intent.py` — typed canonical operation intent.
 - `src/lawvm/core/phase_result.py` — stage output plus findings/events.
 - `src/lawvm/core/timeline*.py` — timelines, selection, lineage, materialization.
+- `src/lawvm/core/authority.py` — authority layers, branch contexts, and branch
+  graph edges.
+- `src/lawvm/core/branch_projection.py` — branch impact projection payloads.
 - `src/lawvm/finland/` — deepest reference frontend and replay pipeline.
 - `src/lawvm/tools/cli.py` — developer CLI entrypoint.
 
