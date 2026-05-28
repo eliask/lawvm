@@ -661,8 +661,8 @@ def test_process_muutoslaki_observes_chapter_seed_skip(monkeypatch) -> None:
     seed_skip = [finding for finding in findings if finding.kind == "ELAB.CHAPTER_SEED_SKIP"]
     assert len(seed_skip) == 1
     assert seed_skip[0].detail.get("dropped_count") == 1
-    assert seed_skip[0].detail.get("seeded_chapters") == ["7"]
-    assert seed_skip[0].detail.get("dropped_ops") == [skipped_op.description()]
+    assert seed_skip[0].detail.get("seeded_chapters") == ("7",)
+    assert seed_skip[0].detail.get("dropped_ops") == (skipped_op.description(),)
 
 
 def test_process_muutoslaki_observes_sec1_pre_routing_fallback(monkeypatch) -> None:
@@ -1031,7 +1031,7 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
     assert len(replay_boundary_findings) == 1
     assert replay_boundary_findings[0].detail.get("op_id") == "skipped_tree_touch"
     assert replay_boundary_findings[0].detail.get("path_set_invariant_holds") is True
-    assert replay_boundary_findings[0].detail.get("declared_recovery_rule_ids") == []
+    assert replay_boundary_findings[0].detail.get("declared_recovery_rule_ids") == ()
 
 
 def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_meta(monkeypatch) -> None:
@@ -1177,7 +1177,7 @@ def test_replay_xml_projects_base_tail_prose_absorb_fact() -> None:
     assert findings[0].role == "observation"
     assert findings[0].source_statute == "1996/1261"
     assert findings[0].detail.get("basis") == "tail_prose_peer"
-    assert findings[0].detail.get("path") == ["body:?", "section:17", "subsection:1", "paragraph:2"]
+    assert findings[0].detail.get("path") == ("body:?", "section:17", "subsection:1", "paragraph:2")
     assert "wrap-up" in str(findings[0].detail.get("explanation", "")).lower()
 
 
@@ -1243,10 +1243,10 @@ def test_replay_xml_projects_base_num_in_intro_normalization_facts() -> None:
     assert len(recovered) == 1
     assert len(mismatch) == 1
     assert recovered[0].detail.get("basis") == "profile_invalid"
-    assert recovered[0].detail.get("path") == ["body:?", "section:5", "subsection:1"]
+    assert recovered[0].detail.get("path") == ("body:?", "section:5", "subsection:1")
     assert recovered[0].role == "observation"
     assert mismatch[0].detail.get("basis") == "profile_invalid"
-    assert mismatch[0].detail.get("path") == ["body:?", "section:6", "subsection:1"]
+    assert mismatch[0].detail.get("path") == ("body:?", "section:6", "subsection:1")
     assert mismatch[0].role == "observation"
     assert "inventing a label" in str(mismatch[0].detail.get("explanation", "")).lower()
 
@@ -1329,8 +1329,8 @@ def test_replay_xml_projects_shape_rewrite_normalization_facts() -> None:
     by_kind = {finding.kind: finding for finding in result.findings}
     assert by_kind["BASE_SUSPICIOUS_SHAPE"].detail.get("basis") == "profile_invalid"
     assert by_kind["BASE_TAG_RECLASSIFY"].detail.get("basis") == "impossible_numbering"
-    assert by_kind["BASE_CROSS_HEADING_HOIST"].detail.get("path") == ["body:?", "chapter:2"]
-    assert by_kind["BASE_DUPLICATE_SIBLING_DROP"].detail.get("path") == ["body:?", "section:?"]
+    assert by_kind["BASE_CROSS_HEADING_HOIST"].detail.get("path") == ("body:?", "chapter:2")
+    assert by_kind["BASE_DUPLICATE_SIBLING_DROP"].detail.get("path") == ("body:?", "section:?")
     assert by_kind["BASE_DUPLICATE_SIBLING_DROP"].role == "observation"
 
 
@@ -1418,16 +1418,16 @@ def test_replay_xml_projects_editorial_and_numbering_family_facts() -> None:
     assert len(digit_reset) == 1
     assert len(duplicate_tail) == 1
     assert editorial[0].detail.get("basis") == "editorial_only"
-    assert editorial[0].detail.get("path") == ["body:?", "section:4", "content:?"]
+    assert editorial[0].detail.get("path") == ("body:?", "section:4", "content:?")
     assert editorial[0].role == "observation"
     assert numbering[0].detail.get("basis") == "monotonic_local_repair"
-    assert numbering[0].detail.get("path") == ["body:?", "section:8"]
+    assert numbering[0].detail.get("path") == ("body:?", "section:8")
     assert numbering[0].role == "observation"
     assert digit_reset[0].detail.get("basis") == "monotonic_local_repair"
-    assert digit_reset[0].detail.get("path") == ["body:?", "section:9", "subsection:1", "paragraph:4"]
+    assert digit_reset[0].detail.get("path") == ("body:?", "section:9", "subsection:1", "paragraph:4")
     assert digit_reset[0].role == "observation"
     assert duplicate_tail[0].detail.get("basis") == "monotonic_local_repair"
-    assert duplicate_tail[0].detail.get("path") == ["body:?", "section:11", "subsection:3"]
+    assert duplicate_tail[0].detail.get("path") == ("body:?", "section:11", "subsection:3")
     assert duplicate_tail[0].role == "observation"
 
 
@@ -10489,13 +10489,13 @@ def test_emit_structural_dedup_warning_records_warning_and_finding() -> None:
     finding = replay_findings[0]
     assert finding.kind == "APPLY.GLOBAL_LABEL_DEDUP_APPLIED"
     assert finding.detail["phase"] == "replay_fold"
-    assert finding.detail["duplicates"] == [
+    assert finding.detail["duplicates"] == (
         {
             "path": "body",
             "kind": "section",
             "label": "1",
-        }
-    ]
+        },
+    )
     assert finding.source_statute == "1976/673"
 
 
@@ -12089,7 +12089,7 @@ def test_ambiguous_unscoped_additive_fallback_insert_observation() -> None:
 
     assert finding is not None
     assert finding.detail["reason_code"] == "ELAB.AMBIGUOUS_UNSCOPED_FALLBACK_INSERT_MULTI_SCOPE"
-    assert finding.detail["candidate_chapters"] == ["1", "2"]
+    assert finding.detail["candidate_chapters"] == ("1", "2")
 
 
 def test_ambiguous_unscoped_additive_fallback_insert_observation_keeps_unique_scope() -> None:
