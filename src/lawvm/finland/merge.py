@@ -42,6 +42,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.helpers import (
     _is_omission_ir,
     _section_sort_key,
@@ -531,8 +532,8 @@ def _merge_subsection_with_omission_ir(master_sub: IRNode, amend_sub: IRNode) ->
 
             last_amend_child = children[omission_idx - 1]
             first_splice_child = master_children[splice_start]
-            amend_label = _tops._norm(last_amend_child.label or "")
-            splice_label = _tops._norm(first_splice_child.label or "")
+            amend_label = normalized_label_key(last_amend_child.label)
+            splice_label = normalized_label_key(first_splice_child.label)
             if (
                 last_amend_child.kind is first_splice_child.kind
                 and amend_label.isdigit()
@@ -938,13 +939,13 @@ def _merge_section_with_omission_ir(
 
     amend_subsecs = [c for c in amend_sec.children if c.kind is IRNodeKind.SUBSECTION]
     if amend_subsecs and master_subsecs:
-        first_amend_label = _tops._norm(amend_subsecs[0].label or "")
+        first_amend_label = normalized_label_key(amend_subsecs[0].label)
         if first_amend_label:
             matched_master_idx = next(
                 (
                     idx
                     for idx, master_sub in enumerate(master_subsecs)
-                    if _tops._norm(master_sub.label or "") == first_amend_label
+                    if normalized_label_key(master_sub.label) == first_amend_label
                 ),
                 None,
             )
@@ -1111,7 +1112,7 @@ def _single_subsection_paragraph_map_ir(node: IRNode) -> tuple[Optional[IRNode],
     for para in sub.children:
         if para.kind is not IRNodeKind.PARAGRAPH or not para.label:
             continue
-        norm = _tops._norm(para.label)
+        norm = normalized_label_key(para.label)
         if norm:
             para_map[norm] = para
     return sub, para_map
@@ -1126,7 +1127,7 @@ def _item_label_from_intro_like_ir(node: IRNode) -> Optional[str]:
         compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text, flags=re.I)
         m = re.match(r"^(\d+[a-z]?)\s*[\).]", compact, flags=re.I)
         if m:
-            return _tops._norm(m.group(1))
+            return normalized_label_key(m.group(1))
     return None
 
 
@@ -1138,7 +1139,7 @@ def _letter_label_from_intro_like_ir(node: IRNode) -> Optional[str]:
         text = (child.text or "").lstrip()
         m = re.match(r"^([a-z])\s*[\).]", text)
         if m:
-            return _tops._norm(m.group(1))
+            return normalized_label_key(m.group(1))
     return None
 
 
@@ -1223,7 +1224,7 @@ def _sparse_item_section_replace_merge_ir(
     amend_labels = set(amend_map)
     if not amend_labels.issubset(set(master_map)):
         return None
-    amend_seq = [_tops._norm(c.label) for c in amend_sub.children if c.kind is IRNodeKind.PARAGRAPH and c.label]
+    amend_seq = [normalized_label_key(c.label) for c in amend_sub.children if c.kind is IRNodeKind.PARAGRAPH and c.label]
     if amend_seq:
         contiguous_prefix = [str(i) for i in range(1, len(amend_seq) + 1)]
         if amend_seq == contiguous_prefix:
@@ -1270,7 +1271,7 @@ def _sparse_item_section_replace_merge_ir(
         if child.kind is IRNodeKind.INTRO:
             continue
         if child.kind is IRNodeKind.PARAGRAPH and child.label:
-            norm = _tops._norm(child.label)
+            norm = normalized_label_key(child.label)
             replacement = amend_map.get(norm)
             if replacement is not None:
                 new_sub_children.append(replacement)
@@ -1344,7 +1345,7 @@ def _merge_sparse_item_subsection_ir(
     for para in master_sub.children:
         if para.kind is not IRNodeKind.PARAGRAPH or not para.label:
             continue
-        norm = _tops._norm(para.label)
+        norm = normalized_label_key(para.label)
         if norm:
             master_map[norm] = para
 
@@ -1353,7 +1354,7 @@ def _merge_sparse_item_subsection_ir(
     for para in amend_sub.children:
         if para.kind is not IRNodeKind.PARAGRAPH or not para.label:
             continue
-        norm = _tops._norm(para.label)
+        norm = normalized_label_key(para.label)
         if norm:
             amend_map[norm] = para
             amend_seq.append(norm)
@@ -1379,7 +1380,7 @@ def _merge_sparse_item_subsection_ir(
         if child.kind is IRNodeKind.INTRO:
             continue
         if child.kind is IRNodeKind.PARAGRAPH and child.label:
-            norm = _tops._norm(child.label)
+            norm = normalized_label_key(child.label)
             replacement = amend_map.get(norm)
             if replacement is not None:
                 new_children.append(replacement)
@@ -1406,9 +1407,9 @@ def _multi_subsection_sparse_item_section_replace_merge_ir(
         return None
 
     master_by_label = {
-        _tops._norm(sub.label or ""): sub
+        normalized_label_key(sub.label): sub
         for sub in master_subs
-        if _tops._norm(sub.label or "")
+        if normalized_label_key(sub.label)
     }
     master_sub_by_index = {idx: sub for idx, sub in enumerate(master_subs)}
     changed = False
@@ -1418,7 +1419,7 @@ def _multi_subsection_sparse_item_section_replace_merge_ir(
         if child.kind is not IRNodeKind.SUBSECTION:
             new_children.append(child)
             continue
-        child_norm = _tops._norm(child.label or "")
+        child_norm = normalized_label_key(child.label)
         if child_norm:
             master_sub = master_by_label.get(child_norm)
         else:
@@ -1568,7 +1569,7 @@ def _mixed_sparse_intro_replace_preserve_first_subsection_items_ir(
 
     master_sub = master_subs[0]
     amend_first = amend_subs[0]
-    if master_sub.label and amend_first.label and _tops._norm(master_sub.label) != _tops._norm(amend_first.label):
+    if master_sub.label and amend_first.label and normalized_label_key(master_sub.label) != normalized_label_key(amend_first.label):
         return None
 
     amend_intro = next((c for c in amend_first.children if c.kind is IRNodeKind.INTRO), None)
@@ -1684,7 +1685,7 @@ def _merge_sparse_alakohta_insert_ir(
     if not any(_is_omission_ir(c) for c in amend_sub.children):
         return None
     anchor = next(
-        (c for c in amend_sub.children if c.kind is IRNodeKind.PARAGRAPH and c.label and _tops._norm(c.label) == item_norm),
+        (c for c in amend_sub.children if c.kind is IRNodeKind.PARAGRAPH and c.label and normalized_label_key(c.label) == item_norm),
         None,
     )
     if anchor is None:
@@ -1692,13 +1693,13 @@ def _merge_sparse_alakohta_insert_ir(
     sparse_letters: List[IRNode] = [
         c
         for c in anchor.children
-        if c.kind is IRNodeKind.SUBPARAGRAPH and c.label and re.fullmatch(r"[a-z]", _tops._norm(c.label))
+        if c.kind is IRNodeKind.SUBPARAGRAPH and c.label and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
     ]
     if not sparse_letters:
         sparse_letters = [
             c
             for c in amend_sub.children
-            if c.kind is IRNodeKind.PARAGRAPH and c.label and re.fullmatch(r"[a-z]", _tops._norm(c.label))
+            if c.kind is IRNodeKind.PARAGRAPH and c.label and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
         ]
     if not sparse_letters:
         return None
@@ -1706,10 +1707,10 @@ def _merge_sparse_alakohta_insert_ir(
     new_children = list(master_para.children)
     existing_sps = [c for c in new_children if c.kind is IRNodeKind.SUBPARAGRAPH]
     for sparse_para in sparse_letters:
-        sp_label = _tops._norm(sparse_para.label)
+        sp_label = normalized_label_key(sparse_para.label)
         replacement = _paragraph_to_subparagraph_ir(sparse_para, sp_label)
         existing = next(
-            (c for c in existing_sps if c.label and _tops._norm(c.label) == sp_label),
+            (c for c in existing_sps if c.label and normalized_label_key(c.label) == sp_label),
             None,
         )
         if existing is not None:
@@ -1721,7 +1722,7 @@ def _merge_sparse_alakohta_insert_ir(
         prev_label = _previous_item_token(sp_label)
         if prev_label is not None:
             prev_sp = next(
-                (c for c in existing_sps if c.label and _tops._norm(c.label) == prev_label),
+                (c for c in existing_sps if c.label and normalized_label_key(c.label) == prev_label),
                 None,
             )
             if prev_sp is not None:
@@ -1760,7 +1761,7 @@ def _merge_sparse_alakohta_replace_ir(
     intro + letter-labelled subparagraphs into the live paragraph.
     """
     anchor = next(
-        (c for c in amend_sub.children if c.kind is IRNodeKind.PARAGRAPH and c.label and _tops._norm(c.label) == item_norm),
+        (c for c in amend_sub.children if c.kind is IRNodeKind.PARAGRAPH and c.label and normalized_label_key(c.label) == item_norm),
         None,
     )
     if anchor is None:
@@ -1769,13 +1770,13 @@ def _merge_sparse_alakohta_replace_ir(
     sparse_letters: List[IRNode] = [
         c
         for c in anchor.children
-        if c.kind is IRNodeKind.SUBPARAGRAPH and c.label and re.fullmatch(r"[a-z]", _tops._norm(c.label))
+        if c.kind is IRNodeKind.SUBPARAGRAPH and c.label and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
     ]
     if not sparse_letters:
         sparse_letters = [
             c
             for c in amend_sub.children
-            if c.kind is IRNodeKind.PARAGRAPH and c.label and re.fullmatch(r"[a-z]", _tops._norm(c.label))
+            if c.kind is IRNodeKind.PARAGRAPH and c.label and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
         ]
     if not sparse_letters:
         return None
@@ -1810,12 +1811,12 @@ def _merge_sparse_alakohta_replace_ir(
     new_children = list(master_num) + intro_like_children + list(master_other) + list(existing_sps)
     merged_sps = [c for c in new_children if c.kind is IRNodeKind.SUBPARAGRAPH]
     for sparse_para in sparse_letters:
-        sp_label = _tops._norm(sparse_para.label)
+        sp_label = normalized_label_key(sparse_para.label)
         replacement = (
             sparse_para if sparse_para.kind is IRNodeKind.SUBPARAGRAPH else _paragraph_to_subparagraph_ir(sparse_para, sp_label)
         )
         existing = next(
-            (c for c in merged_sps if c.label and _tops._norm(c.label) == sp_label),
+            (c for c in merged_sps if c.label and normalized_label_key(c.label) == sp_label),
             None,
         )
         if existing is not None:
@@ -1827,7 +1828,7 @@ def _merge_sparse_alakohta_replace_ir(
         prev_label = _previous_item_token(sp_label)
         if prev_label is not None:
             prev_sp = next(
-                (c for c in merged_sps if c.label and _tops._norm(c.label) == prev_label),
+                (c for c in merged_sps if c.label and normalized_label_key(c.label) == prev_label),
                 None,
             )
             if prev_sp is not None:
@@ -2221,7 +2222,7 @@ def _is_compact_first_subsection_replace_shell_ir(
     if len(amend_subsections) != 1:
         return False
     amend_sub = amend_subsections[0]
-    if amend_sub.label and _tops._norm(amend_sub.label) != "1":
+    if amend_sub.label and normalized_label_key(amend_sub.label) != "1":
         return False
 
     has_heading = any(child.kind is IRNodeKind.HEADING for child in muutos_ir.children)
@@ -2311,7 +2312,7 @@ def _is_single_subsection_replace_section_omission_shell_ir(
     if len(amend_subsections) != 1:
         return False
     amend_sub = amend_subsections[0]
-    if amend_sub.label and _tops._norm(amend_sub.label) != _tops._norm(target_label):
+    if amend_sub.label and normalized_label_key(amend_sub.label) != normalized_label_key(target_label):
         return False
 
     has_heading = any(child.kind is IRNodeKind.HEADING for child in muutos_ir.children)
@@ -2488,7 +2489,7 @@ def _pre_resolve_omissions(
             target_exists_in_live = any(
                 op_para is not None
                 and any(
-                    _tops._norm(sub.label or "") == _tops._norm(str(op_para))
+                    normalized_label_key(sub.label) == normalized_label_key(str(op_para))
                     and sub.attrs.get("lawvm_repeal_placeholder") != "1"
                     for sub in live_subsecs
                 )
