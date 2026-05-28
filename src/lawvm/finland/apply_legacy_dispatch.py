@@ -35,6 +35,8 @@ from lawvm.finland.apply_subsection_dispatch import (
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     DeclaredMutationAllowance,
+    TreePath,
+    TreePaths,
     _emit_apply_mutation_event,
     _emit_apply_mutation_event_for_rop,
     _path_to_tuple,
@@ -137,14 +139,14 @@ def _apply_legacy_dispatch(
         *,
         helper: str,
         outcome: str,
-        resolved_target_path: tuple[tuple[str, str], ...] | None = None,
+        resolved_target_path: TreePath | None = None,
         failure_reason: str = "",
         reason_code: str = "",
         declared_allowances: tuple[DeclaredMutationAllowance, ...] = (),
-        consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-        created_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-        removed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-        replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
+        consumed_paths: TreePaths = (),
+        created_paths: TreePaths = (),
+        removed_paths: TreePaths = (),
+        replaced_paths: TreePaths = (),
     ) -> None:
         if rop is not None:
             _emit_apply_mutation_event_for_rop(

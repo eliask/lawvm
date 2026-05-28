@@ -33,6 +33,8 @@ from lawvm.finland.apply_subsection_dispatch import (
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
     DeclaredMutationAllowance,
+    TreePath,
+    TreePaths,
     _emit_apply_mutation_event_for_rop,
     _path_to_tuple,
     _resolved_target_path_for_rop_event,
@@ -109,7 +111,7 @@ def _materialization_root_move_paths(
     rop: ResolvedOp,
     muutos_ir: Optional[IRNode],
     sec_path: Path | None,
-) -> tuple[tuple[tuple[str, str], ...], ...]:
+) -> TreePaths:
     if sec_path is not None or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
         return ()
     target_chapter = rop.resolved_target_scope_chapter_label
@@ -135,7 +137,7 @@ def _whole_section_move_rebind_paths(
     rop: ResolvedOp,
     muutos_ir: Optional[IRNode],
     sec_path: Path | None,
-) -> tuple[tuple[tuple[str, str], ...], ...]:
+) -> TreePaths:
     if sec_path is not None or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
         return ()
     target_chapter = rop.resolved_target_scope_chapter_label
@@ -220,7 +222,7 @@ def _intent_targets_section(intent: "CanonicalIntent") -> bool:
             return False
 
 
-def _parent_path(path: tuple[tuple[str, str], ...] | None) -> tuple[tuple[str, str], ...] | None:
+def _parent_path(path: TreePath | None) -> TreePath | None:
     if path is None or not path:
         return None
     return path[:-1]
@@ -231,7 +233,7 @@ def _find_scoped_section_insert_parent_path(
     *,
     chapter_label: str | None,
     part_label: str | None,
-) -> tuple[tuple[str, str], ...]:
+) -> TreePath:
     """Resolve a section parent path without dropping part scope.
 
     Bare chapter-label lookup is unsafe when multiple parts contain the same
@@ -323,8 +325,8 @@ def _apply_intent_section_level(
         and rop.effective_target_special is None
         and any(binding.op_type == "INSERT" for binding in rop.slot_assignment.sparse_slot_bindings)
     )
-    migration_rebased_target_path: tuple[tuple[str, str], ...] | None = None
-    migration_rebase_source_path: tuple[tuple[str, str], ...] | None = None
+    migration_rebased_target_path: TreePath | None = None
+    migration_rebase_source_path: TreePath | None = None
     if rop.resolved_action_type in {"INSERT", "REPLACE"} and migration_ledger is not None:
         rop_lo = getattr(rop, "lo", None)
         source_address = rop.resolved_target_address or (rop_lo.target if rop_lo is not None else None)
@@ -373,10 +375,10 @@ def _apply_intent_section_level(
                     rule_id="pending_source_chain_insert_rebase",
                 ),
             )
-        created_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        removed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        placeholder_created_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+        created_paths: TreePaths = ()
+        replaced_paths: TreePaths = ()
+        removed_paths: TreePaths = ()
+        placeholder_created_paths: TreePaths = ()
         if rop.resolved_action_type == "INSERT":
             if resolved_target_path is not None:
                 created_paths = (resolved_target_path,)
@@ -967,7 +969,7 @@ def _apply_intent_relabel(
         *,
         reason_tag: str,
         failure_reason: str,
-        resolved_target_path: tuple[tuple[str, str], ...] | None,
+        resolved_target_path: TreePath | None,
     ) -> None:
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
@@ -1042,15 +1044,12 @@ def _apply_intent_relabel(
                     rop=rop,
                     helper="_apply_intent_relabel",
                     outcome="applied",
-                    resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
-                    parent_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path[:-1])),
+                    resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
+                    parent_path=cast(TreePath, _path_to_tuple(src_path[:-1])),
                     renumbered_paths=(
                         (
-                            cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
-                            cast(
-                                tuple[tuple[str, str], ...],
-                                _path_to_tuple(src_path[:-1] + ((source_unit_kind, dest_label),)),
-                            ),
+                            cast(TreePath, _path_to_tuple(src_path)),
+                            cast(TreePath, _path_to_tuple(src_path[:-1] + ((source_unit_kind, dest_label),))),
                         ),
                     ),
                 )
@@ -1116,7 +1115,7 @@ def _apply_intent_relabel(
                     _emit_relabel_skip(
                         reason_tag="destination_exists",
                         failure_reason=f"destination section {dest_label} already exists",
-                        resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
+                        resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
                     )
                     return state
                 relabelled = _relabel_section_ir(node, dest_label)
@@ -1132,15 +1131,12 @@ def _apply_intent_relabel(
                     rop=rop,
                     helper="_apply_intent_relabel",
                     outcome="applied",
-                    resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
-                    parent_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(parent_path)),
+                    resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
+                    parent_path=cast(TreePath, _path_to_tuple(parent_path)),
                     renumbered_paths=(
                         (
-                            cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
-                            cast(
-                                tuple[tuple[str, str], ...],
-                                _path_to_tuple(parent_path + (("section", dest_label),)),
-                            ),
+                            cast(TreePath, _path_to_tuple(src_path)),
+                            cast(TreePath, _path_to_tuple(parent_path + (("section", dest_label),))),
                         ),
                     ),
                 )
@@ -1209,14 +1205,14 @@ def _apply_intent_relabel(
             _emit_relabel_skip(
                 reason_tag="source_subsection_missing",
                 failure_reason=f"source subsection {source_subsection} not found",
-                resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(section_path)),
+                resolved_target_path=cast(TreePath, _path_to_tuple(section_path)),
             )
             return state
         if any(child.label == dest_label for idx, child in enumerate(subsections) if idx != source_idx):
             _emit_relabel_skip(
                 reason_tag="destination_exists",
                 failure_reason=f"destination subsection {dest_label} already exists",
-                resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(section_path)),
+                resolved_target_path=cast(TreePath, _path_to_tuple(section_path)),
             )
             return state
 
@@ -1230,18 +1226,12 @@ def _apply_intent_relabel(
             rop=rop,
             helper="_apply_intent_relabel",
             outcome="applied",
-            resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(section_path)),
-            parent_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(section_path)),
+            resolved_target_path=cast(TreePath, _path_to_tuple(section_path)),
+            parent_path=cast(TreePath, _path_to_tuple(section_path)),
             renumbered_paths=(
                 (
-                    cast(
-                        tuple[tuple[str, str], ...],
-                        _path_to_tuple(section_path + (("subsection", source_subsection),)),
-                    ),
-                    cast(
-                        tuple[tuple[str, str], ...],
-                        _path_to_tuple(section_path + (("subsection", dest_label),)),
-                    ),
+                    cast(TreePath, _path_to_tuple(section_path + (("subsection", source_subsection),))),
+                    cast(TreePath, _path_to_tuple(section_path + (("subsection", dest_label),))),
                 ),
             ),
         )
@@ -1337,7 +1327,7 @@ def _apply_intent_move(
             rop=rop,
             helper="_apply_intent_move",
             outcome="skipped",
-            resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
+            resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
             failure_reason=f"source {source_leaf_kind}:{source_leaf_label} could not be resolved",
             reason_code=_MOVE_SKIP_REASON_CODES["source_resolved_none"],
         )
@@ -1350,7 +1340,7 @@ def _apply_intent_move(
             rop=rop,
             helper="_apply_intent_move",
             outcome="skipped",
-            resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
+            resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
             failure_reason=f"destination parent {'/'.join(f'{k}:{v}' for k, v in dest_parent_path) or '<root>'} not found",
             reason_code=_MOVE_SKIP_REASON_CODES["destination_parent_not_found"],
         )
@@ -1362,7 +1352,7 @@ def _apply_intent_move(
             rop=rop,
             helper="_apply_intent_move",
             outcome="skipped",
-            resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
+            resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
             failure_reason=f"destination already contains {node.kind.value}:{node.label}",
             reason_code=_MOVE_SKIP_REASON_CODES["destination_exists"],
         )
@@ -1390,15 +1380,12 @@ def _apply_intent_move(
         rop=rop,
         helper="_apply_intent_move",
         outcome="applied",
-        resolved_target_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
-        parent_path=cast(tuple[tuple[str, str], ...], _path_to_tuple(dest_parent_path)),
+        resolved_target_path=cast(TreePath, _path_to_tuple(src_path)),
+        parent_path=cast(TreePath, _path_to_tuple(dest_parent_path)),
         renumbered_paths=(
             (
-                cast(tuple[tuple[str, str], ...], _path_to_tuple(src_path)),
-                cast(
-                    tuple[tuple[str, str], ...],
-                    _path_to_tuple(dest_parent_path + ((source_leaf_kind, source_leaf_label),)),
-                ),
+                cast(TreePath, _path_to_tuple(src_path)),
+                cast(TreePath, _path_to_tuple(dest_parent_path + ((source_leaf_kind, source_leaf_label),))),
             ),
         ),
     )
