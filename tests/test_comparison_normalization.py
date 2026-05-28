@@ -9,6 +9,7 @@ from lawvm.core.comparison_normalization import (
     normalize_comparison_text,
     project_ir_comparison_text,
     validate_comparison_normalization_rule,
+    validate_comparison_normalization_rules,
 )
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -88,3 +89,34 @@ def test_validate_comparison_normalization_rule_rejects_silent_noops() -> None:
 
     with pytest.raises(ValueError, match="requires a regex pattern"):
         normalize_comparison_text("text", (missing_pattern,))
+
+
+def test_validate_comparison_normalization_rules_rejects_duplicate_names() -> None:
+    duplicate = ComparisonNormalizationRule(
+        name="quote_typography",
+        rule_class="presentation_cleanup",
+        kind="translation",
+        description="Duplicate rule name.",
+        translation=str.maketrans({"\u201c": '"'}),
+    )
+
+    assert validate_comparison_normalization_rules((TYPOGRAPHY_RULE, duplicate)) == (
+        "comparison normalization rule 'quote_typography' is duplicated",
+    )
+
+
+def test_current_comparison_rule_sets_validate() -> None:
+    from lawvm.estonia.compare import _EE_CORE_NORMALIZATION_RULES
+    from lawvm.norway.verify import _NO_COMPARISON_NORMALIZATION_RULES
+    from lawvm.open_law.audit import _TYPOGRAPHY_COMPARISON_RULES
+    from lawvm.sweden.fetch import _SE_COMPARE_NORMALIZATION_RULES
+    from lawvm.tools.editorial_hygiene import _FINLEX_ORACLE_COMPARISON_RULES
+
+    for rules in (
+        _EE_CORE_NORMALIZATION_RULES,
+        _NO_COMPARISON_NORMALIZATION_RULES,
+        _TYPOGRAPHY_COMPARISON_RULES,
+        _SE_COMPARE_NORMALIZATION_RULES,
+        _FINLEX_ORACLE_COMPARISON_RULES,
+    ):
+        assert validate_comparison_normalization_rules(rules) == ()
