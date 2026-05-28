@@ -218,6 +218,7 @@ class BranchGraphEdge:
 
     branch_id: str
     edge_kind: BranchEdgeKind
+    scenario_id: str = ""
     source_artifact_id: str = ""
     source_statute_id: str = ""
     source_unit_id: str = ""
@@ -236,12 +237,14 @@ class BranchGraphEdge:
             authority_layer=self.authority_layer,
             legal_status=self.legal_status,
             branch_id=self.branch_id,
+            scenario_id=self.scenario_id,
         )
 
     def to_dict(self) -> dict[str, str]:
         return {
             "branch_id": self.branch_id,
             "edge_kind": self.edge_kind,
+            "scenario_id": self.scenario_id,
             "source_artifact_id": self.source_artifact_id,
             "source_statute_id": self.source_statute_id,
             "source_unit_id": self.source_unit_id,
@@ -343,6 +346,7 @@ def branch_graph_edge_from_operation(
     return BranchGraphEdge(
         branch_id=context.branch_id,
         edge_kind=branch_edge_kind_for_action(op.action),
+        scenario_id=context.scenario_id,
         source_artifact_id=source.statute_id if source is not None else "",
         source_statute_id=source.statute_id if source is not None else "",
         source_unit_id=source_unit_id or (op.group_id or ""),

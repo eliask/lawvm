@@ -8,7 +8,7 @@ Outputs (Neo4j CSV bulk import format):
   rels_amends.csv        amendment_id, parent_id
   rels_delegates.csv     from_statute, from_section, to_type, eid, match_text
   rels_cites.csv         from_statute, to_statute, edge_type, from_section, to_section, count
-  rels_branch_edges.csv  branch_id, edge_kind, source_artifact_id, source_statute_id, source_unit_id, target_statute_id, target_address, operation_id
+  rels_branch_edges.csv  branch_id, edge_kind, scenario_id, source_artifact_id, source_statute_id, source_unit_id, target_statute_id, target_address, operation_id
   events_branch_lifecycle.csv  event_id, branch_id, event_kind, source_artifact_id, event_date, resulting_status, derived_enacted_source_id
 
 Usage:
@@ -165,6 +165,7 @@ def export_neo4j(output_dir: Path, corpus: List[str], verbose: bool = False) -> 
         [
             "branch_id",
             "edge_kind",
+            "scenario_id",
             "source_artifact_id",
             "source_statute_id",
             "source_unit_id",
@@ -262,6 +263,7 @@ def export_jsonld(output_file: Path, corpus: List[str], verbose: bool = False) -
             ),
             "lawvm:branchId": edge.branch_id,
             "lawvm:edgeKind": edge.edge_kind,
+            "lawvm:scenarioId": edge.scenario_id,
             "lawvm:sourceArtifactId": edge.source_artifact_id,
             "lawvm:sourceStatuteId": edge.source_statute_id,
             "lawvm:sourceUnitId": edge.source_unit_id,

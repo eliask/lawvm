@@ -79,6 +79,7 @@ def test_branch_graph_edge_projects_branch_export_shape() -> None:
     edge = BranchGraphEdge(
         branch_id="proposal:example:2026-1",
         edge_kind="would_amend",
+        scenario_id="if_enacted_as_introduced",
         source_artifact_id="proposal/example/2026/1",
         source_statute_id="proposal/example/2026/1",
         source_unit_id="clause:1",
@@ -92,6 +93,7 @@ def test_branch_graph_edge_projects_branch_export_shape() -> None:
     assert edge.to_dict() == {
         "branch_id": "proposal:example:2026-1",
         "edge_kind": "would_amend",
+        "scenario_id": "if_enacted_as_introduced",
         "source_artifact_id": "proposal/example/2026/1",
         "source_statute_id": "proposal/example/2026/1",
         "source_unit_id": "clause:1",
@@ -118,6 +120,7 @@ def test_branch_graph_edge_from_operation_projects_non_enacted_op() -> None:
     assert edge.edge_kind == "would_repeal"
     assert edge.branch_id == "proposal:example:2026-1"
     assert edge.source_artifact_id == "proposal/example/2026/1"
+    assert edge.scenario_id == "if_enacted_as_introduced"
     assert edge.target_statute_id == "base/1"
     assert edge.target_address == "section:1"
     assert edge.operation_id == "proposal-op-1"
