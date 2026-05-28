@@ -7,6 +7,7 @@ from lawvm.core.branch_projection import (
     BranchImpactRow,
     branch_impact_projection_from_edges,
     branch_impact_projection_from_operations,
+    enrich_branch_impact_projection_texts,
 )
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource
@@ -120,3 +121,33 @@ def test_branch_impact_projection_from_operations_uses_branch_edge_mapping() -> 
         ("would_replace", "op-replace", "section:1"),
         ("would_insert", "op-insert", "section:2"),
     ]
+
+
+def test_enrich_branch_impact_projection_texts_uses_target_keys_without_lookup() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        source_artifact_id="proposal/example/2026/1",
+    )
+    projection = branch_impact_projection_from_edges(
+        branch,
+        (
+            BranchGraphEdge(
+                branch_id=branch.branch_id,
+                edge_kind="would_replace",
+                target_statute_id="base/1",
+                target_address="section:1",
+                operation_id="op-1",
+            ),
+        ),
+    )
+
+    enriched = enrich_branch_impact_projection_texts(
+        projection,
+        current_text_by_target={"base/1#section:1": "current text"},
+        branch_text_by_target={"base/1#section:1": "branch text"},
+    )
+
+    assert enriched.rows[0].current_text == "current text"
+    assert enriched.rows[0].branch_text == "branch text"
+    assert projection.rows[0].current_text == ""

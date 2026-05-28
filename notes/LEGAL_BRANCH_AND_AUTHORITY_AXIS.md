@@ -47,6 +47,7 @@ Implemented:
 - `CorpusGraph.branch_edges`
 - `src/lawvm/core/branch_projection.py::BranchImpactProjection`
 - `branch_impact_projection_from_operations(...)`
+- `enrich_branch_impact_projection_texts(...)`
 
 The implementation is metadata-first. It does not parse proposal or bill
 language yet.
@@ -78,6 +79,10 @@ fall back to `would_amend`.
 
 For UI/API payloads, `branch_impact_projection_from_operations(...)` is the
 one-step projection from typed branch operations to branch impact rows.
+When a frontend has current and branch-specific text, it can attach those
+strings with `enrich_branch_impact_projection_texts(...)` using
+`target_statute_id#target_address` keys. Core does not fetch or infer that
+text.
 
 ## Next Steps
 
