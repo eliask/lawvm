@@ -15,9 +15,10 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
-from lawvm.core.timeline_results import TimelineIssue
+from lawvm.core.timeline_results import MaterializationResult, TimelineIssue
 from lawvm.tools.verify import Issue
 from lawvm.tools.verify import _build_verify_facade
+from lawvm.tools.verify import _materialization_degradation_issue
 from lawvm.tools.verify import _phase_finding_to_visibility_issue
 from lawvm.tools.verify import _report
 from lawvm.tools.verify import _timeline_issue_to_issue
@@ -118,6 +119,42 @@ def test_verify_timeline_issue_projection_preserves_blocking_severity() -> None:
     assert nonblocking_issue.stage == "timeline"
     assert nonblocking_issue.severity == "warning"
     assert nonblocking_issue.code == "timeline.empty_same_day_interval"
+
+
+def test_verify_materialization_degradation_projection_distinguishes_statuses() -> None:
+    statute = IRStatute(
+        statute_id="test/materialized",
+        title="Materialized",
+        body=IRNode(kind=IRNodeKind.BODY),
+    )
+    missing_scope = MaterializationResult(
+        status="degraded_missing_scope",
+        statute=statute,
+        required_dimensions=("territory",),
+    )
+    timeline_issue = TimelineIssue(
+        kind="skipped_contingent_unresolved",
+        message="contingent temporal event unresolved",
+    )
+    timeline_degraded = MaterializationResult(
+        status="degraded_timeline_issues",
+        statute=statute,
+        issues=(timeline_issue,),
+    )
+    clean = MaterializationResult(status="materialized", statute=statute)
+
+    scope_issue = _materialization_degradation_issue(missing_scope, "test/statute")
+    assert scope_issue is not None
+    assert scope_issue.code == "timeline.degraded_missing_scope"
+
+    timeline_status_issue = _materialization_degradation_issue(timeline_degraded, "test/statute")
+    assert timeline_status_issue is not None
+    assert timeline_status_issue.code == "timeline.degraded_timeline_issues"
+    assert timeline_status_issue.detail == {
+        "blocking_rule_ids": ("timeline.skipped_contingent_unresolved",),
+    }
+
+    assert _materialization_degradation_issue(clean, "test/statute") is None
 
 
 def test_verify_report_json_projects_issues_to_shared_contract(capsys) -> None:
