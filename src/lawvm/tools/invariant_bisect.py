@@ -25,6 +25,8 @@ Detectors:
   illegal_edge           impossible parent→child nesting
   all_tree               all check_invariants violations (covers both above)
   text_duplication       large duplicated text blocks (lint-level)
+  flattened_sublist_family repeated letter/roman/digit families suggesting
+                           nested sublists were merged into one flat list
 
 Usage:
     lawvm invariant-bisect 1995/398

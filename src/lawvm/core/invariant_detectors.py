@@ -19,6 +19,13 @@ InvariantDetectorName = Literal[
     "text_duplication",
     "flattened_sublist_family",
 ]
+SUPPORTED_INVARIANT_DETECTORS: tuple[InvariantDetectorName, ...] = (
+    "duplicate_label",
+    "illegal_edge",
+    "all_tree",
+    "text_duplication",
+    "flattened_sublist_family",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +61,10 @@ def run_invariant_detector(
 
     The message field intentionally preserves the existing CLI string surface.
     """
+    if detector not in SUPPORTED_INVARIANT_DETECTORS:
+        supported = ", ".join(SUPPORTED_INVARIANT_DETECTORS)
+        raise ValueError(f"unsupported invariant detector {detector!r}; expected one of: {supported}")
+
     if detector in ("duplicate_label", "illegal_edge", "all_tree"):
         selected_families: set[TreeInvariantKind] | None = None
         if detector == "duplicate_label":
@@ -138,7 +149,7 @@ def run_invariant_detector(
                 )
         return results
 
-    return run_invariant_detector(ir, "all_tree", target_path)
+    raise AssertionError(f"unhandled invariant detector {detector!r}")
 
 
 def run_invariant_detector_messages(
@@ -148,4 +159,3 @@ def run_invariant_detector_messages(
 ) -> list[str]:
     """Compatibility projection for legacy CLI output."""
     return [result.message for result in run_invariant_detector(ir, detector, target_path)]
-

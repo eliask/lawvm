@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from lawvm.core.invariant_detectors import run_invariant_detector, run_invariant_detector_messages
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -49,3 +51,9 @@ def test_run_invariant_detector_filters_by_typed_path_before_message_projection(
 
     assert messages == ["body/section:2: duplicate subsection:1 (2 times)"]
 
+
+def test_run_invariant_detector_rejects_unknown_detector() -> None:
+    tree = IRNode(kind=IRNodeKind.BODY)
+
+    with pytest.raises(ValueError, match="unsupported invariant detector 'typo_detector'"):
+        run_invariant_detector(tree, "typo_detector")
