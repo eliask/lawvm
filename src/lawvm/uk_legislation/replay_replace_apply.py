@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any, Protocol
+
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_text
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_replace_text
 from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_replace_selector,
     _table_row_replace_selector,
@@ -18,6 +21,7 @@ from lawvm.uk_legislation.replay_records import (
 from lawvm.uk_legislation.replay_schedule_list_apply import (
     _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.source_definition_structural_insert import (
     UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID,
 )
@@ -31,6 +35,91 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 _UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
     "uk_replay_source_label_changing_substitution_resolved"
 )
+
+
+class _ReplaceReplaySelf(Protocol):
+    statute: UKMutableStatute
+    adjudications_out: list[CompileAdjudication]
+
+    def _find_node_by_target(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> NodeLookupResult: ...
+
+    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+
+    def _replace_schedule_list_entry(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _replace_table_entry_rows(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool: ...
+
+    def _record_invariant_violations(self, op: LegalOperation) -> None: ...
+
+    def _emit_top_section_snapshot(self, op: LegalOperation) -> None: ...
+
+    def _log(self, message: str) -> None: ...
+
+    def _apply_text_substitution_on_node(
+        self,
+        node: UKMutableNode,
+        subs: list[dict[str, Any]],
+    ) -> tuple[UKMutableNode, tuple[dict[str, Any], ...]]: ...
+
+    def _malformed_target_gap(self, target: LegalAddress) -> bool: ...
+
+    def _malformed_target_gap_kind(self, target: LegalAddress) -> str: ...
+
+    def _missing_parent_shape_gap(self, target: LegalAddress) -> bool: ...
+
+    def _missing_parent_shape_gap_kind(self, target: LegalAddress) -> str: ...
+
+    def _missing_sectionlike_gap(self, target: LegalAddress) -> bool: ...
+
+    def _recover_source_carried_structured_tail_substitution(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+    ) -> bool: ...
+
+    def _insert_node_v2(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+    ) -> bool: ...
+
+    def _schedule_paragraph_carrier_gap(self, target: LegalAddress) -> bool: ...
+
+    def _schedule_paragraph_carrier_gap_kind(self, target: LegalAddress) -> str: ...
+
+    def _leading_blank_subparagraph_gap(self, target: LegalAddress) -> bool: ...
+
+    def _missing_sibling_range_gap(self, target: LegalAddress) -> bool: ...
+
+    def _empty_descendant_shape_gap(self, target: LegalAddress) -> bool: ...
+
+    def _replace_definition_child_structural_substitution(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+    ) -> bool: ...
 
 
 def _source_label_changing_substitution_detail(
@@ -51,7 +140,7 @@ def _source_label_changing_substitution_detail(
 
 class UKReplayReplaceApplyMixin:
     def _replace_definition_child_structural_substitution(
-        self,
+        self: _ReplaceReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -159,7 +248,7 @@ class UKReplayReplaceApplyMixin:
         return True
 
     def _apply_replace_op(
-        self,
+        self: _ReplaceReplaySelf,
         op: LegalOperation,
         target: LegalAddress,
         node: UKMutableNode | None,
