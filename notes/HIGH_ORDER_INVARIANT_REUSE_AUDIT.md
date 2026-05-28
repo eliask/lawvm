@@ -162,6 +162,9 @@ Recent improvement:
 - source-version bracketing now has shared source-only window selectors; New
   Zealand archived XML date/change windows delegate the bracketing invariant
   while preserving NZ-specific row classes and truth-claim names.
+- evidence row kind classification now lives with the shared evidence
+  contracts; New Zealand evidence packs and generic report-query tooling reuse
+  the same operation/finding row predicate.
 
 ## Ranked Promotion Candidates
 
