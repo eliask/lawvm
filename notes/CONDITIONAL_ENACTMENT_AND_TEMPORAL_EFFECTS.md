@@ -137,38 +137,48 @@ From the current code:
 * `TriggerCoverageCertificate` records checked/missing trigger sources and can
   back `ResolutionFact(status="untriggered_certified")`.
 * `PhaseResult` can auto-lower `EffectIntent` into `TemporalEvent`.
+* `compile_timelines()` treats explicit `TemporalEvent` carriers as executable
+  temporal authority and records `timeline.skipped_contingent_unresolved`
+  instead of falling back to provenance dates for unresolved contingent events.
 * The finding plane can emit `TIME.CONTINGENT_EFFECTIVE_DATE`.
 * `select_active_version_ex()` / `materialize_pit_ex()` already know how to return explicit degraded results for **missing applicability scope**.
 
 So current core can **represent that something contingent exists**, **surface a
 warning/finding**, **record trigger-source coverage**, and **distinguish unknown
-trigger state from certified untriggered state**.
+trigger state from certified untriggered state**. When executable temporal
+events are supplied, core also prevents the most dangerous fail-open behavior:
+an unresolved contingent commencement does not become active merely because the
+operation provenance has an enacted or effective date.
 
 ## What current core cannot yet do correctly as architecture
 
 It still cannot, in a first-class end-to-end way:
 
+* produce trigger-source coverage certificates from frontend acquisition lanes,
 * compute PIT truthfully when trigger coverage is incomplete,
 * or reason cleanly about **multiple independent contingent events** touching one provision.
 
-## The sharp current flaw
+## The sharp remaining flaw
 
-This is the most important practical problem in current core:
+This is the most important remaining practical problem:
 
-`compile_timelines()` still falls back to `OperationSource.effective` / `OperationSource.enacted`.
+Core can block unresolved contingent effects once a frontend supplies explicit
+`TemporalEvent` carriers, but frontends do not yet consistently produce the
+trigger-resolution and trigger-coverage facts needed to distinguish:
 
-So if a contingent temporal event has:
-
-* no `effective_from`,
-* but the structural op still carries `enacted`,
-
-the current runtime path can still drift toward **applying it too early**, unless a frontend suppresses or reshapes it beforehand.
+* unresolved because the trigger source lane is incomplete,
+* inactive because coverage certifies that no trigger has occurred,
+* active or scheduled because a later authority resolves the trigger.
 
 That means:
 
-> **Current core does not guarantee correct deferred-commencement behavior.**
+> **Current core has the safety guard, but not yet full deferred-commencement
+> operational closure.**
 
-If current Finland behavior happens to look correct in a deferred-commencement case, that is not yet because the shared temporal architecture has truly solved the problem.
+If a frontend still fails to lower commencement facts into executable
+`TemporalEvent`s, timeline execution will correctly report missing temporal
+authority rather than using provenance dates. The remaining work is source
+coverage and resolution production, not enacted-date fallback inside core.
 
 ---
 
@@ -707,40 +717,45 @@ So the honest answer to “does our architecture currently handle such cases?”
 * it can parse and mark contingent commencement,
 * it can emit a coarse temporal finding,
 * it can handle ordinary fixed-date future commencement,
-* a frontend may special-case a contingent repeal correctly.
+* it can represent trigger coverage certificates and certified-untriggered
+  resolution facts,
+* it skips unresolved contingent temporal events instead of applying them by
+  enacted-date provenance fallback.
 
 ## No, not yet in the way it should
 
-* it does not model the trigger type,
-* it does not model later resolution as first-class authority,
-* it does not certify untriggered vs unknown,
+* frontends do not yet consistently emit trigger-source coverage certificates,
+* frontends do not yet consistently emit later resolution facts as executable
+  authority,
 * it does not expose contingent-trigger degradation through the authoritative query/materialization APIs,
 * it does not model multiple competing contingent events cleanly,
-* and core can still drift toward wrong application because of date fallback behavior.
+* and ordinary current-law materialization still needs a cleaner degraded state
+  than “base text plus blocking timeline issue” for unresolved trigger coverage.
 
 So architecturally:
 
-> **the class is recognized, but not solved.**
+> **the class is guarded and partly modeled, but not solved end-to-end.**
 
 ---
 
 # Near-Term Implementation Order
 
-1. **Stop silent enacted-date fallback for contingent temporal events.**
-   This is the highest-value safety fix.
+1. **Produce frontend-owned trigger coverage certificates.**
+   Acquisition must say which commencement/trigger source lanes were checked,
+   which are missing, and the coverage horizon.
 
-2. **Add typed activation to `TemporalEvent`.**
-   Keep `contingent` only as a compatibility shadow during migration.
+2. **Emit resolution facts at frontend boundaries.**
+   Later commencement instruments should produce typed resolution authority
+   rather than source-local warnings or provenance notes.
 
-3. **Add `TemporalResolutionFact`.**
+3. **Extend `_ex` selection/materialization results with unresolved temporal statuses.**
+   A PIT answer should be able to say that current text is degraded because an
+   effect depends on unresolved trigger coverage.
 
-4. **Extend `_ex` selection/materialization results with unresolved temporal statuses.**
+4. **Model multiple independent contingent events touching one provision.**
+   Temporal status is per effect; provision-level status is only a projection.
 
-5. **Add trigger coverage certificates.**
-
-6. **Teach comparison/evidence/publication layers the dedicated temporal disagreement taxonomy.**
-
-7. **Only then retire `OperationSource.effective/expires` as operational authority.**
+5. **Teach comparison/evidence/publication layers the dedicated temporal disagreement taxonomy.**
 
 ---
 
