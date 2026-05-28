@@ -4,6 +4,7 @@ import re
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.roman import roman_to_arabic
 
 UK_TRANSPARENT_WRAPPER_KINDS = frozenset(
@@ -109,7 +110,7 @@ def uk_schedule_root_candidates(
     schedules: list[IRNode],
     *,
     sched_label: Optional[str],
-    remaining_path: tuple[tuple[str, str], ...],
+    remaining_path: TreePath,
     match_kind_label,
 ) -> list[UKCanonicalNodeMatch]:
     roots: list[UKCanonicalNodeMatch] = []

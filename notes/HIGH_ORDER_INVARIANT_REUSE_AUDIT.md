@@ -114,6 +114,8 @@ Recent improvement:
   ordinary insertion.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
   the core mutation-boundary surface instead of Finland-local apply helpers.
+- selected UK production path annotations now use the shared `TreePath` alias
+  instead of spelling legal-address paths as nested tuple types.
 
 ## Ranked Promotion Candidates
 

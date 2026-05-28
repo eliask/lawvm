@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.uk_legislation.addressing import _action_name
 
 
@@ -16,7 +17,7 @@ class _SameSourceTextPatchGroupKey(NamedTuple):
     source_statute_id: str
     source_effective_date: str
     target_special: str
-    target_path: tuple[tuple[str, str], ...]
+    target_path: TreePath
 
 
 def _literal_text_spans_in_subtree(
