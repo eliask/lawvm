@@ -306,9 +306,9 @@ def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     }
 
     assert _grounding_length_window_text_candidates(candidates_by_len, 100) == [
-        ("first", "x" * 100),
-        ("second", "x" * 95),
-        ("too-short", "x" * 90),
+        _GroundingTextCandidate(0, "first", "x" * 100),
+        _GroundingTextCandidate(1, "second", "x" * 95),
+        _GroundingTextCandidate(2, "too-short", "x" * 90),
     ]
 
 
