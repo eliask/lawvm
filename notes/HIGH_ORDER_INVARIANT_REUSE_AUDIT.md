@@ -721,6 +721,9 @@ Implemented progress:
   defaults to `diagnostic_detail`.
 - Sweden acquisition diagnostics for official artifacts and RK current JSON now
   delegate source-pathology envelope defaults to `diagnostic_detail`.
+- Sweden scraped-document ingest diagnostics, later-chain reverse replay
+  exceptions, and official rebuild-chain status diagnostics now also delegate
+  their shared envelope defaults to `diagnostic_detail`.
 - EU pipeline diagnostics and replay adjudication helpers now delegate their
   shared envelope defaults to `diagnostic_detail`.
 - EU parser extraction diagnostics now delegate their shared envelope defaults

@@ -595,35 +595,31 @@ def ingest_se_scraped_doc_html_map(
         if not isinstance(doc_url, str) or not isinstance(html, str):
             skipped += 1
             skipped_entries.append(
-                {
-                    "rule_id": "se_scraped_doc_entry_invalid_shape",
-                    "phase": "acquisition",
-                    "family": "source_pathology",
-                    "entry_index": entry_index,
-                    "doc_url_type": type(doc_url).__name__,
-                    "html_type": type(html).__name__,
-                    "reason": "scraped Sweden document map entry did not have string URL and HTML values",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                diagnostic_detail(
+                    rule_id="se_scraped_doc_entry_invalid_shape",
+                    phase="acquisition",
+                    family="source_pathology",
+                    blocking=True,
+                    reason="scraped Sweden document map entry did not have string URL and HTML values",
+                    entry_index=entry_index,
+                    doc_url_type=type(doc_url).__name__,
+                    html_type=type(html).__name__,
+                )
             )
             continue
         sfs_id = se_sfs_id_from_doc_url(doc_url)
         if not sfs_id:
             skipped += 1
             skipped_entries.append(
-                {
-                    "rule_id": "se_scraped_doc_entry_unrecognized_url",
-                    "phase": "acquisition",
-                    "family": "source_pathology",
-                    "entry_index": entry_index,
-                    "doc_url": doc_url,
-                    "reason": "scraped Sweden document URL did not resolve to an SFS id",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                }
+                diagnostic_detail(
+                    rule_id="se_scraped_doc_entry_unrecognized_url",
+                    phase="acquisition",
+                    family="source_pathology",
+                    blocking=True,
+                    reason="scraped Sweden document URL did not resolve to an SFS id",
+                    entry_index=entry_index,
+                    doc_url=doc_url,
+                )
             )
             continue
         html_bytes = html.encode("utf-8")
@@ -1764,19 +1760,17 @@ def _reverse_patch_se_available_later_chain(
                         message="Sweden later-chain reverse patch skipped an inverse operation after replay raised.",
                         source_statute=f"se/{source}",
                         op_id=inverse_op.op_id,
-                        detail={
-                            "rule_id": "se_later_chain_reverse_op_exception",
-                            "phase": "replay",
-                            "family": "target_resolution_recovery",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                            "reverse_source_sfs_id": source,
-                            "action": inverse_op.action.value,
-                            "target": inverse_op.target.leaf_label(),
-                            "exception_type": type(exc).__name__,
-                            "error": str(exc),
-                        },
+                        detail=diagnostic_detail(
+                            rule_id="se_later_chain_reverse_op_exception",
+                            phase="replay",
+                            family="target_resolution_recovery",
+                            blocking=True,
+                            reverse_source_sfs_id=source,
+                            action=inverse_op.action.value,
+                            target=inverse_op.target.leaf_label(),
+                            exception_type=type(exc).__name__,
+                            error=str(exc),
+                        ),
                     )
                 )
                 continue
@@ -2076,20 +2070,18 @@ def _se_rebuild_chain_blocker_diagnostic(row: dict[str, Any]) -> dict[str, Any] 
             rule_id = "se_official_rebuild_chain_unknown_ops_status"
             phase = "replay_planning"
             reason = "prior Sweden amendment has an unknown rebuild-chain status"
-    return {
-        "rule_id": rule_id,
-        "phase": phase,
-        "family": "source_pathology",
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-        "sfs_id": str(row.get("sfs_id") or ""),
-        "effective_date": str(row.get("effective_date") or ""),
-        "scope_text": str(row.get("scope_text") or ""),
-        "ops_status": ops_status,
-        "error": str(row.get("error") or ""),
-        "reason": reason,
-    }
+    return diagnostic_detail(
+        rule_id=rule_id,
+        phase=phase,
+        family="source_pathology",
+        blocking=True,
+        reason=reason,
+        sfs_id=str(row.get("sfs_id") or ""),
+        effective_date=str(row.get("effective_date") or ""),
+        scope_text=str(row.get("scope_text") or ""),
+        ops_status=ops_status,
+        error=str(row.get("error") or ""),
+    )
 
 
 def plan_se_older_base_rebuild(
