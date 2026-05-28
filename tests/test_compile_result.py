@@ -11,7 +11,7 @@ Run:
 from __future__ import annotations
 
 import pytest
-from typing import cast
+from typing import Any, cast
 
 from types import SimpleNamespace
 
@@ -418,6 +418,21 @@ class TestCompileResultPathologyCarriers:
             message="test",
         )
         assert pathology.target_unit_kind == ""
+
+    def test_source_pathology_freezes_detail_recursively(self) -> None:
+        source_detail: dict[str, Any] = {"nested": {"items": ["a"]}}
+
+        pathology = SourcePathology(
+            code="EMPTY_OPERATIVE_BODY",
+            message="test",
+            detail=source_detail,
+        )
+        source_detail["nested"]["items"].append("mutated")
+
+        assert pathology.detail == {"nested": {"items": ("a",)}}
+        frozen_detail = cast(Any, pathology.detail)
+        with pytest.raises(TypeError, match="immutable"):
+            frozen_detail["extra"] = "blocked"
 
     def test_source_pathology_from_internal_detail_requires_neutral_scope(self) -> None:
         with pytest.raises(ValueError, match="requires explicit neutral target_unit_kind"):

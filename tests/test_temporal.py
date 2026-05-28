@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any, cast
 
 import pytest
 
@@ -262,17 +263,26 @@ class TestTriggerCoverageCertificateConstruction:
     """TriggerCoverageCertificate validates trigger source coverage evidence."""
 
     def test_complete_no_resolution_requires_as_of_and_checked_sources(self) -> None:
+        detail: dict[str, Any] = {"nested": {"sources": ["a"]}}
         cert = TriggerCoverageCertificate(
             certificate_id="coverage-1",
             status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
             as_of="2026-04-07",
             activation_rule_ref="event:1",
-            checked_sources=("decree-register",),
-            source_scope=("commencement-instruments",),
+            checked_sources=["decree-register"],  # ty: ignore[invalid-argument-type]
+            source_scope=["commencement-instruments"],  # ty: ignore[invalid-argument-type]
+            detail=detail,
         )
+        detail["nested"]["sources"].append("mutated")
 
         assert cert.certifies_untriggered is True
+        assert cert.checked_sources == ("decree-register",)
+        assert cert.source_scope == ("commencement-instruments",)
+        assert cert.detail == {"nested": {"sources": ("a",)}}
         assert cert.to_dict()["status"] == "complete_no_resolution"
+        frozen_detail = cast(Any, cert.detail)
+        with pytest.raises(TypeError, match="immutable"):
+            frozen_detail["extra"] = "blocked"
 
     def test_complete_coverage_requires_checked_sources(self) -> None:
         with pytest.raises(ValueError, match="checked_sources"):
