@@ -2100,7 +2100,7 @@ class TestCompileAmendmentOps:
         assert obl.kind == "ELAB.SPARSE_PAYLOAD_LEFTOVER"
         assert not obl.blocking
         assert obl.detail["target_norm"] == "3"
-        assert obl.detail["unassigned_slots"] == ["2:2", "3:(unlabeled)"]
+        assert obl.detail["unassigned_slots"] == ("2:2", "3:(unlabeled)")
 
     def test_collects_sparse_slot_bindings_from_compile_group(self, monkeypatch) -> None:
         master = _make_master((_section("3 §", [_subsection("1", "Old.")]),))
