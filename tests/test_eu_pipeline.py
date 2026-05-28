@@ -486,8 +486,8 @@ def test_apply_eu_ops_blocks_unscoped_parent_hijack() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "eu_replay_insert_parent_scope_unresolved"
     assert adjudications[0].detail["rule_id"] == "eu_replay_insert_parent_scope_unresolved"
-    assert adjudications[0].detail["parent_path"] == ["chapter:2", "section:1"]
-    assert adjudications[0].detail["unscoped_parent_candidates"] == [["chapter:1", "section:1"]]
+    assert adjudications[0].detail["parent_path"] == ("chapter:2", "section:1")
+    assert adjudications[0].detail["unscoped_parent_candidates"] == (("chapter:1", "section:1"),)
     assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
     assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["strict_disposition"] == "block"
