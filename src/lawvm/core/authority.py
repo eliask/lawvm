@@ -45,6 +45,16 @@ BranchEdgeKind = Literal[
     "terminated_by",
 ]
 
+BranchLifecycleKind = Literal[
+    "introduced",
+    "amended",
+    "passed",
+    "withdrawn",
+    "failed",
+    "enacted",
+    "superseded",
+]
+
 ENACTED_AUTHORITY: AuthorityLayer = "enacted"
 PROPOSAL_AUTHORITY: AuthorityLayer = "proposal"
 DRAFT_AUTHORITY: AuthorityLayer = "draft"
@@ -67,6 +77,14 @@ WOULD_REPLACE_EDGE: BranchEdgeKind = "would_replace"
 WOULD_REPEAL_EDGE: BranchEdgeKind = "would_repeal"
 DERIVED_FROM_EDGE: BranchEdgeKind = "derived_from"
 TERMINATED_BY_EDGE: BranchEdgeKind = "terminated_by"
+
+BRANCH_INTRODUCED: BranchLifecycleKind = "introduced"
+BRANCH_AMENDED: BranchLifecycleKind = "amended"
+BRANCH_PASSED: BranchLifecycleKind = "passed"
+BRANCH_WITHDRAWN: BranchLifecycleKind = "withdrawn"
+BRANCH_FAILED: BranchLifecycleKind = "failed"
+BRANCH_ENACTED: BranchLifecycleKind = "enacted"
+BRANCH_SUPERSEDED: BranchLifecycleKind = "superseded"
 
 NON_ENACTED_AUTHORITIES = frozenset({
     PROPOSAL_AUTHORITY,
@@ -101,6 +119,16 @@ _BRANCH_EDGE_VALUES = frozenset({
     WOULD_REPEAL_EDGE,
     DERIVED_FROM_EDGE,
     TERMINATED_BY_EDGE,
+})
+
+_BRANCH_LIFECYCLE_VALUES = frozenset({
+    BRANCH_INTRODUCED,
+    BRANCH_AMENDED,
+    BRANCH_PASSED,
+    BRANCH_WITHDRAWN,
+    BRANCH_FAILED,
+    BRANCH_ENACTED,
+    BRANCH_SUPERSEDED,
 })
 
 
@@ -222,6 +250,44 @@ class BranchGraphEdge:
             "operation_id": self.operation_id,
             "authority_layer": self.authority_layer,
             "legal_status": self.legal_status,
+        }
+
+
+@dataclass(frozen=True)
+class BranchLifecycleEvent:
+    """Lifecycle fact for a branch/proposal, not an enacted-state mutation."""
+
+    event_id: str
+    branch_id: str
+    event_kind: BranchLifecycleKind
+    source_artifact_id: str = ""
+    event_date: str = ""
+    resulting_status: LegalStatus = UNKNOWN_STATUS
+    derived_enacted_source_id: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.event_id:
+            raise ValueError("BranchLifecycleEvent.event_id must be non-empty")
+        if not self.branch_id:
+            raise ValueError("BranchLifecycleEvent.branch_id must be non-empty")
+        if self.event_kind not in _BRANCH_LIFECYCLE_VALUES:
+            raise ValueError(f"unsupported branch lifecycle kind: {self.event_kind!r}")
+        if self.resulting_status not in _STATUS_VALUES:
+            raise ValueError(f"unsupported resulting_status: {self.resulting_status!r}")
+        if self.event_kind in {BRANCH_ENACTED, BRANCH_SUPERSEDED} and not self.derived_enacted_source_id:
+            raise ValueError(
+                f"BranchLifecycleEvent(kind={self.event_kind!r}) requires derived_enacted_source_id"
+            )
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "event_id": self.event_id,
+            "branch_id": self.branch_id,
+            "event_kind": self.event_kind,
+            "source_artifact_id": self.source_artifact_id,
+            "event_date": self.event_date,
+            "resulting_status": self.resulting_status,
+            "derived_enacted_source_id": self.derived_enacted_source_id,
         }
 
 

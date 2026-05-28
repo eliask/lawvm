@@ -35,6 +35,7 @@ Implemented:
 - `src/lawvm/core/authority.py::BranchContext`
 - `src/lawvm/core/authority.py::LegalBranch`
 - `src/lawvm/core/authority.py::BranchGraphEdge`
+- `src/lawvm/core/authority.py::BranchLifecycleEvent`
 - `OperationSource.authority_layer`
 - `OperationSource.legal_status`
 - `OperationSource.branch_id`
@@ -45,6 +46,7 @@ Implemented:
 - `branch_graph_edges_from_operations(...)`
 - `CorpusGraph.branches`
 - `CorpusGraph.branch_edges`
+- `CorpusGraph.branch_lifecycle_events`
 - `src/lawvm/core/branch_projection.py::BranchImpactProjection`
 - `branch_impact_projection_from_operations(...)`
 - `enrich_branch_impact_projection_texts(...)`
@@ -65,6 +67,11 @@ Branch graph edges are intended for claims such as:
 - `terminated_by`
 
 These edges are graph facts, not enacted-state mutations.
+
+`BranchLifecycleEvent` records proposal/draft lifecycle facts such as
+introduced, amended, withdrawn, failed, enacted, or superseded. These are
+history/status facts for the branch; they do not themselves apply the branch's
+operations to enacted law.
 
 `BranchImpactProjection` is the UI/API-facing summary layer for these edges:
 it can say which provisions a branch would affect, optionally with current and

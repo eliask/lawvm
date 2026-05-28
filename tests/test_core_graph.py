@@ -3,7 +3,7 @@ from typing import Any, Mapping, cast
 
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 
-from lawvm.core.authority import BranchGraphEdge, LegalBranch
+from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
 from lawvm.core.graph import CorpusGraph
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -137,9 +137,17 @@ def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() 
         authority_layer="proposal",
         legal_status="unknown",
     )
+    event = BranchLifecycleEvent(
+        event_id="proposal-event-1",
+        branch_id=branch.branch_id,
+        event_kind="introduced",
+        source_artifact_id="proposal/example/2026/1",
+        event_date="2026-01-01",
+    )
     graph = CorpusGraph(
         branches=[branch],
         branch_edges=[edge],
+        branch_lifecycle_events=[event],
         statute_meta={"fi/target": {"title": "Target", "statute_type": "act"}},
     )
 
@@ -152,8 +160,12 @@ def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() 
     assert statute is not None
     assert statute.branches == [branch]
     assert statute.branch_edges == [edge]
+    assert statute.branch_lifecycle_events == []
     assert graph.branch_edges_for_statute("fi/target") == [edge]
+    assert graph.branch_lifecycle_events_for_statute("proposal/example/2026/1") == [event]
     assert counts["branches"] == 1
     assert counts["branch_edges"] == 1
+    assert counts["branch_lifecycle_events"] == 1
     assert branches[0]["authority_layer"] == "proposal"
     assert branch_edges[0]["edge_kind"] == "would_replace"
+    assert artifact_payload["branch_lifecycle_events"][0]["event_kind"] == "introduced"

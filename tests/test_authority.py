@@ -5,6 +5,7 @@ import pytest
 from lawvm.core.authority import (
     BranchContext,
     BranchGraphEdge,
+    BranchLifecycleEvent,
     LegalBranch,
     PROPOSAL_AUTHORITY,
     UNKNOWN_STATUS,
@@ -142,3 +143,33 @@ def test_branch_edge_kind_for_action_maps_structural_actions() -> None:
     assert branch_edge_kind_for_action(StructuralAction.REPEAL) == "would_repeal"
     assert branch_edge_kind_for_action(StructuralAction.TEXT_REPEAL) == "would_repeal"
     assert branch_edge_kind_for_action(StructuralAction.RENUMBER) == "would_amend"
+
+
+def test_branch_lifecycle_event_projects_non_mutating_status_fact() -> None:
+    event = BranchLifecycleEvent(
+        event_id="event-1",
+        branch_id="proposal:example:2026-1",
+        event_kind="withdrawn",
+        source_artifact_id="proposal/example/2026/1",
+        event_date="2026-05-01",
+        resulting_status="withdrawn",
+    )
+
+    assert event.to_dict() == {
+        "event_id": "event-1",
+        "branch_id": "proposal:example:2026-1",
+        "event_kind": "withdrawn",
+        "source_artifact_id": "proposal/example/2026/1",
+        "event_date": "2026-05-01",
+        "resulting_status": "withdrawn",
+        "derived_enacted_source_id": "",
+    }
+
+
+def test_branch_lifecycle_enacted_event_requires_derived_source() -> None:
+    with pytest.raises(ValueError, match="derived_enacted_source_id"):
+        BranchLifecycleEvent(
+            event_id="event-1",
+            branch_id="proposal:example:2026-1",
+            event_kind="enacted",
+        )
