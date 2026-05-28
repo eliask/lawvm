@@ -46,8 +46,11 @@ Recent improvement:
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
-  whole-act repeal is also recorded as a root-path removal. Direct
-  table/schedule-list row edit sites remain future work.
+  whole-act repeal is also recorded as a root-path removal.
+- UK direct table row, table column, and schedule-table row splices now emit
+  conservative container-scoped mutation events. The event records the table
+  path instead of inventing row-level identity for unlabeled duplicate table
+  rows.
 
 ## Ranked Promotion Candidates
 
@@ -151,6 +154,11 @@ Implemented progress:
 - Finland apply accounting now delegates target/recovery/migration path-set
   classification to the core report while preserving its frontend-specific
   accounting result codes and compatibility report fields.
+- UK replay emits opt-in core mutation events for central node
+  replace/remove/insert helpers, whole-act repeal, and direct table/schedule
+  children-splice helpers. Table/schedule splices intentionally record the
+  table container as the changed path because row identity may be unlabeled and
+  non-unique in source XML.
 
 Why high value:
 
@@ -372,12 +380,13 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Extend UK mutation-event emission from central replace/remove/insert helpers
-   to direct table/schedule-list row edits.
-2. Continue replacing local path tuple spellings with shared aliases such as
+1. Continue replacing local path tuple spellings with shared aliases such as
    `TreePath` / `TreePaths` where that reduces type noise without changing
    serialized evidence.
+2. Extend UK mutation-event emission to any remaining direct structural
+   mutation helpers not routed through central replace/remove/insert or the
+   table/schedule children-splice recorder.
 
-The highest-value order is now UK mutation-event/debug emission, cautious
-comparison-normalization reuse for additional frontends, and small type-surface
-cleanup batches.
+The highest-value order is now cautious comparison-normalization reuse for
+additional frontends, remaining UK mutation-event/debug gaps, and small
+type-surface cleanup batches.
