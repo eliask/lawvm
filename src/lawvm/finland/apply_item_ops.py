@@ -20,6 +20,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, ResolvedOp
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token, _previous_item_token
 from lawvm.finland.source_pathology import (
@@ -262,7 +263,7 @@ def _collapse_absorbed_tail_subsection_ir(
     ):
         return None
 
-    removed_label_norm = _tops._norm(stale_subsection.label or "")
+    removed_label_norm = normalized_label_key(stale_subsection.label)
     removed_numeric = int(removed_label_norm) if removed_label_norm.isdigit() else None
 
     rebuilt_subsections: List[IRNode] = []
@@ -270,7 +271,7 @@ def _collapse_absorbed_tail_subsection_ir(
         if idx == subsection_idx + 1:
             continue
         relabelled = subsection
-        subsection_norm = _tops._norm(subsection.label or "")
+        subsection_norm = normalized_label_key(subsection.label)
         if (
             removed_numeric is not None
             and idx > subsection_idx + 1
@@ -310,17 +311,17 @@ def _subsection_exposes_targetable_item_structure(sub: Optional[IRNode], item_no
     if compound:
         para_digit, sub_label = compound.groups()
         for para in paras:
-            if not para.label or _tops._norm(para.label) != para_digit:
+            if not para.label or normalized_label_key(para.label) != para_digit:
                 continue
             if any(
                 child.kind == IRNodeKind.SUBPARAGRAPH
                 and child.label
-                and _tops._norm(child.label) == sub_label
+                and normalized_label_key(child.label) == sub_label
                 for child in para.children
             ):
                 return True
         return False
-    return any(para.label and _tops._norm(para.label) == item_norm for para in paras)
+    return any(para.label and normalized_label_key(para.label) == item_norm for para in paras)
 
 
 def _prune_duplicate_tail_subsection_after_sparse_item_merge(
@@ -414,7 +415,7 @@ def _is_carried_tail_subparagraph(sp: IRNode) -> bool:
     """Return True for sparse carried-tail residue, not genuine lettered subitems."""
     if sp.kind != IRNodeKind.SUBPARAGRAPH:
         return False
-    label_norm = _tops._norm(sp.label or "")
+    label_norm = normalized_label_key(sp.label)
     return not label_norm or label_norm.isdigit()
 
 
@@ -462,7 +463,7 @@ def _apply_item_repeal(
                 return None
         sub = subsecs[n]
         paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
-        para_idx = next((i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == item_norm), None)
+        para_idx = next((i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm), None)
         if para_idx is not None:
             # Always synthesize a placeholder when the profile requests it.
             # Repeal and visibility are separate questions: the placeholder
@@ -533,7 +534,7 @@ def _apply_item_replace(
     if _is_item_johd and 0 <= n < len(subsecs):
         sub = subsecs[n]
         paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
-        para_idx = next((i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == item_norm), None)
+        para_idx = next((i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm), None)
         if para_idx is not None:
             master_para = paras[para_idx]
             from lawvm.finland.apply_payload_ops import _find_amend_intro
@@ -601,7 +602,7 @@ def _apply_item_replace(
                 new_sec = _tops.replace_nth(sec, "subsection", n, merged_content_sub)
                 logger.debug("  %s → kohta replace (content-only row merge)", ctx_label)
                 return _with_preserved_provision_index(state, _tops.replace_at(state.ir, sec_path, new_sec))
-        para_idx = next((i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == item_norm), None)
+        para_idx = next((i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm), None)
         # When the amendment body contains multiple explicitly-labeled subsections,
         # use target_paragraph to select the correct one.  Without this, the slot
         # assignment can assign an item op for subsection N to the wrong amendment
@@ -610,9 +611,9 @@ def _apply_item_replace(
         if amend_sub is None and muutos_ir is not None and view.target_paragraph is not None:
             _amend_subs_multi = [c for c in muutos_ir.children if c.kind == IRNodeKind.SUBSECTION]
             if len(_amend_subs_multi) > 1:
-                _tp_norm = _tops._norm(str(view.target_paragraph))
+                _tp_norm = normalized_label_key(str(view.target_paragraph))
                 _matched = next(
-                    (s for s in _amend_subs_multi if _tops._norm(s.label or "") == _tp_norm),
+                    (s for s in _amend_subs_multi if normalized_label_key(s.label) == _tp_norm),
                     None,
                 )
                 if _matched is not None:
@@ -638,7 +639,7 @@ def _apply_item_replace(
                                         for c in amend_sub.children
                                         if c.kind == IRNodeKind.PARAGRAPH
                                         and c.label
-                                        and re.fullmatch(r"[a-z]", _tops._norm(c.label))
+                                        and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
                                     ]
                                 ),
                             )
@@ -699,7 +700,7 @@ def _apply_item_replace(
             _has_compound_sp = any(
                 c.kind == IRNodeKind.SUBPARAGRAPH
                 and c.label
-                and _compound_sp_re.match(_tops._norm(c.label))
+                and _compound_sp_re.match(normalized_label_key(c.label))
                 for c in amend_para.children
             )
             if _has_compound_sp:
@@ -709,7 +710,7 @@ def _apply_item_replace(
                     if not (
                         c.kind == IRNodeKind.SUBPARAGRAPH
                         and c.label
-                        and _compound_sp_re.match(_tops._norm(c.label))
+                        and _compound_sp_re.match(normalized_label_key(c.label))
                     )
                 )
                 amend_para = IRNode(
@@ -735,7 +736,7 @@ def _apply_item_replace(
                                     for c in orig_children
                                     if c.kind == IRNodeKind.SUBPARAGRAPH
                                     and c.label
-                                    and _compound_sp_re.match(_tops._norm(c.label))
+                                    and _compound_sp_re.match(normalized_label_key(c.label))
                                 ]
                             ),
                         )
@@ -835,7 +836,7 @@ def _apply_item_replace(
             anchor_idx = None
             if prev_tok is not None:
                 anchor_idx = next(
-                    (i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == prev_tok), None
+                    (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == prev_tok), None
                 )
             if anchor_idx is not None or item_norm == "1":
                 new_sub = _insert_item_with_suffix_renumber_ir(
@@ -875,7 +876,7 @@ def _apply_item_replace(
             sub = subsecs[n]
             paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
             master_para_idx = next(
-                (i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == para_digit),
+                (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == para_digit),
                 None,
             )
             amend_para_src = _find_amend_paragraph(para_digit, amend_sub, muutos_ir)
@@ -1002,7 +1003,7 @@ def _apply_item_insert(
         for sub_i, sub in candidates:
             paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
             existing_idx = next(
-                (i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == item_norm),
+                (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == item_norm),
                 None,
             )
             if existing_idx is not None and paras[existing_idx].attrs.get("lawvm_repeal_placeholder") == "1":
@@ -1038,7 +1039,7 @@ def _apply_item_insert(
                                         for c in amend_sub.children
                                         if c.kind == IRNodeKind.PARAGRAPH
                                         and c.label
-                                        and re.fullmatch(r"[a-z]", _tops._norm(c.label))
+                                        and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
                                     ]
                                 ),
                             )
@@ -1082,7 +1083,7 @@ def _apply_item_insert(
             anchor_idx = None
             if prev_tok is not None:
                 anchor_idx = next(
-                    (i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == prev_tok), None
+                    (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == prev_tok), None
                 )
             if anchor_idx is not None or sub_i == n:
                 pathology_count_before = len(source_pathologies_out) if source_pathologies_out is not None else 0
@@ -1106,7 +1107,7 @@ def _apply_item_insert(
                     (
                         child
                         for child in new_sub.children
-                        if child.kind == IRNodeKind.PARAGRAPH and child.label and _tops._norm(child.label) == item_norm
+                        if child.kind == IRNodeKind.PARAGRAPH and child.label and normalized_label_key(child.label) == item_norm
                     ),
                     None,
                 )
@@ -1145,7 +1146,7 @@ def _apply_item_insert(
             sub = subsecs[n]
             paras = [c for c in sub.children if c.kind == IRNodeKind.PARAGRAPH]
             master_para_idx_ci = next(
-                (i for i, p in enumerate(paras) if p.label and _tops._norm(p.label) == para_digit_ci),
+                (i for i, p in enumerate(paras) if p.label and normalized_label_key(p.label) == para_digit_ci),
                 None,
             )
             amend_para_ci = _find_amend_paragraph(para_digit_ci, amend_sub, muutos_ir)
