@@ -16,7 +16,7 @@ from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.apply_ir_ops import _build_repeal_placeholder_from_label_ir
@@ -81,7 +81,7 @@ def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
         mapped is not None
         and scope.target_paragraph is not None
         and mapped.label is not None
-        and _tops._norm(mapped.label) == str(scope.target_paragraph)
+        and normalized_label_key(mapped.label) == str(scope.target_paragraph)
     )
 
     return AmendmentOp(
@@ -123,7 +123,7 @@ def _unique_substantive_section_path(
     state: "ReplayState",
     target_norm: str,
 ) -> Path | None:
-    label_norm = _tops._norm(target_norm)
+    label_norm = normalized_label_key(target_norm)
     matches = [
         _tops._as_path(path)
         for path in state.provision_index.get(("section", label_norm), [])
@@ -689,7 +689,7 @@ def _emit_section_snapshot(
         raw_path = _tops.find(state.ir, "section", label, label_index=idx)
         if raw_path is None:
             return None
-        label_norm = _tops._norm(label)
+        label_norm = normalized_label_key(label)
         if len(idx.get(("section", label_norm), [])) != 1:
             return None
         return _tops._as_path(raw_path)
@@ -1118,7 +1118,7 @@ def _emit_section_snapshot(
     if (
         target_unit_kind == "section"
         and target_chapter
-        and len(state.provision_index.get(("section", _tops._norm(normalized_target_norm)), [])) == 1
+        and len(state.provision_index.get(("section", normalized_label_key(normalized_target_norm)), [])) == 1
     ):
         current_path = tuple(resolved_path)
         prior_path: tuple[tuple[str, str], ...] | None = None
@@ -1388,7 +1388,7 @@ def _emit_section_snapshot(
                         if (
                             existing_chapter
                             and target_container_chapter
-                            and _tops._norm(existing_chapter) != _tops._norm(target_container_chapter)
+                            and normalized_label_key(existing_chapter) != normalized_label_key(target_container_chapter)
                         ):
                             continue
                 sec_path = container_path + (("section", child.label),)
@@ -1505,7 +1505,7 @@ def _valid_target_group_path_hint(
         return None
     if target_unit_kind == "section" and target_chapter:
         chapters = [step for step in path_hint if step[0] == "chapter" and step[1]]
-        if not chapters or _tops._norm(chapters[-1][1]) != _tops._norm(target_chapter):
+        if not chapters or normalized_label_key(chapters[-1][1]) != normalized_label_key(target_chapter):
             return None
     if target_unit_kind == "section" and target_part:
         parts = [step for step in path_hint if step[0] == "part" and step[1]]
@@ -1547,7 +1547,7 @@ def _with_preserved_provision_index(state: "ReplayState", new_ir: IRNode) -> "Re
 
 
 def _same_norm_label(lhs: Optional[str], rhs: Optional[str]) -> bool:
-    return bool(lhs) and bool(rhs) and _tops._norm(lhs) == _tops._norm(rhs)
+    return bool(lhs) and bool(rhs) and normalized_label_key(lhs) == normalized_label_key(rhs)
 
 
 def _parent_has_direct_child_with_same_label(
@@ -1648,7 +1648,7 @@ def _find_chapter_insert_parent_path(
     if fam_path is not None and len(fam_path) >= 2:
         return _tops._as_path(fam_path[:-1])
 
-    new_key = _tops._default_sort_key(chapter_label)
+    new_key = default_label_sort_key(chapter_label)
     best_part_path: Optional[Path] = None
     best_chapter_key = (-1, "", 0)
 
@@ -1663,7 +1663,7 @@ def _find_chapter_insert_parent_path(
         for ch in part.children:
             if ch.kind is not IRNodeKind.CHAPTER or not ch.label:
                 continue
-            ch_key = _tops._default_sort_key(ch.label)
+            ch_key = default_label_sort_key(ch.label)
             if ch_key < part_min_key:
                 part_min_key = ch_key
             if ch_key < new_key and ch_key > best_chapter_key:
