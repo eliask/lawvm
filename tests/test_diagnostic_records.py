@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from lawvm.core.diagnostic_records import diagnostic_detail, validate_diagnostic_detail
+from lawvm.core.diagnostic_records import (
+    BLOCKING_STRICT_DISPOSITIONS,
+    diagnostic_detail,
+    validate_diagnostic_detail,
+)
 
 
 def test_diagnostic_detail_defaults_strict_and_quirks_dispositions() -> None:
@@ -94,3 +98,7 @@ def test_validate_diagnostic_detail_requires_boolean_blocking() -> None:
             "quirks_disposition": "record",
         }
     )
+
+
+def test_blocking_strict_dispositions_are_shared_contract_surface() -> None:
+    assert {"block", "reject", "fail", "hard_fail", "strict_block"} <= BLOCKING_STRICT_DISPOSITIONS
