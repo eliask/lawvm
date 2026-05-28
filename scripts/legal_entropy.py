@@ -26,6 +26,8 @@ import importlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
+DEFAULT_YEAR_RANGE = range(1920, 2027)
+
 try:
     matplotlib = importlib.import_module("matplotlib")
     matplotlib.use("Agg")
@@ -67,7 +69,7 @@ def sid_year(sid: str) -> int:
 # ---------------------------------------------------------------------------
 
 def compute_annual_metrics(statutes, amendments, citations, delegations,
-                           year_range=range(1920, 2027)):
+                           year_range=DEFAULT_YEAR_RANGE):
     """Return dict of {year -> metrics_dict}."""
 
     enacted_by_year = Counter()
@@ -122,7 +124,7 @@ def compute_annual_metrics(statutes, amendments, citations, delegations,
     return results
 
 
-def compute_entropy(annual_metrics, year_range=range(1920, 2027)):
+def compute_entropy(annual_metrics, year_range=DEFAULT_YEAR_RANGE):
     """Composite legal entropy H(t) = normalized cite_density + amend_rate + deleg_rate + enacted/stock.
 
     Each component normalized to [0,1] by dividing by its max across all years.
@@ -159,7 +161,7 @@ def compute_degree_distribution(citations):
     return Counter(in_deg.values())  # degree -> count
 
 
-def compute_stale_accumulation(citations, amendments, statutes, year_range=range(1920, 2027)):
+def compute_stale_accumulation(citations, amendments, statutes, year_range=DEFAULT_YEAR_RANGE):
     """Approximate stale reference accumulation per year.
 
     A CITES edge from statute A to statute B becomes stale when B gets amended

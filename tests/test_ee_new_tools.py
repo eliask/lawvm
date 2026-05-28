@@ -370,11 +370,9 @@ def test_run_single_statute_reports_not_found(monkeypatch, capsys) -> None:
         statute="nonexistent",
     )
 
-    try:
+    with pytest.raises(SystemExit) as excinfo:
         ee_bench._run_single_statute("nonexistent", args)
-        assert False, "Should have raised SystemExit"
-    except SystemExit as e:
-        assert e.code == 1
+    assert excinfo.value.code == 1
 
     err = capsys.readouterr().err
     assert "not found" in err

@@ -63,7 +63,7 @@ line-length = 120
 # W = pycodestyle warnings
 # B = flake8-bugbear (common bug patterns)
 # RUF = ruff-specific rules
-select = ["F", "E", "W", "B033", "RUF034"]
+select = ["F", "E", "W", "B008", "B011", "B017", "B023", "B028", "B033", "RUF034"]
 ignore = [
   "E501",  # line-too-long — AI-only development, line length is not meaningful
   "E701",  # multiple-statements-on-one-line-colon — used deliberately for `if DEBUG: print(...)`

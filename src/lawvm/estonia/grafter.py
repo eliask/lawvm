@@ -6655,7 +6655,13 @@ def _ee_apply_text_replace_value(
         for idx, (old_variant, new_variant) in enumerate(variants):
             pattern = _ee_text_replace_regex(old_variant, case_inflected=case_inflected)
             if all_occurrences:
-                def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
+                def _repl(
+                    match: re.Match[str],
+                    *,
+                    idx: int = idx,
+                    old_variant: str = old_variant,
+                    new_variant: str = new_variant,
+                ) -> str:
                     token = f"\x00ee-after-{idx}-{len(placeholders)}\x00"
                     normalized_new_variant = _ee_normalize_text_replace_surface(new_variant)
                     normalized_old_variant = _ee_normalize_text_replace_surface(old_variant)
@@ -6760,9 +6766,16 @@ def _ee_apply_text_replace_value(
                 )
                 break
 
-            def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
+            def _repl(
+                match: re.Match[str],
+                *,
+                idx: int = idx,
+                old_variant: str = old_variant,
+                new_variant: str = new_variant,
+                working_text: str = working,
+            ) -> str:
                 if mode == "replace" and _ee_match_inside_existing_replacement(
-                    working,
+                    working_text,
                     match_start=match.start(),
                     match_end=match.end(),
                     replacement=new_variant,
@@ -6772,7 +6785,7 @@ def _ee_apply_text_replace_value(
                     new_variant == ""
                     and old.lower().startswith("eeltaotlus")
                     and re.search(r"\bvõi$", old_variant.strip(), re.IGNORECASE)
-                    and working[:match.start()].rstrip().endswith(",")
+                    and working_text[:match.start()].rstrip().endswith(",")
                 ):
                     return match.group(0)
                 token = f"\x00ee-repl-{idx}-{len(placeholders)}\x00"
@@ -6789,7 +6802,7 @@ def _ee_apply_text_replace_value(
                 ):
                     replacement = _ee_trim_overlapping_replacement_tail(
                         replacement,
-                        working[match.end():],
+                        working_text[match.end():],
                     )
                 placeholders[token] = replacement
                 return token

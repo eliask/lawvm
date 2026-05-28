@@ -7,6 +7,8 @@ constitution (LAWVM_CONSTITUTION.md §4).
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 from typing import Any, cast
 
@@ -118,7 +120,7 @@ def test_unknown_action_is_invalid():
 def test_slot_identity_is_frozen():
     """SlotIdentity is immutable (frozen dataclass)."""
     identity = _identity()
-    with pytest.raises(Exception):
+    with pytest.raises(FrozenInstanceError):
         cast(Any, identity).label = "7"
 
 
