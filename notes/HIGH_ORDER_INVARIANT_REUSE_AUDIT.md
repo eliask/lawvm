@@ -171,7 +171,8 @@ Implemented progress:
 - core already owns `MutationEvent` and `DeclaredMutationAllowance`;
 - core now owns `MutationEventPathSetReport` plus helpers for touched paths,
   allowance paths/rule IDs, matched allowance rule IDs, and path-set
-  partitioning;
+  partitioning; the path-set partition invariant is now property-tested across
+  arbitrary touched, target, recovery, and migration path sets.
 - Finland apply accounting now delegates target/recovery/migration path-set
   classification to the core report while preserving its frontend-specific
   accounting result codes and compatibility report fields.
