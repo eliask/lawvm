@@ -67,6 +67,17 @@ class _TableCellParagraphSubstitutionResult(NamedTuple):
     detail: dict[str, Any]
 
 
+class _PendingTableColumnSpanAttrs(NamedTuple):
+    spanner: UKMutableNode
+    attrs: dict[str, Any]
+
+
+class _PendingTableColumnCellInsertion(NamedTuple):
+    row: UKMutableNode
+    insert_index: int
+    cell: UKMutableNode
+
+
 class _TableReplaySelf(Protocol):
     adjudications_out: list[CompileAdjudication]
 
@@ -433,8 +444,8 @@ class UKReplayTableApplyMixin:
         adjusted_spans = 0
         inserted_cells = 0
         matched_rows: list[str] = []
-        pending_span_attrs: list[tuple[UKMutableNode, dict[str, Any]]] = []
-        pending_cell_insertions: list[tuple[UKMutableNode, int, UKMutableNode]] = []
+        pending_span_attrs: list[_PendingTableColumnSpanAttrs] = []
+        pending_cell_insertions: list[_PendingTableColumnCellInsertion] = []
         plans = uk_table_column_insert_plans(table)
         for plan in plans:
             row = plan.row
@@ -458,7 +469,12 @@ class UKReplayTableApplyMixin:
                     reason = "unsupported_colspan_value"
                     break
                 old_colspan = int(old_colspan_raw)
-                pending_span_attrs.append((spanner, {**spanner.attrs, "colspan": str(old_colspan + 1)}))
+                pending_span_attrs.append(
+                    _PendingTableColumnSpanAttrs(
+                        spanner=spanner,
+                        attrs={**spanner.attrs, "colspan": str(old_colspan + 1)},
+                    )
+                )
                 adjusted_spans += 1
                 matched_rows.append(str(spanner.text or "")[:160])
                 continue
@@ -480,7 +496,13 @@ class UKReplayTableApplyMixin:
             else:
                 reason = "column_boundary_not_found"
                 break
-            pending_cell_insertions.append((row, insert_index, payload_cells_result.cells[payload_index]))
+            pending_cell_insertions.append(
+                _PendingTableColumnCellInsertion(
+                    row=row,
+                    insert_index=insert_index,
+                    cell=payload_cells_result.cells[payload_index],
+                )
+            )
             inserted_cells += 1
             payload_index += 1
             matched_rows.append(
@@ -515,10 +537,12 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
-        for spanner, attrs in pending_span_attrs:
-            spanner.attrs = attrs
-        for row, insert_index, cell in pending_cell_insertions:
-            row.children[insert_index:insert_index] = [cell]
+        for span_attrs in pending_span_attrs:
+            span_attrs.spanner.attrs = span_attrs.attrs
+        for insertion in pending_cell_insertions:
+            insertion.row.children[insertion.insert_index : insertion.insert_index] = [
+                insertion.cell
+            ]
         _record_table_structure_splice(
             self,
             container=table,
