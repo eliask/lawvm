@@ -189,6 +189,9 @@ Recent improvement:
 - Finland Finlex latest-PIT sync diagnostics now delegate shared acquisition
   envelope fields to `diagnostic_detail` while preserving statute/version
   locator payloads.
+- UK commencement-filter observations for unnumbered unique schedules and
+  undated commencement-style rows now carry nested shared target-resolution
+  and temporal-resolution projections while preserving the legacy flat fields.
 - Norway amendment-index duplicate logical locator diagnostics now include a
   nested shared source-lane selection projection for both deterministic
   byte-identical duplicate selection and conflicting-duplicate blocking,
