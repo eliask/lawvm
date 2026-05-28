@@ -358,6 +358,10 @@ Recent improvement:
 - lossless filter carriers now require rejected items to carry a non-empty
   reason and boolean blocking flag, and direct `FilterResult` construction
   normalizes accepted/rejected lanes to immutable tuples.
+- shared processing artifact status now validates the complete/partial/blocked/
+  failed vocabulary, forbids blockers on complete artifacts, requires blockers
+  on degraded artifacts, and compile-facade wire export falls back to the
+  verdict status when a blocking verdict has no barrier codes.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
