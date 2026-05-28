@@ -215,6 +215,19 @@ def test_corpus_operation_evidence_validation_rejects_unexplained_non_claim() ->
     assert "blocking row must have blocking strict_disposition" in issues
 
 
+def test_corpus_operation_evidence_row_rejects_invalid_construction() -> None:
+    with pytest.raises(ValueError, match="unsupported row must carry finding_ids"):
+        CorpusOperationEvidenceRow(
+            row_id="row-1",
+            frontend_id="starter",
+            source_artifact_id="act.xml",
+            status=CorpusRowStatus.UNSUPPORTED,
+            blocking=True,
+            strict_disposition="block",
+            quirks_disposition="record",
+        )
+
+
 def test_corpus_operation_evidence_validation_rejects_blocking_match_without_justification() -> None:
     issues = validate_corpus_operation_evidence_row({
         "row_id": "row-1",
@@ -229,6 +242,20 @@ def test_corpus_operation_evidence_validation_rejects_blocking_match_without_jus
     })
 
     assert issues == ("matched row cannot be blocking without blocking_justification detail",)
+
+
+def test_corpus_finding_evidence_row_rejects_invalid_construction() -> None:
+    with pytest.raises(ValueError, match="finding_id is required"):
+        CorpusFindingEvidenceRow(
+            finding_id="",
+            frontend_id="starter",
+            family="unsupported",
+            rule_id="starter.rule",
+            phase="P1",
+            message="bad",
+            strict_disposition="record",
+            quirks_disposition="record",
+        )
 
 
 def test_corpus_finding_evidence_validation_rejects_bad_shapes() -> None:

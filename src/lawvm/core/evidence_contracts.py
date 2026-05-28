@@ -38,6 +38,15 @@ class EvidenceSummary:
     artifact_families: tuple[str, ...] = ()
     detail: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _require_dataclass_string(self.jurisdiction, "EvidenceSummary.jurisdiction")
+        _require_dataclass_string(self.base_id, "EvidenceSummary.base_id")
+        for field_name in ("claim_count", "divergence_count", "actionable_count", "unresolved_count"):
+            if getattr(self, field_name) < 0:
+                raise ValueError(f"EvidenceSummary.{field_name} must be non-negative")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("EvidenceSummary.detail must be a mapping")
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["detail"] = dict(self.detail)
@@ -79,6 +88,17 @@ class CorpusOperationEvidenceRow:
     finding_ids: tuple[str, ...] = ()
     detail: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, CorpusRowStatus):
+            raise ValueError("CorpusOperationEvidenceRow.status must be a CorpusRowStatus")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("CorpusOperationEvidenceRow.detail must be a mapping")
+        object.__setattr__(self, "finding_ids", tuple(str(value) for value in self.finding_ids))
+        _raise_if_issues(
+            validate_corpus_operation_evidence_row(self.to_dict()),
+            subject="CorpusOperationEvidenceRow",
+        )
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["status"] = self.status.value
@@ -103,6 +123,19 @@ class CorpusFindingEvidenceRow:
     strict_disposition: str = ""
     quirks_disposition: str = ""
     evidence: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evidence, Mapping):
+            raise ValueError("CorpusFindingEvidenceRow.evidence must be a mapping")
+        object.__setattr__(
+            self,
+            "related_row_ids",
+            tuple(str(value) for value in self.related_row_ids),
+        )
+        _raise_if_issues(
+            validate_corpus_finding_evidence_row(self.to_dict()),
+            subject="CorpusFindingEvidenceRow",
+        )
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -206,6 +239,17 @@ def _require_non_empty_string(row: Mapping[str, Any], key: str, issues: list[str
     value = row.get(key)
     if not isinstance(value, str) or not value:
         issues.append(f"{key} is required")
+
+
+def _require_dataclass_string(value: str, name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be non-empty")
+
+
+def _raise_if_issues(issues: tuple[str, ...], *, subject: str) -> None:
+    if issues:
+        joined = "; ".join(issues)
+        raise ValueError(f"{subject} invalid: {joined}")
 
 
 def _has_reason_detail(detail: Mapping[str, Any]) -> bool:
