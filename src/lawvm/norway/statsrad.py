@@ -22,6 +22,7 @@ from urllib.request import Request, urlopen
 
 from lxml import etree, html
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.norway.sources import open_no_archive, resolve_no_source_path
 
 STATSRAD_SOURCE_NAME = "regjeringen.no/offisielt-fra-statsrad"
@@ -569,18 +570,23 @@ def _statsrad_event_artifact_diagnostic(
     bulletin_id: str,
     reason: str,
     phase: str = "parse",
+    blocking: bool = True,
+    strict_disposition: str | None = None,
+    quirks_disposition: str = "record",
     **extra: Any,
 ) -> dict[str, Any]:
-    diagnostic = {
-        "rule_id": rule_id,
-        "family": "source_pathology",
-        "phase": phase,
-        "locator": locator,
-        "bulletin_id": bulletin_id,
-        "reason": reason,
-    }
-    diagnostic.update(extra)
-    return diagnostic
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase=phase,
+        reason=reason,
+        blocking=blocking,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+        locator=locator,
+        bulletin_id=bulletin_id,
+        **extra,
+    )
 
 
 def _statsrad_extract_missing_artifact_diagnostic(
