@@ -261,6 +261,7 @@ _UK_TABLE_TRANSPARENT_CONTAINERS = frozenset({"tgroup", "tbody", "tfoot"})
 _UK_SCHEDULE_LIST_ENTRY_RULE_ID = "uk_schedule_list_entry_preserved"
 _UK_NON_SCHEDULE_LIST_ENTRY_RULE_ID = "uk_non_schedule_list_entry_preserved"
 _UK_CONTAINER_NUMBER_INFERRED_RULE_ID = "uk_container_number_inferred_from_source_uri"
+_UK_BLOCK_AMENDMENT_TABLE_RULE_ID = "uk_block_amendment_table_preserved"
 _UK_SCHEDULE_ENTRY_TRANSPARENT_TAGS = frozenset(
     {
         "addition",
@@ -621,6 +622,26 @@ def _parse_table(el: ET.Element, context, force_active=False, pit_date=None, is_
     )
 
 
+def _parse_block_amendment_tables(
+    el: ET.Element,
+    context,
+    force_active=False,
+    pit_date=None,
+    is_eur=False,
+) -> list[UKMutableNode]:
+    tables: list[UKMutableNode] = []
+    for child in el.iter():
+        if child is el or _tag(child) not in {"Table", "table"}:
+            continue
+        table = _parse_table(child, context, force_active, pit_date, is_eur)
+        if table is None:
+            continue
+        table.attrs["source_rule_id"] = _UK_BLOCK_AMENDMENT_TABLE_RULE_ID
+        table.attrs["source_container"] = "BlockAmendment"
+        tables.append(table)
+    return tables
+
+
 def _get_kind(tag: str, context: str = "body", is_eur: bool = False) -> str:
     t = tag.lower()
     if is_eur and t in ("p1", "section", "article", "eusection"):
@@ -950,6 +971,9 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             node = _parse_schedule_single(child, context, force_active, pit_date, is_eur)
         elif ct in ("Table", "table"):
             node = _parse_table(child, context, force_active, pit_date, is_eur)
+        elif ct == "BlockAmendment":
+            children.extend(_parse_block_amendment_tables(child, context, force_active, pit_date, is_eur))
+            continue
         elif ct == "OrderedList":
             definition_children = _parse_definition_ordered_list(child, parent_el)
             if definition_children:
@@ -1175,6 +1199,7 @@ _SOURCE_PARSE_OBSERVATION_RULE_IDS = frozenset(
         _UK_CONTAINER_NUMBER_INFERRED_RULE_ID,
         _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
         _UK_NON_SCHEDULE_LIST_ENTRY_RULE_ID,
+        _UK_BLOCK_AMENDMENT_TABLE_RULE_ID,
     }
 )
 
@@ -1266,6 +1291,14 @@ def _source_parse_observations(
                             "source_identifier": str(node.attrs.get("source_identifier") or ""),
                             "original_label": str(node.attrs.get("source_original_label") or ""),
                             "inferred_label": str(node.attrs.get("source_inferred_label") or ""),
+                        }
+                    )
+                elif rule_id == _UK_BLOCK_AMENDMENT_TABLE_RULE_ID:
+                    sample.update(
+                        {
+                            "source_container": str(node.attrs.get("source_container") or ""),
+                            "row_count": str(len(node.children)),
+                            "text": " ".join(node.text.split())[:160],
                         }
                     )
                 bucket.append(sample)

@@ -580,6 +580,73 @@ def test_parse_uk_statute_ir_bytes_preserves_uk_table_structure() -> None:
     assert [cell.text for cell in body_row.children] == ["1", "Original row"]
 
 
+def test_parse_uk_statute_ir_bytes_preserves_block_amendment_table_structure() -> None:
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <Metadata>
+    <dc:title>Block Amendment Table Test Act</dc:title>
+  </Metadata>
+  <Schedules>
+    <Schedule eId="schedule-3">
+      <Number>3</Number>
+      <ScheduleBody>
+        <P1 eId="schedule-3-paragraph-1">
+          <Pnumber>1</Pnumber>
+          <P1para>
+            <P2 eId="schedule-3-paragraph-1-1">
+              <Pnumber>1</Pnumber>
+              <P2para>
+                <Text>For the Table there were substituted-</Text>
+                <BlockAmendment>
+                  <Text/>
+                  <Tabular>
+                    <table xmlns="http://www.w3.org/1999/xhtml">
+                      <thead>
+                        <tr><th>Row Number</th><th>Punishment</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr><td>7</td><td>service compensation order</td></tr>
+                      </tbody>
+                    </table>
+                  </Tabular>
+                </BlockAmendment>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </ScheduleBody>
+    </Schedule>
+  </Schedules>
+</Legislation>
+"""
+
+    ir = parse_uk_statute_ir_bytes(
+        xml,
+        statute_id="ukpga/2006/52",
+        version_label="enacted",
+        source_path="https://www.legislation.gov.uk/ukpga/2006/52/enacted/data.xml",
+    )
+
+    subparagraph = ir.supplements[0].children[0].children[0]
+    assert subparagraph.text == "For the Table there were substituted-"
+    assert "service compensation order" not in subparagraph.text
+    assert len(subparagraph.children) == 1
+    table = subparagraph.children[0]
+    assert table.kind == IRNodeKind.TABLE
+    assert table.attrs["source_rule_id"] == "uk_block_amendment_table_preserved"
+    assert table.attrs["source_container"] == "BlockAmendment"
+    assert table.children[1].children[0].text == "7"
+    assert table.children[1].children[1].text == "service compensation order"
+    observations = ir.metadata["source_parse_observations"]
+    assert any(
+        row["rule_id"] == "uk_block_amendment_table_preserved"
+        and row["count"] == 1
+        and row["samples"][0]["source_container"] == "BlockAmendment"
+        for row in observations
+    )
+
+
 def test_parse_uk_statute_ir_bytes_preserves_definition_ordered_list_children() -> None:
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
