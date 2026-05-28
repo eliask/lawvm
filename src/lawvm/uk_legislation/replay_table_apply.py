@@ -94,6 +94,24 @@ class _TableReplaySelf(Protocol):
     ) -> None: ...
 
 
+def _record_table_structure_splice(
+    self: _TableReplaySelf,
+    *,
+    container: UKMutableNode,
+    helper: str,
+    outcome: str,
+    reason_code: str,
+) -> None:
+    self._clear_eid_lookup_index()
+    self._note_structure_mutation()
+    self._record_children_splice_mutation_event(
+        container=container,
+        helper=helper,
+        outcome=outcome,
+        reason_code=reason_code,
+    )
+
+
 def _table_cell_ordered_list_units(cell: UKMutableNode) -> list[dict[str, str]]:
     raw = cell.attrs.get("source_ordered_list_units_json")
     if not isinstance(raw, str) or not raw:
@@ -498,9 +516,8 @@ class UKReplayTableApplyMixin:
             spanner.attrs = attrs
         for row, insert_index, cell in pending_cell_insertions:
             row.children[insert_index:insert_index] = [cell]
-        self._clear_eid_lookup_index()
-        self._note_structure_mutation()
-        self._record_children_splice_mutation_event(
+        _record_table_structure_splice(
+            self,
             container=table,
             helper="_insert_table_column",
             outcome="table_column_inserted",
@@ -650,9 +667,8 @@ class UKReplayTableApplyMixin:
         children = list(row_insert.table.children)
         children[row_insert.insert_index:row_insert.insert_index] = inserted_rows
         uk_replace_children(row_insert.table, children)
-        self._clear_eid_lookup_index()
-        self._note_structure_mutation()
-        self._record_children_splice_mutation_event(
+        _record_table_structure_splice(
+            self,
             container=row_insert.table,
             helper="_insert_table_entry_row",
             outcome="table_rows_inserted",
@@ -748,9 +764,8 @@ class UKReplayTableApplyMixin:
         replaced_row_count = row_span.end_index - row_span.start_index
         children[row_span.start_index:row_span.end_index] = replacement_rows
         uk_replace_children(row_span.table, children)
-        self._clear_eid_lookup_index()
-        self._note_structure_mutation()
-        self._record_children_splice_mutation_event(
+        _record_table_structure_splice(
+            self,
             container=row_span.table,
             helper="_replace_table_entry_rows",
             outcome="table_rows_replaced",
