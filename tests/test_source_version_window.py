@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from lawvm.core.source_version_window import (
+    SOURCE_VERSION_CHANGE_WINDOW_RULE_ID,
     SOURCE_VERSION_CHANGE_WINDOW_TRUTH_CLAIM,
+    SOURCE_VERSION_DATE_WINDOW_RULE_ID,
     SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM,
     iso_date_prefix,
     select_source_version_change_window,
@@ -15,127 +17,124 @@ from lawvm.core.source_version_window import (
 
 @dataclass(frozen=True)
 class _Witness:
-    witness_id: str
-    date: str
+    version_id: str
+    version_date: str
+    locator: str = ""
 
 
-def test_source_version_date_window_brackets_requested_date_without_replay_claim() -> None:
-    witnesses = (
-        _Witness("preferred-same-day", "2025-04-05B"),
-        _Witness("older", "2024-01-01"),
-        _Witness("newer", "2026-04-05"),
-        _Witness("ignored", "not-a-date"),
-    )
+def _date(witness: _Witness) -> str:
+    return witness.version_date
 
+
+def _detail(witness: _Witness) -> dict[str, str]:
+    return {
+        "version_id": witness.version_id,
+        "version_date": witness.version_date,
+        "locator": witness.locator,
+    }
+
+
+def test_iso_date_prefix_accepts_iso_prefix_only() -> None:
+    assert iso_date_prefix("2026-05-29T12:00:00Z") == "2026-05-29"
+    assert iso_date_prefix(" 2026-05-29 ") == "2026-05-29"
+    assert iso_date_prefix("29.05.2026") == ""
+
+
+def test_date_window_selects_exact_match_as_both_sides() -> None:
+    exact = _Witness("v2", "2026-05-29", "exact.xml")
     window = select_source_version_date_window(
-        witnesses,
-        requested_version_date="2025-06-01T00:00:00Z",
-        version_date=lambda witness: witness.date,
+        (
+            _Witness("v1", "2026-01-01", "before.xml"),
+            exact,
+            _Witness("v3", "2026-12-31", "after.xml"),
+        ),
+        requested_version_date="2026-05-29",
+        version_date=_date,
     )
 
+    assert window.on_or_before is exact
+    assert window.on_or_after is exact
+    assert window.rule_id == SOURCE_VERSION_DATE_WINDOW_RULE_ID
     assert window.truth_claim == SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM
     assert window.replay_claims is False
-    assert window.requested_version_date == "2025-06-01"
-    assert window.on_or_before == witnesses[0]
-    assert window.on_or_after == witnesses[2]
 
 
-def test_source_version_change_window_uses_strict_before_witness() -> None:
-    witnesses = (
-        _Witness("same-day", "2025-06-01"),
-        _Witness("before", "2025-04-05"),
-        _Witness("after", "2025-08-27"),
+def test_date_window_brackets_between_versions_without_effectivity_claim() -> None:
+    before = _Witness("v1", "2026-01-01", "before.xml")
+    after = _Witness("v2", "2026-12-31", "after.xml")
+    window = select_source_version_date_window(
+        (after, before),
+        requested_version_date="2026-05-29",
+        version_date=_date,
     )
 
+    assert window.on_or_before is before
+    assert window.on_or_after is after
+    detail = source_version_date_window_diagnostic_detail(
+        window,
+        witness_detail=_detail,
+        phase="test_source_window",
+    )
+    assert detail["rule_id"] == SOURCE_VERSION_DATE_WINDOW_RULE_ID
+    assert detail["family"] == "source_version_window"
+    assert detail["truth_claim"] == SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM
+    assert detail["replay_claims"] is False
+    assert detail["on_or_before"]["version_id"] == "v1"
+    assert detail["on_or_after"]["version_id"] == "v2"
+
+
+def test_change_window_uses_strict_before_and_on_or_after() -> None:
+    before = _Witness("before", "2026-01-01")
+    exact = _Witness("exact", "2026-05-29")
+    after = _Witness("after", "2026-12-31")
     window = select_source_version_change_window(
-        witnesses,
-        requested_version_date="2025-06-01",
-        version_date=lambda witness: witness.date,
+        (after, exact, before),
+        requested_version_date="2026-05-29",
+        version_date=_date,
     )
 
+    assert window.before is before
+    assert window.on_or_after is exact
+    assert window.rule_id == SOURCE_VERSION_CHANGE_WINDOW_RULE_ID
     assert window.truth_claim == SOURCE_VERSION_CHANGE_WINDOW_TRUTH_CLAIM
     assert window.replay_claims is False
-    assert window.before == witnesses[1]
-    assert window.on_or_after == witnesses[0]
-
-
-def test_source_version_window_ties_preserve_candidate_order() -> None:
-    witnesses = (
-        _Witness("preferred", "2025-06-01"),
-        _Witness("same-date-later-in-input", "2025-06-01"),
+    detail = source_version_change_window_diagnostic_detail(
+        window,
+        witness_detail=_detail,
+        phase="test_source_window",
     )
-
-    date_window = select_source_version_date_window(
-        witnesses,
-        requested_version_date="2025-06-01",
-        version_date=lambda witness: witness.date,
-    )
-    change_window = select_source_version_change_window(
-        witnesses,
-        requested_version_date="2025-06-01",
-        version_date=lambda witness: witness.date,
-    )
-
-    assert date_window.on_or_before == witnesses[0]
-    assert date_window.on_or_after == witnesses[0]
-    assert change_window.before is None
-    assert change_window.on_or_after == witnesses[0]
+    assert detail["before"]["version_id"] == "before"
+    assert detail["on_or_after"]["version_id"] == "exact"
 
 
-def test_source_version_date_window_projects_source_only_diagnostic_detail() -> None:
-    witnesses = (
-        _Witness("older", "2024-01-01"),
-        _Witness("newer", "2026-04-05"),
-    )
+def test_source_version_window_ignores_undated_candidates_and_preserves_duplicate_tie_order() -> None:
+    first_duplicate = _Witness("first", "2026-05-29")
+    second_duplicate = _Witness("second", "2026-05-29")
     window = select_source_version_date_window(
-        witnesses,
-        requested_version_date="2025-06-01",
-        version_date=lambda witness: witness.date,
+        (
+            _Witness("undated", "not-a-date"),
+            first_duplicate,
+            second_duplicate,
+        ),
+        requested_version_date="2026-05-29",
+        version_date=_date,
+    )
+
+    assert window.on_or_before is first_duplicate
+    assert window.on_or_after is first_duplicate
+
+
+def test_source_version_window_reports_missing_witnesses_as_null_details() -> None:
+    window = select_source_version_date_window(
+        (),
+        requested_version_date="2026-05-29",
+        version_date=_date,
     )
 
     detail = source_version_date_window_diagnostic_detail(
         window,
-        witness_detail=lambda witness: {"witness_id": witness.witness_id, "version_date": witness.date},
+        witness_detail=_detail,
     )
-
-    assert detail == {
-        "rule_id": "source_version_date_window_source_only",
-        "phase": "source_version_window",
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-        "family": "source_version_window",
-        "reason": "source_version_date_window_source_only",
-        "requested_version_date": "2025-06-01",
-        "truth_claim": "source_version_date_window_not_effective_date",
-        "replay_claims": False,
-        "on_or_before": {"witness_id": "older", "version_date": "2024-01-01"},
-        "on_or_after": {"witness_id": "newer", "version_date": "2026-04-05"},
-    }
-
-
-def test_source_version_change_window_projects_source_only_diagnostic_detail() -> None:
-    witnesses = (
-        _Witness("same-day", "2025-06-01"),
-        _Witness("before", "2025-04-05"),
-    )
-    window = select_source_version_change_window(
-        witnesses,
-        requested_version_date="2025-06-01",
-        version_date=lambda witness: witness.date,
-    )
-
-    detail = source_version_change_window_diagnostic_detail(
-        window,
-        witness_detail=lambda witness: {"witness_id": witness.witness_id, "version_date": witness.date},
-    )
-
-    assert detail["truth_claim"] == "source_change_window_not_effective_date"
-    assert detail["replay_claims"] is False
-    assert detail["before"] == {"witness_id": "before", "version_date": "2025-04-05"}
-    assert detail["on_or_after"] == {"witness_id": "same-day", "version_date": "2025-06-01"}
-
-
-def test_iso_date_prefix_rejects_non_iso_prefixes() -> None:
-    assert iso_date_prefix("2025-06-01Z") == "2025-06-01"
-    assert iso_date_prefix("not-2025-06-01") == ""
+    assert detail["requested_version_date"] == "2026-05-29"
+    assert detail["on_or_before"] is None
+    assert detail["on_or_after"] is None
