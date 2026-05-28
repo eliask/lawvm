@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, Mapping, SupportsIndex
+from typing import Any, Dict, Mapping, Self, SupportsIndex
 
 
 class FrozenDict(dict[str, Any]):
@@ -28,6 +28,9 @@ class FrozenDict(dict[str, Any]):
         raise TypeError("FrozenDict is immutable")
 
     def update(self, *args: Any, **kwargs: Any) -> None:
+        raise TypeError("FrozenDict is immutable")
+
+    def __ior__(self, other: Any) -> Self:
         raise TypeError("FrozenDict is immutable")
 
     def __copy__(self) -> "FrozenDict":

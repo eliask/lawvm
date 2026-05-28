@@ -68,6 +68,15 @@ def test_freeze_mapping_public_helper_freezes_nested_values() -> None:
     assert frozen["items"] == (FrozenDict({"inner": ("a",)}),)
 
 
+def test_frozen_dict_in_place_union_does_not_mutate() -> None:
+    frozen = FrozenDict({"items": ("a",)})
+
+    with pytest.raises(TypeError, match="immutable"):
+        frozen |= {"extra": "blocked"}
+
+    assert frozen == {"items": ("a",)}
+
+
 def test_frozen_dict_round_trips_through_pickle_without_losing_immutability() -> None:
     original = FrozenDict({"items": (FrozenDict({"inner": ("a", "b")}),)})
 
