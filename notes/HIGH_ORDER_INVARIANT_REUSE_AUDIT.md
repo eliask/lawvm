@@ -201,6 +201,9 @@ Recent improvement:
 - Estonia redactions-feed acquisition failures now also nest shared source-lane
   evidence for the failed RT feed lane, preserving the existing
   `RedactionsFeedDiagnostic` owner type.
+- EU Cellar manifest request failures now nest shared source-lane selection
+  evidence for the failed notice request lane while preserving the existing
+  source-pathology row.
 - Estonia target-resolution parse rejection helpers now delegate shared
   diagnostic envelope fields to `diagnostic_detail` while preserving their
   local target-title and source-fragment payload.

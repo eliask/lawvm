@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 
 
 BASE_URL = "http://publications.europa.eu/resource"
@@ -736,6 +737,8 @@ def _manifest_request_failure_row(
     notice: NoticeRequest,
     exc: HTTPError | URLError,
 ) -> dict[str, Any]:
+    notice_url = notice.url()
+    accept_header = notice.accept_header()
     return diagnostic_detail(
         rule_id="eu_cellar_manifest_request_failed",
         phase="acquisition",
@@ -744,10 +747,30 @@ def _manifest_request_failure_row(
         source_label=source_label,
         celex=celex,
         request_path=request_path,
-        notice_url=notice.url(),
-        accept_header=notice.accept_header(),
+        notice_url=notice_url,
+        accept_header=accept_header,
         error_type=exc.__class__.__name__,
         error=str(exc),
+        source_lane_selection=SourceLaneSelectionEvidence(
+            rule_id="eu_cellar_manifest_request_failed",
+            phase="acquisition",
+            reason="EU Cellar manifest request failed",
+            selected_lane="no_source_lane_selected_request_failed",
+            attempts=(
+                SourceLaneAttempt(
+                    lane=f"eu_cellar_{notice.notice_type}_{notice.notice_format}",
+                    locator=notice_url,
+                    status="request_failed",
+                    detail={
+                        "accept_header": accept_header,
+                        "request_path": request_path,
+                    },
+                ),
+            ),
+            blocking=True,
+            strict_disposition="block",
+            quirks_disposition="record",
+        ).to_diagnostic_detail(),
     )
 
 

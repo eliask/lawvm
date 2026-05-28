@@ -130,6 +130,29 @@ def test_fetch_manifest_records_failed_request_rows(monkeypatch, tmp_path) -> No
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "source_lane_selection": {
+                "rule_id": "eu_cellar_manifest_request_failed",
+                "phase": "acquisition",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "family": "source_lane_selection",
+                "reason": "EU Cellar manifest request failed",
+                "selected_source_lane": "no_source_lane_selected_request_failed",
+                "selected_source_locator": "",
+                "source_lane_attempts": (
+                    {
+                        "lane": "eu_cellar_tree_xml",
+                        "status": "request_failed",
+                        "locator": (
+                            "http://publications.europa.eu/resource/celex/32016R0679"
+                            "?language=eng&filter=true"
+                        ),
+                        "accept_header": "application/xml;notice=tree",
+                        "request_path": "data/eu/gdpr/tree.xml",
+                    },
+                ),
+            },
         },
     )
 
