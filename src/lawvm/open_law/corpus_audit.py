@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
@@ -615,19 +616,26 @@ def _operation_evidence_row(row: OpenLawOperationAuditRow) -> CorpusOperationEvi
 
 
 def _finding_evidence_row(row: OpenLawOperationAuditRow, finding: OpenLawFinding) -> CorpusFindingEvidenceRow:
+    envelope = diagnostic_detail(
+        rule_id=finding.kind,
+        family=finding.kind,
+        phase=_finding_phase(row.status),
+        message=finding.message,
+        blocking=finding.blocking,
+    )
     return CorpusFindingEvidenceRow(
         finding_id=f"{row.op_id}:{finding.kind}",
         frontend_id="open_law_maryland",
-        family=finding.kind,
-        rule_id=finding.kind,
-        phase=_finding_phase(row.status),
-        message=finding.message,
+        family=str(envelope["family"]),
+        rule_id=str(envelope["rule_id"]),
+        phase=str(envelope["phase"]),
+        message=str(envelope["message"]),
         source_artifact_id=row.action_path,
         source_unit_id=f"{row.before_branch}->{row.after_branch}",
         related_row_ids=(row.op_id,),
-        blocking=finding.blocking,
-        strict_disposition="block" if finding.blocking else "record",
-        quirks_disposition="record",
+        blocking=bool(envelope["blocking"]),
+        strict_disposition=str(envelope["strict_disposition"]),
+        quirks_disposition=str(envelope["quirks_disposition"]),
         evidence={
             "codify_path": "|".join(finding.path or row.codify_path),
             "status": row.status,

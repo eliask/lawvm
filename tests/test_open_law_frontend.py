@@ -11,11 +11,16 @@ from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row, 
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops, resolve_open_law_path
-from lawvm.open_law.corpus_audit import audit_maryland_corpus, audit_maryland_transition
+from lawvm.open_law.corpus_audit import (
+    OpenLawOperationAuditRow,
+    _finding_evidence_row,
+    audit_maryland_corpus,
+    audit_maryland_transition,
+)
 from lawvm.open_law.evidence_pack import _shareable_git_remote_url, write_maryland_evidence_pack
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.local_git import make_maryland_repos
-from lawvm.open_law.models import OpenLawAction
+from lawvm.open_law.models import OpenLawAction, OpenLawFinding
 from lawvm.open_law.planner import plan_maryland_comar_operation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
 from lawvm.tools.open_law import _print_explain, _print_verify_pack
@@ -297,6 +302,47 @@ def test_unsupported_codify_action_blocks_in_strict_mode() -> None:
     assert ops[0].action is OpenLawAction.EXPIRE
     assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
     assert result.findings[0].blocking is True
+
+
+def test_open_law_finding_evidence_row_uses_shared_disposition_envelope() -> None:
+    row = OpenLawOperationAuditRow(
+        before_branch="publication/2026-01-01.2026-01-01",
+        after_branch="publication/2026-01-02.2026-01-02",
+        action_path="editorial-actions/2026-01-02.xml",
+        op_id="op-1",
+        action="replace",
+        codify_path=("10", "41", "02", ".04"),
+        xml_path="10/41/02.xml",
+        status="diverged",
+    )
+    blocking_finding = OpenLawFinding(
+        kind="open_law_publication_snapshot_mismatch",
+        message="Snapshot mismatch.",
+        op_id="op-1",
+        path=("10", "41", "02", ".04"),
+        blocking=True,
+    )
+    nonblocking_finding = OpenLawFinding(
+        kind="open_law_snapshot_typography_projection",
+        message="Typography projection.",
+        op_id="op-1",
+        path=("10", "41", "02", ".04"),
+        blocking=False,
+    )
+
+    blocking_row = _finding_evidence_row(row, blocking_finding).to_dict()
+    nonblocking_row = _finding_evidence_row(row, nonblocking_finding).to_dict()
+
+    assert blocking_row["rule_id"] == "open_law_publication_snapshot_mismatch"
+    assert blocking_row["family"] == "open_law_publication_snapshot_mismatch"
+    assert blocking_row["phase"] == "audit"
+    assert blocking_row["blocking"] is True
+    assert blocking_row["strict_disposition"] == "block"
+    assert blocking_row["quirks_disposition"] == "record"
+    assert nonblocking_row["blocking"] is False
+    assert nonblocking_row["strict_disposition"] == "record"
+    assert validate_corpus_finding_evidence_row(blocking_row) == ()
+    assert validate_corpus_finding_evidence_row(nonblocking_row) == ()
 
 
 def test_snapshot_audit_accepts_publication_that_matches_declared_replace() -> None:
