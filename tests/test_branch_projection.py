@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from lawvm.core.authority import BranchGraphEdge, LegalBranch
@@ -10,6 +12,7 @@ from lawvm.core.branch_projection import (
     branch_impact_projection_from_operations,
     enrich_branch_impact_projection_texts,
 )
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import StructuralAction
@@ -126,6 +129,37 @@ def test_branch_impact_projection_validates_envelope() -> None:
 
     with pytest.raises(ValueError, match="status"):
         BranchImpactProjection(branch=branch, status="")
+
+
+def test_branch_impact_projection_normalizes_rows_and_freezes_detail() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        source_artifact_id="proposal/example/2026/1",
+    )
+    row_detail = {"witnesses": ["source"]}
+    row = BranchImpactRow(
+        row_id="row-1",
+        branch_id=branch.branch_id,
+        edge_kind="would_amend",
+        target_statute_id="base/1",
+        detail=row_detail,
+    )
+    rows = [row]
+
+    projection = BranchImpactProjection(
+        branch=branch,
+        rows=cast(Any, rows),
+        detail={"projection": {"ids": ["row-1"]}},
+    )
+
+    rows.clear()
+    row_detail["witnesses"].append("mutated")
+
+    assert projection.rows == (row,)
+    assert isinstance(row.detail, FrozenDict)
+    assert row.detail["witnesses"] == ("source",)
+    assert projection.detail["projection"]["ids"] == ("row-1",)
 
 
 def test_branch_impact_projection_from_operations_uses_branch_edge_mapping() -> None:

@@ -12,6 +12,7 @@ from lawvm.core.evidence_contracts import (
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
 )
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
@@ -87,6 +88,28 @@ def test_replay_contracts_reject_invalid_envelope_shapes() -> None:
             total_steps=1,
             serialize_text=lambda: "",
         )
+
+
+def test_replay_contracts_freeze_detail_and_normalize_steps() -> None:
+    step_detail = {"events": ["applied"]}
+    step = ReplayAmendmentStep(source_id="source", detail=step_detail)
+    steps = [step]
+
+    summary = ReplaySummary(
+        jurisdiction="no",
+        base_id="base",
+        as_of="2026-01-01",
+        steps=cast(Any, steps),
+        detail={"nested": {"ids": ["source"]}},
+    )
+
+    steps.clear()
+    step_detail["events"].append("mutated")
+
+    assert summary.steps == (step,)
+    assert isinstance(step.detail, FrozenDict)
+    assert step.detail["events"] == ("applied",)
+    assert summary.detail["nested"]["ids"] == ("source",)
 
 
 def test_verify_summary_to_dict_embeds_nested_records() -> None:

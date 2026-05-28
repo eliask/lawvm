@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from lawvm.core.authority import BranchGraphEdge, LegalBranch, branch_graph_edges_from_operations
+from lawvm.core.frozen_values import freeze_mapping
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalOperation
@@ -42,6 +43,7 @@ class BranchImpactRow:
             raise ValueError("BranchImpactRow.status must be non-empty")
         if not isinstance(self.detail, Mapping):
             raise ValueError("BranchImpactRow.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -64,10 +66,13 @@ class BranchImpactProjection:
             raise ValueError("BranchImpactProjection.branch must be a LegalBranch")
         if not self.status:
             raise ValueError("BranchImpactProjection.status must be non-empty")
-        if not all(isinstance(row, BranchImpactRow) for row in self.rows):
+        rows = tuple(self.rows)
+        if not all(isinstance(row, BranchImpactRow) for row in rows):
             raise ValueError("BranchImpactProjection.rows must contain BranchImpactRow records")
+        object.__setattr__(self, "rows", rows)
         if not isinstance(self.detail, Mapping):
             raise ValueError("BranchImpactProjection.detail must be a mapping")
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         return {
