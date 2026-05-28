@@ -18,6 +18,29 @@ def tree_path_from_legal_address(address: LegalAddress) -> TreePath:
 
 
 @dataclass(frozen=True)
+class ChangedPathPartition:
+    """Changed paths split by whether a declared boundary covers them."""
+
+    covered_changed_paths: Tuple[TreePath, ...]
+    unexplained_changed_paths: Tuple[TreePath, ...]
+
+
+def partition_changed_paths(
+    changed_paths: Sequence[TreePath],
+    allowed_prefixes: Sequence[TreePath],
+) -> ChangedPathPartition:
+    """Partition changed paths into covered and unexplained paths."""
+
+    allowed = tuple(allowed_prefixes)
+    covered = tuple(path for path in changed_paths if path_has_prefix(path, allowed))
+    unexplained = tuple(path for path in changed_paths if not path_has_prefix(path, allowed))
+    return ChangedPathPartition(
+        covered_changed_paths=covered,
+        unexplained_changed_paths=unexplained,
+    )
+
+
+@dataclass(frozen=True)
 class MutationBoundaryReport:
     """Changed-path accounting against declared legal mutation regions."""
 
@@ -36,13 +59,12 @@ def build_mutation_boundary_report(
 
     changed_paths = diff_ir_paths(before, after)
     allowed = tuple(allowed_prefixes)
-    covered = tuple(path for path in changed_paths if path_has_prefix(path, allowed))
-    unexplained = tuple(path for path in changed_paths if not path_has_prefix(path, allowed))
+    partition = partition_changed_paths(changed_paths, allowed)
     return MutationBoundaryReport(
         changed_paths=changed_paths,
         allowed_prefixes=allowed,
-        covered_changed_paths=covered,
-        unexplained_changed_paths=unexplained,
+        covered_changed_paths=partition.covered_changed_paths,
+        unexplained_changed_paths=partition.unexplained_changed_paths,
     )
 
 
@@ -58,7 +80,7 @@ def unexplained_changed_paths(
 ) -> Tuple[TreePath, ...]:
     """Return changed paths outside every declared mutation boundary prefix."""
 
-    return tuple(path for path in changed_paths if not path_has_prefix(path, allowed_prefixes))
+    return partition_changed_paths(changed_paths, allowed_prefixes).unexplained_changed_paths
 
 
 def path_has_prefix(path: TreePath, allowed_prefixes: Sequence[TreePath]) -> bool:
