@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -37,6 +38,12 @@ class InvariantDetectorResult:
     path_text: str
     message: str
     detail: dict[str, object]
+
+
+def _detail_sequence(value: object) -> list[object]:
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return list(value)
+    return []
 
 
 def path_matches_target(path_text: str, target_path: str) -> bool:
@@ -121,11 +128,11 @@ def run_invariant_detector(
             path = str(warning.get("path") or "?")
             node_kind = str(warning.get("node_kind") or "?")
             raw_sample = warning.get("label_sample")
-            sample = list(raw_sample) if isinstance(raw_sample, list) else []
+            sample = _detail_sequence(raw_sample)
             sample_str = ", ".join(str(item) for item in sample[:8])
             if kind == "flattened_sublist_interleaved":
                 raw_families = warning.get("repeated_families")
-                families = ", ".join(str(item) for item in (raw_families if isinstance(raw_families, list) else []))
+                families = ", ".join(str(item) for item in _detail_sequence(raw_families))
                 message = f"{path}: flattened {node_kind} family interleaved ({families}) [{sample_str}]"
             elif kind == "flattened_sublist_reset":
                 dominant = str(warning.get("dominant_family") or "?")
