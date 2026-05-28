@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping, Protocol, cast
 
 from lxml import etree
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.new_zealand.acquisition import open_farchive
 
 
@@ -231,19 +232,20 @@ def _latest_xml_locator_candidate_diagnostic(
     reason: str,
     detail: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "nz_latest_xml_locator_candidate_rejected",
-        "phase": "acquisition",
-        "family": "source_pathology",
-        "work_id": work_id,
-        "version_id": version_id,
-        "version_locator": version_locator,
-        "reason": reason,
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-        "detail": {"reason_code": reason_code, **dict(detail or {})},
-    }
+    diagnostic = diagnostic_detail(
+        rule_id="nz_latest_xml_locator_candidate_rejected",
+        phase="acquisition",
+        family="source_pathology",
+        reason=reason,
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        work_id=work_id,
+        version_id=version_id,
+        version_locator=version_locator,
+    )
+    diagnostic["detail"] = {"reason_code": reason_code, **dict(detail or {})}
+    return diagnostic
 
 
 def _xml_locator_from_version_detail(detail: Mapping[str, Any]) -> str:

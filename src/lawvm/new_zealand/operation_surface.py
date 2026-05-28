@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
@@ -766,17 +767,17 @@ def _finding(
     source_xml_id: str,
     blocking: bool,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": rule_id,
-        "phase": phase,
-        "family": family,
-        "reason": reason,
-        "row_id": row_id,
-        "source_xml_id": source_xml_id,
-        "blocking": blocking,
-        "strict_disposition": "block" if blocking else "warn",
-        "quirks_disposition": "skip_with_finding" if blocking else "warn",
-    }
+    return diagnostic_detail(
+        rule_id=rule_id,
+        phase=phase,
+        family=family,
+        reason=reason,
+        blocking=blocking,
+        strict_disposition="block" if blocking else "warn",
+        quirks_disposition="skip_with_finding" if blocking else "warn",
+        row_id=row_id,
+        source_xml_id=source_xml_id,
+    )
 
 
 def _operation_evidence_row(

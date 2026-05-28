@@ -19,6 +19,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 _API_BASE = "https://api.legislation.govt.nz"
 _USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
 _RATE_LIMIT_HEADERS = (
@@ -126,19 +128,19 @@ class NZAcquisitionDiagnostic:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def to_jsonable(self) -> dict[str, Any]:
-        return {
-            "rule_id": self.rule_id,
-            "phase": self.phase,
-            "family": self.family,
-            "reason": self.reason,
-            "locator": self.locator,
-            "url": self.url,
-            "status_code": self.status_code,
-            "blocking": self.blocking,
-            "strict_disposition": self.strict_disposition,
-            "quirks_disposition": self.quirks_disposition,
-            "metadata": dict(self.metadata),
-        }
+        return diagnostic_detail(
+            rule_id=self.rule_id,
+            phase=self.phase,
+            family=self.family,
+            reason=self.reason,
+            blocking=self.blocking,
+            strict_disposition=self.strict_disposition,
+            quirks_disposition=self.quirks_disposition,
+            locator=self.locator,
+            url=self.url,
+            status_code=self.status_code,
+            metadata=dict(self.metadata),
+        )
 
 
 @dataclass

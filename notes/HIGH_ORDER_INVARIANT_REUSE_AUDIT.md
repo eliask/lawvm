@@ -298,6 +298,10 @@ Implemented progress:
   diagnostics now delegate their shared envelope fields to `diagnostic_detail`.
 - Open Law corpus finding evidence rows now derive their shared disposition
   envelope fields through `diagnostic_detail`.
+- New Zealand acquisition diagnostics, latest-XML locator rejection diagnostics,
+  benchmark findings, and operation-surface findings now delegate their shared
+  envelope fields to `diagnostic_detail` while preserving NZ-local warning and
+  witness-only dispositions.
 
 Why high value:
 

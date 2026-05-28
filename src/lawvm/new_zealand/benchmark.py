@@ -17,6 +17,7 @@ from typing import Any, Callable, Mapping
 
 from lxml import etree
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import ArchiveReader, extract_dependency_report, latest_xml_locator_for_work
 from lawvm.new_zealand.effect_candidates import (
@@ -1043,17 +1044,17 @@ def _finding(
     locator: str = "",
     blocking: bool,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": rule_id,
-        "phase": phase,
-        "family": family,
-        "work_id": work_id,
-        "locator": locator,
-        "reason": reason,
-        "blocking": blocking,
-        "strict_disposition": "block" if blocking else "warn",
-        "quirks_disposition": "skip_with_finding" if blocking else "warn",
-    }
+    return diagnostic_detail(
+        rule_id=rule_id,
+        phase=phase,
+        family=family,
+        reason=reason,
+        blocking=blocking,
+        strict_disposition="block" if blocking else "warn",
+        quirks_disposition="skip_with_finding" if blocking else "warn",
+        work_id=work_id,
+        locator=locator,
+    )
 
 
 def main(args: Any) -> None:
