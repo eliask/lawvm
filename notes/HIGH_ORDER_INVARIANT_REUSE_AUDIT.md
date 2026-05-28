@@ -206,6 +206,9 @@ Recent improvement:
   candidate count, selected target, status, confidence, and strict/quirks
   disposition; frontends still own candidate discovery and local fallback
   policy.
+- New Zealand instruction-workqueue evidence now projects its latest-oracle
+  target lookup through the shared target-resolution carrier while preserving
+  NZ-local status names and keeping replay/effect claims disabled.
 
 ## Ranked Promotion Candidates
 
