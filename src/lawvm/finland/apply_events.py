@@ -11,11 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
-from lawvm.core.mutation_boundary import dedupe_tree_paths, partition_changed_paths, path_has_prefix
 from lawvm.core.mutation_events import (
     DeclaredMutationAllowance,
     MutationEvent as ApplyMutationEvent,
-    mutation_event_declared_allowance_paths,
+    build_mutation_event_path_set_report,
     mutation_event_touched_paths,
 )
 from lawvm.core.tree_ops import Path
@@ -242,85 +241,8 @@ def _emit_legacy_dispatch_fallback_event(
     )
 
 
-def _path_is_descendant_or_same(
-    ancestor: tuple[tuple[str, str], ...] | None,
-    candidate: tuple[tuple[str, str], ...],
-) -> bool:
-    if ancestor is None:
-        return True
-    return path_has_prefix(candidate, (ancestor,))
-
-
 def _event_touched_paths(event: ApplyMutationEvent) -> tuple[tuple[tuple[str, str], ...], ...]:
     return mutation_event_touched_paths(event)
-
-
-def _event_declared_allowance_paths(event: ApplyMutationEvent) -> tuple[tuple[tuple[str, str], ...], ...]:
-    return mutation_event_declared_allowance_paths(event)
-
-
-def _allowance_paths_by_kind(
-    event: ApplyMutationEvent,
-    *kinds: str,
-) -> tuple[tuple[tuple[str, str], ...], ...]:
-    wanted = set(kinds)
-    paths: list[tuple[tuple[str, str], ...]] = []
-    for allowance in event.declared_allowances:
-        if allowance.kind not in wanted:
-            continue
-        paths.extend(path for path in allowance.paths if path)
-    deduped: list[tuple[tuple[str, str], ...]] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    for path in paths:
-        if path in seen:
-            continue
-        seen.add(path)
-        deduped.append(path)
-    return tuple(deduped)
-
-
-def _allowance_rule_ids_by_kind(
-    event: ApplyMutationEvent,
-    *kinds: str,
-) -> tuple[str, ...]:
-    wanted = set(kinds)
-    rule_ids: list[str] = []
-    seen: set[str] = set()
-    for allowance in event.declared_allowances:
-        if allowance.kind not in wanted:
-            continue
-        rule_id = str(allowance.rule_id or "").strip()
-        if not rule_id or rule_id in seen:
-            continue
-        seen.add(rule_id)
-        rule_ids.append(rule_id)
-    return tuple(rule_ids)
-
-
-def _matching_declared_allowance_rule_ids(
-    event: ApplyMutationEvent,
-    path: tuple[tuple[str, str], ...],
-) -> tuple[str, ...]:
-    matched: list[str] = []
-    for allowance in event.declared_allowances:
-        if not allowance.rule_id:
-            continue
-        if any(_path_is_descendant_or_same(allowed_path, path) for allowed_path in allowance.paths if allowed_path):
-            matched.append(allowance.rule_id)
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for rule_id in matched:
-        if rule_id in seen:
-            continue
-        seen.add(rule_id)
-        deduped.append(rule_id)
-    return tuple(deduped)
-
-
-def _dedupe_paths(
-    paths: Iterable[tuple[tuple[str, str], ...]],
-) -> tuple[tuple[tuple[str, str], ...], ...]:
-    return dedupe_tree_paths(paths)
 
 
 def build_apply_mutation_invariant_reports(
@@ -330,13 +252,14 @@ def build_apply_mutation_invariant_reports(
     reports: list[ApplyMutationInvariantReport] = []
     for event in events:
         touched_paths = _event_touched_paths(event)
+        path_report = build_mutation_event_path_set_report(event, ())
         results: list[ApplyMutationAccountingResult] = []
         allowed_roots: tuple[tuple[tuple[str, str], ...], ...] = ()
-        declared_allowance_paths = _event_declared_allowance_paths(event)
-        declared_recovery_paths = _allowance_paths_by_kind(event, "recovery", "recovery_path")
-        declared_recovery_rule_ids = _allowance_rule_ids_by_kind(event, "recovery", "recovery_path")
-        declared_migration_paths = _allowance_paths_by_kind(event, "migration", "migration_path")
-        declared_migration_rule_ids = _allowance_rule_ids_by_kind(event, "migration", "migration_path")
+        declared_allowance_paths = path_report.declared_allowance_paths
+        declared_recovery_paths = path_report.declared_recovery_paths
+        declared_recovery_rule_ids = path_report.declared_recovery_rule_ids
+        declared_migration_paths = path_report.declared_migration_paths
+        declared_migration_rule_ids = path_report.declared_migration_rule_ids
         allowed_effect_region_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
         permitted_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
         covered_changed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
@@ -389,6 +312,12 @@ def build_apply_mutation_invariant_reports(
                         path for path in (event.resolved_target_path, event.parent_path) if path is not None
                     )
                 allowed_effect_region_paths = allowed_roots
+                path_report = build_mutation_event_path_set_report(event, allowed_effect_region_paths)
+                declared_allowance_paths = path_report.declared_allowance_paths
+                declared_recovery_paths = path_report.declared_recovery_paths
+                declared_recovery_rule_ids = path_report.declared_recovery_rule_ids
+                declared_migration_paths = path_report.declared_migration_paths
+                declared_migration_rule_ids = path_report.declared_migration_rule_ids
                 if not allowed_roots:
                     results.append(
                         ApplyMutationAccountingResult(
@@ -398,36 +327,14 @@ def build_apply_mutation_invariant_reports(
                         )
                     )
                 else:
-                    permitted_paths = _dedupe_paths(
-                        (
-                            *allowed_effect_region_paths,
-                            *declared_recovery_paths,
-                            *declared_migration_paths,
-                        )
-                    )
-                    partition = partition_changed_paths(touched_paths, permitted_paths)
-                    allowed_non_target_list = [
-                        path
-                        for path in partition.covered_changed_paths
-                        if not path_has_prefix(path, allowed_roots)
-                    ]
-                    covered_changed_paths = partition.covered_changed_paths
-                    unexplained_changed_paths = partition.unexplained_changed_paths
-                    allowed_non_target_paths = tuple(allowed_non_target_list)
+                    permitted_paths = path_report.permitted_paths
+                    covered_changed_paths = path_report.covered_changed_paths
+                    unexplained_changed_paths = path_report.unexplained_changed_paths
+                    allowed_non_target_paths = path_report.allowed_non_target_paths
                     out_of_scope_paths = unexplained_changed_paths
-                    path_set_invariant_holds = not out_of_scope_paths
+                    path_set_invariant_holds = path_report.path_set_invariant_holds
                     if allowed_non_target_paths:
-                        matched_rule_ids: list[str] = []
-                        for path in allowed_non_target_paths:
-                            matched_rule_ids.extend(_matching_declared_allowance_rule_ids(event, path))
-                        deduped_rule_ids: list[str] = []
-                        seen_rule_ids: set[str] = set()
-                        for rule_id in matched_rule_ids:
-                            if rule_id in seen_rule_ids:
-                                continue
-                            seen_rule_ids.add(rule_id)
-                            deduped_rule_ids.append(rule_id)
-                        matched_allowance_rule_ids = tuple(deduped_rule_ids)
+                        matched_allowance_rule_ids = path_report.matched_allowance_rule_ids
                         results.append(
                             ApplyMutationAccountingResult(
                                 code="REPLAY_APPLY_BOUNDARY_TOUCH_ALLOWED",
