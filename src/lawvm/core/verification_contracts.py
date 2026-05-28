@@ -55,6 +55,23 @@ class DivergenceRecord:
 
 
 @dataclass(frozen=True)
+class FilteredDivergenceRecord:
+    """A divergence intentionally removed from the primary mismatch lane."""
+
+    divergence: Any
+    rule_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class DivergencePartition:
+    """Primary divergences plus filtered divergences with explicit rule IDs."""
+
+    primary: list[Any]
+    filtered: list[FilteredDivergenceRecord]
+
+
+@dataclass(frozen=True)
 class CoverageAttribution:
     """Shared summary of touched/untouched divergence attribution."""
 

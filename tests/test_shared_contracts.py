@@ -12,6 +12,8 @@ from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplaySummary, Repl
 from lawvm.core.verification_contracts import (
     CoverageAttribution,
     DivergenceRecord,
+    DivergencePartition,
+    FilteredDivergenceRecord,
     VerifyIssue,
     VerifySummary,
 )
@@ -69,6 +71,25 @@ def test_verify_summary_to_dict_embeds_nested_records() -> None:
     assert data["issues"][0]["code"] == "parse.bad"
     assert data["divergences"][0]["address"] == "section:1"
     assert data["coverage"]["touched_divergence_count"] == 1
+
+
+def test_divergence_partition_preserves_filtered_rule_evidence() -> None:
+    divergence = DivergenceRecord(address="section:1", kind="MISMATCH")
+
+    partition = DivergencePartition(
+        primary=[],
+        filtered=[
+            FilteredDivergenceRecord(
+                divergence=divergence,
+                rule_id="verify.prefix_descendant_suppressed",
+                reason="parent divergence covered by child divergence",
+            )
+        ],
+    )
+
+    assert partition.primary == []
+    assert partition.filtered[0].divergence is divergence
+    assert partition.filtered[0].rule_id == "verify.prefix_descendant_suppressed"
 
 
 def test_evidence_summary_to_dict_preserves_tuple_fields() -> None:

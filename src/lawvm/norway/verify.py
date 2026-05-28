@@ -13,6 +13,10 @@ from lawvm.core.mutation_boundary import normalize_tree_path_for_relation, paths
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops
 from lawvm.core.timeline_consistency import ConsistencyDivergence, ingest_consolidated, verify_consistency
+from lawvm.core.verification_contracts import (
+    DivergencePartition as NOPrimaryDivergencePartition,
+    FilteredDivergenceRecord as NOFilteredDivergence,
+)
 from lawvm.norway.grafter import parse_no_statute
 from lawvm.norway.index import NOAmendmentIndex, build_no_amendment_index, load_no_amendment_index
 from lawvm.norway.inventory import build_no_inventory
@@ -122,19 +126,6 @@ NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED = (
     "no_verify.compare_definition_subsection_pairs_collapsed"
 )
 NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED = "no_verify.compare_other_laws_context_suppressed"
-
-
-@dataclass
-class NOFilteredDivergence:
-    divergence: ConsistencyDivergence
-    rule_id: str
-    reason: str
-
-
-@dataclass
-class NOPrimaryDivergencePartition:
-    primary: list[ConsistencyDivergence]
-    filtered: list[NOFilteredDivergence]
 
 
 @dataclass(frozen=True)
