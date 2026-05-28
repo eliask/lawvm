@@ -180,6 +180,9 @@ Recent improvement:
 - UK article-plus-attached-schedule affecting-source extraction now uses the
   shared source-lane carrier to show the article context lane and selected
   schedule-payload lane without changing extraction policy.
+- UK single-child amendment payload, enacted schedule-table row payload, and
+  compound BlockAmendment payload-only extraction diagnostics now use the same
+  source-lane carrier while preserving their existing UK-local fields.
 - Norway amendment-index duplicate logical locator diagnostics now include a
   nested shared source-lane selection projection for both deterministic
   byte-identical duplicate selection and conflicting-duplicate blocking,

@@ -8,8 +8,11 @@ from lawvm.uk_legislation.source_state import (
     is_uk_affecting_act_xml_source_observation,
     uk_affecting_act_article_schedule_payload_source_extracted,
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
+    uk_affecting_act_compound_payload_only_block_amendment_selected,
     uk_affecting_act_current_shell_enacted_source_selected,
+    uk_affecting_act_enacted_schedule_table_row_source_extracted,
     uk_affecting_act_missing_current_enacted_source_selected,
+    uk_affecting_act_single_amendment_child_source_selected,
     uk_affecting_act_xml_too_small_rejection,
     uk_source_state_wire_tuple,
 )
@@ -141,6 +144,78 @@ def test_article_schedule_payload_source_observation_is_typed_source_diagnostic(
     )
     assert is_uk_affecting_act_xml_source_observation(observation) is True
     assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
+
+
+def test_single_amendment_child_source_selection_uses_shared_source_lane_evidence() -> None:
+    observation = uk_affecting_act_single_amendment_child_source_selected(
+        effect_id="eff-1",
+        affecting_act_id="uksi/2003/3076",
+        affecting_provisions="art. 2",
+        locator="https://www.legislation.gov.uk/uksi/2003/3076/enacted/data.xml",
+        authority_layer="AFFECTING_ACT_ENACTED_TEXT",
+        source_container_id="article-2",
+        selected_child_id="article-2-2",
+        selected_child_label="2",
+        selected_child_text_preview="except in Scotland",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_single_amendment_child_source_selected"
+    assert observation["selected_source_lane"] == "single_amendment_child_payload"
+    assert observation["selected_source_locator"] == (
+        "https://www.legislation.gov.uk/uksi/2003/3076/enacted/data.xml#article-2-2"
+    )
+    assert [attempt["status"] for attempt in observation["source_lane_attempts"]] == [
+        "context_selected_not_payload",
+        "selected",
+    ]
+    assert observation["source_container_id"] == "article-2"
+    assert observation["selected_child_id"] == "article-2-2"
+
+
+def test_enacted_schedule_table_row_source_selection_uses_shared_source_lane_evidence() -> None:
+    observation = uk_affecting_act_enacted_schedule_table_row_source_extracted(
+        effect_id="eff-1",
+        affecting_act_id="asp/2004/3",
+        affected_provisions="sch. 1 para. 32B",
+        affecting_provisions="Sch. 1",
+        locator="https://www.legislation.gov.uk/asp/2004/3/enacted/data.xml",
+        authority_layer="AFFECTING_ACT_ENACTED_TEXT",
+        schedule_label="1",
+        part_label="4",
+        target_label="32b",
+        source_row_text="32B NHS Health Scotland",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_enacted_schedule_table_row_source_extracted"
+    assert observation["selected_source_lane"] == "enacted_schedule_table_row_payload"
+    assert observation["source_lane_attempts"][0]["status"] == "selected"
+    assert observation["source_lane_attempts"][0]["target_label"] == "32b"
+    assert observation["part_label"] == "4"
+    assert observation["source_row_text"] == "32B NHS Health Scotland"
+
+
+def test_compound_payload_only_source_selection_uses_shared_source_lane_evidence() -> None:
+    observation = uk_affecting_act_compound_payload_only_block_amendment_selected(
+        effect_id="eff-1",
+        affecting_act_id="ukpga/2023/1",
+        affecting_provisions="Sch. 2 Pt. 1 para. 1(2)(a)",
+        locator="https://www.legislation.gov.uk/ukpga/2023/1/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+        source_row_tag="P3",
+        source_row_id="schedule-2-paragraph-1-2-a",
+        source_row_label="a",
+        payload_container_tag="BlockAmendment",
+        payload_text_preview="the 1996 Act means...",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_compound_payload_only_block_amendment_selected"
+    assert observation["selected_source_lane"] == "block_amendment_payload_container"
+    assert [attempt["lane"] for attempt in observation["source_lane_attempts"]] == [
+        "numbered_source_row_context",
+        "block_amendment_payload_container",
+    ]
+    assert observation["payload_container_tag"] == "BlockAmendment"
+    assert observation["source_row_id"] == "schedule-2-paragraph-1-2-a"
 
 
 def test_current_shell_enacted_source_selection_uses_shared_source_lane_evidence() -> None:

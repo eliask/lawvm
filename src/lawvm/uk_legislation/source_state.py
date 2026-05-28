@@ -292,27 +292,47 @@ def uk_affecting_act_single_amendment_child_source_selected(
     selected_child_label: str,
     selected_child_text_preview: str,
 ) -> dict[str, Any]:
-    return _uk_source_diagnostic(
-        rule_id="uk_affecting_act_single_amendment_child_source_selected",
-        family="source_lane_selection",
-        phase="extraction",
-        reason=(
-            "UK effects metadata named a broad source container whose current "
-            "version was only a shell, while the enacted source container had "
-            "exactly one child carrying an amendment payload. LawVM selected "
-            "that child rather than smuggling the context sibling into the payload."
-        ),
-        blocking=False,
-        effect_id=effect_id,
-        affecting_act_id=affecting_act_id,
-        affecting_provisions=affecting_provisions,
-        locator=locator,
-        authority_layer=authority_layer,
-        source_container_id=source_container_id,
-        selected_child_id=selected_child_id,
-        selected_child_label=selected_child_label,
-        selected_child_text_preview=selected_child_text_preview,
+    reason = (
+        "UK effects metadata named a broad source container whose current "
+        "version was only a shell, while the enacted source container had "
+        "exactly one child carrying an amendment payload. LawVM selected "
+        "that child rather than smuggling the context sibling into the payload."
     )
+    return SourceLaneSelectionEvidence(
+        rule_id="uk_affecting_act_single_amendment_child_source_selected",
+        phase="extraction",
+        reason=reason,
+        selected_lane="single_amendment_child_payload",
+        selected_locator=f"{locator}#{selected_child_id}",
+        blocking=False,
+        attempts=(
+            SourceLaneAttempt(
+                lane="source_container_context",
+                locator=f"{locator}#{source_container_id}",
+                status="context_selected_not_payload",
+            ),
+            SourceLaneAttempt(
+                lane="single_amendment_child_payload",
+                locator=f"{locator}#{selected_child_id}",
+                status="selected",
+                detail={
+                    "selected_child_label": selected_child_label,
+                    "selected_child_text_preview": selected_child_text_preview,
+                },
+            ),
+        ),
+        detail={
+            "effect_id": effect_id,
+            "affecting_act_id": affecting_act_id,
+            "affecting_provisions": affecting_provisions,
+            "locator": locator,
+            "authority_layer": authority_layer,
+            "source_container_id": source_container_id,
+            "selected_child_id": selected_child_id,
+            "selected_child_label": selected_child_label,
+            "selected_child_text_preview": selected_child_text_preview,
+        },
+    ).to_diagnostic_detail()
 
 
 def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
@@ -479,29 +499,47 @@ def uk_affecting_act_enacted_schedule_table_row_source_extracted(
     target_label: str,
     source_row_text: str,
 ) -> dict[str, Any]:
-    return _uk_source_diagnostic(
-        rule_id="uk_affecting_act_enacted_schedule_table_row_source_extracted",
-        family="source_lane_selection",
-        phase="extraction",
-        reason=(
-            "UK current affecting-act XML was unavailable, while the official enacted "
-            "source exposed a unique table row under the affected schedule Part whose "
-            "first cell exactly names the added schedule paragraph; LawVM extracted "
-            "only that row as a synthetic paragraph payload instead of admitting the "
-            "whole schedule source."
-        ),
-        blocking=False,
-        effect_id=effect_id,
-        affecting_act_id=affecting_act_id,
-        affected_provisions=affected_provisions,
-        affecting_provisions=affecting_provisions,
-        locator=locator,
-        authority_layer=authority_layer,
-        schedule_label=schedule_label,
-        part_label=part_label,
-        target_label=target_label,
-        source_row_text=source_row_text,
+    reason = (
+        "UK current affecting-act XML was unavailable, while the official enacted "
+        "source exposed a unique table row under the affected schedule Part whose "
+        "first cell exactly names the added schedule paragraph; LawVM extracted "
+        "only that row as a synthetic paragraph payload instead of admitting the "
+        "whole schedule source."
     )
+    selected_locator = f"{locator}#schedule-{schedule_label}-part-{part_label}-row-{target_label}"
+    return SourceLaneSelectionEvidence(
+        rule_id="uk_affecting_act_enacted_schedule_table_row_source_extracted",
+        phase="extraction",
+        reason=reason,
+        selected_lane="enacted_schedule_table_row_payload",
+        selected_locator=selected_locator,
+        blocking=False,
+        attempts=(
+            SourceLaneAttempt(
+                lane="enacted_schedule_table_row_payload",
+                locator=selected_locator,
+                status="selected",
+                detail={
+                    "schedule_label": schedule_label,
+                    "part_label": part_label,
+                    "target_label": target_label,
+                    "source_row_text": source_row_text,
+                },
+            ),
+        ),
+        detail={
+            "effect_id": effect_id,
+            "affecting_act_id": affecting_act_id,
+            "affected_provisions": affected_provisions,
+            "affecting_provisions": affecting_provisions,
+            "locator": locator,
+            "authority_layer": authority_layer,
+            "schedule_label": schedule_label,
+            "part_label": part_label,
+            "target_label": target_label,
+            "source_row_text": source_row_text,
+        },
+    ).to_diagnostic_detail()
 
 
 def uk_affecting_act_compound_payload_only_block_amendment_selected(
@@ -517,28 +555,49 @@ def uk_affecting_act_compound_payload_only_block_amendment_selected(
     payload_container_tag: str,
     payload_text_preview: str,
 ) -> dict[str, Any]:
-    return _uk_source_diagnostic(
-        rule_id="uk_affecting_act_compound_payload_only_block_amendment_selected",
-        family="source_lane_selection",
-        phase="extraction",
-        reason=(
-            "UK compound affecting-source metadata selected a numbered source row whose "
-            "only substantive content is a BlockAmendment/InlineAmendment payload. "
-            "LawVM uses the amendment payload container rather than smuggling the "
-            "source row label into payload text."
-        ),
-        blocking=False,
-        effect_id=effect_id,
-        affecting_act_id=affecting_act_id,
-        affecting_provisions=affecting_provisions,
-        locator=locator,
-        authority_layer=authority_layer,
-        source_row_tag=source_row_tag,
-        source_row_id=source_row_id,
-        source_row_label=source_row_label,
-        payload_container_tag=payload_container_tag,
-        payload_text_preview=payload_text_preview,
+    reason = (
+        "UK compound affecting-source metadata selected a numbered source row whose "
+        "only substantive content is a BlockAmendment/InlineAmendment payload. "
+        "LawVM uses the amendment payload container rather than smuggling the "
+        "source row label into payload text."
     )
+    return SourceLaneSelectionEvidence(
+        rule_id="uk_affecting_act_compound_payload_only_block_amendment_selected",
+        phase="extraction",
+        reason=reason,
+        selected_lane="block_amendment_payload_container",
+        selected_locator=f"{locator}#{source_row_id}/payload",
+        blocking=False,
+        attempts=(
+            SourceLaneAttempt(
+                lane="numbered_source_row_context",
+                locator=f"{locator}#{source_row_id}",
+                status="context_selected_not_payload",
+                detail={"source_row_tag": source_row_tag, "source_row_label": source_row_label},
+            ),
+            SourceLaneAttempt(
+                lane="block_amendment_payload_container",
+                locator=f"{locator}#{source_row_id}/payload",
+                status="selected",
+                detail={
+                    "payload_container_tag": payload_container_tag,
+                    "payload_text_preview": payload_text_preview,
+                },
+            ),
+        ),
+        detail={
+            "effect_id": effect_id,
+            "affecting_act_id": affecting_act_id,
+            "affecting_provisions": affecting_provisions,
+            "locator": locator,
+            "authority_layer": authority_layer,
+            "source_row_tag": source_row_tag,
+            "source_row_id": source_row_id,
+            "source_row_label": source_row_label,
+            "payload_container_tag": payload_container_tag,
+            "payload_text_preview": payload_text_preview,
+        },
+    ).to_diagnostic_detail()
 
 
 def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
