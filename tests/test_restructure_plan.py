@@ -2002,4 +2002,4 @@ class TestExecutionOrdering:
         assert finding.detail["reason_code"] == "non_executable_deferred_to_leaf_replay"
         assert finding.detail["plan_op_kind"] == "replace_leaf"
         assert finding.detail["target"] == "chapter:2/section:10"
-        assert finding.detail["payload_claim_ids"] == ["section:2/10"]
+        assert finding.detail["payload_claim_ids"] == ("section:2/10",)
