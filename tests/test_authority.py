@@ -14,6 +14,7 @@ from lawvm.core.authority import (
     branch_graph_edges_from_operations,
     enacted_materialization_ops,
     branch_materialization_ops,
+    branch_overlay_materialization_ops,
 )
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource
@@ -50,6 +51,16 @@ def test_default_operation_source_is_enacted_materialization_context() -> None:
 def test_proposal_operation_does_not_leak_into_enacted_materialization() -> None:
     enacted = _op("enacted", source=OperationSource(statute_id="2025/1"))
     proposal = _op("proposal", source=_branch_source())
+    other_proposal = _op(
+        "other-proposal",
+        source=OperationSource(
+            statute_id="proposal/example/2026/2",
+            authority_layer=PROPOSAL_AUTHORITY,
+            legal_status=UNKNOWN_STATUS,
+            branch_id="proposal:example:2026-2",
+            scenario_id="if_enacted_as_introduced",
+        ),
+    )
     context = BranchContext(
         authority_layer=PROPOSAL_AUTHORITY,
         legal_status=UNKNOWN_STATUS,
@@ -57,8 +68,18 @@ def test_proposal_operation_does_not_leak_into_enacted_materialization() -> None
         scenario_id="if_enacted_as_introduced",
     )
 
-    assert enacted_materialization_ops([enacted, proposal]) == (enacted,)
-    assert branch_materialization_ops([enacted, proposal], context) == (proposal,)
+    ops = [enacted, proposal, other_proposal]
+
+    assert enacted_materialization_ops(ops) == (enacted,)
+    assert branch_materialization_ops(ops, context) == (proposal,)
+    assert branch_overlay_materialization_ops(ops, context) == (enacted, proposal)
+
+
+def test_branch_overlay_default_context_is_enacted_lane() -> None:
+    enacted = _op("enacted", source=OperationSource(statute_id="2025/1"))
+    proposal = _op("proposal", source=_branch_source())
+
+    assert branch_overlay_materialization_ops([enacted, proposal], BranchContext()) == (enacted,)
 
 
 def test_non_enacted_branch_context_requires_branch_id() -> None:

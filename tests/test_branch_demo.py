@@ -12,6 +12,7 @@ def test_branch_demo_payload_keeps_proposal_out_of_default_enacted_lane() -> Non
 
     assert payload["default_enacted_operation_ids"] == ("enacted-op-1",)
     assert payload["branch_operation_ids"] == ("proposal-op-1",)
+    assert payload["branch_overlay_operation_ids"] == ("enacted-op-1", "proposal-op-1")
     row = payload["impact_projection"]["rows"][0]
     assert row["edge_kind"] == "would_replace"
     assert row["current_text"] == "Current enacted text."
