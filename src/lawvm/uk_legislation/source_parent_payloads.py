@@ -1154,13 +1154,12 @@ def _source_carried_structured_tail_substitution(
         anchor = " ".join(text_match.group("anchor").split()).strip()
         payload_tail = " ".join(text_match.group("payload").split()).strip()
     else:
-        if subparagraph_text_match is None and subparagraph_effect_context_match is None:
+        if subparagraph_text_match is not None:
+            active_match = subparagraph_text_match
+        elif subparagraph_effect_context_match is not None:
+            active_match = subparagraph_effect_context_match
+        else:
             return None
-        active_match = (
-            subparagraph_text_match
-            if subparagraph_text_match is not None
-            else subparagraph_effect_context_match
-        )
         if _addr_leaf_kind(target) != "subparagraph":
             return None
         source_paragraph = ""

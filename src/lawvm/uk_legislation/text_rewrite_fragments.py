@@ -6,7 +6,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import _addr_container
@@ -1545,10 +1545,11 @@ def append_source_carried_substitution_rewrite_observations(
             },
         )
 def _fragment_target_suffix(fragment: object) -> tuple[str, str] | None:
-    if not isinstance(fragment, dict):
+    if not isinstance(fragment, Mapping):
         return None
-    kind = str(fragment.get("target_suffix_kind") or "").strip().lower().replace("-", "")
-    label = str(fragment.get("target_suffix_label") or "").strip()
+    fragment_map = cast(Mapping[str, object], fragment)
+    kind = str(fragment_map.get("target_suffix_kind") or "").strip().lower().replace("-", "")
+    label = str(fragment_map.get("target_suffix_label") or "").strip()
     if not kind or not label:
         return None
     return kind, label
@@ -1560,9 +1561,10 @@ def _labeled_child_end_range_selector(
     suffix: tuple[str, str],
 ) -> str:
     """Return a parent-scoped selector for ranges ending at an explicit child."""
-    if target.special is not None or not isinstance(fragment, dict):
+    if target.special is not None or not isinstance(fragment, Mapping):
         return ""
-    original = str(fragment.get("original") or "")
+    fragment_map = cast(Mapping[str, object], fragment)
+    original = str(fragment_map.get("original") or "")
     if not original.startswith("TEXT_FROM_") or not original.endswith("_TO_END"):
         return ""
     suffix_kind, suffix_label = suffix
