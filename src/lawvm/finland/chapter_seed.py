@@ -24,6 +24,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.xml_ingest import xml_to_ir_node
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import default_label_sort_key
 from lawvm.finland.helpers import _fi_label_postprocessor
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.replay_notices import replay_print
@@ -34,6 +35,10 @@ _MISSING_CHAPTER_SPAN_RE = re.compile(
     r"\bpuuttuu\s+luvut?\s+(\d+)\s*[-–]\s*(\d+)\b",
     re.IGNORECASE,
 )
+
+
+def _chapter_sort_key(label: str) -> Tuple[int, str, int]:
+    return default_label_sort_key(label)
 
 
 @dataclass(frozen=True)
@@ -180,11 +185,11 @@ def _labels_in_missing_span(
     The textual form ``Puuttuu luvut 7-11`` is treated as the missing gap
     starting at 7 and ending *before* the next present chapter 11.
     """
-    start_key = _tops._default_sort_key(start_label)
-    end_key = _tops._default_sort_key(end_label)
+    start_key = default_label_sort_key(start_label)
+    end_key = default_label_sort_key(end_label)
     return [
         label for label in labels
-        if start_key <= _tops._default_sort_key(label) < end_key
+        if start_key <= default_label_sort_key(label) < end_key
     ]
 
 
@@ -226,12 +231,12 @@ def _chapters_in_gap(
     next_label: Optional[str],
 ) -> List[str]:
     """Return seedable chapter labels that sort between prev and next."""
-    prev_key = _tops._default_sort_key(prev_label) if prev_label else (-1, '', 0)
+    prev_key = default_label_sort_key(prev_label) if prev_label else (-1, '', 0)
     # Use a very large upper bound if there's no next chapter
-    next_key = _tops._default_sort_key(next_label) if next_label else (999999, '', 0)
+    next_key = default_label_sort_key(next_label) if next_label else (999999, '', 0)
     return [
         label for label in seedable
-        if prev_key < _tops._default_sort_key(label) < next_key
+        if prev_key < default_label_sort_key(label) < next_key
     ]
 
 
@@ -316,7 +321,7 @@ def seed_missing_chapters(
                 base_chapter_labels.add(ch.label)
 
     if DEBUG:
-        replay_print(f"  SEED: base chapters = {sorted(base_chapter_labels, key=_tops._default_sort_key)}")
+        replay_print(f"  SEED: base chapters = {sorted(base_chapter_labels, key=_chapter_sort_key)}")
 
     # Step 3: Scan amendments chronologically for chapters not in the base.
     # Map: chapter_label → (amendment_id, IRNode)
@@ -386,7 +391,7 @@ def seed_missing_chapters(
                 gap_seeds = _chapters_in_gap(seedable, prev_label, next_label)
                 if gap_seeds:
                     # Insert the seeded chapters in sorted order, drop the omission.
-                    for label in sorted(gap_seeds, key=_tops._default_sort_key):
+                    for label in sorted(gap_seeds, key=_chapter_sort_key):
                         amendment_id, ch_ir = seedable[label]
                         new_children.append(ch_ir)
                         seeded_set.add((label, amendment_id))
@@ -423,7 +428,7 @@ def seed_missing_chapters(
                             chapter_node = stripped
                             container_changed = True
                 new_children.append(chapter_node)
-                for label in sorted(gap_seeds, key=_tops._default_sort_key):
+                for label in sorted(gap_seeds, key=_chapter_sort_key):
                     amendment_id, ch_ir = seedable[label]
                     new_children.append(ch_ir)
                     seeded_set.add((label, amendment_id))
@@ -449,7 +454,7 @@ def seed_missing_chapters(
 
     if seeded_set:
         labels_str = ", ".join(
-            f"ch{l} (from {m})" for l, m in sorted(seeded_set, key=lambda x: _tops._default_sort_key(x[0]))
+            f"ch{l} (from {m})" for l, m in sorted(seeded_set, key=lambda x: _chapter_sort_key(x[0]))
         )
         replay_print(f"  SEED: inserted {len(seeded_set)} chapter(s): {labels_str}")
 
