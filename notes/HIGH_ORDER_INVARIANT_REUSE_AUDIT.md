@@ -46,7 +46,8 @@ Recent improvement:
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
-  direct table/schedule-list row edit sites remain future work.
+  whole-act repeal is also recorded as a root-path removal. Direct
+  table/schedule-list row edit sites remain future work.
 
 ## Ranked Promotion Candidates
 
@@ -365,7 +366,7 @@ These are jurisdiction source semantics, not shared invariants.
 ## Recommended Next Work
 
 1. Extend UK mutation-event emission from central replace/remove/insert helpers
-   to direct table/schedule-list row edits and whole-act repeal.
+   to direct table/schedule-list row edits.
 2. Continue replacing private `_norm` / `_default_sort_key` frontend imports
    with the public `normalized_label_key` / `default_label_sort_key` wrappers
    in small, testable batches.

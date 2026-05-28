@@ -9786,6 +9786,7 @@ def test_executor_records_text_target_empty_surface_gap() -> None:
 
 def test_replay_uk_ops_applies_whole_act_repeal() -> None:
     adjudications: list[CompileAdjudication] = []
+    mutation_events: list[MutationEvent] = []
     op = LegalOperation(
         op_id="uk_test_whole_act_repeal",
         sequence=1,
@@ -9794,11 +9795,25 @@ def test_replay_uk_ops_applies_whole_act_repeal() -> None:
         source=_source(),
     )
 
-    replayed = replay_uk_ops(_base_statute(), [op], adjudications_out=adjudications)
+    replayed = replay_uk_ops(
+        _base_statute(),
+        [op],
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
 
     assert adjudications == []
     assert replayed.body.children == ()
     assert replayed.supplements == ()
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk_test_whole_act_repeal"
+    assert event.action == "repeal"
+    assert event.helper == "_apply_op_with_context"
+    assert event.outcome == "whole_act_repealed"
+    assert event.resolved_target_path == ()
+    assert event.parent_path == ()
+    assert event.removed_paths == ((),)
 
 
 def test_replay_uk_ops_records_prepare_filtered_unsupported_whole_act_target() -> None:

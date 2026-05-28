@@ -85,6 +85,23 @@ class UKReplayExecutor(
         if self.verbose:
             print(message)
 
+    def _record_whole_act_repeal_mutation_event(self, op: LegalOperation) -> None:
+        if self.mutation_events_out is None:
+            return
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper="_apply_op_with_context",
+                outcome="whole_act_repealed",
+                resolved_target_path=(),
+                parent_path=(),
+                removed_paths=((),),
+            )
+        )
+
     def apply_op(self, op: LegalOperation):
         previous_mutation_op = self._current_mutation_op
         self._current_mutation_op = op
@@ -105,6 +122,7 @@ class UKReplayExecutor(
                 self.statute.supplements = []
                 self._clear_eid_lookup_index()
                 self._note_structure_mutation()
+                self._record_whole_act_repeal_mutation_event(op)
                 self._record_invariant_violations(op)
             else:
                 self._log(
