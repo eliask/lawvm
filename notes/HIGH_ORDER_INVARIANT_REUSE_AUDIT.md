@@ -337,9 +337,9 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Migrate `invariant-bisect` and other detector consumers to
-   `core.invariant_detectors` while preserving their current JSON/text output;
-   `diagnose-phase` already uses this compatibility projection.
+1. Migrate remaining detector consumers to `core.invariant_detectors` while
+   preserving their current JSON/text output; `diagnose-phase` and
+   `invariant-bisect` already use this compatibility projection.
 2. Migrate `scripts/audit_invariants.py` and materialization helper tests away
    from regex/string reconstruction where typed records are available.
 3. Add a small diagnostic envelope/disposition helper without collapsing

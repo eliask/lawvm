@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Literal, Optional
 
-from lawvm.tools.diagnose_phase import _run_tree_detector
+from lawvm.core.invariant_detectors import run_invariant_detector_messages
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def build_invariant_bisect_bundle(
         ).output
 
     # Check state before scan window
-    initial_violations = _run_tree_detector(state.ir, detector, target_path)
+    initial_violations = run_invariant_detector_messages(state.ir, detector, target_path)
     initial_clean = len(initial_violations) == 0
 
     # Scan window
@@ -132,7 +132,7 @@ def build_invariant_bisect_bundle(
             mid, state, ctx,
             replay_mode=mode, parent_id=statute_id, corpus=cs,
         ).output
-        violations = _run_tree_detector(state.ir, detector, target_path)
+        violations = run_invariant_detector_messages(state.ir, detector, target_path)
         steps.append({
             "source_id": mid,
             "clean": len(violations) == 0,
