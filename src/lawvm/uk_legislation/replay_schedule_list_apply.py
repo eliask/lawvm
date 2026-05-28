@@ -142,16 +142,15 @@ def _replace_schedule_list_children_with_event(
     mark_structure_mutation: bool = True,
 ) -> None:
     uk_replace_children(container, children)
+    if mark_structure_mutation:
+        self._clear_eid_lookup_index()
+        self._note_structure_mutation()
     self._record_children_splice_mutation_event(
         container=container,
         helper=helper,
         outcome=outcome,
         reason_code=reason_code,
     )
-    if not mark_structure_mutation:
-        return
-    self._clear_eid_lookup_index()
-    self._note_structure_mutation()
 
 
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
@@ -351,11 +350,10 @@ class UKReplayScheduleListApplyMixin:
                 strip_uk_identity_attrs_recursive(row)
             children = list(table.children)
             children[insert_index:insert_index] = payload_rows
-            uk_replace_children(table, children)
-            self._clear_eid_lookup_index()
-            self._note_structure_mutation()
-            self._record_children_splice_mutation_event(
+            _replace_schedule_list_children_with_event(
+                self,
                 container=table,
+                children=children,
                 helper="_insert_schedule_list_entry_table_rows",
                 outcome="schedule_table_rows_inserted",
                 reason_code="explicit_schedule_end_unique_table",
@@ -436,11 +434,10 @@ class UKReplayScheduleListApplyMixin:
             strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
         children[insert_index:insert_index] = payload_rows
-        uk_replace_children(table, children)
-        self._clear_eid_lookup_index()
-        self._note_structure_mutation()
-        self._record_children_splice_mutation_event(
+        _replace_schedule_list_children_with_event(
+            self,
             container=table,
+            children=children,
             helper="_insert_schedule_list_entry_table_rows",
             outcome="schedule_table_rows_inserted",
             reason_code="explicit_entry_anchor_unique_in_schedule_table",
