@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 
 import yaml
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 
 USER_AGENT = "LawVM UK bootstrap/0.1 (+https://www.legislation.gov.uk/)"
 
@@ -353,20 +355,17 @@ def _append_uk_effect_feed_diagnostic(
 ) -> None:
     if diagnostics_out is None:
         return
-    diagnostics_out.append(
-        {
-            "rule_id": rule_id,
-            "kind": rule_id,
-            "family": "source_pathology",
-            "phase": "acquisition",
-            "source": str(path),
-            "reason": reason,
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-            "detail": detail,
-        }
+    diagnostic = diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase="acquisition",
+        reason=reason,
+        blocking=True,
+        source=str(path),
     )
+    diagnostic["kind"] = rule_id
+    diagnostic["detail"] = detail
+    diagnostics_out.append(diagnostic)
 
 
 def _parse_effect_entries(path: Path, diagnostics_out: list[dict[str, Any]] | None = None) -> dict[str, Any]:
