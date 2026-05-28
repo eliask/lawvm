@@ -14,6 +14,30 @@ TreePaths: TypeAlias = Tuple[TreePath, ...]
 RenumberedTreePaths: TypeAlias = Tuple[Tuple[TreePath, TreePath], ...]
 
 
+def validate_tree_path(
+    path: TreePath,
+    *,
+    field_name: str = "tree path",
+    allow_root: bool = True,
+) -> tuple[str, ...]:
+    """Return validation issues for the shared mutation-boundary path shape."""
+
+    if not path:
+        if allow_root:
+            return ()
+        return (f"{field_name} must not be the root path",)
+
+    issues: list[str] = []
+    for index, step in enumerate(path):
+        if len(step) != 2:
+            issues.append(f"{field_name} step {index} must have kind and label")
+            continue
+        kind, _label = step
+        if not str(kind).strip():
+            issues.append(f"{field_name} step {index} requires a non-empty kind")
+    return tuple(issues)
+
+
 def tree_path_from_legal_address(address: LegalAddress) -> TreePath:
     """Project a legal node address into mutation-boundary path form."""
 

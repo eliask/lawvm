@@ -133,6 +133,8 @@ Recent improvement:
   blocking adjudications, making the prepare filter lossless for audit tooling.
 - mutation-event path-set reporting now validates declared allowances before
   classification, so non-target allowances with paths must carry named rule IDs.
+- mutation-event path-set reporting now also validates tree-path shape for
+  touched paths and allowed effect-region paths before evidence classification.
 
 ## Ranked Promotion Candidates
 

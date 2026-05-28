@@ -16,6 +16,7 @@ from lawvm.core.mutation_boundary import (
     dedupe_tree_paths,
     partition_changed_paths,
     path_has_prefix,
+    validate_tree_path,
 )
 
 
@@ -80,6 +81,8 @@ def validate_declared_mutation_allowance(allowance: DeclaredMutationAllowance) -
         issues.append("declared mutation allowance requires a non-empty kind")
     if any(path for path in allowance.paths) and not str(allowance.rule_id or "").strip():
         issues.append("declared mutation allowance with paths requires a rule_id")
+    for path in allowance.paths:
+        issues.extend(validate_tree_path(path, field_name="declared mutation allowance path"))
     return tuple(issues)
 
 
@@ -89,6 +92,32 @@ def validate_mutation_event_allowances(event: MutationEvent) -> tuple[str, ...]:
     issues: list[str] = []
     for allowance in event.declared_allowances:
         issues.extend(validate_declared_mutation_allowance(allowance))
+    return tuple(issues)
+
+
+def validate_mutation_event_paths(event: MutationEvent) -> tuple[str, ...]:
+    """Return validation issues for tree paths carried by one mutation event."""
+
+    issues: list[str] = []
+    for path in event.consumed_paths:
+        issues.extend(validate_tree_path(path, field_name="mutation event consumed_paths path"))
+    for path in event.created_paths:
+        issues.extend(validate_tree_path(path, field_name="mutation event created_paths path"))
+    for path in event.removed_paths:
+        issues.extend(validate_tree_path(path, field_name="mutation event removed_paths path"))
+    for path in event.replaced_paths:
+        issues.extend(validate_tree_path(path, field_name="mutation event replaced_paths path"))
+    for path in event.placeholder_created_paths:
+        issues.extend(validate_tree_path(path, field_name="mutation event placeholder_created_paths path"))
+    for path in event.placeholder_consumed_paths:
+        issues.extend(validate_tree_path(path, field_name="mutation event placeholder_consumed_paths path"))
+    for old_path, new_path in event.renumbered_paths:
+        issues.extend(validate_tree_path(old_path, field_name="mutation event renumbered_paths old path"))
+        issues.extend(validate_tree_path(new_path, field_name="mutation event renumbered_paths new path"))
+    if event.resolved_target_path is not None:
+        issues.extend(validate_tree_path(event.resolved_target_path, field_name="mutation event resolved_target_path"))
+    if event.parent_path is not None:
+        issues.extend(validate_tree_path(event.parent_path, field_name="mutation event parent_path"))
     return tuple(issues)
 
 
@@ -172,7 +201,15 @@ def build_mutation_event_path_set_report(
 ) -> MutationEventPathSetReport:
     """Partition one event's touched paths through target, recovery, and migration regions."""
 
-    issues = validate_mutation_event_allowances(event)
+    issues = (
+        *validate_mutation_event_paths(event),
+        *validate_mutation_event_allowances(event),
+        *(
+            issue
+            for path in allowed_effect_region_paths
+            for issue in validate_tree_path(path, field_name="allowed effect region path")
+        ),
+    )
     if issues:
         raise ValueError("; ".join(issues))
     touched_paths = mutation_event_touched_paths(event)

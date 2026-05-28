@@ -18,6 +18,7 @@ from lawvm.core.mutation_events import (
     mutation_event_touched_paths,
     validate_declared_mutation_allowance,
     validate_mutation_event_allowances,
+    validate_mutation_event_paths,
 )
 
 TREE_PATHS = st.lists(
@@ -140,6 +141,31 @@ def test_validate_declared_mutation_allowance_requires_kind_and_rule_for_paths()
     )
 
 
+def test_validate_declared_mutation_allowance_allows_named_root_allowance() -> None:
+    allowance = DeclaredMutationAllowance(
+        kind="migration",
+        paths=((),),
+        rule_id="whole_act_migration",
+    )
+
+    assert validate_declared_mutation_allowance(allowance) == ()
+
+
+def test_validate_mutation_event_paths_rejects_empty_path_kinds() -> None:
+    event = MutationEvent(
+        op_id="op",
+        source_statute="src",
+        action="insert",
+        helper="helper",
+        outcome="applied",
+        created_paths=((("", "1"),),),
+    )
+
+    assert validate_mutation_event_paths(event) == (
+        "mutation event created_paths path step 0 requires a non-empty kind",
+    )
+
+
 def test_build_mutation_event_path_set_report_rejects_malformed_allowances() -> None:
     event = MutationEvent(
         op_id="op",
@@ -165,6 +191,24 @@ def test_build_mutation_event_path_set_report_rejects_malformed_allowances() -> 
         assert "requires a rule_id" in str(exc)
     else:  # pragma: no cover - explicit failure branch
         raise AssertionError("expected malformed allowance rejection")
+
+
+def test_build_mutation_event_path_set_report_rejects_malformed_event_paths() -> None:
+    event = MutationEvent(
+        op_id="op",
+        source_statute="src",
+        action="insert",
+        helper="helper",
+        outcome="applied",
+        created_paths=((("", "1"),),),
+    )
+
+    try:
+        build_mutation_event_path_set_report(event, ())
+    except ValueError as exc:
+        assert "created_paths path step 0 requires a non-empty kind" in str(exc)
+    else:  # pragma: no cover - explicit failure branch
+        raise AssertionError("expected malformed event path rejection")
 
 
 def test_build_mutation_event_path_set_report_partitions_target_allowances_and_out_of_scope_paths() -> None:

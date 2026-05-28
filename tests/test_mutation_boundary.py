@@ -16,6 +16,7 @@ from lawvm.core.mutation_boundary import (
     path_has_prefix,
     tree_path_from_legal_address,
     unexplained_changed_paths,
+    validate_tree_path,
 )
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 
@@ -47,6 +48,15 @@ def test_dedupe_tree_paths_preserves_first_seen_normalized_paths() -> None:
     ) == (
         (("section", "1"),),
         (("section", "2"),),
+    )
+
+
+def test_validate_tree_path_allows_root_and_empty_labels_but_rejects_empty_kinds() -> None:
+    assert validate_tree_path(()) == ()
+    assert validate_tree_path((("schedule", ""),)) == ()
+    assert validate_tree_path((), allow_root=False) == ("tree path must not be the root path",)
+    assert validate_tree_path((("", "1"),), field_name="event path") == (
+        "event path step 0 requires a non-empty kind",
     )
 
 
