@@ -11,8 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.core.mutation_boundary import partition_changed_paths, path_has_prefix
 from lawvm.core.tree_ops import Path
+from lawvm.finland.ops import AmendmentOp, ResolvedOp
 
 
 @dataclass(frozen=True)
@@ -271,9 +272,7 @@ def _path_is_descendant_or_same(
 ) -> bool:
     if ancestor is None:
         return True
-    if len(candidate) < len(ancestor):
-        return False
-    return candidate[: len(ancestor)] == ancestor
+    return path_has_prefix(candidate, (ancestor,))
 
 
 def _event_touched_paths(event: ApplyMutationEvent) -> tuple[tuple[tuple[str, str], ...], ...]:
@@ -464,23 +463,14 @@ def build_apply_mutation_invariant_reports(
                             *declared_migration_paths,
                         )
                     )
-                    covered_changed_list = [
-                        path
-                        for path in touched_paths
-                        if any(_path_is_descendant_or_same(permitted_path, path) for permitted_path in permitted_paths)
-                    ]
-                    unexplained_changed_list = [
-                        path
-                        for path in touched_paths
-                        if not any(_path_is_descendant_or_same(permitted_path, path) for permitted_path in permitted_paths)
-                    ]
+                    partition = partition_changed_paths(touched_paths, permitted_paths)
                     allowed_non_target_list = [
                         path
-                        for path in covered_changed_list
-                        if not any(_path_is_descendant_or_same(root, path) for root in allowed_roots)
+                        for path in partition.covered_changed_paths
+                        if not path_has_prefix(path, allowed_roots)
                     ]
-                    covered_changed_paths = tuple(covered_changed_list)
-                    unexplained_changed_paths = tuple(unexplained_changed_list)
+                    covered_changed_paths = partition.covered_changed_paths
+                    unexplained_changed_paths = partition.unexplained_changed_paths
                     allowed_non_target_paths = tuple(allowed_non_target_list)
                     out_of_scope_paths = unexplained_changed_paths
                     path_set_invariant_holds = not out_of_scope_paths
