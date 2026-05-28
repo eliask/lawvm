@@ -70,6 +70,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_new_zealand_effect_preflight.py",
         "test_new_zealand_effect_readiness.py",
         "test_new_zealand_instruction_workqueue.py",
+        "test_new_zealand_text_comparison.py",
     ),
     "new_zealand_reports": (
         "test_new_zealand_agreement.py",
