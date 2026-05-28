@@ -242,15 +242,14 @@ def apply_eu_ops(
                     message="Replay output contains a suspicious duplicated text tract.",
                     source_statute=op.source.statute_id if op.source else "",
                     op_id=op.op_id,
-                    detail={
-                        "phase": "apply_op",
-                        "action": str(action),
-                        "target": str(target),
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                        **warning,
-                    },
+                    detail=diagnostic_detail(
+                        rule_id="text_duplication_warning",
+                        phase="apply_op",
+                        blocking=False,
+                        action=str(action),
+                        target=str(target),
+                        detail=warning,
+                    ),
                 )
             )
             seen_duplication_warnings.add(warning_key)

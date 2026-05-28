@@ -738,6 +738,8 @@ Implemented progress:
   envelope defaults to `diagnostic_detail`.
 - EU pipeline diagnostics and replay adjudication helpers now delegate their
   shared envelope defaults to `diagnostic_detail`.
+- EU apply-step text-duplication replay warnings now also delegate their
+  shared nonblocking envelope defaults to `diagnostic_detail`.
 - EU parser extraction diagnostics now delegate their shared envelope defaults
   to `diagnostic_detail`.
 - EU Cellar acquisition diagnostics and REUL bridge target-resolution
