@@ -278,6 +278,8 @@ Implemented progress:
   defaults to `diagnostic_detail`.
 - EU pipeline diagnostics and replay adjudication helpers now delegate their
   shared envelope defaults to `diagnostic_detail`.
+- Open Law corpus finding evidence rows now derive their shared disposition
+  envelope fields through `diagnostic_detail`.
 
 Why high value:
 
