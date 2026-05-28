@@ -160,6 +160,10 @@ Recent improvement:
   surface as child insertion, so duplicate schedule fallback insertion cannot
   replace or append over an existing same-label supplement while emitting a
   successful recovery adjudication.
+- UK explicit-index insertion paths now share the same same-kind/same-label
+  collision guard as sorted insertion, so routed, predecessor-based, and
+  definition-child sibling inserts cannot introduce duplicate labelled
+  structural siblings by bypassing the sorted helper.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in

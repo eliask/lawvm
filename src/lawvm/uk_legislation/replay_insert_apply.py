@@ -16,7 +16,13 @@ from lawvm.uk_legislation.addressing import (
 )
 from lawvm.uk_legislation.authority_filter import _following_eid, _preceding_eid
 from lawvm.uk_legislation.canonicalize import uk_find_body_predecessor_parent
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_insert_child_sorted, uk_replace_children
+from lawvm.uk_legislation.mutable_ir import (
+    UKMutableNode,
+    UKMutableStatute,
+    uk_insert_child_sorted,
+    uk_insert_node_at_index,
+    uk_replace_children,
+)
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_selector,
@@ -558,7 +564,8 @@ class UKReplayInsertApplyMixin:
             new_node = _inherit_parent_local_eid(parent_node, new_node)
             replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} at routed index {insert_idx}")
             children = list(parent_node.children)
-            children.insert(insert_idx, new_node)
+            if not uk_insert_node_at_index(children, insert_idx, new_node):
+                return False
             uk_replace_children(parent_node, children)
             replay._record_child_inserted(parent_node, new_node)
             return True
@@ -671,7 +678,8 @@ class UKReplayInsertApplyMixin:
                     f"  EXECUTOR: inserting {new_node.kind} {new_node.label} after body predecessor {pred_label}"
                 )
                 children: list[UKMutableNode] = list(pred_parent.children)
-                children.insert(pred_idx + 1, new_node)
+                if not uk_insert_node_at_index(children, pred_idx + 1, new_node):
+                    return False
                 uk_replace_children(pred_parent, children)
                 replay._record_child_inserted(pred_parent, new_node)
                 return True
@@ -879,7 +887,8 @@ class UKReplayInsertApplyMixin:
             )
             return True
         children = list(parent_node.children)
-        children.insert(anchor_indexes[0] + 1, new_node)
+        if not uk_insert_node_at_index(children, anchor_indexes[0] + 1, new_node):
+            return False
         uk_replace_children(parent_node, children)
         replay._record_child_inserted(parent_node, new_node)
         _append_uk_replay_adjudication(
