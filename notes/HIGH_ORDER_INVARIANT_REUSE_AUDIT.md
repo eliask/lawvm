@@ -715,6 +715,11 @@ Implemented progress:
   renumber-token parse diagnostics, and replay action-family recovery
   diagnostics now also delegate their shared envelope defaults to
   `diagnostic_detail`.
+- Norway unstructured parse adjudications, structured target/action recovery
+  adjudications, structured document-change base failures, unresolved
+  structured target skips, cross-base structured target skips, and structured
+  renumber skip diagnostics now delegate their shared envelope defaults to
+  `diagnostic_detail`.
 - Estonia RT acquisition diagnostic record projections now delegate their
   shared envelope fields to `diagnostic_detail`.
 - Estonia grafter source-local global text-replace selector exclusions and

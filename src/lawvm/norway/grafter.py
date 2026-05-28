@@ -1970,23 +1970,20 @@ def _append_no_unstructured_parse_adjudication(
     base_id: str,
     detail: dict[str, object],
 ) -> None:
-    payload: dict[str, object] = {
-        "rule_id": kind,
-        "family": "unsupported_or_unresolved_action",
-        "phase": "parse",
-        "source_excerpt": _normalize_space(lead)[:240],
-        "base_id": base_id,
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
-    payload.update(detail)
     _append_no_parse_adjudication(
         adjudications_out,
         kind=kind,
         message=message,
         source_id=source_id,
-        detail=payload,
+        detail=diagnostic_detail(
+            rule_id=kind,
+            family="unsupported_or_unresolved_action",
+            phase="parse",
+            blocking=True,
+            source_excerpt=_normalize_space(lead)[:240],
+            base_id=base_id,
+            detail=detail,
+        ),
     )
 
 
@@ -2044,21 +2041,19 @@ def _append_no_structured_parse_recovery_adjudications(
             "targets inferred from the operative lead or payload."
         ),
         source_id=source_id,
-        detail={
-            "rule_id": NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD,
-            "phase": "parse",
-            "family": "target_resolution_recovery",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-            "base_id": base_id,
-            "source_doc": source_doc,
-            "reason": reason,
-            "scope_confidence": scope_confidence,
-            "original_specs": _no_structured_spec_detail(original_specs),
-            "recovered_specs": _no_structured_spec_detail(recovered_specs),
-            "raw_text": raw_text,
-        },
+        detail=diagnostic_detail(
+            rule_id=NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD,
+            phase="parse",
+            family="target_resolution_recovery",
+            blocking=True,
+            reason=reason,
+            base_id=base_id,
+            source_doc=source_doc,
+            scope_confidence=scope_confidence,
+            original_specs=_no_structured_spec_detail(original_specs),
+            recovered_specs=_no_structured_spec_detail(recovered_specs),
+            raw_text=raw_text,
+        ),
     )
     original_actions = tuple(_no_action_value(action) for action, _target in original_specs)
     recovered_actions = tuple(_no_action_value(action) for action, _target in recovered_specs)
@@ -2069,23 +2064,21 @@ def _append_no_structured_parse_recovery_adjudications(
         kind=NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD,
         message="Norway parser recovered structured operation action family from the operative lead.",
         source_id=source_id,
-        detail={
-            "rule_id": NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD,
-            "phase": "parse",
-            "family": "action_family_recovery",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-            "base_id": base_id,
-            "source_doc": source_doc,
-            "reason": reason,
-            "scope_confidence": scope_confidence,
-            "original_actions": original_actions,
-            "recovered_actions": recovered_actions,
-            "original_specs": _no_structured_spec_detail(original_specs),
-            "recovered_specs": _no_structured_spec_detail(recovered_specs),
-            "raw_text": raw_text,
-        },
+        detail=diagnostic_detail(
+            rule_id=NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD,
+            phase="parse",
+            family="action_family_recovery",
+            blocking=True,
+            reason=reason,
+            base_id=base_id,
+            source_doc=source_doc,
+            scope_confidence=scope_confidence,
+            original_actions=original_actions,
+            recovered_actions=recovered_actions,
+            original_specs=_no_structured_spec_detail(original_specs),
+            recovered_specs=_no_structured_spec_detail(recovered_specs),
+            raw_text=raw_text,
+        ),
     )
 
 
@@ -2122,16 +2115,14 @@ def iter_no_document_change_ops(
                 kind="no_parse_document_change_base_unresolved",
                 message="Norway parser skipped structured document-change with missing or unmappable base act.",
                 source_id=source_id,
-                detail={
-                    "rule_id": "no_parse_document_change_base_unresolved",
-                    "phase": "parse",
-                    "family": "source_pathology",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                    "source_doc": source_doc,
-                    "reason": "missing_data_document" if not source_doc else "unmappable_data_document",
-                },
+                detail=diagnostic_detail(
+                    rule_id="no_parse_document_change_base_unresolved",
+                    phase="parse",
+                    family="source_pathology",
+                    blocking=True,
+                    reason="missing_data_document" if not source_doc else "unmappable_data_document",
+                    source_doc=source_doc,
+                ),
             )
             continue
         doc_ops: list[LegalOperation] = []
@@ -2179,20 +2170,18 @@ def iter_no_document_change_ops(
                     kind="no_parse_unresolved_structured_target_skipped",
                     message="Norway parser skipped structured target whose path could not be lowered.",
                     source_id=source_id,
-                    detail={
-                        "rule_id": "no_parse_unresolved_structured_target_skipped",
-                        "phase": "parse",
-                        "family": "target_resolution_recovery",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                        "base_id": base_id,
-                        "source_doc": source_doc,
-                        "action": action,
-                        "raw_target": raw_target,
-                        "target_base": target_base or "",
-                        "raw_text": raw_text,
-                    },
+                    detail=diagnostic_detail(
+                        rule_id="no_parse_unresolved_structured_target_skipped",
+                        phase="parse",
+                        family="target_resolution_recovery",
+                        blocking=True,
+                        base_id=base_id,
+                        source_doc=source_doc,
+                        action=action,
+                        raw_target=raw_target,
+                        target_base=target_base or "",
+                        raw_text=raw_text,
+                    ),
                 )
 
             if skipped_cross_base_specs and parsed_specs:
@@ -2229,20 +2218,18 @@ def iter_no_document_change_ops(
                     kind="no_parse_cross_base_structured_target_skipped",
                     message="Norway parser skipped structured target for a different base act.",
                     source_id=source_id,
-                    detail={
-                        "rule_id": "no_parse_cross_base_structured_target_skipped",
-                        "phase": "parse",
-                        "family": "source_pathology",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                        "base_id": base_id,
-                        "source_doc": source_doc,
-                        "action": action,
-                        "raw_target": raw_target,
-                        "target_base": normalize_lovdata_refid(raw_target) or "",
-                        "raw_text": raw_text,
-                    },
+                    detail=diagnostic_detail(
+                        rule_id="no_parse_cross_base_structured_target_skipped",
+                        phase="parse",
+                        family="source_pathology",
+                        blocking=True,
+                        base_id=base_id,
+                        source_doc=source_doc,
+                        action=action,
+                        raw_target=raw_target,
+                        target_base=normalize_lovdata_refid(raw_target) or "",
+                        raw_text=raw_text,
+                    ),
                 )
 
             inferred_sentence_specs = _infer_same_base_sentence_target_specs_from_lead(lead_text)
@@ -2341,23 +2328,21 @@ def iter_no_document_change_ops(
                             "or destination belongs to a different base act."
                         ),
                         source_id=source_id,
-                        detail={
-                            "rule_id": "no_parse_cross_base_structured_renumber_skipped",
-                            "phase": "parse",
-                            "family": "source_pathology",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                            "base_id": base_id,
-                            "source_doc": source_doc,
-                            "raw_target": raw_target,
-                            "raw_destination": raw_destination,
-                            "target_base": target_base or "",
-                            "destination_base": dest_base or "",
-                            "target_cross_base": target_cross_base,
-                            "destination_cross_base": destination_cross_base,
-                            "raw_text": raw_text,
-                        },
+                        detail=diagnostic_detail(
+                            rule_id="no_parse_cross_base_structured_renumber_skipped",
+                            phase="parse",
+                            family="source_pathology",
+                            blocking=True,
+                            base_id=base_id,
+                            source_doc=source_doc,
+                            raw_target=raw_target,
+                            raw_destination=raw_destination,
+                            target_base=target_base or "",
+                            destination_base=dest_base or "",
+                            target_cross_base=target_cross_base,
+                            destination_cross_base=destination_cross_base,
+                            raw_text=raw_text,
+                        ),
                     )
                     continue
                 target = lovdata_path_to_address(raw_target)
@@ -2371,21 +2356,19 @@ def iter_no_document_change_ops(
                             "or destination path could not be lowered."
                         ),
                         source_id=source_id,
-                        detail={
-                            "rule_id": "no_parse_unresolved_structured_renumber_skipped",
-                            "phase": "parse",
-                            "family": "target_resolution_recovery",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                            "base_id": base_id,
-                            "source_doc": source_doc,
-                            "raw_target": raw_target,
-                            "raw_destination": raw_destination,
-                            "target_resolved": target is not None,
-                            "destination_resolved": destination is not None,
-                            "raw_text": raw_text,
-                        },
+                        detail=diagnostic_detail(
+                            rule_id="no_parse_unresolved_structured_renumber_skipped",
+                            phase="parse",
+                            family="target_resolution_recovery",
+                            blocking=True,
+                            base_id=base_id,
+                            source_doc=source_doc,
+                            raw_target=raw_target,
+                            raw_destination=raw_destination,
+                            target_resolved=target is not None,
+                            destination_resolved=destination is not None,
+                            raw_text=raw_text,
+                        ),
                     )
                     continue
                 doc_ops.append(
