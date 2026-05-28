@@ -29,6 +29,10 @@ from lawvm.new_zealand.effect_readiness import (
 from lawvm.new_zealand.operation_surface import NZOperationSurfaceReport, build_archived_work_operation_surface
 from lawvm.new_zealand.payload_surface import NZPayloadSurfaceReport, build_archived_work_payload_surface
 from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode, parse_archived_work_latest
+from lawvm.new_zealand.text_comparison import (
+    normalized_nz_inline_contains,
+    normalized_nz_inline_occurrence_count,
+)
 
 
 @dataclass(frozen=True)
@@ -1140,8 +1144,8 @@ def _latest_oracle_text_witness(
     target_node = _latest_oracle_target_node(target_document, target_address)
     if isinstance(target_node, _LatestOracleTextWitness):
         return target_node
-    old_occurrences = _normalized_occurrence_count(target_node.node.text, text_substitution.old_text)
-    new_occurrences = _normalized_occurrence_count(target_node.node.text, text_substitution.new_text)
+    old_occurrences = normalized_nz_inline_occurrence_count(target_node.node.text, text_substitution.old_text)
+    new_occurrences = normalized_nz_inline_occurrence_count(target_node.node.text, text_substitution.new_text)
     if old_occurrences == 0 and new_occurrences == 1:
         status = "oracle_new_text_only"
     elif (
@@ -1150,7 +1154,7 @@ def _latest_oracle_text_witness(
         and new_occurrences > 1
     ):
         status = "oracle_new_text_only_each_place"
-    elif _normalized_text(text_substitution.old_text) in _normalized_text(text_substitution.new_text) and new_occurrences > 0:
+    elif normalized_nz_inline_contains(text_substitution.new_text, text_substitution.old_text) and new_occurrences > 0:
         status = "oracle_new_text_contains_old_text"
     elif old_occurrences == 1 and new_occurrences == 0:
         status = "oracle_old_text_only"
@@ -1271,21 +1275,6 @@ def _source_path_suffix_candidates_from_target_address(target_address: str) -> t
             return ()
         suffixes = [(*suffix, segment) for suffix in suffixes for segment in segment_candidates]
     return tuple(tuple(suffix) for suffix in suffixes)
-
-
-def _normalized_occurrence_count(haystack: str, needle: str) -> int:
-    normalized_haystack = _normalized_text(haystack)
-    normalized_needle = _normalized_text(needle)
-    if not normalized_needle:
-        return 0
-    return normalized_haystack.count(normalized_needle)
-
-
-def _normalized_text(text: str) -> str:
-    normalized = " ".join(text.split())
-    normalized = re.sub(r"\s+([,.;:])", r"\1", normalized)
-    normalized = re.sub(r"([(])\s+", r"\1", normalized)
-    return normalized
 
 
 def _replacement_clause_count(text: str) -> int:
