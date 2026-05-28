@@ -14,13 +14,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.timeline import current_address_from_migration_events
 from lawvm.core.timeline_lineage import current_address_with_prefix_migrations_from_events as _core_prefix_migrations
 from lawvm.finland.helpers import _norm_num_token
 
 
-def normalize_address_path(path: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+def normalize_address_path(path: TreePath) -> TreePath:
     """Normalize address labels for Finland migration-wave matching."""
     return tuple(
         (kind, _norm_num_token(label))

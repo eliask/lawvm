@@ -130,6 +130,9 @@ Recent improvement:
   instead of spelling legal-address paths as nested tuple types.
 - `TreePathStep` now lives beside `TreePath`, letting frontends type mutable
   path builders without repeating `tuple[str, str]` for legal tree steps.
+- Finland editorial/corrigendum address builders and UK replay/addressing
+  root-path helpers now use shared tree-path aliases where the values are
+  actual legal tree path steps, leaving parser pair/range tuples local.
 - `LegalAddress.has_prefix(...)` now owns the core path-prefix plus facet
   matching invariant used by timeline address and temporal scope helpers.
 - `LegalAddress.has_path_prefix(...)` now owns path-only prefix matching for

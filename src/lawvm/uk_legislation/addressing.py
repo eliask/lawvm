@@ -10,6 +10,7 @@ import re
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.uk_legislation.canonicalize import uk_addr_container
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -40,7 +41,7 @@ def _make_address(
     special: Optional[FacetKind] = None,
 ) -> LegalAddress:
     """Build a LegalAddress from the flat-field style used by the UK parser."""
-    path: list[tuple[str, str]] = []
+    path: list[TreePathStep] = []
     if container == "schedule":
         if section is not None:
             path.append(("schedule", section))

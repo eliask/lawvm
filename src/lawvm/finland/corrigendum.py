@@ -69,6 +69,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
+from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.finland.corrigendum_records import default_patch_records_path, load_patch_records
 from lawvm.finland.metadata import _normalize_fi_parse_text as _normalize_ws_base
@@ -196,7 +197,7 @@ def _address_from_span(span: etree._Element) -> LegalAddress:
                 chapter = n
         el = el.getparent()
 
-    path: list[tuple[str, str]] = []
+    path: list[TreePathStep] = []
     if chapter:
         path.append(("chapter", chapter))
     if section:

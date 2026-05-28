@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Any, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.replay_prepare_filters import _is_unsafe_schedule_entry_repeal_op
@@ -30,7 +31,7 @@ def _canonicalize_uk_address_aliases(address: Optional[LegalAddress]) -> Optiona
     if address is None:
         return None
     changed = False
-    path: list[tuple[str, str]] = []
+    path: list[TreePathStep] = []
     for kind, label in address.path:
         if kind == "point":
             path.append(("item", label))
