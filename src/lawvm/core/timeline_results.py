@@ -59,6 +59,13 @@ TimelineIssueKind = Literal[
 ]
 
 
+MaterializationStatus = Literal[
+    "materialized",
+    "degraded_missing_scope",
+    "degraded_timeline_issues",
+]
+
+
 @dataclass(frozen=True)
 class MaterializationCertificate:
     """Positive certificate summarizing one PIT materialization decision."""
@@ -159,7 +166,7 @@ def timeline_issues_to_findings(issues: tuple[TimelineIssue, ...]) -> tuple[Find
 class MaterializationResult:
     """Explicit PIT materialization result with degradation metadata."""
 
-    status: Literal["materialized", "degraded_missing_scope"]
+    status: MaterializationStatus
     statute: IRStatute
     required_dimensions: tuple[str, ...] = ()
     ambiguous_addresses: tuple[LegalAddress, ...] = ()

@@ -970,6 +970,7 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
+        assert result.status == "degraded_timeline_issues"
         assert any(issue.kind == "missing_insert_payload" for issue in result.issues)
         assert result.statute.body.children == ()
 
@@ -1011,11 +1012,13 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
+        assert result.status == "degraded_timeline_issues"
         assert any(issue.kind == "missing_replace_payload" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
         payload = cast(Any, artifact.payload)
         assert artifact.schema == "lawvm.materialization_result"
+        assert payload["status"] == "degraded_timeline_issues"
         assert artifact.status == ProcessingStatus(
             kind="partial",
             blockers=("timeline.missing_replace_payload",),
@@ -1065,6 +1068,7 @@ class TestFromPhaseResult:
 
         result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
 
+        assert result.status == "degraded_timeline_issues"
         assert any(issue.kind == "skipped_contingent_unresolved" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
         artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")

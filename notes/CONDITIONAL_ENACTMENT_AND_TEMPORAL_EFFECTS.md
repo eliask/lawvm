@@ -140,6 +140,9 @@ From the current code:
 * `compile_timelines()` treats explicit `TemporalEvent` carriers as executable
   temporal authority and records `timeline.skipped_contingent_unresolved`
   instead of falling back to provenance dates for unresolved contingent events.
+* `materialize_pit_ex()` / facade PIT materialization now report
+  `degraded_timeline_issues` when a rendered statute carries blocking timeline
+  diagnostics such as unresolved contingent temporal execution.
 * The finding plane can emit `TIME.CONTINGENT_EFFECTIVE_DATE`.
 * `select_active_version_ex()` / `materialize_pit_ex()` already know how to return explicit degraded results for **missing applicability scope**.
 
@@ -727,10 +730,11 @@ So the honest answer to “does our architecture currently handle such cases?”
 * frontends do not yet consistently emit trigger-source coverage certificates,
 * frontends do not yet consistently emit later resolution facts as executable
   authority,
-* it does not expose contingent-trigger degradation through the authoritative query/materialization APIs,
+* it does not expose contingent-trigger degradation as a dedicated temporal
+  status distinct from the broader `degraded_timeline_issues` bucket,
 * it does not model multiple competing contingent events cleanly,
-* and ordinary current-law materialization still needs a cleaner degraded state
-  than “base text plus blocking timeline issue” for unresolved trigger coverage.
+* and frontends still need to turn source coverage into resolution/coverage
+  facts before core can decide inactive-vs-unresolved-vs-resolved.
 
 So architecturally:
 

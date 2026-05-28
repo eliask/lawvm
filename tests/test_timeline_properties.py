@@ -976,8 +976,9 @@ def test_materialize_pit_records_same_source_equal_rank_selection_conflict() -> 
 
     result = materialize_pit_ex(timelines, "2021-01-01", base=base)
 
-    assert result.status == "materialized"
+    assert result.status == "degraded_timeline_issues"
     assert result.statute.body.children[0].text == "Second text"
+    assert result.statute.metadata["materialization_status"] == "degraded_timeline_issues"
     issues = [
         issue
         for issue in result.issues
