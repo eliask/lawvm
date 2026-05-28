@@ -135,6 +135,8 @@ Recent improvement:
   classification, so non-target allowances with paths must carry named rule IDs.
 - mutation-event path-set reporting now also validates tree-path shape for
   touched paths and allowed effect-region paths before evidence classification.
+- shared changed-path partitioning now validates changed-path and allowed-prefix
+  shape before classifying boundary coverage.
 
 ## Ranked Promotion Candidates
 
