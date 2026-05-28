@@ -675,8 +675,8 @@ def test_occupancy_policy_violation_emits_finding() -> None:
     assert finding.detail["legacy_action"] == "REPLACE"
     assert finding.detail["target_label"] == "1"
     assert finding.detail["current_occupancy"] == "absent"
-    assert finding.detail["allowed_from"] == ["substantive"]
-    assert finding.detail["primary_expected_from"] == ["substantive"]
+    assert finding.detail["allowed_from"] == ("substantive",)
+    assert finding.detail["primary_expected_from"] == ("substantive",)
     assert finding.detail["strict_disposition"] == "record"
 
 
