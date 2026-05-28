@@ -50,7 +50,7 @@ def main():
         current_xml = repo_root / f".tmp/uk_oracle_{statute_id.replace('/','_')}_{pit_date}.xml"
         if not current_xml.exists():
             print(f"Fetching PIT Oracle for {pit_date}...")
-            from lawvm.uk_legislation.uk_amendment_replay import _download_file
+            from lawvm.uk_legislation.effects import _download_file
             url = f"https://www.legislation.gov.uk/{statute_id}/{pit_date}/data.xml"
             try:
                 _download_file(url, current_xml)

@@ -24,6 +24,7 @@ import csv
 import re
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 import farchive as _farchive
 
@@ -53,7 +54,28 @@ print(f"Unique parent statutes: {len(candidates)}")
 # ---- build farchive indexes -----------------------------------------------
 print("Building farchive source and oracle indexes...")
 archive = _farchive.Farchive(str(FARCHIVE_PATH), readonly=True)
-corpus = ArchiveCorpusStore(archive)
+
+
+class _FarchiveCorpusAdapter:
+    """Expose old farchive handles through the current corpus-store protocol."""
+
+    def __init__(self, wrapped: Any) -> None:
+        self._wrapped = wrapped
+
+    def get(self, url: str) -> bytes | None:
+        return self._wrapped.get(url)
+
+    def fetch(self, url: str, max_age_hours: float | None = None) -> bytes | None:
+        return self._wrapped.get(url)
+
+    def locators(self, pattern: str = "%") -> list[str]:
+        return list(self._wrapped.locators(pattern))
+
+    def close(self) -> None:
+        self._wrapped.close()
+
+
+corpus = ArchiveCorpusStore(_FarchiveCorpusAdapter(archive))
 
 # Source index: sid -> canonical URL
 source_index: dict[str, str] = {sid: statute_url(sid) for sid in corpus.list_statute_ids()}

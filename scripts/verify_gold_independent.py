@@ -31,7 +31,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Protocol, Tuple
 
 import farchive as _farchive
 from lxml import etree
@@ -81,6 +81,33 @@ TARGETS_END = "<</TARGET_LIST>>"
 RAW_LOG_DIR = Path(".tmp/migration/verify/raw_logs")
 
 
+class _FarchiveLike(Protocol):
+    def get(self, locator: str) -> bytes | None: ...
+
+    def locators(self, pattern: str = "%") -> list[str]: ...
+
+    def close(self) -> None: ...
+
+
+class _FarchiveCorpusAdapter:
+    """Expose old farchive handles through the current corpus-store protocol."""
+
+    def __init__(self, wrapped: _FarchiveLike) -> None:
+        self._wrapped = wrapped
+
+    def get(self, url: str) -> bytes | None:
+        return self._wrapped.get(url)
+
+    def fetch(self, url: str, max_age_hours: float | None = None) -> bytes | None:
+        return self._wrapped.get(url)
+
+    def locators(self, pattern: str = "%") -> list[str]:
+        return list(self._wrapped.locators(pattern))
+
+    def close(self) -> None:
+        self._wrapped.close()
+
+
 def _joined_text(parts: Iterable[object], *, sep: str = "") -> str:
     return sep.join(str(part) for part in parts)
 
@@ -98,15 +125,18 @@ def load_amendment_parents() -> Dict[str, List[str]]:
     return parents
 
 
-def load_farchive_source_index(archive: object) -> Dict[str, str]:
+def load_farchive_source_index(archive: _FarchiveLike) -> Dict[str, str]:
     """Build statute_id → farchive locator mapping for source (sd/) XMLs."""
-    return {sid: statute_url(sid) for sid in ArchiveCorpusStore(archive).list_statute_ids()}  # type: ignore[arg-type]
+    return {
+        sid: statute_url(sid)
+        for sid in ArchiveCorpusStore(_FarchiveCorpusAdapter(archive)).list_statute_ids()
+    }
 
 
-def load_farchive_oracle_index(archive: object) -> Dict[str, str]:
+def load_farchive_oracle_index(archive: _FarchiveLike) -> Dict[str, str]:
     """Build statute_id → best versioned oracle farchive locator mapping."""
     best: Dict[str, tuple] = {}
-    for url in archive.locators(build_versioned_consolidated_main_glob()):  # type: ignore[attr-defined]
+    for url in archive.locators(build_versioned_consolidated_main_glob()):
         parts = parse_versioned_consolidated_main_locator(url)
         if parts is None:
             continue
@@ -465,6 +495,11 @@ async def verify_statute(
                                    amendments_processed=0, provisions_verified=0)
 
     base_xml = archive.get(base_url)
+    if base_xml is None:
+        archive.close()
+        print(f"  ERROR: {statute_id} source XML missing in farchive", file=sys.stderr)
+        return StatuteVerification(statute_id=statute_id, title="?",
+                                   amendments_processed=0, provisions_verified=0)
     base_tree = etree.fromstring(base_xml)
     title_el = base_tree.find(f".//{NS}docTitle")
     title = normalize_text(_joined_text(title_el.itertext())) if title_el is not None else "?"
@@ -501,6 +536,9 @@ async def verify_statute(
             continue
 
         amend_xml = archive.get(amend_url)
+        if amend_xml is None:
+            print(f"  [{i+1}/{len(amendments)}] {amend_id}: XML missing in farchive — skipping")
+            continue
         amend_tree = etree.fromstring(amend_xml)
         johtolause = extract_johtolause_text(amend_tree)
         amend_sections = extract_amendment_sections(amend_tree)

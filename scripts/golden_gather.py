@@ -27,6 +27,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Protocol
 
 from lxml import etree
 from lawvm.corpus_store import statute_url
@@ -42,6 +43,10 @@ _LAWVM_DIR = _HERE.parent.parent  # scripts/ → LawVM/
 _FARCHIVE_PATH = _LAWVM_DIR / "data" / "finlex.farchive"
 _DIVERGENCES_DB = _LAWVM_DIR / ".tmp" / "divergences.db"
 _OUTPUT_DIR = _LAWVM_DIR / ".tmp" / "golden_gathered"
+
+
+class _ArchiveGet(Protocol):
+    def get(self, locator: str) -> bytes | None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -97,11 +102,11 @@ def _norm_ws(s: str) -> str:
 
 def _load_xml_from_farchive(
     statute_id: str,
-    archive: object,
+    archive: _ArchiveGet,
 ) -> etree._Element | None:
     url = statute_url(statute_id)
     try:
-        xml_bytes = archive.get(url)  # type: ignore[attr-defined]
+        xml_bytes = archive.get(url)
         if xml_bytes is None:
             return None
         return etree.fromstring(xml_bytes)
@@ -278,7 +283,7 @@ def _gather_section_evidence(
     blame_amendments: list[str],
     ops_output: str,
     base_root: etree._Element | None,
-    archive: object,
+    archive: _ArchiveGet,
 ) -> dict:
     """Build the evidence record for one diverging section."""
 
