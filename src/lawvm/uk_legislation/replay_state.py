@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple, Optional, TypeAlias, cast
+from typing import Any, NamedTuple, Optional, Sequence, TypeAlias, cast
 
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
@@ -44,6 +44,13 @@ class VersionedNodeLookup(NamedTuple):
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
+
+
+def _identity_index(nodes: Sequence[UKMutableNode], target: UKMutableNode) -> int | None:
+    for index, node in enumerate(nodes):
+        if node is target:
+            return index
+    return None
 
 
 class UKReplayStateMixin:
@@ -506,10 +513,7 @@ class UKReplayStateMixin:
         )
 
     def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None:
-        try:
-            idx = parent.children.index(node)
-        except ValueError:
-            idx = None
+        idx = _identity_index(parent.children, node)
         self._add_eid_lookup_subtree(node, parent, idx)
         self._note_structure_mutation()
         self._record_insert_node_mutation_event(
@@ -518,10 +522,7 @@ class UKReplayStateMixin:
         )
 
     def _record_supplement_inserted(self, node: UKMutableNode) -> None:
-        try:
-            idx = self.statute.supplements.index(node)
-        except ValueError:
-            idx = None
+        idx = _identity_index(self.statute.supplements, node)
         self._add_eid_lookup_subtree(node, None, idx)
         self._note_structure_mutation()
         self._record_insert_node_mutation_event(
