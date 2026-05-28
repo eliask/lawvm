@@ -31,6 +31,17 @@ class LegalAddress:
             return None
         return LegalAddress(path=self.path[:-1])
 
+    def has_prefix(self, prefix: "LegalAddress") -> bool:
+        """Return True when ``prefix`` matches this address path and facet."""
+
+        if len(prefix.path) > len(self.path):
+            return False
+        if self.path[: len(prefix.path)] != prefix.path:
+            return False
+        if prefix.special:
+            return prefix.special == self.special
+        return True
+
     def leaf_kind(self) -> str:
         return self.path[-1][0] if self.path else ""
 

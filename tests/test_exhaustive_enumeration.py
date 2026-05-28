@@ -418,6 +418,28 @@ class TestLegalAddressExhaustive:
             addr = LegalAddress(path=(("section", "1"),), special=special)
             assert addr.special == special
 
+    def test_has_prefix_respects_path_and_special_facet(self) -> None:
+        """LegalAddress prefix checks centralize timeline path/facet semantics."""
+        addr = LegalAddress(
+            path=(("chapter", "1"), ("section", "2")),
+            special=FacetKind.HEADING,
+        )
+
+        assert addr.has_prefix(LegalAddress(path=(("chapter", "1"),)))
+        assert addr.has_prefix(
+            LegalAddress(
+                path=(("chapter", "1"), ("section", "2")),
+                special=FacetKind.HEADING,
+            )
+        )
+        assert not addr.has_prefix(LegalAddress(path=(("chapter", "2"),)))
+        assert not addr.has_prefix(
+            LegalAddress(
+                path=(("chapter", "1"), ("section", "2")),
+                special=FacetKind.INTRO,
+            )
+        )
+
     def test_empty_path_leaf_accessors(self) -> None:
         """Empty path returns empty string for leaf_kind and leaf_label."""
         addr = LegalAddress(path=())

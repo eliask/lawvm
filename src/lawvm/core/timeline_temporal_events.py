@@ -39,13 +39,7 @@ LatestSubstantiveVersionPicker = Callable[[ProvisionTimeline, str], ProvisionVer
 
 
 def matches_prefix(address: LegalAddress, prefix: LegalAddress) -> bool:
-    if len(prefix.path) > len(address.path):
-        return False
-    if address.path[: len(prefix.path)] != prefix.path:
-        return False
-    if prefix.special:
-        return prefix.special == address.special
-    return True
+    return address.has_prefix(prefix)
 
 
 def matches_scope_addresses(
