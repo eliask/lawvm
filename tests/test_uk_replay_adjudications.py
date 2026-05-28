@@ -5742,6 +5742,7 @@ def test_prepare_replay_uk_ops_canonicalizes_point_alias_before_overlap_classifi
     prepared = _prepare_replay_uk_ops([broad, ordinal], base_ir=statute)
 
     assert [op.op_id for op in prepared.accepted_ops] == ["uk_test_point_alias_broad"]
+    assert [op.op_id for op in prepared.rejected_ops] == ["uk_test_point_alias_ordinal"]
     assert [row.kind for row in prepared.rejected_adjudications] == [
         "uk_replay_same_source_text_patch_overlap_blocked"
     ]
@@ -10303,6 +10304,7 @@ def test_prepare_replay_uk_ops_preserves_rejected_whole_act_adjudication_without
     prepared = _prepare_replay_uk_ops([whole_act_replace, whole_act_repeal, section_replace])
 
     assert prepared.accepted_ops == (whole_act_repeal, section_replace)
+    assert prepared.rejected_ops == (whole_act_replace,)
     assert len(prepared.rejected_adjudications) == 1
     rejection = prepared.rejected_adjudications[0]
     assert rejection.kind == "uk_replay_unsupported_action"
