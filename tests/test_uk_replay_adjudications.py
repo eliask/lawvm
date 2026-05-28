@@ -5747,6 +5747,11 @@ def test_prepare_replay_uk_ops_canonicalizes_point_alias_before_overlap_classifi
         "uk_replay_same_source_text_patch_overlap_blocked"
     ]
     assert prepared.rejected_adjudications[0].op_id == "uk_test_point_alias_ordinal"
+    assert prepared.filter_result.accepted_items == prepared.accepted_ops
+    assert prepared.filter_result.rejected_payloads == prepared.rejected_ops
+    assert prepared.filter_result.rejected_reason_counts() == {
+        "same_source_same_target_overlapping_text_patch": 1
+    }
 
 
 def test_executor_canonicalizes_source_point_alias_in_labeled_child_recovery() -> None:
@@ -10305,6 +10310,11 @@ def test_prepare_replay_uk_ops_preserves_rejected_whole_act_adjudication_without
 
     assert prepared.accepted_ops == (whole_act_repeal, section_replace)
     assert prepared.rejected_ops == (whole_act_replace,)
+    assert prepared.filter_result.accepted_items == prepared.accepted_ops
+    assert prepared.filter_result.rejected_payloads == prepared.rejected_ops
+    assert prepared.filter_result.rejected_items[0].reason == "whole_act_prepare_filter"
+    assert prepared.filter_result.rejected_items[0].reason_code == "uk_replay_unsupported_action"
+    assert prepared.filter_result.rejected_items[0].blocking is True
     assert len(prepared.rejected_adjudications) == 1
     rejection = prepared.rejected_adjudications[0]
     assert rejection.kind == "uk_replay_unsupported_action"
