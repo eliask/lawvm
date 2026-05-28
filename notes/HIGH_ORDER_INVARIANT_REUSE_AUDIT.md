@@ -49,6 +49,9 @@ Recent improvement:
 - UK commencement-filter observations now delegate their outward envelope
   defaults to `diagnostic_detail` while preserving commencement target/date
   payloads.
+- UK payload-identity normalization records now delegate their outward envelope
+  defaults to `diagnostic_detail` while preserving strict blocking and
+  synthesized-EID samples.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
