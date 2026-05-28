@@ -269,7 +269,7 @@ def _order_uk_text_patch_preimage_chains(
         reordered_group = [group_ops[idx] for idx in topo]
         if [op.op_id for op in reordered_group] == [op.op_id for op in group_ops]:
             continue
-        for target_slot, op in zip(indices, reordered_group):
+        for target_slot, op in zip(indices, reordered_group, strict=True):
             ordered[target_slot] = op
         if lowering_observations_out is not None:
             lowering_observations_out.append(

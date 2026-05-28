@@ -467,7 +467,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             or not _has_respectively_all_occurrences_signal(originals_text)
         ):
             continue
-        for original, replacement in zip(originals, replacements):
+        for original, replacement in zip(originals, replacements, strict=True):
             subs.append(
                 {
                     "original": original,

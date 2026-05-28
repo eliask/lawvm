@@ -5171,7 +5171,7 @@ def _history_rows() -> list[tuple[str, dict[str, str]]]:
             if not header:
                 continue
             padded_row = raw_row + [""] * max(len(header) - len(raw_row), 0)
-            rows.append((schema, dict(zip(header, padded_row))))
+            rows.append((schema, dict(zip(header, padded_row, strict=False))))
     return rows
 
 
