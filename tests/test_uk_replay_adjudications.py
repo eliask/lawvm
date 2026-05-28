@@ -171,6 +171,38 @@ def test_replay_uk_ops_records_content_payload_replace_as_node_replacement() -> 
     assert event.replaced_paths == ((("section", "1"),),)
 
 
+def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="Section two."),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-label-changing-replace",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Replacement section."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(statute, [op], adjudications_out=adjudications)
+
+    assert [child.label for child in replayed.body.children] == ["2", "2"]
+    assert any(
+        adjudication.kind == "uk_replay_tree_invariant_violation"
+        and "duplicate section:2" in str(adjudication.detail["violation"])
+        for adjudication in adjudications
+    )
+
+
 def test_replay_uk_ops_can_emit_core_mutation_event_for_node_repeal() -> None:
     mutation_events: list[MutationEvent] = []
     op = LegalOperation(
