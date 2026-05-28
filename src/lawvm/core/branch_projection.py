@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from lawvm.core.authority import BranchGraphEdge, LegalBranch
+from lawvm.core.authority import BranchGraphEdge, LegalBranch, branch_graph_edges_from_operations
+
+if TYPE_CHECKING:
+    from lawvm.core.ir import LegalOperation
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,24 @@ def branch_impact_projection_from_edges(
     return BranchImpactProjection(
         branch=branch,
         rows=rows,
+        status=status,
+        message=message,
+    )
+
+
+def branch_impact_projection_from_operations(
+    branch: LegalBranch,
+    ops: Sequence["LegalOperation"],
+    *,
+    target_statute_id: str,
+    status: str = "ok",
+    message: str = "",
+) -> BranchImpactProjection:
+    """Build a branch impact projection from typed non-enacted operations."""
+
+    return branch_impact_projection_from_edges(
+        branch,
+        branch_graph_edges_from_operations(ops, target_statute_id=target_statute_id),
         status=status,
         message=message,
     )
