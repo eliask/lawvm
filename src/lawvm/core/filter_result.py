@@ -21,11 +21,24 @@ class RejectedItem(Generic[T]):
     reason_code: str = ""
     blocking: bool = True
 
+    def __post_init__(self) -> None:
+        if not str(self.reason or "").strip():
+            raise ValueError("RejectedItem.reason must be non-empty")
+        if not isinstance(self.blocking, bool):
+            raise ValueError("RejectedItem.blocking must be a boolean")
+
 
 @dataclass(frozen=True)
 class FilterResult(Generic[T]):
     accepted_items: tuple[T, ...] = ()
     rejected_items: tuple[RejectedItem[T], ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "accepted_items", tuple(self.accepted_items))
+        rejected_items = tuple(self.rejected_items)
+        if not all(isinstance(rejected, RejectedItem) for rejected in rejected_items):
+            raise ValueError("FilterResult.rejected_items must contain RejectedItem records")
+        object.__setattr__(self, "rejected_items", rejected_items)
 
     @property
     def rejected_payloads(self) -> tuple[T, ...]:
@@ -46,4 +59,3 @@ def filter_result_from_parts(
         accepted_items=tuple(accepted_items),
         rejected_items=tuple(rejected_items),
     )
-

@@ -355,6 +355,9 @@ Recent improvement:
   contracts: invalid requested dates are rejected instead of selecting a
   misleading witness window, source-window diagnostics must retain their
   source-only truth claim, and `replay_claims` must remain false.
+- lossless filter carriers now require rejected items to carry a non-empty
+  reason and boolean blocking flag, and direct `FilterResult` construction
+  normalizes accepted/rejected lanes to immutable tuples.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
