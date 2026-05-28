@@ -5169,7 +5169,7 @@ def _ee_remove_omitted_inserted_item_labels_from_replace_range(
         detail={
             "target": str(op.target),
             "omitted_inserted_item_labels": ",".join(
-                sorted(omitted_labels, key=tree_ops.default_label_sort_key)
+                sorted(omitted_labels, key=lambda label: tree_ops.default_label_sort_key(label))
             ),
         },
     )
@@ -5611,7 +5611,7 @@ def _subsection_labels_implied_by_plain_range_repeal(
                 base_num = int(base_raw)
                 if start_num <= base_num <= end_num:
                     implied.add(child.label)
-    return sorted(implied, key=tree_ops.default_label_sort_key)
+    return sorted(implied, key=lambda label: tree_ops.default_label_sort_key(label))
 
 
 def _section_labels_implied_by_plain_range_repeal(
@@ -5644,7 +5644,7 @@ def _section_labels_implied_by_plain_range_repeal(
             base_num = int(base_raw)
             if start_num <= base_num <= end_num:
                 implied.add(child.label)
-    return sorted(implied, key=tree_ops.default_label_sort_key)
+    return sorted(implied, key=lambda label: tree_ops.default_label_sort_key(label))
 
 
 def _address_to_path(target) -> tree_ops.Path:
