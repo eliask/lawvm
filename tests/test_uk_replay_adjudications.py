@@ -344,6 +344,120 @@ def test_replay_uk_ops_emit_mutation_event_for_table_row_replace() -> None:
     assert event.reason_code == "source_owned_table_entry_selector"
 
 
+def test_replay_uk_ops_emit_mutation_event_for_table_cell_child_list_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    selector = {
+        "source_table_row_number": "1",
+        "source_table_column_index": "3",
+        "table_child_anchor_kind": "paragraph",
+        "table_child_anchor_label": "a",
+        "table_child_insert_direction": "after",
+    }
+    statute = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="132",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="detention"),
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text=(
+                                                        "only if-\n\n"
+                                                        "leading rate;\n\n\n\n"
+                                                        "lance corporal or lance bombardier;"
+                                                    ),
+                                                    attrs={
+                                                        "source_rule_id": (
+                                                            "uk_table_cell_ordered_list_units_preserved"
+                                                        ),
+                                                        "source_ordered_list_units_json": json.dumps(
+                                                            [
+                                                                {
+                                                                    "source_list_type": "alpha",
+                                                                    "source_list_decoration": "parens",
+                                                                    "label": "a",
+                                                                    "text": "leading rate;",
+                                                                },
+                                                                {
+                                                                    "source_list_type": "alpha",
+                                                                    "source_list_decoration": "parens",
+                                                                    "label": "b",
+                                                                    "text": (
+                                                                        "lance corporal or lance bombardier;"
+                                                                    ),
+                                                                },
+                                                            ],
+                                                            separators=(",", ":"),
+                                                        ),
+                                                    },
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    op = LegalOperation(
+        op_id="uk-test-table-cell-child-list-insert",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "132"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.ITEM,
+            label="aa",
+            text="corporal in the Royal Marines;",
+            attrs={"source_list_type": "alpha", "source_list_decoration": "parens"},
+        ),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"table_cell_child_list_insert_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    cell = replayed.body.children[0].children[0].children[0].children[0].children[2]
+    assert " ".join(str(cell.text or "").split()) == (
+        "only if- leading rate; corporal in the Royal Marines; "
+        "lance corporal or lance bombardier;"
+    )
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    cell_path = (
+        ("section", "132"),
+        ("subsection", "1"),
+        ("table", ""),
+        ("row", ""),
+        ("cell", ""),
+    )
+    assert event.op_id == "uk-test-table-cell-child-list-insert"
+    assert event.helper == "_replace_node_in_statute"
+    assert event.outcome == "replaced_node"
+    assert event.resolved_target_path == (("section", "132"), ("subsection", "1"))
+    assert event.parent_path == cell_path[:-1]
+    assert event.replaced_paths == (cell_path,)
+
+
 def test_replay_uk_ops_emit_mutation_event_for_schedule_table_row_insert() -> None:
     mutation_events: list[MutationEvent] = []
     statute = IRStatute(

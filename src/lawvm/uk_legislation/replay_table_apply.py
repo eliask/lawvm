@@ -127,28 +127,33 @@ def _replace_table_cell_ordered_list_text(
     cell: UKMutableNode,
     old_units: list[dict[str, str]],
     new_units: list[dict[str, str]],
-) -> bool:
+) -> UKMutableNode | None:
     if not old_units:
-        return False
+        return None
     text = str(cell.text or "")
     first_text = old_units[0]["text"]
     last_text = old_units[-1]["text"]
     first_index = text.find(first_text)
     if first_index < 0:
-        return False
+        return None
     last_index = text.rfind(last_text)
     if last_index < first_index:
-        return False
+        return None
     last_end = last_index + len(last_text)
     list_region = text[first_index:last_end]
     separator = "\n\n\n\n" if "\n\n\n\n" in list_region else "\n\n"
-    cell.text = f"{text[:first_index]}{separator.join(unit['text'] for unit in new_units)}{text[last_end:]}"
-    cell.attrs["source_ordered_list_units_json"] = json.dumps(
-        new_units,
-        ensure_ascii=False,
-        separators=(",", ":"),
+    return dc_replace(
+        cell,
+        text=f"{text[:first_index]}{separator.join(unit['text'] for unit in new_units)}{text[last_end:]}",
+        attrs={
+            **dict(cell.attrs),
+            "source_ordered_list_units_json": json.dumps(
+                new_units,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        },
     )
-    return True
 
 
 class UKReplayTableApplyMixin:
@@ -304,7 +309,8 @@ class UKReplayTableApplyMixin:
             },
             *old_units[insert_index:],
         ]
-        if not _replace_table_cell_ordered_list_text(cell, old_units, new_units):
+        replaced_cell = _replace_table_cell_ordered_list_text(cell, old_units, new_units)
+        if replaced_cell is None:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_TABLE_CELL_CHILD_LIST_INSERT_UNRESOLVED_RULE_ID,
@@ -321,6 +327,7 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
+        self._replace_node_in_statute(cell, replaced_cell)
         self._note_structure_mutation()
         _append_uk_replay_adjudication(
             self.adjudications_out,
