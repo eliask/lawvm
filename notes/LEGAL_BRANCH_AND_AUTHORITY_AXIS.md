@@ -73,6 +73,9 @@ introduced, amended, withdrawn, failed, enacted, or superseded. These are
 history/status facts for the branch; they do not themselves apply the branch's
 operations to enacted law.
 
+`CorpusGraph` rejects duplicate branch ids and branch edges or lifecycle events
+whose `branch_id` is not registered in `CorpusGraph.branches`.
+
 `BranchImpactProjection` is the UI/API-facing summary layer for these edges:
 it can say which provisions a branch would affect, optionally with current and
 branch-specific text supplied by a frontend. The projection itself does not

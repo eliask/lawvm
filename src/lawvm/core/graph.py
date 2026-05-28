@@ -136,11 +136,41 @@ class CorpusGraph:
         failure_count = len(self.build_failures)
         status_kind = self.processing_status.kind
         blockers = tuple(self.processing_status.blockers or ())
+        branch_ids = [branch.branch_id for branch in self.branches]
+        duplicate_branch_ids = sorted(
+            branch_id for branch_id in set(branch_ids) if branch_ids.count(branch_id) > 1
+        )
+        registered_branch_ids = set(branch_ids)
 
         if self.build_meta is not None and self.build_meta.failed_statutes != failure_count:
             raise ValueError(
                 "CorpusGraph.build_meta.failed_statutes must match build_failures "
                 f"({self.build_meta.failed_statutes!r} != {failure_count!r})"
+            )
+        if duplicate_branch_ids:
+            raise ValueError(
+                "CorpusGraph.branches must have unique branch_id values: "
+                f"{', '.join(duplicate_branch_ids)}"
+            )
+        unknown_edge_branches = sorted(
+            {edge.branch_id for edge in self.branch_edges if edge.branch_id not in registered_branch_ids}
+        )
+        if unknown_edge_branches:
+            raise ValueError(
+                "CorpusGraph.branch_edges reference unknown branch_id values: "
+                f"{', '.join(unknown_edge_branches)}"
+            )
+        unknown_lifecycle_branches = sorted(
+            {
+                event.branch_id
+                for event in self.branch_lifecycle_events
+                if event.branch_id not in registered_branch_ids
+            }
+        )
+        if unknown_lifecycle_branches:
+            raise ValueError(
+                "CorpusGraph.branch_lifecycle_events reference unknown branch_id values: "
+                f"{', '.join(unknown_lifecycle_branches)}"
             )
 
         if failure_count:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import Any, Mapping, cast
 
+import pytest
+
 from lawvm.core.ir import LegalAddress, ProvisionTimeline, ProvisionVersion
 
 from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
@@ -169,3 +171,36 @@ def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() 
     assert branches[0]["authority_layer"] == "proposal"
     assert branch_edges[0]["edge_kind"] == "would_replace"
     assert artifact_payload["branch_lifecycle_events"][0]["event_kind"] == "introduced"
+
+
+def test_corpus_graph_rejects_duplicate_branch_ids() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        source_artifact_id="proposal/example/2026/1",
+    )
+
+    with pytest.raises(ValueError, match="unique branch_id"):
+        CorpusGraph(branches=[branch, branch])
+
+
+def test_corpus_graph_rejects_branch_edges_without_registered_branch() -> None:
+    edge = BranchGraphEdge(
+        branch_id="proposal:example:missing",
+        edge_kind="would_amend",
+        target_statute_id="base/1",
+    )
+
+    with pytest.raises(ValueError, match="branch_edges reference unknown"):
+        CorpusGraph(branch_edges=[edge])
+
+
+def test_corpus_graph_rejects_lifecycle_events_without_registered_branch() -> None:
+    event = BranchLifecycleEvent(
+        event_id="event-1",
+        branch_id="proposal:example:missing",
+        event_kind="introduced",
+    )
+
+    with pytest.raises(ValueError, match="branch_lifecycle_events reference unknown"):
+        CorpusGraph(branch_lifecycle_events=[event])
