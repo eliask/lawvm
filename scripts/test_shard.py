@@ -293,6 +293,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "tools_runtime_io": (
         "test_acquisition.py",
         "test_consolidated_artifacts.py",
+        "test_branch_demo.py",
         "test_export_sql.py",
         "test_graph_export.py",
         "test_import_zip.py",

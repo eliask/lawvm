@@ -2951,6 +2951,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="build concurrency (default: 8)",
     )
 
+    branch_demo_p = sub.add_parser(
+        "branch-demo",
+        help="emit a synthetic branch/authority demo payload",
+        description=(
+            "Emit a small synthetic enacted-vs-proposal payload showing that "
+            "non-enacted branch operations remain outside the default enacted lane."
+        ),
+    )
+    branch_demo_p.add_argument(
+        "--pretty",
+        action="store_true",
+        help="pretty-print JSON output",
+    )
+
     # --- build ---
     build_p = sub.add_parser(
         "build",
@@ -7354,6 +7368,11 @@ def main() -> None:
         from lawvm.tools.report_query import main as report_query_main
 
         report_query_main(args)
+
+    elif args.command == "branch-demo":
+        from lawvm.tools.branch_demo import main as branch_demo_main
+
+        branch_demo_main(args)
 
     elif args.command == "sql":
         from lawvm.tools.sql_query import main as sql_main

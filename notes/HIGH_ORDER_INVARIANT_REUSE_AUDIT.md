@@ -194,6 +194,8 @@ Recent improvement:
   export lane.
 - JSON-LD graph export now includes branch resources, branch graph edges, and
   branch lifecycle events under the `lawvm:` namespace.
+- `lawvm branch-demo` now emits a synthetic branch/authority payload for
+  demonstrating default enacted vs selected proposal operation lanes.
 
 ## Ranked Promotion Candidates
 
