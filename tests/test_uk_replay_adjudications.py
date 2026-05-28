@@ -2,6 +2,7 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any, cast
 
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, TextPatchKindEnum, TextPatchSpec, TextSelector, StructuralAction
@@ -5100,7 +5101,7 @@ def test_executor_materializes_source_carried_alpha_child_text_substitution() ->
 
 def test_uk_mutable_ir_maps_source_point_alias_to_item_kind() -> None:
     assert uk_ir_node_kind("point") == IRNodeKind.ITEM
-    assert UKMutableNode(kind="point", label="i").kind == IRNodeKind.ITEM
+    assert UKMutableNode(kind=cast(Any, "point"), label="i").kind == IRNodeKind.ITEM
 
 
 def test_prepare_replay_uk_ops_canonicalizes_point_address_alias_for_core_ir_boundary() -> None:

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 import types
+from typing import Any, cast
 import pytest
 from lawvm.uk_legislation import uk_prefetch
 
@@ -1281,7 +1282,7 @@ def test_uk_bench_limit_zero_preserves_empty_diagnostic_budget(monkeypatch, tmp_
 
     assert seen["corpus"] == []
     assert seen["archive_closed_before_run"] is False
-    run_kwargs = dict(seen["run_kwargs"])
+    run_kwargs = dict(cast(dict[str, Any], seen["run_kwargs"]))
     assert callable(run_kwargs.pop("progress_start"))
     assert run_kwargs == {
         "do_replay": False,
@@ -1366,7 +1367,7 @@ def test_uk_bench_source_first_candidate_threads_regime(monkeypatch, tmp_path) -
 
     uk_bench.main(args)
 
-    run_kwargs = dict(seen["run_kwargs"])
+    run_kwargs = dict(cast(dict[str, Any], seen["run_kwargs"]))
     assert callable(run_kwargs.pop("progress_start"))
     assert run_kwargs == {
         "do_replay": True,

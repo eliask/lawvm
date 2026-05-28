@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from typing import Any, cast
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import ir_statute_from_dict
@@ -55,12 +56,13 @@ def test_clean_num_handles_fused_container_prefixes() -> None:
 
 
 def test_clean_num_cache_is_semantics_preserving() -> None:
-    _clean_num.cache_clear()
+    clean_num_cached = cast(Any, _clean_num)
+    clean_num_cached.cache_clear()
 
     assert _clean_num("Schedule IV.") == "4"
     assert _clean_num("Schedule IV.") == "4"
 
-    cache_info = _clean_num.cache_info()
+    cache_info = clean_num_cached.cache_info()
     assert cache_info.hits >= 1
     assert cache_info.maxsize == 32768
 
