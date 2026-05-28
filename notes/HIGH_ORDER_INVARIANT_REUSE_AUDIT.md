@@ -310,12 +310,14 @@ Evidence:
 
 Promotion:
 
-- add a neutral core record for source-lane selection attempts, selected lane,
-  rejected lanes, source locators, payload digests/sizes, and blocking
-  disposition;
-- keep lane policy local to each frontend;
-- project the record through `diagnostic_detail` or evidence rows without
-  changing source acquisition behavior.
+- status: initial evidence carrier exists in `src/lawvm/core/source_lane.py`;
+- it records source-lane attempts, selected lane, locator, local attempt
+  details, and blocking disposition;
+- lane policy remains local to each frontend;
+- current users include Finland operative-text acquisition, Sweden official-PDF
+  fallback acquisition, Norway duplicate logical locator diagnostics, UK
+  affecting-source selection, Estonia RT XML/feed acquisition diagnostics, and
+  EU Cellar manifest request failures.
 
 Why high value:
 
