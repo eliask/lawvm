@@ -24,6 +24,7 @@ from lxml import etree
 
 from lawvm.core import tree_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.tree_ops import TreeInvariantKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_int
 from lawvm.core.ir import (
@@ -3037,12 +3038,17 @@ def apply_no_ops(
             )
         )
 
+    no_replay_tree_invariant_families: tuple[TreeInvariantKind, ...] = ("duplicate_label", "sort_order")
+
     def _assert_no_invariant_violations(op: LegalOperation) -> None:
-        violations = [
-            violation
-            for violation in tree_ops.check_invariants(body, sort_key=_no_sort_key)
-            if "duplicate " in violation or " out of order:" in violation
-        ]
+        typed_violations = tuple(
+            tree_ops.iter_tree_invariant_violations(
+                body,
+                sort_key=_no_sort_key,
+                families=no_replay_tree_invariant_families,
+            )
+        )
+        violations = tuple(violation.message for violation in typed_violations)
         if not violations:
             return
         joined = "; ".join(violations)
@@ -3055,6 +3061,7 @@ def apply_no_ops(
                 "action": _no_action_value(op.action),
                 "target": str(op.target),
                 "violations": joined,
+                "invariant_violations": tuple(violation.to_dict() for violation in typed_violations),
             },
         )
         if not strict_invariants:
