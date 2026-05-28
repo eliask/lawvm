@@ -112,6 +112,33 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_replace() -> None:
     assert event.removed_paths == ()
 
 
+def test_replay_uk_ops_can_emit_core_mutation_event_for_node_repeal() -> None:
+    mutation_events: list[MutationEvent] = []
+    op = LegalOperation(
+        op_id="uk-test-repeal-section-1",
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "1"),)),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(_base_statute(), [op], mutation_events_out=mutation_events)
+
+    assert replayed.body.children == ()
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-repeal-section-1"
+    assert event.source_statute == "ukpga/2026/1"
+    assert event.action == "repeal"
+    assert event.helper == "_remove_node"
+    assert event.outcome == "removed_node"
+    assert event.resolved_target_path == (("section", "1"),)
+    assert event.parent_path == ()
+    assert event.removed_paths == ((("section", "1"),),)
+    assert event.created_paths == ()
+    assert event.replaced_paths == ()
+
+
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
     assert _uk_definition_term_lexical_variants("") == ()
     assert _uk_definition_term_lexical_variants("education") == ("educational",)
