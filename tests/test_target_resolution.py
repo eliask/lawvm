@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from lawvm.core.diagnostic_records import validate_diagnostic_detail
@@ -10,6 +12,7 @@ from lawvm.core.target_resolution import (
     TARGET_FALLBACK_RESOLVED,
     TARGET_REJECTED,
     TARGET_RESOLVED,
+    TargetResolutionStatus,
     TargetResolutionCandidate,
     TargetResolutionCertificate,
     target_resolution_candidate_from_mapping,
@@ -133,6 +136,41 @@ def test_target_resolution_certificate_requires_selected_target_for_resolved_sta
             status=TARGET_RESOLVED,
             source_target="section:5",
             candidate_count=1,
+        )
+
+
+def test_target_resolution_certificate_rejects_invalid_status() -> None:
+    with pytest.raises(ValueError, match="status must be one of"):
+        TargetResolutionCertificate(
+            rule_id="test_target_bad",
+            phase="elaboration",
+            reason="bad status",
+            status=cast(TargetResolutionStatus, "exact_source_path"),
+            source_target="section:5",
+        )
+
+
+def test_target_resolution_certificate_requires_candidate_count_for_selected_status() -> None:
+    with pytest.raises(ValueError, match="candidate_count >= 1"):
+        TargetResolutionCertificate(
+            rule_id="test_target_bad",
+            phase="elaboration",
+            reason="selected target without counted candidate",
+            status=TARGET_RESOLVED,
+            source_target="section:5",
+            selected_target="section:5",
+        )
+
+
+def test_target_resolution_certificate_rejects_unknown_scope_confidence() -> None:
+    with pytest.raises(ValueError, match="scope_confidence must be one of"):
+        TargetResolutionCertificate(
+            rule_id="test_target_bad",
+            phase="elaboration",
+            reason="bad confidence",
+            status=TARGET_REJECTED,
+            source_target="section:5",
+            scope_confidence="probably",
         )
 
 
