@@ -5580,6 +5580,7 @@ def test_executor_recovers_empty_descendant_text_patch_on_parent_text() -> None:
 
 def test_executor_materializes_source_carried_labeled_child_text_substitution() -> None:
     adjudications: list[CompileAdjudication] = []
+    mutation_events: list[MutationEvent] = []
     statute = IRStatute(
         statute_id="asp/2000/11",
         title="Test Act",
@@ -5612,7 +5613,11 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution() 
         ),
         supplements=(),
     )
-    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    executor = UKReplayExecutor(
+        statute,
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
 
     executor.apply_op(
         LegalOperation(
@@ -5657,6 +5662,23 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution() 
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk_test_source_carried_labeled_child_text_substitution"
+    assert event.helper == "_replace_node_in_statute"
+    assert event.outcome == "replaced_node"
+    assert event.resolved_target_path == (
+        ("section", "11"),
+        ("subsection", "4"),
+        ("paragraph", "b"),
+    )
+    assert event.replaced_paths == (
+        (
+            ("section", "11"),
+            ("subsection", "4"),
+            ("paragraph", "b"),
+        ),
+    )
 
 
 def test_executor_materializes_source_carried_labeled_child_text_substitution_prefix() -> None:

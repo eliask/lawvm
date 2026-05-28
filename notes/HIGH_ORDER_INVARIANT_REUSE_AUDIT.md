@@ -133,6 +133,9 @@ Recent improvement:
 - UK content-payload structural replacements now route through the central
   node-replacement helper, so lead-text replacement events are visible on the
   shared mutation-event stream.
+- UK source-carried labelled-child text-substitution recovery now rebuilds the
+  recovered parent through the same central node-replacement helper instead of
+  mutating text and children in place.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
   the core mutation-boundary surface instead of Finland-local apply helpers.
 - selected UK production path annotations now use the shared `TreePath` alias
