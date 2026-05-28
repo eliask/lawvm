@@ -39,10 +39,19 @@ Recent improvement:
 
 Problem:
 
-- `check_invariants` returns strings;
-- UK replay has a parallel duplicate/order scanner in
-  `uk_legislation/replay_invariant_diagnostics.py`;
+- `check_invariants` still exposes strings for compatibility;
 - tests and scripts parse or reconstruct duplicate/order cases independently.
+
+Implemented progress:
+
+- core now has `TreeInvariantViolation` and
+  `iter_tree_invariant_violations(...)`;
+- UK replay duplicate/order scanning consumes the typed iterator while
+  preserving legacy rendered adjudication details;
+- `diagnose-phase` consumes typed tree invariant records for
+  `duplicate_label`, `illegal_edge`, and `all_tree` detectors;
+- UK replay shape-gap classifiers can consume typed invariant records instead
+  of reparsing `"duplicate ..."` / `"out of order ..."` messages.
 
 Evidence:
 
@@ -79,11 +88,13 @@ Risk:
 Compatibility path:
 
 1. add typed records and core tests while preserving exact
-   `check_invariants(...) -> list[str]` output;
+   `check_invariants(...) -> list[str]` output; done.
 2. migrate UK replay duplicate/order diagnostics to the typed iterator while
-   preserving returned strings and adjudication kinds;
+   preserving returned strings and adjudication kinds; done for replay
+   invariant-gap classification.
 3. migrate `diagnose-phase`, `audit_invariants.py`, and materialization tests
-   away from regex/string reconstruction after the typed records are stable.
+   away from regex/string reconstruction after the typed records are stable;
+   `diagnose-phase` is done for tree invariant detectors.
 
 ### P0. Generic Mutation Event Accounting
 
@@ -323,10 +334,10 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Add typed core tree invariant records while preserving current string
-   `check_invariants` output.
-2. Refactor UK duplicate/order replay diagnostics to consume typed invariant
-   records or a typed duplicate/order subset scanner.
+1. Add a small typed detector-result adapter for `diagnose-phase` and
+   `invariant-bisect` while preserving their current JSON/text output.
+2. Migrate `scripts/audit_invariants.py` and materialization helper tests away
+   from regex/string reconstruction where typed records are available.
 3. Add a small diagnostic envelope/disposition helper without collapsing
    frontend-specific finding classes.
 4. Promote a core mutation-event report shape, then adapt Finland as a
@@ -334,5 +345,6 @@ These are jurisdiction source semantics, not shared invariants.
 5. Add a small comparison-normalization pipeline and migrate Open Law
    typography projection first, then Estonia comparison rules later.
 
-The highest-value order is invariant records first, then the diagnostic
-envelope and mutation-event surfaces, then comparison-normalization cleanup.
+The highest-value order is detector-result consolidation next, then the
+diagnostic envelope and mutation-event surfaces, then comparison-normalization
+cleanup.
