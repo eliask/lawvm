@@ -52,6 +52,9 @@ Recent improvement:
 - UK payload-identity normalization records now delegate their outward envelope
   defaults to `diagnostic_detail` while preserving strict blocking and
   synthesized-EID samples.
+- UK lowering filter, source-pathology filter, manual-frontier, PIT-date,
+  metadata-only, source-pathology classification, and applicability-filter
+  records now delegate their outward envelope defaults to `diagnostic_detail`.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber

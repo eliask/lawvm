@@ -58,6 +58,30 @@ def _effect_lowering_record_base(
     return payload
 
 
+def _effect_diagnostic(
+    *,
+    rule_id: str,
+    family: str,
+    effect: UKEffectRecord,
+    blocking: bool,
+    reason: str = "",
+    **detail: Any,
+) -> dict[str, Any]:
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family=family,
+        phase="lowering",
+        reason=reason,
+        blocking=blocking,
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affected_provisions=str(effect.affected_provisions or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        effect_type=str(effect.effect_type or ""),
+        detail=detail,
+    )
+
+
 def _append_uk_effect_lowering_rejection(
     rejections_out: Optional[list[dict[str, Any]]],
     *,
@@ -180,20 +204,13 @@ def append_structural_no_ops_lowering_rejection(
     ):
         return False
     lowering_rejections_out.append(
-        {
-            "rule_id": "uk_effect_lowering_no_ops_rejected",
-            "family": "lowering_filter",
-            "phase": "lowering",
-            "effect_id": effect.effect_id,
-            "affecting_act_id": effect.affecting_act_id,
-            "affected_provisions": effect.affected_provisions,
-            "affecting_provisions": effect.affecting_provisions,
-            "effect_type": effect.effect_type,
-            "reason": "UK structural effect lowered to no replay operations",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-        }
+        _effect_diagnostic(
+            rule_id="uk_effect_lowering_no_ops_rejected",
+            family="lowering_filter",
+            effect=effect,
+            reason="UK structural effect lowered to no replay operations",
+            blocking=True,
+        )
     )
     return True
 
@@ -224,44 +241,30 @@ def append_source_pathology_filter_lowering_rejections(
         )
     ):
         lowering_rejections_out.append(
-            {
-                "rule_id": "uk_effect_instruction_text_payload_rejected",
-                "family": "source_pathology_filter",
-                "phase": "lowering",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "reason": "UK effect payload reused instruction text rather than source legal payload",
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-                "source_pathology": source_pathology,
-            }
+            _effect_diagnostic(
+                rule_id="uk_effect_instruction_text_payload_rejected",
+                family="source_pathology_filter",
+                effect=effect,
+                reason="UK effect payload reused instruction text rather than source legal payload",
+                blocking=True,
+                source_pathology=source_pathology,
+            )
         )
         appended = True
     if source_pathology == "range_to_container_target_unsupported":
         lowering_rejections_out.append(
-            {
-                "rule_id": "uk_effect_range_to_container_substitution_rejected",
-                "family": "source_pathology_filter",
-                "phase": "lowering",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "reason": (
+            _effect_diagnostic(
+                rule_id="uk_effect_range_to_container_substitution_rejected",
+                family="source_pathology_filter",
+                effect=effect,
+                reason=(
                     "UK source substitutes a section range into a container payload; "
                     "lowering must own range replacement and lineage before replay"
                 ),
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-                "source_pathology": source_pathology,
+                blocking=True,
+                source_pathology=source_pathology,
                 **_range_to_container_substitution_detail(effect, compiled_ops),
-            }
+            )
         )
         appended = True
     if (
@@ -270,26 +273,19 @@ def append_source_pathology_filter_lowering_rejections(
         and source_pathology in _SOURCE_PATHOLOGY_NONREPLAY_OUT_OF_SCOPE
     ):
         lowering_rejections_out.append(
-            {
-                "rule_id": "uk_effect_source_pathology_out_of_scope_observed",
-                "family": "source_pathology_filter",
-                "phase": "lowering",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "reason": (
+            _effect_diagnostic(
+                rule_id="uk_effect_source_pathology_out_of_scope_observed",
+                family="source_pathology_filter",
+                effect=effect,
+                reason=(
                     "UK source-pathology classification proves this row is outside "
                     "direct text/tree replay; compiled operations are recorded as "
                     "evidence but not replayed."
                 ),
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-                "source_pathology": source_pathology,
-                "compiled_op_count": len(compiled_ops),
-            }
+                blocking=False,
+                source_pathology=source_pathology,
+                compiled_op_count=len(compiled_ops),
+            )
         )
         appended = True
     return appended
@@ -318,21 +314,14 @@ def append_no_ops_lowering_rejections(
     )
     if nonstructural_candidate_family:
         lowering_rejections_out.append(
-            {
-                "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
-                "family": "lowering_filter",
-                "phase": "lowering",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-                "nonstructural_replay_candidate_family": nonstructural_candidate_family,
-            }
+            _effect_diagnostic(
+                rule_id="uk_effect_nonstructural_lowering_no_ops_rejected",
+                family="lowering_filter",
+                effect=effect,
+                reason="UK nonstructural effect row may be replayable but lowered to no replay operations",
+                blocking=True,
+                nonstructural_replay_candidate_family=nonstructural_candidate_family,
+            )
         )
         return True
     if (
@@ -340,23 +329,16 @@ def append_no_ops_lowering_rejections(
         and effect.is_applicable_for_replay(applicability_mode=applicability_mode)
     ):
         lowering_rejections_out.append(
-            {
-                "rule_id": "uk_effect_nonstructural_unsupported_no_ops_observed",
-                "family": "nonstructural_replay_observation",
-                "phase": "lowering",
-                "effect_id": effect.effect_id,
-                "affecting_act_id": effect.affecting_act_id,
-                "affected_provisions": effect.affected_provisions,
-                "affecting_provisions": effect.affecting_provisions,
-                "effect_type": effect.effect_type,
-                "reason": (
+            _effect_diagnostic(
+                rule_id="uk_effect_nonstructural_unsupported_no_ops_observed",
+                family="nonstructural_replay_observation",
+                effect=effect,
+                reason=(
                     "UK applicable nonstructural effect row is not replay-supported "
                     "under the selected replay lens and lowered to no replay operations"
                 ),
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            }
+                blocking=False,
+            )
         )
         return True
     return appended
@@ -485,34 +467,27 @@ def append_manual_compile_frontier_diagnostic(
         replay_applicable=replay_applicable,
         structural_for_replay=structural_for_replay,
     )
-    record = {
-        "rule_id": "uk_manual_compile_frontier_classified",
-        "family": "manual_compile_frontier",
-        "phase": "lowering",
-        "effect_id": str(effect.effect_id or ""),
-        "affecting_act_id": str(effect.affecting_act_id or ""),
-        "affected_provisions": str(effect.affected_provisions or ""),
-        "affecting_provisions": str(effect.affecting_provisions or ""),
-        "effect_type": str(effect.effect_type or ""),
-        "manual_compile_status": manual_frontier["status"],
-        "manual_compile_rule_id": manual_frontier["rule_id"],
-        "manual_compile_reason": manual_frontier["reason"],
-        "lowering_rule_ids": _lowering_record_rule_ids(current_lowering_rejections),
-        "blocking_lowering_rule_ids": _lowering_record_rule_ids(
+    record = _effect_diagnostic(
+        rule_id="uk_manual_compile_frontier_classified",
+        family="manual_compile_frontier",
+        effect=effect,
+        blocking=False,
+        manual_compile_status=manual_frontier["status"],
+        manual_compile_rule_id=manual_frontier["rule_id"],
+        manual_compile_reason=manual_frontier["reason"],
+        lowering_rule_ids=_lowering_record_rule_ids(current_lowering_rejections),
+        blocking_lowering_rule_ids=_lowering_record_rule_ids(
             tuple(
                 row
                 for row in current_lowering_rejections
                 if is_blocking_compile_record(row)
             )
         ),
-        "source_pathology": source_pathology or "",
-        "structural_for_replay": structural_for_replay,
-        "replay_applicable": replay_applicable,
-        "compiled_op_count": compiled_op_count,
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        source_pathology=source_pathology or "",
+        structural_for_replay=structural_for_replay,
+        replay_applicable=replay_applicable,
+        compiled_op_count=compiled_op_count,
+    )
     template_status = uk_manual_claim_template_status(
         manual_compile_status=record["manual_compile_status"],
         manual_compile_rule_id=record["manual_compile_rule_id"],
@@ -533,22 +508,15 @@ def append_pit_date_filter_rejection(
     if diagnostics_out is None:
         return
     diagnostics_out.append(
-        {
-            "rule_id": "uk_effect_pit_date_filter_rejected",
-            "family": "temporal_filter",
-            "phase": "lowering",
-            "effect_id": effect.effect_id,
-            "affecting_act_id": str(effect.affecting_act_id or ""),
-            "affected_provisions": effect.affected_provisions,
-            "affecting_provisions": effect.affecting_provisions,
-            "effect_type": effect.effect_type,
-            "effective_date": effective_date,
-            "pit_date": pit_date,
-            "reason": "UK effect effective date is later than requested point-in-time date",
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
+        _effect_diagnostic(
+            rule_id="uk_effect_pit_date_filter_rejected",
+            family="temporal_filter",
+            effect=effect,
+            reason="UK effect effective date is later than requested point-in-time date",
+            blocking=False,
+            effective_date=effective_date,
+            pit_date=pit_date,
+        )
     )
 
 
@@ -561,21 +529,14 @@ def append_metadata_only_selection_rejection(
     if rejections_out is None:
         return
     rejections_out.append(
-        {
-            "rule_id": "uk_effect_metadata_only_selection_rejected",
-            "family": "applicability_filter",
-            "phase": "lowering",
-            "effect_id": effect.effect_id,
-            "affecting_act_id": effect.affecting_act_id,
-            "affected_provisions": effect.affected_provisions,
-            "affecting_provisions": effect.affecting_provisions,
-            "effect_type": effect.effect_type,
-            "metadata_only": True,
-            "reason": "UK replay regime excludes metadata-only effect rows",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-        }
+        _effect_diagnostic(
+            rule_id="uk_effect_metadata_only_selection_rejected",
+            family="applicability_filter",
+            effect=effect,
+            reason="UK replay regime excludes metadata-only effect rows",
+            blocking=True,
+            metadata_only=True,
+        )
     )
 
 
@@ -592,23 +553,16 @@ def append_source_pathology_classified_diagnostic(
     if diagnostics_out is None:
         return
     diagnostics_out.append(
-        {
-            "rule_id": "uk_effect_source_pathology_classified",
-            "family": "source_pathology",
-            "phase": "lowering",
-            "effect_id": str(effect.effect_id or ""),
-            "affecting_act_id": str(effect.affecting_act_id or ""),
-            "affected_provisions": str(effect.affected_provisions or ""),
-            "affecting_provisions": str(effect.affecting_provisions or ""),
-            "effect_type": str(effect.effect_type or ""),
-            "source_pathology": source_pathology or "",
-            "structural_for_replay": structural_for_replay,
-            "replay_applicable": replay_applicable,
-            "compiled_op_count": compiled_op_count,
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
+        _effect_diagnostic(
+            rule_id="uk_effect_source_pathology_classified",
+            family="source_pathology",
+            effect=effect,
+            blocking=False,
+            source_pathology=source_pathology or "",
+            structural_for_replay=structural_for_replay,
+            replay_applicable=replay_applicable,
+            compiled_op_count=compiled_op_count,
+        )
     )
 
 
@@ -625,29 +579,22 @@ def append_replay_applicability_filter_diagnostic(
     if diagnostics_out is None:
         return
     diagnostics_out.append(
-        {
-            "rule_id": "uk_effect_replay_applicability_filter_rejected",
-            "family": "applicability_filter",
-            "phase": "lowering",
-            "effect_id": str(effect.effect_id or ""),
-            "affecting_act_id": str(effect.affecting_act_id or ""),
-            "affected_provisions": str(effect.affected_provisions or ""),
-            "affecting_provisions": str(effect.affecting_provisions or ""),
-            "effect_type": str(effect.effect_type or ""),
-            "compiled_op_count": len(compiled_ops),
-            "compiled_op_ids": [str(op.op_id or "") for op in compiled_ops],
-            "compiled_op_actions": [_action_name(op.action) for op in compiled_ops],
-            "structural_for_replay": structural_for_replay,
-            "replay_applicable": replay_applicable,
-            "nonstructural_replay_family": uk_nonstructural_replay_candidate_family(
+        _effect_diagnostic(
+            rule_id="uk_effect_replay_applicability_filter_rejected",
+            family="applicability_filter",
+            effect=effect,
+            reason="UK effect compiled to operations but replay applicability excludes the effect",
+            blocking=False,
+            compiled_op_count=len(compiled_ops),
+            compiled_op_ids=[str(op.op_id or "") for op in compiled_ops],
+            compiled_op_actions=[_action_name(op.action) for op in compiled_ops],
+            structural_for_replay=structural_for_replay,
+            replay_applicable=replay_applicable,
+            nonstructural_replay_family=uk_nonstructural_replay_candidate_family(
                 effect,
                 applicability_mode=applicability_mode,
             ),
-            "reason": "UK effect compiled to operations but replay applicability excludes the effect",
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
+        )
     )
 
 
