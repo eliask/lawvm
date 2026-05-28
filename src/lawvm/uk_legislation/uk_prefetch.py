@@ -502,7 +502,7 @@ def fetch_missing_for_statute(
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = resp.read()
-                final_url = str(getattr(resp, "geturl", lambda: url)())
+                final_url = str(getattr(resp, "geturl", lambda url=url: url)())
                 http_status = getattr(resp, "status", None)
             source_state = classify_uk_source_blob(data)
             if source_state.status is not UKSourceStatus.AVAILABLE:

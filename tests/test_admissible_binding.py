@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
+
 from lawvm.core.compile_result import AdmissibleBindingCertificate
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -96,11 +98,8 @@ def test_admissible_binding_certificate_frozen() -> None:
         candidate_count=1,
         admissibility="single",
     )
-    try:
+    with pytest.raises(AttributeError):
         cast(Any, cert).slot_id = 99
-        assert False, "should be frozen"
-    except AttributeError:
-        pass
 
 
 # ---------------------------------------------------------------------------

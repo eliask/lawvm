@@ -191,6 +191,7 @@ def test_summarize_bench_warning_diagnostics_collects_logger_and_python_warnings
         warnings.warn(
             "ProvisionVersion effective == expires (2013-11-08) — empty same-day temporal interval (source=2014/415)",
             UserWarning,
+            stacklevel=2,
         )
 
     counts = bench._summarize_bench_warning_diagnostics(

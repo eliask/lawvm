@@ -372,11 +372,16 @@ def find_all(
                 continue
             scoped_matches: List[Path] = []
 
-            def _search_scoped(node: IRNode, prefix: Path) -> None:
+            def _search_scoped(
+                node: IRNode,
+                prefix: Path,
+                *,
+                matches_out: List[Path] = scoped_matches,
+            ) -> None:
                 for child in node.children:
                     child_path = prefix + ((_kind_str(child.kind), child.label or ""),)
                     if _kind_matches(child.kind, kind) and _match_label(child.label, label):
-                        scoped_matches.append(child_path)
+                        matches_out.append(child_path)
                     _search_scoped(child, child_path)
 
             _search_scoped(scope_node, ())

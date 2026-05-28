@@ -1,6 +1,9 @@
 """Unit tests for lawvm.finland.address_parse — Finnish legal address parser."""
 
+from dataclasses import FrozenInstanceError
 from typing import Any, cast
+
+import pytest
 
 from lawvm.finland.address_parse import ParsedLegalAddress, parse_legal_addresses
 
@@ -20,11 +23,8 @@ def test_parsed_legal_address_defaults() -> None:
 
 def test_parsed_legal_address_frozen() -> None:
     addr = ParsedLegalAddress(section="6")
-    try:
+    with pytest.raises(FrozenInstanceError):
         cast(Any, addr).section = "7"
-        assert False, "Should have raised FrozenInstanceError"
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------

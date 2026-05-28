@@ -623,7 +623,14 @@ async def verify_statute(
         # PHASE 2: Provision-level text verification
 
         # For each amendment section, verify against the corresponding provision
-        async def verify_one_provision(sec_num: str, amend_text: str) -> Optional[ProvisionVerification]:
+        async def verify_one_provision(
+            sec_num: str,
+            amend_text: str,
+            *,
+            amendment_id: str = amend_id,
+            amendment_index: int = i,
+            clause_text: str = johtolause,
+        ) -> Optional[ProvisionVerification]:
             # Find the matching provision in consolidated
             matching_keys = [
                 k for k in consolidated
@@ -640,7 +647,7 @@ async def verify_statute(
             prompt = PROMPT_TEMPLATE.format(
                 sec_num=sec_num,
                 current_text=current_text,
-                johtolause=johtolause,
+                johtolause=clause_text,
                 amendment_content=amend_text,
                 result_start=RESULT_START,
                 result_end=RESULT_END,
@@ -649,7 +656,7 @@ async def verify_statute(
             async with sem:
                 raw_out, _ = await call_llm(
                     prompt,
-                    call_label=f"{statute_id.replace('/', '_')}_{amend_id.replace('/', '_')}_sec{sec_num}",
+                    call_label=f"{statute_id.replace('/', '_')}_{amendment_id.replace('/', '_')}_sec{sec_num}",
                 )
             llm_result = _extract_delimited(raw_out, RESULT_START, RESULT_END)
 
@@ -658,14 +665,14 @@ async def verify_statute(
             if "[UNABLE TO DETERMINE]" in llm_result or "[TIMEOUT]" in llm_result or "[ERROR" in llm_result:
                 return ProvisionVerification(
                     address=address,
-                    amendment_id=amend_id,
+                    amendment_id=amendment_id,
                     diagnosis="LLM_UNCERTAIN_STEP",
                     replay_text="",
                     oracle_text="",
                     llm_text=llm_result,
                     replay_match_llm=False,
                     oracle_match_llm=False,
-                    note=f"LLM could not derive at step {i+1}: {llm_result[:100]}",
+                    note=f"LLM could not derive at step {amendment_index + 1}: {llm_result[:100]}",
                 )
 
             # Update cumulative LLM-derived state
