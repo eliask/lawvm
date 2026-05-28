@@ -139,6 +139,8 @@ Recent improvement:
   shape before classifying boundary coverage.
 - diagnostic detail payloads now reject frontend-local `detail` keys that would
   override shared envelope fields such as `rule_id`, `phase`, or dispositions.
+- mutation-event accounting result/report logic now has a core home; Finland
+  apply events re-export the shared accounting surface for compatibility.
 
 ## Ranked Promotion Candidates
 
@@ -247,6 +249,9 @@ Implemented progress:
   allowance paths/rule IDs, matched allowance rule IDs, and path-set
   partitioning; the path-set partition invariant is now property-tested across
   arbitrary touched, target, recovery, and migration path sets.
+- core now owns `MutationAccountingResult` and `MutationInvariantReport` plus
+  the passive accounting analyzers for skipped/failed mutation, missing primary
+  target consumption, unresolved apply boundary, and out-of-target touches.
 - Finland apply accounting now delegates target/recovery/migration path-set
   classification to the core report while preserving its frontend-specific
   accounting result codes and compatibility report fields.
