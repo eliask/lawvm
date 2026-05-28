@@ -55,11 +55,13 @@ but not the preferred persisted/public dossier shape for downstream consumers.
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Iterable, List, Mapping, Tuple, TypeVar
 
 import icontract
 
+from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.observation_registry import (
     FindingRole,
     get_finding_spec,
@@ -82,6 +84,12 @@ T = TypeVar("T")
 OBSERVATION_ROLE: FindingRole = "observation"
 OBLIGATION_ROLE: FindingRole = "obligation"
 VIOLATION_ROLE: FindingRole = "violation"
+
+
+def _freeze_phase_detail(subject: str, detail: Mapping[str, Any]) -> Mapping[str, Any]:
+    if not isinstance(detail, MappingABC):
+        raise TypeError(f"{subject}.detail must be a mapping")
+    return freeze_mapping(detail)
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,7 @@ class Observation:
 
     def __post_init__(self) -> None:
         validate_finding_projection(self.kind, "observation", False)
+        object.__setattr__(self, "detail", _freeze_phase_detail("Observation", self.detail))
 
 
 @dataclass(frozen=True)
@@ -134,6 +143,7 @@ class Obligation:
 
     def __post_init__(self) -> None:
         validate_finding_projection(self.kind, "obligation", self.blocking)
+        object.__setattr__(self, "detail", _freeze_phase_detail("Obligation", self.detail))
 
 
 @dataclass(frozen=True)
@@ -152,6 +162,7 @@ class Violation:
 
     def __post_init__(self) -> None:
         validate_finding_projection(self.kind, "violation", True)
+        object.__setattr__(self, "detail", _freeze_phase_detail("Violation", self.detail))
 
 
 @dataclass(frozen=True)
@@ -170,6 +181,7 @@ class Finding:
 
     def __post_init__(self) -> None:
         validate_finding_projection(self.kind, self.role, self.blocking)
+        object.__setattr__(self, "detail", _freeze_phase_detail("Finding", self.detail))
 
 
 @dataclass(frozen=True, init=False)
@@ -361,7 +373,7 @@ class PhaseBuilder(Generic[T]):
                 kind=kind,
                 role=role,
                 stage=stage,
-                detail=dict(detail),
+                detail=detail,
                 source_statute=source_statute,
                 blocking=blocking,
             )
