@@ -581,6 +581,7 @@ def _timeline_target_exists(
     """Return True if target_path already exists in base or prior emitted replay history."""
     if base_ir is not None and _tops.resolve(base_ir, target_path) is not None:
         return True
+    target_address = LegalAddress(path=target_path)
     for lo in replay_history_ops:
         lo_effective = lo.source.effective if lo.source is not None else ""
         if before_effective and lo_effective and lo_effective >= before_effective:
@@ -590,7 +591,7 @@ def _timeline_target_exists(
         if (
             lo.payload is not None
             and len(lo.target.path) < len(target_path)
-            and target_path[: len(lo.target.path)] == lo.target.path
+            and target_address.has_path_prefix(lo.target)
             and _payload_contains_relative_target(lo.payload, target_path[len(lo.target.path) :])
         ):
             return True
