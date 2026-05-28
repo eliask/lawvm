@@ -5,6 +5,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, NamedTuple, Optional, Sequence
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
@@ -17,6 +18,23 @@ _UK_SOURCE_PROVISION_ORDER_TOKEN_RE = re.compile(
     r"schedules?|schs?|sch|paragraphs?|paras?|para)\.?\s*(?P<label>[0-9]+[A-Za-z]*)"
     r"|\((?P<paren>[0-9A-Za-z]+)\)"
 )
+
+
+def _uk_ordering_diagnostic(
+    *,
+    rule_id: str,
+    reason: str,
+    blocking: bool,
+    **detail: Any,
+) -> dict[str, Any]:
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="temporal_recovery",
+        phase="lowering",
+        reason=reason,
+        blocking=blocking,
+        detail=detail,
+    )
 
 
 class _EffectOrderingGroupKey(NamedTuple):
@@ -126,26 +144,22 @@ def _order_uk_effects_for_replay(
         new_ids = [effect.effect_id for effect in new_group]
         if old_ids == new_ids:
             continue
-        record = {
-            "rule_id": "uk_effect_source_provision_order_normalized",
-            "family": "temporal_recovery",
-            "phase": "lowering",
-            "effective_date": group_key[0],
-            "modified": group_key[1],
-            "affecting_act_id": group_key[2],
-            "reason_code": "same_date_same_affecting_act_source_citation_order",
-            "original_effect_ids": tuple(old_ids),
-            "ordered_effect_ids": tuple(new_ids),
-            "original_affecting_provisions": tuple(effect.affecting_provisions for effect in group_effects),
-            "ordered_affecting_provisions": tuple(effect.affecting_provisions for effect in new_group),
-            "reason": (
+        record = _uk_ordering_diagnostic(
+            rule_id="uk_effect_source_provision_order_normalized",
+            reason=(
                 "UK effects with the same effective date and affecting act "
                 "were ordered by source provision citation rather than opaque effect id"
             ),
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
+            blocking=False,
+            effective_date=group_key[0],
+            modified=group_key[1],
+            affecting_act_id=group_key[2],
+            reason_code="same_date_same_affecting_act_source_citation_order",
+            original_effect_ids=tuple(old_ids),
+            ordered_effect_ids=tuple(new_ids),
+            original_affecting_provisions=tuple(effect.affecting_provisions for effect in group_effects),
+            ordered_affecting_provisions=tuple(effect.affecting_provisions for effect in new_group),
+        )
         if diagnostics_out is not None:
             diagnostics_out.append(record)
         if lowering_observations_out is not None:
@@ -214,23 +228,19 @@ def _order_uk_text_patch_preimage_chains(
         if ambiguous:
             if lowering_observations_out is not None:
                 lowering_observations_out.append(
-                    {
-                        "rule_id": "uk_effect_text_patch_preimage_chain_ambiguous",
-                        "family": "temporal_recovery",
-                        "phase": "lowering",
-                        "target": target,
-                        "effective_date": effective_date,
-                        "op_ids": tuple(op.op_id for op in group_ops),
-                        "reason_code": "same_target_text_patch_preimage_chain_not_unique",
-                        "reason": (
+                    _uk_ordering_diagnostic(
+                        rule_id="uk_effect_text_patch_preimage_chain_ambiguous",
+                        reason=(
                             "UK same-target text patches had exact preimage-chain "
                             "links, but the chain was not unique; lowering left the "
                             "original order intact rather than guessing precedence."
                         ),
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
+                        blocking=True,
+                        target=target,
+                        effective_date=effective_date,
+                        op_ids=tuple(op.op_id for op in group_ops),
+                        reason_code="same_target_text_patch_preimage_chain_not_unique",
+                    )
                 )
             continue
         ready = [idx for idx in range(len(group_ops)) if not predecessors[idx]]
@@ -248,22 +258,18 @@ def _order_uk_text_patch_preimage_chains(
         if len(topo) != len(group_ops):
             if lowering_observations_out is not None:
                 lowering_observations_out.append(
-                    {
-                        "rule_id": "uk_effect_text_patch_preimage_chain_ambiguous",
-                        "family": "temporal_recovery",
-                        "phase": "lowering",
-                        "target": target,
-                        "effective_date": effective_date,
-                        "op_ids": tuple(op.op_id for op in group_ops),
-                        "reason_code": "same_target_text_patch_preimage_chain_cycle",
-                        "reason": (
+                    _uk_ordering_diagnostic(
+                        rule_id="uk_effect_text_patch_preimage_chain_ambiguous",
+                        reason=(
                             "UK same-target text patches had cyclic exact preimage-chain "
                             "links; lowering left the original order intact."
                         ),
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
+                        blocking=True,
+                        target=target,
+                        effective_date=effective_date,
+                        op_ids=tuple(op.op_id for op in group_ops),
+                        reason_code="same_target_text_patch_preimage_chain_cycle",
+                    )
                 )
             continue
         reordered_group = [group_ops[idx] for idx in topo]
@@ -273,23 +279,19 @@ def _order_uk_text_patch_preimage_chains(
             ordered[target_slot] = op
         if lowering_observations_out is not None:
             lowering_observations_out.append(
-                {
-                    "rule_id": "uk_effect_text_patch_preimage_chain_ordered",
-                    "family": "temporal_recovery",
-                    "phase": "lowering",
-                    "target": target,
-                    "effective_date": effective_date,
-                    "original_op_ids": tuple(op.op_id for op in group_ops),
-                    "ordered_op_ids": tuple(op.op_id for op in reordered_group),
-                    "reason_code": "exact_same_target_text_patch_preimage_chain",
-                    "reason": (
+                _uk_ordering_diagnostic(
+                    rule_id="uk_effect_text_patch_preimage_chain_ordered",
+                    reason=(
                         "UK same-target text patches were ordered by exact quoted "
                         "preimage chain: one replacement text is the next patch's "
                         "source preimage."
                     ),
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                }
+                    blocking=False,
+                    target=target,
+                    effective_date=effective_date,
+                    original_op_ids=tuple(op.op_id for op in group_ops),
+                    ordered_op_ids=tuple(op.op_id for op in reordered_group),
+                    reason_code="exact_same_target_text_patch_preimage_chain",
+                )
             )
     return ordered
