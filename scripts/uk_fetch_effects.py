@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import sys
 from pathlib import Path
-from lawvm.uk_legislation.uk_amendment_replay import fetch_effects_for_statute
+
+from lawvm.uk_legislation.effects import fetch_effects_for_statute
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
