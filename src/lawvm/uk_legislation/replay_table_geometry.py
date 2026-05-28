@@ -896,11 +896,12 @@ def resolve_uk_table_entry_row_replace_span(
         if len(anchor_match.matches) != 1
     ]
     if non_unique:
-        reason = (
-            "entry_not_found"
-            if any(int(item["matching_entry_count"]) == 0 for item in non_unique)
-            else "entry_not_unique"
+        missing_anchor = any(
+            len(anchor_match.matches) == 0
+            for anchor_match in matches_by_anchor
+            if len(anchor_match.matches) != 1
         )
+        reason = "entry_not_found" if missing_anchor else "entry_not_unique"
         return result(
             None,
             None,
