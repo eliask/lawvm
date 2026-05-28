@@ -278,7 +278,8 @@ Recent improvement:
   and commencement policy local.
 - contingent temporal resolution can now distinguish unresolved trigger state
   from coverage-certified untriggered state in core activation/resolution
-  status projection.
+  status projection; certified-untriggered resolution facts must point to an
+  authority source or trigger coverage certificate.
 - the legal branch/authority axis now has an initial core contract:
   default enacted materialization remains branchless, while proposal/draft
   operations require a branch id and are excluded by the default enacted

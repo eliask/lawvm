@@ -27,7 +27,10 @@ from lawvm.core.ir import (
     StructuralAction,
 )
 from lawvm.core.temporal import (
+    TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+    TRIGGER_COVERAGE_INCOMPLETE,
     UNTRIGGERED_CERTIFIED_STATUS,
+    TriggerCoverageCertificate,
     derive_temporal_status,
     project_temporal_status,
 )
@@ -255,6 +258,38 @@ def test_finland_ops_temporary_signal_is_coarse_and_live() -> None:
 # ---------------------------------------------------------------------------
 
 
+class TestTriggerCoverageCertificateConstruction:
+    """TriggerCoverageCertificate validates trigger source coverage evidence."""
+
+    def test_complete_no_resolution_requires_as_of_and_checked_sources(self) -> None:
+        cert = TriggerCoverageCertificate(
+            certificate_id="coverage-1",
+            status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+            as_of="2026-04-07",
+            activation_rule_ref="event:1",
+            checked_sources=("decree-register",),
+            source_scope=("commencement-instruments",),
+        )
+
+        assert cert.certifies_untriggered is True
+        assert cert.to_dict()["status"] == "complete_no_resolution"
+
+    def test_complete_coverage_requires_checked_sources(self) -> None:
+        with pytest.raises(ValueError, match="checked_sources"):
+            TriggerCoverageCertificate(
+                certificate_id="coverage-1",
+                status=TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+                as_of="2026-04-07",
+            )
+
+    def test_incomplete_coverage_requires_missing_sources(self) -> None:
+        with pytest.raises(ValueError, match="missing_sources"):
+            TriggerCoverageCertificate(
+                certificate_id="coverage-1",
+                status=TRIGGER_COVERAGE_INCOMPLETE,
+            )
+
+
 class TestResolutionFactConstruction:
     """ResolutionFact construction and validation."""
 
@@ -280,10 +315,14 @@ class TestResolutionFactConstruction:
     def test_untriggered_certified(self) -> None:
         fact = ResolutionFact(
             status=UNTRIGGERED_CERTIFIED_STATUS,
-            authority_source="coverage://commencement-instruments-through-2026",
+            coverage_certificate_id="coverage-1",
         )
         assert fact.status == "untriggered_certified"
-        assert fact.authority_source == "coverage://commencement-instruments-through-2026"
+        assert fact.coverage_certificate_id == "coverage-1"
+
+    def test_untriggered_certified_requires_evidence_pointer(self) -> None:
+        with pytest.raises(ValueError, match="coverage_certificate_id"):
+            ResolutionFact(status=UNTRIGGERED_CERTIFIED_STATUS)
 
     def test_superseded(self) -> None:
         fact = ResolutionFact(
@@ -301,7 +340,10 @@ class TestResolutionFactConstruction:
     def test_status_predicates_reflect_current_status(self) -> None:
         resolved = ResolutionFact(status="resolved", resolved_effective="2027-06-01")
         unresolved = ResolutionFact(status="unresolved")
-        untriggered = ResolutionFact(status=UNTRIGGERED_CERTIFIED_STATUS)
+        untriggered = ResolutionFact(
+            status=UNTRIGGERED_CERTIFIED_STATUS,
+            coverage_certificate_id="coverage-1",
+        )
         superseded = ResolutionFact(status="superseded")
 
         assert resolved.is_resolved is True
@@ -387,7 +429,7 @@ class TestDeriveTemporalStatus:
         rule = ActivationRule(kind="pending_decree")
         res = ResolutionFact(
             status=UNTRIGGERED_CERTIFIED_STATUS,
-            authority_source="coverage://commencement-instruments-through-2026",
+            coverage_certificate_id="coverage-1",
         )
         assert derive_temporal_status(rule, res, "2026-04-07") == "inactive"
 
@@ -456,7 +498,12 @@ class TestProjectTemporalStatus:
 
     def test_certified_untriggered_projects_inactive(self) -> None:
         rules = [ActivationRule(kind="pending_decree")]
-        resolutions = [ResolutionFact(status=UNTRIGGERED_CERTIFIED_STATUS)]
+        resolutions = [
+            ResolutionFact(
+                status=UNTRIGGERED_CERTIFIED_STATUS,
+                coverage_certificate_id="coverage-1",
+            )
+        ]
         assert project_temporal_status(rules, resolutions, "2026-04-07") == "inactive"
 
     def test_resolution_list_shorter_than_rules(self) -> None:

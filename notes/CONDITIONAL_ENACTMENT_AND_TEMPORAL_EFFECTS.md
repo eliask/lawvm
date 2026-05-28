@@ -24,20 +24,21 @@ It has the beginnings of the right pieces:
 * typed `ResolutionFact`,
 * `ResolutionFact(status="untriggered_certified")` for coverage-backed
   non-triggered contingent effects,
+* typed `TriggerCoverageCertificate`,
 * finding codes like `TIME.CONTINGENT_EFFECTIVE_DATE`,
 * explicit `_ex` query/materialization APIs for some degraded states,
 
 but it still lacks some things that make these cases first-class end-to-end:
 
-* frontend-owned **coverage certificates** that prove which trigger sources
-  were searched,
+* frontend-owned **coverage certificate production** that proves which trigger
+  sources were searched,
 * explicit **temporal-degraded query results**,
 * a real model for **multiple competing contingent events** on the same provision.
 
 Current support boundary:
 
 > **Current LawVM has the core activation/resolution vocabulary, but frontends
-> still need source-coverage evidence and PIT integration before deferred
+> still need source-coverage acquisition and PIT integration before deferred
 > commencement is fully operational.**
 
 And the ideal architecture should.
@@ -133,13 +134,15 @@ From the current code:
   condition-pending activation.
 * `ResolutionFact` distinguishes resolved, unresolved, superseded, and
   coverage-certified untriggered contingent activation.
+* `TriggerCoverageCertificate` records checked/missing trigger sources and can
+  back `ResolutionFact(status="untriggered_certified")`.
 * `PhaseResult` can auto-lower `EffectIntent` into `TemporalEvent`.
 * The finding plane can emit `TIME.CONTINGENT_EFFECTIVE_DATE`.
 * `select_active_version_ex()` / `materialize_pit_ex()` already know how to return explicit degraded results for **missing applicability scope**.
 
 So current core can **represent that something contingent exists**, **surface a
-warning/finding**, and **distinguish unknown trigger state from certified
-untriggered state**.
+warning/finding**, **record trigger-source coverage**, and **distinguish unknown
+trigger state from certified untriggered state**.
 
 ## What current core cannot yet do correctly as architecture
 
