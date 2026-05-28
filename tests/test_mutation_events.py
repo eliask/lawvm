@@ -10,6 +10,7 @@ from lawvm.core.mutation_accounting import (
     MutationInvariantReport,
     build_mutation_invariant_reports,
     check_mutation_accounting,
+    mutation_event_outcome_family,
 )
 from lawvm.core.mutation_boundary import path_has_prefix
 from lawvm.core.mutation_events import (
@@ -359,6 +360,36 @@ def test_core_mutation_accounting_flags_out_of_scope_touches() -> None:
             ),
         ),
     )
+
+
+def test_core_mutation_accounting_classifies_frontend_specific_applied_outcomes() -> None:
+    assert mutation_event_outcome_family("replaced_node") == "applied"
+    assert mutation_event_outcome_family("table_rows_inserted") == "applied"
+    assert mutation_event_outcome_family("skipped") == "skipped"
+    assert mutation_event_outcome_family("failed") == "failed"
+    assert mutation_event_outcome_family("local_observation") == "unknown"
+
+
+def test_core_mutation_accounting_checks_specific_applied_outcomes() -> None:
+    event = MutationEvent(
+        op_id="uk-op",
+        source_statute="ukpga/2000/1",
+        action="replace",
+        helper="_replace_node_in_statute",
+        outcome="replaced_node",
+        resolved_target_path=(("section", "1"),),
+        replaced_paths=((("section", "2"),),),
+    )
+
+    reports = build_mutation_invariant_reports([event])
+
+    assert check_mutation_accounting([event]) == [
+        "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET op_id=uk-op helper=_replace_node_in_statute touched=1"
+    ]
+    assert reports[0].outcome == "replaced_node"
+    assert reports[0].allowed_roots == ((("section", "1"),),)
+    assert reports[0].out_of_scope_paths == ((("section", "2"),),)
+    assert reports[0].path_set_invariant_holds is False
 
 
 def test_core_mutation_accounting_parent_boundary_helpers_are_configurable() -> None:
