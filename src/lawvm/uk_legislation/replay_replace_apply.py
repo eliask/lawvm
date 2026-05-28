@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from typing import Any, Protocol
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_replace_text
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_replace_selector,
     _table_row_replace_selector,
@@ -417,7 +418,8 @@ class UKReplayReplaceApplyMixin:
                             )
                         self._record_invariant_violations(op)
                 elif node_kind != "content" and new_kind == "content":
-                    uk_replace_text(node, new_node.text)
+                    self._replace_node_in_statute(node, dc_replace(node, text=new_node.text))
+                    self._record_invariant_violations(op)
                 else:
                     existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
                     if existing_eid:

@@ -131,6 +131,46 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_replace() -> None:
     assert event.removed_paths == ()
 
 
+def test_replay_uk_ops_records_content_payload_replace_as_node_replacement() -> None:
+    mutation_events: list[MutationEvent] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Old section lead.",
+                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Child text."),),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk-test-replace-section-1-content",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="Replacement section lead."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    section = replayed.body.children[0]
+    assert section.text == "Replacement section lead."
+    assert section.children == (IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Child text."),)
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-replace-section-1-content"
+    assert event.helper == "_replace_node_in_statute"
+    assert event.outcome == "replaced_node"
+    assert event.resolved_target_path == (("section", "1"),)
+    assert event.replaced_paths == ((("section", "1"),),)
+
+
 def test_replay_uk_ops_can_emit_core_mutation_event_for_node_repeal() -> None:
     mutation_events: list[MutationEvent] = []
     op = LegalOperation(

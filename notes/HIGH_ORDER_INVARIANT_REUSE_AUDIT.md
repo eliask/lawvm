@@ -130,6 +130,9 @@ Recent improvement:
 - UK table-column insertion now stages spanning-cell and row-child edits until
   the whole column boundary is proven, so an unresolved short payload cannot
   leave partial table mutations outside an applied mutation event.
+- UK content-payload structural replacements now route through the central
+  node-replacement helper, so lead-text replacement events are visible on the
+  shared mutation-event stream.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
   the core mutation-boundary surface instead of Finland-local apply helpers.
 - selected UK production path annotations now use the shared `TreePath` alias
