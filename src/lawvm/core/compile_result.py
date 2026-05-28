@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Mapping, Optional, cast
 
+from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 from lawvm.core.event_summaries import (
     count_events_with_activation_rules,
@@ -100,6 +101,7 @@ class SourcePathology:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
         if not self.target_unit_kind:
             if any(
                 key in self.detail

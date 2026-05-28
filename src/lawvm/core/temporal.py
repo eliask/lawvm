@@ -40,6 +40,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
 
+from lawvm.core.frozen_values import freeze_mapping
+
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalAddress, OperationSource
 
@@ -125,6 +127,10 @@ class TriggerCoverageCertificate:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "source_scope", tuple(self.source_scope))
+        object.__setattr__(self, "checked_sources", tuple(self.checked_sources))
+        object.__setattr__(self, "missing_sources", tuple(self.missing_sources))
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
         if not self.certificate_id:
             raise ValueError("TriggerCoverageCertificate.certificate_id must be non-empty")
         if self.status not in _TRIGGER_COVERAGE_STATUSES:

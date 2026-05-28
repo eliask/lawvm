@@ -404,6 +404,9 @@ Recent improvement:
 - `PhaseResult` runtime finding carriers now freeze nested detail payloads at
   construction for observations, obligations, violations, and projected
   findings, so stage side-channel evidence cannot be rewritten after emission.
+- source-pathology and trigger-coverage certificate carriers now freeze nested
+  detail payloads at construction; trigger coverage also normalizes source
+  lanes to tuples, keeping temporal/source evidence stable after emission.
 
 ## Ranked Promotion Candidates
 
