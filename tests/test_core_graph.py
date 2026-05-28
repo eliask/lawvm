@@ -217,6 +217,25 @@ def test_corpus_graph_rejects_branch_edge_scenario_mismatch() -> None:
         CorpusGraph(branches=[branch], branch_edges=[edge])
 
 
+def test_corpus_graph_rejects_branch_edge_authority_status_mismatch() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        legal_status="unknown",
+        source_artifact_id="proposal/example/2026/1",
+    )
+    edge = BranchGraphEdge(
+        branch_id=branch.branch_id,
+        edge_kind="would_amend",
+        target_statute_id="base/1",
+        authority_layer="draft",
+        legal_status="failed",
+    )
+
+    with pytest.raises(ValueError, match="authority_layer and legal_status must match"):
+        CorpusGraph(branches=[branch], branch_edges=[edge])
+
+
 def test_corpus_graph_rejects_lifecycle_events_without_registered_branch() -> None:
     event = BranchLifecycleEvent(
         event_id="event-1",

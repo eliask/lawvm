@@ -260,7 +260,11 @@ def export_jsonld(output_file: Path, corpus: List[str], verbose: bool = False) -
             "@type": "lawvm:BranchGraphEdge",
             "@id": (
                 f"lawvm:branch-edge/{edge.branch_id}/"
-                f"{edge.edge_kind}/{edge.operation_id or edge.source_unit_id}"
+                f"{edge.scenario_id or '_'}"
+                f"/{edge.edge_kind}"
+                f"/{edge.target_statute_id or '_'}"
+                f"/{edge.target_address or '_'}"
+                f"/{edge.operation_id or edge.source_unit_id or '_'}"
             ),
             "lawvm:branchId": edge.branch_id,
             "lawvm:edgeKind": edge.edge_kind,

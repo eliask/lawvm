@@ -6,8 +6,11 @@ from lawvm.core.authority import (
     BranchContext,
     BranchGraphEdge,
     BranchLifecycleEvent,
+    ENACTED_AUTHORITY,
+    ORACLE_AUTHORITY,
     LegalBranch,
     PROPOSAL_AUTHORITY,
+    UNCOMMENCED_STATUS,
     UNKNOWN_STATUS,
     branch_edge_kind_for_action,
     branch_graph_edge_from_operation,
@@ -87,6 +90,11 @@ def test_non_enacted_branch_context_requires_branch_id() -> None:
         BranchContext(authority_layer=PROPOSAL_AUTHORITY)
 
 
+def test_branch_context_rejects_scenario_without_branch_id() -> None:
+    with pytest.raises(ValueError, match="scenario_id requires a branch_id"):
+        BranchContext(scenario_id="if_enacted_as_introduced")
+
+
 def test_operation_source_validates_branch_context_at_provenance_boundary() -> None:
     with pytest.raises(ValueError, match="requires a branch_id"):
         OperationSource(
@@ -139,6 +147,21 @@ def test_branch_graph_edge_from_operation_ignores_default_enacted_ops() -> None:
     op = _op("enacted-op", source=OperationSource(statute_id="2025/1"))
 
     assert branch_graph_edge_from_operation(op, target_statute_id="base/1") is None
+
+
+def test_branch_graph_edge_from_operation_ignores_non_branch_authority() -> None:
+    oracle = _op("oracle-op", source=OperationSource(statute_id="2025/1", authority_layer=ORACLE_AUTHORITY))
+    uncommenced = _op(
+        "uncommenced-op",
+        source=OperationSource(
+            statute_id="2025/1",
+            authority_layer=ENACTED_AUTHORITY,
+            legal_status=UNCOMMENCED_STATUS,
+        ),
+    )
+
+    assert branch_graph_edge_from_operation(oracle, target_statute_id="base/1") is None
+    assert branch_graph_edge_from_operation(uncommenced, target_statute_id="base/1") is None
 
 
 def test_branch_graph_edge_from_operation_projects_non_enacted_op() -> None:
@@ -200,10 +223,20 @@ def test_branch_lifecycle_event_projects_non_mutating_status_fact() -> None:
     }
 
 
+def test_terminal_branch_lifecycle_event_requires_matching_status() -> None:
+    with pytest.raises(ValueError, match="resulting_status='withdrawn'"):
+        BranchLifecycleEvent(
+            event_id="event-1",
+            branch_id="proposal:example:2026-1",
+            event_kind="withdrawn",
+        )
+
+
 def test_branch_lifecycle_enacted_event_requires_derived_source() -> None:
     with pytest.raises(ValueError, match="derived_enacted_source_id"):
         BranchLifecycleEvent(
             event_id="event-1",
             branch_id="proposal:example:2026-1",
             event_kind="enacted",
+            resulting_status="commenced",
         )

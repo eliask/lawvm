@@ -149,3 +149,63 @@ def test_export_jsonld_includes_branch_graph_resources(tmp_path, monkeypatch) ->
     assert by_type["lawvm:BranchGraphEdge"]["lawvm:scenarioId"] == ""
     assert by_type["lawvm:BranchLifecycleEvent"]["lawvm:eventKind"] == "introduced"
     assert by_type["lawvm:BranchLifecycleEvent"]["lawvm:scenarioId"] == ""
+
+
+def test_export_jsonld_branch_edge_ids_include_scenario_and_target(tmp_path, monkeypatch) -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        scenario_id="if_enacted_as_introduced",
+        source_artifact_id="proposal/example/2026/1",
+        title="Example proposal",
+    )
+    edges = [
+        BranchGraphEdge(
+            branch_id=branch.branch_id,
+            edge_kind="would_replace",
+            scenario_id=branch.scenario_id,
+            source_artifact_id="proposal/example/2026/1",
+            target_statute_id="2026/1",
+            target_address="section:1",
+            operation_id="op-1",
+        ),
+        BranchGraphEdge(
+            branch_id=branch.branch_id,
+            edge_kind="would_replace",
+            scenario_id=branch.scenario_id,
+            source_artifact_id="proposal/example/2026/1",
+            target_statute_id="2026/1",
+            target_address="section:2",
+            operation_id="op-1",
+        ),
+    ]
+
+    async def fake_build_corpus_graph(corpus, *, with_timelines=False):
+        assert corpus == ["2026/1"]
+        assert with_timelines is False
+        return CorpusGraph(
+            statute_meta={"2026/1": {"title": "Base", "statute_type": "act"}},
+            branches=[branch],
+            branch_edges=edges,
+        )
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "lawvm.graph_build",
+        types.SimpleNamespace(build_corpus_graph=fake_build_corpus_graph),
+    )
+    output = tmp_path / "graph.jsonld"
+
+    export_jsonld(output, ["2026/1"])
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    edge_ids = [
+        row["@id"]
+        for row in data["@graph"]
+        if row["@type"] == "lawvm:BranchGraphEdge"
+    ]
+    assert len(edge_ids) == 2
+    assert len(set(edge_ids)) == 2
+    assert all("if_enacted_as_introduced" in edge_id for edge_id in edge_ids)
+    assert any("section:1" in edge_id for edge_id in edge_ids)
+    assert any("section:2" in edge_id for edge_id in edge_ids)
