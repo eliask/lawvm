@@ -15,6 +15,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 
 BASE_URL = "http://publications.europa.eu/resource"
 USER_AGENT = "LawVM EU Cellar/0.1 (+https://op.europa.eu/en/web/cellar/home)"
@@ -281,20 +283,17 @@ def _append_manifestation_option_diagnostic(
 ) -> None:
     if diagnostics_out is None:
         return
-    diagnostics_out.append(
-        {
-            "rule_id": rule_id,
-            "kind": rule_id,
-            "family": "source_pathology",
-            "phase": "acquisition",
-            "source": str(tree_notice_path),
-            "reason": reason,
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-            "detail": detail,
-        }
+    diagnostic = diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase="acquisition",
+        reason=reason,
+        blocking=True,
+        kind=rule_id,
+        source=str(tree_notice_path),
     )
+    diagnostic["detail"] = detail
+    diagnostics_out.append(diagnostic)
 
 
 def list_manifestation_options(
@@ -737,21 +736,19 @@ def _manifest_request_failure_row(
     notice: NoticeRequest,
     exc: HTTPError | URLError,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "eu_cellar_manifest_request_failed",
-        "phase": "acquisition",
-        "family": "source_pathology",
-        "source_label": source_label,
-        "celex": celex,
-        "request_path": request_path,
-        "notice_url": notice.url(),
-        "accept_header": notice.accept_header(),
-        "error_type": exc.__class__.__name__,
-        "error": str(exc),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id="eu_cellar_manifest_request_failed",
+        phase="acquisition",
+        family="source_pathology",
+        blocking=True,
+        source_label=source_label,
+        celex=celex,
+        request_path=request_path,
+        notice_url=notice.url(),
+        accept_header=notice.accept_header(),
+        error_type=exc.__class__.__name__,
+        error=str(exc),
+    )
 
 
 def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> ManifestFetchReport:
