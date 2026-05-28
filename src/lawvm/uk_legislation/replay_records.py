@@ -8,6 +8,7 @@ from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem, filter_result_from_parts
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_flattened_sublist_findings, build_text_duplication_findings
@@ -25,6 +26,27 @@ class UKReplayPrepareResult:
     accepted_ops: tuple[LegalOperation, ...]
     rejected_ops: tuple[LegalOperation, ...]
     rejected_adjudications: tuple[CompileAdjudication, ...]
+
+    @property
+    def filter_result(self) -> FilterResult[LegalOperation]:
+        """Project replay preparation into the shared lossless filter contract."""
+
+        return filter_result_from_parts(
+            accepted_items=self.accepted_ops,
+            rejected_items=(
+                RejectedItem(
+                    item=op,
+                    reason=_prepare_rejection_reason(adjudication),
+                    reason_code=str(adjudication.kind or ""),
+                    blocking=bool(adjudication.detail.get("blocking", True)),
+                )
+                for op, adjudication in zip(
+                    self.rejected_ops,
+                    self.rejected_adjudications,
+                    strict=True,
+                )
+            ),
+        )
 
 
 def _build_uk_replay_adjudication(
@@ -50,6 +72,13 @@ def _build_uk_replay_adjudication(
         op_id=op.op_id,
         detail=detail_payload,
     )
+
+
+def _prepare_rejection_reason(adjudication: CompileAdjudication) -> str:
+    reason = adjudication.detail.get("reason", "")
+    if reason:
+        return str(reason)
+    return str(adjudication.kind or "")
 
 
 def _append_uk_replay_adjudication(
