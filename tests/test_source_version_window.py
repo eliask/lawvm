@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from lawvm.core.source_version_window import (
     SOURCE_VERSION_CHANGE_WINDOW_RULE_ID,
     SOURCE_VERSION_CHANGE_WINDOW_TRUTH_CLAIM,
     SOURCE_VERSION_DATE_WINDOW_RULE_ID,
     SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM,
+    SourceVersionDateWindow,
     iso_date_prefix,
     select_source_version_change_window,
     select_source_version_date_window,
@@ -138,3 +141,39 @@ def test_source_version_window_reports_missing_witnesses_as_null_details() -> No
     assert detail["requested_version_date"] == "2026-05-29"
     assert detail["on_or_before"] is None
     assert detail["on_or_after"] is None
+
+
+def test_source_version_window_rejects_invalid_requested_date() -> None:
+    with pytest.raises(ValueError, match="requested_version_date"):
+        select_source_version_date_window(
+            (_Witness("v1", "2026-01-01"),),
+            requested_version_date="29.05.2026",
+            version_date=_date,
+        )
+
+
+def test_source_version_window_contract_rejects_replay_claims() -> None:
+    with pytest.raises(ValueError, match="replay_claims"):
+        SourceVersionDateWindow(
+            requested_version_date="2026-05-29",
+            on_or_before=None,
+            on_or_after=None,
+            replay_claims=True,
+        )
+
+
+def test_source_version_window_diagnostic_rejects_bad_truth_claim() -> None:
+    @dataclass(frozen=True)
+    class _BadWindow:
+        requested_version_date: str = "2026-05-29"
+        on_or_before: _Witness | None = None
+        on_or_after: _Witness | None = None
+        rule_id: str = "local_window_rule"
+        truth_claim: str = "legal_effective_date"
+        replay_claims: bool = False
+
+    with pytest.raises(ValueError, match="truth_claim"):
+        source_version_date_window_diagnostic_detail(
+            _BadWindow(),
+            witness_detail=_detail,
+        )

@@ -351,6 +351,10 @@ Recent improvement:
   date-window and change-window evidence; New Zealand effect-candidate rows
   nest date-window and source-change-window projections beside existing flat
   fields so source-only/non-effectivity truth claims are queryable.
+- source-version bracketing now validates requested source dates and projection
+  contracts: invalid requested dates are rejected instead of selecting a
+  misleading witness window, source-window diagnostics must retain their
+  source-only truth claim, and `replay_claims` must remain false.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
@@ -453,7 +457,8 @@ Risk:
 Tests needed:
 
 - exact match, on-or-before, strict-before, on-or-after, latest, no candidate,
-  duplicate-date tie-break, and no-authority-claim metadata.
+  duplicate-date tie-break, invalid requested date rejection, and
+  no-authority-claim metadata.
 
 ### P1. Target Resolution Certificate
 

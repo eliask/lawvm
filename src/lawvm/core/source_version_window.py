@@ -31,6 +31,13 @@ class SourceVersionDateWindow(Generic[T]):
     truth_claim: str = SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM
     replay_claims: bool = False
 
+    def __post_init__(self) -> None:
+        _validate_source_version_window_contract(
+            self,
+            expected_truth_claim=SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM,
+            subject="SourceVersionDateWindow",
+        )
+
 
 @dataclass(frozen=True)
 class SourceVersionChangeWindow(Generic[T]):
@@ -40,6 +47,13 @@ class SourceVersionChangeWindow(Generic[T]):
     rule_id: str = SOURCE_VERSION_CHANGE_WINDOW_RULE_ID
     truth_claim: str = SOURCE_VERSION_CHANGE_WINDOW_TRUTH_CLAIM
     replay_claims: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_source_version_window_contract(
+            self,
+            expected_truth_claim=SOURCE_VERSION_CHANGE_WINDOW_TRUTH_CLAIM,
+            subject="SourceVersionChangeWindow",
+        )
 
 
 class SourceVersionDateWindowLike(Protocol[T]):
@@ -68,7 +82,7 @@ def select_source_version_date_window(
 ) -> SourceVersionDateWindow[T]:
     """Return latest on-or-before and earliest on-or-after source witnesses."""
 
-    requested = iso_date_prefix(requested_version_date)
+    requested = _requested_source_version_date(requested_version_date)
     dated = _dated_candidates(candidates, version_date)
     before_date = max((date for date, _candidate in dated if date <= requested), default="")
     after_date = min((date for date, _candidate in dated if date >= requested), default="")
@@ -89,7 +103,7 @@ def select_source_version_change_window(
 ) -> SourceVersionChangeWindow[T]:
     """Return strict-before and earliest on-or-after source witnesses."""
 
-    requested = iso_date_prefix(requested_version_date)
+    requested = _requested_source_version_date(requested_version_date)
     dated = _dated_candidates(candidates, version_date)
     before_date = max((date for date, _candidate in dated if date < requested), default="")
     after_date = min((date for date, _candidate in dated if date >= requested), default="")
@@ -115,6 +129,11 @@ def source_version_date_window_diagnostic_detail(
     commencement, effectivity, oracle authority, or replay agreement.
     """
 
+    _validate_source_version_window_contract(
+        window,
+        expected_truth_claim=SOURCE_VERSION_DATE_WINDOW_TRUTH_CLAIM,
+        subject="source version date window diagnostic",
+    )
     return diagnostic_detail(
         rule_id=window.rule_id,
         phase=phase,
@@ -140,6 +159,11 @@ def source_version_change_window_diagnostic_detail(
 ) -> dict[str, Any]:
     """Project a strict-before/on-or-after source-change window as evidence."""
 
+    _validate_source_version_window_contract(
+        window,
+        expected_truth_claim=SOURCE_VERSION_CHANGE_WINDOW_TRUTH_CLAIM,
+        subject="source version change window diagnostic",
+    )
     return diagnostic_detail(
         rule_id=window.rule_id,
         phase=phase,
@@ -177,6 +201,30 @@ def _dated_candidates(
         for candidate in candidates
         if (date_prefix := iso_date_prefix(version_date(candidate)))
     )
+
+
+def _requested_source_version_date(value: str) -> str:
+    requested = iso_date_prefix(value)
+    if not requested:
+        raise ValueError("requested_version_date must start with an ISO YYYY-MM-DD date")
+    return requested
+
+
+def _validate_source_version_window_contract(
+    window: SourceVersionDateWindowLike[Any] | SourceVersionChangeWindowLike[Any],
+    *,
+    expected_truth_claim: str,
+    subject: str,
+) -> None:
+    requested = str(window.requested_version_date or "").strip()
+    if iso_date_prefix(requested) != requested:
+        raise ValueError(f"{subject}.requested_version_date must be a normalized ISO YYYY-MM-DD date")
+    if not str(window.rule_id or "").strip():
+        raise ValueError(f"{subject}.rule_id must be non-empty")
+    if window.truth_claim != expected_truth_claim:
+        raise ValueError(f"{subject}.truth_claim must be {expected_truth_claim!r}")
+    if window.replay_claims is not False:
+        raise ValueError(f"{subject}.replay_claims must be False")
 
 
 _ISO_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
