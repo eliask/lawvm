@@ -552,7 +552,7 @@ def _normalize_no_compare_tree(
                     and len(subsection_children[1:]) % 2 == 0
                     and all(not child.children for child in subsection_children[1:])
                 ):
-                    pairs = list(zip(subsection_children[1::2], subsection_children[2::2]))
+                    pairs = list(zip(subsection_children[1::2], subsection_children[2::2], strict=True))
                     if all(
                         normalize_no_comparison_text(left.text or "").endswith(":")
                         and normalize_no_comparison_text(right.text or "")
