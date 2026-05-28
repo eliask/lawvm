@@ -299,8 +299,19 @@ def test_eu_ops_parser_records_unsupported_action_segment() -> None:
     assert parser.diagnostics[0].family == "unsupported_action"
     assert parser.diagnostics[0].phase == "extraction"
     assert parser.diagnostics[0].blocking is True
-    assert parser.diagnostics[0].as_detail()["strict_disposition"] == "block"
-    assert parser.diagnostics[0].as_detail()["quirks_disposition"] == "record"
+    assert parser.diagnostics[0].as_detail() == {
+        "rule_id": "eu_ops_parser_unsupported_action_segment",
+        "phase": "extraction",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "family": "unsupported_action",
+        "reason": (
+            "EU parser saw an operative-looking amendment segment with an unsupported "
+            "action verb: renumber"
+        ),
+        "source_excerpt": "Article 4 is renumbered as Article 5.",
+    }
 
 
 def test_eu_ops_parser_records_unknown_operative_segment_with_target() -> None:
