@@ -7,7 +7,7 @@ from typing import Sequence, Tuple
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.mutation_boundary import TreePath, diff_ir_paths, unexplained_changed_paths
+from lawvm.core.mutation_boundary import TreePath, build_mutation_boundary_report
 from lawvm.core.tree_ops import insert_sorted_required, replace_at_required, resolve_required
 from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
 
@@ -256,9 +256,10 @@ def audit_open_law_snapshot(
     projected_before = _project_typography_for_snapshot_compare(annotation_projected_before)
     projected_after = _project_typography_for_snapshot_compare(annotation_projected_after)
     projected_replay = _project_typography_for_snapshot_compare(annotation_projected_replay)
-    changed_paths = diff_ir_paths(projected_before, projected_after)
     allowed_prefixes = tuple(mutation.tree_path for mutation in replay.mutations)
-    unexplained_paths = unexplained_changed_paths(changed_paths, allowed_prefixes)
+    boundary = build_mutation_boundary_report(projected_before, projected_after, allowed_prefixes)
+    changed_paths = boundary.changed_paths
+    unexplained_paths = boundary.unexplained_changed_paths
     findings = list(replay.findings)
     if (
         annotation_projected_before != before
