@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -243,7 +244,7 @@ class TestBuildFacadeFromReplay:
             replay_mode="finlex_oracle",
         )
         with pytest.raises((AttributeError, TypeError)):
-            setattr(facade, "replay_mode", "other")
+            cast(Any, facade).replay_mode = "other"
 
 # ---------------------------------------------------------------------------
 # _print_facade_summary

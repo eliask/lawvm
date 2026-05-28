@@ -5678,16 +5678,9 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     orig_children = grafter_mod._amendment_children_by_parent
     orig_reflected = grafter_mod.get_consolidated_oracle_reflected_source_vts_children
     try:
-        setattr(
-            grafter_mod,
-            "_amendment_children_by_parent",
-            lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]},
-        )
-        setattr(
-            grafter_mod,
-            "get_consolidated_oracle_reflected_source_vts_children",
-            lambda _parent_id, corpus=None, selector=None: {"2024/1049"},
-        )
+        grafter_patch = cast(Any, grafter_mod)
+        grafter_patch._amendment_children_by_parent = lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]}
+        grafter_patch.get_consolidated_oracle_reflected_source_vts_children = lambda _parent_id, corpus=None, selector=None: {"2024/1049"}
         records, cutoff_date, oracle_version = grafter_mod._resolve_applicable_amendment_records(
             "1986/506",
             "legal_pit",

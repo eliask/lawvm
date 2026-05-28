@@ -1,5 +1,6 @@
 from dataclasses import FrozenInstanceError
 from dataclasses import asdict
+from typing import Any, cast
 
 import pytest
 
@@ -201,7 +202,7 @@ def test_finland_rulebook_exports_a_frozen_example_rule() -> None:
 
 def test_finland_rulebook_objects_are_frozen_and_importable() -> None:
     with pytest.raises(FrozenInstanceError):
-        setattr(FINLAND_RULEBOOK.clause_rules, "family_id", "mutated")
+        cast(Any, FINLAND_RULEBOOK.clause_rules).family_id = "mutated"
 
 
 def test_rulebook_validation_rejects_wrong_family_prefix() -> None:
@@ -261,7 +262,7 @@ def test_rule_application_ledger_is_frozen_and_serializable() -> None:
         ),
     }
     with pytest.raises(FrozenInstanceError):
-        setattr(ledger, "applications", ())
+        cast(Any, ledger).applications = ()
 
 
 def test_rule_application_ledger_record_and_render_surface() -> None:

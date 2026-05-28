@@ -23,7 +23,7 @@ def main(args: "argparse.Namespace") -> None:
     output_path = Path(output_arg) if output_arg else None
 
     report = build_no_verify_partition(
-        as_of=getattr(args, "as_of"),
+        as_of=args.as_of,
         data_dir=data_dir,
         index_path=index_path,
         commencement_path=commencement_path,

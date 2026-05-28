@@ -408,7 +408,8 @@ def test_assign_chapter_scope_from_explicit_chunk_for_unique_sections() -> None:
     assert explicit_chunk_ids == {"op1", "op2", "op3", "op5", "op6", "op7", "op8"}
     assert carry_forward_ids == {"op4"}
     assert getattr(scoped[0], "scope_confidence", None) is not None
-    assert getattr(scoped[0], "scope_confidence").tag == "chapter_scope_from_explicit_chunk"
+    scope_confidence = cast(Any, scoped[0]).scope_confidence
+    assert scope_confidence.tag == "chapter_scope_from_explicit_chunk"
 
 
 def test_assign_chapter_scope_from_johtolause_respects_part_scope() -> None:
@@ -471,9 +472,10 @@ def test_assign_chapter_scope_from_johtolause_respects_part_scope() -> None:
 
     assert scoped[0].target.path == (("part", "II"), ("chapter", "1"), ("section", "3"))
     assert "chapter_scope_from_johtolause" in scoped[0].provenance_tags
-    assert getattr(scoped[0], "scope_confidence").resolved_chapter == "1"
-    assert getattr(scoped[0], "scope_confidence").source == "johtolause"
-    assert getattr(scoped[0], "scope_confidence").confidence == "inferred"
+    scope_confidence = cast(Any, scoped[0]).scope_confidence
+    assert scope_confidence.resolved_chapter == "1"
+    assert scope_confidence.source == "johtolause"
+    assert scope_confidence.confidence == "inferred"
 
 
 def test_strip_scope_keeps_explicit_chunk_whole_section_target_for_later_body_backed_rewrite() -> None:
@@ -679,10 +681,11 @@ def test_assign_scope_from_renumber_destinations_carries_section_scope() -> None
     assert "grouped_part_scope" in scoped[1].provenance_tags
     assert "chapter_scope_carry_forward" in scoped[1].provenance_tags
     assert getattr(scoped[1], "scope_confidence", None) is not None
-    assert getattr(scoped[1], "scope_confidence").tag == "grouped_part_scope"
-    assert getattr(scoped[1], "scope_confidence").source == "grouped_part"
-    assert getattr(scoped[1], "scope_confidence").confidence == "inferred"
-    assert getattr(scoped[1], "scope_confidence").resolved_chapter == "2"
+    scope_confidence = cast(Any, scoped[1]).scope_confidence
+    assert scope_confidence.tag == "grouped_part_scope"
+    assert scope_confidence.source == "grouped_part"
+    assert scope_confidence.confidence == "inferred"
+    assert scope_confidence.resolved_chapter == "2"
 
 
 def test_assign_scope_from_renumber_destinations_consumes_carry_forward_once() -> None:
@@ -716,7 +719,8 @@ def test_assign_scope_from_renumber_destinations_consumes_carry_forward_once() -
     assert "grouped_part_scope" in scoped[1].provenance_tags
     assert "chapter_scope_carry_forward" in scoped[1].provenance_tags
     assert getattr(scoped[1], "scope_confidence", None) is not None
-    assert getattr(scoped[1], "scope_confidence").tag == "grouped_part_scope"
+    scope_confidence = cast(Any, scoped[1]).scope_confidence
+    assert scope_confidence.tag == "grouped_part_scope"
     assert second_path.get("part") is None
     assert second_path.get("chapter") is None
     assert "grouped_part_scope" not in scoped[2].provenance_tags

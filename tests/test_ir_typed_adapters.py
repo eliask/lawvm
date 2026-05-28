@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -69,7 +69,7 @@ class TestLegalOperationTypedAction:
     def test_legal_operation_is_frozen(self) -> None:
         op = _make_op(StructuralAction.REPLACE)
         with pytest.raises(FrozenInstanceError):
-            setattr(op, "notes", ["mutated"])
+            cast(Any, op).notes = ["mutated"]
 
 
 class TestCanonicalIntentEnumNormalization:

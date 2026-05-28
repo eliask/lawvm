@@ -268,7 +268,7 @@ def main(args: "argparse.Namespace") -> None:
     index_path = Path(index_arg) if index_arg else None
     from lawvm.norway.commencement import build_no_commencement_candidate_artifact
     report = build_no_commencement_candidate_report(
-        source_id=getattr(args, "source_id"),
+        source_id=args.source_id,
         data_dir=data_dir,
         index_path=index_path,
         limit=int(getattr(args, "limit", 20) or 20),

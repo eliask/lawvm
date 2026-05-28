@@ -1439,7 +1439,7 @@ def test_fetch_uk_affecting_acts_main_uses_farchive(monkeypatch, tmp_path) -> No
         return archive
 
     fake_farchive_module = types.ModuleType("farchive")
-    setattr(fake_farchive_module, "Farchive", fake_farchive)
+    cast(Any, fake_farchive_module).Farchive = fake_farchive
 
     def fake_fetch_missing(
         sid: str,
@@ -1495,7 +1495,7 @@ def test_fetch_uk_affecting_acts_writes_acquisition_events_jsonl(monkeypatch, tm
         return DummyArchive(path)
 
     fake_farchive_module = types.ModuleType("farchive")
-    setattr(fake_farchive_module, "Farchive", fake_farchive)
+    cast(Any, fake_farchive_module).Farchive = fake_farchive
 
     event = {
         "rule_id": "uk_prefetch_http_error",
@@ -1571,7 +1571,7 @@ def test_uk_fetch_affecting_text_prints_acquisition_event_rules(monkeypatch, tmp
         return DummyArchive(path)
 
     fake_farchive_module = types.ModuleType("farchive")
-    setattr(fake_farchive_module, "Farchive", fake_farchive)
+    cast(Any, fake_farchive_module).Farchive = fake_farchive
 
     event = {
         "rule_id": "uk_prefetch_http_error",

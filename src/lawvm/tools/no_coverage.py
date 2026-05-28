@@ -154,7 +154,7 @@ def main(args: "argparse.Namespace") -> None:
     limit = int(getattr(args, "limit", 20) or 20)
 
     report = build_no_coverage_report(
-        base_id=getattr(args, "base_id"),
+        base_id=args.base_id,
         data_dir=data_dir,
         index_path=index_path,
         commencement_path=commencement_path,

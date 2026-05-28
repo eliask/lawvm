@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from lawvm.core.clause_ast import RefAmend, TextAmend, LabelAmend, LabelAction, legal_op_to_clause_node, clause_node_to_legal_operation
 from lawvm.core.ir import (
     LegalAddress,
@@ -255,7 +257,7 @@ class TestEEParserIntegration:
             node = legal_op_to_clause_node(op)
             rt = clause_node_to_legal_operation(node, sequence=op.sequence)
             assert rt is not None
-            assert rt.action == getattr(node, "action"), f"Action mismatch for {text[:40]}"
+            assert rt.action == cast(Any, node).action, f"Action mismatch for {text[:40]}"
             assert rt.target.path == op.target.path, f"Target mismatch for {text[:40]}"
 
     def test_ee_text_replace_round_trip(self):
