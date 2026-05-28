@@ -84,6 +84,15 @@ class _TableReplaySelf(Protocol):
 
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
 
+    def _record_children_splice_mutation_event(
+        self,
+        *,
+        container: UKMutableNode,
+        helper: str,
+        outcome: str,
+        reason_code: str,
+    ) -> None: ...
+
 
 def _table_cell_ordered_list_units(cell: UKMutableNode) -> list[dict[str, str]]:
     raw = cell.attrs.get("source_ordered_list_units_json")
@@ -475,6 +484,12 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
+        self._record_children_splice_mutation_event(
+            container=table,
+            helper="_insert_table_column",
+            outcome="table_column_inserted",
+            reason_code="source_owned_between_columns_selector",
+        )
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_TABLE_COLUMN_INSERT_RULE_ID,
@@ -621,6 +636,12 @@ class UKReplayTableApplyMixin:
         uk_replace_children(row_insert.table, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
+        self._record_children_splice_mutation_event(
+            container=row_insert.table,
+            helper="_insert_table_entry_row",
+            outcome="table_rows_inserted",
+            reason_code="source_owned_table_entry_selector",
+        )
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
@@ -713,6 +734,12 @@ class UKReplayTableApplyMixin:
         uk_replace_children(row_span.table, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
+        self._record_children_splice_mutation_event(
+            container=row_span.table,
+            helper="_replace_table_entry_rows",
+            outcome="table_rows_replaced",
+            reason_code="source_owned_table_entry_selector",
+        )
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_TABLE_ENTRY_ROW_REPLACE_RULE_ID,

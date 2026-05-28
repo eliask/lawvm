@@ -1,5 +1,6 @@
 """UK replay adjudication emission tests."""
 from __future__ import annotations
+import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, cast
@@ -165,6 +166,194 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_insert() -> None:
     assert event.created_paths == ((("section", "2"),),)
     assert event.removed_paths == ()
     assert event.replaced_paths == ()
+
+
+def test_replay_uk_ops_emit_mutation_event_for_table_row_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    selector = {"selector_mode": "row_number", "direction": "after", "row_number": 1}
+    op = LegalOperation(
+        op_id="uk-test-insert-table-row",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "159"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(
+                IRNode(kind=IRNodeKind.CELL, text="Inserted first column."),
+                IRNode(kind=IRNodeKind.CELL, text="Inserted second column."),
+            ),
+        ),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"table_row_insert_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(_table_cell_statute(), [op], mutation_events_out=mutation_events)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "The Welsh Ministers",
+        "Inserted first column.",
+        "Functions under Chapter 1 of Part 6 (performance of principal councils).",
+    ]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    table_path = (("section", "159"), ("subsection", "5"), ("table", ""))
+    assert event.op_id == "uk-test-insert-table-row"
+    assert event.helper == "_insert_table_entry_row"
+    assert event.outcome == "table_rows_inserted"
+    assert event.resolved_target_path == (("section", "159"), ("subsection", "5"))
+    assert event.parent_path == table_path
+    assert event.replaced_paths == (table_path,)
+    assert event.reason_code == "source_owned_table_entry_selector"
+
+
+def test_replay_uk_ops_emit_mutation_event_for_table_row_replace() -> None:
+    mutation_events: list[MutationEvent] = []
+    statute = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="159",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Alpha entry"),
+                                                IRNode(kind=IRNodeKind.CELL, text="Alpha detail"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Beta entry"),
+                                                IRNode(kind=IRNodeKind.CELL, text="Beta detail"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    selector = {
+        "selector_mode": "relating_entries",
+        "relating_texts": (
+            "Alpha entry",
+            "Beta entry",
+        ),
+    }
+    op = LegalOperation(
+        op_id="uk-test-replace-table-rows",
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "159"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="Replacement first column."),
+                        IRNode(kind=IRNodeKind.CELL, text="Replacement second column."),
+                    ),
+                ),
+            ),
+        ),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"table_row_replace_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert len(table.children) == 1
+    assert table.children[0].children[0].text == "Replacement first column."
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    table_path = (("section", "159"), ("subsection", "5"), ("table", ""))
+    assert event.op_id == "uk-test-replace-table-rows"
+    assert event.helper == "_replace_table_entry_rows"
+    assert event.outcome == "table_rows_replaced"
+    assert event.resolved_target_path == (("section", "159"), ("subsection", "5"))
+    assert event.parent_path == table_path
+    assert event.replaced_paths == (table_path,)
+    assert event.reason_code == "source_owned_table_entry_selector"
+
+
+def test_replay_uk_ops_emit_mutation_event_for_schedule_table_row_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(IRNode(kind=IRNodeKind.CELL, text="Existing row."),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    selector = {"direction": "end"}
+    op = LegalOperation(
+        op_id="uk-test-insert-schedule-table-row",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(IRNode(kind=IRNodeKind.CELL, text="Inserted schedule row."),),
+                ),
+            ),
+        ),
+        source=_source(),
+        sequence=1,
+        provenance_tags=(f"schedule_table_end_rows_selector:{json.dumps(selector)}",),
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    table = replayed.supplements[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "Existing row.",
+        "Inserted schedule row.",
+    ]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    table_path = (("schedule", "1"), ("table", ""))
+    assert event.op_id == "uk-test-insert-schedule-table-row"
+    assert event.helper == "_insert_schedule_list_entry_table_rows"
+    assert event.outcome == "schedule_table_rows_inserted"
+    assert event.resolved_target_path == (("schedule", "1"),)
+    assert event.parent_path == table_path
+    assert event.replaced_paths == (table_path,)
+    assert event.reason_code == "explicit_schedule_end_unique_table"
 
 
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:

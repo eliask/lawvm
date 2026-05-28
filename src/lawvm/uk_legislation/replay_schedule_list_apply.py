@@ -119,6 +119,15 @@ class _ScheduleListReplaySelf(Protocol):
 
     def _note_structure_mutation(self) -> None: ...
 
+    def _record_children_splice_mutation_event(
+        self,
+        *,
+        container: UKMutableNode,
+        helper: str,
+        outcome: str,
+        reason_code: str,
+    ) -> None: ...
+
     def _target_under_repealed_prefix(self, target: LegalAddress) -> bool: ...
 
 
@@ -322,6 +331,12 @@ class UKReplayScheduleListApplyMixin:
             uk_replace_children(table, children)
             self._clear_eid_lookup_index()
             self._note_structure_mutation()
+            self._record_children_splice_mutation_event(
+                container=table,
+                helper="_insert_schedule_list_entry_table_rows",
+                outcome="schedule_table_rows_inserted",
+                reason_code="explicit_schedule_end_unique_table",
+            )
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=resolved_rule_id,
@@ -401,6 +416,12 @@ class UKReplayScheduleListApplyMixin:
         uk_replace_children(table, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
+        self._record_children_splice_mutation_event(
+            container=table,
+            helper="_insert_schedule_list_entry_table_rows",
+            outcome="schedule_table_rows_inserted",
+            reason_code="explicit_entry_anchor_unique_in_schedule_table",
+        )
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=resolved_rule_id,

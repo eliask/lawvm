@@ -753,6 +753,37 @@ class UKReplayStateMixin:
             )
         )
 
+    def _record_children_splice_mutation_event(
+        self,
+        *,
+        container: UKMutableNode,
+        helper: str,
+        outcome: str,
+        reason_code: str,
+    ) -> None:
+        if self.mutation_events_out is None:
+            return
+        op = self._current_mutation_op
+        if op is None:
+            return
+        container_path = self._tree_path_for_mutable_node(container)
+        if container_path is None:
+            return
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper=helper,
+                outcome=outcome,
+                resolved_target_path=tree_path_from_legal_address(op.target),
+                parent_path=container_path,
+                replaced_paths=(container_path,),
+                reason_code=reason_code,
+            )
+        )
+
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
