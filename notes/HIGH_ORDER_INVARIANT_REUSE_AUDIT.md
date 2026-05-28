@@ -207,6 +207,9 @@ Recent improvement:
 - New Zealand latest XML locator candidate rejections now nest shared
   source-lane selection evidence for rejected API version-detail lanes while
   preserving the existing NZ diagnostic rows.
+- New Zealand API v0 HTTP acquisition failures now optionally carry the same
+  source-lane sidecar in `NZAcquisitionDiagnostic` without changing existing
+  source-pathology ownership.
 - Estonia target-resolution parse rejection helpers now delegate shared
   diagnostic envelope fields to `diagnostic_detail` while preserving their
   local target-title and source-fragment payload.
@@ -321,7 +324,7 @@ Promotion:
   fallback acquisition, Norway duplicate logical locator diagnostics, UK
   affecting-source selection, Estonia RT XML/feed acquisition diagnostics, EU
   Cellar manifest request failures, and New Zealand latest-XML locator
-  candidate rejections.
+  candidate/HTTP acquisition rejections.
 
 Why high value:
 

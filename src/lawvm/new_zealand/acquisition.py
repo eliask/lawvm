@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 
 _API_BASE = "https://api.legislation.govt.nz"
 _USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
@@ -126,9 +127,10 @@ class NZAcquisitionDiagnostic:
     strict_disposition: str = "record"
     quirks_disposition: str = "record"
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    source_lane_selection: Mapping[str, Any] | None = None
 
     def to_jsonable(self) -> dict[str, Any]:
-        return diagnostic_detail(
+        payload = diagnostic_detail(
             rule_id=self.rule_id,
             phase=self.phase,
             family=self.family,
@@ -141,6 +143,9 @@ class NZAcquisitionDiagnostic:
             status_code=self.status_code,
             metadata=dict(self.metadata),
         )
+        if self.source_lane_selection is not None:
+            payload["source_lane_selection"] = dict(self.source_lane_selection)
+        return payload
 
 
 @dataclass
@@ -864,8 +869,9 @@ def _http_diagnostic(
     metadata: Mapping[str, Any],
 ) -> NZAcquisitionDiagnostic:
     blocking = response.status_code in {401, 403, 429} or response.status_code == 0
+    diagnostic_rule_id = f"{rule_id}_http_error"
     return NZAcquisitionDiagnostic(
-        rule_id=f"{rule_id}_http_error",
+        rule_id=diagnostic_rule_id,
         phase="acquisition",
         family="source_pathology",
         reason=f"HTTP status {response.status_code}",
@@ -875,6 +881,24 @@ def _http_diagnostic(
         blocking=blocking,
         strict_disposition="block" if blocking else "record",
         metadata=metadata,
+        source_lane_selection=SourceLaneSelectionEvidence(
+            rule_id=diagnostic_rule_id,
+            phase="acquisition",
+            reason=f"HTTP status {response.status_code}",
+            selected_lane="no_source_lane_selected_http_error",
+            selected_locator="",
+            attempts=(
+                SourceLaneAttempt(
+                    lane=rule_id,
+                    locator=locator or url,
+                    status=f"http_{response.status_code}",
+                    detail={"url": url, "content_type": response.content_type},
+                ),
+            ),
+            blocking=blocking,
+            strict_disposition="block" if blocking else "record",
+            quirks_disposition="record",
+        ).to_diagnostic_detail(),
     )
 
 

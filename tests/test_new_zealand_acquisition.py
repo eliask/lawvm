@@ -362,6 +362,46 @@ def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> 
     assert stats.diagnostics[0].rule_id == "nz_acquire_xml_format_missing"
 
 
+def test_nz_corpus_sync_http_error_records_source_lane_selection(tmp_path: Path) -> None:
+    version_id = "act_public_1990_109_en_2022-08-30"
+    version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            version_url: NZHttpResponse(
+                status_code=500,
+                body=b"server error",
+                headers={"X-RateLimit-Remaining": "9999"},
+                content_type="text/plain",
+            ),
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(version_id,),
+        delay=0.0,
+    )
+
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    assert [diag.rule_id for diag in stats.diagnostics] == ["nz_api_v0_version_detail_http_error"]
+    detail = stats.diagnostics[0].to_jsonable()
+    assert detail["blocking"] is False
+    assert detail["strict_disposition"] == "record"
+    source_lane = detail["source_lane_selection"]
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "no_source_lane_selected_http_error"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "nz_api_v0_version_detail",
+            "status": "http_500",
+            "locator": version_url,
+            "url": version_url,
+            "content_type": "text/plain",
+        },
+    )
+
+
 def test_nz_corpus_sync_progress_reports_to_stderr(tmp_path: Path, capsys: Any) -> None:
     version_id = "act_public_1990_109_en_2022-08-30"
     version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
