@@ -4,6 +4,7 @@ import pytest
 
 from lawvm.core.authority import BranchGraphEdge, LegalBranch
 from lawvm.core.branch_projection import (
+    BranchImpactProjection,
     BranchImpactRow,
     branch_impact_projection_from_edges,
     branch_impact_projection_from_operations,
@@ -103,6 +104,28 @@ def test_branch_impact_row_requires_target_statute() -> None:
             edge_kind="would_amend",
             target_statute_id="",
         )
+
+
+def test_branch_impact_row_requires_status_and_mapping_detail() -> None:
+    with pytest.raises(ValueError, match="status"):
+        BranchImpactRow(
+            row_id="row-1",
+            branch_id="proposal:example:2026-1",
+            edge_kind="would_amend",
+            target_statute_id="base/1",
+            status="",
+        )
+
+
+def test_branch_impact_projection_validates_envelope() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        source_artifact_id="proposal/example/2026/1",
+    )
+
+    with pytest.raises(ValueError, match="status"):
+        BranchImpactProjection(branch=branch, status="")
 
 
 def test_branch_impact_projection_from_operations_uses_branch_edge_mapping() -> None:
