@@ -162,6 +162,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_evidence.py",
     ),
     "evidence_core": (
+        "test_adjudication_evidence.py",
         "test_capture.py",
         "test_chain_completeness.py",
         "test_proof_algebra.py",
