@@ -28,6 +28,44 @@ MUTATION_ACCOUNTING_HARD_CODES = frozenset(
     }
 )
 
+APPLIED_MUTATION_OUTCOMES = frozenset(
+    {
+        "applied",
+        "inserted_node",
+        "removed_node",
+        "renumbered_node",
+        "replaced_node",
+        "schedule_list_entries_repealed",
+        "schedule_list_entry_inserted",
+        "schedule_list_entry_replaced",
+        "schedule_table_rows_inserted",
+        "table_column_inserted",
+        "table_rows_inserted",
+        "table_rows_replaced",
+        "whole_act_repealed",
+    }
+)
+FAILED_MUTATION_OUTCOMES = frozenset({"failed"})
+SKIPPED_MUTATION_OUTCOMES = frozenset({"skipped"})
+
+
+def mutation_event_outcome_family(outcome: str) -> str:
+    """Classify frontend-specific mutation outcomes for shared accounting.
+
+    The original ``MutationEvent.outcome`` remains the evidence surface. This
+    adapter only lets shared invariant checks reason over specific applied
+    outcomes without forcing frontends to erase their local outcome labels.
+    """
+
+    normalized = str(outcome or "")
+    if normalized in APPLIED_MUTATION_OUTCOMES:
+        return "applied"
+    if normalized in FAILED_MUTATION_OUTCOMES:
+        return "failed"
+    if normalized in SKIPPED_MUTATION_OUTCOMES:
+        return "skipped"
+    return "unknown"
+
 
 @dataclass(frozen=True)
 class MutationAccountingResult:
@@ -107,7 +145,8 @@ def build_mutation_invariant_reports(
         out_of_scope_paths: TreePaths = ()
         matched_allowance_rule_ids: tuple[str, ...] = ()
         path_set_invariant_holds = True
-        if event.outcome == "skipped":
+        outcome_family = mutation_event_outcome_family(event.outcome)
+        if outcome_family == "skipped":
             if touched_paths:
                 results.append(
                     MutationAccountingResult(
@@ -117,7 +156,7 @@ def build_mutation_invariant_reports(
                         touched_count=len(touched_paths),
                     )
                 )
-        elif event.outcome == "failed":
+        elif outcome_family == "failed":
             if touched_paths:
                 results.append(
                     MutationAccountingResult(
@@ -127,7 +166,7 @@ def build_mutation_invariant_reports(
                         touched_count=len(touched_paths),
                     )
                 )
-        elif event.outcome == "applied":
+        elif outcome_family == "applied":
             if not touched_paths:
                 results.append(
                     MutationAccountingResult(
@@ -268,4 +307,3 @@ def _event_allowed_roots(
             if path is not None
         )
     return tuple(path for path in (event.resolved_target_path, event.parent_path) if path is not None)
-
