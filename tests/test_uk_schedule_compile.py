@@ -28874,6 +28874,27 @@ def test_commencement_eid_set_matches_enum_nodes_under_structural_containers() -
                 "the enacted source has exactly one schedule root."
             ),
             "source_ref": "Sch. para. 18",
+            "target_resolution": {
+                "rule_id": "uk_commencement_unnumbered_single_schedule_target_resolved",
+                "family": "target_resolution",
+                "phase": "commencement_filter",
+                "reason": "unnumbered_schedule_unique_live_root",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+                "target_resolution_status": "fallback_resolved",
+                "source_target": "Sch. para. 18",
+                "candidate_count": 1,
+                "target_candidates": (
+                    {
+                        "target": "schedule:SCHEDULE 1",
+                        "reason": "unique_schedule_root",
+                    },
+                ),
+                "selected_target": "schedule:SCHEDULE 1",
+                "selected_target_differs_from_source": True,
+                "scope_confidence": "fallback",
+            },
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
@@ -28996,6 +29017,16 @@ def test_commencement_eid_set_does_not_self_commence_when_only_undated_rows_exis
                 "has a replay-applicable effective date; LawVM will not "
                 "silently treat the whole instrument as commenced."
             ),
+            "temporal_resolution": {
+                "rule_id": "uk_commencement_undated_effects_block_self_commencement",
+                "family": "temporal_recovery",
+                "phase": "commencement_filter",
+                "reason": "missing_replay_applicable_effective_date",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+                "temporal_resolution_status": "unknown_effective_date",
+            },
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",

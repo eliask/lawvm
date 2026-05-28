@@ -7,6 +7,17 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_FALLBACK,
+    TARGET_FALLBACK_RESOLVED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+)
+from lawvm.core.temporal_resolution import (
+    TEMPORAL_RECOVERY_FAMILY,
+    TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+    TemporalResolutionEvidence,
+)
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
     uk_is_transparent_wrapper_kind,
@@ -134,6 +145,7 @@ def _nodes_matching_address(
         if len(schedule_candidates) == 1:
             unique_unnumbered_schedule = schedule_candidates[0]
             if observations_out is not None:
+                selected_schedule_target = f"schedule:{unique_unnumbered_schedule.label or ''}"
                 observations_out.append(
                     _uk_commencement_diagnostic(
                         rule_id=_UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
@@ -148,6 +160,23 @@ def _nodes_matching_address(
                         affecting_provisions=effect.affecting_provisions if effect is not None else "",
                         effect_type=effect.effect_type if effect is not None else "",
                         source_ref=source_ref,
+                        target_resolution=TargetResolutionCertificate(
+                            rule_id=_UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
+                            phase="commencement_filter",
+                            reason="unnumbered_schedule_unique_live_root",
+                            status=TARGET_FALLBACK_RESOLVED,
+                            source_target=source_ref or "schedule:",
+                            candidate_count=1,
+                            candidates=(
+                                TargetResolutionCandidate(
+                                    target=selected_schedule_target,
+                                    reason="unique_schedule_root",
+                                ),
+                            ),
+                            selected_target=selected_schedule_target,
+                            scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
+                            blocking=False,
+                        ).to_diagnostic_detail(),
                     )
                 )
 
@@ -275,6 +304,14 @@ def commencement_eid_set(
                                 if (effect.effect_type or "").strip()
                             }
                         ),
+                        temporal_resolution=TemporalResolutionEvidence(
+                            rule_id=_UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID,
+                            phase="commencement_filter",
+                            reason="missing_replay_applicable_effective_date",
+                            status=TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+                            family=TEMPORAL_RECOVERY_FAMILY,
+                            blocking=False,
+                        ).to_diagnostic_detail(),
                     )
                 )
             return set()
