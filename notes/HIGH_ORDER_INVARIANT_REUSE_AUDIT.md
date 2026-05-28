@@ -52,6 +52,9 @@ Implemented progress:
   `duplicate_label`, `illegal_edge`, and `all_tree` detectors;
 - UK replay shape-gap classifiers can consume typed invariant records instead
   of reparsing `"duplicate ..."` / `"out of order ..."` messages.
+- core now has a small typed detector-result adapter that preserves legacy
+  detector messages while giving tools a typed `InvariantDetectorResult`
+  surface.
 
 Evidence:
 
@@ -334,8 +337,9 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Add a small typed detector-result adapter for `diagnose-phase` and
-   `invariant-bisect` while preserving their current JSON/text output.
+1. Migrate `invariant-bisect` and other detector consumers to
+   `core.invariant_detectors` while preserving their current JSON/text output;
+   `diagnose-phase` already uses this compatibility projection.
 2. Migrate `scripts/audit_invariants.py` and materialization helper tests away
    from regex/string reconstruction where typed records are available.
 3. Add a small diagnostic envelope/disposition helper without collapsing
