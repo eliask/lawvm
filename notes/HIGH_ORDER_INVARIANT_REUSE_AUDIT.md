@@ -181,6 +181,9 @@ Recent improvement:
   would-affect graph export facts.
 - branch impact projections can now be built directly from typed non-enacted
   operations, which is the minimal UI/API handoff for proposal-style demos.
+- branch impact projections can now be text-enriched from frontend-supplied
+  current/branch text maps without letting core infer source text or enacted
+  authority.
 
 ## Ranked Promotion Candidates
 

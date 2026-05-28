@@ -112,6 +112,45 @@ def branch_impact_projection_from_operations(
     )
 
 
+def enrich_branch_impact_projection_texts(
+    projection: BranchImpactProjection,
+    *,
+    current_text_by_target: Mapping[str, str],
+    branch_text_by_target: Mapping[str, str],
+) -> BranchImpactProjection:
+    """Attach frontend-supplied current/branch text to projection rows.
+
+    Keys are ``target_statute_id + "#" + target_address``. Missing entries are
+    left empty; this helper performs no source lookup and makes no enacted-state
+    claim.
+    """
+
+    rows = tuple(
+        BranchImpactRow(
+            row_id=row.row_id,
+            branch_id=row.branch_id,
+            edge_kind=row.edge_kind,
+            target_statute_id=row.target_statute_id,
+            target_address=row.target_address,
+            operation_id=row.operation_id,
+            source_artifact_id=row.source_artifact_id,
+            source_unit_id=row.source_unit_id,
+            current_text=current_text_by_target.get(_target_key(row), row.current_text),
+            branch_text=branch_text_by_target.get(_target_key(row), row.branch_text),
+            status=row.status,
+            detail=row.detail,
+        )
+        for row in projection.rows
+    )
+    return BranchImpactProjection(
+        branch=projection.branch,
+        rows=rows,
+        status=projection.status,
+        message=projection.message,
+        detail=projection.detail,
+    )
+
+
 def _selected_branch_edges(
     branch: LegalBranch,
     edges: Sequence[BranchGraphEdge],
@@ -134,3 +173,7 @@ def _selected_branch_edges(
 def _branch_impact_row_id(edge: BranchGraphEdge, index: int) -> str:
     suffix = edge.operation_id or edge.source_unit_id or str(index + 1)
     return f"{edge.branch_id}:{edge.edge_kind}:{suffix}"
+
+
+def _target_key(row: BranchImpactRow) -> str:
+    return f"{row.target_statute_id}#{row.target_address}"
