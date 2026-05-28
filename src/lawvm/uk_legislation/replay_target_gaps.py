@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core import tree_ops
@@ -23,10 +24,49 @@ _PAYLOAD_SHAPE_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = froze
         "sort_order",
     }
 )
+InvariantViolation = str | tree_ops.TreeInvariantViolation
 
 
 def _strip_order_kind_prefix(text: str, kind: str) -> str:
     return re.sub(rf"^(?:{re.escape(kind)})\s*", "", text.strip(), flags=re.I)
+
+
+def _violation_message(violation: InvariantViolation) -> str:
+    if isinstance(violation, tree_ops.TreeInvariantViolation):
+        return violation.message
+    return str(violation or "")
+
+
+def _is_order_violation(violation: InvariantViolation, kind: str) -> bool:
+    if isinstance(violation, tree_ops.TreeInvariantViolation):
+        return violation.kind == "sort_order" and violation.child_kind == kind
+    return f"{kind} out of order:" in _violation_message(violation).lower()
+
+
+def _is_duplicate_violation(violation: InvariantViolation, kind: str | None = None) -> bool:
+    if isinstance(violation, tree_ops.TreeInvariantViolation):
+        if violation.kind not in {"duplicate_label", "normalized_duplicate_label"}:
+            return False
+        return kind is None or violation.child_kind == kind
+    text = _violation_message(violation).lower()
+    return f"duplicate {kind}:" in text if kind is not None else "duplicate " in text
+
+
+def _order_labels(violation: InvariantViolation, kind: str) -> tuple[str, str] | None:
+    if isinstance(violation, tree_ops.TreeInvariantViolation):
+        if not _is_order_violation(violation, kind):
+            return None
+        if violation.previous_label is None or violation.next_label is None:
+            return None
+        return violation.previous_label, violation.next_label
+    match = re.search(
+        rf"{re.escape(kind)} out of order:\s*(.+?)\s*>\s*(.+)$",
+        _violation_message(violation),
+        re.I,
+    )
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
 
 
 def _is_numeric_order_label(text: str) -> bool:
@@ -102,20 +142,23 @@ def uk_broad_schedule_table_shape_gap(target: LegalAddress, node: UKMutableNode)
 
 
 def uk_payload_shape_invariant_violations(op: LegalOperation) -> list[str]:
+    return [violation.message for violation in uk_payload_shape_invariant_violation_records(op)]
+
+
+def uk_payload_shape_invariant_violation_records(op: LegalOperation) -> list[tree_ops.TreeInvariantViolation]:
     payload = getattr(op, "payload", None)
     if payload is None or _action_name(op.action) not in {"insert", "replace"}:
         return []
-    return [
-        violation.message
-        for violation in tree_ops.iter_tree_invariant_violations(
+    return list(
+        tree_ops.iter_tree_invariant_violations(
             payload,
             families=_PAYLOAD_SHAPE_INVARIANT_FAMILIES,
         )
-    ]
+    )
 
 
-def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "duplicate part:" not in scoped_violation.lower():
+def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_duplicate_violation(scoped_violation, "part"):
         return False
     payload = getattr(op, "payload", None)
     if payload is None or _action_name(op.action) != "replace":
@@ -128,7 +171,10 @@ def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: str) ->
     return payload_kind == "part" and payload_label in {"", "part"}
 
 
-def uk_repeated_form_label_payload_shape_gap(op: LegalOperation, payload_violations: list[str]) -> bool:
+def uk_repeated_form_label_payload_shape_gap(
+    op: LegalOperation,
+    payload_violations: Sequence[InvariantViolation],
+) -> bool:
     payload = getattr(op, "payload", None)
     if payload is None or _action_name(op.action) != "insert":
         return False
@@ -139,14 +185,13 @@ def uk_repeated_form_label_payload_shape_gap(op: LegalOperation, payload_violati
         return False
     if not payload_violations:
         return False
-    allowed = (
-        "duplicate item:",
-        "item out of order:",
+    return all(
+        _is_duplicate_violation(violation, "item") or _is_order_violation(violation, "item")
+        for violation in payload_violations
     )
-    return all(any(token in violation.lower() for token in allowed) for violation in payload_violations)
 
 
-def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: str) -> bool:
+def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if _action_name(op.action) != "replace" or op.payload is None:
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
@@ -160,25 +205,23 @@ def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: s
         (
             target_kind == "subsection"
             and payload_kind == "paragraph"
-            and "paragraph out of order:" in scoped_violation.lower()
+            and _is_order_violation(scoped_violation, "paragraph")
         )
         or (
             target_kind == "paragraph"
             and payload_kind == "subparagraph"
-            and "subparagraph out of order:" in scoped_violation.lower()
+            and _is_order_violation(scoped_violation, "subparagraph")
         )
         or (
             target_kind in {"subparagraph", "item", "point"}
             and payload_kind in {"item", "point"}
-            and "duplicate " in scoped_violation.lower()
+            and _is_duplicate_violation(scoped_violation)
         )
     )
 
 
-def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: str) -> bool:
+def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if _action_name(op.action) != "insert":
-        return False
-    if " out of order:" not in str(scoped_violation or "").lower():
         return False
     witness = _witness_for_op(op)
     insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
@@ -196,9 +239,9 @@ def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: s
     target_label = _clean_num(str(target_path[-1][1] or ""))
     if not target_kind or not target_label:
         return False
-    if f"{target_kind} out of order:" not in str(scoped_violation or "").lower():
+    if not _is_order_violation(scoped_violation, target_kind):
         return False
-    return target_label in _clean_num(scoped_violation)
+    return target_label in _clean_num(_violation_message(scoped_violation))
 
 
 def uk_missing_source_target_gap(op: LegalOperation) -> bool:
@@ -214,8 +257,8 @@ def uk_missing_source_target_gap(op: LegalOperation) -> bool:
     )
 
 
-def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "part out of order:" not in scoped_violation.lower():
+def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_order_violation(scoped_violation, "part"):
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
     if not target_path:
@@ -224,8 +267,7 @@ def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
     if not part_labels:
         return False
     leaf_text = _clean_num(part_labels[-1])
-    violation = str(scoped_violation or "")
-    match = re.search(r"part out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+    labels = _order_labels(scoped_violation, "part")
     schedule_labels = [
         _clean_num(str(label or "")) for kind, label in target_path if str(kind or "").lower() == "schedule"
     ]
@@ -233,27 +275,26 @@ def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
         return True
     if re.fullmatch(r"(?:[a-z]+\d+[a-z0-9]*|\d+[a-z][a-z0-9]*)", leaf_text):
         return True
-    if match is None:
+    if labels is None:
         return False
-    left = _clean_num(_strip_order_kind_prefix(match.group(1), "part"))
-    right = _clean_num(_strip_order_kind_prefix(match.group(2), "part"))
+    left = _clean_num(_strip_order_kind_prefix(labels[0], "part"))
+    right = _clean_num(_strip_order_kind_prefix(labels[1], "part"))
     return (_is_numeric_order_label(left) and _is_roman_order_label(right)) or (
         _is_roman_order_label(left) and _is_numeric_order_label(right)
     )
 
 
-def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "chapter out of order:" not in scoped_violation.lower():
+def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_order_violation(scoped_violation, "chapter"):
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
     if not target_path or str(target_path[-1][0] or "").lower() != "chapter":
         return False
-    violation = str(scoped_violation or "")
-    match = re.search(r"chapter out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
-    if match is None:
+    labels = _order_labels(scoped_violation, "chapter")
+    if labels is None:
         return False
-    left = _clean_num(_strip_order_kind_prefix(match.group(1), "chapter"))
-    right = _clean_num(_strip_order_kind_prefix(match.group(2), "chapter"))
+    left = _clean_num(_strip_order_kind_prefix(labels[0], "chapter"))
+    right = _clean_num(_strip_order_kind_prefix(labels[1], "chapter"))
 
     return (
         (_is_numeric_order_label(left) and _is_mixed_chapter_order_label(right))
@@ -263,23 +304,22 @@ def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: str) -> boo
     )
 
 
-def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "section out of order:" not in scoped_violation.lower():
+def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_order_violation(scoped_violation, "section"):
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
     if not target_path or str(target_path[-1][0] or "").lower() != "section":
         return False
     leaf_text = _clean_num(str(target_path[-1][1] or ""))
-    violation = str(scoped_violation or "")
     if _is_mixed_section_order_label(leaf_text):
         return True
     if leaf_text and not re.fullmatch(r"\d+[a-z]*", leaf_text, re.I):
         return True
-    match = re.search(r"section out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
-    if match is None:
+    labels = _order_labels(scoped_violation, "section")
+    if labels is None:
         return False
-    left = _clean_num(match.group(1))
-    right = _clean_num(match.group(2))
+    left = _clean_num(labels[0])
+    right = _clean_num(labels[1])
     return (
         (_is_numeric_order_label(left) and _is_mixed_section_order_label(right))
         or (_is_mixed_section_order_label(left) and _is_numeric_order_label(right))
@@ -287,8 +327,8 @@ def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: str) -> boo
     )
 
 
-def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "paragraph out of order:" not in scoped_violation.lower():
+def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_order_violation(scoped_violation, "paragraph"):
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
     if not target_path:
@@ -299,12 +339,11 @@ def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> b
     leaf_text = _clean_num(paragraph_labels[-1])
     if _is_mixed_paragraph_order_label(leaf_text) or _is_alpha_suffix_order_label(leaf_text):
         return True
-    violation = str(scoped_violation or "")
-    match = re.search(r"paragraph out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
-    if match is None:
+    labels = _order_labels(scoped_violation, "paragraph")
+    if labels is None:
         return False
-    left = _clean_num(match.group(1))
-    right = _clean_num(match.group(2))
+    left = _clean_num(labels[0])
+    right = _clean_num(labels[1])
     return (
         (_is_mixed_paragraph_order_label(left) and _is_alpha_order_label(right))
         or (_is_alpha_order_label(left) and _is_mixed_paragraph_order_label(right))
@@ -322,8 +361,8 @@ def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> b
     )
 
 
-def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "subparagraph out of order:" not in scoped_violation.lower():
+def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_order_violation(scoped_violation, "subparagraph"):
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
     if not target_path or str(target_path[-1][0] or "").lower() != "subparagraph":
@@ -331,12 +370,11 @@ def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -
     leaf_text = _clean_num(str(target_path[-1][1] or ""))
     if _is_mixed_subunit_order_label(leaf_text) or _is_alpha_suffix_order_label(leaf_text):
         return True
-    violation = str(scoped_violation or "")
-    match = re.search(r"subparagraph out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
-    if match is None:
+    labels = _order_labels(scoped_violation, "subparagraph")
+    if labels is None:
         return False
-    left = _clean_num(match.group(1))
-    right = _clean_num(match.group(2))
+    left = _clean_num(labels[0])
+    right = _clean_num(labels[1])
     return bool(
         (_is_mixed_subunit_order_label(left) and _is_roman_order_label(right))
         or (_is_roman_order_label(left) and _is_mixed_subunit_order_label(right))
@@ -351,8 +389,8 @@ def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -
     )
 
 
-def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
-    if "item out of order:" not in scoped_violation.lower():
+def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
+    if not _is_order_violation(scoped_violation, "item"):
         return False
     target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
     if not target_path or str(target_path[-1][0] or "").lower() not in {"subparagraph", "item", "point"}:
@@ -362,14 +400,13 @@ def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
     leaf_text = _clean_num(raw_leaf_text)
     if _is_mixed_subunit_order_label(leaf_text) or _is_alpha_suffix_order_label(leaf_text):
         return True
-    violation = str(scoped_violation or "")
-    match = re.search(r"item out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
-    if match is None:
+    labels = _order_labels(scoped_violation, "item")
+    if labels is None:
         return False
-    raw_left = str(match.group(1) or "").strip().lower()
-    raw_right = str(match.group(2) or "").strip().lower()
-    left = _clean_num(match.group(1))
-    right = _clean_num(match.group(2))
+    raw_left = str(labels[0] or "").strip().lower()
+    raw_right = str(labels[1] or "").strip().lower()
+    left = _clean_num(labels[0])
+    right = _clean_num(labels[1])
     return bool(
         (_is_mixed_subunit_order_label(left) and _is_roman_order_label(right))
         or (_is_roman_order_label(left) and _is_mixed_subunit_order_label(right))

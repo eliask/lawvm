@@ -54692,7 +54692,7 @@ def test_executor_skips_invariant_rescan_when_structure_serial_unchanged(
 
     monkeypatch.setattr(
         invariant_mod,
-        "_collect_duplicate_order_invariants",
+        "_collect_duplicate_order_invariant_records",
         fail_collect,
     )
     executor._record_invariant_violations(
@@ -54740,7 +54740,7 @@ def test_executor_skips_payload_invariant_check_without_new_tree_violation(
 
     monkeypatch.setattr(
         invariant_mod,
-        "uk_payload_shape_invariant_violations",
+        "uk_payload_shape_invariant_violation_records",
         fail_payload_check,
     )
     executor.apply_op(
@@ -54807,7 +54807,7 @@ def test_executor_scopes_schedule_descendant_invariant_scan_to_parent(
 
     monkeypatch.setattr(
         invariant_mod,
-        "_collect_duplicate_order_invariants",
+        "_collect_duplicate_order_invariant_records",
         collect_scanned_root,
     )
 
@@ -54860,7 +54860,7 @@ def test_executor_skips_repeal_invariant_scan_without_existing_scoped_violation(
 
     monkeypatch.setattr(
         invariant_mod,
-        "_collect_duplicate_order_invariants",
+        "_collect_duplicate_order_invariant_records",
         fail_collect,
     )
 
@@ -54911,7 +54911,7 @@ def test_executor_rescans_repeal_when_existing_scoped_violation_may_clear(
 
     monkeypatch.setattr(
         invariant_mod,
-        "_collect_duplicate_order_invariants",
+        "_collect_duplicate_order_invariant_records",
         collect_after_repeal,
     )
     executor.apply_op(

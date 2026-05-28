@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, TextPatchKindEnum, TextPatchSpec, TextSelector, StructuralAction
+from lawvm.core.tree_ops import TreeInvariantViolation
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
@@ -838,6 +839,33 @@ def test_schedule_single_letter_item_before_alpha_suffix_is_order_shape_gap() ->
         "schedule:SCHEDULE 3A:schedule/part:PART 1/crossheading:?/paragraph:1/"
         "subparagraph:1: item out of order: v > ja",
     )
+
+
+def test_item_order_shape_gap_accepts_typed_invariant_record() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_item_typed_order_gap",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(
+            path=(
+                ("schedule", "3A"),
+                ("paragraph", "1"),
+                ("subparagraph", "1"),
+                ("item", "v"),
+            )
+        ),
+        payload=IRNode(kind=IRNodeKind.ITEM, label="v", text="Inserted item."),
+        source=_source(),
+    )
+    violation = TreeInvariantViolation(
+        kind="sort_order",
+        path=(("schedule", "SCHEDULE 3A"), ("paragraph", "1"), ("subparagraph", "1")),
+        child_kind="item",
+        previous_label="v",
+        next_label="ja",
+    )
+
+    assert uk_item_order_shape_gap(op, violation)
 
 
 def test_executor_classifies_absent_child_repeal_under_present_parent() -> None:
