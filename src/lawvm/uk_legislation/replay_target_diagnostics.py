@@ -4,19 +4,27 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import cast
+from typing import TYPE_CHECKING, Optional, cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import TextPatchKindEnum
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind, uk_replace_text_and_children
+from lawvm.uk_legislation.mutable_ir import (
+    UKMutableNode,
+    UKMutableStatute,
+    uk_insert_child_sorted,
+    uk_ir_node_kind,
+    uk_replace_text_and_children,
+)
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_recovery_action_target_detail,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_malformed_target_note_or_crossheading_gap,
     uk_malformed_target_placeholder_label_gap,
@@ -99,6 +107,53 @@ def _collect_sectionlike_descendant_labels(node: UKMutableNode | None) -> list[s
 
 
 class UKReplayTargetDiagnosticsMixin:
+    statute: UKMutableStatute
+    adjudications_out: list[CompileAdjudication]
+
+    if TYPE_CHECKING:
+
+        def _find_node_by_target(
+            self,
+            target: LegalAddress,
+            *,
+            allow_compound_subsection_alias: bool = False,
+            allow_recursive_match: bool = True,
+            target_resolution_op: LegalOperation | None = None,
+        ) -> NodeLookupResult: ...
+
+        def _apply_text_replace_on_node_text_only(
+            self,
+            node: UKMutableNode,
+            match: str,
+            replacement: str,
+            occurrence: int,
+            end_occurrence: int = 0,
+            *,
+            allow_punctuation_spacing: bool = False,
+            allow_word_punctuation_elision: bool = False,
+            recovery_rule_ids_out: Optional[list[str]] = None,
+        ) -> tuple[UKMutableNode, bool]: ...
+
+        def _apply_text_replace_on_subtree(
+            self,
+            node: UKMutableNode,
+            match: str,
+            replacement: str,
+            occurrence: int,
+            end_occurrence: int = 0,
+            *,
+            allow_punctuation_spacing: bool = False,
+            allow_word_punctuation_elision: bool = False,
+            recovery_rule_ids_out: Optional[list[str]] = None,
+        ) -> tuple[UKMutableNode, bool]: ...
+
+        def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+
+        def _derive_target_eid(self, addr: LegalAddress) -> str: ...
+
+        def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+
+        def _log(self, message: str) -> None: ...
 
     def _schedule_unlabeled_paragraph_target_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
