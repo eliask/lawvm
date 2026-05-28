@@ -25,6 +25,24 @@ def test_redactions_feed_diagnostic_detail_uses_standard_envelope() -> None:
         "grupi_id": "123",
         "url": "https://example.test/feed",
         "exception_type": "RuntimeError",
+        "source_lane_selection": {
+            "rule_id": "ee_redactions_feed_unavailable",
+            "phase": "acquisition",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "family": "source_lane_selection",
+            "reason": "feed unavailable",
+            "selected_source_lane": "no_source_lane_selected_fetch_failed",
+            "selected_source_locator": "",
+            "source_lane_attempts": (
+                {
+                    "lane": "riigi_teataja_redactions_feed",
+                    "status": "fetch_failed",
+                    "locator": "https://example.test/feed",
+                },
+            ),
+        },
     }
 
 
