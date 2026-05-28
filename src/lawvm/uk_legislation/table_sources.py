@@ -189,6 +189,7 @@ class _UKRepealTableParentChildTextRepealMatch:
     enactment_cell: str
     extent_cell: str
     enactment_match_basis: str
+    parent_target: LegalAddress
     structural_target: LegalAddress
     text_selectors: tuple[str, ...]
 
@@ -974,6 +975,18 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
         stripped = clause.strip()
         if not stripped:
             continue
+        section_dash = re.match(
+            r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*(?:--|[-\u2013\u2014])\s*(?P<body>.+)$",
+            stripped,
+            re.I,
+        )
+        if section_dash is not None:
+            context = section_dash.group("context")
+            for part in re.split(r";\s*", section_dash.group("body")):
+                part_text = part.strip(" .")
+                if part_text:
+                    expanded.append(f"{context}, {part_text}.")
+            continue
         section_context = re.match(
             r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*,\s*(?P<body>.+)$",
             stripped,
@@ -996,6 +1009,27 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
             if part_text:
                 expanded.append(f"{context}, {part_text}".rstrip(".") + ".")
     return expanded
+
+
+def _uk_repeal_table_parent_child_scope_clauses(extent_clause: str) -> tuple[str, ...]:
+    """Split section-dash repeal rows so child context cannot bleed across semicolons."""
+    text = " ".join((extent_clause or "").split()).strip()
+    if not text:
+        return ()
+    section_dash = re.match(
+        r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*(?:--|[-\u2013\u2014])\s*(?P<body>.+)$",
+        text,
+        re.I,
+    )
+    if section_dash is None:
+        return (text,)
+    context = section_dash.group("context")
+    scoped: list[str] = []
+    for part in re.split(r";\s*", section_dash.group("body")):
+        part_text = part.strip(" .")
+        if part_text:
+            scoped.append(f"{context}, {part_text}.")
+    return tuple(scoped) or (text,)
 
 
 def _uk_repeal_table_gateway_text(text: Optional[str]) -> bool:
@@ -1662,7 +1696,12 @@ def _uk_repeal_table_mixed_clause_word_selector(
         text,
         re.I,
     )
-    match = preceding_target or preceding_bare
+    preceding_quoted = re.search(
+        r"(?:the\s+)?" + quoted + r"\s+(?:immediately\s+)?(?:before|preceding)\s+it\b",
+        text,
+        re.I,
+    )
+    match = preceding_target or preceding_bare or preceding_quoted
     if match is None:
         following_target = re.search(
             r"(?:the\s+)?word\s+"
@@ -1820,44 +1859,68 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
             if not enactment_match_basis:
                 continue
             for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
-                if not _uk_table_cell_mentions_target(
-                    extent_clause,
-                    target=target,
-                    affected_year=str(effect.affected_year or ""),
-                ):
-                    continue
-                child_targets = _uk_repeal_table_explicit_child_structural_targets(
-                    extent_clause,
-                    parent_target=target,
-                )
-                if len(child_targets) != 1:
-                    continue
-                structural_target = child_targets[0]
-                text_selectors: list[str] = []
-                mixed_word_selector = _uk_repeal_table_mixed_clause_word_selector(
-                    extent_clause,
-                    target=structural_target,
-                )
-                if mixed_word_selector:
-                    text_selectors.append(mixed_word_selector)
-                quoted_selector, _occurrence, _end_occurrence = (
-                    _uk_repeal_table_quoted_words_selector(extent_clause)
-                )
-                if quoted_selector and quoted_selector not in text_selectors:
-                    text_selectors.append(quoted_selector)
-                if not text_selectors:
-                    continue
-                matches.append(
-                    _UKRepealTableParentChildTextRepealMatch(
-                        table_index=table_index,
-                        row_text=" | ".join((enactment_cell, extent_clause)),
-                        enactment_cell=enactment_cell,
-                        extent_cell=extent_clause,
-                        enactment_match_basis=enactment_match_basis,
-                        structural_target=structural_target,
-                        text_selectors=tuple(text_selectors),
+                for scope_clause in _uk_repeal_table_parent_child_scope_clauses(extent_clause):
+                    parent_target = target
+                    structural_target: LegalAddress | None = None
+                    text_selectors: list[str] = []
+                    target_self_word_selector = _uk_repeal_table_mixed_clause_word_selector(
+                        scope_clause,
+                        target=target,
                     )
-                )
+                    if (
+                        target_self_word_selector
+                        and len(target.path) >= 2
+                        and _uk_repeal_table_mixed_clause_explicitly_names_target_with_parent(
+                            scope_clause,
+                            target=target,
+                            affected_year=str(effect.affected_year or ""),
+                        )
+                    ):
+                        parent_target = LegalAddress(path=target.path[:-1], special=None)
+                        structural_target = target
+                        text_selectors.append(target_self_word_selector)
+                    elif _uk_table_cell_mentions_target(
+                        scope_clause,
+                        target=target,
+                        affected_year=str(effect.affected_year or ""),
+                    ):
+                        child_targets = _uk_repeal_table_explicit_child_structural_targets(
+                            scope_clause,
+                            parent_target=target,
+                        )
+                        if len(child_targets) != 1:
+                            continue
+                        structural_target = child_targets[0]
+                    else:
+                        continue
+
+                    if structural_target is None:
+                        continue
+                    mixed_word_selector = _uk_repeal_table_mixed_clause_word_selector(
+                        scope_clause,
+                        target=structural_target,
+                    )
+                    if mixed_word_selector and mixed_word_selector not in text_selectors:
+                        text_selectors.append(mixed_word_selector)
+                    quoted_selector, _occurrence, _end_occurrence = (
+                        _uk_repeal_table_quoted_words_selector(scope_clause)
+                    )
+                    if quoted_selector and quoted_selector.startswith("TEXT_FROM_"):
+                        text_selectors.append(quoted_selector)
+                    if not text_selectors:
+                        continue
+                    matches.append(
+                        _UKRepealTableParentChildTextRepealMatch(
+                            table_index=table_index,
+                            row_text=" | ".join((enactment_cell, scope_clause)),
+                            enactment_cell=enactment_cell,
+                            extent_cell=scope_clause,
+                            enactment_match_basis=enactment_match_basis,
+                            parent_target=parent_target,
+                            structural_target=structural_target,
+                            text_selectors=tuple(text_selectors),
+                        )
+                    )
 
     if len(matches) != 1:
         if not matches:
@@ -1870,7 +1933,7 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
     match = matches[0]
     return _UKRepealTableParentChildTextRepealSplit(
         recognized=True,
-        parent_target=target,
+        parent_target=match.parent_target,
         structural_target=match.structural_target,
         text_selectors=match.text_selectors,
         reason_code="parent_target_child_structural_and_text_repeal_split",
