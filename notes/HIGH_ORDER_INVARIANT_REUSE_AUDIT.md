@@ -156,6 +156,9 @@ Recent improvement:
   Norway verification aliases them while keeping local suppression rules.
 - duplicate-preserving source-path indexing now has a core helper; New Zealand
   agreement and version-diff surfaces reuse it to avoid source-path overwrites.
+- source-lane selection evidence now has a neutral core carrier; Sweden
+  official-PDF fallback acquisition emits that shared projection while keeping
+  Swedish lane policy local.
 
 ## Ranked Promotion Candidates
 

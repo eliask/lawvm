@@ -22,6 +22,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
+from lawvm.core.source_lane import SourceLaneSelectionEvidence, source_lane_attempt_from_mapping
 from lawvm.core import tree_ops
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.replay_adjudication import CompileAdjudication
@@ -956,25 +957,44 @@ def _record_se_official_artifacts_diagnostic(
 ) -> None:
     if diagnostics_out is None:
         return
+    detail: dict[str, Any] = {
+        "sfs_id": sfs_id,
+        "locator": locator,
+        "doc_url": doc_url,
+        "pdf_url": pdf_url or "",
+    }
+    if exception_type:
+        detail["exception_type"] = exception_type
+    if doc_status:
+        detail["doc_status"] = doc_status
+    if selected_pdf_lane:
+        detail["selected_pdf_lane"] = selected_pdf_lane
+    if pdf_source_attempts:
+        detail["pdf_source_attempts"] = pdf_source_attempts
+    if selected_pdf_lane:
+        diagnostics_out.append(
+            SourceLaneSelectionEvidence(
+                rule_id=rule_id,
+                phase=phase,
+                reason=reason,
+                selected_lane=selected_pdf_lane,
+                selected_locator=pdf_url or locator,
+                blocking=blocking,
+                strict_disposition="block" if blocking else "record",
+                quirks_disposition="record",
+                attempts=tuple(source_lane_attempt_from_mapping(row) for row in pdf_source_attempts),
+                detail=detail,
+            ).to_diagnostic_detail()
+        )
+        return
     diagnostic = diagnostic_detail(
         rule_id=rule_id,
         family="source_pathology",
         phase=phase,
         reason=reason,
         blocking=blocking,
-        sfs_id=sfs_id,
-        locator=locator,
-        doc_url=doc_url,
-        pdf_url=pdf_url or "",
+        detail=detail,
     )
-    if exception_type:
-        diagnostic["exception_type"] = exception_type
-    if doc_status:
-        diagnostic["doc_status"] = doc_status
-    if selected_pdf_lane:
-        diagnostic["selected_pdf_lane"] = selected_pdf_lane
-    if pdf_source_attempts:
-        diagnostic["pdf_source_attempts"] = pdf_source_attempts
     diagnostics_out.append(diagnostic)
 
 
