@@ -7,10 +7,9 @@ from typing import Sequence, Tuple
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.mutation_boundary import TreePath, diff_ir_paths, unexplained_changed_paths
 from lawvm.core.tree_ops import insert_sorted_required, replace_at_required, resolve_required
 from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
-
-TreePath = Tuple[Tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -259,7 +258,7 @@ def audit_open_law_snapshot(
     projected_replay = _project_typography_for_snapshot_compare(annotation_projected_replay)
     changed_paths = diff_ir_paths(projected_before, projected_after)
     allowed_prefixes = tuple(mutation.tree_path for mutation in replay.mutations)
-    unexplained_paths = tuple(path for path in changed_paths if not _path_has_allowed_prefix(path, allowed_prefixes))
+    unexplained_paths = unexplained_changed_paths(changed_paths, allowed_prefixes)
     findings = list(replay.findings)
     if (
         annotation_projected_before != before
@@ -308,36 +307,6 @@ def audit_open_law_snapshot(
         unexplained_paths=unexplained_paths,
         findings=tuple(findings),
     )
-
-
-def diff_ir_paths(before: IRNode, after: IRNode) -> Tuple[TreePath, ...]:
-    """Return structural paths whose node content/shape differs."""
-
-    return tuple(_diff_ir_paths(before, after, ()))
-
-
-def _diff_ir_paths(before: IRNode, after: IRNode, path: TreePath) -> list[TreePath]:
-    if _node_without_children(before) != _node_without_children(after):
-        return [path]
-    before_keys = tuple((_kind_str(child.kind), child.label or "") for child in before.children)
-    after_keys = tuple((_kind_str(child.kind), child.label or "") for child in after.children)
-    if before_keys != after_keys:
-        return [path]
-    out: list[TreePath] = []
-    for before_child, after_child, key in zip(before.children, after.children, before_keys):
-        out.extend(_diff_ir_paths(before_child, after_child, path + (key,)))
-    return out
-
-
-def _node_without_children(node: IRNode) -> tuple[str, str | None, str, tuple[tuple[str, object], ...]]:
-    return (_kind_str(node.kind), node.label, node.text, tuple(sorted(dict(node.attrs).items())))
-
-
-def _path_has_allowed_prefix(path: TreePath, allowed_prefixes: Sequence[TreePath]) -> bool:
-    for prefix in allowed_prefixes:
-        if len(path) >= len(prefix) and path[: len(prefix)] == prefix:
-            return True
-    return False
 
 
 def _project_annotations_for_snapshot_compare(node: IRNode) -> IRNode:
