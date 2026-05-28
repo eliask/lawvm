@@ -62,6 +62,20 @@ def _base_statute() -> IRStatute:
     )
 
 
+def _base_statute_with_schedule_1() -> IRStatute:
+    return IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),),
+        ),
+        supplements=(IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Existing schedule."),),
+    )
+
+
 def _source() -> OperationSource:
     return OperationSource(
         statute_id="ukpga/2026/1",
@@ -365,6 +379,32 @@ def test_replay_uk_ops_emit_mutation_event_for_fallback_schedule_insert() -> Non
     assert event.resolved_target_path == (("section", "99"), ("subsection", "1"))
     assert event.parent_path == ()
     assert event.created_paths == ((("schedule", "1"),),)
+
+
+def test_replay_uk_ops_refuses_duplicate_fallback_schedule_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-duplicate-fallback-insert-schedule",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "99"), ("subsection", "1"))),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Replacement schedule."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(
+        _base_statute_with_schedule_1(),
+        [op],
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
+
+    assert [schedule.text for schedule in replayed.supplements] == ["Existing schedule."]
+    assert mutation_events == []
+    kinds = [adjudication.kind for adjudication in adjudications]
+    assert "uk_replay_body_root_fallback_insert_resolved" not in kinds
+    assert kinds == ["uk_replay_missing_root_parent_shape_gap"]
 
 
 def test_replay_uk_ops_emit_mutation_event_for_table_row_insert() -> None:

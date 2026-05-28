@@ -731,6 +731,14 @@ class UKReplayInsertApplyMixin:
             )
             return False
         replay._log(f"  EXECUTOR: fallback inserting {new_node.kind} {new_node.label} into body")
+        if new_kind == "schedule":
+            inserted = replay._insert_supplement_sorted(new_node)
+        else:
+            inserted = uk_insert_child_sorted(self.statute.body, new_node)
+            if inserted:
+                replay._record_child_inserted(self.statute.body, new_node)
+        if not inserted:
+            return False
         _append_uk_replay_adjudication(
             replay.adjudications_out,
             kind="uk_replay_body_root_fallback_insert_resolved",
@@ -748,17 +756,7 @@ class UKReplayInsertApplyMixin:
                 derived_target_eid=target_eid,
             ),
         )
-        if new_kind == "schedule":
-            supplements = list(self.statute.supplements)
-            supplements.append(new_node)
-            replay._replace_statute(supplements=supplements)
-            replay._record_supplement_inserted(new_node)
-            return True
-        else:
-            inserted = uk_insert_child_sorted(self.statute.body, new_node)
-            if inserted:
-                replay._record_child_inserted(self.statute.body, new_node)
-            return inserted
+        return True
 
     def _insert_definition_child_structural_sibling(
         self,

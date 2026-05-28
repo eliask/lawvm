@@ -127,7 +127,7 @@ def uk_replace_children(node: UKMutableNode, new_children: list[UKMutableNode]) 
     return True
 
 
-def uk_insert_child_sorted(parent: UKMutableNode, new_node: UKMutableNode) -> bool:
+def uk_insert_node_sorted(children: list[UKMutableNode], new_node: UKMutableNode) -> bool:
     from lawvm.uk_legislation.canonicalize import uk_insert_into_children
     from lawvm.uk_legislation.ordering import _label_sort_key
     from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -138,13 +138,17 @@ def uk_insert_child_sorted(parent: UKMutableNode, new_node: UKMutableNode) -> bo
         if any(
             uk_ir_node_kind(child.kind) == insert_kind
             and _clean_num(child.label or "") == insert_label
-            for child in parent.children
+            for child in children
         ):
             return False
 
     uk_insert_into_children(
-        cast(list[IRNode], parent.children),
+        cast(list[IRNode], children),
         cast(IRNode, new_node),
         label_sort_key=_label_sort_key,
     )
     return True
+
+
+def uk_insert_child_sorted(parent: UKMutableNode, new_node: UKMutableNode) -> bool:
+    return uk_insert_node_sorted(parent.children, new_node)

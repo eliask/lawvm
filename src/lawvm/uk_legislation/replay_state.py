@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple, Optional, Sequence, TypeAlias, cast
+from typing import Any, NamedTuple, Optional, Sequence, TypeAlias
 
 from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, TreePaths, tree_path_from_legal_address
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
-from lawvm.uk_legislation.ordering import _label_sort_key
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_insert_node_sorted
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
@@ -929,13 +928,8 @@ class UKReplayStateMixin:
         return _ROOT_PARENT_INDEX
 
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool:
-        from lawvm.uk_legislation.canonicalize import uk_insert_into_children
-
-        uk_insert_into_children(
-            cast(list[IRNode], self.statute.supplements),
-            cast(IRNode, new_node),
-            label_sort_key=_label_sort_key,
-        )
+        if not uk_insert_node_sorted(self.statute.supplements, new_node):
+            return False
         self._record_supplement_inserted(new_node)
         return True
 
