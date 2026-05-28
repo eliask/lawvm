@@ -20,6 +20,16 @@ from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperat
 from lawvm.core.ir import LegalAddress
 from lawvm.core.mutation_boundary import TreePath, TreePathStep
 from lawvm.core.semantic_types import FacetKind
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+    SCOPE_CONFIDENCE_FALLBACK,
+    TARGET_RECOVERED,
+    TARGET_REJECTED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+    TargetResolutionStatus,
+)
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
 from lawvm.new_zealand.source_tree import NZHistoryWitness, NZSourceDocument, NZSourceNode, parse_archived_work_latest
@@ -390,39 +400,80 @@ def build_operation_surface(
                 )
             )
         if target_address_candidate.status != "candidate":
+            rule_id = target_address_candidate.blocking_rule_id or f"nz_target_address_{target_address_candidate.status}"
+            reason = f"target address candidate is {target_address_candidate.status}"
             findings.append(
                 _finding(
-                    rule_id=target_address_candidate.blocking_rule_id or f"nz_target_address_{target_address_candidate.status}",
+                    rule_id=rule_id,
                     phase="P6",
                     family="target_address_candidate",
-                    reason=f"target address candidate is {target_address_candidate.status}",
+                    reason=reason,
                     row_id=row.row_id,
                     source_xml_id=witness.xml_id,
                     blocking=True,
+                    detail={
+                        "target_resolution": _target_resolution_evidence(
+                            row,
+                            rule_id=rule_id,
+                            phase="P6",
+                            reason=reason,
+                            status=TARGET_REJECTED,
+                            blocking=True,
+                            scope_confidence="",
+                        )
+                    },
                 )
             )
         if target_status == "skeleton_duplicate_resolved":
+            rule_id = "nz_target_address_skeleton_duplicate_resolved"
+            reason = "source path duplicate is caused by non-current end skeleton nodes; primary node target kept"
             findings.append(
                 _finding(
-                    rule_id="nz_target_address_skeleton_duplicate_resolved",
+                    rule_id=rule_id,
                     phase="P6",
                     family="target_resolution_recovery",
-                    reason="source path duplicate is caused by non-current end skeleton nodes; primary node target kept",
+                    reason=reason,
                     row_id=row.row_id,
                     source_xml_id=witness.xml_id,
                     blocking=False,
+                    detail={
+                        "target_resolution": _target_resolution_evidence(
+                            row,
+                            rule_id=rule_id,
+                            phase="P6",
+                            reason=reason,
+                            status=TARGET_RECOVERED,
+                            blocking=False,
+                            scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+                            candidate_reason="primary_non_skeleton_source_node",
+                        )
+                    },
                 )
             )
         if target_hint.status == "attached_facet" and target_address_candidate.status == "candidate":
+            rule_id = "nz_target_address_attached_heading_from_context"
+            reason = "history note targets the attached node heading by local context"
             findings.append(
                 _finding(
-                    rule_id="nz_target_address_attached_heading_from_context",
+                    rule_id=rule_id,
                     phase="P6",
                     family="target_resolution_recovery",
-                    reason="history note targets the attached node heading by local context",
+                    reason=reason,
                     row_id=row.row_id,
                     source_xml_id=witness.xml_id,
                     blocking=False,
+                    detail={
+                        "target_resolution": _target_resolution_evidence(
+                            row,
+                            rule_id=rule_id,
+                            phase="P6",
+                            reason=reason,
+                            status=TARGET_RECOVERED,
+                            blocking=False,
+                            scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+                            candidate_reason="attached_heading_source_context",
+                        )
+                    },
                 )
             )
         if dependency_status == "amending_work_resolved_unarchived":
@@ -767,6 +818,7 @@ def _finding(
     row_id: str,
     source_xml_id: str,
     blocking: bool,
+    detail: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return diagnostic_detail(
         rule_id=rule_id,
@@ -778,7 +830,62 @@ def _finding(
         quirks_disposition="skip_with_finding" if blocking else "warn",
         row_id=row_id,
         source_xml_id=source_xml_id,
+        detail=detail,
     )
+
+
+def _target_resolution_evidence(
+    row: NZOperationWitnessRow,
+    *,
+    rule_id: str,
+    phase: str,
+    reason: str,
+    status: TargetResolutionStatus,
+    blocking: bool,
+    scope_confidence: str,
+    candidate_reason: str = "",
+) -> dict[str, Any]:
+    candidate = row.target_address_candidate
+    candidates = (
+        (
+            TargetResolutionCandidate(
+                target=candidate.address,
+                reason=candidate_reason,
+                detail={
+                    "source_path": row.source_path,
+                    "target_address_status": candidate.status,
+                },
+            ),
+        )
+        if candidate.address
+        else ()
+    )
+    return TargetResolutionCertificate(
+        rule_id=rule_id,
+        phase=phase,
+        reason=reason,
+        status=status,
+        source_target=_source_target_for_resolution(row),
+        selected_target=candidate.address if status == TARGET_RECOVERED else "",
+        candidate_count=max(1, len(candidates)) if status == TARGET_RECOVERED else len(candidates),
+        candidates=candidates,
+        scope_confidence=scope_confidence or (SCOPE_CONFIDENCE_FALLBACK if status == TARGET_RECOVERED else ""),
+        blocking=blocking,
+        strict_disposition="block" if blocking else "warn",
+        quirks_disposition="skip_with_finding" if blocking else "warn",
+        detail={
+            "jurisdiction_status": candidate.status,
+            "target_surface_status": row.target_surface_status,
+            "target_hint_status": row.target_hint.status,
+            "target_hint_kind": row.target_hint.kind,
+            "source_path": row.source_path,
+            "source_xml_path": row.source_xml_path,
+        },
+    ).to_diagnostic_detail()
+
+
+def _source_target_for_resolution(row: NZOperationWitnessRow) -> str:
+    return row.amended_provision or "/".join(row.source_path) or row.source_xml_path or row.row_id
 
 
 def _operation_evidence_row(
