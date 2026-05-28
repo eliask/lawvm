@@ -840,7 +840,7 @@ def _extract_payload_candidates(
     if direct_text_articles and direct_targets:
         leaf_kinds = {target.leaf_kind() for target in direct_targets}
         if len(direct_text_articles) >= len(direct_targets) and len(leaf_kinds) == 1:
-            for article, target in zip(direct_text_articles, direct_targets):
+            for article, target in zip(direct_text_articles, direct_targets, strict=False):
                 payload = _payload_from_direct_text_article(article, target)
                 if payload is not None and target.leaf_label():
                     candidates[(target.leaf_kind(), target.leaf_label())] = payload
@@ -848,7 +848,7 @@ def _extract_payload_candidates(
             text = _node_text_without_structural_children(direct_text_articles[0])
             sentences = _split_no_sentences(text)
             if len(sentences) == len(direct_targets):
-                for sentence_text, target in zip(sentences, direct_targets):
+                for sentence_text, target in zip(sentences, direct_targets, strict=True):
                     if not target.leaf_label():
                         continue
                     candidates[("sentence", target.leaf_label())] = IRNode(
@@ -862,7 +862,7 @@ def _extract_payload_candidates(
             tail = _normalize_space(raw_text.split(":", 1)[1])
             sentences = _split_no_sentences(tail)
             if len(sentences) == len(direct_targets):
-                for sentence_text, target in zip(sentences, direct_targets):
+                for sentence_text, target in zip(sentences, direct_targets, strict=True):
                     if not target.leaf_label():
                         continue
                     candidates[("sentence", target.leaf_label())] = IRNode(
@@ -1461,7 +1461,7 @@ def _iter_unstructured_no_change_groups(
                     )
                 )
                 sequence += 1
-            for src_target, dst_target in zip(source_targets, dest_targets):
+            for src_target, dst_target in zip(source_targets, dest_targets, strict=False):
                 doc_ops.append(
                     LegalOperation(
                         op_id=f"{source_id}:{sequence}",
@@ -1518,7 +1518,7 @@ def _iter_unstructured_no_change_groups(
             sentence_targets = [target for _action, target in sentence_specs]
             sentence_payloads: list[IRNode] = []
             if len(text_articles) >= len(sentence_targets):
-                for target, article in zip(sentence_targets, text_articles):
+                for target, article in zip(sentence_targets, text_articles, strict=False):
                     payload = _payload_from_direct_text_article(article, target)
                     if payload is None:
                         sentence_payloads = []
@@ -1530,10 +1530,10 @@ def _iter_unstructured_no_change_groups(
                 if len(sentences) == len(sentence_targets):
                     sentence_payloads = [
                         IRNode(kind=IRNodeKind.SENTENCE, label=target.leaf_label() or None, text=sentence_text)
-                        for target, sentence_text in zip(sentence_targets, sentences)
+                        for target, sentence_text in zip(sentence_targets, sentences, strict=True)
                     ]
             if sentence_payloads and len(sentence_payloads) == len(sentence_targets):
-                for (action, target), payload in zip(sentence_specs, sentence_payloads):
+                for (action, target), payload in zip(sentence_specs, sentence_payloads, strict=True):
                     doc_ops.append(
                         LegalOperation(
                             op_id=f"{source_id}:{sequence}",
@@ -1565,7 +1565,7 @@ def _iter_unstructured_no_change_groups(
         subsection_specs = _infer_same_base_subsection_target_specs_from_lead(lead)
         if subsection_specs and len(text_articles) >= len(subsection_specs):
             unresolved_targets: list[LegalAddress] = []
-            for (action, target), article in zip(subsection_specs, text_articles):
+            for (action, target), article in zip(subsection_specs, text_articles, strict=False):
                 payload = _payload_from_direct_text_article(article, target)
                 if payload is None:
                     unresolved_targets.append(target)
