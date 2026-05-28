@@ -6,7 +6,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.tools.uk_claim_templates import (
@@ -70,7 +70,7 @@ def _trim_cache(cache: dict[Any, Any], *, limit: int) -> None:
 
 def _clear_context_resolver_lookup_caches(context: "_EffectSummaryContext") -> None:
     """Discard per-row oracle lookup caches during fast diagnostic scans."""
-    resolver = context.resolver
+    resolver: Any = context.resolver
     if resolver is None:
         return
     resolver._eid_search_cache.clear()
@@ -1191,7 +1191,7 @@ def _format_legal_address_path(address: Any) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in address.path)
 
 
-def _compiled_text_patch_evidence(ops: object) -> tuple[dict[str, Any], ...]:
+def _compiled_text_patch_evidence(ops: Iterable[Any]) -> tuple[dict[str, Any], ...]:
     evidence: list[dict[str, Any]] = []
     for op in ops:
         patch = op.text_patch
