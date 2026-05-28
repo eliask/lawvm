@@ -9,6 +9,7 @@ from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import (
     build_operation_mutation_boundary_report,
     build_mutation_boundary_report,
+    dedupe_tree_paths,
     diff_ir_paths,
     operation_storage_boundary_prefixes,
     partition_changed_paths,
@@ -33,6 +34,19 @@ def test_tree_path_from_legal_address_uses_boundary_path_shape() -> None:
     assert tree_path_from_legal_address(address) == (
         ("section", "1"),
         ("subsection", "2"),
+    )
+
+
+def test_dedupe_tree_paths_preserves_first_seen_normalized_paths() -> None:
+    assert dedupe_tree_paths(
+        [
+            (("section", "1"),),
+            (("section", "1"),),
+            (("section", "2"),),
+        ]
+    ) == (
+        (("section", "1"),),
+        (("section", "2"),),
     )
 
 
