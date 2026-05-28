@@ -424,6 +424,7 @@ def _uk_table_entry_inline_text_selector(
                 "selector_mode": "unique_column_text",
                 "column_index": column_index,
                 "row_index": row_index,
+                "row_index_mode": "first_column_label",
                 "source_entry_paragraph_label": _clean_num(
                     row_column_match.group("paragraph") or ""
                 ),

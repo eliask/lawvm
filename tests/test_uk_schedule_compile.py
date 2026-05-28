@@ -14206,6 +14206,7 @@ def test_compile_table_row_column_text_patch_uses_owned_cell_selector() -> None:
     assert selector["rule_id"] == "uk_effect_table_row_column_text_patch"
     assert selector["selector_mode"] == "unique_column_text"
     assert selector["row_index"] == 1
+    assert selector["row_index_mode"] == "first_column_label"
     assert selector["source_entry_paragraph_label"] == "c"
     assert selector["column_index"] == 3
     assert selector["match_text"] == "air forces"
@@ -14285,6 +14286,88 @@ def test_replay_table_row_column_text_patch_requires_source_row_index() -> None:
     table = replayed.body.children[0].children[0]
     assert table.children[0].children[2].text == "air forces (but see subsection (1A))"
     assert table.children[1].children[2].text == "air forces"
+
+
+def test_replay_table_row_column_text_patch_resolves_source_row_number_label() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_row_column_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 3,
+        "row_index": 1,
+        "row_index_mode": "first_column_label",
+        "match_text": "air forces",
+        "allow_unique_descendant_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_row_column_text_patch_source_row_label",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "132"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="air forces", occurrence=0),
+            replacement="air forces (but see subsection (1A))",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="132",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Row Number"),
+                                                IRNode(kind=IRNodeKind.CELL, text="Punishment"),
+                                                IRNode(kind=IRNodeKind.CELL, text="Limitation"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="detention"),
+                                                IRNode(kind=IRNodeKind.CELL, text="corporal in any air forces"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="2"),
+                                                IRNode(kind=IRNodeKind.CELL, text="fine"),
+                                                IRNode(kind=IRNodeKind.CELL, text="air forces"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert table.children[0].children[2].text == "Limitation"
+    assert table.children[1].children[2].text == "corporal in any air forces (but see subsection (1A))"
+    assert table.children[2].children[2].text == "air forces"
 
 
 def test_compile_table_entry_for_column_omit_uses_owned_cell_selector() -> None:

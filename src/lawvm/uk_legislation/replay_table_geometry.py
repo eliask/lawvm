@@ -1341,6 +1341,7 @@ def resolve_unique_uk_table_column_text_cell(
         row_index = int(selector.get("row_index") or 0)
     except (TypeError, ValueError):
         return result(None, "invalid_selector", {})
+    row_index_mode = str(selector.get("row_index_mode") or "")
     match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
     full_cell_match = str(selector.get("match_scope") or "") == "full_cell"
     if column_index < 1 or not match_norm:
@@ -1358,6 +1359,7 @@ def resolve_unique_uk_table_column_text_cell(
                 candidate_table,
                 column_index=column_index,
                 row_index=row_index,
+                row_index_mode=row_index_mode,
                 match_norm=match_norm,
                 full_cell_match=full_cell_match,
             )
@@ -1387,6 +1389,7 @@ def resolve_unique_uk_table_column_text_cell(
         candidate_tables[0],
         column_index=column_index,
         row_index=row_index,
+        row_index_mode=row_index_mode,
         match_norm=match_norm,
         full_cell_match=full_cell_match,
     )
@@ -1417,14 +1420,20 @@ def _matching_uk_table_column_text_cells(
     *,
     column_index: int,
     row_index: int = 0,
+    row_index_mode: str = "",
     match_norm: str,
     full_cell_match: bool = False,
 ) -> UKTableCellMatches:
     matching_cells: list[UKMutableNode] = []
     matching_rows: list[str] = []
     for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
-        if row_index >= 1 and physical_row_index + 1 != row_index:
-            continue
+        if row_index >= 1:
+            if row_index_mode == "first_column_label":
+                first_cell = row_cells.get(1)
+                if first_cell is None or _compact_normalized_text(first_cell.text or "") != str(row_index):
+                    continue
+            elif physical_row_index + 1 != row_index:
+                continue
         target_cell = row_cells.get(column_index)
         if target_cell is None:
             continue
