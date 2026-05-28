@@ -14,6 +14,8 @@ from lawvm.core.mutation_boundary import (
     operation_storage_boundary_prefixes,
     partition_changed_paths,
     path_has_prefix,
+    paths_related,
+    normalize_tree_path_for_relation,
     tree_path_from_legal_address,
     unexplained_changed_paths,
     validate_tree_path,
@@ -57,6 +59,31 @@ def test_validate_tree_path_allows_root_and_empty_labels_but_rejects_empty_kinds
     assert validate_tree_path((), allow_root=False) == ("tree path must not be the root path",)
     assert validate_tree_path((("", "1"),), field_name="event path") == (
         "event path step 0 requires a non-empty kind",
+    )
+
+
+def test_paths_related_handles_ancestor_descendant_and_ignored_kinds() -> None:
+    assert paths_related(
+        (("chapter", "1"), ("section", "2")),
+        (("section", "2"), ("subsection", "1")),
+        ignored_kinds=frozenset({"chapter"}),
+    )
+    assert normalize_tree_path_for_relation(
+        (("part", "A"), ("chapter", "1"), ("section", "2")),
+        ignored_kinds=frozenset({"part", "chapter"}),
+    ) == (("section", "2"),)
+
+
+def test_paths_related_handles_symbolic_sibling_labels() -> None:
+    assert paths_related(
+        (("section", "5"), ("subsection", "1"), ("item", "last")),
+        (("section", "5"), ("subsection", "1"), ("item", "8")),
+        special_labels=frozenset({"first", "last"}),
+    )
+    assert not paths_related(
+        (("section", "5"), ("subsection", "1"), ("item", "7")),
+        (("section", "5"), ("subsection", "1"), ("item", "8")),
+        special_labels=frozenset({"first", "last"}),
     )
 
 

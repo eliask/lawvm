@@ -183,6 +183,47 @@ def path_has_prefix(path: TreePath, allowed_prefixes: Sequence[TreePath]) -> boo
     return False
 
 
+def normalize_tree_path_for_relation(
+    path: TreePath,
+    *,
+    ignored_kinds: frozenset[str] = frozenset(),
+) -> TreePath:
+    """Drop relation-irrelevant path steps while preserving legal order."""
+
+    issues = validate_tree_path(path)
+    if issues:
+        raise ValueError("; ".join(issues))
+    return tuple(step for step in path if step[0] not in ignored_kinds)
+
+
+def paths_related(
+    left: TreePath,
+    right: TreePath,
+    *,
+    ignored_kinds: frozenset[str] = frozenset(),
+    special_labels: frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether two paths identify overlapping or symbolic sibling regions."""
+
+    left = normalize_tree_path_for_relation(left, ignored_kinds=ignored_kinds)
+    right = normalize_tree_path_for_relation(right, ignored_kinds=ignored_kinds)
+    if left == right:
+        return True
+    if len(left) <= len(right) and right[: len(left)] == left:
+        return True
+    if len(right) <= len(left) and left[: len(right)] == right:
+        return True
+    if not left or not right:
+        return False
+    left_kind, left_label = left[-1]
+    right_kind, right_label = right[-1]
+    if left_kind != right_kind:
+        return False
+    if left[:-1] != right[:-1]:
+        return False
+    return left_label in special_labels or right_label in special_labels
+
+
 def _diff_ir_paths(before: IRNode, after: IRNode, path: TreePath) -> list[TreePath]:
     if _node_without_children(before) != _node_without_children(after):
         return [path]
