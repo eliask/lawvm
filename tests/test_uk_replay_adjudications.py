@@ -470,6 +470,20 @@ def test_replay_uk_ops_refuses_duplicate_indexed_section_insert() -> None:
     assert [adjudication.kind for adjudication in adjudications] == ["uk_replay_payload_mismatch"]
 
 
+def test_replace_descendant_at_path_is_copy_on_write() -> None:
+    executor = UKReplayExecutor(_base_statute_sections_1_2())
+    old_body = executor.statute.body
+    old_section = old_body.children[0]
+    replacement = UKMutableNode(kind=IRNodeKind.SECTION, label="1", text="Replacement section one.")
+
+    rebuilt = executor._replace_descendant_at_path(old_body, (0,), replacement)
+
+    assert old_body.children[0] is old_section
+    assert old_body.children[0].text == "Section one."
+    assert rebuilt is not old_body
+    assert rebuilt.children[0] is replacement
+
+
 def test_replay_uk_ops_emit_mutation_event_for_table_row_insert() -> None:
     mutation_events: list[MutationEvent] = []
     selector = {"selector_mode": "row_number", "direction": "after", "row_number": 1}
