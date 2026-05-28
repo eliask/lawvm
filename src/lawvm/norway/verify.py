@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.ir import IRNode, IRStatute
+from lawvm.core.mutation_boundary import normalize_tree_path_for_relation, paths_related
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops
 from lawvm.core.timeline_consistency import ConsistencyDivergence, ingest_consolidated, verify_consistency
@@ -310,30 +311,22 @@ def _no_compare_child_path(
 
 
 def normalize_no_relation_path(path: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
-    return tuple(step for step in path if step[0] not in _NO_RELATION_CONTAINER_KINDS)
+    return normalize_tree_path_for_relation(
+        path,
+        ignored_kinds=frozenset(_NO_RELATION_CONTAINER_KINDS),
+    )
 
 
 def no_paths_related(
     left: tuple[tuple[str, str], ...],
     right: tuple[tuple[str, str], ...],
 ) -> bool:
-    left = normalize_no_relation_path(left)
-    right = normalize_no_relation_path(right)
-    if left == right:
-        return True
-    if len(left) <= len(right) and right[: len(left)] == left:
-        return True
-    if len(right) <= len(left) and left[: len(right)] == right:
-        return True
-    if not left or not right:
-        return False
-    left_kind, left_label = left[-1]
-    right_kind, right_label = right[-1]
-    if left_kind != right_kind:
-        return False
-    if left[:-1] != right[:-1]:
-        return False
-    return left_label in _NO_RELATION_SPECIAL_LABELS or right_label in _NO_RELATION_SPECIAL_LABELS
+    return paths_related(
+        left,
+        right,
+        ignored_kinds=frozenset(_NO_RELATION_CONTAINER_KINDS),
+        special_labels=frozenset(_NO_RELATION_SPECIAL_LABELS),
+    )
 
 
 def _concretize_no_relation_path(

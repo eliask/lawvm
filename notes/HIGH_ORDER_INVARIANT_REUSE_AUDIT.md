@@ -143,6 +143,9 @@ Recent improvement:
   apply events re-export the shared accounting surface for compatibility.
 - lossless filter results now have a small core carrier; UK authority filtering
   uses it while preserving existing diagnostics and returned kept-op lists.
+- bidirectional path-relation helpers now live in core; Norway verification
+  delegates its touched-divergence relation predicate while keeping local
+  ignored-container and symbolic-label policy.
 
 ## Ranked Promotion Candidates
 
