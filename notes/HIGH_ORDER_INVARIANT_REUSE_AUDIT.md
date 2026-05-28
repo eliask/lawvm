@@ -237,6 +237,9 @@ Recent improvement:
 - source-lane selection evidence now validates that selected lanes are tied to
   an attempted lane, an explicitly selected attempt, or an explicit
   `no_source_lane_selected_*` failure lane.
+- source-lane selection evidence now normalizes attempted lanes to immutable
+  tuples and freezes nested detail payloads at construction, so later caller
+  mutation cannot rewrite acquisition evidence.
 - Estonia replay orchestration now nests shared source-lane selection evidence
   inside amendment fetch, amendment parse, temporal source scan, pending
   cancellation, and pending source-act commencement failures while preserving
