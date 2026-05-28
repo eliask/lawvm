@@ -159,6 +159,9 @@ Recent improvement:
 - source-lane selection evidence now has a neutral core carrier; Sweden
   official-PDF fallback acquisition emits that shared projection while keeping
   Swedish lane policy local.
+- source-version bracketing now has shared source-only window selectors; New
+  Zealand archived XML date/change windows delegate the bracketing invariant
+  while preserving NZ-specific row classes and truth-claim names.
 
 ## Ranked Promotion Candidates
 
