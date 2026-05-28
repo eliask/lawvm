@@ -62,7 +62,7 @@ class UKReplayExecutor(
         self.text_map = text_map or {}
         self.verbose = bool(verbose)
         self.lo_ops_out = lo_ops_out  # None = don't collect snapshots
-        self.adjudications_out = adjudications_out
+        self.adjudications_out = adjudications_out if adjudications_out is not None else []
         self._seen_invariant_violations = self._collect_invariant_violations()
         self._repealed_target_prefixes: set[str] = set()
         self._applied_text_patch_targets: dict[str, list[str]] = {}
