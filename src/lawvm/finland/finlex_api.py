@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from lxml import etree
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     canonical_consolidated_locator,
@@ -476,18 +477,18 @@ def _append_sync_latest_pit_diagnostic(
     if diagnostics_out is None:
         return
     diagnostics_out.append(
-        {
-            "rule_id": rule_id,
-            "phase": "acquisition",
-            "family": "source_pathology",
-            "statute_id": statute_id,
-            "pit_version": pit_version,
-            "locator": locator,
-            "reason": reason,
-            "blocking": blocking,
-            "strict_disposition": "block" if blocking else "record",
-            "quirks_disposition": "record",
-        }
+        diagnostic_detail(
+            rule_id=rule_id,
+            phase="acquisition",
+            family="source_pathology",
+            reason=reason,
+            blocking=blocking,
+            strict_disposition="block" if blocking else "record",
+            quirks_disposition="record",
+            statute_id=statute_id,
+            pit_version=pit_version,
+            locator=locator,
+        )
     )
 
 

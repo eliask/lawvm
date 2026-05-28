@@ -186,6 +186,9 @@ Recent improvement:
 - Estonia target-resolution parse rejection helpers now delegate shared
   diagnostic envelope fields to `diagnostic_detail` while preserving their
   local target-title and source-fragment payload.
+- Finland Finlex latest-PIT sync diagnostics now delegate shared acquisition
+  envelope fields to `diagnostic_detail` while preserving statute/version
+  locator payloads.
 - Norway amendment-index duplicate logical locator diagnostics now include a
   nested shared source-lane selection projection for both deterministic
   byte-identical duplicate selection and conflicting-duplicate blocking,
