@@ -372,9 +372,14 @@ Recent improvement:
   identifiers, invalid severity values, out-of-range divergence scores,
   filtered divergences without rule/reason evidence, and negative summary or
   coverage counts.
+- shared verification report contracts now freeze nested issue/divergence/
+  coverage/summary detail payloads and normalize issue/divergence lanes at
+  construction.
 - shared corpus evidence rows now run their existing row validators at
   construction time, so invalid operation/finding evidence cannot bypass the
   envelope contract by skipping explicit validator calls.
+- shared corpus evidence rows and summaries now freeze nested detail/evidence
+  payloads and normalize tuple-like ID/category lanes at construction.
 - shared replay summary/checkpoint contracts now validate required IDs, status
   fields, non-negative counts, replay text-view shape, and checkpoint bounds at
   construction time.
