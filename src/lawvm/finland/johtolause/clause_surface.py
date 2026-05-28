@@ -570,7 +570,7 @@ def lower_to_ast(clause: SurfaceClause):
     grouped = resolve_grouped(clause)
     verb_groups: list[VerbGroup] = []
 
-    for vg, vg_ops in zip(clause.verb_groups, grouped):
+    for vg, vg_ops in zip(clause.verb_groups, grouped, strict=True):
         verb_enum = _VERB_TO_ACTION.get(vg.verb, StructuralAction.REPLACE)
         # Group consecutive same-chapter ops into ScopedBlocks
         nodes = _group_ops_by_chapter_for_ast(vg_ops)

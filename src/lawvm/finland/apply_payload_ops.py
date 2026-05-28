@@ -28,7 +28,7 @@ def _has_consecutive_numeric_labels(labels: List[str]) -> bool:
     if not all(label.isdigit() for label in labels):
         return False
     numbers = [int(label) for label in labels]
-    return all(cur == prev + 1 for prev, cur in zip(numbers, numbers[1:]))
+    return all(cur == prev + 1 for prev, cur in zip(numbers, numbers[1:], strict=False))
 
 
 def _is_plain_intro_only_subsection(sub: IRNode) -> bool:

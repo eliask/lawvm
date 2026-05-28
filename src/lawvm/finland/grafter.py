@@ -5044,7 +5044,7 @@ def _stabilize_same_parent_relabel_order(resolved: List[ResolvedOp]) -> List[Res
         if len(topo_order) != n_rel:
             continue
 
-        for pos_in_list, rel_idx in zip(relabel_positions, topo_order):
+        for pos_in_list, rel_idx in zip(relabel_positions, topo_order, strict=True):
             result[pos_in_list] = relabel_ops[rel_idx]
     return result
 

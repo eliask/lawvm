@@ -1119,7 +1119,7 @@ def _extract_renumber_pairs_from_jolloin_tokens(
     if len(src_nums) != len(dst_nums) or not src_nums:
         return []
 
-    return [(src, dst, kind) for src, dst in zip(src_nums, dst_nums)]
+    return [(src, dst, kind) for src, dst in zip(src_nums, dst_nums, strict=True)]
 
 
 def annotate_jolloin(tokens: list[Token]) -> list[Annotation]:

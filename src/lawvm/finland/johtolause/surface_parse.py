@@ -1215,7 +1215,7 @@ def _section_ref(s: Stream, verb: SourceVerb, chapter: str, part: str = "") -> O
             else:
                 destination_labels.extend(label.removesuffix(":ksi") for label in expanded)
         destination_by_source = (
-            dict(zip(source_labels, destination_labels)) if len(source_labels) == len(destination_labels) else {}
+            dict(zip(source_labels, destination_labels, strict=True)) if len(source_labels) == len(destination_labels) else {}
         )
         # Whole-section nodes for the renumbered section(s).
         # When emitting a scope block (explicit chapter/part), the scope block
@@ -1474,7 +1474,7 @@ def _chapter_ref(s: Stream, verb: SourceVerb, part: str = "") -> Optional[list[S
         source_labels = [n + sf for n, sf in nums]
         destination_labels = [(n + sf).removesuffix(":ksi") for n, sf in renumber_targets]
         destination_by_source = (
-            dict(zip(source_labels, destination_labels)) if len(source_labels) == len(destination_labels) else {}
+            dict(zip(source_labels, destination_labels, strict=True)) if len(source_labels) == len(destination_labels) else {}
         )
     if has_renumber:
         _rid = "fi.chapter_renumber"
@@ -1547,7 +1547,7 @@ def _part_ref(s: Stream, verb: SourceVerb, chapter: str = "") -> Optional[list[S
         source_labels = [n + sf for n, sf in nums]
         destination_labels = [(n + sf).removesuffix(":ksi") for n, sf in renumber_targets]
         destination_by_source = (
-            dict(zip(source_labels, destination_labels)) if len(source_labels) == len(destination_labels) else {}
+            dict(zip(source_labels, destination_labels, strict=True)) if len(source_labels) == len(destination_labels) else {}
         )
     _rid = "fi.part_renumber" if has_renumber else "fi.part_ref"
     _w = _make_witness(_rid, saved, s.pos)

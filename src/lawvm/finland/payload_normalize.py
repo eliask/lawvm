@@ -754,10 +754,10 @@ def _assign_dense_local_target_groups(
     # sparse slots here.
     if len(remaining_pairs) < 2:
         return
-    if any(target <= label for target, label in zip(ordered_targets, remaining_labels)):
+    if any(target <= label for target, label in zip(ordered_targets, remaining_labels, strict=True)):
         return
 
-    for (_idx, sub), target in zip(remaining_pairs, ordered_targets):
+    for (_idx, sub), target in zip(remaining_pairs, ordered_targets, strict=True):
         for op in sorted(
             target_groups[target],
             key=lambda current: (current.target_special != "johd", current.op_type),
@@ -794,7 +794,7 @@ def _assign_dense_local_slot_ops(
         return
     sorted_ops = sorted(remaining_plain_ops, key=lambda op: op.target_paragraph or 0)
     sorted_subs = sorted(remaining_sub_pairs, key=lambda pair: int(pair[1].label or "0"))
-    offsets = {int(op.target_paragraph or 0) - int(sub.label or "0") for op, (_, sub) in zip(sorted_ops, sorted_subs)}
+    offsets = {int(op.target_paragraph or 0) - int(sub.label or "0") for op, (_, sub) in zip(sorted_ops, sorted_subs, strict=True)}
     if len(offsets) != 1:
         return
     offset = next(iter(offsets))
@@ -802,7 +802,7 @@ def _assign_dense_local_slot_ops(
         return
     bound_targets: List[int] = []
     bound_labels: List[str] = []
-    for op, (idx, sub) in zip(sorted_ops, sorted_subs):
+    for op, (idx, sub) in zip(sorted_ops, sorted_subs, strict=True):
         state.subsec_map.assign(op, sub)
         state.binding_rule_by_op_id[id(op)] = "local_dense_subsection_numbering"
         state.used_subs.add(idx)
@@ -1105,7 +1105,7 @@ def _assign_remaining_insert_slot_ops(
             pair[0],
         )
     )
-    for op, (idx, sub) in zip(remaining_inserts, remaining_slots):
+    for op, (idx, sub) in zip(remaining_inserts, remaining_slots, strict=True):
         state.subsec_map.assign(op, sub)
         state.used_subs.add(idx)
 
@@ -1398,7 +1398,7 @@ def _split_fused_restarted_subsection_across_consecutive_replaces(
         return muutos_ir, False
 
     targets = [int(op.target_paragraph or 0) for op in replace_ops]
-    if any(curr != prev + 1 for prev, curr in zip(targets, targets[1:])):
+    if any(curr != prev + 1 for prev, curr in zip(targets, targets[1:], strict=False)):
         return muutos_ir, False
 
     merged_sub = amend_subs[0]
@@ -2705,7 +2705,7 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
         return muutos_ir, False
 
     targets = [int(op.target_paragraph or 0) for op in replace_ops]
-    if any(curr != prev + 1 for prev, curr in zip(targets, targets[1:])):
+    if any(curr != prev + 1 for prev, curr in zip(targets, targets[1:], strict=False)):
         return muutos_ir, False
 
     master_sec = ctx.live_node
@@ -2761,7 +2761,7 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
             attrs=dict(merged_sub.attrs),
             children=(IRNode(kind=IRNodeKind.CONTENT, text=chunk),),
         )
-        for target, chunk in zip(targets, chunks)
+        for target, chunk in zip(targets, chunks, strict=True)
     ]
     new_children: List[IRNode] = []
     replaced = False
