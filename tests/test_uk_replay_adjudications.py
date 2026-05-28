@@ -15,7 +15,7 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.effect_payload_normalization import prepare_uk_operation_payload_node
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_ir_node_kind
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
@@ -313,6 +313,26 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_insert() -> None:
     assert event.created_paths == ((("section", "2"),),)
     assert event.removed_paths == ()
     assert event.replaced_paths == ()
+
+
+def test_uk_mutable_sorted_insert_refuses_same_label_replacement() -> None:
+    parent = UKMutableNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=[
+            UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
+        ],
+    )
+    new_node = UKMutableNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Replacement text.",
+    )
+
+    inserted = uk_insert_child_sorted(parent, new_node)
+
+    assert inserted is False
+    assert [child.text for child in parent.children] == ["Existing text."]
 
 
 def test_replay_uk_ops_emit_mutation_event_for_fallback_schedule_insert() -> None:
