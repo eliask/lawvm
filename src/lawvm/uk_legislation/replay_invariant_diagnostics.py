@@ -25,7 +25,7 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_paragraph_order_shape_gap,
     uk_part_order_shape_gap,
     uk_payload_container_shape_gap,
-    uk_payload_shape_invariant_violations,
+    uk_payload_shape_invariant_violation_records,
     uk_repeated_form_label_payload_shape_gap,
     uk_replace_payload_kind_mismatch_gap,
     uk_section_order_shape_gap,
@@ -72,6 +72,13 @@ def _invariant_detail(
 
 
 def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str | None = None) -> list[str]:
+    return [violation.message for violation in _collect_duplicate_order_invariant_records(root, initial_path)]
+
+
+def _collect_duplicate_order_invariant_records(
+    root: UKMutableNode,
+    initial_path: str | None = None,
+) -> list[tree_ops.TreeInvariantViolation]:
     """Return the duplicate/order subset that UK replay diagnostics persist.
 
     ``tree_ops.check_invariants`` also checks nesting and normalized-label
@@ -80,14 +87,13 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
     protocol, so this path does not convert the subtree to frozen IR.
     """
     root_path = _parse_invariant_path_text(initial_path or root.kind.value)
-    return [
-        violation.message
-        for violation in tree_ops.iter_tree_invariant_violations(
+    return list(
+        tree_ops.iter_tree_invariant_violations(
             root,
             families=_DUPLICATE_ORDER_INVARIANT_FAMILIES,
             root_path=root_path,
         )
-    ]
+    )
 
 
 class UKReplayInvariantDiagnosticsMixin:
@@ -266,21 +272,29 @@ class UKReplayInvariantDiagnosticsMixin:
             return
 
         current_violations: set[str] = set()
+        current_violation_records: dict[str, tree_ops.TreeInvariantViolation] = {}
         for target_root in target_roots:
-            for violation in _collect_duplicate_order_invariants(
+            for violation in _collect_duplicate_order_invariant_records(
                 target_root.node,
                 initial_path=target_root.initial_path,
             ):
-                current_violations.add(f"{target_root.root_name}:{violation}")
+                scoped_violation = f"{target_root.root_name}:{violation.message}"
+                current_violations.add(scoped_violation)
+                current_violation_records[scoped_violation] = violation
         new_violations = sorted(current_violations - scoped_seen)
         if not new_violations:
             self._seen_invariant_violations.difference_update(scoped_seen)
             self._seen_invariant_violations.update(current_violations)
             self._last_invariant_structure_serial = self._structure_mutation_serial
             return
-        payload_shape_violations = uk_payload_shape_invariant_violations(op)
+        payload_shape_violation_records = uk_payload_shape_invariant_violation_records(op)
+        payload_shape_violations = [violation.message for violation in payload_shape_violation_records]
         for scoped_violation in new_violations:
-            if payload_shape_violations and uk_repeated_form_label_payload_shape_gap(op, payload_shape_violations):
+            invariant_record = current_violation_records.get(scoped_violation, scoped_violation)
+            if payload_shape_violation_records and uk_repeated_form_label_payload_shape_gap(
+                op,
+                payload_shape_violation_records,
+            ):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_repeated_form_label_payload_shape_gap",
@@ -295,7 +309,7 @@ class UKReplayInvariantDiagnosticsMixin:
                         payload_violations="; ".join(payload_shape_violations),
                     ),
                 )
-            elif payload_shape_violations or uk_payload_container_shape_gap(op, scoped_violation):
+            elif payload_shape_violations or uk_payload_container_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_payload_shape_gap",
@@ -307,7 +321,7 @@ class UKReplayInvariantDiagnosticsMixin:
                         payload_violations="; ".join(payload_shape_violations),
                     ),
                 )
-            elif uk_replace_payload_kind_mismatch_gap(op, scoped_violation):
+            elif uk_replace_payload_kind_mismatch_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_replace_payload_target_leaf_mismatch_gap",
@@ -319,7 +333,7 @@ class UKReplayInvariantDiagnosticsMixin:
                         payload_kind=str(op.payload.kind) if op.payload is not None else "",
                     ),
                 )
-            elif uk_part_order_shape_gap(op, scoped_violation):
+            elif uk_part_order_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_part_order_shape_gap",
@@ -327,7 +341,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-            elif uk_chapter_order_shape_gap(op, scoped_violation):
+            elif uk_chapter_order_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_chapter_order_shape_gap",
@@ -335,7 +349,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-            elif uk_source_anchored_order_observation(op, scoped_violation):
+            elif uk_source_anchored_order_observation(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_source_anchored_order_observed",
@@ -346,7 +360,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-            elif uk_section_order_shape_gap(op, scoped_violation):
+            elif uk_section_order_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_section_order_shape_gap",
@@ -354,7 +368,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-            elif uk_paragraph_order_shape_gap(op, scoped_violation):
+            elif uk_paragraph_order_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_paragraph_order_shape_gap",
@@ -362,7 +376,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-            elif uk_subparagraph_order_shape_gap(op, scoped_violation):
+            elif uk_subparagraph_order_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_subparagraph_order_shape_gap",
@@ -370,7 +384,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     op=op,
                     detail=_invariant_detail(op, scoped_violation),
                 )
-            elif uk_item_order_shape_gap(op, scoped_violation):
+            elif uk_item_order_shape_gap(op, invariant_record):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_item_order_shape_gap",
