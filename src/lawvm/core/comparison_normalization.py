@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Callable, Literal, Mapping, Optional, cast
+from typing import Any, Callable, Literal, Mapping, Optional, cast
 
 from lawvm.core.ir import IRNode
 
@@ -35,6 +35,23 @@ class ComparisonNormalizationResult:
     fired_rules: tuple[str, ...]
 
 
+def validate_comparison_normalization_rule(rule: ComparisonNormalizationRule) -> tuple[str, ...]:
+    """Return rule-shape issues for comparison-only normalization rules."""
+
+    issues: list[str] = []
+    if not rule.name:
+        issues.append("comparison normalization rule requires a non-empty name")
+    if not rule.rule_class:
+        issues.append(f"comparison normalization rule {rule.name!r} requires a non-empty rule_class")
+    if rule.kind == "translation" and rule.translation is None:
+        issues.append(f"comparison normalization rule {rule.name!r} requires a translation table")
+    elif rule.kind == "literal" and not rule.old_text:
+        issues.append(f"comparison normalization rule {rule.name!r} requires non-empty old_text")
+    elif rule.kind in {"regex", "placeholder"} and rule.pattern is None:
+        issues.append(f"comparison normalization rule {rule.name!r} requires a regex pattern")
+    return tuple(issues)
+
+
 def normalize_comparison_text(
     text: str,
     rules: tuple[ComparisonNormalizationRule, ...],
@@ -43,21 +60,24 @@ def normalize_comparison_text(
     normalized = text
     fired: list[str] = []
     for rule in rules:
+        issues = validate_comparison_normalization_rule(rule)
+        if issues:
+            raise ValueError("; ".join(issues))
         before = normalized
         if rule.kind == "translation":
-            if rule.translation is None:
-                continue
-            normalized = normalized.translate(rule.translation)
+            translation = rule.translation
+            assert translation is not None
+            normalized = normalized.translate(cast(Any, translation))
         elif rule.kind == "literal":
             normalized = normalized.replace(rule.old_text, rule.new_text)
         elif rule.kind == "regex":
-            if rule.pattern is None:
-                continue
-            normalized = rule.pattern.sub(rule.replacement, normalized)
+            pattern = rule.pattern
+            assert pattern is not None
+            normalized = pattern.sub(rule.replacement, normalized)
         elif rule.kind == "placeholder":
-            if rule.pattern is None:
-                continue
-            if rule.pattern.fullmatch(normalized.strip()):
+            pattern = rule.pattern
+            assert pattern is not None
+            if pattern.fullmatch(normalized.strip()):
                 normalized = cast(str, rule.replacement)
         if normalized != before:
             fired.append(rule.name)
