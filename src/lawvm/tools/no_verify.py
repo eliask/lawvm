@@ -24,8 +24,8 @@ def main(args: "argparse.Namespace") -> None:
     commencement_path = Path(commencement_arg) if commencement_arg else None
 
     result = verify_no_against_current(
-        getattr(args, "base_id"),
-        as_of=getattr(args, "as_of"),
+        args.base_id,
+        as_of=args.as_of,
         data_dir=data_dir,
         index_path=index_path,
         commencement_path=commencement_path,

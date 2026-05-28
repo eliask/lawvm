@@ -4,6 +4,7 @@ from argparse import Namespace
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -50,7 +51,8 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
     )
 
     def fake_summarize(effect: object, *_args: object, **_kwargs: object) -> uk_effects._EffectSummary:
-        if getattr(effect, "effect_id") == "eff-now-supported":
+        effect_id = cast(Any, effect).effect_id
+        if effect_id == "eff-now-supported":
             return uk_effects._EffectSummary(
                 source_pathology="",
                 compare_shape="commensurable",
@@ -63,7 +65,7 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
                 replay_applicable=True,
                 structural_for_replay=True,
             )
-        if getattr(effect, "effect_id") == "eff-still-frontier-with-op":
+        if effect_id == "eff-still-frontier-with-op":
             return uk_effects._EffectSummary(
                 source_pathology="source_carried_structured_tail_substitution_unsupported",
                 compare_shape="commensurable",

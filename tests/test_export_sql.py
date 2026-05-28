@@ -10,6 +10,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 
 class TestExportParquet:
@@ -97,9 +98,10 @@ class TestExportParquet:
         )
 
         levenshtein = types.ModuleType("Levenshtein")
-        setattr(levenshtein, "ratio", lambda _left, _right: 1.0)
+        cast(Any, levenshtein).ratio = lambda _left, _right: 1.0
 
         grafter = types.ModuleType("lawvm.finland.grafter")
+        grafter_patch = cast(Any, grafter)
 
         class FakeMaster:
             title = "Synthetic statute"
@@ -108,25 +110,23 @@ class TestExportParquet:
             def serialize_text(self) -> str:
                 return "synthetic replay text"
 
-        setattr(grafter, "replay_xml", lambda *args, **kwargs: FakeMaster())
-        setattr(grafter, "get_ground_truth", lambda _statute_id: "synthetic replay text")
-        setattr(grafter, "_oracle_version_label", lambda _statute_id: "synthetic-oracle")
+        grafter_patch.replay_xml = lambda *args, **kwargs: FakeMaster()
+        grafter_patch.get_ground_truth = lambda _statute_id: "synthetic replay text"
+        grafter_patch._oracle_version_label = lambda _statute_id: "synthetic-oracle"
 
         section_keys = types.ModuleType("lawvm.tools.section_keys")
-        setattr(section_keys, "extract_ir_sections", lambda _ir: {"1": object()})
-        setattr(section_keys, "extract_oracle_sections", lambda _root: {})
-        setattr(
-            section_keys,
-            "reconcile_unique_unscoped_aliases",
-            lambda replay_sections, oracle_sections: (replay_sections, oracle_sections),
-        )
+        section_keys_patch = cast(Any, section_keys)
+        section_keys_patch.extract_ir_sections = lambda _ir: {"1": object()}
+        section_keys_patch.extract_oracle_sections = lambda _root: {}
+        section_keys_patch.reconcile_unique_unscoped_aliases = lambda replay_sections, oracle_sections: (replay_sections, oracle_sections)
 
         corpus = types.ModuleType("lawvm.finland.corpus")
+        corpus_patch = cast(Any, corpus)
 
         def fail_ground_truth_tree(_statute_id: str) -> object:
             raise RuntimeError("synthetic section diff failure")
 
-        setattr(corpus, "get_ground_truth_tree", fail_ground_truth_tree)
+        corpus_patch.get_ground_truth_tree = fail_ground_truth_tree
 
         monkeypatch.setitem(sys.modules, "Levenshtein", levenshtein)
         monkeypatch.setitem(sys.modules, "lawvm.finland.grafter", grafter)

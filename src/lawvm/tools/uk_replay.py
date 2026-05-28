@@ -953,7 +953,7 @@ def main(args: "argparse.Namespace") -> None:
             replayed_ir = base_ir
             lo_ops_out = None
         else:
-            pipeline_cls = getattr(uk_replay_module, "UKReplayPipeline")
+            pipeline_cls = uk_replay_module.UKReplayPipeline
             pipeline = pipeline_cls(_REPO_ROOT)
             ops = pipeline.compile_ops_for_statute(
                 statute_id,

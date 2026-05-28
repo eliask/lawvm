@@ -405,12 +405,12 @@ def test_ee_corpus_run_stats_falls_back_when_archive_stats_breaks(tmp_path, caps
     import farchive
 
     original_farchive: Any = farchive.Farchive
-    setattr(cast(Any, farchive), "Farchive", FakeArchive)
+    cast(Any, farchive).Farchive = FakeArchive
     try:
         args = argparse.Namespace(db=str(db_path), json=True)
         ee_corpus.run_stats(args)
     finally:
-        setattr(cast(Any, farchive), "Farchive", original_farchive)
+        cast(Any, farchive).Farchive = original_farchive
 
     out = capsys.readouterr().out
     assert '"archive_path"' in out

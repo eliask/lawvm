@@ -202,7 +202,7 @@ def main(args: "argparse.Namespace") -> None:
     limit = getattr(args, "limit", 20)
 
     report = build_no_op_trace_report(
-        base_id=getattr(args, "base_id"),
+        base_id=args.base_id,
         data_dir=data_dir,
         index_path=index_path,
         path_filters=path_filters,

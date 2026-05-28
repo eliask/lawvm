@@ -10,7 +10,7 @@ from functools import lru_cache
 import datetime as dt
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, cast
+from typing import Dict, List, Optional, Protocol, Set, Tuple, cast
 
 import lxml.etree as etree
 
@@ -74,6 +74,11 @@ def get_corpus() -> CorpusStore:
 # Consolidated locator access
 # ---------------------------------------------------------------------------
 
+class _ArchiveWithLocators(Protocol):
+    def locators(self, pattern: str) -> list[str]:
+        ...
+
+
 def _archive_from_source(source: object) -> object | None:
     """Return the archive-like object behind a CorpusStore or transparent store."""
     archive = getattr(source, "_archive", None)
@@ -87,9 +92,10 @@ def list_cached_consolidated_locators(source: object, sid: str | None = None) ->
     archive = _archive_from_source(source)
     if archive is None or not hasattr(archive, "locators"):
         return []
+    archive_with_locators = cast(_ArchiveWithLocators, archive)
     pattern = build_consolidated_family_glob(sid=sid)
     try:
-        locators = getattr(archive, "locators")(pattern)
+        locators = archive_with_locators.locators(pattern)
     except Exception:
         return []
     return sorted(

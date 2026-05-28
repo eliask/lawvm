@@ -2299,7 +2299,7 @@ def _oracle_corpus_statute_ids(
         cache_only=cache_only,
     ):
         corpus = get_corpus_store()
-        oracle_index_fn = getattr(corpus, "oracle_path_index")
+        oracle_index_fn = corpus.oracle_path_index
         if cache_only:
             try:
                 oracle_index = oracle_index_fn()

@@ -239,8 +239,8 @@ def main(args: "argparse.Namespace") -> None:
     path_filters = list(getattr(args, "path", []) or [])
     limit = int(getattr(args, "limit", 5) or 5)
     report = _build_report(
-        base_id=getattr(args, "base_id"),
-        as_of=getattr(args, "as_of"),
+        base_id=args.base_id,
+        as_of=args.as_of,
         data_dir=data_dir,
         index_path=index_path,
         commencement_path=commencement_path,

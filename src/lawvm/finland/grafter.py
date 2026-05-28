@@ -6234,7 +6234,7 @@ def process_muutoslaki(
         # The full list is checked at the outer replay_xml level (line ~6788).
         _mutation_start = getattr(_build_result, "_mutation_cursor", 0)
         _current_events = (mutation_events_out or [])[_mutation_start:]
-        setattr(_build_result, "_mutation_cursor", len(mutation_events_out or []))
+        cast(Any, _build_result)._mutation_cursor = len(mutation_events_out or [])
         mutation_invariant_reports = build_apply_mutation_invariant_reports(_current_events)
         if mutation_invariant_reports_out is not None:
             mutation_invariant_reports_out.extend(mutation_invariant_reports)

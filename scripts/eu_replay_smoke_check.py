@@ -9,7 +9,7 @@ import io
 import json
 from contextlib import redirect_stdout
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from lawvm.tools.eu_replay import main as eu_replay_main
 
@@ -236,12 +236,14 @@ def _run_eu_replay_capture(
     old_select_manifestation_option = eu_cellar.select_manifestation_option
     old_request_url = eu_cellar._request_url
     old_ops_parser = eu_pipeline.EUOpsParser
+    pipeline_patch = cast(Any, eu_pipeline)
+    cellar_patch = cast(Any, eu_cellar)
 
     try:
-        setattr(eu_pipeline, "_request_notice", _fake_request_notice)
-        setattr(eu_cellar, "select_manifestation_option", _fake_select_manifestation_option)
-        setattr(eu_cellar, "_request_url", _fake_request_url)
-        setattr(eu_pipeline, "EUOpsParser", _NoopEUOpsParser)
+        pipeline_patch._request_notice = _fake_request_notice
+        cellar_patch.select_manifestation_option = _fake_select_manifestation_option
+        cellar_patch._request_url = _fake_request_url
+        pipeline_patch.EUOpsParser = _NoopEUOpsParser
 
         args = argparse.Namespace(
             command="eu-replay",
@@ -256,10 +258,10 @@ def _run_eu_replay_capture(
             eu_replay_main(args)
         return capture.getvalue()
     finally:
-        setattr(eu_pipeline, "_request_notice", old_request_notice)
-        setattr(eu_cellar, "select_manifestation_option", old_select_manifestation_option)
-        setattr(eu_cellar, "_request_url", old_request_url)
-        setattr(eu_pipeline, "EUOpsParser", old_ops_parser)
+        pipeline_patch._request_notice = old_request_notice
+        cellar_patch.select_manifestation_option = old_select_manifestation_option
+        cellar_patch._request_url = old_request_url
+        pipeline_patch.EUOpsParser = old_ops_parser
 
 
 def run_offline_smoke(
