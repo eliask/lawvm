@@ -5182,7 +5182,7 @@ def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
     if abs(len(left) - len(right)) > 1:
         return False
     if len(left) == len(right):
-        return sum(a != b for a, b in zip(left, right)) == 1
+        return sum(a != b for a, b in zip(left, right, strict=True)) == 1
     if len(left) > len(right):
         left, right = right, left
     mismatch_seen = False
@@ -6040,7 +6040,7 @@ def _ee_global_text_replace(
             new_text = node.text
         new_children = [_walk(c, node_path) for c in node.children]
         text_changed = new_text != node.text
-        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children, strict=True))
         if not text_changed and not children_changed:
             return node  # no change — preserve identity for change detection
         return IRNode(
@@ -6082,7 +6082,7 @@ def _ee_global_text_replace_with_spec(
             new_text = node.text
         new_children = [_walk(child, node_path) for child in node.children]
         text_changed = new_text != node.text
-        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children, strict=True))
         if not text_changed and not children_changed:
             return node
         return IRNode(
@@ -6171,7 +6171,7 @@ def _ee_global_generic_minister_plural_replace(
             new_text = node.text
         new_children = [_walk(c, node_path) for c in node.children]
         text_changed = new_text != node.text
-        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children, strict=True))
         if not text_changed and not children_changed:
             return node
         return IRNode(
@@ -7650,7 +7650,7 @@ def _ee_apply_op(
                         new_text = node.text
                     new_children = [_walk_case_inflected(c, chapter_label, node_path) for c in node.children]
                     text_changed = new_text != node.text
-                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children, strict=True))
                     if not text_changed and not children_changed:
                         return node
                     return IRNode(
@@ -7683,7 +7683,7 @@ def _ee_apply_op(
                         new_text = node.text
                     new_children = [_walk_normitehniline(c, node_path) for c in node.children]
                     text_changed = new_text != node.text
-                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children, strict=True))
                     if not text_changed and not children_changed:
                         return node
                     return IRNode(
@@ -7739,7 +7739,7 @@ def _ee_apply_op(
                         new_text = node.text
                     new_children = [_walk_scoped(c, chapter_label, node_path) for c in node.children]
                     text_changed = new_text != node.text
-                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children, strict=True))
                     if not text_changed and not children_changed:
                         return node
                     return IRNode(
