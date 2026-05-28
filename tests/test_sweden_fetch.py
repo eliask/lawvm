@@ -22,6 +22,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.sweden.fetch import (
     _ArchiveLike,
+    _normalize_compare_text,
     _reverse_patch_se_available_later_chain,
     analyze_se_official_replay_feasibility,
     attach_official_artifacts_to_bundle,
@@ -104,6 +105,13 @@ from lawvm.sweden.grafter import (
     se_statute_invariant_violation_records,
     se_statute_invariant_violations,
 )
+
+
+def test_se_compare_text_normalization_uses_named_presentation_projection() -> None:
+    assert (
+        _normalize_compare_text("1 Exempel – text 1. med nummer Förordning (2026:280).")
+        == "Exempel - text med nummer"
+    )
 
 
 @dataclass
