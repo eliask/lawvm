@@ -1609,11 +1609,11 @@ def test_compile_fi_preserves_payload_completeness_witness_detail(
         "target_norm": "35",
         "target_chapter": "",
         "payload_completeness_kind": "sparse_certified",
-        "reasons": ["tail_omission_payload"],
+        "reasons": ("tail_omission_payload",),
         "tail_policy": "preserve_unstated_tail",
         "detail": {
             "payload_completeness_kind": "sparse_certified",
-            "reasons": ["tail_omission_payload"],
+            "reasons": ("tail_omission_payload",),
             "tail_policy": "preserve_unstated_tail",
             "has_omission": True,
         },
@@ -2113,7 +2113,7 @@ def test_compile_fi_surfaces_sparse_leftovers_as_projection_rows(
     assert len(leftover_projection_rows) == 1
     assert leftover_projection_rows[0]["source"] == "1993/805"
     assert cast(dict[str, Any], leftover_projection_rows[0]["detail"])["target_norm"] == "35"
-    assert cast(dict[str, Any], leftover_projection_rows[0]["detail"])["unassigned_slots"] == ["2:2", "3:(unlabeled)"]
+    assert cast(dict[str, Any], leftover_projection_rows[0]["detail"])["unassigned_slots"] == ("2:2", "3:(unlabeled)")
 
 
 def test_compile_fi_surfaces_sparse_slot_bindings_as_projection_rows(
@@ -2753,7 +2753,7 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
     assert len(unowned) == 1
     assert unowned[0].detail["reason_code"] == "plain_number_not_owned_by_insert_fallback"
     assert unowned[0].detail["num_text"] == "5 §"
-    assert unowned[0].detail["accepted_insert_targets"] == ["5a"]
+    assert unowned[0].detail["accepted_insert_targets"] == ("5a",)
 
     reasons = strict_fail_reasons_from_finding_ledger(
         default_finland_strict_profile(),
