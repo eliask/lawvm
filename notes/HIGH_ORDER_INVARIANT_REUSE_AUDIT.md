@@ -372,6 +372,9 @@ Recent improvement:
 - shared replay summary/checkpoint contracts now validate required IDs, status
   fields, non-negative counts, replay text-view shape, and checkpoint bounds at
   construction time.
+- branch/proposal impact projections now validate their UI/API envelope at
+  construction time: rows require a status and mapping detail, and projections
+  require a real `LegalBranch`, status, row records, and mapping detail.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including

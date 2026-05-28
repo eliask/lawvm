@@ -38,6 +38,10 @@ class BranchImpactRow:
             raise ValueError("BranchImpactRow.edge_kind must be non-empty")
         if not self.target_statute_id:
             raise ValueError("BranchImpactRow.target_statute_id must be non-empty")
+        if not self.status:
+            raise ValueError("BranchImpactRow.status must be non-empty")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("BranchImpactRow.detail must be a mapping")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -54,6 +58,16 @@ class BranchImpactProjection:
     status: str = "ok"
     message: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.branch, LegalBranch):
+            raise ValueError("BranchImpactProjection.branch must be a LegalBranch")
+        if not self.status:
+            raise ValueError("BranchImpactProjection.status must be non-empty")
+        if not all(isinstance(row, BranchImpactRow) for row in self.rows):
+            raise ValueError("BranchImpactProjection.rows must contain BranchImpactRow records")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("BranchImpactProjection.detail must be a mapping")
 
     def to_dict(self) -> dict[str, Any]:
         return {
