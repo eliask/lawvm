@@ -24,6 +24,7 @@ tests/diagnostics, but not a primary public product API.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any, Dict, List, Literal, Mapping, TypedDict
 
 import re
@@ -135,9 +136,7 @@ def check_temporary_overlay_consistency(timelines: Timelines) -> List[str]:
         # Check for overlapping temporaries
         # Sort by effective date
         sorted_temps = sorted(temporaries, key=lambda v: (v.effective, v.enacted))
-        for i in range(len(sorted_temps) - 1):
-            a = sorted_temps[i]
-            b = sorted_temps[i + 1]
+        for a, b in pairwise(sorted_temps):
             # a is active in [a.effective, a.expires)
             # b is active in [b.effective, b.expires)
             # They overlap if a.expires > b.effective (and both have expires)
@@ -575,9 +574,7 @@ def check_all_timeline_invariants_typed(
                 )
 
         sorted_temps = sorted(temporaries, key=lambda v: (v.effective, v.enacted))
-        for i in range(len(sorted_temps) - 1):
-            a = sorted_temps[i]
-            b = sorted_temps[i + 1]
+        for a, b in pairwise(sorted_temps):
             if a.expires and b.effective < a.expires:
                 typed_violations.append(
                     _typed_violation_from_address(

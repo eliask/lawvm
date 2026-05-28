@@ -24,6 +24,7 @@ import warnings
 import string
 from dataclasses import replace as dc_replace
 from datetime import date, timedelta
+from itertools import pairwise
 from typing import Any, List, cast
 
 import pytest
@@ -245,10 +246,10 @@ def test_timeline_versions_are_monotonically_ordered(statute: IRStatute) -> None
     """Versions within each ProvisionTimeline are in non-decreasing effective date order."""
     timelines = compile_timelines(statute, [])
     for addr, tl in timelines.items():
-        for i in range(len(tl.versions) - 1):
-            assert tl.versions[i].effective <= tl.versions[i + 1].effective, (
-                f"Timeline {addr}: version {i} effective {tl.versions[i].effective!r} "
-                f"> version {i+1} effective {tl.versions[i+1].effective!r}"
+        for i, (left_version, right_version) in enumerate(pairwise(tl.versions)):
+            assert left_version.effective <= right_version.effective, (
+                f"Timeline {addr}: version {i} effective {left_version.effective!r} "
+                f"> version {i+1} effective {right_version.effective!r}"
             )
 
 

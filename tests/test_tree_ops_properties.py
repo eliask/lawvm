@@ -27,6 +27,7 @@ C. Omission merge:
 from __future__ import annotations
 
 import string
+from itertools import pairwise
 from typing import List, Optional, Tuple, cast
 
 from hypothesis import given, settings, assume
@@ -533,10 +534,10 @@ def test_insert_sorted_maintains_sort_order(body: IRNode, new_label: str, new_te
     result = insert_sorted(body, [], new_section)
 
     keys = _all_sort_keys(result, "section")
-    for i in range(len(keys) - 1):
-        assert keys[i] <= keys[i + 1], (
+    for i, (left_key, right_key) in enumerate(pairwise(keys)):
+        assert left_key <= right_key, (
             f"Sort order violated after insert: position {i}: "
-            f"{keys[i]} > {keys[i + 1]}. "
+            f"{left_key} > {right_key}. "
             f"Labels: {_collect_labels(result, 'section')}"
         )
 

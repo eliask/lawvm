@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import pairwise
 import re
 from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple
 
@@ -1157,8 +1158,8 @@ def iter_tree_invariant_violations(
             for kind, labels in by_kind.items():
                 if kind in _ORDERED_INVARIANT_KINDS:
                     keys = [_sort_key(label) for label in labels]
-                    for i in range(len(keys) - 1):
-                        if keys[i] > keys[i + 1]:
+                    for i, (left_key, right_key) in enumerate(pairwise(keys)):
+                        if left_key > right_key:
                             yield TreeInvariantViolation(
                                 kind="sort_order",
                                 path=path,

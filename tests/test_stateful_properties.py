@@ -12,6 +12,7 @@ Run:
 from __future__ import annotations
 
 import string
+from itertools import pairwise
 from typing import List, Optional, Set
 
 from hypothesis import settings
@@ -141,10 +142,10 @@ class TreeOpsStateMachine(RuleBasedStateMachine):
         """Section labels are in _default_sort_key order."""
         section_labels = [c.label for c in self.tree.children if c.kind == IRNodeKind.SECTION and c.label is not None]
         keys = [_default_sort_key(lbl) for lbl in section_labels]
-        for i in range(len(keys) - 1):
-            assert keys[i] <= keys[i + 1], (
+        for i, (left_key, right_key) in enumerate(pairwise(keys)):
+            assert left_key <= right_key, (
                 f"Section labels out of order at position {i}: "
-                f"{section_labels[i]} ({keys[i]}) > {section_labels[i + 1]} ({keys[i + 1]})"
+                f"{section_labels[i]} ({left_key}) > {section_labels[i + 1]} ({right_key})"
             )
 
     @invariant()
@@ -270,9 +271,9 @@ class TimelineStateMachine(RuleBasedStateMachine):
     @invariant()
     def versions_are_sorted(self) -> None:
         """Versions are in non-decreasing (effective, enacted) order."""
-        for i in range(len(self.versions) - 1):
-            a = (self.versions[i].effective, self.versions[i].enacted)
-            b = (self.versions[i + 1].effective, self.versions[i + 1].enacted)
+        for i, (left_version, right_version) in enumerate(pairwise(self.versions)):
+            a = (left_version.effective, left_version.enacted)
+            b = (right_version.effective, right_version.enacted)
             assert a <= b, f"Version ordering violated at index {i}: {a} > {b}"
 
     @invariant()
