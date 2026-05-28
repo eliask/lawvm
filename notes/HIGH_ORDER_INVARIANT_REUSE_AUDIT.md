@@ -189,6 +189,9 @@ Recent improvement:
 - `CorpusGraph` now rejects duplicate branch ids and dangling branch edge or
   lifecycle references, keeping proposal/draft graph claims internally
   referentially sound.
+- Neo4j graph export now includes branch nodes, branch would-affect edges, and
+  branch lifecycle event tables so proposal/draft graph facts have a persistent
+  export lane.
 
 ## Ranked Promotion Candidates
 

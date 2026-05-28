@@ -4,9 +4,12 @@ Exports the compiled statute graph to graph DB import formats.
 
 Outputs (Neo4j CSV bulk import format):
   nodes_statutes.csv     statute_id, title, statute_type, year, n_amendments
+  nodes_branches.csv     branch_id, authority_layer, legal_status, scenario_id, source_artifact_id, title
   rels_amends.csv        amendment_id, parent_id
   rels_delegates.csv     from_statute, from_section, to_type, eid, match_text
   rels_cites.csv         from_statute, to_statute, edge_type, from_section, to_section, count
+  rels_branch_edges.csv  branch_id, edge_kind, source_artifact_id, source_statute_id, source_unit_id, target_statute_id, target_address, operation_id
+  events_branch_lifecycle.csv  event_id, branch_id, event_kind, source_artifact_id, event_date, resulting_status, derived_enacted_source_id
 
 Usage:
     lawvm export --neo4j <output_dir>
@@ -90,6 +93,23 @@ def export_neo4j(output_dir: Path, corpus: List[str], verbose: bool = False) -> 
     )
     print(f"  {len(statute_rows):>6} statute nodes → {output_dir}/nodes_statutes.csv")
 
+    branch_rows = [branch.to_dict() for branch in cg.branches]
+    _write_csv(
+        output_dir / "nodes_branches.csv",
+        [
+            "branch_id",
+            "authority_layer",
+            "legal_status",
+            "scenario_id",
+            "parent_branch_id",
+            "source_artifact_id",
+            "title",
+            "terminated_by",
+        ],
+        branch_rows,
+    )
+    print(f"  {len(branch_rows):>6} branch nodes → {output_dir}/nodes_branches.csv")
+
     # Amendment edges
     amend_rows = [
         {"amendment_id": a, "parent_id": p}
@@ -138,6 +158,44 @@ def export_neo4j(output_dir: Path, corpus: List[str], verbose: bool = False) -> 
         cite_rows,
     )
     print(f"  {len(cite_rows):>6} citation edges → {output_dir}/rels_cites.csv")
+
+    branch_edge_rows = [edge.to_dict() for edge in cg.branch_edges]
+    _write_csv(
+        output_dir / "rels_branch_edges.csv",
+        [
+            "branch_id",
+            "edge_kind",
+            "source_artifact_id",
+            "source_statute_id",
+            "source_unit_id",
+            "target_statute_id",
+            "target_address",
+            "operation_id",
+            "authority_layer",
+            "legal_status",
+        ],
+        branch_edge_rows,
+    )
+    print(f"  {len(branch_edge_rows):>6} branch edges → {output_dir}/rels_branch_edges.csv")
+
+    lifecycle_rows = [event.to_dict() for event in cg.branch_lifecycle_events]
+    _write_csv(
+        output_dir / "events_branch_lifecycle.csv",
+        [
+            "event_id",
+            "branch_id",
+            "event_kind",
+            "source_artifact_id",
+            "event_date",
+            "resulting_status",
+            "derived_enacted_source_id",
+        ],
+        lifecycle_rows,
+    )
+    print(
+        f"  {len(lifecycle_rows):>6} branch lifecycle events "
+        f"→ {output_dir}/events_branch_lifecycle.csv"
+    )
 
 
 def _write_csv(path: Path, fieldnames: List[str], rows: List[dict]) -> None:
