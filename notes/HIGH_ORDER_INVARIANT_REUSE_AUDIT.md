@@ -265,6 +265,10 @@ Recent improvement:
   target-resolution certificate when the recovery explicitly names an alternate
   `recovery_target`, avoiding fabricated target evidence for recoveries that
   only repair source shape in place.
+- New Zealand inline text occurrence checks now share one frontend-local rule
+  set backed by core comparison-normalization validation, replacing duplicate
+  ad hoc whitespace and punctuation normalization in instruction-workqueue and
+  effect-candidate surfaces.
 
 ## Ranked Promotion Candidates
 

@@ -35,6 +35,7 @@ from lawvm.new_zealand.instruction_workqueue import (
 from lawvm.new_zealand.operation_surface import NZOperationSurfaceReport, NZOperationWitnessRow
 from lawvm.new_zealand.payload_surface import NZPayloadSurfaceReport, NZPayloadWitnessRow
 from lawvm.new_zealand.source_tree import parse_nz_source_document
+from lawvm.new_zealand.text_comparison import normalized_nz_inline_occurrence_count
 from lawvm.new_zealand.version_diff import NZArchivedVersionDateWindow, archived_xml_version_date_window
 from lawvm.new_zealand.version_diff import archived_xml_version_change_window
 
@@ -1232,10 +1233,10 @@ def _source_change_text_witness(
             on_or_after_xml_locator=window.on_or_after.xml_locator,
             target_source_path=instruction_row.latest_oracle_target_source_path,
         )
-    before_old = _normalized_occurrence_count(before_node.text, instruction_row.old_text)
-    before_new = _normalized_occurrence_count(before_node.text, instruction_row.new_text)
-    after_old = _normalized_occurrence_count(after_node.text, instruction_row.old_text)
-    after_new = _normalized_occurrence_count(after_node.text, instruction_row.new_text)
+    before_old = normalized_nz_inline_occurrence_count(before_node.text, instruction_row.old_text)
+    before_new = normalized_nz_inline_occurrence_count(before_node.text, instruction_row.new_text)
+    after_old = normalized_nz_inline_occurrence_count(after_node.text, instruction_row.old_text)
+    after_new = normalized_nz_inline_occurrence_count(after_node.text, instruction_row.new_text)
     status = _source_change_text_status(
         before_old=before_old,
         before_new=before_new,
@@ -1306,21 +1307,6 @@ def _source_change_text_status(
     if before_old > 0 and after_new > 0:
         return "partial_text_change_observed"
     return "text_change_not_observed"
-
-
-def _normalized_occurrence_count(haystack: str, needle: str) -> int:
-    normalized_haystack = _normalized_text(haystack)
-    normalized_needle = _normalized_text(needle)
-    if not normalized_needle:
-        return 0
-    return normalized_haystack.count(normalized_needle)
-
-
-def _normalized_text(text: str) -> str:
-    normalized = " ".join(text.split())
-    normalized = re.sub(r"\s+([,.;:])", r"\1", normalized)
-    normalized = re.sub(r"([(])\s+", r"\1", normalized)
-    return normalized
 
 
 def _repeal_payload_corroboration(
