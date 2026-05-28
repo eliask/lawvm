@@ -9,8 +9,9 @@ not read live replay state or mutate IR.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, TypeAlias
 
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.mutation_events import (
     DeclaredMutationAllowance,
     MutationEvent as ApplyMutationEvent,
@@ -20,6 +21,9 @@ from lawvm.core.mutation_events import (
 from lawvm.core.tree_ops import Path
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 
+TreePaths: TypeAlias = tuple[TreePath, ...]
+RenumberedTreePaths: TypeAlias = tuple[tuple[TreePath, TreePath], ...]
+
 
 @dataclass(frozen=True)
 class ApplyMutationAccountingResult:
@@ -27,9 +31,9 @@ class ApplyMutationAccountingResult:
     op_id: str
     helper: str
     touched_count: int = 0
-    allowed_roots: tuple[tuple[tuple[str, str], ...], ...] = ()
-    out_of_scope_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    allowed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+    allowed_roots: TreePaths = ()
+    out_of_scope_paths: TreePaths = ()
+    allowed_paths: TreePaths = ()
     matched_allowance_rule_ids: tuple[str, ...] = ()
 
     def as_violation_string(self) -> str:
@@ -48,26 +52,26 @@ class ApplyMutationInvariantReport:
     op_id: str
     helper: str
     outcome: str
-    touched_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    changed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    allowed_roots: tuple[tuple[tuple[str, str], ...], ...] = ()
-    allowed_effect_region_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    declared_allowance_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    declared_recovery_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+    touched_paths: TreePaths = ()
+    changed_paths: TreePaths = ()
+    allowed_roots: TreePaths = ()
+    allowed_effect_region_paths: TreePaths = ()
+    declared_allowance_paths: TreePaths = ()
+    declared_recovery_paths: TreePaths = ()
     declared_recovery_rule_ids: tuple[str, ...] = ()
-    declared_migration_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+    declared_migration_paths: TreePaths = ()
     declared_migration_rule_ids: tuple[str, ...] = ()
-    permitted_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    covered_changed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    unexplained_changed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    allowed_non_target_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    out_of_scope_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+    permitted_paths: TreePaths = ()
+    covered_changed_paths: TreePaths = ()
+    unexplained_changed_paths: TreePaths = ()
+    allowed_non_target_paths: TreePaths = ()
+    out_of_scope_paths: TreePaths = ()
     matched_allowance_rule_ids: tuple[str, ...] = ()
     path_set_invariant_holds: bool = True
     results: tuple[ApplyMutationAccountingResult, ...] = ()
 
 
-def _path_to_tuple(path: Path | None) -> tuple[tuple[str, str], ...] | None:
+def _path_to_tuple(path: Path | None) -> TreePath | None:
     if path is None:
         return None
     return tuple((str(kind), str(label)) for kind, label in path)
@@ -76,10 +80,10 @@ def _path_to_tuple(path: Path | None) -> tuple[tuple[str, str], ...] | None:
 def _resolved_target_path_for_event(
     op: AmendmentOp,
     sec_path: Path | None,
-) -> tuple[tuple[str, str], ...] | None:
+) -> TreePath | None:
     if sec_path is None:
         return None
-    resolved: tuple[tuple[str, str], ...] = tuple(sec_path)
+    resolved: TreePath = tuple(sec_path)
     if op.target_paragraph is not None:
         resolved = resolved + (("subsection", str(op.target_paragraph)),)
     if op.target_item is not None:
@@ -92,7 +96,7 @@ def _resolved_target_path_for_event(
 def _resolved_target_path_for_rop_event(
     rop: ResolvedOp,
     sec_path: Path | None,
-) -> tuple[tuple[str, str], ...] | None:
+) -> TreePath | None:
     """Resolve mutation-event target identity from late-waist fields."""
     resolved_address_path = _target_address_path_for_rop_event(rop)
     if resolved_address_path is not None:
@@ -103,7 +107,7 @@ def _resolved_target_path_for_rop_event(
 def _target_address_path_for_rop_event(
     rop: ResolvedOp,
     path_hint: Path | None = None,
-) -> tuple[tuple[str, str], ...] | None:
+) -> TreePath | None:
     """Resolve mutation-event identity from the effective ResolvedOp target address."""
     address = rop.resolved_target_address
     if address is not None and address.path:
@@ -117,16 +121,16 @@ def _emit_apply_mutation_event(
     op: AmendmentOp,
     helper: str,
     outcome: str,
-    resolved_target_path: tuple[tuple[str, str], ...] | None = None,
-    parent_path: tuple[tuple[str, str], ...] | None = None,
+    resolved_target_path: TreePath | None = None,
+    parent_path: TreePath | None = None,
     declared_allowances: tuple[DeclaredMutationAllowance, ...] = (),
-    consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    created_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    removed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    renumbered_paths: tuple[tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]], ...] = (),
-    placeholder_created_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    placeholder_consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
+    consumed_paths: TreePaths = (),
+    created_paths: TreePaths = (),
+    removed_paths: TreePaths = (),
+    replaced_paths: TreePaths = (),
+    renumbered_paths: RenumberedTreePaths = (),
+    placeholder_created_paths: TreePaths = (),
+    placeholder_consumed_paths: TreePaths = (),
     used_fallback_tags: tuple[str, ...] = (),
     failure_reason: str = "",
     reason_code: str = "",
@@ -163,16 +167,16 @@ def _emit_apply_mutation_event_for_rop(
     rop: ResolvedOp,
     helper: str,
     outcome: str,
-    resolved_target_path: tuple[tuple[str, str], ...] | None = None,
-    parent_path: tuple[tuple[str, str], ...] | None = None,
+    resolved_target_path: TreePath | None = None,
+    parent_path: TreePath | None = None,
     declared_allowances: tuple[DeclaredMutationAllowance, ...] = (),
-    consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    created_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    removed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    renumbered_paths: tuple[tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]], ...] = (),
-    placeholder_created_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
-    placeholder_consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
+    consumed_paths: TreePaths = (),
+    created_paths: TreePaths = (),
+    removed_paths: TreePaths = (),
+    replaced_paths: TreePaths = (),
+    renumbered_paths: RenumberedTreePaths = (),
+    placeholder_created_paths: TreePaths = (),
+    placeholder_consumed_paths: TreePaths = (),
     used_fallback_tags: tuple[str, ...] = (),
     failure_reason: str = "",
     reason_code: str = "",
@@ -241,7 +245,7 @@ def _emit_legacy_dispatch_fallback_event(
     )
 
 
-def _event_touched_paths(event: ApplyMutationEvent) -> tuple[tuple[tuple[str, str], ...], ...]:
+def _event_touched_paths(event: ApplyMutationEvent) -> TreePaths:
     return mutation_event_touched_paths(event)
 
 
@@ -254,18 +258,18 @@ def build_apply_mutation_invariant_reports(
         touched_paths = _event_touched_paths(event)
         path_report = build_mutation_event_path_set_report(event, ())
         results: list[ApplyMutationAccountingResult] = []
-        allowed_roots: tuple[tuple[tuple[str, str], ...], ...] = ()
+        allowed_roots: TreePaths = ()
         declared_allowance_paths = path_report.declared_allowance_paths
         declared_recovery_paths = path_report.declared_recovery_paths
         declared_recovery_rule_ids = path_report.declared_recovery_rule_ids
         declared_migration_paths = path_report.declared_migration_paths
         declared_migration_rule_ids = path_report.declared_migration_rule_ids
-        allowed_effect_region_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        permitted_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        covered_changed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        unexplained_changed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        allowed_non_target_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-        out_of_scope_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
+        allowed_effect_region_paths: TreePaths = ()
+        permitted_paths: TreePaths = ()
+        covered_changed_paths: TreePaths = ()
+        unexplained_changed_paths: TreePaths = ()
+        allowed_non_target_paths: TreePaths = ()
+        out_of_scope_paths: TreePaths = ()
         matched_allowance_rule_ids: tuple[str, ...] = ()
         path_set_invariant_holds = True
         if event.outcome == "skipped":
