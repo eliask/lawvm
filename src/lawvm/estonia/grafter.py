@@ -5127,12 +5127,12 @@ def _ee_remove_omitted_inserted_item_labels_from_replace_range(
             continue
         if child.label in explicit_labels or not _is_inserted_numbered_label(child.label):
             continue
-        child_key = tree_ops._default_sort_key(child.label)
+        child_key = tree_ops.default_label_sort_key(child.label)
         for start, end in selection_meta.plain_numeric_ranges:
             if not (str(start).isdigit() and str(end).isdigit()):
                 continue
-            start_key = tree_ops._default_sort_key(str(start))
-            end_key = tree_ops._default_sort_key(str(end))
+            start_key = tree_ops.default_label_sort_key(str(start))
+            end_key = tree_ops.default_label_sort_key(str(end))
             if start_key > end_key:
                 start_key, end_key = end_key, start_key
             if start_key <= child_key <= end_key:
@@ -5169,7 +5169,7 @@ def _ee_remove_omitted_inserted_item_labels_from_replace_range(
         detail={
             "target": str(op.target),
             "omitted_inserted_item_labels": ",".join(
-                sorted(omitted_labels, key=tree_ops._default_sort_key)
+                sorted(omitted_labels, key=tree_ops.default_label_sort_key)
             ),
         },
     )
@@ -5611,7 +5611,7 @@ def _subsection_labels_implied_by_plain_range_repeal(
                 base_num = int(base_raw)
                 if start_num <= base_num <= end_num:
                     implied.add(child.label)
-    return sorted(implied, key=tree_ops._default_sort_key)
+    return sorted(implied, key=tree_ops.default_label_sort_key)
 
 
 def _section_labels_implied_by_plain_range_repeal(
@@ -5644,7 +5644,7 @@ def _section_labels_implied_by_plain_range_repeal(
             base_num = int(base_raw)
             if start_num <= base_num <= end_num:
                 implied.add(child.label)
-    return sorted(implied, key=tree_ops._default_sort_key)
+    return sorted(implied, key=tree_ops.default_label_sort_key)
 
 
 def _address_to_path(target) -> tree_ops.Path:
@@ -7792,7 +7792,7 @@ def _ee_apply_op(
                 without_source,
                 dest_parent or [],
                 moved_node,
-                sort_key_fn=tree_ops._default_sort_key,
+                sort_key_fn=tree_ops.default_label_sort_key,
             )
         if dest_full is not None:
             return tree_ops.replace_at(without_source, dest_full, moved_node)
@@ -7800,7 +7800,7 @@ def _ee_apply_op(
             without_source,
             dest_parent or [],
             moved_node,
-            sort_key_fn=tree_ops._default_sort_key,
+            sort_key_fn=tree_ops.default_label_sort_key,
         )
 
     # ── Heading rename (chapter or section) ─────────────────────────────────
@@ -8146,28 +8146,28 @@ def _ee_apply_op(
                         for start, end in selection_meta.label_ranges:
                             if start not in live_subsection_labels or end not in live_subsection_labels:
                                 continue
-                            start_key = tree_ops._default_sort_key(start)
-                            end_key = tree_ops._default_sort_key(end)
+                            start_key = tree_ops.default_label_sort_key(start)
+                            end_key = tree_ops.default_label_sort_key(end)
                             if start_key > end_key:
                                 start_key, end_key = end_key, start_key
                             for label in live_subsection_labels:
-                                label_key = tree_ops._default_sort_key(label)
+                                label_key = tree_ops.default_label_sort_key(label)
                                 if start_key <= label_key <= end_key:
                                     implied_labels_set.add(label)
                         for start, end in selection_meta.plain_numeric_ranges:
                             if not (str(start).isdigit() and str(end).isdigit()):
                                 continue
-                            start_key = tree_ops._default_sort_key(str(start))
-                            end_key = tree_ops._default_sort_key(str(end))
+                            start_key = tree_ops.default_label_sort_key(str(start))
+                            end_key = tree_ops.default_label_sort_key(str(end))
                             if start_key > end_key:
                                 start_key, end_key = end_key, start_key
                             for label in live_subsection_labels:
                                 if label in implied_labels_set:
                                     continue
-                                label_key = tree_ops._default_sort_key(label)
+                                label_key = tree_ops.default_label_sort_key(label)
                                 if start_key <= label_key <= end_key:
                                     implied_labels_set.add(label)
-                        implied_labels = sorted(implied_labels_set, key=tree_ops._default_sort_key)
+                        implied_labels = sorted(implied_labels_set, key=tree_ops.default_label_sort_key)
                     else:
                         implied_labels = []
                     if len(implied_labels) > 1 and target_node.label in implied_labels:
@@ -8321,7 +8321,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops._default_sort_key,
+                        sort_key_fn=tree_ops.default_label_sort_key,
                     )
             if full_path is None and path and path[-1][0] == "item":
                 recovered_body = _ee_replace_inline_item_in_singleton_subsection(
@@ -8912,7 +8912,7 @@ def _ee_apply_op(
                                 updated_body,
                                 parent_path,
                                 sibling,
-                                sort_key_fn=tree_ops._default_sort_key,
+                                sort_key_fn=tree_ops.default_label_sort_key,
                             )
                 if target_node.kind == IRNodeKind.ITEM:
                     updated_body = _ee_remove_omitted_inserted_item_labels_from_replace_range(
@@ -8944,7 +8944,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops._default_sort_key,
+                        sort_key_fn=tree_ops.default_label_sort_key,
                     )
                 return body
             elif kind == "chapter":
@@ -8992,7 +8992,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops._default_sort_key,
+                        sort_key_fn=tree_ops.default_label_sort_key,
                     )
                 return body
             # For whole-division inserts (e.g. "3. peatükki täiendatakse 2. jaoga"),
@@ -9069,7 +9069,7 @@ def _ee_apply_op(
                         body,
                         parent_path,
                         new_node,
-                        sort_key_fn=tree_ops._default_sort_key,
+                        sort_key_fn=tree_ops.default_label_sort_key,
                     )
                 return body
             # For section-level inserts, parse payload into structured form.
@@ -9404,7 +9404,7 @@ def _ee_apply_op(
                             shifted_parent = _shift_numbered_subsections(parent_node, label)
                             body = tree_ops.replace_at(body, parent_path, shifted_parent)
                             return tree_ops.insert_sorted(
-                                body, parent_path, new_node, sort_key_fn=tree_ops._default_sort_key
+                                body, parent_path, new_node, sort_key_fn=tree_ops.default_label_sort_key
                             )
                         if new_node.children:
                             merged_children = list(target_node.children)
@@ -9416,7 +9416,7 @@ def _ee_apply_op(
                                     merged_children.append(child)
                             merged_children.sort(
                                 key=lambda child: (
-                                    tree_ops._default_sort_key(child.label),
+                                    tree_ops.default_label_sort_key(child.label),
                                     child.kind,
                                 )
                             )
@@ -9470,7 +9470,7 @@ def _ee_apply_op(
                         if existing_items:
                             ordered = sorted(
                                 existing_items + [new_node],
-                                key=lambda child: tree_ops._default_sort_key(child.label),
+                                key=lambda child: tree_ops.default_label_sort_key(child.label),
                             )
                             insert_idx = next(
                                 (
@@ -9504,7 +9504,7 @@ def _ee_apply_op(
                     body,
                     parent_path,
                     new_node,
-                    sort_key_fn=tree_ops._default_sort_key,
+                    sort_key_fn=tree_ops.default_label_sort_key,
                 )
                 if kind == "item":
                     updated_parent = tree_ops.resolve(updated_body, parent_path)

@@ -40,12 +40,14 @@ from lawvm.core.tree_ops import (
     _default_sort_key,
     build_label_index,
     check_invariants,
+    default_label_sort_key,
     find_flattened_sublist_warnings,
     find_text_duplication_warnings,
     find,
     format_invariant_path,
     insert_sorted,
     iter_tree_invariant_violations,
+    normalized_label_key,
     remove_at,
     replace_at,
     resolve,
@@ -1395,6 +1397,11 @@ def test_check_invariants_no_false_positive_for_distinct_normalized_labels() -> 
     violations = check_invariants(body)
     norm_dupes = [v for v in violations if "normalized-duplicate" in v]
     assert norm_dupes == [], f"Unexpected normalized-duplicate violation: {norm_dupes}"
+
+
+def test_public_label_helpers_project_legacy_core_behavior() -> None:
+    assert normalized_label_key(" 1-A ") == "1a"
+    assert default_label_sort_key("12b") == _default_sort_key("12b")
 
 
 def test_iter_tree_invariant_violations_projects_legacy_messages() -> None:

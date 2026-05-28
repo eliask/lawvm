@@ -2450,7 +2450,7 @@ def _no_sort_key(label: Optional[str]) -> tuple[int, str, int]:
     roman = _roman_to_int(normalized)
     if roman is not None:
         return (roman, "", 0)
-    return tree_ops._default_sort_key(normalized)
+    return tree_ops.default_label_sort_key(normalized)
 
 
 def _resolve_no_path(body: IRNode, target: LegalAddress) -> Optional[tree_ops.Path]:
