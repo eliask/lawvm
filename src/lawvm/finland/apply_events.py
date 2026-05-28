@@ -12,30 +12,14 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
 from lawvm.core.mutation_boundary import dedupe_tree_paths, partition_changed_paths, path_has_prefix
+from lawvm.core.mutation_events import (
+    DeclaredMutationAllowance,
+    MutationEvent as ApplyMutationEvent,
+    mutation_event_declared_allowance_paths,
+    mutation_event_touched_paths,
+)
 from lawvm.core.tree_ops import Path
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
-
-
-@dataclass(frozen=True)
-class ApplyMutationEvent:
-    op_id: str
-    source_statute: str
-    action: str
-    helper: str
-    outcome: str
-    resolved_target_path: tuple[tuple[str, str], ...] | None = None
-    parent_path: tuple[tuple[str, str], ...] | None = None
-    declared_allowances: tuple["DeclaredMutationAllowance", ...] = ()
-    consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    created_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    removed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    renumbered_paths: tuple[tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]], ...] = ()
-    placeholder_created_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    placeholder_consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    used_fallback_tags: tuple[str, ...] = ()
-    failure_reason: str = ""
-    reason_code: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,14 +66,6 @@ class ApplyMutationInvariantReport:
     matched_allowance_rule_ids: tuple[str, ...] = ()
     path_set_invariant_holds: bool = True
     results: tuple[ApplyMutationAccountingResult, ...] = ()
-
-
-@dataclass(frozen=True)
-class DeclaredMutationAllowance:
-    kind: str
-    paths: tuple[tuple[tuple[str, str], ...], ...] = ()
-    rule_id: str = ""
-    note: str = ""
 
 
 def _path_to_tuple(path: Path | None) -> tuple[tuple[str, str], ...] | None:
@@ -276,38 +252,11 @@ def _path_is_descendant_or_same(
 
 
 def _event_touched_paths(event: ApplyMutationEvent) -> tuple[tuple[tuple[str, str], ...], ...]:
-    touched: list[tuple[tuple[str, str], ...]] = []
-    touched.extend(event.consumed_paths)
-    touched.extend(event.created_paths)
-    touched.extend(event.removed_paths)
-    touched.extend(event.replaced_paths)
-    touched.extend(event.placeholder_created_paths)
-    touched.extend(event.placeholder_consumed_paths)
-    for old_path, new_path in event.renumbered_paths:
-        touched.append(old_path)
-        touched.append(new_path)
-    deduped: list[tuple[tuple[str, str], ...]] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    for path in touched:
-        if path in seen:
-            continue
-        seen.add(path)
-        deduped.append(path)
-    return tuple(deduped)
+    return mutation_event_touched_paths(event)
 
 
 def _event_declared_allowance_paths(event: ApplyMutationEvent) -> tuple[tuple[tuple[str, str], ...], ...]:
-    allowed: list[tuple[tuple[str, str], ...]] = []
-    for allowance in event.declared_allowances:
-        allowed.extend(path for path in allowance.paths if path)
-    deduped: list[tuple[tuple[str, str], ...]] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    for path in allowed:
-        if path in seen:
-            continue
-        seen.add(path)
-        deduped.append(path)
-    return tuple(deduped)
+    return mutation_event_declared_allowance_paths(event)
 
 
 def _allowance_paths_by_kind(
