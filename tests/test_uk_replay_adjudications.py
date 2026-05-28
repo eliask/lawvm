@@ -709,6 +709,45 @@ def test_replay_uk_ops_emit_mutation_event_for_sibling_renumber() -> None:
     assert event.replaced_paths == ()
 
 
+def test_same_parent_sibling_renumber_reindexes_warm_eid_lookup() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    text="Section 9 text.",
+                    attrs={"eId": "section-9"},
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=[])
+    warm_node, _warm_parent, _warm_idx = executor._find_node_and_parent_statute("section-9")
+    assert warm_node is not None
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk-test-renumber-section",
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "9"),)),
+            destination=LegalAddress(path=(("section", "8"),)),
+            source=_source(),
+            sequence=1,
+        )
+    )
+
+    old_node, _old_parent, _old_idx = executor._find_node_and_parent_statute("section-9")
+    new_node, _new_parent, _new_idx = executor._find_node_and_parent_statute("section-8")
+    assert old_node is None
+    assert new_node is not None
+    assert new_node.label == "8"
+    assert executor._structure_mutation_serial == 1
+
+
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
     assert _uk_definition_term_lexical_variants("") == ()
     assert _uk_definition_term_lexical_variants("education") == ("educational",)

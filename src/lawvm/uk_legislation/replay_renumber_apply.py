@@ -44,7 +44,14 @@ class _RenumberReplaySelf(Protocol):
 
     def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None: ...
 
-    def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+    def _add_eid_lookup_subtree(
+        self,
+        node: UKMutableNode,
+        parent: UKMutableNode | None,
+        idx: int | None,
+    ) -> None: ...
+
+    def _note_structure_mutation(self) -> None: ...
 
     def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None: ...
 
@@ -218,6 +225,12 @@ class UKReplayRenumberApplyMixin:
         replay._remove_eid_lookup_subtree(source_node)
         source_parent.children.pop(source_idx)
         uk_insert_child_sorted(source_parent, moved)
+        try:
+            moved_idx = source_parent.children.index(moved)
+        except ValueError:
+            moved_idx = None
+        replay._add_eid_lookup_subtree(moved, source_parent, moved_idx)
+        replay._note_structure_mutation()
         replay._record_renumber_node_mutation_event(
             old_path=old_path,
             new_node=moved,

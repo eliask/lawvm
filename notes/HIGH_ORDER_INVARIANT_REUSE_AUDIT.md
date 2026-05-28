@@ -124,6 +124,9 @@ Recent improvement:
 - UK same-parent sibling renumber replay now emits a renumber-specific mutation
   event with old and new paths instead of reporting the destination as an
   ordinary insertion.
+- UK same-parent sibling renumber replay now also reindexes the moved subtree
+  and bumps the structure-mutation serial, so warm eId lookups and
+  post-renumber invariant diagnostics observe the changed tree.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
   the core mutation-boundary surface instead of Finland-local apply helpers.
 - selected UK production path annotations now use the shared `TreePath` alias
