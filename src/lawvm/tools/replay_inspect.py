@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any, Literal, Optional
 
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.finland.grafter import replay_xml
 
 
-def _format_path(path: tuple[tuple[str, str], ...]) -> str:
+def _format_path(path: TreePath) -> str:
     if not path:
         return "body"
     return "body / " + " / ".join(f"{kind}:{label}" for kind, label in path)

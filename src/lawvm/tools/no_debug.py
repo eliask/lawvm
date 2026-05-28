@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, TYPE_CHECKING, cast
 
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.tools.report_models import (
     NorwayCompareProjectionItem,
     NorwayDivergenceItem,
@@ -22,7 +23,7 @@ def _format_address(path: list[tuple[str, str]]) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
 
 
-def _projection_address(value: object) -> tuple[tuple[str, str], ...]:
+def _projection_address(value: object) -> TreePath:
     if not isinstance(value, list):
         return ()
     address: list[tuple[str, str]] = []
