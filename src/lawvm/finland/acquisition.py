@@ -6,6 +6,8 @@ from typing import Optional, Sequence
 
 import lxml.etree as etree
 
+from lawvm.core.compile_result import StrictProfile
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.finland.citation_routing import (
     OP_KEYWORDS,
     extract_pending_amendment_target_id,
@@ -17,7 +19,6 @@ from lawvm.finland.metadata import (
     get_operative_body_repeal_candidate,
 )
 from lawvm.finland.scope import restrict_sec1_fallback_to_parent
-from lawvm.core.compile_result import StrictProfile
 
 _OPERATIVE_BODY_TAGS = {
     "section",
@@ -89,6 +90,41 @@ class AmendmentAcquisitionResult:
     rejected_lanes: tuple[tuple[str, str], ...]
     diagnostics: tuple[AcquisitionDiagnostic, ...]
     decision: OperativeLaneDecision
+
+
+def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dict[str, object]:
+    """Project operative-text lane selection through the shared source-lane carrier."""
+
+    attempts = tuple(
+        SourceLaneAttempt(
+            lane=candidate.lane,
+            status="selected" if candidate.selected else candidate.reason or "not_selected",
+            detail={
+                "usable": candidate.usable,
+                "raw_text_length": len(candidate.raw_text),
+                "normalized_text_length": len(candidate.normalized_text),
+            },
+        )
+        for candidate in result.candidates
+    )
+    return SourceLaneSelectionEvidence(
+        rule_id="fi_acquisition_operative_text_lane_selected",
+        phase="acquisition",
+        reason=result.decision.route_reason or "operative text lane selected",
+        selected_lane=result.decision.selected_lane,
+        attempts=attempts,
+        blocking=False,
+        strict_disposition="record",
+        quirks_disposition="record",
+        detail={
+            "should_apply": result.decision.should_apply,
+            "route_target_amendment_id": result.decision.route_target_amendment_id,
+            "pre_routing_sec1_requested": result.decision.pre_routing_sec1_requested,
+            "pre_routing_sec1_applied": result.decision.pre_routing_sec1_applied,
+            "post_routing_sec1_applied": result.decision.post_routing_sec1_applied,
+            "body_repeal_candidate_used": result.decision.body_repeal_candidate_used,
+        },
+    ).to_diagnostic_detail()
 
 
 def _localname(node: etree._Element) -> str:

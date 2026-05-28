@@ -18,7 +18,7 @@ from lxml import etree
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.finland.acquisition import build_amendment_acquisition_result
+from lawvm.finland.acquisition import build_amendment_acquisition_result, operative_lane_selection_evidence
 from lawvm.finland.grafter import (
     _resolve_applicable_amendment_records,
     _tree_title,
@@ -85,6 +85,7 @@ def _build_acquisition_witness(
             "target_amendment_id": result.decision.route_target_amendment_id,
         },
         "raw_operative_text_candidates": [_jsonable(candidate) for candidate in result.candidates],
+        "source_lane_selection": operative_lane_selection_evidence(result),
         "diagnostics": [_jsonable(diagnostic) for diagnostic in result.diagnostics],
         "rejected_lanes": [
             {"lane": lane, "reason": reason}

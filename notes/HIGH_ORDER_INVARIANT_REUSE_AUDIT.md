@@ -165,6 +165,9 @@ Recent improvement:
 - source-lane selection evidence now has a neutral core carrier; Sweden
   official-PDF fallback acquisition emits that shared projection while keeping
   Swedish lane policy local.
+- Finland operative-text acquisition now exposes its preamble/body/fallback
+  lane decision through the shared source-lane evidence carrier in phase
+  witnesses while leaving lane policy local.
 - source-version bracketing now has shared source-only window selectors; New
   Zealand archived XML date/change windows delegate the bracketing invariant
   while preserving NZ-specific row classes and truth-claim names.

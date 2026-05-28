@@ -98,6 +98,10 @@ def test_phase_witness_acquisition_projects_shared_acquisition_result() -> None:
     assert witness["route"]["should_apply"] == result.decision.should_apply
     assert witness["route"]["reason"] == result.decision.route_reason
     assert witness["route"]["target_amendment_id"] == result.decision.route_target_amendment_id
+    assert witness["source_lane_selection"]["family"] == "source_lane_selection"
+    assert witness["source_lane_selection"]["selected_source_lane"] == "sec1_fallback_pre_routing"
+    assert witness["source_lane_selection"]["source_lane_attempts"][1]["lane"] == "sec1_fallback"
+    assert witness["source_lane_selection"]["source_lane_attempts"][1]["status"] == "selected"
     assert witness["diagnostics"] == []
 
 
@@ -176,6 +180,10 @@ def test_phase_witness_projects_strict_blocked_acquisition_diagnostics() -> None
             "reason": "strict_profile_blocked_context_dependent_anchor_resolution",
         }
     ]
+    assert witness["source_lane_selection"]["selected_source_lane"] == "preamble"
+    assert witness["source_lane_selection"]["source_lane_attempts"][1]["status"] == (
+        "strict_profile_blocked_context_dependent_anchor_resolution"
+    )
 
 
 def test_build_amendment_acquisition_result_uses_body_lead_pre_routing_fallback() -> None:
