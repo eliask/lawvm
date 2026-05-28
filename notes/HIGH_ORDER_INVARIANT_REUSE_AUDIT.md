@@ -142,9 +142,10 @@ Recent improvement:
 - UK source-carried labelled-child text-substitution recovery now rebuilds the
   recovered parent through the same central node-replacement helper instead of
   mutating text and children in place.
-- UK node replacement now treats kind/label changes as structural mutations,
-  so label-changing replacements rescan post-op invariants instead of relying
-  only on child-shape changes.
+- UK node replacement now treats recursive kind/label shape changes as
+  structural mutations, so label-changing replacements and descendant-shape
+  replacements rescan post-op invariants instead of relying only on immediate
+  child-shape changes.
 - UK post-op invariant adjudications now include the latest same-op mutation
   event accounting summary when mutation events are being collected, making
   the causal helper, touched paths, and allowed/unexplained path partition
@@ -914,11 +915,15 @@ These are jurisdiction source semantics, not shared invariants.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
    table/schedule children-splice recorder.
-3. Promote the UK post-op invariant attribution shape into a small core
+3. Audit same-label sorted insertion helpers for destructive replacement
+   semantics. If an insert helper can replace an existing same-kind/same-label
+   node, it must either block with a conflict diagnostic or emit a replacement
+   mutation event, not an insertion event.
+4. Promote the UK post-op invariant attribution shape into a small core
    invariant-delta carrier only after another frontend has a concrete consumer;
    for now UK owns the local projection because its invariant scope pruning is
    frontend-specific.
-4. Centralize UK target-gap/absent-target diagnostic ladders only after a
+5. Centralize UK target-gap/absent-target diagnostic ladders only after a
    family-level shape is clear from real witnesses; do not collapse UK drafting
    semantics into core.
 
