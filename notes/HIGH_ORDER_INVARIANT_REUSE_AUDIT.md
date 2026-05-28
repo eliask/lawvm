@@ -43,6 +43,9 @@ Recent improvement:
 - core comparison normalization supports placeholder-equivalence rules, and
   Estonia comparison text normalization delegates execution to the core
   pipeline while keeping the EE rule taxonomy local.
+- UK replay now has an opt-in core `MutationEvent` sink for central node
+  replacements via `_replace_node_in_statute`; direct list-edit mutation sites
+  remain future work.
 
 ## Ranked Promotion Candidates
 
@@ -360,8 +363,9 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Add an opt-in UK replay debug path that emits core mutation-event records
-   from mutation sites without whole-tree snapshots.
+1. Extend UK mutation-event emission from central node replacements to direct
+   list-edit mutation sites: insert, repeal, schedule-list/table row edits, and
+   whole-act repeal.
 2. Continue replacing private `_norm` / `_default_sort_key` frontend imports
    with the public `normalized_label_key` / `default_label_sort_key` wrappers
    in small, testable batches.

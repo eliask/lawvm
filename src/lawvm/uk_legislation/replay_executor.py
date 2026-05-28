@@ -6,6 +6,7 @@ import time
 from typing import Any, List, Optional
 
 from lawvm.core.ir import IRStatute, LegalOperation
+from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
@@ -56,12 +57,15 @@ class UKReplayExecutor(
         verbose: bool = False,
         lo_ops_out: Optional[List[LegalOperation]] = None,
         adjudications_out: Optional[List[CompileAdjudication]] = None,
+        mutation_events_out: Optional[list[MutationEvent]] = None,
     ):
         self.statute = UKMutableStatute.from_irstatute(statute)
         self.eid_map = eid_map or {}
         self.text_map = text_map or {}
         self.verbose = bool(verbose)
         self.lo_ops_out = lo_ops_out  # None = don't collect snapshots
+        self.mutation_events_out = mutation_events_out
+        self._current_mutation_op: Optional[LegalOperation] = None
         self.adjudications_out = adjudications_out if adjudications_out is not None else []
         self._seen_invariant_violations = self._collect_invariant_violations()
         self._repealed_target_prefixes: set[str] = set()
@@ -82,6 +86,14 @@ class UKReplayExecutor(
             print(message)
 
     def apply_op(self, op: LegalOperation):
+        previous_mutation_op = self._current_mutation_op
+        self._current_mutation_op = op
+        try:
+            self._apply_op_with_context(op)
+        finally:
+            self._current_mutation_op = previous_mutation_op
+
+    def _apply_op_with_context(self, op: LegalOperation) -> None:
         target = op.target
         # Keep legacy warnings visible during replay runs while also recording
         # structured adjudications for downstream analyses.
@@ -221,6 +233,7 @@ def replay_uk_ops(
     verbose: bool = False,
     lo_ops_out: Optional[List[LegalOperation]] = None,
     adjudications_out: Optional[List[CompileAdjudication]] = None,
+    mutation_events_out: Optional[list[MutationEvent]] = None,
     replay_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> IRStatute:
     """Apply compiled UK legal operations to enacted base, return amended statute.
@@ -246,6 +259,10 @@ def replay_uk_ops(
         adjudications_out: Optional list to collect replay skip/no-op adjudications.
                     Entries are `CompileAdjudication` with one of the `uk_replay_*`
                     kinds defined by this executor.
+        mutation_events_out:
+                    Optional list to collect core mutation events at UK replay
+                    mutation sites. This is a debug/evidence stream, not a replay
+                    control path.
         replay_phase_timings_out:
                     Optional accumulator for replay preparation, per-action
                     apply, and replay finalization timing diagnostics.
@@ -287,6 +304,7 @@ def replay_uk_ops(
         verbose=verbose,
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications_out,
+        mutation_events_out=mutation_events_out,
     )
     _mark_replay_phase("replay_executor_init")
     if replay_phase_timings_out is None:
