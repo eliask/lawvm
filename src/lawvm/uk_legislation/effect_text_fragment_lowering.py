@@ -126,7 +126,7 @@ def lower_uk_text_fragment_rewrite(
     heading_facet_target: bool,
     source_structural_payload_matches_target: bool,
     source_carried_table_entry_paragraph_substitution: Optional[dict[str, Any]],
-    table_cell_selector: Optional[str],
+    table_cell_selector: Optional[dict[str, Any]],
     selector_rule_id: str,
     structural_sibling_insert_detail: Optional[dict[str, Any]],
     extracted_el: Optional[ET.Element],
@@ -258,7 +258,7 @@ def lower_uk_text_fragment_rewrite(
             skip_effect=True,
         )
 
-    if is_word_level:
+    if is_word_level and curr_action is not None:
         quote_only_omission_lowering = lower_quote_only_word_omission(
             effect=effect,
             effect_type=effect_type,
@@ -377,7 +377,7 @@ def lower_uk_text_fragment_rewrite(
             op_text_end_occurrence=op_text_end_occurrence,
         )
 
-    if is_word_level:
+    if is_word_level and curr_action is not None:
         quote_only_omission_lowering = lower_quote_only_word_omission(
             effect=effect,
             effect_type=effect_type,
@@ -504,6 +504,7 @@ def _extract_text_fragment_substitutions(
     )
     if (
         multi_quoted_word_repeals
+        and subs is not None
         and len(subs) == 1
         and (
             _multi_fragment_text_selector(str(subs[0].get("original") or ""))
@@ -873,7 +874,7 @@ def _promote_text_fragment_substitutions(
     is_word_level: bool,
     target: LegalAddress,
     target_ref: str,
-    table_cell_selector: Optional[str],
+    table_cell_selector: Optional[dict[str, Any]],
     selector_rule_id: str,
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],

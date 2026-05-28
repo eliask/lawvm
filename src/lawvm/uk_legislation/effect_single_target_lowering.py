@@ -87,7 +87,9 @@ class _SingleLoweringResult(Protocol):
 
 class _BatchLoweringResult(Protocol):
     handled: bool
-    ops: Sequence[LegalOperation]
+
+    @property
+    def ops(self) -> Sequence[LegalOperation]: ...
 
 
 def _append_handled_lowering_op(
