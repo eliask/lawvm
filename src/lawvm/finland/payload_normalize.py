@@ -22,6 +22,7 @@ import re
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from dataclasses import replace as dc_replace
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from lawvm.core.compile_result import AdmissibleBindingCertificate, SourcePathology
@@ -1398,7 +1399,7 @@ def _split_fused_restarted_subsection_across_consecutive_replaces(
         return muutos_ir, False
 
     targets = [int(op.target_paragraph or 0) for op in replace_ops]
-    if any(curr != prev + 1 for prev, curr in zip(targets, targets[1:], strict=False)):
+    if any(curr != prev + 1 for prev, curr in pairwise(targets)):
         return muutos_ir, False
 
     merged_sub = amend_subs[0]
@@ -2705,7 +2706,7 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
         return muutos_ir, False
 
     targets = [int(op.target_paragraph or 0) for op in replace_ops]
-    if any(curr != prev + 1 for prev, curr in zip(targets, targets[1:], strict=False)):
+    if any(curr != prev + 1 for prev, curr in pairwise(targets)):
         return muutos_ir, False
 
     master_sec = ctx.live_node

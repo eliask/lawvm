@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, replace as dc_replace
+from itertools import pairwise
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from lawvm.core.ir import IRNode
@@ -283,7 +284,7 @@ def sort_group_ops_for_apply(
             if (
                 len(replace_targets) >= 2
                 and replace_targets[0] == 1
-                and any(curr > prev + 1 for prev, curr in zip(replace_targets, replace_targets[1:], strict=False))
+                and any(curr > prev + 1 for prev, curr in pairwise(replace_targets))
             ):
                 return sorted(group_ops, key=_op_apply_sort_key)
         # When all plain moment ops are INSERTs, sort ascending so earlier
