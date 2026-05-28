@@ -604,6 +604,12 @@ class UKReplayScheduleListApplyMixin:
             uk_replace_children(carrier_node, children)
             self._clear_eid_lookup_index()
             self._note_structure_mutation()
+            self._record_children_splice_mutation_event(
+                container=carrier_node,
+                helper="_insert_schedule_list_entry",
+                outcome="schedule_list_entry_inserted",
+                reason_code="definition_list_end_direct_entry_boundary",
+            )
             return True
         if direction == "alphabetical":
             inserted_sort_key = _compact_schedule_entry_anchor_without_article(new_node.text)
@@ -663,6 +669,12 @@ class UKReplayScheduleListApplyMixin:
             uk_replace_children(carrier_node, children)
             self._clear_eid_lookup_index()
             self._note_structure_mutation()
+            self._record_children_splice_mutation_event(
+                container=carrier_node,
+                helper="_insert_schedule_list_entry",
+                outcome="schedule_list_entry_inserted",
+                reason_code="explicit_alphabetical_order",
+            )
             return True
 
         matches = [
@@ -809,6 +821,12 @@ class UKReplayScheduleListApplyMixin:
                 grouped_match.group.children = group_children
                 self._clear_eid_lookup_index()
                 self._note_structure_mutation()
+                self._record_children_splice_mutation_event(
+                    container=grouped_match.group,
+                    helper="_insert_schedule_list_entry",
+                    outcome="schedule_list_entry_inserted",
+                    reason_code="anchor_unique_in_schedule_child_group",
+                )
                 return True
             matches = [(idx, child) for idx, child in enumerate(grouped_matches)]
         if len(matches) != 1:
@@ -919,6 +937,12 @@ class UKReplayScheduleListApplyMixin:
         uk_replace_children(carrier_node, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
+        self._record_children_splice_mutation_event(
+            container=carrier_node,
+            helper="_insert_schedule_list_entry",
+            outcome="schedule_list_entry_inserted",
+            reason_code="explicit_entry_anchor_unique",
+        )
         return True
 
     def _repeal_schedule_list_entries(
@@ -1131,6 +1155,12 @@ class UKReplayScheduleListApplyMixin:
             for idx in sorted(delete_group.indices, reverse=True):
                 children.pop(idx)
             uk_replace_children(delete_group.parent, children)
+            self._record_children_splice_mutation_event(
+                container=delete_group.parent,
+                helper="_repeal_schedule_list_entries",
+                outcome="schedule_list_entries_repealed",
+                reason_code="explicit_entry_anchors_unique",
+            )
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
         _append_uk_replay_adjudication(
@@ -1314,6 +1344,12 @@ class UKReplayScheduleListApplyMixin:
         uk_replace_children(carrier_node, children)
         self._clear_eid_lookup_index()
         self._note_structure_mutation()
+        self._record_children_splice_mutation_event(
+            container=carrier_node,
+            helper="_replace_schedule_list_entry",
+            outcome="schedule_list_entry_replaced",
+            reason_code="explicit_entry_anchor_unique",
+        )
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID,
