@@ -69,6 +69,17 @@ class BranchImpactProjection:
         rows = tuple(self.rows)
         if not all(isinstance(row, BranchImpactRow) for row in rows):
             raise ValueError("BranchImpactProjection.rows must contain BranchImpactRow records")
+        mismatched_rows = tuple(
+            row.row_id
+            for row in rows
+            if row.branch_id != self.branch.branch_id
+            or ((row.scenario_id or self.branch.scenario_id) and row.scenario_id != self.branch.scenario_id)
+        )
+        if mismatched_rows:
+            raise ValueError(
+                "BranchImpactProjection.rows must match the projection branch_id and scenario_id: "
+                f"{', '.join(mismatched_rows)}"
+            )
         object.__setattr__(self, "rows", rows)
         if not isinstance(self.detail, Mapping):
             raise ValueError("BranchImpactProjection.detail must be a mapping")
@@ -183,7 +194,7 @@ def _selected_branch_edges(
                 edge
                 for edge in edges
                 if edge.branch_id == branch.branch_id
-                and (not branch.scenario_id or edge.scenario_id == branch.scenario_id)
+                and edge.scenario_id == branch.scenario_id
             ),
             key=lambda edge: (
                 edge.target_statute_id,

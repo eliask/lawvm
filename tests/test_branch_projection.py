@@ -131,6 +131,43 @@ def test_branch_impact_projection_validates_envelope() -> None:
         BranchImpactProjection(branch=branch, status="")
 
 
+def test_branch_impact_projection_rejects_row_branch_or_scenario_mismatch() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        scenario_id="if_enacted_as_introduced",
+        source_artifact_id="proposal/example/2026/1",
+    )
+
+    with pytest.raises(ValueError, match="branch_id and scenario_id"):
+        BranchImpactProjection(
+            branch=branch,
+            rows=(
+                BranchImpactRow(
+                    row_id="wrong-branch",
+                    branch_id="proposal:example:other",
+                    scenario_id=branch.scenario_id,
+                    edge_kind="would_amend",
+                    target_statute_id="base/1",
+                ),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="branch_id and scenario_id"):
+        BranchImpactProjection(
+            branch=branch,
+            rows=(
+                BranchImpactRow(
+                    row_id="wrong-scenario",
+                    branch_id=branch.branch_id,
+                    scenario_id="if_enacted_as_amended",
+                    edge_kind="would_amend",
+                    target_statute_id="base/1",
+                ),
+            ),
+        )
+
+
 def test_branch_impact_projection_normalizes_rows_and_freezes_detail() -> None:
     branch = LegalBranch(
         branch_id="proposal:example:2026-1",
@@ -184,6 +221,37 @@ def test_branch_impact_projection_from_operations_uses_branch_edge_mapping() -> 
         ("would_insert", "op-insert", "section:2"),
     ]
     assert {row.scenario_id for row in projection.rows} == {"if_enacted_as_introduced"}
+
+
+def test_branch_impact_projection_from_edges_filters_scenario_mismatches() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        scenario_id="if_enacted_as_introduced",
+        source_artifact_id="proposal/example/2026/1",
+    )
+
+    projection = branch_impact_projection_from_edges(
+        branch,
+        (
+            BranchGraphEdge(
+                branch_id=branch.branch_id,
+                scenario_id=branch.scenario_id,
+                edge_kind="would_replace",
+                target_statute_id="base/1",
+                operation_id="kept",
+            ),
+            BranchGraphEdge(
+                branch_id=branch.branch_id,
+                scenario_id="if_enacted_as_amended",
+                edge_kind="would_replace",
+                target_statute_id="base/1",
+                operation_id="rejected",
+            ),
+        ),
+    )
+
+    assert tuple(row.operation_id for row in projection.rows) == ("kept",)
 
 
 def test_enrich_branch_impact_projection_texts_uses_target_keys_without_lookup() -> None:

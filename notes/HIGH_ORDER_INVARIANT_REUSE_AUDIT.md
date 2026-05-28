@@ -301,6 +301,10 @@ Recent improvement:
 - branch impact projections can now be text-enriched from frontend-supplied
   current/branch text maps without letting core infer source text or enacted
   authority.
+- branch impact projections now reject manually supplied rows whose
+  `branch_id` or `scenario_id` does not match the projection branch, and edge
+  selection requires exact scenario agreement rather than branch-id-only
+  matching.
 - branch lifecycle events now record proposal/draft status history as graph
   facts, separate from enacted-state operation replay.
 - `CorpusGraph` now rejects duplicate branch ids and dangling branch edge or
