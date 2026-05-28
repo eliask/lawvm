@@ -13,7 +13,7 @@ from lawvm.core.evidence_contracts import (
     validate_corpus_operation_evidence_row,
 )
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
-from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplaySummary, ReplayTextView
+from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
     CoverageAttribution,
     DivergenceRecord,
@@ -61,6 +61,32 @@ def test_replay_summary_to_dict_is_json_friendly() -> None:
     assert data["jurisdiction"] == "no"
     assert data["steps"][0]["source_id"] == "2006-01-01-1"
     assert data["text_view"]["content"] == "hello"
+
+
+def test_replay_contracts_reject_invalid_envelope_shapes() -> None:
+    with pytest.raises(ValueError, match="ReplayAmendmentStep.source_id"):
+        ReplayAmendmentStep(source_id="")
+
+    with pytest.raises(ValueError, match="op_count"):
+        ReplayAmendmentStep(source_id="source", op_count=-1)
+
+    with pytest.raises(ValueError, match="ReplayTextView.format"):
+        ReplayTextView(format="")
+
+    with pytest.raises(ValueError, match="ReplaySummary.as_of"):
+        ReplaySummary(jurisdiction="no", base_id="base", as_of="")
+
+    with pytest.raises(ValueError, match="divergence_count"):
+        ReplaySummary(jurisdiction="no", base_id="base", as_of="2026-01-01", divergence_count=-1)
+
+    with pytest.raises(ValueError, match="step_index"):
+        ReplayCheckpoint(
+            parent_id="base",
+            amendment_id="amending",
+            step_index=1,
+            total_steps=1,
+            serialize_text=lambda: "",
+        )
 
 
 def test_verify_summary_to_dict_embeds_nested_records() -> None:
