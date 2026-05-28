@@ -95,6 +95,30 @@ def test_verify_summary_to_dict_embeds_nested_records() -> None:
     assert data["coverage"]["touched_divergence_count"] == 1
 
 
+def test_verify_contracts_reject_invalid_envelope_shapes() -> None:
+    with pytest.raises(ValueError, match="VerifyIssue.code"):
+        VerifyIssue(code="", message="bad")
+
+    with pytest.raises(ValueError, match="severity"):
+        VerifyIssue(code="parse.bad", message="bad", severity=cast(Any, "fatal"))
+
+    with pytest.raises(ValueError, match="score"):
+        DivergenceRecord(address="section:1", kind="MISMATCH", score=1.5)
+
+    with pytest.raises(ValueError, match="rule_id"):
+        FilteredDivergenceRecord(
+            divergence=DivergenceRecord(address="section:1", kind="MISMATCH"),
+            rule_id="",
+            reason="covered by child",
+        )
+
+    with pytest.raises(ValueError, match="touched_path_count"):
+        CoverageAttribution(touched_path_count=-1)
+
+    with pytest.raises(ValueError, match="jurisdiction"):
+        VerifySummary(jurisdiction="", base_id="base")
+
+
 def test_divergence_partition_preserves_filtered_rule_evidence() -> None:
     divergence = DivergenceRecord(address="section:1", kind="MISMATCH")
 

@@ -16,6 +16,7 @@ from typing import Any, Literal, Mapping
 
 
 VerifySeverity = Literal["error", "warning", "info"]
+VERIFY_SEVERITIES = frozenset({"error", "warning", "info"})
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,14 @@ class VerifyIssue:
     severity: VerifySeverity = "error"
     context: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_field(self.code, "VerifyIssue.code")
+        _require_field(self.message, "VerifyIssue.message")
+        if self.severity not in VERIFY_SEVERITIES:
+            raise ValueError(f"VerifyIssue.severity must be one of {sorted(VERIFY_SEVERITIES)}")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("VerifyIssue.detail must be a mapping")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -48,6 +57,14 @@ class DivergenceRecord:
     source_signal: str = ""
     detail: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _require_field(self.address, "DivergenceRecord.address")
+        _require_field(self.kind, "DivergenceRecord.kind")
+        if self.score is not None and not 0 <= self.score <= 1:
+            raise ValueError("DivergenceRecord.score must be between 0 and 1")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("DivergenceRecord.detail must be a mapping")
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["detail"] = dict(self.detail)
@@ -61,6 +78,10 @@ class FilteredDivergenceRecord:
     divergence: Any
     rule_id: str
     reason: str
+
+    def __post_init__(self) -> None:
+        _require_field(self.rule_id, "FilteredDivergenceRecord.rule_id")
+        _require_field(self.reason, "FilteredDivergenceRecord.reason")
 
 
 @dataclass(frozen=True)
@@ -81,6 +102,19 @@ class CoverageAttribution:
     touched_divergence_count: int = 0
     untouched_divergence_count: int = 0
     detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "touched_path_count",
+            "touched_source_count",
+            "touched_op_count",
+            "touched_divergence_count",
+            "untouched_divergence_count",
+        ):
+            if getattr(self, field_name) < 0:
+                raise ValueError(f"CoverageAttribution.{field_name} must be non-negative")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("CoverageAttribution.detail must be a mapping")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -107,6 +141,16 @@ class VerifySummary:
     coverage: CoverageAttribution | None = None
     detail: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _require_field(self.jurisdiction, "VerifySummary.jurisdiction")
+        _require_field(self.base_id, "VerifySummary.base_id")
+        _require_field(self.status, "VerifySummary.status")
+        for field_name in ("issue_count", "divergence_count", "op_count"):
+            if getattr(self, field_name) < 0:
+                raise ValueError(f"VerifySummary.{field_name} must be non-negative")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("VerifySummary.detail must be a mapping")
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["issues"] = [issue.to_dict() for issue in self.issues]
@@ -114,3 +158,8 @@ class VerifySummary:
         data["coverage"] = self.coverage.to_dict() if self.coverage is not None else None
         data["detail"] = dict(self.detail)
         return data
+
+
+def _require_field(value: str, name: str) -> None:
+    if not str(value or "").strip():
+        raise ValueError(f"{name} must be non-empty")

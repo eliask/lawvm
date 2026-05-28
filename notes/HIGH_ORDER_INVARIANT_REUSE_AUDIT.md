@@ -362,6 +362,10 @@ Recent improvement:
   failed vocabulary, forbids blockers on complete artifacts, requires blockers
   on degraded artifacts, and compile-facade wire export falls back to the
   verdict status when a blocking verdict has no barrier codes.
+- shared verification report contracts now reject missing issue/divergence
+  identifiers, invalid severity values, out-of-range divergence scores,
+  filtered divergences without rule/reason evidence, and negative summary or
+  coverage counts.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
