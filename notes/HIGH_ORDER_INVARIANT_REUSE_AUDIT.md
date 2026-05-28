@@ -744,6 +744,10 @@ Implemented progress:
   to `diagnostic_detail`.
 - EU Cellar acquisition diagnostics and REUL bridge target-resolution
   diagnostics now delegate their shared envelope fields to `diagnostic_detail`.
+- replay adjudication evidence projection now has shared adapters
+  `adjudication_diagnostic_detail(...)` and
+  `adjudication_record_diagnostic_detail(...)`, so object and persisted-record
+  adjudications get the same normalized diagnostic envelope in evidence rows.
 - Open Law corpus finding evidence rows now derive their shared disposition
   envelope fields through `diagnostic_detail`.
 - New Zealand acquisition diagnostics, latest-XML locator rejection diagnostics,
@@ -888,7 +892,11 @@ These are jurisdiction source semantics, not shared invariants.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
    table/schedule children-splice recorder.
+3. Opportunistically route replay-adjudication JSON/reporting workqueue rows
+   through `adjudication_record_diagnostic_detail(...)` when they currently
+   recompute blocking and strict/quirks dispositions locally.
 
 The highest-value order is now cautious comparison-normalization reuse for
-additional frontends, remaining UK mutation-event/debug gaps, and small
-type-surface cleanup batches.
+additional frontends, replay-adjudication projection cleanup at reporting
+boundaries, remaining UK mutation-event/debug gaps, and small type-surface
+cleanup batches.

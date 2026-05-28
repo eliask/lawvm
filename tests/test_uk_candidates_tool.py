@@ -4772,6 +4772,9 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
     assert evidence_rows[0]["adjudication_kind"] == "text_duplication_warning"
     assert evidence_rows[0]["adjudication_bucket"] == "nonblocking_observation"
     assert evidence_rows[0]["blocking"] is False
+    assert evidence_rows[0]["diagnostic_detail"]["phase"] == "replay_fold"
+    assert evidence_rows[0]["diagnostic_detail"]["blocking"] is False
+    assert evidence_rows[0]["diagnostic_detail"]["strict_disposition"] == "record"
     assert evidence_rows[0]["detail"]["path"] == "body/section:1"
     assert evidence_rows[0]["uk_replay_regime"] == {
         "allow_metadata_backfill": False,
