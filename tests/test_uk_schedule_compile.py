@@ -36,6 +36,9 @@ from lawvm.uk_legislation.replay_applicability import should_replay_nonstructura
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
+from lawvm.uk_legislation.replay_records import (
+    append_replay_fold_text_duplication_adjudications,
+)
 from lawvm.uk_legislation.replay_grounding import (
     _GroundingTextCandidate,
     _grounding_length_window_text_candidates,
@@ -54326,6 +54329,42 @@ def test_uk_replay_fast_invariant_scan_matches_persisted_generic_subset() -> Non
     ]
 
     assert _collect_duplicate_order_invariants(UKMutableNode.from_irnode(root)) == generic_subset
+
+
+def test_uk_replay_projects_flattened_sublist_lints_to_adjudications() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/22",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=tuple(
+                        IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=f"paragraph {label}")
+                        for label in ("a", "b", "1", "2", "a", "b")
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    append_replay_fold_text_duplication_adjudications(
+        adjudications,
+        frozen_statute=statute,
+        source_statute="uk_test",
+    )
+
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "flattened_sublist_family_warning"
+    ]
+    assert adjudications[0].detail["phase"] == "replay_fold"
+    assert adjudications[0].detail["root"] == "body"
+    assert adjudications[0].detail["kind"] == "flattened_sublist_interleaved"
 
 
 def test_uk_source_ancestor_chain_caches_repeated_source_walks() -> None:

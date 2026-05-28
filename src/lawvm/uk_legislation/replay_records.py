@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
-from lawvm.core.replay_lints import build_text_duplication_findings
+from lawvm.core.replay_lints import build_flattened_sublist_findings, build_text_duplication_findings
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
 
@@ -244,7 +244,7 @@ def append_replay_fold_text_duplication_adjudications(
     frozen_statute: IRStatute,
     source_statute: str,
 ) -> None:
-    """Project replay-fold text-duplication findings into UK adjudications."""
+    """Project generic replay-fold lint findings into UK adjudications."""
     duplicate_findings = [
         dc_replace(finding, detail={**finding.detail, "root": "body"})
         for finding in build_text_duplication_findings(
@@ -253,11 +253,26 @@ def append_replay_fold_text_duplication_adjudications(
             source_statute=source_statute,
         )
     ]
+    duplicate_findings.extend(
+        dc_replace(finding, detail={**finding.detail, "root": "body"})
+        for finding in build_flattened_sublist_findings(
+            frozen_statute.body,
+            phase="replay_fold",
+            source_statute=source_statute,
+        )
+    )
     for schedule in frozen_statute.supplements:
         schedule_findings = build_text_duplication_findings(
             schedule,
             phase="replay_fold",
             source_statute=source_statute,
+        )
+        schedule_findings.extend(
+            build_flattened_sublist_findings(
+                schedule,
+                phase="replay_fold",
+                source_statute=source_statute,
+            )
         )
         duplicate_findings.extend(
             dc_replace(
