@@ -297,6 +297,10 @@ def test_build_operation_surface_records_duplicate_target_and_unarchived_depende
         "nz_history_note_dependency_unarchived",
         "nz_lowering_readiness_blocked_amending_work_resolved_unarchived",
     ]
+    assert report.findings[0]["target_resolution"]["target_resolution_status"] == "rejected"
+    assert report.findings[0]["target_resolution"]["source_target"] == "Section 1"
+    assert report.findings[0]["target_resolution"]["jurisdiction_status"] == "blocked_duplicate_source_path"
+    assert report.findings[0]["target_resolution"]["strict_disposition"] == "block"
     assert report.findings[1]["blocking"] is False
 
 
@@ -418,6 +422,35 @@ def test_build_operation_surface_resolves_end_skeleton_duplicates_with_named_obs
         "nz_target_address_skeleton_duplicate_resolved",
     ]
     assert report.findings[0]["blocking"] is False
+    assert report.findings[0]["target_resolution"] == {
+        "rule_id": "nz_target_address_skeleton_duplicate_resolved",
+        "family": "target_resolution",
+        "phase": "P6",
+        "reason": "source path duplicate is caused by non-current end skeleton nodes; primary node target kept",
+        "blocking": False,
+        "strict_disposition": "warn",
+        "quirks_disposition": "warn",
+        "target_resolution_status": "recovered",
+        "source_target": "Section 1",
+        "candidate_count": 1,
+        "target_candidates": (
+            {
+                "target": "section:1",
+                "reason": "primary_non_skeleton_source_node",
+                "source_path": ("prov:1",),
+                "target_address_status": "candidate",
+            },
+        ),
+        "selected_target": "section:1",
+        "selected_target_differs_from_source": True,
+        "scope_confidence": "explicit_source",
+        "jurisdiction_status": "candidate",
+        "target_surface_status": "skeleton_duplicate_resolved",
+        "target_hint_status": "parsed",
+        "target_hint_kind": "section",
+        "source_path": ("prov:1",),
+        "source_xml_path": "/act/body/prov/notes/history-note",
+    }
     assert report.operation_evidence_rows()[0].to_dict()["finding_ids"] == (
         "nz-opw-1:nz_target_address_skeleton_duplicate_resolved",
     )
@@ -455,6 +488,10 @@ def test_build_operation_surface_resolves_attached_heading_from_context_with_nam
         "nz_target_address_attached_heading_from_context",
     ]
     assert report.findings[0]["blocking"] is False
+    assert report.findings[0]["target_resolution"]["target_resolution_status"] == "recovered"
+    assert report.findings[0]["target_resolution"]["source_target"] == "Heading"
+    assert report.findings[0]["target_resolution"]["selected_target"] == "part:1/heading"
+    assert report.findings[0]["target_resolution"]["scope_confidence"] == "explicit_source_with_context"
     assert report.operation_evidence_rows()[0].to_dict()["finding_ids"] == (
         "nz-opw-1:nz_target_address_attached_heading_from_context",
     )

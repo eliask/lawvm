@@ -257,6 +257,10 @@ Recent improvement:
 - New Zealand instruction-workqueue evidence now projects its latest-oracle
   target lookup through the shared target-resolution carrier while preserving
   NZ-local status names and keeping replay/effect claims disabled.
+- New Zealand operation-surface target candidate findings now carry nested
+  shared target-resolution certificates for blocked address candidates,
+  end-skeleton duplicate recovery, and attached-heading context recovery while
+  preserving the existing NZ witness rows and disabled replay/effect claims.
 
 ## Ranked Promotion Candidates
 
