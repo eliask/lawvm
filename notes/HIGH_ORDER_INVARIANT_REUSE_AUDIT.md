@@ -337,6 +337,9 @@ Recent improvement:
 - target-resolution certificates now validate the shared status and
   scope-confidence vocabulary at construction, and resolved/recovered statuses
   must carry a counted selected candidate.
+- target-resolution certificates now normalize candidate lanes to immutable
+  tuples and freeze nested candidate/detail payloads at construction, keeping
+  frontend-local target evidence stable after emission.
 - UK replay recovery action/target details now attach a nested shared
   target-resolution certificate when the recovery explicitly names an alternate
   `recovery_target`, avoiding fabricated target evidence for recoveries that
@@ -385,6 +388,9 @@ Recent improvement:
 - temporal-resolution evidence now validates its shared status/family
   vocabulary at construction, and `certified_untriggered` evidence must carry
   a source locator, authority layer, or trigger-coverage certificate.
+- temporal-resolution evidence now freezes nested detail payloads at
+  construction, so trigger-coverage certificates and other frontend-local
+  temporal witnesses cannot be mutated after the evidence object is created.
 
 ## Ranked Promotion Candidates
 
