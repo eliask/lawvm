@@ -27,7 +27,7 @@ def _grounding_eid(node: UKMutableNode) -> Optional[str]:
 
 def _find_best_oracle_path(oracle_id: str, eid_map: dict[str, str], current_context: str) -> Optional[str]:
     # Find all keys mapping to oracle_id
-    candidates = [k for k, v in eid_map.items() if v == oracle_id]
+    candidates: list[str] = [k for k, v in eid_map.items() if v == oracle_id]
     if not candidates:
         return None
     # Filter out ordinal keys (those containing '[')
@@ -39,7 +39,7 @@ def _find_best_oracle_path(oracle_id: str, eid_map: dict[str, str], current_cont
     if context_matches:
         return context_matches[0]
     # Otherwise return the shortest candidate or first candidate
-    return min(candidates, key=len)
+    return min(candidates, key=lambda candidate: len(candidate))
 
 
 def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
@@ -98,6 +98,9 @@ class UKReplayGroundingMixin:
     eid_map: dict[str, str]
     text_map: dict[str, str]
     oracle_alignment_events: list[dict[str, object]]
+
+    def _log(self, message: str) -> None:
+        del message
 
     def ground_ids(self):
         """Walks the entire statute and updates EIDs to match the Oracle map."""

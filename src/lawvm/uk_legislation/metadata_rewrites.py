@@ -227,7 +227,7 @@ def _uk_affected_target_corrected_renumber_targets(
     affected_target = canonicalize_uk_address(_parse_affected_target(effect.affected_provisions))
     if affected_target.path[:-1] != unsupported.source_target.path:
         return None
-    if _clean_num(_addr_leaf_label(affected_target)) != descendant_label:
+    if _clean_num(_addr_leaf_label(affected_target) or "") != descendant_label:
         return None
     return UKMetadataRenumberTargets(
         source_target=unsupported.source_target,
