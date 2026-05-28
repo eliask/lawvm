@@ -26,7 +26,11 @@ from lawvm.core.ir import (
     ProvisionVersion,
     StructuralAction,
 )
-from lawvm.core.temporal import derive_temporal_status, project_temporal_status
+from lawvm.core.temporal import (
+    UNTRIGGERED_CERTIFIED_STATUS,
+    derive_temporal_status,
+    project_temporal_status,
+)
 from lawvm.core.temporal import ActivationRule, ResolutionFact, TemporalEvent, TemporalScope
 from lawvm.core.timeline_temporal_events import (
     apply_standalone_temporal_event,
@@ -273,6 +277,14 @@ class TestResolutionFactConstruction:
         assert fact.status == "unresolved"
         assert fact.resolved_effective == ""
 
+    def test_untriggered_certified(self) -> None:
+        fact = ResolutionFact(
+            status=UNTRIGGERED_CERTIFIED_STATUS,
+            authority_source="coverage://commencement-instruments-through-2026",
+        )
+        assert fact.status == "untriggered_certified"
+        assert fact.authority_source == "coverage://commencement-instruments-through-2026"
+
     def test_superseded(self) -> None:
         fact = ResolutionFact(
             status="superseded",
@@ -289,16 +301,24 @@ class TestResolutionFactConstruction:
     def test_status_predicates_reflect_current_status(self) -> None:
         resolved = ResolutionFact(status="resolved", resolved_effective="2027-06-01")
         unresolved = ResolutionFact(status="unresolved")
+        untriggered = ResolutionFact(status=UNTRIGGERED_CERTIFIED_STATUS)
         superseded = ResolutionFact(status="superseded")
 
         assert resolved.is_resolved is True
         assert resolved.is_unresolved is False
+        assert resolved.is_untriggered_certified is False
         assert resolved.is_superseded is False
         assert unresolved.is_resolved is False
         assert unresolved.is_unresolved is True
+        assert unresolved.is_untriggered_certified is False
         assert unresolved.is_superseded is False
+        assert untriggered.is_resolved is False
+        assert untriggered.is_unresolved is False
+        assert untriggered.is_untriggered_certified is True
+        assert untriggered.is_superseded is False
         assert superseded.is_resolved is False
         assert superseded.is_unresolved is False
+        assert superseded.is_untriggered_certified is False
         assert superseded.is_superseded is True
 
 
@@ -363,6 +383,14 @@ class TestDeriveTemporalStatus:
         )
         assert derive_temporal_status(rule, res, "2026-04-07") == "inactive"
 
+    def test_pending_decree_certified_untriggered_is_inactive(self) -> None:
+        rule = ActivationRule(kind="pending_decree")
+        res = ResolutionFact(
+            status=UNTRIGGERED_CERTIFIED_STATUS,
+            authority_source="coverage://commencement-instruments-through-2026",
+        )
+        assert derive_temporal_status(rule, res, "2026-04-07") == "inactive"
+
     def test_pending_condition_no_resolution(self) -> None:
         rule = ActivationRule(kind="pending_condition", condition_ref="laki X")
         assert derive_temporal_status(rule, None, "2026-04-07") == "pending_external_resolution"
@@ -424,6 +452,11 @@ class TestProjectTemporalStatus:
     def test_all_inactive(self) -> None:
         rules = [ActivationRule(kind="pending_decree")]
         resolutions = [ResolutionFact(status="superseded", authority_source="2027/1")]
+        assert project_temporal_status(rules, resolutions, "2026-04-07") == "inactive"
+
+    def test_certified_untriggered_projects_inactive(self) -> None:
+        rules = [ActivationRule(kind="pending_decree")]
+        resolutions = [ResolutionFact(status=UNTRIGGERED_CERTIFIED_STATUS)]
         assert project_temporal_status(rules, resolutions, "2026-04-07") == "inactive"
 
     def test_resolution_list_shorter_than_rules(self) -> None:

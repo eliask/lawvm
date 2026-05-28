@@ -1,7 +1,7 @@
 # Conditional Commencement Architecture
 
 Living spec note.
-Status: **accepted direction**, not yet implemented.
+Status: **partially implemented core contract**.
 
 Key decisions: typed activation rules (not boolean contingent), resolution facts,
 coverage certificates, per-effect temporal status, no silent enacted-date fallback.
@@ -19,21 +19,26 @@ For **deferred / decree-set / conditional commencement** — “comes into force
 It has the beginnings of the right pieces:
 
 * parse-layer `EffectIntent.Commencement(is_contingent=True)`,
-* transitional `TemporalEvent(contingent=True)`,
+* operational `TemporalEvent.activation_rule`,
+* typed `ActivationRule`,
+* typed `ResolutionFact`,
+* `ResolutionFact(status="untriggered_certified")` for coverage-backed
+  non-triggered contingent effects,
 * finding codes like `TIME.CONTINGENT_EFFECTIVE_DATE`,
 * explicit `_ex` query/materialization APIs for some degraded states,
 
-but it still lacks the core things that make these cases first-class:
+but it still lacks some things that make these cases first-class end-to-end:
 
-* a **typed activation rule** instead of a boolean `contingent`,
-* a **resolution fact** model for the later decree / trigger,
-* a **coverage certificate** that distinguishes “no decree exists” from “source coverage is incomplete,”
+* frontend-owned **coverage certificates** that prove which trigger sources
+  were searched,
 * explicit **temporal-degraded query results**,
 * a real model for **multiple competing contingent events** on the same provision.
 
 Current support boundary:
 
-> **Current LawVM can notice these cases, and a frontend may special-case them correctly, but the shared architecture does not yet fully model them.**
+> **Current LawVM has the core activation/resolution vocabulary, but frontends
+> still need source-coverage evidence and PIT integration before deferred
+> commencement is fully operational.**
 
 And the ideal architecture should.
 
@@ -123,24 +128,23 @@ So **“PendingDecree” alone is not enough**.
 From the current code:
 
 * `EffectIntent.Commencement` can mark `is_contingent=True`.
-* `TemporalEvent` has a `contingent: bool`.
+* `TemporalEvent` carries `activation_rule`.
+* `ActivationRule` distinguishes immediate, fixed-date, decree-set, and
+  condition-pending activation.
+* `ResolutionFact` distinguishes resolved, unresolved, superseded, and
+  coverage-certified untriggered contingent activation.
 * `PhaseResult` can auto-lower `EffectIntent` into `TemporalEvent`.
 * The finding plane can emit `TIME.CONTINGENT_EFFECTIVE_DATE`.
 * `select_active_version_ex()` / `materialize_pit_ex()` already know how to return explicit degraded results for **missing applicability scope**.
 
-So current core can **represent that something contingent exists** and **surface a warning/finding**.
+So current core can **represent that something contingent exists**, **surface a
+warning/finding**, and **distinguish unknown trigger state from certified
+untriggered state**.
 
 ## What current core cannot yet do correctly as architecture
 
-It still cannot, in a first-class way:
+It still cannot, in a first-class end-to-end way:
 
-* say **what kind** of contingency this is,
-* represent the **later decree / trigger resolution**,
-* distinguish:
-
-  * fixed future inactive,
-  * contingent but certified untriggered,
-  * contingent and unresolved,
 * compute PIT truthfully when trigger coverage is incomplete,
 * or reason cleanly about **multiple independent contingent events** touching one provision.
 
