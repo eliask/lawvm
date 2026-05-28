@@ -141,6 +141,8 @@ Recent improvement:
   override shared envelope fields such as `rule_id`, `phase`, or dispositions.
 - mutation-event accounting result/report logic now has a core home; Finland
   apply events re-export the shared accounting surface for compatibility.
+- lossless filter results now have a small core carrier; UK authority filtering
+  uses it while preserving existing diagnostics and returned kept-op lists.
 
 ## Ranked Promotion Candidates
 
