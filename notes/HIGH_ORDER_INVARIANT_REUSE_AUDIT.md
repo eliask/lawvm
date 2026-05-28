@@ -150,6 +150,9 @@ Recent improvement:
   event accounting summary when mutation events are being collected, making
   the causal helper, touched paths, and allowed/unexplained path partition
   visible without changing replay control flow.
+- UK mutable sorted child insertion now refuses same-kind/same-normalized-label
+  replacement instead of inheriting the lower-level canonical insertion
+  helper's destructive replacement semantics.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
@@ -915,10 +918,10 @@ These are jurisdiction source semantics, not shared invariants.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
    table/schedule children-splice recorder.
-3. Audit same-label sorted insertion helpers for destructive replacement
-   semantics. If an insert helper can replace an existing same-kind/same-label
-   node, it must either block with a conflict diagnostic or emit a replacement
-   mutation event, not an insertion event.
+3. Continue caller-specific audit of same-label sorted insertion paths where a
+   refusal should emit a more precise conflict diagnostic. The shared mutable
+   helper now refuses destructive replacement; remaining work is diagnostic
+   quality, not silent mutation prevention.
 4. Promote the UK post-op invariant attribution shape into a small core
    invariant-delta carrier only after another frontend has a concrete consumer;
    for now UK owns the local projection because its invariant scope pruning is
