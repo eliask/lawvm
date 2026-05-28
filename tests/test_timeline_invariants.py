@@ -9,7 +9,9 @@ Run:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal, cast
+
+import pytest
 
 from lawvm.core.ir import (
     IRNode,
@@ -23,6 +25,7 @@ from lawvm.core.ir import (
 from lawvm.core.provenance import ExpiryOverride
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_invariants import (
+    TimelineInvariantViolation,
     check_all_timeline_invariants,
     check_all_timeline_invariants_typed,
     check_expiry_chain_preserved,
@@ -66,6 +69,24 @@ def _pv(
 
 def _tl(address: LegalAddress, versions: list[ProvisionVersion]) -> ProvisionTimeline:
     return ProvisionTimeline(address=address, versions=versions)
+
+
+def test_timeline_invariant_violation_freezes_detail_recursively() -> None:
+    detail: dict[str, Any] = {"selection": {"candidates": ["a"]}}
+
+    violation = TimelineInvariantViolation(
+        kind="content_mismatch",
+        section_label="1",
+        address_path="section:1",
+        message="content mismatch",
+        detail=detail,
+    )
+    detail["selection"]["candidates"].append("mutated")
+
+    assert violation.detail == {"selection": {"candidates": ("a",)}}
+    frozen_detail = cast(Any, violation.detail)
+    with pytest.raises(TypeError, match="immutable"):
+        frozen_detail["extra"] = "blocked"
 
 
 def _forged_pv(

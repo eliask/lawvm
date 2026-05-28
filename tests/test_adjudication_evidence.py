@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
+import pytest
+
 from lawvm.core.adjudication_evidence import (
     adjudication_diagnostic_detail,
     adjudication_finding_evidence_rows,
     adjudication_record_diagnostic_detail,
 )
 from lawvm.core.diagnostic_records import validate_diagnostic_detail
-from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 
 
 def test_adjudication_diagnostic_detail_defaults_to_blocking_compile_envelope() -> None:
@@ -27,6 +31,38 @@ def test_adjudication_diagnostic_detail_defaults_to_blocking_compile_envelope() 
     assert detail["quirks_disposition"] == "record"
     assert detail["target"] == "section:99"
     assert validate_diagnostic_detail(detail) == ()
+
+
+def test_adjudication_payloads_are_frozen_recursively() -> None:
+    detail: dict[str, Any] = {"nested": {"targets": ["section:1"]}}
+    adjudication = CompileAdjudication(
+        kind="uk_replay_target_not_found",
+        message="target missing",
+        source_statute="ukpga/2000/1",
+        op_id="op-1",
+        detail=detail,
+    )
+    detail["nested"]["targets"].append("mutated")
+
+    assert adjudication.detail == {"nested": {"targets": ("section:1",)}}
+    frozen_detail = cast(Any, adjudication.detail)
+    with pytest.raises(TypeError, match="immutable"):
+        frozen_detail["extra"] = "blocked"
+
+
+def test_source_adjudication_lineage_is_frozen_recursively() -> None:
+    lineage: list[dict[str, Any]] = [{"event": {"sources": ["oracle"]}}]
+    adjudication = SourceAdjudication(
+        statute_id="2000/1",
+        replay_mode="strict",
+        lineage=lineage,  # ty: ignore[invalid-argument-type]
+    )
+    lineage[0]["event"]["sources"].append("mutated")
+
+    assert adjudication.lineage == ({"event": {"sources": ("oracle",)}},)
+    frozen_lineage_row = cast(Any, adjudication.lineage[0])
+    with pytest.raises(TypeError, match="immutable"):
+        frozen_lineage_row["extra"] = "blocked"
 
 
 def test_adjudication_record_diagnostic_detail_preserves_nonblocking_detail() -> None:
