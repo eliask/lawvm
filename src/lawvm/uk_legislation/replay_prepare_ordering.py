@@ -20,11 +20,17 @@ class _SameSourceTextPatchGroupKey(NamedTuple):
     target_path: TreePath
 
 
+class _LiteralTextSpan(NamedTuple):
+    child_path: tuple[int, ...]
+    start: int
+    end: int
+
+
 def _literal_text_spans_in_subtree(
     node: Any,
     needle: str,
-) -> list[tuple[tuple[int, ...], int, int]]:
-    spans: list[tuple[tuple[int, ...], int, int]] = []
+) -> list[_LiteralTextSpan]:
+    spans: list[_LiteralTextSpan] = []
     if not needle:
         return spans
 
@@ -36,7 +42,7 @@ def _literal_text_spans_in_subtree(
             if pos == -1:
                 break
             end = pos + len(needle)
-            spans.append((path, pos, end))
+            spans.append(_LiteralTextSpan(child_path=path, start=pos, end=end))
             start = end
         for index, child in enumerate(current.children):
             _walk(child, path + (index,))
@@ -46,12 +52,10 @@ def _literal_text_spans_in_subtree(
 
 
 def _spans_overlap(
-    left: tuple[tuple[int, ...], int, int],
-    right: tuple[tuple[int, ...], int, int],
+    left: _LiteralTextSpan,
+    right: _LiteralTextSpan,
 ) -> bool:
-    left_path, left_start, left_end = left
-    right_path, right_start, right_end = right
-    return left_path == right_path and left_start < right_end and right_start < left_end
+    return left.child_path == right.child_path and left.start < right.end and right.start < left.end
 
 
 def _same_source_ordinal_text_patch_overlap_status(
