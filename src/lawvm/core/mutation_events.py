@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from lawvm.core.mutation_boundary import (
+    RenumberedTreePaths,
     TreePath,
+    TreePaths,
     dedupe_tree_paths,
     partition_changed_paths,
     path_has_prefix,
@@ -20,7 +22,7 @@ from lawvm.core.mutation_boundary import (
 @dataclass(frozen=True)
 class DeclaredMutationAllowance:
     kind: str
-    paths: tuple[TreePath, ...] = ()
+    paths: TreePaths = ()
     rule_id: str = ""
     note: str = ""
 
@@ -35,13 +37,13 @@ class MutationEvent:
     resolved_target_path: TreePath | None = None
     parent_path: TreePath | None = None
     declared_allowances: tuple[DeclaredMutationAllowance, ...] = ()
-    consumed_paths: tuple[TreePath, ...] = ()
-    created_paths: tuple[TreePath, ...] = ()
-    removed_paths: tuple[TreePath, ...] = ()
-    replaced_paths: tuple[TreePath, ...] = ()
-    renumbered_paths: tuple[tuple[TreePath, TreePath], ...] = ()
-    placeholder_created_paths: tuple[TreePath, ...] = ()
-    placeholder_consumed_paths: tuple[TreePath, ...] = ()
+    consumed_paths: TreePaths = ()
+    created_paths: TreePaths = ()
+    removed_paths: TreePaths = ()
+    replaced_paths: TreePaths = ()
+    renumbered_paths: RenumberedTreePaths = ()
+    placeholder_created_paths: TreePaths = ()
+    placeholder_consumed_paths: TreePaths = ()
     used_fallback_tags: tuple[str, ...] = ()
     failure_reason: str = ""
     reason_code: str = ""
@@ -54,23 +56,23 @@ class MutationEventPathSetReport:
     op_id: str
     helper: str
     outcome: str
-    touched_paths: tuple[TreePath, ...] = ()
-    changed_paths: tuple[TreePath, ...] = ()
-    allowed_effect_region_paths: tuple[TreePath, ...] = ()
-    declared_allowance_paths: tuple[TreePath, ...] = ()
-    declared_recovery_paths: tuple[TreePath, ...] = ()
+    touched_paths: TreePaths = ()
+    changed_paths: TreePaths = ()
+    allowed_effect_region_paths: TreePaths = ()
+    declared_allowance_paths: TreePaths = ()
+    declared_recovery_paths: TreePaths = ()
     declared_recovery_rule_ids: tuple[str, ...] = ()
-    declared_migration_paths: tuple[TreePath, ...] = ()
+    declared_migration_paths: TreePaths = ()
     declared_migration_rule_ids: tuple[str, ...] = ()
-    permitted_paths: tuple[TreePath, ...] = ()
-    covered_changed_paths: tuple[TreePath, ...] = ()
-    unexplained_changed_paths: tuple[TreePath, ...] = ()
-    allowed_non_target_paths: tuple[TreePath, ...] = ()
+    permitted_paths: TreePaths = ()
+    covered_changed_paths: TreePaths = ()
+    unexplained_changed_paths: TreePaths = ()
+    allowed_non_target_paths: TreePaths = ()
     matched_allowance_rule_ids: tuple[str, ...] = ()
     path_set_invariant_holds: bool = True
 
 
-def mutation_event_touched_paths(event: MutationEvent) -> tuple[TreePath, ...]:
+def mutation_event_touched_paths(event: MutationEvent) -> TreePaths:
     """Return all paths touched by one mutation event in first-seen order."""
     touched: list[TreePath] = []
     touched.extend(event.consumed_paths)
@@ -85,7 +87,7 @@ def mutation_event_touched_paths(event: MutationEvent) -> tuple[TreePath, ...]:
     return dedupe_tree_paths(touched)
 
 
-def mutation_event_declared_allowance_paths(event: MutationEvent) -> tuple[TreePath, ...]:
+def mutation_event_declared_allowance_paths(event: MutationEvent) -> TreePaths:
     """Return all declared non-target allowance paths for one event."""
     return dedupe_tree_paths(path for allowance in event.declared_allowances for path in allowance.paths if path)
 
@@ -93,7 +95,7 @@ def mutation_event_declared_allowance_paths(event: MutationEvent) -> tuple[TreeP
 def mutation_event_allowance_paths_by_kind(
     event: MutationEvent,
     *kinds: str,
-) -> tuple[TreePath, ...]:
+) -> TreePaths:
     """Return declared allowance paths matching any of the given kind labels."""
 
     wanted = set(kinds)
@@ -146,7 +148,7 @@ def mutation_event_matching_allowance_rule_ids(
 
 def build_mutation_event_path_set_report(
     event: MutationEvent,
-    allowed_effect_region_paths: tuple[TreePath, ...],
+    allowed_effect_region_paths: TreePaths,
 ) -> MutationEventPathSetReport:
     """Partition one event's touched paths through target, recovery, and migration regions."""
 

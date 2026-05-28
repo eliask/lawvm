@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, Sequence, Tuple, TypeAlias
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.semantic_types import StructuralAction
 
 TreePath = Tuple[Tuple[str, str], ...]
+TreePaths: TypeAlias = Tuple[TreePath, ...]
+RenumberedTreePaths: TypeAlias = Tuple[Tuple[TreePath, TreePath], ...]
 
 
 def tree_path_from_legal_address(address: LegalAddress) -> TreePath:
@@ -21,7 +23,7 @@ def tree_path_from_legal_address(address: LegalAddress) -> TreePath:
 def operation_storage_boundary_prefixes(
     op: LegalOperation,
     declared_extra_prefixes: Sequence[TreePath] = (),
-) -> Tuple[TreePath, ...]:
+) -> TreePaths:
     """Return storage paths an operation is allowed to change by action shape.
 
     Structural child-list edits are observed at the parent path by
@@ -72,8 +74,8 @@ def build_operation_mutation_boundary_report(
 class ChangedPathPartition:
     """Changed paths split by whether a declared boundary covers them."""
 
-    covered_changed_paths: Tuple[TreePath, ...]
-    unexplained_changed_paths: Tuple[TreePath, ...]
+    covered_changed_paths: TreePaths
+    unexplained_changed_paths: TreePaths
 
 
 def partition_changed_paths(
@@ -95,10 +97,10 @@ def partition_changed_paths(
 class MutationBoundaryReport:
     """Changed-path accounting against declared legal mutation regions."""
 
-    changed_paths: Tuple[TreePath, ...]
-    allowed_prefixes: Tuple[TreePath, ...]
-    covered_changed_paths: Tuple[TreePath, ...]
-    unexplained_changed_paths: Tuple[TreePath, ...]
+    changed_paths: TreePaths
+    allowed_prefixes: TreePaths
+    covered_changed_paths: TreePaths
+    unexplained_changed_paths: TreePaths
 
 
 def build_mutation_boundary_report(
@@ -119,7 +121,7 @@ def build_mutation_boundary_report(
     )
 
 
-def diff_ir_paths(before: IRNode, after: IRNode) -> Tuple[TreePath, ...]:
+def diff_ir_paths(before: IRNode, after: IRNode) -> TreePaths:
     """Return structural paths whose node content or child shape differs."""
 
     return tuple(_diff_ir_paths(before, after, ()))
@@ -128,7 +130,7 @@ def diff_ir_paths(before: IRNode, after: IRNode) -> Tuple[TreePath, ...]:
 def unexplained_changed_paths(
     changed_paths: Sequence[TreePath],
     allowed_prefixes: Sequence[TreePath],
-) -> Tuple[TreePath, ...]:
+) -> TreePaths:
     """Return changed paths outside every declared mutation boundary prefix."""
 
     return partition_changed_paths(changed_paths, allowed_prefixes).unexplained_changed_paths
@@ -174,7 +176,7 @@ def _replace_payload_changes_target_key(op: LegalOperation) -> bool:
     return payload_key != (str(target_kind), str(target_label))
 
 
-def dedupe_tree_paths(paths: Iterable[TreePath]) -> Tuple[TreePath, ...]:
+def dedupe_tree_paths(paths: Iterable[TreePath]) -> TreePaths:
     """Return tree paths in first-seen order after string-normalizing steps."""
     seen: set[TreePath] = set()
     result: list[TreePath] = []
@@ -187,5 +189,5 @@ def dedupe_tree_paths(paths: Iterable[TreePath]) -> Tuple[TreePath, ...]:
     return tuple(result)
 
 
-def _dedupe_tree_paths(paths: Iterable[TreePath]) -> Tuple[TreePath, ...]:
+def _dedupe_tree_paths(paths: Iterable[TreePath]) -> TreePaths:
     return dedupe_tree_paths(paths)

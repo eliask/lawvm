@@ -9,9 +9,9 @@ not read live replay state or mutate IR.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, TypeAlias
+from typing import Iterable, List, Optional
 
-from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.mutation_boundary import RenumberedTreePaths, TreePath, TreePaths
 from lawvm.core.mutation_events import (
     DeclaredMutationAllowance,
     MutationEvent as ApplyMutationEvent,
@@ -20,10 +20,6 @@ from lawvm.core.mutation_events import (
 )
 from lawvm.core.tree_ops import Path
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
-
-TreePaths: TypeAlias = tuple[TreePath, ...]
-RenumberedTreePaths: TypeAlias = tuple[tuple[TreePath, TreePath], ...]
-
 
 @dataclass(frozen=True)
 class ApplyMutationAccountingResult:
