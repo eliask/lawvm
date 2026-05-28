@@ -88,6 +88,20 @@ The JSON-LD export also includes branch resources, branch graph edges, and
 branch lifecycle events using the `lawvm:` namespace. ELI statute resources
 remain separate from these branch/proposal graph facts.
 
+## Demo Command
+
+```bash
+uv run lawvm branch-demo --pretty
+```
+
+This emits a small synthetic payload showing:
+
+- the default enacted operation lane;
+- the selected proposal branch operation lane;
+- branch impact rows with current and branch text.
+
+It is a contract demo, not a jurisdiction frontend.
+
 `BranchImpactProjection` is the UI/API-facing summary layer for these edges:
 it can say which provisions a branch would affect, optionally with current and
 branch-specific text supplied by a frontend. The projection itself does not
