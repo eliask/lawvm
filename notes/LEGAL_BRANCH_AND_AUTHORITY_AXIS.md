@@ -43,6 +43,7 @@ Implemented:
 - `branch_materialization_ops(...)`
 - `CorpusGraph.branches`
 - `CorpusGraph.branch_edges`
+- `src/lawvm/core/branch_projection.py::BranchImpactProjection`
 
 The implementation is metadata-first. It does not parse proposal or bill
 language yet.
@@ -61,6 +62,11 @@ Branch graph edges are intended for claims such as:
 
 These edges are graph facts, not enacted-state mutations.
 
+`BranchImpactProjection` is the UI/API-facing summary layer for these edges:
+it can say which provisions a branch would affect, optionally with current and
+branch-specific text supplied by a frontend. The projection itself does not
+execute replay or claim enacted legal effect.
+
 ## Next Steps
 
 1. Add a small synthetic proposal demo corpus:
@@ -68,8 +74,8 @@ These edges are graph facts, not enacted-state mutations.
 2. Add a branch-aware materialization/demo command:
    default view excludes proposal ops; branch view includes only selected branch
    ops.
-3. Add proposal diff payloads:
-   current provision, proposed operation, proposed branch result, provenance.
+3. Fill branch impact rows with frontend-supplied current/branch text where a
+   source has enough structure for a meaningful diff.
 4. Add lifecycle events:
    introduced, amended, passed, withdrawn, failed, enacted.
 5. Prototype one real frontend lane:
