@@ -75,7 +75,7 @@ def _grounding_node_full_text(node: UKMutableNode) -> str:
 def _grounding_length_window_text_candidates(
     candidates_by_len: dict[int, list[_GroundingTextCandidate]],
     text_len: int,
-) -> list[tuple[str, str]]:
+) -> list[_GroundingTextCandidate]:
     """Return oracle texts passing the historical fuzzy length guard.
 
     The result preserves original ``text_map`` order so equal-score fuzzy ties
@@ -90,7 +90,7 @@ def _grounding_length_window_text_candidates(
             continue
         ordered.extend(candidates_by_len.get(candidate_len, ()))
     ordered.sort(key=lambda item: item.order)
-    return [(candidate.candidate_id, candidate.text) for candidate in ordered]
+    return ordered
 
 
 class UKReplayGroundingMixin:
@@ -248,7 +248,7 @@ class UKReplayGroundingMixin:
             text_candidates_by_len.setdefault(len(oracle_text), []).append(
                 _GroundingTextCandidate(order, candidate_id, oracle_text)
             )
-        text_candidate_window_cache: dict[int, list[tuple[str, str]]] = {}
+        text_candidate_window_cache: dict[int, list[_GroundingTextCandidate]] = {}
 
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
             nonlocal seen_oracle_ids
@@ -392,13 +392,13 @@ class UKReplayGroundingMixin:
                             text_candidates_by_len,
                             node_norm_len,
                         )
-                    for oid, otext in text_candidate_window_cache[node_norm_len]:
-                        if oid in seen_oracle_ids:
+                    for candidate in text_candidate_window_cache[node_norm_len]:
+                        if candidate.candidate_id in seen_oracle_ids:
                             continue
-                        score = Levenshtein.ratio(node_norm, otext)
+                        score = Levenshtein.ratio(node_norm, candidate.text)
                         if score > 0.92 and score > best_score:
                             best_score = score
-                            best_id = oid
+                            best_id = candidate.candidate_id
                     if best_id:
                         # Guard: crossheadings must not fuzzy-match term-* oracle EIDs.
                         # A crossheading "domestic abuse protection notices" should match

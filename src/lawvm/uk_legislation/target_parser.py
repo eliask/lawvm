@@ -6,6 +6,7 @@ import re
 from typing import Optional
 
 from lawvm.core.ir import LegalAddress
+from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import FacetKind
 from lawvm.roman import (
     arabic_to_roman as _shared_arabic_to_roman,
@@ -72,7 +73,7 @@ def _parse_affected_target(ref: str) -> LegalAddress:
     schedule_idx = next((i for i, (kind, _num) in enumerate(path) if kind == "schedule"), None)
     if schedule_idx is not None:
         schedule_tokens = [path[schedule_idx], *path[schedule_idx + 1 :], *reversed(path[:schedule_idx])]
-        schedule_path: list[tuple[str, str]] = []
+        schedule_path: list[TreePathStep] = []
         schedule_depth = 0
         for kind, num in schedule_tokens:
             if kind == "schedule":
@@ -99,7 +100,7 @@ def _parse_affected_target(ref: str) -> LegalAddress:
 
     body_descendant_tokens = [(kind, num) for kind, num in path if kind in ("paragraph", None)]
     if _is_direct_section_paragraph_ref(ref):
-        body_path: list[tuple[str, str]] = []
+        body_path: list[TreePathStep] = []
         body_depth = 0
         for kind, num in path:
             if kind == "part":
@@ -123,7 +124,7 @@ def _parse_affected_target(ref: str) -> LegalAddress:
             return LegalAddress(path=tuple(body_path))
 
     if len(body_descendant_tokens) > 2:
-        body_path: list[tuple[str, str]] = []
+        body_path: list[TreePathStep] = []
         body_depth = 0
         for kind, num in path:
             if kind == "part":
