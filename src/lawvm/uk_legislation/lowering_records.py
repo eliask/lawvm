@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 import re
 from typing import Any, Optional, Sequence
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
@@ -37,23 +38,21 @@ def _effect_lowering_record_base(
     extracted_text: Optional[str],
     blocking: bool,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "rule_id": rule_id,
-        "family": family,
-        "phase": "lowering",
-        "effect_id": effect.effect_id,
-        "affecting_act_id": effect.affecting_act_id,
-        "affected_provisions": effect.affected_provisions,
-        "affecting_provisions": effect.affecting_provisions,
-        "effect_type": effect.effect_type,
-        "reason": reason,
-        "reason_code": reason_code,
-        "blocking": blocking,
-        "strict_disposition": "block" if blocking else "record",
-        "quirks_disposition": "record",
-        "extracted_tag": _extracted_tag(extracted_el),
-        "has_extracted_source": extracted_el is not None,
-    }
+    payload = diagnostic_detail(
+        rule_id=rule_id,
+        family=family,
+        phase="lowering",
+        reason=reason,
+        blocking=blocking,
+        effect_id=effect.effect_id,
+        affecting_act_id=effect.affecting_act_id,
+        affected_provisions=effect.affected_provisions,
+        affecting_provisions=effect.affecting_provisions,
+        effect_type=effect.effect_type,
+        reason_code=reason_code,
+        extracted_tag=_extracted_tag(extracted_el),
+        has_extracted_source=extracted_el is not None,
+    )
     if extracted_text:
         payload["extracted_text_preview"] = " ".join(extracted_text.split())[:500]
     return payload
