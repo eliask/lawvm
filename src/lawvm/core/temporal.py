@@ -37,8 +37,8 @@ See also
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalAddress, OperationSource
@@ -91,6 +91,77 @@ UNRESOLVED_STATUS: ResolutionStatus = "unresolved"
 UNTRIGGERED_CERTIFIED_STATUS: ResolutionStatus = "untriggered_certified"
 SUPERSEDED_STATUS: ResolutionStatus = "superseded"
 
+TriggerCoverageStatus = Literal[
+    "complete_no_resolution",
+    "complete_with_resolution",
+    "incomplete",
+    "unknown",
+]
+
+TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION: TriggerCoverageStatus = "complete_no_resolution"
+TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION: TriggerCoverageStatus = "complete_with_resolution"
+TRIGGER_COVERAGE_INCOMPLETE: TriggerCoverageStatus = "incomplete"
+TRIGGER_COVERAGE_UNKNOWN: TriggerCoverageStatus = "unknown"
+
+_TRIGGER_COVERAGE_STATUSES = frozenset({
+    TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+    TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION,
+    TRIGGER_COVERAGE_INCOMPLETE,
+    TRIGGER_COVERAGE_UNKNOWN,
+})
+
+
+@dataclass(frozen=True)
+class TriggerCoverageCertificate:
+    """Epistemic coverage record for contingent trigger source searches."""
+
+    certificate_id: str
+    status: TriggerCoverageStatus
+    as_of: str = ""
+    activation_rule_ref: str = ""
+    source_scope: tuple[str, ...] = ()
+    checked_sources: tuple[str, ...] = ()
+    missing_sources: tuple[str, ...] = ()
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.certificate_id:
+            raise ValueError("TriggerCoverageCertificate.certificate_id must be non-empty")
+        if self.status not in _TRIGGER_COVERAGE_STATUSES:
+            raise ValueError(f"unsupported trigger coverage status: {self.status!r}")
+        if self.status in {
+            TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION,
+            TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION,
+        }:
+            if not self.as_of:
+                raise ValueError(
+                    f"TriggerCoverageCertificate(status={self.status!r}) requires as_of"
+                )
+            if not self.checked_sources:
+                raise ValueError(
+                    f"TriggerCoverageCertificate(status={self.status!r}) requires checked_sources"
+                )
+        if self.status == TRIGGER_COVERAGE_INCOMPLETE and not self.missing_sources:
+            raise ValueError(
+                "TriggerCoverageCertificate(status='incomplete') requires missing_sources"
+            )
+
+    @property
+    def certifies_untriggered(self) -> bool:
+        return self.status == TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "certificate_id": self.certificate_id,
+            "status": self.status,
+            "as_of": self.as_of,
+            "activation_rule_ref": self.activation_rule_ref,
+            "source_scope": self.source_scope,
+            "checked_sources": self.checked_sources,
+            "missing_sources": self.missing_sources,
+            "detail": dict(self.detail),
+        }
+
 
 @dataclass(frozen=True)
 class ResolutionFact:
@@ -104,11 +175,21 @@ class ResolutionFact:
     status: ResolutionStatus
     resolved_effective: str = ""
     authority_source: str = ""
+    coverage_certificate_id: str = ""
 
     def __post_init__(self) -> None:
         if self.status == RESOLVED_STATUS and not self.resolved_effective:
             raise ValueError(
                 "ResolutionFact(status='resolved') requires a non-empty resolved_effective"
+            )
+        if (
+            self.status == UNTRIGGERED_CERTIFIED_STATUS
+            and not self.authority_source
+            and not self.coverage_certificate_id
+        ):
+            raise ValueError(
+                "ResolutionFact(status='untriggered_certified') requires authority_source "
+                "or coverage_certificate_id"
             )
 
     @property
@@ -305,6 +386,12 @@ __all__ = [
     "FIXED_DATE_KIND",
     "PENDING_DECREE_KIND",
     "PENDING_CONDITION_KIND",
+    "TriggerCoverageStatus",
+    "TriggerCoverageCertificate",
+    "TRIGGER_COVERAGE_COMPLETE_NO_RESOLUTION",
+    "TRIGGER_COVERAGE_COMPLETE_WITH_RESOLUTION",
+    "TRIGGER_COVERAGE_INCOMPLETE",
+    "TRIGGER_COVERAGE_UNKNOWN",
     "ResolutionStatus",
     "ResolutionFact",
     "RESOLVED_STATUS",
