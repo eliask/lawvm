@@ -272,6 +272,8 @@ Recent improvement:
 - Estonia parse-time target-title rejection diagnostics now carry a nested
   shared target-resolution rejection certificate while preserving EE-local
   title and statute-fragment payloads.
+- Estonia instruction-waist `exclude_paths` now uses shared tree-path aliases
+  while keeping Estonia-local numeric and label range tuples local.
 
 ## Ranked Promotion Candidates
 
