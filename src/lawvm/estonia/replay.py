@@ -28,6 +28,7 @@ from lawvm.core.compile_result import (
     TemporalEvent,
 )
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.temporal import TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
@@ -381,6 +382,37 @@ _EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE = "ee_temporal_source_scan_failed"
 _EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE = "ee_pending_source_act_commencement_source_fetch_failed"
 
 
+def _ee_rt_xml_source_lane_detail(
+    *,
+    rule_id: str,
+    phase: str,
+    reason: str,
+    akt_viide: str,
+    attempt_status: str,
+    selected_lane: str,
+    selected: bool,
+    blocking: bool = True,
+) -> dict[str, Any]:
+    locator = f"ee/{akt_viide}"
+    return SourceLaneSelectionEvidence(
+        rule_id=rule_id,
+        phase=phase,
+        reason=reason,
+        selected_lane=selected_lane,
+        selected_locator=locator if selected else "",
+        attempts=(
+            SourceLaneAttempt(
+                lane="riigi_teataja_xml",
+                locator=locator,
+                status=attempt_status,
+            ),
+        ),
+        blocking=blocking,
+        strict_disposition="block" if blocking else "record",
+        quirks_disposition="record",
+    ).to_diagnostic_detail()
+
+
 def _ee_orchestration_adjudication(
     *,
     kind: str,
@@ -446,6 +478,15 @@ def _ee_filter_cancelled_pending_refs(
                             "ref_amendment": ref.aktViide,
                             "reason": "pending_ref_source_fetch_failed",
                             "exception_type": type(exc).__name__,
+                            "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                                rule_id=_EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE,
+                                phase="acquisition",
+                                reason="pending_ref_source_fetch_failed",
+                                akt_viide=ref.aktViide,
+                                attempt_status="fetch_failed",
+                                selected_lane="no_source_lane_selected_fetch_failed",
+                                selected=False,
+                            ),
                         },
                     )
             )
@@ -730,6 +771,15 @@ def _ee_precompose_pending_source_act_commencements(
                         "effective": ref.joustumine,
                         "as_of": as_of,
                         "error": str(exc),
+                        "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                            rule_id=_EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE,
+                            phase="acquisition",
+                            reason="pending_source_act_commencement_source_fetch_failed",
+                            akt_viide=ref.aktViide,
+                            attempt_status="fetch_failed",
+                            selected_lane="no_source_lane_selected_fetch_failed",
+                            selected=False,
+                        ),
                     },
                 )
             )
@@ -1264,6 +1314,15 @@ def replay_ee_to_pit(
                         "reason": "amendment_source_fetch_failed",
                         "exception_type": type(e).__name__,
                         "exception": str(e),
+                        "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                            rule_id=_EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE,
+                            phase="acquisition",
+                            reason="amendment_source_fetch_failed",
+                            akt_viide=ref.aktViide,
+                            attempt_status="fetch_failed",
+                            selected_lane="no_source_lane_selected_fetch_failed",
+                            selected=False,
+                        ),
                     },
                     phase="acquisition",
                     family="source_lane_failure",
@@ -1303,6 +1362,15 @@ def replay_ee_to_pit(
                         "reason": "amendment_parse_failed",
                         "exception_type": type(e).__name__,
                         "exception": str(e),
+                        "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                            rule_id=_EE_AMENDMENT_PARSE_FAILED_RULE,
+                            phase="parse",
+                            reason="amendment_parse_failed",
+                            akt_viide=ref.aktViide,
+                            attempt_status="selected_parse_failed",
+                            selected_lane="riigi_teataja_xml",
+                            selected=True,
+                        ),
                     },
                     phase="parse",
                     family="source_lane_failure",
@@ -1391,6 +1459,15 @@ def replay_ee_to_pit(
                             "reason": "temporal_source_scan_failed",
                             "exception_type": type(e).__name__,
                             "exception": str(e),
+                            "source_lane_selection": _ee_rt_xml_source_lane_detail(
+                                rule_id=_EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE,
+                                phase="temporal",
+                                reason="temporal_source_scan_failed",
+                                akt_viide=ref.aktViide,
+                                attempt_status="selected_scan_failed",
+                                selected_lane="riigi_teataja_xml",
+                                selected=True,
+                            ),
                         },
                         phase="temporal",
                         family="source_lane_failure",

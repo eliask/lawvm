@@ -194,6 +194,10 @@ Recent improvement:
 - UK single-child amendment payload, enacted schedule-table row payload, and
   compound BlockAmendment payload-only extraction diagnostics now use the same
   source-lane carrier while preserving their existing UK-local fields.
+- Estonia replay orchestration now nests shared source-lane selection evidence
+  inside amendment fetch, amendment parse, temporal source scan, pending
+  cancellation, and pending source-act commencement failures while preserving
+  Estonia's blocking adjudication kinds and families.
 - Estonia target-resolution parse rejection helpers now delegate shared
   diagnostic envelope fields to `diagnostic_detail` while preserving their
   local target-title and source-fragment payload.

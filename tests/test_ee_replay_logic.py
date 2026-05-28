@@ -300,6 +300,16 @@ def test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].detail["exception_type"] == "RuntimeError"
+    source_lane = adjudications[0].detail["source_lane_selection"]
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "no_source_lane_selected_fetch_failed"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "riigi_teataja_xml",
+            "status": "fetch_failed",
+            "locator": "ee/108072025001",
+        },
+    )
 
 
 def test_filter_cancelled_pending_refs_records_metadata_parse_failure_and_retains_ref(
@@ -3623,6 +3633,16 @@ def test_precompose_pending_source_act_commencement_records_fetch_failure(monkey
     assert adjudication.detail["strict_disposition"] == "block"
     assert adjudication.detail["quirks_disposition"] == "record"
     assert adjudication.detail["error"] == "source unavailable"
+    source_lane = adjudication.detail["source_lane_selection"]
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "no_source_lane_selected_fetch_failed"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "riigi_teataja_xml",
+            "status": "fetch_failed",
+            "locator": "ee/missing",
+        },
+    )
 
 
 def test_precompose_pending_source_act_commencement_keeps_now_effective_override(monkeypatch) -> None:
@@ -3814,6 +3834,16 @@ def test_replay_ee_to_pit_adjudicates_amendment_fetch_failure(monkeypatch) -> No
     assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["exception_type"] == "RuntimeError"
+    source_lane = adjudications[0].detail["source_lane_selection"]
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "no_source_lane_selected_fetch_failed"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "riigi_teataja_xml",
+            "status": "fetch_failed",
+            "locator": "ee/amend-fetch-fails",
+        },
+    )
 
 
 def test_replay_ee_to_pit_adjudicates_amendment_parse_failure(monkeypatch) -> None:
@@ -3843,6 +3873,17 @@ def test_replay_ee_to_pit_adjudicates_amendment_parse_failure(monkeypatch) -> No
     assert adjudications[0].detail["phase"] == "parse"
     assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["exception_type"] == "ValueError"
+    source_lane = adjudications[0].detail["source_lane_selection"]
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "riigi_teataja_xml"
+    assert source_lane["selected_source_locator"] == "ee/amend-parse-fails"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "riigi_teataja_xml",
+            "status": "selected_parse_failed",
+            "locator": "ee/amend-parse-fails",
+        },
+    )
 
 
 def test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure(monkeypatch) -> None:
@@ -3878,6 +3919,17 @@ def test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure(monkeypatch) 
     assert adjudications[0].detail["family"] == "source_lane_failure"
     assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["exception_type"] == "ValueError"
+    source_lane = adjudications[0].detail["source_lane_selection"]
+    assert source_lane["family"] == "source_lane_selection"
+    assert source_lane["selected_source_lane"] == "riigi_teataja_xml"
+    assert source_lane["selected_source_locator"] == "ee/temporal-scan-fails"
+    assert source_lane["source_lane_attempts"] == (
+        {
+            "lane": "riigi_teataja_xml",
+            "status": "selected_scan_failed",
+            "locator": "ee/temporal-scan-fails",
+        },
+    )
 
 
 def test_derive_ee_temporal_expiry_events_from_kehtib_kuni_clause() -> None:
