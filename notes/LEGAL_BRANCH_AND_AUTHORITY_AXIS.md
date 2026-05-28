@@ -41,6 +41,8 @@ Implemented:
 - `OperationSource.scenario_id`
 - `enacted_materialization_ops(...)`
 - `branch_materialization_ops(...)`
+- `branch_graph_edge_from_operation(...)`
+- `branch_graph_edges_from_operations(...)`
 - `CorpusGraph.branches`
 - `CorpusGraph.branch_edges`
 - `src/lawvm/core/branch_projection.py::BranchImpactProjection`
@@ -66,6 +68,12 @@ These edges are graph facts, not enacted-state mutations.
 it can say which provisions a branch would affect, optionally with current and
 branch-specific text supplied by a frontend. The projection itself does not
 execute replay or claim enacted legal effect.
+
+Frontends that already lower proposal/draft material into `LegalOperation`
+instances can call `branch_graph_edges_from_operations(...)` to get conservative
+would-affect graph facts. Core maps insert/replace/repeal actions to
+`would_insert`, `would_replace`, and `would_repeal`; other structural actions
+fall back to `would_amend`.
 
 ## Next Steps
 

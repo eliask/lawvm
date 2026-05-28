@@ -8,6 +8,9 @@ from lawvm.core.authority import (
     LegalBranch,
     PROPOSAL_AUTHORITY,
     UNKNOWN_STATUS,
+    branch_edge_kind_for_action,
+    branch_graph_edge_from_operation,
+    branch_graph_edges_from_operations,
     enacted_materialization_ops,
     branch_materialization_ops,
 )
@@ -26,6 +29,16 @@ def _op(op_id: str, *, source: OperationSource | None = None) -> LegalOperation:
     )
 
 
+def _branch_source() -> OperationSource:
+    return OperationSource(
+        statute_id="proposal/example/2026/1",
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id="proposal:example:2026-1",
+        scenario_id="if_enacted_as_introduced",
+    )
+
+
 def test_default_operation_source_is_enacted_materialization_context() -> None:
     enacted = _op("enacted", source=OperationSource(statute_id="2025/1"))
     sourceless = _op("sourceless")
@@ -35,14 +48,7 @@ def test_default_operation_source_is_enacted_materialization_context() -> None:
 
 def test_proposal_operation_does_not_leak_into_enacted_materialization() -> None:
     enacted = _op("enacted", source=OperationSource(statute_id="2025/1"))
-    proposal_source = OperationSource(
-        statute_id="proposal/example/2026/1",
-        authority_layer=PROPOSAL_AUTHORITY,
-        legal_status=UNKNOWN_STATUS,
-        branch_id="proposal:example:2026-1",
-        scenario_id="if_enacted_as_introduced",
-    )
-    proposal = _op("proposal", source=proposal_source)
+    proposal = _op("proposal", source=_branch_source())
     context = BranchContext(
         authority_layer=PROPOSAL_AUTHORITY,
         legal_status=UNKNOWN_STATUS,
@@ -94,3 +100,45 @@ def test_branch_graph_edge_projects_branch_export_shape() -> None:
         "authority_layer": "proposal",
         "legal_status": "unknown",
     }
+
+
+def test_branch_graph_edge_from_operation_ignores_default_enacted_ops() -> None:
+    op = _op("enacted-op", source=OperationSource(statute_id="2025/1"))
+
+    assert branch_graph_edge_from_operation(op, target_statute_id="base/1") is None
+
+
+def test_branch_graph_edge_from_operation_projects_non_enacted_op() -> None:
+    op = _op("proposal-op-1", source=_branch_source())
+
+    edge = branch_graph_edge_from_operation(op, target_statute_id="base/1")
+
+    assert edge is not None
+    assert edge.edge_kind == "would_repeal"
+    assert edge.branch_id == "proposal:example:2026-1"
+    assert edge.source_artifact_id == "proposal/example/2026/1"
+    assert edge.target_statute_id == "base/1"
+    assert edge.target_address == "section:1"
+    assert edge.operation_id == "proposal-op-1"
+
+
+def test_branch_graph_edges_from_operations_filters_enacted_ops() -> None:
+    enacted = _op("enacted-op", source=OperationSource(statute_id="2025/1"))
+    proposal = _op("proposal-op-1", source=_branch_source())
+
+    edges = branch_graph_edges_from_operations(
+        [enacted, proposal],
+        target_statute_id="base/1",
+    )
+
+    assert len(edges) == 1
+    assert edges[0].operation_id == "proposal-op-1"
+
+
+def test_branch_edge_kind_for_action_maps_structural_actions() -> None:
+    assert branch_edge_kind_for_action(StructuralAction.INSERT) == "would_insert"
+    assert branch_edge_kind_for_action(StructuralAction.REPLACE) == "would_replace"
+    assert branch_edge_kind_for_action(StructuralAction.TEXT_REPLACE) == "would_replace"
+    assert branch_edge_kind_for_action(StructuralAction.REPEAL) == "would_repeal"
+    assert branch_edge_kind_for_action(StructuralAction.TEXT_REPEAL) == "would_repeal"
+    assert branch_edge_kind_for_action(StructuralAction.RENUMBER) == "would_amend"

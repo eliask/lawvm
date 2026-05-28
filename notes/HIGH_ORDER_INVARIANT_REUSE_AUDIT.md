@@ -176,6 +176,9 @@ Recent improvement:
 - branch impact projection rows now provide a small shared UI/API-facing
   payload for would-affect branch graph edges without claiming enacted legal
   effect or executing jurisdiction-specific proposal parsing in core.
+- branch graph edges can now be projected from typed non-enacted operations,
+  giving proposal/draft frontends a shared path from `LegalOperation` to
+  would-affect graph export facts.
 
 ## Ranked Promotion Candidates
 

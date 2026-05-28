@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, Sequence
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalOperation
+    from lawvm.core.semantic_types import StructuralAction
 
 
 AuthorityLayer = Literal[
@@ -253,3 +254,68 @@ def branch_materialization_ops(
     """Return operations belonging to the requested legal branch context."""
 
     return tuple(op for op in ops if operation_matches_branch_context(op, context))
+
+
+def branch_graph_edge_from_operation(
+    op: "LegalOperation",
+    *,
+    target_statute_id: str,
+    source_unit_id: str = "",
+) -> BranchGraphEdge | None:
+    """Project a non-enacted branch operation into a graph/export edge.
+
+    Default enacted operations return ``None`` because they are ordinary replay
+    inputs, not proposal/draft branch claims.
+    """
+
+    context = branch_context_from_operation(op)
+    if context.is_enacted_default:
+        return None
+    if not target_statute_id:
+        raise ValueError("branch_graph_edge_from_operation requires target_statute_id")
+    source = op.source
+    return BranchGraphEdge(
+        branch_id=context.branch_id,
+        edge_kind=branch_edge_kind_for_action(op.action),
+        source_artifact_id=source.statute_id if source is not None else "",
+        source_statute_id=source.statute_id if source is not None else "",
+        source_unit_id=source_unit_id or (op.group_id or ""),
+        target_statute_id=target_statute_id,
+        target_address=str(op.target),
+        operation_id=op.op_id,
+        authority_layer=context.authority_layer,
+        legal_status=context.legal_status,
+    )
+
+
+def branch_graph_edges_from_operations(
+    ops: Sequence["LegalOperation"],
+    *,
+    target_statute_id: str,
+) -> tuple[BranchGraphEdge, ...]:
+    """Project all non-enacted branch operations into graph/export edges."""
+
+    return tuple(
+        edge
+        for op in ops
+        if (edge := branch_graph_edge_from_operation(op, target_statute_id=target_statute_id))
+        is not None
+    )
+
+
+def branch_edge_kind_for_action(action: "StructuralAction") -> BranchEdgeKind:
+    """Map a core structural action to a conservative branch graph edge kind."""
+
+    from lawvm.core.semantic_types import StructuralAction
+
+    if action is StructuralAction.INSERT:
+        return WOULD_INSERT_EDGE
+    if action in {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}:
+        return WOULD_REPEAL_EDGE
+    if action in {
+        StructuralAction.REPLACE,
+        StructuralAction.HEADING_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    }:
+        return WOULD_REPLACE_EDGE
+    return WOULD_AMEND_EDGE
