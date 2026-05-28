@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Protocol
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.heading_facets import (
     _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID,
@@ -18,10 +19,28 @@ from lawvm.uk_legislation.replay_records import (
 )
 
 
+class _HeadingReplaySelf(Protocol):
+    adjudications_out: list[CompileAdjudication]
+
+    def _find_parent_tuple_for_node(
+        self,
+        target_node: UKMutableNode,
+    ) -> tuple[Optional[UKMutableNode], Optional[int]]: ...
+
+    def _remove_node(
+        self,
+        node: UKMutableNode,
+        parent: Optional[UKMutableNode],
+        idx: Optional[int],
+    ) -> bool: ...
+
+    def _record_repealed_target(self, target: LegalAddress) -> None: ...
+
+
 class UKReplayHeadingApplyMixin:
 
     def _repeal_crossheading_group(
-        self,
+        self: _HeadingReplaySelf,
         target: LegalAddress,
         node: UKMutableNode,
         parent: Optional[UKMutableNode],
