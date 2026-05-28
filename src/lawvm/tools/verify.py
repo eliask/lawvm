@@ -54,7 +54,7 @@ from lawvm.core.compile_facade import CompileFacade
 from lawvm.core.compile_result import (
     CanonicalBundle,
 )
-from lawvm.core.timeline_results import TimelineIssue
+from lawvm.core.timeline_results import MaterializationResult, TimelineIssue
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.verification_contracts import VerifyIssue, VerifySeverity, VerifySummary
 from lawvm.core.compile_views import (
@@ -88,6 +88,40 @@ def _timeline_issue_to_issue(issue: TimelineIssue, context: str) -> Issue:
     """Project typed timeline execution diagnostics into verify CLI issues."""
     severity = "error" if issue.blocking else "warning"
     return _issue("timeline", severity, issue.rule_id, issue.message, context)
+
+
+def _materialization_degradation_issue(
+    materialized: MaterializationResult,
+    context: str,
+) -> Issue | None:
+    """Project PIT materialization degradation status into verify CLI issues."""
+    if materialized.status == "degraded_missing_scope":
+        return _issue(
+            "timeline",
+            "warning",
+            "timeline.degraded_missing_scope",
+            (
+                "timeline/PIT materialization required missing scope: "
+                + ", ".join(materialized.required_dimensions)
+            ),
+            context,
+        )
+    if materialized.status == "degraded_timeline_issues":
+        blocking_rule_ids = tuple(
+            issue.rule_id for issue in materialized.issues if issue.blocking
+        )
+        return _issue(
+            "timeline",
+            "warning",
+            "timeline.degraded_timeline_issues",
+            (
+                "timeline/PIT materialization rendered with blocking timeline "
+                f"diagnostics: {', '.join(blocking_rule_ids)}"
+            ),
+            context,
+            detail={"blocking_rule_ids": blocking_rule_ids},
+        )
+    return None
 
 
 def _phase_finding_to_visibility_issue(finding, context: str) -> Issue:
@@ -396,15 +430,9 @@ def _verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex
         if compiled_timelines.issues:
             for issue in compiled_timelines.issues:
                 all_issues.append(_timeline_issue_to_issue(issue, sid))
-        if materialized.is_degraded:
-            all_issues.append(_issue(
-                "timeline", "warning", "timeline.degraded_missing_scope",
-                (
-                    "timeline/PIT materialization required missing scope: "
-                    + ", ".join(materialized.required_dimensions)
-                ),
-                sid,
-            ))
+        degradation_issue = _materialization_degradation_issue(materialized, sid)
+        if degradation_issue is not None:
+            all_issues.append(degradation_issue)
         for issue in materialized.issues:
             all_issues.append(_timeline_issue_to_issue(issue, sid))
 
