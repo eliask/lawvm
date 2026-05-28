@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Dict, Any, cast
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
@@ -1229,24 +1230,22 @@ def _visible_inline_text_preservation_observation(
             })
     if not count:
         return None
-    return {
-        "rule_id": "uk_visible_inline_text_preserved",
-        "family": "source_shape_preservation",
-        "phase": "source_parse",
-        "statute_id": statute_id,
-        "side": version_label,
-        "source_url": source_path,
-        "count": count,
-        "samples": tuple(samples),
-        "reason": (
+    return diagnostic_detail(
+        rule_id="uk_visible_inline_text_preserved",
+        family="source_shape_preservation",
+        phase="source_parse",
+        reason=(
             "UK visible inline source tags such as Citation, CitationSubRef, and Term "
             "were preserved as host provision text while remaining non-addressable as "
             "standalone legal units."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        statute_id=statute_id,
+        side=version_label,
+        source_url=source_path,
+        count=count,
+        samples=tuple(samples),
+    )
 
 
 def _source_parse_observations(
@@ -1324,20 +1323,21 @@ def _source_parse_observations(
         _walk(supplement)
 
     return [
-        {
-            "rule_id": rule_id,
-            "family": "source_shape_preservation",
-            "phase": "source_parse",
-            "statute_id": statute_id,
-            "side": version_label,
-            "source_url": source_path,
-            "count": count,
-            "samples": samples.get(rule_id, []),
-            "reason": "UK source XML structure was preserved as replay-addressable IR rather than flattened into host text.",
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
+        diagnostic_detail(
+            rule_id=rule_id,
+            family="source_shape_preservation",
+            phase="source_parse",
+            reason=(
+                "UK source XML structure was preserved as replay-addressable IR rather "
+                "than flattened into host text."
+            ),
+            blocking=False,
+            statute_id=statute_id,
+            side=version_label,
+            source_url=source_path,
+            count=count,
+            samples=samples.get(rule_id, []),
+        )
         for rule_id, count in sorted(counts.items())
     ]
 

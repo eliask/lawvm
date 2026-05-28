@@ -57,6 +57,8 @@ Recent improvement:
   records now delegate their outward envelope defaults to `diagnostic_detail`.
 - UK source-backed temporal recovery records now delegate their outward
   envelope defaults to `diagnostic_detail`.
+- UK source-parse shape-preservation observations now delegate their outward
+  envelope defaults to `diagnostic_detail`.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
