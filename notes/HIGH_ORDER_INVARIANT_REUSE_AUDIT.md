@@ -267,6 +267,9 @@ Implemented progress:
 - the central UK replay action/target detail builder now delegates envelope
   defaults to `diagnostic_detail` while letting `_build_uk_replay_adjudication`
   attach the final replay rule ID.
+- Norway replay skip/adjudication helpers and Estonia orchestration/unsupported
+  replay adjudication helpers now delegate their shared envelope defaults to
+  `diagnostic_detail` while preserving frontend-local adjudication carriers.
 
 Why high value:
 

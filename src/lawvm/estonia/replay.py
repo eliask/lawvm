@@ -27,6 +27,7 @@ from typing import Any, List, Optional
 from lawvm.core.compile_result import (
     TemporalEvent,
 )
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.temporal import TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
@@ -391,13 +392,13 @@ def _ee_orchestration_adjudication(
     blocking: bool = False,
     op_id: str = "",
 ) -> CompileAdjudication:
-    normalized_detail = dict(detail)
-    normalized_detail.setdefault("rule_id", kind)
-    normalized_detail.setdefault("phase", phase)
-    normalized_detail.setdefault("family", family)
-    normalized_detail.setdefault("blocking", blocking)
-    normalized_detail.setdefault("strict_disposition", "block" if blocking else "record")
-    normalized_detail.setdefault("quirks_disposition", "record")
+    normalized_detail = diagnostic_detail(
+        rule_id=kind,
+        phase=phase,
+        family=family,
+        blocking=blocking,
+        detail=detail,
+    )
     return CompileAdjudication(
         kind=kind,
         message=message,
