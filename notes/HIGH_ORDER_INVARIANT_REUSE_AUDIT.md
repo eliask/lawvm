@@ -33,6 +33,9 @@ Recent improvement:
   `strict_disposition`, and `quirks_disposition`; UK lowering and the central
   UK replay action/target detail builder use it while keeping their local
   adjudication carriers.
+- UK source acquisition/extraction diagnostics now also delegate their outward
+  envelope defaults to `diagnostic_detail` while preserving local source-lane
+  rule IDs and payload fields.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 MIN_UK_XML_SOURCE_BYTES = 100
 UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
     {
@@ -69,6 +71,25 @@ def classify_uk_source_blob_legacy(blob: bytes | None) -> tuple[str, int]:
     return uk_source_state_wire_tuple(blob)
 
 
+def _uk_source_diagnostic(
+    *,
+    rule_id: str,
+    family: str,
+    phase: str,
+    reason: str,
+    blocking: bool,
+    **detail: Any,
+) -> dict[str, Any]:
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family=family,
+        phase=phase,
+        reason=reason,
+        blocking=blocking,
+        detail=detail,
+    )
+
+
 def uk_source_xml_parse_rejection(
     *,
     statute_id: str,
@@ -76,20 +97,18 @@ def uk_source_xml_parse_rejection(
     source_url: str,
     exc: Exception,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": f"uk_{side}_xml_parse_rejected",
-        "family": "source_pathology",
-        "phase": "parse",
-        "statute_id": statute_id,
-        "side": side,
-        "source_url": source_url,
-        "reason": "UK source XML was available but could not be parsed.",
-        "exception_type": type(exc).__name__,
-        "exception_message": str(exc),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return _uk_source_diagnostic(
+        rule_id=f"uk_{side}_xml_parse_rejected",
+        family="source_pathology",
+        phase="parse",
+        reason="UK source XML was available but could not be parsed.",
+        blocking=True,
+        statute_id=statute_id,
+        side=side,
+        source_url=source_url,
+        exception_type=type(exc).__name__,
+        exception_message=str(exc),
+    )
 
 
 def uk_source_parse_observations_from_ir(ir: Any) -> list[dict[str, Any]]:
@@ -107,18 +126,16 @@ def uk_affecting_act_xml_missing_rejection(
     affecting_act_id: str,
     locator: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_xml_missing_rejected",
-        "family": "source_pathology",
-        "phase": "acquisition",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": locator,
-        "reason": "UK affecting act XML was missing from the archive, so the effect source fragment could not be extracted.",
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_xml_missing_rejected",
+        family="source_pathology",
+        phase="acquisition",
+        reason="UK affecting act XML was missing from the archive, so the effect source fragment could not be extracted.",
+        blocking=True,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        locator=locator,
+    )
 
 
 def uk_affecting_act_xml_parse_rejection(
@@ -128,20 +145,18 @@ def uk_affecting_act_xml_parse_rejection(
     locator: str,
     exc: Exception,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_xml_parse_rejected",
-        "family": "source_pathology",
-        "phase": "parse",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": locator,
-        "reason": "UK affecting act XML was available but could not be parsed, so the effect source fragment could not be extracted.",
-        "exception_type": type(exc).__name__,
-        "exception_message": str(exc),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_xml_parse_rejected",
+        family="source_pathology",
+        phase="parse",
+        reason="UK affecting act XML was available but could not be parsed, so the effect source fragment could not be extracted.",
+        blocking=True,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        locator=locator,
+        exception_type=type(exc).__name__,
+        exception_message=str(exc),
+    )
 
 
 def uk_affecting_act_xml_too_small_rejection(
@@ -151,19 +166,17 @@ def uk_affecting_act_xml_too_small_rejection(
     locator: str,
     source_size: int,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_xml_too_small_rejected",
-        "family": "source_pathology",
-        "phase": "acquisition",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "locator": locator,
-        "source_size": int(source_size),
-        "reason": "UK affecting act XML was present but too small to trust, so the effect source fragment could not be extracted.",
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_xml_too_small_rejected",
+        family="source_pathology",
+        phase="acquisition",
+        reason="UK affecting act XML was present but too small to trust, so the effect source fragment could not be extracted.",
+        blocking=True,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        locator=locator,
+        source_size=int(source_size),
+    )
 
 
 def uk_affecting_act_current_shell_enacted_source_selected(
@@ -178,28 +191,26 @@ def uk_affecting_act_current_shell_enacted_source_selected(
     current_text_preview: str,
     enacted_text_preview: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_current_shell_enacted_source_selected",
-        "family": "source_lane_selection",
-        "phase": "acquisition",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "current_locator": current_locator,
-        "enacted_locator": enacted_locator,
-        "current_source_size": int(current_source_size),
-        "enacted_source_size": int(enacted_source_size),
-        "current_text_preview": current_text_preview,
-        "enacted_text_preview": enacted_text_preview,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_current_shell_enacted_source_selected",
+        family="source_lane_selection",
+        phase="acquisition",
+        reason=(
             "UK current affecting-act XML extracted only a non-substantive dot-leader "
             "shell, while the official enacted XML contained substantive text for the "
             "same affecting provision."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        current_locator=current_locator,
+        enacted_locator=enacted_locator,
+        current_source_size=int(current_source_size),
+        enacted_source_size=int(enacted_source_size),
+        current_text_preview=current_text_preview,
+        enacted_text_preview=enacted_text_preview,
+    )
 
 
 def uk_affecting_act_missing_current_enacted_source_selected(
@@ -213,27 +224,25 @@ def uk_affecting_act_missing_current_enacted_source_selected(
     enacted_source_size: int,
     enacted_text_preview: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_missing_current_enacted_source_selected",
-        "family": "source_lane_selection",
-        "phase": "acquisition",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "current_locator": current_locator,
-        "enacted_locator": enacted_locator,
-        "current_source_size": int(current_source_size),
-        "enacted_source_size": int(enacted_source_size),
-        "enacted_text_preview": enacted_text_preview,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_missing_current_enacted_source_selected",
+        family="source_lane_selection",
+        phase="acquisition",
+        reason=(
             "UK current affecting-act XML did not expose an extractable same-provision "
             "source node, while the official enacted XML contained substantive text for "
             "that exact affecting provision."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        current_locator=current_locator,
+        enacted_locator=enacted_locator,
+        current_source_size=int(current_source_size),
+        enacted_source_size=int(enacted_source_size),
+        enacted_text_preview=enacted_text_preview,
+    )
 
 
 def uk_affecting_act_single_amendment_child_source_selected(
@@ -248,29 +257,27 @@ def uk_affecting_act_single_amendment_child_source_selected(
     selected_child_label: str,
     selected_child_text_preview: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_single_amendment_child_source_selected",
-        "family": "source_lane_selection",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "source_container_id": source_container_id,
-        "selected_child_id": selected_child_id,
-        "selected_child_label": selected_child_label,
-        "selected_child_text_preview": selected_child_text_preview,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_single_amendment_child_source_selected",
+        family="source_lane_selection",
+        phase="extraction",
+        reason=(
             "UK effects metadata named a broad source container whose current "
             "version was only a shell, while the enacted source container had "
             "exactly one child carrying an amendment payload. LawVM selected "
             "that child rather than smuggling the context sibling into the payload."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        source_container_id=source_container_id,
+        selected_child_id=selected_child_id,
+        selected_child_label=selected_child_label,
+        selected_child_text_preview=selected_child_text_preview,
+    )
 
 
 def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
@@ -284,28 +291,26 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
     normalized_affecting_provisions: str,
     extracted_element_id: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
-        "family": "target_resolution_recovery",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "normalized_affecting_provisions": normalized_affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "requested_part_label": requested_part_label,
-        "extracted_element_id": extracted_element_id,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_nonaddressable_schedule_part_context_ignored",
+        family="target_resolution_recovery",
+        phase="extraction",
+        reason=(
             "UK effects metadata named a schedule Part context that is represented as an "
             "ancestor container in source XML rather than in descendant paragraph IDs; "
             "the normalized paragraph reference was accepted only because the extracted "
             "node has a matching Part ancestor."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        normalized_affecting_provisions=normalized_affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        requested_part_label=requested_part_label,
+        extracted_element_id=extracted_element_id,
+    )
 
 
 def uk_affecting_act_article_schedule_payload_source_extracted(
@@ -320,28 +325,26 @@ def uk_affecting_act_article_schedule_payload_source_extracted(
     schedule_element_id: str,
     article_text_preview: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_article_schedule_payload_source_extracted",
-        "family": "source_lane_selection",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "article_ref": article_ref,
-        "article_element_id": article_element_id,
-        "schedule_element_id": schedule_element_id,
-        "article_text_preview": article_text_preview,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_article_schedule_payload_source_extracted",
+        family="source_lane_selection",
+        phase="extraction",
+        reason=(
             "UK effects metadata cited an article plus an attached Schedule payload; "
             "the article text explicitly points to text set out in the Schedule, so "
             "the unnumbered source Schedule is used as the amendment payload."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        article_ref=article_ref,
+        article_element_id=article_element_id,
+        schedule_element_id=schedule_element_id,
+        article_text_preview=article_text_preview,
+    )
 
 
 def uk_affecting_act_implicit_first_subparagraph_context_ignored(
@@ -354,27 +357,25 @@ def uk_affecting_act_implicit_first_subparagraph_context_ignored(
     normalized_affecting_provisions: str,
     extracted_element_id: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_implicit_first_subparagraph_context_ignored",
-        "family": "target_resolution_recovery",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "normalized_affecting_provisions": normalized_affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "extracted_element_id": extracted_element_id,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_implicit_first_subparagraph_context_ignored",
+        family="target_resolution_recovery",
+        phase="extraction",
+        reason=(
             "UK effects metadata included an inserted first subparagraph context in a "
             "schedule paragraph source reference, but the affecting XML exposes the "
             "lettered child directly under the source paragraph; LawVM accepted the "
             "normalized reference only after the exact source reference missed."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        normalized_affecting_provisions=normalized_affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        extracted_element_id=extracted_element_id,
+    )
 
 
 def uk_affecting_act_parenthesized_range_source_extracted(
@@ -389,29 +390,27 @@ def uk_affecting_act_parenthesized_range_source_extracted(
     requested_end_label: str,
     extracted_element_ids: list[str],
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_parenthesized_range_source_extracted",
-        "family": "source_range_extraction",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "normalized_parent_ref": normalized_parent_ref,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "requested_start_label": requested_start_label,
-        "requested_end_label": requested_end_label,
-        "extracted_element_ids": extracted_element_ids,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_parenthesized_range_source_extracted",
+        family="source_range_extraction",
+        phase="extraction",
+        reason=(
             "UK effects metadata named a parenthesized source range whose individual "
             "children are addressable in the affecting XML; LawVM extracted only the "
             "bounded child range into a synthetic source wrapper instead of widening "
             "to the whole parent provision."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        normalized_parent_ref=normalized_parent_ref,
+        locator=locator,
+        authority_layer=authority_layer,
+        requested_start_label=requested_start_label,
+        requested_end_label=requested_end_label,
+        extracted_element_ids=extracted_element_ids,
+    )
 
 
 def uk_affecting_act_enacted_schedule_table_row_source_extracted(
@@ -427,31 +426,29 @@ def uk_affecting_act_enacted_schedule_table_row_source_extracted(
     target_label: str,
     source_row_text: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_enacted_schedule_table_row_source_extracted",
-        "family": "source_lane_selection",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affected_provisions": affected_provisions,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "schedule_label": schedule_label,
-        "part_label": part_label,
-        "target_label": target_label,
-        "source_row_text": source_row_text,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_enacted_schedule_table_row_source_extracted",
+        family="source_lane_selection",
+        phase="extraction",
+        reason=(
             "UK current affecting-act XML was unavailable, while the official enacted "
             "source exposed a unique table row under the affected schedule Part whose "
             "first cell exactly names the added schedule paragraph; LawVM extracted "
             "only that row as a synthetic paragraph payload instead of admitting the "
             "whole schedule source."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affected_provisions=affected_provisions,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        schedule_label=schedule_label,
+        part_label=part_label,
+        target_label=target_label,
+        source_row_text=source_row_text,
+    )
 
 
 def uk_affecting_act_compound_payload_only_block_amendment_selected(
@@ -467,30 +464,28 @@ def uk_affecting_act_compound_payload_only_block_amendment_selected(
     payload_container_tag: str,
     payload_text_preview: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_compound_payload_only_block_amendment_selected",
-        "family": "source_lane_selection",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "source_row_tag": source_row_tag,
-        "source_row_id": source_row_id,
-        "source_row_label": source_row_label,
-        "payload_container_tag": payload_container_tag,
-        "payload_text_preview": payload_text_preview,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_compound_payload_only_block_amendment_selected",
+        family="source_lane_selection",
+        phase="extraction",
+        reason=(
             "UK compound affecting-source metadata selected a numbered source row whose "
             "only substantive content is a BlockAmendment/InlineAmendment payload. "
             "LawVM uses the amendment payload container rather than smuggling the "
             "source row label into payload text."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        source_row_tag=source_row_tag,
+        source_row_id=source_row_id,
+        source_row_label=source_row_label,
+        payload_container_tag=payload_container_tag,
+        payload_text_preview=payload_text_preview,
+    )
 
 
 def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
@@ -509,34 +504,32 @@ def uk_affecting_act_block_amendment_payload_descendant_ref_rejection(
     source_instruction_ancestor_label: str,
     source_instruction_ancestor_text_preview: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
-        "family": "source_pathology",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "extracted_tag": extracted_tag,
-        "extracted_label": extracted_label,
-        "extracted_text_preview": extracted_text_preview,
-        "amendment_container_tag": amendment_container_tag,
-        "source_instruction_ancestor_tag": source_instruction_ancestor_tag,
-        "source_instruction_ancestor_id": source_instruction_ancestor_id,
-        "source_instruction_ancestor_label": source_instruction_ancestor_label,
-        "source_instruction_ancestor_text_preview": source_instruction_ancestor_text_preview,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_block_amendment_payload_descendant_ref_rejected",
+        family="source_pathology",
+        phase="extraction",
+        reason=(
             "UK effects metadata named an affecting source provision, but greedy "
             "source extraction resolved the reference to an anonymous descendant "
             "inside a BlockAmendment/InlineAmendment payload. That payload child is "
             "amended text, not the cited source instruction, so LawVM rejects it "
             "instead of treating it as source context."
         ),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+        blocking=True,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        extracted_tag=extracted_tag,
+        extracted_label=extracted_label,
+        extracted_text_preview=extracted_text_preview,
+        amendment_container_tag=amendment_container_tag,
+        source_instruction_ancestor_tag=source_instruction_ancestor_tag,
+        source_instruction_ancestor_id=source_instruction_ancestor_id,
+        source_instruction_ancestor_label=source_instruction_ancestor_label,
+        source_instruction_ancestor_text_preview=source_instruction_ancestor_text_preview,
+    )
 
 
 def uk_affecting_act_outdented_child_source_selected(
@@ -552,30 +545,28 @@ def uk_affecting_act_outdented_child_source_selected(
     selected_child_text_preview: str,
     carried_parent_label: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_outdented_child_source_selected",
-        "family": "source_context_recovery",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "requested_parent_id": requested_parent_id,
-        "selected_child_id": selected_child_id,
-        "selected_child_label": selected_child_label,
-        "selected_child_text_preview": selected_child_text_preview,
-        "carried_parent_label": carried_parent_label,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_outdented_child_source_selected",
+        family="source_context_recovery",
+        phase="extraction",
+        reason=(
             "UK source XML outdented a lettered source child from the numbered "
             "provision named by the effects metadata. LawVM selected the "
             "outdented child only because it shares the same source parent and "
             "its own instruction explicitly names the carried subsection."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        requested_parent_id=requested_parent_id,
+        selected_child_id=selected_child_id,
+        selected_child_label=selected_child_label,
+        selected_child_text_preview=selected_child_text_preview,
+        carried_parent_label=carried_parent_label,
+    )
 
 
 def uk_affecting_act_compound_reference_split_fallback(
@@ -590,30 +581,28 @@ def uk_affecting_act_compound_reference_split_fallback(
     split_selected_part: str,
     extracted_element_id: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_compound_reference_split_fallback",
-        "family": "target_resolution_recovery",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "split_first_part": split_first_part,
-        "split_second_part": split_second_part,
-        "split_selected_part": split_selected_part,
-        "extracted_element_id": extracted_element_id,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_compound_reference_split_fallback",
+        family="target_resolution_recovery",
+        phase="extraction",
+        reason=(
             "UK affecting provisions contained a compound/combined reference that either "
             "failed to extract as one address or initially resolved only to a gateway "
             "provision. LawVM split the reference at an explicit structural component "
             "boundary and extracted one component without treating the gateway and "
             "payload references as a single address."
         ),
-        "blocking": False,
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        split_first_part=split_first_part,
+        split_second_part=split_second_part,
+        split_selected_part=split_selected_part,
+        extracted_element_id=extracted_element_id,
+    )
 
 
 def uk_affecting_act_schedule_part_standalone_split_rejection(
@@ -632,33 +621,31 @@ def uk_affecting_act_schedule_part_standalone_split_rejection(
     standalone_part_candidate_id: str,
     standalone_part_candidate_label: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "uk_affecting_act_schedule_part_standalone_split_rejected",
-        "family": "source_pathology",
-        "phase": "extraction",
-        "effect_id": effect_id,
-        "affecting_act_id": affecting_act_id,
-        "affecting_provisions": affecting_provisions,
-        "locator": locator,
-        "authority_layer": authority_layer,
-        "split_first_part": split_first_part,
-        "split_second_part": split_second_part,
-        "schedule_component_tag": schedule_component_tag,
-        "schedule_component_id": schedule_component_id,
-        "schedule_component_label": schedule_component_label,
-        "standalone_part_candidate_tag": standalone_part_candidate_tag,
-        "standalone_part_candidate_id": standalone_part_candidate_id,
-        "standalone_part_candidate_label": standalone_part_candidate_label,
-        "reason": (
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_schedule_part_standalone_split_rejected",
+        family="source_pathology",
+        phase="extraction",
+        reason=(
             "UK affecting provisions named a schedule part, but source extraction could "
             "not resolve that part while preserving the schedule container. LawVM rejects "
             "the attempted standalone Part/Pt split because it may select a main-body "
             "Part with the same label and contaminate the amendment payload."
         ),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+        blocking=True,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        split_first_part=split_first_part,
+        split_second_part=split_second_part,
+        schedule_component_tag=schedule_component_tag,
+        schedule_component_id=schedule_component_id,
+        schedule_component_label=schedule_component_label,
+        standalone_part_candidate_tag=standalone_part_candidate_tag,
+        standalone_part_candidate_id=standalone_part_candidate_id,
+        standalone_part_candidate_label=standalone_part_candidate_label,
+    )
 
 
 def is_uk_affecting_act_xml_source_observation(row: dict[str, Any]) -> bool:
