@@ -42,6 +42,7 @@ class VersionedNodeLookup(NamedTuple):
 
 
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
+_NodeStructuralShape: TypeAlias = tuple[object, Optional[str], tuple[tuple[object, Optional[str]], ...]]
 _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
 
@@ -533,6 +534,9 @@ class UKReplayStateMixin:
     def _child_shape(self, node: UKMutableNode) -> tuple[tuple[object, Optional[str]], ...]:
         return tuple((child.kind, child.label) for child in node.children)
 
+    def _structural_shape(self, node: UKMutableNode) -> _NodeStructuralShape:
+        return (node.kind, node.label, self._child_shape(node))
+
     def _eid_lookup_parent_entry(
         self,
         node: UKMutableNode,
@@ -814,7 +818,7 @@ class UKReplayStateMixin:
         )
 
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
-        structure_changed = self._child_shape(old_node) != self._child_shape(new_node)
+        structure_changed = self._structural_shape(old_node) != self._structural_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
         if self.statute.body is old_node:
             self._remove_eid_lookup_subtree(old_node)
