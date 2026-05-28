@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, TypeAlias
+from typing import Any, NamedTuple, TypeAlias
 
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
@@ -119,7 +119,14 @@ class _UKDescendantTableMatch:
 
 
 ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
-ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[tuple[int, dict[int, UKMutableNode]]]
+
+
+class UKExpandedTableRow(NamedTuple):
+    physical_index: int
+    cells_by_column: dict[int, UKMutableNode]
+
+
+ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[UKExpandedTableRow]
 
 
 def strip_uk_identity_attrs_recursive(node: UKMutableNode) -> None:
@@ -154,7 +161,7 @@ def expanded_uk_table_rows(table: UKMutableNode) -> ExpandedTableRows:
 def expanded_uk_table_rows_with_physical_index(
     table: UKMutableNode,
 ) -> ExpandedTableRowsWithPhysicalIndex:
-    rows: list[tuple[int, dict[int, UKMutableNode]]] = []
+    rows: list[UKExpandedTableRow] = []
     active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
     for row_index, row in enumerate(table.children):
         if _uk_kind_value(row.kind).lower() != "row":
@@ -182,7 +189,7 @@ def expanded_uk_table_rows_with_physical_index(
                     next_rowspans[current_col] = (rowspan - 1, cell)
             col += colspan
         if row_cells:
-            rows.append((row_index, row_cells))
+            rows.append(UKExpandedTableRow(physical_index=row_index, cells_by_column=row_cells))
         active_rowspans = next_rowspans
     return rows
 
