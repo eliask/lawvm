@@ -87,6 +87,15 @@ def test_non_enacted_branch_context_requires_branch_id() -> None:
         BranchContext(authority_layer=PROPOSAL_AUTHORITY)
 
 
+def test_operation_source_validates_branch_context_at_provenance_boundary() -> None:
+    with pytest.raises(ValueError, match="requires a branch_id"):
+        OperationSource(
+            statute_id="proposal/example/2026/1",
+            authority_layer=PROPOSAL_AUTHORITY,
+            legal_status=UNKNOWN_STATUS,
+        )
+
+
 def test_terminated_branch_requires_terminating_source() -> None:
     with pytest.raises(ValueError, match="requires terminated_by"):
         LegalBranch(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, FrozenSet, Literal, Tuple
 
-from lawvm.core.authority import AuthorityLayer, COMMENCED_STATUS, ENACTED_AUTHORITY, LegalStatus
+from lawvm.core.authority import AuthorityLayer, BranchContext, COMMENCED_STATUS, ENACTED_AUTHORITY, LegalStatus
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalAddress
@@ -49,6 +49,14 @@ class OperationSource:
     legal_status: LegalStatus = COMMENCED_STATUS
     branch_id: str = ""
     scenario_id: str = ""
+
+    def __post_init__(self) -> None:
+        BranchContext(
+            authority_layer=self.authority_layer,
+            legal_status=self.legal_status,
+            branch_id=self.branch_id,
+            scenario_id=self.scenario_id,
+        )
 
 
 @dataclass(frozen=True)
