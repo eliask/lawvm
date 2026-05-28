@@ -9,7 +9,12 @@ from typing import Any, Callable, Optional
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.ir import IRNode, IRStatute
-from lawvm.core.mutation_boundary import normalize_tree_path_for_relation, paths_related
+from lawvm.core.mutation_boundary import (
+    TreePath,
+    normalize_tree_path_for_relation,
+    path_is_strict_prefix,
+    paths_related,
+)
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops
 from lawvm.core.timeline_consistency import ConsistencyDivergence, ingest_consolidated, verify_consistency
@@ -133,7 +138,7 @@ class NOCompareProjection:
     surface: str
     rule_id: str
     reason: str
-    address: tuple[tuple[str, str], ...]
+    address: TreePath
     before_kind: str
     before_label: str | None
     before_text: str
@@ -270,7 +275,7 @@ def _append_no_compare_projection(
     surface: str,
     rule_id: str,
     reason: str,
-    path: tuple[tuple[str, str], ...],
+    path: TreePath,
     before: IRNode,
     after: IRNode,
 ) -> None:
@@ -293,15 +298,15 @@ def _append_no_compare_projection(
 
 
 def _no_compare_child_path(
-    path: tuple[tuple[str, str], ...],
+    path: TreePath,
     child: IRNode,
-) -> tuple[tuple[str, str], ...]:
+) -> TreePath:
     if child.label:
         return (*path, (_no_kind_value(child.kind), child.label))
     return path
 
 
-def normalize_no_relation_path(path: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+def normalize_no_relation_path(path: TreePath) -> TreePath:
     return normalize_tree_path_for_relation(
         path,
         ignored_kinds=frozenset(_NO_RELATION_CONTAINER_KINDS),
@@ -309,8 +314,8 @@ def normalize_no_relation_path(path: tuple[tuple[str, str], ...]) -> tuple[tuple
 
 
 def no_paths_related(
-    left: tuple[tuple[str, str], ...],
-    right: tuple[tuple[str, str], ...],
+    left: TreePath,
+    right: TreePath,
 ) -> bool:
     return paths_related(
         left,
@@ -322,8 +327,8 @@ def no_paths_related(
 
 def _concretize_no_relation_path(
     body: IRNode,
-    path: tuple[tuple[str, str], ...],
-) -> tuple[tuple[str, str], ...]:
+    path: TreePath,
+) -> TreePath:
     concrete: list[tuple[str, str]] = []
     for kind, label in path:
         if label not in _NO_RELATION_SPECIAL_LABELS:
@@ -346,13 +351,13 @@ def collect_no_touched_path_counts(
     index: NOAmendmentIndex,
     data_dir: Optional[Path] = None,
     replayed_body: Optional[IRNode] = None,
-) -> tuple[Counter[tuple[tuple[str, str], ...]], int, int]:
+) -> tuple[Counter[TreePath], int, int]:
     from lawvm.norway.grafter import iter_no_document_change_ops
     from lawvm.norway.sources import load_no_amendment_artifact_bytes
 
     source_path = resolve_no_source_path(Path(index.data_dir) if getattr(index, "data_dir", None) else data_dir)
     norm_base_id = base_id if base_id.startswith("no/") else f"no/{base_id.removeprefix('lov/')}"
-    touched_path_counts: Counter[tuple[tuple[str, str], ...]] = Counter()
+    touched_path_counts: Counter[TreePath] = Counter()
     touched_source_count = 0
     touched_op_count = 0
 
@@ -736,11 +741,7 @@ def _normalize_no_compare_tree(
     return after
 
 
-def _is_prefix_address(prefix: tuple[tuple[str, str], ...], full: tuple[tuple[str, str], ...]) -> bool:
-    return len(prefix) < len(full) and full[: len(prefix)] == prefix
-
-
-def _non_container_path(path: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+def _non_container_path(path: TreePath) -> TreePath:
     return tuple(step for step in path if step[0] not in {"part", "chapter"})
 
 
@@ -766,7 +767,7 @@ def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> 
     paths = [tuple(div.address.path) for div in divergences]
     for idx, divergence in enumerate(divergences):
         path = paths[idx]
-        if any(_is_prefix_address(path, other_path) for j, other_path in enumerate(paths) if j != idx):
+        if any(path_is_strict_prefix(path, other_path) for j, other_path in enumerate(paths) if j != idx):
             filtered.append(
                 NOFilteredDivergence(
                     divergence=divergence,

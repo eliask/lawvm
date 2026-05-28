@@ -14,6 +14,7 @@ from lawvm.core.mutation_boundary import (
     operation_storage_boundary_prefixes,
     partition_changed_paths,
     path_has_prefix,
+    path_is_strict_prefix,
     paths_related,
     normalize_tree_path_for_relation,
     tree_path_from_legal_address,
@@ -85,6 +86,25 @@ def test_paths_related_handles_symbolic_sibling_labels() -> None:
         (("section", "5"), ("subsection", "1"), ("item", "8")),
         special_labels=frozenset({"first", "last"}),
     )
+
+
+def test_path_is_strict_prefix_requires_proper_ancestor() -> None:
+    section = (("section", "1"),)
+    subsection = (("section", "1"), ("subsection", "2"))
+
+    assert path_is_strict_prefix(section, subsection)
+    assert not path_is_strict_prefix(section, section)
+    assert path_is_strict_prefix((), section)
+    assert not path_is_strict_prefix(subsection, section)
+
+
+def test_path_is_strict_prefix_rejects_malformed_paths() -> None:
+    try:
+        path_is_strict_prefix((("", "1"),), (("section", "1"),))
+    except ValueError as exc:
+        assert "prefix path step 0 requires a non-empty kind" in str(exc)
+    else:  # pragma: no cover - explicit failure branch
+        raise AssertionError("expected malformed prefix path rejection")
 
 
 def test_operation_storage_boundary_prefixes_text_target_target_path() -> None:

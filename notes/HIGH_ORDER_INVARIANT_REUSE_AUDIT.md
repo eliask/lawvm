@@ -149,6 +149,9 @@ Recent improvement:
 - bidirectional path-relation helpers now live in core; Norway verification
   delegates its touched-divergence relation predicate while keeping local
   ignored-container and symbolic-label policy.
+- strict tree-path prefix classification now lives in core; Norway primary
+  divergence partitioning delegates prefix/descendant suppression to the
+  shared path predicate.
 - filtered divergence partition records now live in core verification contracts;
   Norway verification aliases them while keeping local suppression rules.
 - duplicate-preserving source-path indexing now has a core helper; New Zealand
