@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Any, Callable, NamedTuple, Optional, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TypeAlias
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.core.semantic_types import IRNodeKind
@@ -1119,6 +1119,19 @@ def _find_text_range_start_index(
 
 
 class UKReplayTextApplyMixin:
+    if TYPE_CHECKING:
+
+        def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+
+        def _replace_descendant_at_path(
+            self,
+            root: UKMutableNode,
+            path: tuple[int, ...],
+            new_node: UKMutableNode,
+        ) -> UKMutableNode: ...
+
+        def _log(self, message: str) -> None: ...
+
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
         node: UKMutableNode,
