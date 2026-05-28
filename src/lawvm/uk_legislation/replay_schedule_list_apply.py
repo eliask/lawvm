@@ -552,8 +552,8 @@ class UKReplayScheduleListApplyMixin:
             )
             return False
 
-        entry_rows: list[tuple[int, UKMutableNode]] = [
-            (idx, child)
+        entry_rows: list[_ScheduleListEntryRow] = [
+            _ScheduleListEntryRow(parent=carrier_node, index=idx, child=child)
             for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
@@ -598,7 +598,7 @@ class UKReplayScheduleListApplyMixin:
                     ),
                 )
                 return False
-            insert_index = entry_rows[-1][0] + 1
+            insert_index = entry_rows[-1].index + 1
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_END_POSITION_RULE_ID,
@@ -633,9 +633,9 @@ class UKReplayScheduleListApplyMixin:
         if direction == "alphabetical":
             inserted_sort_key = _compact_schedule_entry_anchor_without_article(new_node.text)
             duplicate_matches = [
-                (idx, child)
-                for idx, child in entry_rows
-                if _compact_schedule_entry_anchor_without_article(child.text) == inserted_sort_key
+                row
+                for row in entry_rows
+                if _compact_schedule_entry_anchor_without_article(row.child.text) == inserted_sort_key
             ]
             if not inserted_sort_key or duplicate_matches:
                 _append_uk_replay_adjudication(
@@ -658,10 +658,10 @@ class UKReplayScheduleListApplyMixin:
                 )
                 return False
             insert_index = len(carrier_node.children)
-            for idx, child in entry_rows:
-                child_sort_key = _compact_schedule_entry_anchor_without_article(child.text)
+            for row in entry_rows:
+                child_sort_key = _compact_schedule_entry_anchor_without_article(row.child.text)
                 if child_sort_key > inserted_sort_key:
-                    insert_index = idx
+                    insert_index = row.index
                     break
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -696,9 +696,9 @@ class UKReplayScheduleListApplyMixin:
             return True
 
         matches = [
-            (idx, child)
-            for idx, child in entry_rows
-            if _compact_normalized_text(child.text) == anchor_norm
+            row
+            for row in entry_rows
+            if _compact_normalized_text(row.child.text) == anchor_norm
         ]
         prefix_normalized = False
         article_normalized = False
@@ -708,9 +708,9 @@ class UKReplayScheduleListApplyMixin:
         grouped_entry_count = 0
         if not matches:
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
-                if _compact_normalized_text(child.text).startswith(anchor_norm)
+                row
+                for row in entry_rows
+                if _compact_normalized_text(row.child.text).startswith(anchor_norm)
             ]
             prefix_normalized = len(matches) == 1
         if not matches:
@@ -718,12 +718,12 @@ class UKReplayScheduleListApplyMixin:
                 str(selector.get("anchor_text") or "")
             )
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
+                row
+                for row in entry_rows
                 if article_anchor_norm
                 and (
-                    _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
-                    or _compact_schedule_entry_anchor_without_article(child.text).startswith(article_anchor_norm)
+                    _compact_schedule_entry_anchor_without_article(row.child.text) == article_anchor_norm
+                    or _compact_schedule_entry_anchor_without_article(row.child.text).startswith(article_anchor_norm)
                 )
             ]
             article_normalized = len(matches) == 1
@@ -735,13 +735,13 @@ class UKReplayScheduleListApplyMixin:
                 entry_text, paragraph_label = parenthetical_anchor
                 entry_article_norm = _compact_schedule_entry_anchor_without_article(entry_text)
                 matches = [
-                    (idx, child)
-                    for idx, child in entry_rows
-                    if _clean_num(child.label or "") == paragraph_label
+                    row
+                    for row in entry_rows
+                    if _clean_num(row.child.label or "") == paragraph_label
                     and entry_article_norm
                     and (
-                        _compact_schedule_entry_anchor_without_article(child.text) == entry_article_norm
-                        or _compact_schedule_entry_anchor_without_article(child.text).startswith(entry_article_norm)
+                        _compact_schedule_entry_anchor_without_article(row.child.text) == entry_article_norm
+                        or _compact_schedule_entry_anchor_without_article(row.child.text).startswith(entry_article_norm)
                     )
                 ]
                 parenthetical_paragraph_normalized = len(matches) == 1
@@ -845,7 +845,14 @@ class UKReplayScheduleListApplyMixin:
                     reason_code="anchor_unique_in_schedule_child_group",
                 )
                 return True
-            matches = [(idx, child) for idx, child in enumerate(grouped_matches)]
+            matches = [
+                _ScheduleListEntryRow(
+                    parent=grouped_match.group,
+                    index=grouped_match.child_index,
+                    child=grouped_match.child,
+                )
+                for grouped_match in grouped_matches
+            ]
         if len(matches) != 1:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -945,7 +952,7 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
 
-        anchor_index = matches[0][0]
+        anchor_index = matches[0].index
         insert_index = anchor_index if direction == "before" else anchor_index + 1
         for key in ("eId", "id"):
             new_node.attrs.pop(key, None)
@@ -1263,34 +1270,34 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
             return False
-        entry_rows: list[tuple[int, UKMutableNode]] = [
-            (idx, child)
+        entry_rows: list[_ScheduleListEntryRow] = [
+            _ScheduleListEntryRow(parent=carrier_node, index=idx, child=child)
             for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
         anchor_norm = _compact_normalized_text(anchor)
         matches = [
-            (idx, child)
-            for idx, child in entry_rows
-            if _compact_normalized_text(child.text) == anchor_norm
+            row
+            for row in entry_rows
+            if _compact_normalized_text(row.child.text) == anchor_norm
         ]
         match_mode = "exact"
         if not matches:
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
-                if _compact_normalized_text(child.text).startswith(anchor_norm)
+                row
+                for row in entry_rows
+                if _compact_normalized_text(row.child.text).startswith(anchor_norm)
             ]
             match_mode = "prefix"
         if not matches:
             article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
+                row
+                for row in entry_rows
                 if article_anchor_norm
                 and (
-                    _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
-                    or _compact_schedule_entry_anchor_without_article(child.text).startswith(article_anchor_norm)
+                    _compact_schedule_entry_anchor_without_article(row.child.text) == article_anchor_norm
+                    or _compact_schedule_entry_anchor_without_article(row.child.text).startswith(article_anchor_norm)
                 )
             ]
             match_mode = "article"
@@ -1316,7 +1323,7 @@ class UKReplayScheduleListApplyMixin:
                 ),
             )
             return False
-        replace_idx = matches[0][0]
+        replace_idx = matches[0].index
         if match_mode == "prefix":
             _append_uk_replay_adjudication(
                 self.adjudications_out,
