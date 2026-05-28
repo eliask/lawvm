@@ -122,18 +122,25 @@ text.
 
 ## Next Steps
 
-1. Add a small synthetic proposal demo corpus:
-   enacted base statute plus one proposal-branch operation.
-2. Add a branch-aware materialization/demo command:
-   default view excludes proposal ops; branch view includes only selected branch
-   ops.
-3. Fill branch impact rows with frontend-supplied current/branch text where a
-   source has enough structure for a meaningful diff.
-4. Add lifecycle events:
-   introduced, amended, passed, withdrawn, failed, enacted.
-5. Prototype one real frontend lane:
+Done in the core/demo layer:
+
+- branch lifecycle events exist as graph facts;
+- branch graph facts export to Neo4j CSV and JSON-LD;
+- `lawvm branch-demo --pretty` shows default enacted vs selected proposal
+  operation lanes;
+- branch impact rows can be built from operations and enriched with
+  frontend-supplied current/branch text.
+
+Remaining:
+
+1. Prototype one real frontend lane:
    pick the jurisdiction/source family with the cleanest proposal or bill
    source extraction, otherwise build a synthetic-to-real bridge first.
+2. Add branch-aware materialization beyond the current operation-lane filter if
+   a frontend needs actual branch-state execution rather than graph/diff
+   projection.
+3. Add frontend-owned lifecycle import for introduced, amended, withdrawn,
+   failed, enacted, or superseded statuses once a real source surface exists.
 
 ## Non-Goals For This Layer
 
