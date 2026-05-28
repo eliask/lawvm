@@ -173,6 +173,9 @@ Recent improvement:
   default enacted materialization remains branchless, while proposal/draft
   operations require a branch id and are excluded by the default enacted
   operation filter.
+- branch impact projection rows now provide a small shared UI/API-facing
+  payload for would-affect branch graph edges without claiming enacted legal
+  effect or executing jurisdiction-specific proposal parsing in core.
 
 ## Ranked Promotion Candidates
 
