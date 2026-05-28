@@ -97,14 +97,14 @@ def _format_results(columns: list[str], rows: list[tuple], max_width: int = 120)
                 widths[i] = max(widths[i], min(len(val), 60))
 
     # Build header
-    header = "  ".join(c.ljust(w) for c, w in zip(columns, widths))
+    header = "  ".join(c.ljust(w) for c, w in zip(columns, widths, strict=True))
     separator = "  ".join("-" * w for w in widths)
 
     # Build rows
     lines = [header, separator]
     for row in str_rows:
         line = "  ".join(
-            val[:60].ljust(w) for val, w in zip(row, widths)
+            val[:60].ljust(w) for val, w in zip(row, widths, strict=True)
         )
         lines.append(line)
 
@@ -186,7 +186,7 @@ def run_sql(
                 import json
                 out = []
                 for row in rows:
-                    out.append(dict(zip(columns, [_json_safe(v) for v in row])))
+                    out.append(dict(zip(columns, [_json_safe(v) for v in row], strict=True)))
                 print(json.dumps(out, indent=2, ensure_ascii=False))
             elif output_format == "csv":
                 import csv as csv_mod

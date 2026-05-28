@@ -100,7 +100,7 @@ def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = Fals
     )
     # Build divergence details
     divergences = []
-    for divergence, address in zip(result.divergences, divergence_addresses):
+    for divergence, address in zip(result.divergences, divergence_addresses, strict=True):
         bucket = None
         evidence = None
         if residual_summary is not None:

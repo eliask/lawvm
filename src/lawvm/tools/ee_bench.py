@@ -297,7 +297,7 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             }
         punctuation_records = [
             build_ee_punctuation_whitespace_record(address)
-            for address, divergence in zip(divergence_addresses, r.divergences)
+            for address, divergence in zip(divergence_addresses, r.divergences, strict=True)
             if address not in matched_addresses
             and is_ee_punctuation_whitespace_only_difference(
                 divergence.ops_text,

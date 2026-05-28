@@ -942,7 +942,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     }
     divergences: list[dict[str, Any]] = []
     raw_divergences: list[dict[str, Any]] = []
-    for divergence, address in zip(result.divergences, raw_divergence_addresses):
+    for divergence, address in zip(result.divergences, raw_divergence_addresses, strict=True):
         raw_divergences.append(
             {
                 "address": address,

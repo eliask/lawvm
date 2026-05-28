@@ -556,7 +556,7 @@ def _same_kind_sequence(parts_a: list[str], parts_b: list[str]) -> bool:
     """
     if len(parts_a) != len(parts_b):
         return False
-    for a, b in zip(parts_a, parts_b):
+    for a, b in zip(parts_a, parts_b, strict=True):
         ka = a.split(":")[0] if ":" in a else a
         kb = b.split(":")[0] if ":" in b else b
         if ka != kb:

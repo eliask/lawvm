@@ -425,7 +425,7 @@ async def _run(args):
             tasks = [_process_statute(session, sid, sem) for sid in batch]
             results = await asyncio.gather(*tasks)
 
-            for sid, rows in zip(batch, results):
+            for sid, rows in zip(batch, results, strict=True):
                 if not rows:
                     skipped += 1
                 else:

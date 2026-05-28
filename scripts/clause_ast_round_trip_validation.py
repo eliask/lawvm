@@ -265,7 +265,7 @@ def validate_statute(cs, statute_id: str, amendments_map: dict[str, list[str]]) 
             continue
 
         # Compare each op
-        for i, (op_a, op_b) in enumerate(zip(path_a_ops, path_b_ops)):
+        for i, (op_a, op_b) in enumerate(zip(path_a_ops, path_b_ops, strict=True)):
             diff = compare_legal_ops(op_a, op_b)
             if diff:
                 mismatch_type, value_diff = diff.split(": ", 1)

@@ -98,7 +98,7 @@ def plan_maryland_publication_transitions(inventory: MarylandInventory) -> Tuple
         candidates.append(item)
 
     transitions: list[MarylandTransitionPlan] = []
-    for before, after in zip(candidates, candidates[1:]):
+    for before, after in zip(candidates, candidates[1:], strict=False):
         before_actions = set(before.included_editorial_actions)
         after_actions = set(after.included_editorial_actions)
         if not before_actions.issubset(after_actions):
