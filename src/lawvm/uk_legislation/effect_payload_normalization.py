@@ -236,7 +236,7 @@ def extract_uk_structural_payload_ir(
             payload_match_target=payload_match_target,
             extracted_text=extracted_text,
         )
-    elif content_ir is None and actual_el is not extracted_el:
+    elif content_ir is None and actual_el is not None and actual_el is not extracted_el:
         actual_el = _with_trailing_subordinate_siblings(actual_el, extracted_el)
 
     if content_ir is None and actual_el is not None:

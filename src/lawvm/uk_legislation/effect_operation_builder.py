@@ -130,7 +130,7 @@ def build_lowered_operations_for_text_patches(
     preceding_eid: Optional[str],
     preceding_eid_source: str,
     following_eid: Optional[str],
-    following_eid_source: str,
+    following_eid_source: Optional[str],
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,
     table_cell_selector: Optional[dict[str, Any]],
