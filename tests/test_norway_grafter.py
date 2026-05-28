@@ -727,8 +727,8 @@ def test_iter_no_document_change_ops_unstructured_records_renumber_arity_mismatc
     assert adjudication.detail["source_count"] == 2
     assert adjudication.detail["destination_count"] == 1
     assert adjudication.detail["paired_count"] == 1
-    assert adjudication.detail["unmatched_source_targets"] == ["section:6/subsection:3"]
-    assert adjudication.detail["unmatched_destination_targets"] == []
+    assert adjudication.detail["unmatched_source_targets"] == ("section:6/subsection:3",)
+    assert adjudication.detail["unmatched_destination_targets"] == ()
 
 
 def test_apply_no_ops_supports_global_text_replace() -> None:

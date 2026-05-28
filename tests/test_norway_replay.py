@@ -366,7 +366,7 @@ def test_replay_no_to_pit_records_no_matching_change_group(tmp_path) -> None:
     adjudication = result.adjudications[0]
     assert adjudication.detail["phase"] == "replay"
     assert adjudication.detail["base_id"] == "no/lov/2025-01-01-1"
-    assert adjudication.detail["parsed_group_bases"] == ["no/lov/2025-01-01-2"]
+    assert adjudication.detail["parsed_group_bases"] == ("no/lov/2025-01-01-2",)
     assert adjudication.detail["strict_disposition"] == "block"
     payload = build_no_replay_payload(result)
     assert payload["adjudication_kind_counts"] == {"no_replay_no_matching_change_group": 1}
