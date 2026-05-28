@@ -17,6 +17,7 @@ import subprocess
 from typing import Any, Callable, Protocol, Optional, cast
 from urllib.parse import urlencode, urljoin
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
@@ -925,19 +926,17 @@ def _record_se_official_artifacts_diagnostic(
 ) -> None:
     if diagnostics_out is None:
         return
-    diagnostic: dict[str, Any] = {
-        "rule_id": rule_id,
-        "family": "source_pathology",
-        "phase": phase,
-        "reason": reason,
-        "sfs_id": sfs_id,
-        "locator": locator,
-        "doc_url": doc_url,
-        "pdf_url": pdf_url or "",
-        "blocking": blocking,
-        "strict_disposition": "block" if blocking else "record",
-        "quirks_disposition": "record",
-    }
+    diagnostic = diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase=phase,
+        reason=reason,
+        blocking=blocking,
+        sfs_id=sfs_id,
+        locator=locator,
+        doc_url=doc_url,
+        pdf_url=pdf_url or "",
+    )
     if exception_type:
         diagnostic["exception_type"] = exception_type
     if doc_status:
@@ -1082,17 +1081,15 @@ def _record_se_rk_current_diagnostic(
     if diagnostics_out is None:
         return
     diagnostics_out.append(
-        {
-            "rule_id": rule_id,
-            "family": "source_pathology",
-            "phase": phase,
-            "reason": reason,
-            "sfs_id": sfs_id,
-            "locator": locator,
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-        }
+        diagnostic_detail(
+            rule_id=rule_id,
+            family="source_pathology",
+            phase=phase,
+            reason=reason,
+            blocking=True,
+            sfs_id=sfs_id,
+            locator=locator,
+        )
     )
 
 
