@@ -16,7 +16,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, normalized_label_key
 from lawvm.core.compile_result import StrictProfile
 from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp, TargetUnitKind, get_replay_profile
 from lawvm.finland.replay_notices import replay_print
@@ -264,7 +264,7 @@ def _apply_legacy_dispatch(
     existing_global_section_count = 0
     if dispatch_op.target_section:
         existing_global_section_count = len(
-            state.provision_index.get(("section", _tops._norm(dispatch_op.target_section)), [])
+            state.provision_index.get(("section", normalized_label_key(dispatch_op.target_section)), [])
         )
 
     blocked_scoped_whole_section_replace_recovery = (

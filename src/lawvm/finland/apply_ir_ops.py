@@ -17,6 +17,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 
 from lawvm.finland.helpers import _is_omission_ir
 from lawvm.finland.source_pathology import build_destructive_shape_loss_risk_pathology
@@ -192,7 +193,7 @@ def _shift_lettered_item_labels_after_repeal(sub: IRNode, repealed_label: str) -
     new_children: List[IRNode] = []
     for child in sub.children:
         if child.kind == IRNodeKind.PARAGRAPH and child.label:
-            label_norm = _tops._norm(str(child.label))
+            label_norm = normalized_label_key(str(child.label))
             if re.fullmatch(r"[a-z]", label_norm, flags=re.I) and ord(label_norm) > repealed_ord:
                 child = _relabel_paragraph_ir(child, chr(ord(label_norm) - 1))
         new_children.append(child)
