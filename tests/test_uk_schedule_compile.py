@@ -108,6 +108,28 @@ from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
 _AVAILABLE_XML_BYTES = b"<Legislation>" + (b"x" * 128) + b"</Legislation>"
 
 
+def _required_payload(op: LegalOperation) -> IRNode:
+    assert op.payload is not None
+    return op.payload
+
+
+def _required_text_patch(op: LegalOperation) -> TextPatchSpec:
+    assert op.text_patch is not None
+    return op.text_patch
+
+
+def _required_text_patch_replacement(op: LegalOperation) -> str:
+    replacement = _required_text_patch(op).replacement
+    assert replacement is not None
+    return replacement
+
+
+def _required_fragment_substitution(op: LegalOperation) -> list[dict[str, Any]]:
+    fragment = _fragment_substitution(op)
+    assert fragment is not None
+    return fragment
+
+
 def test_instruction_text_before_amendment_container_is_cached_by_source_element() -> None:
     element = ET.fromstring(
         """
@@ -2224,7 +2246,7 @@ def test_insert_anchor_prefers_after_clause_governing_insert_over_prior_omit_cla
         False,
         False,
     ]
-    first_anchor_witness = ops[0].payload.attrs["rewrite_witness"]["insertion_anchor_witness"]
+    first_anchor_witness = _required_payload(ops[0]).attrs["rewrite_witness"]["insertion_anchor_witness"]
     assert first_anchor_witness == {
         "preceding_eid": "section-356-1-c",
         "following_eid": None,
@@ -4614,8 +4636,7 @@ def test_compile_empty_type_compound_target_local_text_insertions_split_text_pat
         (("section", "91"), ("subsection", "2")),
         (("section", "91"), ("subsection", "2")),
     ]
-    patches = [op.text_patch for op in ops]
-    assert all(patch is not None for patch in patches)
+    patches = [_required_text_patch(op) for op in ops]
     assert patches[0].kind is TextPatchKindEnum.REPLACE
     assert patches[0].selector.match_text == "annulment"
     assert patches[0].replacement == (
@@ -4909,7 +4930,7 @@ def test_compile_preposed_words_inserted_at_end_to_text_append() -> None:
     assert op.text_patch is not None
     assert op.text_patch.kind is TextPatchKindEnum.APPEND
     assert op.text_patch.selector.match_text == "TEXT_END"
-    assert op.text_patch.replacement.startswith(
+    assert _required_text_patch_replacement(op).startswith(
         "and the amounts referred to in that subsection are net amounts"
     )
     assert (
@@ -8353,7 +8374,7 @@ def test_compile_labeled_end_range_block_preserves_child_endpoint_selector() -> 
         ops[0].text_patch.selector.match_text
         == f"TEXT_FROM_CHILD_END{US}paragraph{US}a{US}a list"
     )
-    assert ops[0].text_patch.replacement.startswith(
+    assert _required_text_patch_replacement(ops[0]).startswith(
         "a in relation to a list published in accordance with regulations"
     )
     assert (
@@ -8425,7 +8446,7 @@ def test_compile_labeled_end_range_ordinal_comma_block() -> None:
         == f"TEXT_FROM_CHILD_END{US}paragraph{US}a{US}petition"
     )
     assert op.text_patch.selector.occurrence == 1
-    assert op.text_patch.replacement.startswith("debtor application is made")
+    assert _required_text_patch_replacement(op).startswith("debtor application is made")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_labeled_end_range_substitution_text_patch"
         in op.provenance_tags
@@ -8876,11 +8897,11 @@ def test_compile_source_range_pseudo_definition_entry_inserts_with_explicit_anch
     )
     assert (
         "“local digital sound programme service” and “national digital sound programme service”"
-        in ops[2].text_patch.replacement
+        in _required_text_patch_replacement(ops[2])
     )
     assert (
         "“local radio multiplex service” and “national radio multiplex service”"
-        in ops[2].text_patch.replacement
+        in _required_text_patch_replacement(ops[2])
     )
     source_range_observations = [
         record
@@ -10022,7 +10043,7 @@ def test_compile_source_carried_after_word_anchor_insert_from_parent_context() -
     )
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "inclusion"
-    assert ops[0].text_patch.replacement.startswith(
+    assert _required_text_patch_replacement(ops[0]).startswith(
         "inclusion — i in the case of a medical practitioner"
     )
     assert (
@@ -12737,7 +12758,7 @@ def test_compile_source_carried_parent_quoted_child_substitution_to_parent_patch
     assert ops[0].target.path == (("section", "130"), ("subsection", "3"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "if the charge is amended after referral."
-    assert ops[0].text_patch.replacement.startswith(
+    assert _required_text_patch_replacement(ops[0]).startswith(
         "a where the charge is amended after referral; b to any charge"
     )
     assert ops[0].witness_rule_id == "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
@@ -27071,7 +27092,7 @@ def test_compile_comma_ordinal_range_to_end_block_substitution() -> None:
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_list_TO_END"
     assert ops[0].text_patch.selector.occurrence == 2
-    assert ops[0].text_patch.replacement.startswith("list\u2014 a in relation to a list")
+    assert _required_text_patch_replacement(ops[0]).startswith("list\u2014 a in relation to a list")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_to_end_ordinal_block_substitution_text_patch"
         in ops[0].provenance_tags
@@ -27185,7 +27206,7 @@ def test_compile_anchor_onwards_block_substitution_to_range_end() -> None:
     assert ops[0].target.path == (("section", "49"), ("subsection", "4"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_whether as being_TO_END"
-    assert ops[0].text_patch.replacement.startswith("if he is\u2014")
+    assert _required_text_patch_replacement(ops[0]).startswith("if he is\u2014")
     assert [record["rule_id"] for record in lowering_records] == [
         "uk_effect_anchor_to_end_block_substitution_text_patch"
     ]
@@ -27238,7 +27259,7 @@ def test_compile_unquoted_range_independent_end_occurrence_block() -> None:
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_the_TO_trustee"
     assert ops[0].text_patch.selector.occurrence == 1
     assert ops[0].text_patch.selector.end_occurrence == 2
-    assert ops[0].text_patch.replacement.startswith("a a trustee is appointed")
+    assert _required_text_patch_replacement(ops[0]).startswith("a a trustee is appointed")
     assert [record["rule_id"] for record in lowering_records] == [
         "uk_effect_range_independent_end_occurrence_substitution_text_patch",
         "uk_effect_range_independent_end_occurrence_text_patch",
@@ -35883,7 +35904,7 @@ def test_compile_first_second_occurrence_substitution_preserves_bounded_occurren
         in op.provenance_tags
         for op in ops
     )
-    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
 
 
 def test_compile_first_two_places_substitution_preserves_bounded_occurrences() -> None:
@@ -35947,7 +35968,7 @@ def test_compile_first_two_places_substitution_preserves_bounded_occurrences() -
         in op.provenance_tags
         for op in ops
     )
-    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
 
 
 def test_compile_quoted_word_where_multiple_ordinal_substitution_preserves_bounded_occurrences() -> None:
@@ -36006,7 +36027,7 @@ def test_compile_quoted_word_where_multiple_ordinal_substitution_preserves_bound
         in op.provenance_tags
         for op in ops
     )
-    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "1"]
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "1"]
     assert [record["rule_id"] for record in lowering_rejections] == [
         "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
     ]
@@ -36074,7 +36095,7 @@ def test_compile_quoted_word_ordinal_places_substitution_preserves_bounded_occur
         in op.provenance_tags
         for op in ops
     )
-    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "1"]
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "1"]
     assert [record["rule_id"] for record in lowering_rejections] == [
         "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
     ]
@@ -36142,7 +36163,7 @@ def test_compile_both_subsequent_places_substitution_preserves_bounded_occurrenc
         in op.provenance_tags
         for op in ops
     )
-    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "2"]
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["3", "2"]
     assert [record["rule_id"] for record in lowering_records] == [
         "uk_effect_both_subsequent_occurrences_substitution_text_patch"
     ]
@@ -36550,7 +36571,7 @@ def test_compile_post_quoted_ordinal_substitution_preserves_bounded_occurrence()
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_ordinal_substitution_text_patch"
         in op.provenance_tags
     )
-    assert _fragment_substitution(op)[0]["occurrence"] == "1"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "1"
 
 
 def test_compile_post_quoted_ordinal_there_is_substituted_preserves_bounded_occurrence() -> None:
@@ -36603,7 +36624,7 @@ def test_compile_post_quoted_ordinal_there_is_substituted_preserves_bounded_occu
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_ordinal_substitution_text_patch"
         in op.provenance_tags
     )
-    assert _fragment_substitution(op)[0]["occurrence"] == "2"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "2"
 
 
 def test_compile_post_quoted_where_ordinal_substitution_preserves_bounded_occurrence() -> None:
@@ -36655,7 +36676,7 @@ def test_compile_post_quoted_where_ordinal_substitution_preserves_bounded_occurr
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_where_ordinal_substitution_text_patch"
         in op.provenance_tags
     )
-    assert _fragment_substitution(op)[0]["occurrence"] == "2"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "2"
 
 
 def test_compile_passive_ordinal_place_substitution_with_words_wrapper_preserves_occurrence() -> None:
@@ -36708,7 +36729,7 @@ def test_compile_passive_ordinal_place_substitution_with_words_wrapper_preserves
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_ordinal_substitution_text_patch"
         in op.provenance_tags
     )
-    assert _fragment_substitution(op)[0]["occurrence"] == "1"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "1"
 
 
 def test_compile_parenthesized_nested_quote_substitution_lowers_to_text_patch() -> None:
@@ -36866,7 +36887,7 @@ def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> N
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_ordinal_insert_text_patch"
         in op.provenance_tags
     )
-    assert _fragment_substitution(op)[0]["occurrence"] == "1"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "1"
 
 
 def test_compile_after_anchor_each_other_place_insert_requires_first_occurrence_sibling() -> None:
@@ -37264,7 +37285,7 @@ def test_compile_after_anchor_ordinal_places_insert_preserves_bounded_occurrence
         in op.provenance_tags
         for op in ops
     )
-    assert [_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
+    assert [_required_fragment_substitution(op)[0]["occurrence"] for op in ops] == ["2", "1"]
     assert [record["rule_id"] for record in lowering_rejections] == [
         "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
     ]
@@ -37321,7 +37342,7 @@ def test_compile_after_prefixed_anchor_ordinal_insert_preserves_bounded_occurren
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_prefixed_quoted_anchor_ordinal_insert_text_patch"
         in op.provenance_tags
     )
-    assert _fragment_substitution(op)[0]["occurrence"] == "2"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "2"
 
 
 def test_compile_final_quoted_word_omission_lowers_to_final_occurrence_repeal() -> None:
@@ -37370,7 +37391,7 @@ def test_compile_final_quoted_word_omission_lowers_to_final_occurrence_repeal() 
     assert op.text_patch.selector.occurrence == -1
     assert op.text_patch.replacement is None
     assert f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_final_quoted_word_omit_text_patch" in op.provenance_tags
-    assert _fragment_substitution(op)[0]["occurrence"] == "-1"
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "-1"
 
 
 def test_compile_multi_anchor_overlap_substitution_records_unlowered_rejection() -> None:
@@ -41680,7 +41701,7 @@ def test_compile_at_end_insert_with_carried_parent_context() -> None:
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
     assert ops[0].text_patch.selector.match_text == "TEXT_END"
-    assert ops[0].text_patch.replacement.startswith(
+    assert _required_text_patch_replacement(ops[0]).startswith(
         "but nothing in this subsection shall enable a self-assessment"
     )
     assert (
@@ -41748,7 +41769,7 @@ def test_compile_source_parent_at_end_text_payload_lowers_append() -> None:
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
     assert ops[0].text_patch.selector.match_text == "TEXT_END"
-    assert ops[0].text_patch.replacement.startswith("The further information required")
+    assert _required_text_patch_replacement(ops[0]).startswith("The further information required")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_at_end_text_insertion_patch"
         in ops[0].provenance_tags
@@ -41817,7 +41838,7 @@ def test_compile_source_parent_at_end_following_definition_payload_lowers_append
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
     assert ops[0].text_patch.selector.match_text == "TEXT_END"
-    assert ops[0].text_patch.replacement.startswith("“small-scale radio multiplex service”")
+    assert _required_text_patch_replacement(ops[0]).startswith("“small-scale radio multiplex service”")
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_at_end_text_insertion_patch"
         in ops[0].provenance_tags
@@ -41941,7 +41962,7 @@ def test_compile_source_parent_insert_at_end_text_payload_lowers_append() -> Non
     assert ops[0].target.path == (("section", "9zb"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
-    assert ops[0].text_patch.replacement.startswith(", and b anything else")
+    assert _required_text_patch_replacement(ops[0]).startswith(", and b anything else")
     assert any(
         record["rule_id"] == "uk_effect_source_parent_at_end_text_insertion_patch"
         and record["source_parent_instruction"] == "insert at the end"
@@ -42006,7 +42027,7 @@ def test_compile_source_parent_insert_at_end_quoted_list_payload_lowers_append()
     assert ops[0].target.path == (("section", "9zb"), ("subsection", "1"))
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
-    assert ops[0].text_patch.replacement.startswith(", and b anything else")
+    assert _required_text_patch_replacement(ops[0]).startswith(", and b anything else")
     observations = [
         record
         for record in lowering_records
@@ -42142,7 +42163,7 @@ def test_compile_source_parent_word_range_list_payload_lowers_text_patch() -> No
     assert ops[0].text_patch is not None
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
     assert ops[0].text_patch.selector.match_text == "TEXT_FROM_six years_TO_made"
-    assert ops[0].text_patch.replacement.startswith("a in the case of an assessment")
+    assert _required_text_patch_replacement(ops[0]).startswith("a in the case of an assessment")
     observations = [
         record
         for record in lowering_records
