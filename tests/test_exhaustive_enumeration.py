@@ -440,6 +440,22 @@ class TestLegalAddressExhaustive:
             )
         )
 
+    def test_has_path_prefix_ignores_special_facet(self) -> None:
+        """Path-only prefix checks are explicit where lineage ignores facets."""
+        addr = LegalAddress(
+            path=(("chapter", "1"), ("section", "2")),
+            special=FacetKind.HEADING,
+        )
+
+        assert addr.has_path_prefix((("chapter", "1"),))
+        assert addr.has_path_prefix(
+            LegalAddress(
+                path=(("chapter", "1"), ("section", "2")),
+                special=FacetKind.INTRO,
+            )
+        )
+        assert not addr.has_path_prefix((("chapter", "1"), ("section", "3")))
+
     def test_empty_path_leaf_accessors(self) -> None:
         """Empty path returns empty string for leaf_kind and leaf_label."""
         addr = LegalAddress(path=())

@@ -34,13 +34,19 @@ class LegalAddress:
     def has_prefix(self, prefix: "LegalAddress") -> bool:
         """Return True when ``prefix`` matches this address path and facet."""
 
-        if len(prefix.path) > len(self.path):
-            return False
-        if self.path[: len(prefix.path)] != prefix.path:
+        if not self.has_path_prefix(prefix):
             return False
         if prefix.special:
             return prefix.special == self.special
         return True
+
+    def has_path_prefix(self, prefix: "LegalAddress | Tuple[Tuple[str, str], ...]") -> bool:
+        """Return True when ``prefix`` matches this address path, ignoring facets."""
+
+        prefix_path = prefix.path if isinstance(prefix, LegalAddress) else tuple(prefix)
+        if len(prefix_path) > len(self.path):
+            return False
+        return self.path[: len(prefix_path)] == prefix_path
 
     def leaf_kind(self) -> str:
         return self.path[-1][0] if self.path else ""

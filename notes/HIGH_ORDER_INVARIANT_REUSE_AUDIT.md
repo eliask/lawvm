@@ -124,6 +124,8 @@ Recent improvement:
   instead of spelling legal-address paths as nested tuple types.
 - `LegalAddress.has_prefix(...)` now owns the core path-prefix plus facet
   matching invariant used by timeline address and temporal scope helpers.
+- `LegalAddress.has_path_prefix(...)` now owns path-only prefix matching for
+  timeline lineage/materialization code that intentionally ignores facets.
 
 ## Ranked Promotion Candidates
 

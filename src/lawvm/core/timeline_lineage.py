@@ -396,13 +396,13 @@ def current_address_with_prefix_migrations_from_events(
             reverse=True,
         ):
             normalized_event_from = normalize(event.from_address)
-            if wave_start.path[: len(normalized_event_from.path)] != normalized_event_from.path:
+            if not wave_start.has_path_prefix(normalized_event_from):
                 continue
             applicable_wave_events.append(event)
         for event in applicable_wave_events:
             normalized_event_from = normalize(event.from_address)
             normalized_current = normalize(current)
-            if normalized_current.path[: len(normalized_event_from.path)] != normalized_event_from.path:
+            if not normalized_current.has_path_prefix(normalized_event_from):
                 continue
             prefix_len = len(event.from_address.path)
             next_path = event.to_address.path + current.path[prefix_len:]
@@ -442,7 +442,7 @@ def current_address_with_prefix_migrations_from_events(
             if normalized_event_from.path not in allowed_destination_source_prefixes:
                 continue
             normalized_current = normalize(current)
-            if normalized_current.path[: len(normalized_event_from.path)] != normalized_event_from.path:
+            if not normalized_current.has_path_prefix(normalized_event_from):
                 continue
             prefix_len = len(event.from_address.path)
             next_path = event.to_address.path + current.path[prefix_len:]
@@ -606,7 +606,7 @@ def rekey_timelines_with_migration_events(
         outer_migrated
         for _outer_is_native, _outer_address, outer_migrated, _outer_timeline in entries
         if any(
-            inner_migrated.path[: len(outer_migrated.path)] == outer_migrated.path
+            inner_migrated.has_path_prefix(outer_migrated)
             and len(inner_migrated.path) > len(outer_migrated.path)
             for _inner_is_native, _inner_address, inner_migrated, _inner_timeline in entries
         )
