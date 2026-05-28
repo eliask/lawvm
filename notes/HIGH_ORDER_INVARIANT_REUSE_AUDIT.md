@@ -407,6 +407,9 @@ Recent improvement:
 - source-pathology and trigger-coverage certificate carriers now freeze nested
   detail payloads at construction; trigger coverage also normalizes source
   lanes to tuples, keeping temporal/source evidence stable after emission.
+- frontend replay adjudication projections and typed timeline invariant
+  violations now freeze nested evidence/detail payloads at construction, so
+  replay/oracle and timeline diagnostic rows stay stable after emission.
 
 ## Ranked Promotion Candidates
 

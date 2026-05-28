@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Literal, Mapping, NamedTuple, TypedDict
 
 import re
 
+from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -409,6 +410,9 @@ class TimelineInvariantViolation:
     address_path: str  # full address string for diagnostics
     message: str
     detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
 
 def _section_label_from_address_text(address_text: str) -> str:
