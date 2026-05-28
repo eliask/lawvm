@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, cast
 
+from lawvm.core.comparison_normalization import (
+    ComparisonNormalizationRule,
+    ComparisonRuleKind,
+    normalize_comparison_text,
+)
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 _EE_QMARK_HYPHEN_RE = re.compile(
@@ -495,6 +500,24 @@ _EE_NON_SILENT_NORMALIZATION_RULE_CLASSES = (
 )
 
 
+def _to_core_comparison_rule(rule: EENormalizationRule) -> ComparisonNormalizationRule:
+    return ComparisonNormalizationRule(
+        name=rule.name,
+        rule_class=rule.rule_class.value,
+        kind=cast(ComparisonRuleKind, rule.kind),
+        description=rule.description,
+        pattern=rule.pattern,
+        replacement=rule.replacement,
+        old_text=rule.old_text,
+        new_text=rule.new_text,
+    )
+
+
+_EE_CORE_NORMALIZATION_RULES = tuple(
+    _to_core_comparison_rule(rule) for rule in _EE_NORMALIZATION_RULES
+)
+
+
 def get_ee_comparison_normalization_rules() -> tuple[EENormalizationRule, ...]:
     """Return the explicit taxonomy of comparison-only normalization rules."""
     return _EE_NORMALIZATION_RULES
@@ -535,17 +558,7 @@ def normalize_ee_comparison_text(text: str) -> str:
     - a few bounded fused/split compound artifacts still seen on the EE tail
     - bounded committee-list dash normalization in ``§ 93``-style prose
     """
-    normalized = text
-    for rule in _EE_NORMALIZATION_RULES:
-        if rule.kind == "regex":
-            pattern = rule.pattern
-            if pattern is not None:
-                normalized = pattern.sub(rule.replacement, normalized)
-        elif rule.kind == "literal":
-            normalized = normalized.replace(rule.old_text, rule.new_text)
-        elif rule.kind == "placeholder" and rule.pattern is not None:
-            if rule.pattern.fullmatch(normalized.strip()):
-                return cast(str, rule.replacement)
+    normalized = normalize_comparison_text(text, _EE_CORE_NORMALIZATION_RULES).text
     if normalized.strip() == "–":
         return ""
     return normalized

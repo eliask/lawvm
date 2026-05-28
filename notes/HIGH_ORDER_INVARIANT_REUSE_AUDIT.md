@@ -40,6 +40,9 @@ Recent improvement:
   `scripts/audit_invariants.py` prefers typed metadata when available.
 - materialization duplicate regression helpers now consume typed tree invariant
   records instead of maintaining a parallel duplicate-child scanner.
+- core comparison normalization supports placeholder-equivalence rules, and
+  Estonia comparison text normalization delegates execution to the core
+  pipeline while keeping the EE rule taxonomy local.
 
 ## Ranked Promotion Candidates
 
@@ -359,11 +362,10 @@ These are jurisdiction source semantics, not shared invariants.
 
 1. Add an opt-in UK replay debug path that emits core mutation-event records
    from mutation sites without whole-tree snapshots.
-2. Adapt Estonia's comparison-normalization rule registry to the core
-   comparison carrier while keeping EE rule taxonomy local.
-3. Continue replacing private `_norm` / `_default_sort_key` frontend imports
+2. Continue replacing private `_norm` / `_default_sort_key` frontend imports
    with the public `normalized_label_key` / `default_label_sort_key` wrappers
    in small, testable batches.
 
 The highest-value order is now UK mutation-event/debug emission, cautious
-comparison-normalization reuse, and small public-helper migration batches.
+comparison-normalization reuse for additional frontends, and small
+public-helper migration batches.
