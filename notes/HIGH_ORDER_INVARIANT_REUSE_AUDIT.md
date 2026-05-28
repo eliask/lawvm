@@ -52,6 +52,10 @@ Recent improvement:
 - Sweden comparison-only dash/editorial/inline-numbering projection now
   delegates its named presentation rules to the core comparison-normalization
   pipeline while keeping Sweden's rule taxonomy local.
+- Norway comparison-only spacing, footnote-marker, hyphen-gap, and placeholder
+  dash-tail projection now delegates its named presentation rules to the core
+  comparison-normalization pipeline while keeping Norway's suppression logic
+  local.
 - UK replay now has an opt-in core `MutationEvent` sink for central node
   replacements, removals, and ordinary insertions via `_replace_node_in_statute`,
   `_remove_node`, `_record_child_inserted`, and `_record_supplement_inserted`;
@@ -247,6 +251,9 @@ Low-risk first migration:
 - Sweden comparison text normalization now uses the core rule carrier for dash
   equivalence, editorial attribution suffixes, leading section numbers, and
   inline list numbering.
+- Norway comparison text normalization now uses the core rule carrier for
+  bounded whitespace, punctuation, footnote-marker, numeric hyphen, and
+  other-laws placeholder presentation cleanup.
 
 ### P1. Diagnostic Envelope / Disposition Builder
 

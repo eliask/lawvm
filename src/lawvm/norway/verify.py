@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops
@@ -34,6 +35,80 @@ _NO_VERIFY_CONTINGENT_OTHER_LAWS_RE = re.compile(
 _NO_VERIFY_SECTION_SHELL_RE = re.compile(
     r"^I §\s*(?P<label>[0-9A-Za-z-]+)(?:\s+nr\.\s*\d+)?\b",
     re.IGNORECASE,
+)
+_NO_COMPARISON_NORMALIZATION_RULES = (
+    ComparisonNormalizationRule(
+        name="no_compare_nbsp",
+        rule_class="presentation_cleanup",
+        kind="literal",
+        description="Project non-breaking spaces to ordinary spaces for Norway comparison text.",
+        old_text="\xa0",
+        new_text=" ",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_whitespace_collapse",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Collapse whitespace runs for Norway comparison text.",
+        pattern=_NO_VERIFY_WS_RE,
+        replacement=" ",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_punctuation_spacing",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove spaces before punctuation for Norway comparison text.",
+        pattern=_NO_VERIFY_PUNCT_RE,
+        replacement=r"\1",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_open_paren_spacing",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove spaces after opening parenthesis for Norway comparison text.",
+        pattern=_NO_VERIFY_PAREN_OPEN_RE,
+        replacement="(",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_inline_footnote_marker",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove inline numeric footnote markers between sentences.",
+        pattern=re.compile(r"(?<=[a-zæøå])\s+\d+\s+(?=[A-ZÆØÅ])"),
+        replacement=" ",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_standalone_footnote_marker",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove standalone numeric footnote markers after punctuation.",
+        pattern=_NO_VERIFY_STANDALONE_FOOTNOTE_RE,
+        replacement=r"\1 ",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_numeric_hyphen_gap",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Close a spacing gap before hyphen after a digit.",
+        pattern=re.compile(r"(\d)\s+-"),
+        replacement=r"\1-",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_other_laws_placeholder_dash_tail",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Suppress pure dash tails in other-laws placeholder clauses.",
+        pattern=_NO_VERIFY_OTHER_LAWS_PLACEHOLDER_RE,
+        replacement=r"\1",
+    ),
+    ComparisonNormalizationRule(
+        name="no_compare_trailing_footnote_marker",
+        rule_class="presentation_cleanup",
+        kind="regex",
+        description="Remove trailing numeric footnote markers after terminal punctuation.",
+        pattern=_NO_VERIFY_TRAILING_FOOTNOTE_RE,
+        replacement=r"\1",
+    ),
 )
 NO_VERIFY_COMPARE_REPEALED_SHELL_BLANKED = "no_verify.compare_repealed_shell_blanked"
 NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED = "no_verify.compare_sentence_children_collapsed"
@@ -123,18 +198,10 @@ _NO_RELATION_SPECIAL_LABELS = {"last", "first"}
 
 def normalize_no_comparison_text(text: str) -> str:
     """Normalize bounded Norway editorial spacing noise for compare-only use."""
-    text = text.replace("\xa0", " ")
-    text = _NO_VERIFY_WS_RE.sub(" ", text).strip()
-    text = _NO_VERIFY_PUNCT_RE.sub(r"\1", text)
-    text = _NO_VERIFY_PAREN_OPEN_RE.sub("(", text)
-    text = re.sub(r"(?<=[a-zæøå])\s+\d+\s+(?=[A-ZÆØÅ])", " ", text)
-    text = _NO_VERIFY_STANDALONE_FOOTNOTE_RE.sub(r"\1 ", text)
-    text = re.sub(r"(\d)\s+-", r"\1-", text)
-    text = _NO_VERIFY_OTHER_LAWS_PLACEHOLDER_RE.sub(r"\1", text)
-    text = _NO_VERIFY_TRAILING_FOOTNOTE_RE.sub(r"\1", text)
-    if _NO_VERIFY_REPEALED_RE.fullmatch(text):
+    normalized = normalize_comparison_text(text, _NO_COMPARISON_NORMALIZATION_RULES).text.strip()
+    if _NO_VERIFY_REPEALED_RE.fullmatch(normalized):
         return ""
-    return text
+    return normalized
 
 
 def _has_no_other_laws_marker(text: str) -> bool:
