@@ -146,6 +146,8 @@ Recent improvement:
 - bidirectional path-relation helpers now live in core; Norway verification
   delegates its touched-divergence relation predicate while keeping local
   ignored-container and symbolic-label policy.
+- filtered divergence partition records now live in core verification contracts;
+  Norway verification aliases them while keeping local suppression rules.
 
 ## Ranked Promotion Candidates
 
