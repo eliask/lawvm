@@ -47,6 +47,14 @@ bug class it catches. Addresses Pro adversarial review attack #23
 | Invariant → evidence | C3 tests (5) | tests/test_section_invariant_evidence.py | CI | Yes | Timeline violations ignored by evidence |
 | Publication guarantees | D1-D3 tests (5) | tests/test_publication_guarantees.py | CI | Yes | PROVED claim without rule_id or section scope |
 | Worker pool cleanup | Signal handling tests (5) | tests/test_worker_pool.py | CI | Yes | Zombie worker processes |
+| UK replay duplicate/order invariants | UKReplayInvariantDiagnosticsMixin | src/lawvm/uk_legislation/replay_invariant_diagnostics.py | UK replay after structural mutations | No, records adjudications | Duplicate siblings, out-of-order siblings, payload shape gaps |
+| UK replay invariant scan equivalence | pytest | tests/test_uk_schedule_compile.py | CI | Yes | Fast UK invariant scanner diverging from persisted generic subset |
+| Replay text-duplication lints | replay_lints + frontend projection | src/lawvm/core/replay_lints.py; src/lawvm/uk_legislation/replay_records.py | FI/EU/UK replay fold | No, observation | Large duplicate text tracts after replay |
+| Flattened sublist-family lints | replay_lints + diagnose-phase | src/lawvm/core/replay_lints.py; src/lawvm/tools/diagnose_phase.py | Manual/debug | No, observation | Nested list accidentally flattened to one sibling list |
+| Phase-local invariant attribution | diagnose-phase | src/lawvm/tools/diagnose_phase.py | Manual/debug | No | Whether a structural violation arose before apply, in apply, fold post-process, or materialization |
+| First-bad invariant bisection | invariant-bisect | src/lawvm/tools/invariant_bisect.py | Manual/debug | No | First amendment introducing duplicate/order/illegal-edge/text-dup/flattened-list symptoms |
+| Apply mutation-boundary accounting | Finland apply_events | src/lawvm/finland/apply_events.py | Finland replay | No, finding/evidence | Successful/failed op mutated outside declared target boundary |
+| Publication operation boundary accounting | Open Law audit | src/lawvm/open_law/audit.py | Open Law audit | No, finding | Published snapshot changed paths outside declared operation target regions |
 
 ## What is NOT verified
 
@@ -56,3 +64,25 @@ bug class it catches. Addresses Pro adversarial review attack #23
 - No section-chain completeness certificate as precondition for negative proofs
 - No formal proof that 17 apply failures don't affect section-level PIT output
 - No abstract formal semantics of the Finnish amendment language
+- No UK-wide mutation-boundary checker equivalent to Finland `ApplyMutationEvent`
+- No generic changed-path accounting in the UK replay executor; UK currently relies on target-specific adjudications plus duplicate/order invariant scans
+- No UK projection of `flattened_sublist_family_warning` into saved bench/candidate evidence, despite the detector existing generically
+
+## Reuse Before Ad Hoc Detection
+
+When a new frontend symptom is visible as one of these generic properties, prefer the generic detector/evidence lane before adding a bespoke source-family check.
+
+Good candidates:
+
+- duplicate siblings or wrong local ordering: use `check_invariants` or the UK replay invariant adjudication lane
+- large repeated wording after replay: use `build_text_duplication_findings`
+- suspicious flat repeated list families: use `build_flattened_sublist_findings` / `diagnose-phase --detector flattened_sublist_family`
+- unexplained sibling/parent mutation: generalize mutation-boundary accounting instead of adding more late replay special cases
+- phase attribution for Finland-style chains: run `invariant-bisect` then `diagnose-phase --certificate`
+
+UK-specific next opportunities:
+
+- Add UK replay mutation events with `changed_paths`, `covered_changed_paths`, and `unexplained_changed_paths`, using the same conceptual boundary as Finland and Open Law.
+- Project flattened-sublist lints into UK replay adjudications beside text-duplication warnings so UK bench triage can find list-flattening families without bespoke scanners.
+- Expose a UK-compatible invariant debug command or extend existing UK bench/candidate output with first new tree-invariant adjudication samples, because `diagnose-phase` / `invariant-bisect` are currently Finland-chain oriented.
+- Keep target-family repairs source-owned, but let generic invariants prove symptoms; a source parser should not duplicate a generic duplicate-label or out-of-boundary detector just to recognize the same failure shape.
