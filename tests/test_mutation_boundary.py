@@ -5,16 +5,18 @@ from collections import Counter
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import (
+    build_operation_mutation_boundary_report,
     build_mutation_boundary_report,
     diff_ir_paths,
+    operation_storage_boundary_prefixes,
     partition_changed_paths,
     path_has_prefix,
     tree_path_from_legal_address,
     unexplained_changed_paths,
 )
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 
 TREE_PATHS = st.lists(
     st.tuples(
@@ -31,6 +33,44 @@ def test_tree_path_from_legal_address_uses_boundary_path_shape() -> None:
     assert tree_path_from_legal_address(address) == (
         ("section", "1"),
         ("subsection", "2"),
+    )
+
+
+def test_operation_storage_boundary_prefixes_text_target_target_path() -> None:
+    op = LegalOperation(
+        op_id="op",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
+    )
+
+    assert operation_storage_boundary_prefixes(op) == ((("section", "1"), ("subsection", "2")),)
+
+
+def test_operation_storage_boundary_prefixes_insert_target_parent_path() -> None:
+    op = LegalOperation(
+        op_id="op",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
+        anchor=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+    )
+
+    assert operation_storage_boundary_prefixes(op) == ((("section", "1"),),)
+
+
+def test_operation_storage_boundary_prefixes_renumber_covers_source_and_destination_parents() -> None:
+    op = LegalOperation(
+        op_id="op",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "2"))),
+        destination=LegalAddress(path=(("section", "3"), ("subsection", "4"))),
+    )
+
+    assert operation_storage_boundary_prefixes(op) == (
+        (("section", "1"),),
+        (("section", "3"),),
     )
 
 
@@ -122,3 +162,84 @@ def test_build_mutation_boundary_report_partitions_changed_paths() -> None:
     )
     assert report.covered_changed_paths == ((("section", "1"),),)
     assert report.unexplained_changed_paths == ((("section", "2"),),)
+
+
+def test_build_operation_boundary_report_covers_insert_parent_shape_change() -> None:
+    before = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+    after = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="1"),
+            IRNode(kind=IRNodeKind.SECTION, label="2"),
+        ),
+    )
+    op = LegalOperation(
+        op_id="op",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2"),
+        anchor=LegalAddress(path=(("section", "1"),)),
+    )
+
+    report = build_operation_mutation_boundary_report(before, after, op)
+
+    assert report.changed_paths == ((),)
+    assert report.covered_changed_paths == ((),)
+    assert report.unexplained_changed_paths == ()
+
+
+def test_build_operation_boundary_report_flags_unrelated_text_change() -> None:
+    before = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="old one"),
+            IRNode(kind=IRNodeKind.SECTION, label="2", text="old two"),
+        ),
+    )
+    after = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="new one"),
+            IRNode(kind=IRNodeKind.SECTION, label="2", text="new two"),
+        ),
+    )
+    op = LegalOperation(
+        op_id="op",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="new one"),
+    )
+
+    report = build_operation_mutation_boundary_report(before, after, op)
+
+    assert report.covered_changed_paths == ((("section", "1"),),)
+    assert report.unexplained_changed_paths == ((("section", "2"),),)
+
+
+def test_build_operation_boundary_report_covers_replace_payload_key_change_at_parent() -> None:
+    before = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
+    )
+    after = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.SECTION, label="1A"),),
+    )
+    op = LegalOperation(
+        op_id="op",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1A"),
+    )
+
+    report = build_operation_mutation_boundary_report(before, after, op)
+
+    assert report.changed_paths == ((),)
+    assert report.covered_changed_paths == ((),)
+    assert report.unexplained_changed_paths == ()
