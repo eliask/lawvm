@@ -349,6 +349,9 @@ Recent improvement:
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
   unresolved contingent temporal events that were not applied.
+- temporal-resolution evidence now validates its shared status/family
+  vocabulary at construction, and `certified_untriggered` evidence must carry
+  a source locator, authority layer, or trigger-coverage certificate.
 
 ## Ranked Promotion Candidates
 
