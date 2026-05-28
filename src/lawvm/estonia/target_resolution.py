@@ -13,6 +13,7 @@ from typing import Callable, Iterable, Sequence, cast
 import xml.etree.ElementTree as ET
 import html as html_lib
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 
@@ -78,17 +79,17 @@ def _record_ee_parse_rejection(
             kind=kind,
             message=message,
             source_statute=source_id,
-            detail={
-                "rule_id": rule_id,
-                "reason": reason,
-                "phase": "parse",
-                "family": family,
-                "target_title": target_title,
-                "statute_fragment": statute_fragment,
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-            },
+            detail=diagnostic_detail(
+                rule_id=rule_id,
+                phase="parse",
+                family=family,
+                reason=reason,
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+                target_title=target_title,
+                statute_fragment=statute_fragment,
+            ),
         )
     )
 
@@ -112,17 +113,17 @@ def _record_ee_old_format_unparsed_meta_rejection(
             ),
             source_statute=source_id,
             op_id=op.op_id,
-            detail={
-                "rule_id": _EE_OLD_FORMAT_UNPARSED_META_REJECTED_RULE,
-                "reason": "unparsed_meta_not_executable",
-                "phase": "parse",
-                "family": "unsupported_source_lane",
-                "target_title": target_title,
-                "source_text": effective_text[:500],
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-            },
+            detail=diagnostic_detail(
+                rule_id=_EE_OLD_FORMAT_UNPARSED_META_REJECTED_RULE,
+                phase="parse",
+                family="unsupported_source_lane",
+                reason="unparsed_meta_not_executable",
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+                target_title=target_title,
+                source_text=effective_text[:500],
+            ),
         )
     )
 

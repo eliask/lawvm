@@ -183,6 +183,9 @@ Recent improvement:
 - UK single-child amendment payload, enacted schedule-table row payload, and
   compound BlockAmendment payload-only extraction diagnostics now use the same
   source-lane carrier while preserving their existing UK-local fields.
+- Estonia target-resolution parse rejection helpers now delegate shared
+  diagnostic envelope fields to `diagnostic_detail` while preserving their
+  local target-title and source-fragment payload.
 - Norway amendment-index duplicate logical locator diagnostics now include a
   nested shared source-lane selection projection for both deterministic
   byte-identical duplicate selection and conflicting-duplicate blocking,
