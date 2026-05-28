@@ -186,6 +186,9 @@ Recent improvement:
   authority.
 - branch lifecycle events now record proposal/draft status history as graph
   facts, separate from enacted-state operation replay.
+- `CorpusGraph` now rejects duplicate branch ids and dangling branch edge or
+  lifecycle references, keeping proposal/draft graph claims internally
+  referentially sound.
 
 ## Ranked Promotion Candidates
 
