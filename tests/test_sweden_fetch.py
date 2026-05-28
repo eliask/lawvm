@@ -556,7 +556,7 @@ def test_fetch_official_falls_back_to_legacy_sfspdf_direct_url(monkeypatch) -> N
     assert diagnostics == [
         {
             "rule_id": "se_official_pdf_source_lane_fallback",
-            "family": "source_pathology",
+            "family": "source_lane_selection",
             "phase": "acquisition",
             "reason": "Sweden official SFS PDF was recovered through a fallback source lane",
             "sfs_id": "2015:284",
@@ -566,6 +566,15 @@ def test_fetch_official_falls_back_to_legacy_sfspdf_direct_url(monkeypatch) -> N
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "selected_source_lane": "legacy_direct_guess",
+            "selected_source_locator": legacy_pdf_url,
+            "source_lane_attempts": (
+                {
+                    "lane": "legacy_direct_guess",
+                    "status": "valid_pdf",
+                    "locator": legacy_pdf_url,
+                },
+            ),
             "doc_status": "missing",
             "selected_pdf_lane": "legacy_direct_guess",
             "pdf_source_attempts": (
