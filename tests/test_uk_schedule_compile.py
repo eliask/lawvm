@@ -36,6 +36,7 @@ from lawvm.uk_legislation.replay_applicability import should_replay_nonstructura
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
 )
+from lawvm.uk_legislation.replay_executor import replay_uk_ops as _replay_uk_ops_with_events
 from lawvm.uk_legislation.replay_records import (
     append_replay_fold_text_duplication_adjudications,
 )
@@ -35543,8 +35544,14 @@ def test_replay_table_column_insert_adjusts_spanning_header_and_rows() -> None:
         ),
     )
     adjudications: list[CompileAdjudication] = []
+    mutation_events: list[Any] = []
 
-    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+    replayed = _replay_uk_ops_with_events(
+        base,
+        [op],
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
 
     table = replayed.body.children[0].children[0].children[0]
     assert table.children[0].children[1].attrs["colspan"] == "3"
@@ -35562,6 +35569,13 @@ def test_replay_table_column_insert_adjusts_spanning_header_and_rows() -> None:
     assert adjudications[0].detail["strict_disposition"] == "record"
     assert adjudications[0].detail["adjusted_spans"] == 1
     assert adjudications[0].detail["inserted_cells"] == 3
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk_test_table_column_insert_apply"
+    assert event.helper == "_insert_table_column"
+    assert event.outcome == "table_column_inserted"
+    assert event.reason_code == "source_owned_between_columns_selector"
+    assert event.replaced_paths == ((("section", "122"), ("subsection", "1"), ("table", "")),)
 
 
 def test_replay_table_column_insert_does_not_partially_mutate_on_short_payload() -> None:
