@@ -159,6 +159,168 @@ Recent improvement:
 
 ## Ranked Promotion Candidates
 
+### P0. Source-Lane Selection Evidence
+
+Problem:
+
+- acquisition code increasingly chooses between multiple source lanes:
+  current XML, enacted XML, official PDF, legacy PDF guesses, archive members,
+  and duplicate logical locators;
+- those choices are evidence-sensitive, but the record shape is still local to
+  each frontend.
+
+Evidence:
+
+- `src/lawvm/uk_legislation/source_context.py::_select_enacted_source_for_current_shell`
+- `src/lawvm/uk_legislation/source_state.py::uk_affecting_act_current_shell_enacted_source_selected`
+- `src/lawvm/sweden/fetch.py::fetch_se_official_artifacts`
+- `src/lawvm/norway/index.py::_deduplicated_no_amendment_artifacts`
+
+Promotion:
+
+- add a neutral core record for source-lane selection attempts, selected lane,
+  rejected lanes, source locators, payload digests/sizes, and blocking
+  disposition;
+- keep lane policy local to each frontend;
+- project the record through `diagnostic_detail` or evidence rows without
+  changing source acquisition behavior.
+
+Why high value:
+
+- makes acquisition-layer source choice auditable across jurisdictions;
+- prevents future frontends from treating fallback source lanes as invisible
+  transport details;
+- gives strict mode a common way to reject ambiguous or non-authoritative lane
+  selection while quirks mode can still proceed with evidence.
+
+Risk:
+
+- do not encode jurisdiction authority policy in core;
+- do not imply a selected source lane is legally authoritative merely because
+  it was selected;
+- start as an evidence carrier before replacing existing diagnostics.
+
+Tests needed:
+
+- UK current-shell to enacted-source selection preserves current and enacted
+  locators, sizes, and previews;
+- Sweden fallback PDF lane emits nonblocking source-lane selection evidence;
+- Norway duplicate byte-identical artifacts select a deterministic witness but
+  conflicting duplicates block;
+- malformed records must reject missing selected/rejected lane reason fields.
+
+### P0. Source-Version Bracketing Witness
+
+Problem:
+
+- Finland, New Zealand, and Estonia each choose exact/latest/on-or-before
+  source versions from ordered official artifacts;
+- the shared invariant is a witness-window selection, not the jurisdiction's
+  legal temporal semantics.
+
+Evidence:
+
+- `src/lawvm/finland/consolidated_artifacts.py`
+- `src/lawvm/new_zealand/version_diff.py`
+- `src/lawvm/estonia/fetch.py`
+
+Promotion:
+
+- add a core source-version window record with requested date, candidate
+  versions, selected version, selection relation, and tie-break evidence;
+- keep jurisdiction authority and commencement interpretation outside the
+  helper.
+
+Why high value:
+
+- makes oracle/source bracketing auditable for replay-vs-oracle checks;
+- reduces hidden date-window policy drift between frontends.
+
+Risk:
+
+- must be clearly named as source witness selection, not proof of legal
+  effectivity.
+
+Tests needed:
+
+- exact match, on-or-before, strict-before, on-or-after, latest, no candidate,
+  duplicate-date tie-break, and no-authority-claim metadata.
+
+### P1. Target Resolution Certificate
+
+Problem:
+
+- Finland sparse-slot binding and UK target refinement both compute candidate
+  counts, ambiguity, fallback status, selected target, and rule evidence;
+- current records are local and hard to query uniformly.
+
+Evidence:
+
+- `src/lawvm/finland/payload_normalize.py`
+- `src/lawvm/uk_legislation/replay_target_lookup.py`
+- `src/lawvm/uk_legislation/effect_target_prelude.py`
+
+Promotion:
+
+- add a core resolution certificate shape for target/slot selection outcomes;
+- include source target, candidate count, selected target, status, rule ID,
+  confidence, and strict/quirks disposition;
+- keep resolver logic and local target grammar in frontends.
+
+Why high value:
+
+- directly supports the no-target-hijacking invariant;
+- lets tools ask where fallback or ambiguity entered the pipeline.
+
+Risk:
+
+- avoid forcing Finland sparse-slot and UK effect-target vocabularies into one
+  enum too early.
+
+Tests needed:
+
+- zero candidate, single candidate, ambiguous candidates, fallback candidate,
+  selected target differs from metadata target, and strict mode blocks fallback
+  while still emitting the certificate.
+
+### P1. Temporal Resolution Status Contract
+
+Problem:
+
+- UK commencement overrides, Norway effective-date statuses, and Finland
+  activation-rule lowering all classify temporal evidence;
+- the language-specific date extraction is local, but the evidence status
+  shape is reusable.
+
+Evidence:
+
+- `src/lawvm/uk_legislation/effect_temporal.py`
+- `src/lawvm/norway/sources.py`
+- `src/lawvm/finland/temporal_lowering.py`
+
+Promotion:
+
+- add a small temporal resolution record for fixed, immediate, contingent,
+  missing, ambiguous, and source-backed override outcomes;
+- include locator/source text when a recovery or override is used.
+
+Why high value:
+
+- temporal uncertainty is a cross-jurisdiction replay blocker;
+- shared evidence would make strict-mode temporal barriers easier to reason
+  about.
+
+Risk:
+
+- do not promote language-specific effective-date parsers or commencement
+  doctrines.
+
+Tests needed:
+
+- fixed date, immediate, contingent/pending decree, unknown/missing,
+  source-backed override, ambiguous multi-date without override, and strict
+  rejection of unproven temporal recovery.
+
 ### P0. Typed Tree Invariant Violations
 
 Problem:
