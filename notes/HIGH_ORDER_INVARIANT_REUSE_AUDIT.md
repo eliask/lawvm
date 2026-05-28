@@ -122,6 +122,8 @@ Recent improvement:
   the core mutation-boundary surface instead of Finland-local apply helpers.
 - selected UK production path annotations now use the shared `TreePath` alias
   instead of spelling legal-address paths as nested tuple types.
+- `LegalAddress.has_prefix(...)` now owns the core path-prefix plus facet
+  matching invariant used by timeline address and temporal scope helpers.
 
 ## Ranked Promotion Candidates
 

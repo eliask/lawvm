@@ -147,10 +147,4 @@ def _retarget_version_content(
 
 def _address_prefix_matches(address: LegalAddress, prefix: LegalAddress) -> bool:
     """Return True when ``prefix`` matches the leading path of ``address``."""
-    if len(prefix.path) > len(address.path):
-        return False
-    if address.path[: len(prefix.path)] != prefix.path:
-        return False
-    if prefix.special:
-        return prefix.special == address.special
-    return True
+    return address.has_prefix(prefix)
