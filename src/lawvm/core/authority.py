@@ -325,6 +325,26 @@ def branch_materialization_ops(
     return tuple(op for op in ops if operation_matches_branch_context(op, context))
 
 
+def branch_overlay_materialization_ops(
+    ops: Sequence["LegalOperation"],
+    context: BranchContext,
+) -> tuple["LegalOperation", ...]:
+    """Return default enacted operations plus the selected branch context.
+
+    This is a selector only. It does not promote proposal/draft claims into
+    enacted law; callers must explicitly pass a non-default branch context.
+    """
+
+    if context.is_enacted_default:
+        return enacted_materialization_ops(ops)
+    return tuple(
+        op
+        for op in ops
+        if branch_context_from_operation(op).is_enacted_default
+        or operation_matches_branch_context(op, context)
+    )
+
+
 def branch_graph_edge_from_operation(
     op: "LegalOperation",
     *,

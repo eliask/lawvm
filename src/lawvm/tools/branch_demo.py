@@ -17,6 +17,7 @@ from lawvm.core.authority import (
     UNKNOWN_STATUS,
     LegalBranch,
     branch_materialization_ops,
+    branch_overlay_materialization_ops,
     enacted_materialization_ops,
 )
 from lawvm.core.branch_projection import (
@@ -74,6 +75,9 @@ def build_branch_demo_payload() -> dict[str, Any]:
         "branch": branch.to_dict(),
         "default_enacted_operation_ids": tuple(op.op_id for op in enacted_materialization_ops(ops)),
         "branch_operation_ids": tuple(op.op_id for op in branch_materialization_ops(ops, branch.to_context())),
+        "branch_overlay_operation_ids": tuple(
+            op.op_id for op in branch_overlay_materialization_ops(ops, branch.to_context())
+        ),
         "impact_projection": projection.to_dict(),
     }
 

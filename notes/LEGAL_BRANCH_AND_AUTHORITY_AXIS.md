@@ -42,6 +42,7 @@ Implemented:
 - `OperationSource.scenario_id`
 - `enacted_materialization_ops(...)`
 - `branch_materialization_ops(...)`
+- `branch_overlay_materialization_ops(...)`
 - `branch_graph_edge_from_operation(...)`
 - `branch_graph_edges_from_operations(...)`
 - `CorpusGraph.branches`
@@ -134,15 +135,18 @@ Done in the core/demo layer:
   construction rejects branch edges whose scenario does not match the
   registered branch scenario.
 - branch impact row ids include the scenario id when present.
+- branch overlay operation selection exists for explicit “current law plus this
+  branch/scenario” materialization demos; it is a selector only, not promotion
+  of proposal claims into enacted law.
 
 Remaining:
 
 1. Prototype one real frontend lane:
    pick the jurisdiction/source family with the cleanest proposal or bill
    source extraction, otherwise build a synthetic-to-real bridge first.
-2. Add branch-aware materialization beyond the current operation-lane filter if
-   a frontend needs actual branch-state execution rather than graph/diff
-   projection.
+2. Add branch-state execution on top of the current branch-overlay operation
+   selector if a frontend needs actual branch-state materialization rather than
+   graph/diff projection.
 3. Add frontend-owned lifecycle import for introduced, amended, withdrawn,
    failed, enacted, or superseded statuses once a real source surface exists.
 

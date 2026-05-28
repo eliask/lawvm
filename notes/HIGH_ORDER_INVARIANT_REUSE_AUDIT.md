@@ -300,6 +300,9 @@ Recent improvement:
   and `CorpusGraph` rejects branch-edge scenario mismatches against the
   registered branch so proposal variants cannot merge by branch id alone;
   branch-impact row ids include scenario ids when present.
+- branch overlay operation selection now has a core helper for explicit
+  current-law-plus-selected-branch materialization demos without promoting
+  proposal claims into the default enacted lane.
 - Neo4j graph export now includes branch nodes, branch would-affect edges, and
   branch lifecycle event tables so proposal/draft graph facts have a persistent
   export lane.
