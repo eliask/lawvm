@@ -127,22 +127,6 @@ def uk_replace_children(node: UKMutableNode, new_children: list[UKMutableNode]) 
     return True
 
 
-def uk_replace_text(node: UKMutableNode, new_text: str) -> bool:
-    node.text = new_text
-    return True
-
-
-def uk_replace_text_and_children(
-    node: UKMutableNode,
-    *,
-    text: str,
-    children: list[UKMutableNode],
-) -> bool:
-    node.text = text
-    node.children = list(children)
-    return True
-
-
 def uk_insert_child_sorted(parent: UKMutableNode, new_node: UKMutableNode) -> bool:
     from lawvm.uk_legislation.canonicalize import uk_insert_into_children
     from lawvm.uk_legislation.ordering import _label_sort_key

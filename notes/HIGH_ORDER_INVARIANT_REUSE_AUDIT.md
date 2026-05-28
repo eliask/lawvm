@@ -136,6 +136,8 @@ Recent improvement:
 - UK source-carried labelled-child text-substitution recovery now rebuilds the
   recovered parent through the same central node-replacement helper instead of
   mutating text and children in place.
+- unused UK mutable replay helpers for direct text and text+children mutation
+  were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in
   the core mutation-boundary surface instead of Finland-local apply helpers.
 - selected UK production path annotations now use the shared `TreePath` alias
