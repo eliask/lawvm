@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
-from lawvm.core.mutation_boundary import partition_changed_paths, path_has_prefix
+from lawvm.core.mutation_boundary import dedupe_tree_paths, partition_changed_paths, path_has_prefix
 from lawvm.core.tree_ops import Path
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 
@@ -371,14 +371,7 @@ def _matching_declared_allowance_rule_ids(
 def _dedupe_paths(
     paths: Iterable[tuple[tuple[str, str], ...]],
 ) -> tuple[tuple[tuple[str, str], ...], ...]:
-    deduped: list[tuple[tuple[str, str], ...]] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    for path in paths:
-        if path in seen:
-            continue
-        seen.add(path)
-        deduped.append(path)
-    return tuple(deduped)
+    return dedupe_tree_paths(paths)
 
 
 def build_apply_mutation_invariant_reports(

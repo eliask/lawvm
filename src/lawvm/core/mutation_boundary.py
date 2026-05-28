@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from typing import Iterable, Sequence, Tuple
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
@@ -32,25 +32,25 @@ def operation_storage_boundary_prefixes(
 
     target_path = tree_path_from_legal_address(op.target)
     if str(op.target.special or "") == "whole_act":
-        return _dedupe_tree_paths(((), *declared_extra_prefixes))
+        return dedupe_tree_paths(((), *declared_extra_prefixes))
 
     action = op.action
     if action in {StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPEAL, StructuralAction.HEADING_REPLACE}:
-        return _dedupe_tree_paths((target_path, *declared_extra_prefixes))
+        return dedupe_tree_paths((target_path, *declared_extra_prefixes))
     if action is StructuralAction.INSERT:
-        return _dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))
+        return dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))
     if action is StructuralAction.REPEAL:
-        return _dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))
+        return dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))
     if action is StructuralAction.RENUMBER:
         prefixes = [_parent_tree_path(target_path)]
         if op.destination is not None:
             prefixes.append(_parent_tree_path(tree_path_from_legal_address(op.destination)))
-        return _dedupe_tree_paths((*prefixes, *declared_extra_prefixes))
+        return dedupe_tree_paths((*prefixes, *declared_extra_prefixes))
     if action is StructuralAction.REPLACE:
         if _replace_payload_changes_target_key(op):
-            return _dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))
-        return _dedupe_tree_paths((target_path, *declared_extra_prefixes))
-    return _dedupe_tree_paths((target_path, *declared_extra_prefixes))
+            return dedupe_tree_paths((_parent_tree_path(target_path), *declared_extra_prefixes))
+        return dedupe_tree_paths((target_path, *declared_extra_prefixes))
+    return dedupe_tree_paths((target_path, *declared_extra_prefixes))
 
 
 def build_operation_mutation_boundary_report(
@@ -174,7 +174,8 @@ def _replace_payload_changes_target_key(op: LegalOperation) -> bool:
     return payload_key != (str(target_kind), str(target_label))
 
 
-def _dedupe_tree_paths(paths: Sequence[TreePath]) -> Tuple[TreePath, ...]:
+def dedupe_tree_paths(paths: Iterable[TreePath]) -> Tuple[TreePath, ...]:
+    """Return tree paths in first-seen order after string-normalizing steps."""
     seen: set[TreePath] = set()
     result: list[TreePath] = []
     for path in paths:
@@ -184,3 +185,7 @@ def _dedupe_tree_paths(paths: Sequence[TreePath]) -> Tuple[TreePath, ...]:
         seen.add(normalized)
         result.append(normalized)
     return tuple(result)
+
+
+def _dedupe_tree_paths(paths: Iterable[TreePath]) -> Tuple[TreePath, ...]:
+    return dedupe_tree_paths(paths)
