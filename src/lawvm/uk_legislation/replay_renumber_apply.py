@@ -211,6 +211,28 @@ class UKReplayRenumberApplyMixin:
             return False
 
         destination_label = _addr_leaf_label(destination)
+        destination_label_clean = _clean_num(destination_label or "")
+        destination_kind = uk_ir_node_kind(source_node.kind)
+        if any(
+            child is not source_node
+            and uk_ir_node_kind(child.kind) == destination_kind
+            and _clean_num(child.label or "") == destination_label_clean
+            for child in source_parent.children
+        ):
+            _append_uk_replay_adjudication(
+                replay.adjudications_out,
+                kind="uk_replay_existing_target_conflict_gap",
+                message="UK replay skipped renumber: destination sibling already exists.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    source_target,
+                    destination=str(destination),
+                    family="source_shape_gap",
+                    reason_code="renumber_destination_sibling_collision",
+                ),
+            )
+            return True
         moved = dc_replace(
             source_node,
             label=destination_label,
