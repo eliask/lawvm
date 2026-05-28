@@ -43,7 +43,9 @@ from lawvm.core.tree_ops import (
     find_flattened_sublist_warnings,
     find_text_duplication_warnings,
     find,
+    format_invariant_path,
     insert_sorted,
+    iter_tree_invariant_violations,
     remove_at,
     replace_at,
     resolve,
@@ -1393,3 +1395,42 @@ def test_check_invariants_no_false_positive_for_distinct_normalized_labels() -> 
     violations = check_invariants(body)
     norm_dupes = [v for v in violations if "normalized-duplicate" in v]
     assert norm_dupes == [], f"Unexpected normalized-duplicate violation: {norm_dupes}"
+
+
+def test_iter_tree_invariant_violations_projects_legacy_messages() -> None:
+    """Typed invariant records must preserve the legacy string surface."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="2", text="second"),
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="first"),
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="duplicate"),
+        ),
+    )
+
+    typed = list(iter_tree_invariant_violations(body))
+
+    assert [violation.message for violation in typed] == check_invariants(body)
+    assert {violation.kind for violation in typed} == {
+        "duplicate_label",
+        "sort_order",
+    }
+    assert format_invariant_path(typed[0].path) == typed[0].path_text == "body"
+
+
+def test_iter_tree_invariant_violations_can_filter_families() -> None:
+    """Callers can cheaply request only the invariant families they consume."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="2", text="second"),
+            IRNode(kind=IRNodeKind.SECTION, label="1", text="first"),
+            IRNode(kind=IRNodeKind.SECTION, label="1.", text="normalized duplicate"),
+        ),
+    )
+
+    typed = list(iter_tree_invariant_violations(body, families={"normalized_duplicate_label"}))
+
+    assert [violation.kind for violation in typed] == ["normalized_duplicate_label"]
+    assert typed[0].child_kind == "section"
+    assert typed[0].normalized_label == "1"

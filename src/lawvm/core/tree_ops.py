@@ -26,9 +26,10 @@ contract.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 import re
-from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Sequence, Tuple
 
 import icontract
 
@@ -245,6 +246,15 @@ def normalize_text(tree: IRNode) -> IRNode:
 PathStep = Tuple[str, str]
 Path = Tuple[PathStep, ...]  # ((kind, label), ...)
 LabelIndex = Dict[PathStep, List[Path]]
+
+InvariantPathStep = Tuple[str, Optional[str]]
+InvariantPath = Tuple[InvariantPathStep, ...]
+TreeInvariantKind = Literal[
+    "duplicate_label",
+    "normalized_duplicate_label",
+    "sort_order",
+    "unexpected_child_kind",
+]
 
 
 def _as_path(path: Sequence[PathStep]) -> Path:
@@ -998,6 +1008,153 @@ _NESTING_ORDER = {
     "final": {"paragraph", "subparagraph", "item", "sentence", "content", "heading", "num", "hcontainer"},
 }
 
+_ORDERED_INVARIANT_KINDS = frozenset(
+    {
+        "section",
+        "chapter",
+        "part",
+        "division",
+        "schedule",
+        "appendix",
+        "paragraph",
+        "subparagraph",
+        "item",
+        "sentence",
+    }
+)
+
+
+def format_invariant_path(path: InvariantPath) -> str:
+    """Format an invariant path with the legacy `check_invariants` spelling."""
+    if not path:
+        return ""
+    head_kind, head_label = path[0]
+    parts = [head_kind if head_label is None else f"{head_kind}:{head_label or '?'}"]
+    for kind, label in path[1:]:
+        parts.append(f"{kind}:{label or '?'}")
+    return "/".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class TreeInvariantViolation:
+    """Typed structural invariant violation with a legacy message projection."""
+
+    kind: TreeInvariantKind
+    path: InvariantPath
+    parent_kind: Optional[str] = None
+    child_kind: Optional[str] = None
+    label: Optional[str] = None
+    normalized_label: Optional[str] = None
+    count: Optional[int] = None
+    previous_label: Optional[str] = None
+    next_label: Optional[str] = None
+
+    @property
+    def path_text(self) -> str:
+        return format_invariant_path(self.path)
+
+    @property
+    def message(self) -> str:
+        if self.kind == "duplicate_label":
+            return f"{self.path_text}: duplicate {self.child_kind}:{self.label} ({self.count} times)"
+        if self.kind == "normalized_duplicate_label":
+            return f"{self.path_text}: normalized-duplicate {self.child_kind}:{self.normalized_label}"
+        if self.kind == "sort_order":
+            return f"{self.path_text}: {self.child_kind} out of order: {self.previous_label} > {self.next_label}"
+        return f"{self.path_text}: unexpected {self.child_kind} inside {self.parent_kind}"
+
+
+def iter_tree_invariant_violations(
+    tree: IRNode,
+    *,
+    sort_key: Optional[Callable[[Optional[str]], Tuple[int, str, int]]] = None,
+    families: Optional[Collection[TreeInvariantKind]] = None,
+    root_path: Optional[InvariantPath] = None,
+) -> Iterator[TreeInvariantViolation]:
+    """Yield typed tree invariant violations.
+
+    `check_invariants` remains the compatibility string projection. New callers
+    should consume these records instead of parsing violation messages.
+    """
+    _sort_key = sort_key if sort_key is not None else _default_sort_key
+    selected = frozenset(families) if families is not None else None
+
+    def _wants(kind: TreeInvariantKind) -> bool:
+        return selected is None or kind in selected
+
+    def _check(node: IRNode, path: InvariantPath) -> Iterator[TreeInvariantViolation]:
+        if _wants("duplicate_label"):
+            seen: Dict[Tuple[str, str], int] = {}
+            for child in node.children:
+                if child.label:
+                    key = (_kind_str(child.kind), child.label)
+                    seen[key] = seen.get(key, 0) + 1
+            for (kind, label), count in seen.items():
+                if count > 1:
+                    yield TreeInvariantViolation(
+                        kind="duplicate_label",
+                        path=path,
+                        child_kind=kind,
+                        label=label,
+                        count=count,
+                    )
+
+        if _wants("normalized_duplicate_label"):
+            norm_seen: Dict[Tuple[str, str], str] = {}
+            for child in node.children:
+                if child.label is not None:
+                    child_kind = _kind_str(child.kind)
+                    normalized_label = _norm(child.label)
+                    norm_key = (child_kind, normalized_label)
+                    if norm_key in norm_seen:
+                        if norm_seen[norm_key] != child.label:
+                            yield TreeInvariantViolation(
+                                kind="normalized_duplicate_label",
+                                path=path,
+                                child_kind=child_kind,
+                                normalized_label=normalized_label,
+                            )
+                    else:
+                        norm_seen[norm_key] = child.label
+
+        if _wants("sort_order"):
+            by_kind: Dict[str, List[str]] = {}
+            for child in node.children:
+                if child.label:
+                    by_kind.setdefault(_kind_str(child.kind), []).append(child.label)
+            for kind, labels in by_kind.items():
+                if kind in _ORDERED_INVARIANT_KINDS:
+                    keys = [_sort_key(label) for label in labels]
+                    for i in range(len(keys) - 1):
+                        if keys[i] > keys[i + 1]:
+                            yield TreeInvariantViolation(
+                                kind="sort_order",
+                                path=path,
+                                child_kind=kind,
+                                previous_label=labels[i],
+                                next_label=labels[i + 1],
+                            )
+
+        if _wants("unexpected_child_kind"):
+            parent_kind = _kind_str(node.kind)
+            allowed = _NESTING_ORDER.get(parent_kind)
+            if allowed is not None:
+                for child in node.children:
+                    child_kind = _kind_str(child.kind)
+                    if child_kind not in allowed:
+                        yield TreeInvariantViolation(
+                            kind="unexpected_child_kind",
+                            path=path,
+                            parent_kind=parent_kind,
+                            child_kind=child_kind,
+                        )
+
+        for child in node.children:
+            child_path = path + ((_kind_str(child.kind), child.label),)
+            yield from _check(child, child_path)
+
+    yield from _check(tree, root_path or ((_kind_str(tree.kind), None),))
+
 
 def check_invariants(
     tree: IRNode,
@@ -1016,71 +1173,7 @@ def check_invariants(
                   ``_default_sort_key``.  Jurisdiction adapters can pass their
                   own function to apply jurisdiction-specific ordering rules.
     """
-    _sort_key = sort_key if sort_key is not None else _default_sort_key
-    violations: List[str] = []
-
-    def _check(node: IRNode, path: str) -> None:
-        # 1. Label uniqueness among same-kind siblings
-        seen: Dict[Tuple[str, str], int] = {}
-        for child in node.children:
-            if child.label:
-                key = (_kind_str(child.kind), child.label)
-                seen[key] = seen.get(key, 0) + 1
-        for (kind, label), count in seen.items():
-            if count > 1:
-                violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
-
-        # 1b. Normalized-label uniqueness among same-kind siblings
-        # Mutators use _match_label() which normalizes labels, so siblings
-        # like "1" and "1." are treated as the same slot by find/replace/remove.
-        # Only report when raw labels differ (raw duplicates are already caught above).
-        norm_seen: Dict[Tuple[str, str], str] = {}  # norm_key -> first raw label
-        for child in node.children:
-            if child.label is not None:
-                norm_key = (_kind_str(child.kind), _norm(child.label))
-                if norm_key in norm_seen:
-                    if norm_seen[norm_key] != child.label:
-                        violations.append(f"{path}: normalized-duplicate {_kind_str(child.kind)}:{_norm(child.label)}")
-                else:
-                    norm_seen[norm_key] = child.label
-
-        # 2. Sort ordering among same-kind labeled siblings
-        by_kind: Dict[str, List[str]] = {}
-        for child in node.children:
-            if child.label:
-                by_kind.setdefault(_kind_str(child.kind), []).append(child.label)
-        for kind, labels in by_kind.items():
-            if kind in (
-                "section",
-                "chapter",
-                "part",
-                "division",
-                "schedule",
-                "appendix",
-                "paragraph",
-                "subparagraph",
-                "item",
-                "sentence",
-            ):
-                keys = [_sort_key(l) for l in labels]
-                for i in range(len(keys) - 1):
-                    if keys[i] > keys[i + 1]:
-                        violations.append(f"{path}: {kind} out of order: {labels[i]} > {labels[i + 1]}")
-
-        # 3. Nesting validity
-        allowed = _NESTING_ORDER.get(_kind_str(node.kind))
-        if allowed is not None:
-            for child in node.children:
-                if _kind_str(child.kind) not in allowed:
-                    violations.append(f"{path}: unexpected {_kind_str(child.kind)} inside {_kind_str(node.kind)}")
-
-        # Recurse
-        for child in node.children:
-            child_path = f"{path}/{_kind_str(child.kind)}:{child.label or '?'}"
-            _check(child, child_path)
-
-    _check(tree, _kind_str(tree.kind))
-    return violations
+    return [violation.message for violation in iter_tree_invariant_violations(tree, sort_key=sort_key)]
 
 
 def find_text_duplication_warnings(
