@@ -45,6 +45,7 @@ from typing import Any, Optional, cast
 from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -3187,12 +3188,13 @@ def _append_se_replay_adjudication(
     action_value = normalized_detail.get("action")
     if isinstance(action_value, StructuralAction):
         normalized_detail["action"] = action_value.value
-    normalized_detail.setdefault("rule_id", kind)
-    normalized_detail.setdefault("phase", "replay")
-    normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
-    normalized_detail.setdefault("blocking", True)
-    normalized_detail.setdefault("strict_disposition", "block")
-    normalized_detail.setdefault("quirks_disposition", "record")
+    normalized_detail = diagnostic_detail(
+        rule_id=kind,
+        phase="replay",
+        family="unsupported_or_unresolved_action",
+        blocking=True,
+        detail=normalized_detail,
+    )
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
