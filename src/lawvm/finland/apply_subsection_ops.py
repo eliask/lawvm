@@ -19,6 +19,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, ResolvedOp, temporary_signal_for_op
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.apply_ir_ops import (
@@ -91,7 +92,7 @@ def _subsection_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _SubsectionAp
             mapped is not None
             and scope.target_paragraph is not None
             and mapped.label is not None
-            and _tops._norm(mapped.label) == str(scope.target_paragraph)
+            and normalized_label_key(mapped.label) == str(scope.target_paragraph)
         )
     else:
         legacy_source_statute_id = (
@@ -462,7 +463,7 @@ def _strip_context_carried_omission_for_complete_numbered_replace(
     numbered = [child for child in trailing if child.kind is IRNodeKind.PARAGRAPH and child.label]
     if not numbered:
         return None
-    numbered_labels = [_tops._norm(child.label or "") for child in numbered]
+    numbered_labels = [normalized_label_key(child.label) for child in numbered]
     if any(not label.isdigit() for label in numbered_labels):
         return None
     if numbered_labels != [str(i) for i in range(1, len(numbered_labels) + 1)]:
@@ -486,7 +487,7 @@ def _resolve_subsection_index(
     """Compute the 0-based subsection index for a target_paragraph value."""
     n = target_paragraph - 1
     exact_idx = next(
-        (idx for idx, sub in enumerate(subsecs) if sub.label and _tops._norm(sub.label) == str(target_paragraph)),
+        (idx for idx, sub in enumerate(subsecs) if sub.label and normalized_label_key(sub.label) == str(target_paragraph)),
         None,
     )
     if exact_idx is not None:
@@ -508,7 +509,7 @@ def _resolve_subsection_index_with_fragment(
     """Resolve target_paragraph and report any skipped stale continuation slot."""
     target_label = str(target_paragraph)
     exact_idx = next(
-        (idx for idx, sub in enumerate(subsecs) if sub.label and _tops._norm(sub.label) == target_label),
+        (idx for idx, sub in enumerate(subsecs) if sub.label and normalized_label_key(sub.label) == target_label),
         None,
     )
     if exact_idx is None:
@@ -538,7 +539,7 @@ def _resolve_subsection_index_with_rebound_kind(
     """Resolve a subsection index and classify any rebound shape explicitly."""
     n, stale_fragment_idx, rebound_from_fragment = _resolve_subsection_index_with_fragment(subsecs, target_paragraph)
     exact_match = n is not None and any(
-        sub.label and _tops._norm(sub.label) == str(target_paragraph) for sub in subsecs
+        sub.label and normalized_label_key(sub.label) == str(target_paragraph) for sub in subsecs
     )
     if n is None:
         n = _resolve_subsection_index(subsecs, target_paragraph)
@@ -1214,7 +1215,7 @@ def _apply_subsection_insert(
             (
                 idx
                 for idx, sub in enumerate(subsecs)
-                if sub.label and _tops._norm(sub.label) == target_label
+                if sub.label and normalized_label_key(sub.label) == target_label
             ),
             None,
         )

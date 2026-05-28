@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, cast
 
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, normalized_label_key
 from lawvm.core.ir import LegalAddress
 from lawvm.core.occupancy import (
     InvalidOccupancyTransition,
@@ -171,7 +171,7 @@ def _resolve_unscoped_placeholder_shadowed_by_unique_substantive(
     state: "ReplayState",
     target_norm: str,
 ) -> tuple[Path | None, str | None]:
-    label_norm = _tops._norm(target_norm)
+    label_norm = normalized_label_key(target_norm)
     matches = [
         _tops._as_path(path)
         for path in state.provision_index.get(("section", label_norm), [])
@@ -321,7 +321,7 @@ def _resolve_section_path_with_fallbacks(
         _idx = state.provision_index
         global_path = _tops.find(state.ir, "section", target_norm, label_index=_idx)
         if global_path is not None:
-            label_norm = _tops._norm(target_norm)
+            label_norm = normalized_label_key(target_norm)
             n_matches = len(_idx.get(("section", label_norm), []))
             if n_matches == 1:
                 global_path = _tops._as_path(global_path)

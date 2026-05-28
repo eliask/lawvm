@@ -39,6 +39,7 @@ from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import check_invariants as _check_tree_invariants
 from lawvm.core.tree_ops import iter_tree_invariant_violations as _iter_tree_invariant_violations
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.core.elaboration_context import (
     ReplayLookups,
     build_payload_elaboration_context,
@@ -5248,7 +5249,7 @@ def apply_ops_to_tree(
             raw_path = _tops.find(state.ir, "section", label, label_index=idx)
             if raw_path is None:
                 return None
-            label_norm = _tops._norm(label)
+            label_norm = normalized_label_key(label)
             if len(idx.get(("section", label_norm), [])) != 1:
                 return None
             return raw_path

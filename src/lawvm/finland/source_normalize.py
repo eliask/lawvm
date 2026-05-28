@@ -83,6 +83,7 @@ from typing import List, Optional, Tuple
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import default_label_sort_key
 from lawvm.core.semantic_types import (
     IRNodeKind,
     SourceNormalizationBasis,
@@ -547,16 +548,12 @@ def _reparent_trailing_chapters_into_preceding_part(
             current_part = child
             current_part_index = len(rewritten)
             part_chapters = [gc for gc in child.children if gc.kind == IRNodeKind.CHAPTER and gc.label is not None]
-            last_chapter_key = (
-                _tops._default_sort_key(part_chapters[-1].label)
-                if part_chapters
-                else None
-            )
+            last_chapter_key = default_label_sort_key(part_chapters[-1].label) if part_chapters else None
             rewritten.append(child)
             continue
 
         if child.kind == IRNodeKind.CHAPTER and current_part is not None and child.label is not None:
-            child_key = _tops._default_sort_key(child.label)
+            child_key = default_label_sort_key(child.label)
             if last_chapter_key is None or child_key > last_chapter_key:
                 current_part = _tops._with_children(current_part, list(current_part.children) + [child])
                 last_chapter_key = child_key
