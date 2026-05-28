@@ -162,7 +162,7 @@ def test_2013_331_base_observations_in_findings():
     assert unnumbered.detail.get("intro_excerpt") == "kaatopaikkana ei kuitenkaan pidetä:"
     reparent = peer_reparent[0]
     assert reparent.detail.get("basis") == "profile_invalid"
-    assert reparent.detail.get("path") == ["body:?", "hcontainer:?", "chapter:1", "section:3", "subsection:1"]
+    assert reparent.detail.get("path") == ("body:?", "hcontainer:?", "chapter:1", "section:3", "subsection:1")
     assert "wrap_up" in str(reparent.detail.get("explanation", "")).lower()
 
     # Verify label/eId findings have correct details
