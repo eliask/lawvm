@@ -68,6 +68,9 @@ Recent improvement:
   envelope independently of frontend-local payload fields.
 - blocking strict-disposition vocabulary is now shared between diagnostic
   envelope validation and corpus evidence-row validation.
+- blocking/strict-disposition validation is now one shared helper reused by
+  diagnostic detail validation and corpus evidence-row validation while
+  preserving row-specific issue text.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber

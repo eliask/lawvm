@@ -5,6 +5,7 @@ import pytest
 from lawvm.core.diagnostic_records import (
     BLOCKING_STRICT_DISPOSITIONS,
     diagnostic_detail,
+    validate_blocking_disposition,
     validate_diagnostic_detail,
 )
 
@@ -102,3 +103,13 @@ def test_validate_diagnostic_detail_requires_boolean_blocking() -> None:
 
 def test_blocking_strict_dispositions_are_shared_contract_surface() -> None:
     assert {"block", "reject", "fail", "hard_fail", "strict_block"} <= BLOCKING_STRICT_DISPOSITIONS
+
+
+def test_validate_blocking_disposition_is_shared_contract_surface() -> None:
+    assert validate_blocking_disposition(
+        {
+            "blocking": True,
+            "strict_disposition": "record",
+        },
+        subject="row",
+    ) == ("blocking row must have blocking strict_disposition",)
