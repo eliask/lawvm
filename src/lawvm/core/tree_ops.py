@@ -30,12 +30,13 @@ from dataclasses import dataclass
 from functools import lru_cache
 from itertools import pairwise
 import re
-from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple
+from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple, TypeAlias
 
 import icontract
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.mutation_boundary import TreePath, TreePathStep
 from lawvm.core.semantic_types import IRNodeKind
 
 
@@ -258,8 +259,8 @@ def normalize_text(tree: IRNode) -> IRNode:
 # Path resolution
 # ---------------------------------------------------------------------------
 
-PathStep = Tuple[str, str]
-Path = Tuple[PathStep, ...]  # ((kind, label), ...)
+PathStep: TypeAlias = TreePathStep
+Path: TypeAlias = TreePath  # ((kind, label), ...)
 LabelIndex = Dict[PathStep, List[Path]]
 
 InvariantPathStep = Tuple[str, Optional[str]]
