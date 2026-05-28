@@ -12,6 +12,12 @@ from lawvm.core.filter_result import FilterResult, RejectedItem, filter_result_f
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_flattened_sublist_findings, build_text_duplication_findings
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_FALLBACK,
+    TARGET_RECOVERED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+)
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
 
@@ -149,6 +155,33 @@ def uk_replay_recovery_action_target_detail(
     )
     detail["strict_disposition"] = "block"
     detail["quirks_disposition"] = "apply"
+    recovery_target = str(extra.get("recovery_target") or "")
+    if recovery_target:
+        detail["target_resolution"] = TargetResolutionCertificate(
+            rule_id=str(detail.get("rule_id") or family),
+            phase="replay",
+            reason=str(detail.get("reason") or "recovery_selected_alternate_target"),
+            status=TARGET_RECOVERED,
+            source_target=str(op.target),
+            candidate_count=1,
+            candidates=(
+                TargetResolutionCandidate(
+                    target=recovery_target,
+                    reason=str(extra.get("source_shape") or family),
+                    detail={"target_argument": str(target)},
+                ),
+            ),
+            selected_target=recovery_target,
+            scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
+            blocking=False,
+            strict_disposition="block",
+            quirks_disposition="apply",
+            detail={
+                "action": _action_name(op.action),
+                "op_id": op.op_id,
+                "recovery_family": family,
+            },
+        ).to_diagnostic_detail()
     return detail
 
 

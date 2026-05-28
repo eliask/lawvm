@@ -2683,6 +2683,12 @@ def test_executor_recovers_implicit_first_subparagraph_parent_text_patch() -> No
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
+    assert adjudications[0].detail["target_resolution"]["target_resolution_status"] == "recovered"
+    assert adjudications[0].detail["target_resolution"]["source_target"] == (
+        "schedule:6/paragraph:43A/subparagraph:1"
+    )
+    assert adjudications[0].detail["target_resolution"]["selected_target"] == "schedule:6/paragraph:43A"
+    assert adjudications[0].detail["target_resolution"]["scope_confidence"] == "fallback"
 
 
 def test_executor_recovers_direct_section_paragraph_text_patch_from_unique_child() -> None:

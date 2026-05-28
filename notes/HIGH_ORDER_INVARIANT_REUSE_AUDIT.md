@@ -261,6 +261,10 @@ Recent improvement:
   shared target-resolution certificates for blocked address candidates,
   end-skeleton duplicate recovery, and attached-heading context recovery while
   preserving the existing NZ witness rows and disabled replay/effect claims.
+- UK replay recovery action/target details now attach a nested shared
+  target-resolution certificate when the recovery explicitly names an alternate
+  `recovery_target`, avoiding fabricated target evidence for recoveries that
+  only repair source shape in place.
 
 ## Ranked Promotion Candidates
 
