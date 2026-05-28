@@ -22,6 +22,15 @@ class ReplayAmendmentStep:
     op_count: int = 0
     detail: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        _require_non_empty(self.source_id, "ReplayAmendmentStep.source_id")
+        if self.status and not isinstance(self.status, str):
+            raise ValueError("ReplayAmendmentStep.status must be a string")
+        if self.op_count < 0:
+            raise ValueError("ReplayAmendmentStep.op_count must be non-negative")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("ReplayAmendmentStep.detail must be a mapping")
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["detail"] = dict(self.detail)
@@ -34,6 +43,11 @@ class ReplayTextView:
 
     format: str = "text/plain"
     content: str = ""
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.format, "ReplayTextView.format")
+        if not isinstance(self.content, str):
+            raise ValueError("ReplayTextView.content must be a string")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -61,6 +75,23 @@ class ReplaySummary:
     steps: tuple[ReplayAmendmentStep, ...] = ()
     text_view: ReplayTextView | None = None
     detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.jurisdiction, "ReplaySummary.jurisdiction")
+        _require_non_empty(self.base_id, "ReplaySummary.base_id")
+        _require_non_empty(self.as_of, "ReplaySummary.as_of")
+        _require_non_empty(self.status, "ReplaySummary.status")
+        for field_name in ("amendment_count", "applied_count", "skipped_count", "failed_count", "op_count"):
+            if getattr(self, field_name) < 0:
+                raise ValueError(f"ReplaySummary.{field_name} must be non-negative")
+        if self.divergence_count is not None and self.divergence_count < 0:
+            raise ValueError("ReplaySummary.divergence_count must be non-negative")
+        if not all(isinstance(step, ReplayAmendmentStep) for step in self.steps):
+            raise ValueError("ReplaySummary.steps must contain ReplayAmendmentStep records")
+        if self.text_view is not None and not isinstance(self.text_view, ReplayTextView):
+            raise ValueError("ReplaySummary.text_view must be a ReplayTextView")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("ReplaySummary.detail must be a mapping")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -94,6 +125,18 @@ class ReplayCheckpoint:
     total_steps: int
     serialize_text: Callable[[], str]
 
+    def __post_init__(self) -> None:
+        _require_non_empty(self.parent_id, "ReplayCheckpoint.parent_id")
+        _require_non_empty(self.amendment_id, "ReplayCheckpoint.amendment_id")
+        if self.step_index < 0:
+            raise ValueError("ReplayCheckpoint.step_index must be non-negative")
+        if self.total_steps < 0:
+            raise ValueError("ReplayCheckpoint.total_steps must be non-negative")
+        if self.total_steps and self.step_index >= self.total_steps:
+            raise ValueError("ReplayCheckpoint.step_index must be less than total_steps")
+        if not callable(self.serialize_text):
+            raise ValueError("ReplayCheckpoint.serialize_text must be callable")
+
 
 class ReplayCheckpointCallback(Protocol):
     """Protocol for replay checkpoint consumers.
@@ -103,3 +146,8 @@ class ReplayCheckpointCallback(Protocol):
     """
 
     def __call__(self, checkpoint: ReplayCheckpoint) -> None: ...
+
+
+def _require_non_empty(value: str, name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be non-empty")

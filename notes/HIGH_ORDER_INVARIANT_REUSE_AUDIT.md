@@ -369,6 +369,9 @@ Recent improvement:
 - shared corpus evidence rows now run their existing row validators at
   construction time, so invalid operation/finding evidence cannot bypass the
   envelope contract by skipping explicit validator calls.
+- shared replay summary/checkpoint contracts now validate required IDs, status
+  fields, non-negative counts, replay text-view shape, and checkpoint bounds at
+  construction time.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
