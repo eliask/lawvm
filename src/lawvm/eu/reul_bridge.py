@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import re
 from typing import Any, Dict, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRStatute, IRNode
 from lawvm.core import tree_ops
 
@@ -107,19 +108,17 @@ class REULBridge:
     ) -> None:
         if diagnostics_out is None:
             return
-        payload = {
-            "rule_id": "eu_reul_uri_resolution_failed",
-            "kind": "eu_reul_uri_resolution_failed",
-            "family": "target_resolution_recovery",
-            "phase": "lowering",
-            "reason": "EU REUL bridge could not resolve retained-law URI against the EU statute tree",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-            "uri": uri,
-            "statute_id": eu_statute.statute_id,
-            "detail": {"reason_code": reason_code, **(detail or {})},
-        }
+        payload = diagnostic_detail(
+            rule_id="eu_reul_uri_resolution_failed",
+            family="target_resolution_recovery",
+            phase="lowering",
+            reason="EU REUL bridge could not resolve retained-law URI against the EU statute tree",
+            blocking=True,
+            kind="eu_reul_uri_resolution_failed",
+            uri=uri,
+            statute_id=eu_statute.statute_id,
+        )
+        payload["detail"] = {"reason_code": reason_code, **(detail or {})}
         diagnostics_out.append(payload)
 
     def resolve_retained_law_uri(
