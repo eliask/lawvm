@@ -73,12 +73,12 @@ def normalize_comparison_text(
     rules: tuple[ComparisonNormalizationRule, ...],
 ) -> ComparisonNormalizationResult:
     """Apply comparison-only normalization rules and report which rules fired."""
+    issues = validate_comparison_normalization_rules(rules)
+    if issues:
+        raise ValueError("; ".join(issues))
     normalized = text
     fired: list[str] = []
     for rule in rules:
-        issues = validate_comparison_normalization_rule(rule)
-        if issues:
-            raise ValueError("; ".join(issues))
         before = normalized
         if rule.kind == "translation":
             translation = rule.translation
