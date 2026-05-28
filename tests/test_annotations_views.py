@@ -51,7 +51,7 @@ def _compare_token_lists(expected: list[Token], actual: list[Token]) -> None:
         f"Expected cats: {[t.cat for t in expected]}\n"
         f"Actual cats:   {[t.cat for t in actual]}"
     )
-    for i, (exp, act) in enumerate(zip(expected, actual)):
+    for i, (exp, act) in enumerate(zip(expected, actual, strict=True)):
         exp_sig = _tok_signature(exp)
         act_sig = _tok_signature(act)
         assert exp_sig == act_sig, f"Token {i} mismatch:\n  expected: {exp_sig}\n  actual:   {act_sig}"
@@ -247,7 +247,7 @@ class TestCuratedCaseBridgeEquivalence:
             if len(expected) != len(actual):
                 failures.append(f"{name}: length {len(expected)} vs {len(actual)}")
                 continue
-            for i, (exp, act) in enumerate(zip(expected, actual)):
+            for i, (exp, act) in enumerate(zip(expected, actual, strict=True)):
                 if (exp.text, exp.lemma, exp.cat, exp.case) != (act.text, act.lemma, act.cat, act.case):
                     failures.append(f"{name}: token {i}: ({exp.text!r},{exp.cat}) vs ({act.text!r},{act.cat})")
                     break

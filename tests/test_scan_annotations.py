@@ -126,7 +126,7 @@ class TestAnnotateCitationsRoundTrip:
         result1 = stream.structural_view()
         result2 = AnnotatedStream(tokens=tokens, annotations=annotate_statute_citations(tokens)).structural_view()
         assert len(result1) == len(result2)
-        for i, (a, b) in enumerate(zip(result1, result2)):
+        for i, (a, b) in enumerate(zip(result1, result2, strict=True)):
             assert a.cat == b.cat and a.text == b.text, (
                 f"Token {i} non-deterministic: ({a.cat}, {a.text!r}) vs ({b.cat}, {b.text!r})"
             )
@@ -177,7 +177,7 @@ class TestAnnotateStatuteNamesRoundTrip:
             f"run1: {[(t.cat, t.text) for t in result1]}\n"
             f"run2: {[(t.cat, t.text) for t in result2]}"
         )
-        for i, (a, b) in enumerate(zip(result1, result2)):
+        for i, (a, b) in enumerate(zip(result1, result2, strict=True)):
             assert a.cat == b.cat and a.text == b.text, (
                 f"Token {i} non-deterministic: ({a.cat}, {a.text!r}) vs ({b.cat}, {b.text!r})"
             )
@@ -207,7 +207,7 @@ class TestFullPipelineRoundTrip:
             f"run1: {[(t.cat, t.text) for t in result1]}\n"
             f"run2: {[(t.cat, t.text) for t in result2]}"
         )
-        for i, (a, b) in enumerate(zip(result1, result2)):
+        for i, (a, b) in enumerate(zip(result1, result2, strict=True)):
             assert a.cat == b.cat and a.text == b.text, (
                 f"[{case['name']}] Token {i}: ({a.cat}, {a.text!r}) vs ({b.cat}, {b.text!r})"
             )

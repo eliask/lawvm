@@ -205,7 +205,7 @@ def test_sparse_section_merge_preserves_untouched_tail_subsections(
     untouched_master = master_subsections[prefix_len:]
     untouched_result = result_subsections[prefix_len:]
     assert len(untouched_result) == len(untouched_master)
-    for got, want in zip(untouched_result, untouched_master):
+    for got, want in zip(untouched_result, untouched_master, strict=True):
         assert _node_signature(got) == _node_signature(want)
 
 
@@ -272,7 +272,7 @@ def test_sparse_subsection_merge_preserves_untouched_tail_items(
     untouched_master = master_items[prefix_len:]
     untouched_result = result_items[prefix_len:]
     assert len(untouched_result) == len(untouched_master)
-    for got, want in zip(untouched_result, untouched_master):
+    for got, want in zip(untouched_result, untouched_master, strict=True):
         assert _node_signature(got) == _node_signature(want)
 
 
@@ -305,5 +305,5 @@ def test_sparse_subsection_merge_preserves_undeclared_item_gap(
         if item.label is not None and int(item.label) not in {1, tail_label}
     ]
     assert len(untouched_result) == len(untouched_master)
-    for got, want in zip(untouched_result, untouched_master):
+    for got, want in zip(untouched_result, untouched_master, strict=True):
         assert _node_signature(got) == _node_signature(want)

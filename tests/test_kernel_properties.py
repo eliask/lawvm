@@ -230,7 +230,7 @@ def test_k1_replace_at_preserves_other_siblings(body: IRNode, new_text: str) -> 
     # All sections except the replaced one should be the exact same object
     original_other_sections = [c for c in ch.children if c.kind == IRNodeKind.SECTION and c.label != sec.label]
     result_other_sections = [c for c in result_ch.children if c.kind == IRNodeKind.SECTION and c.label != sec.label]
-    for orig, res in zip(original_other_sections, result_other_sections):
+    for orig, res in zip(original_other_sections, result_other_sections, strict=True):
         assert orig is res, f"Sibling section {orig.label} was copied instead of shared"
 
 
