@@ -28,8 +28,8 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import (
-    _default_sort_key,
     check_invariants,
+    default_label_sort_key,
     find,
     insert_sorted,
     remove_at,
@@ -139,9 +139,9 @@ class TreeOpsStateMachine(RuleBasedStateMachine):
 
     @invariant()
     def labels_are_sorted(self) -> None:
-        """Section labels are in _default_sort_key order."""
+        """Section labels are in default label sort-key order."""
         section_labels = [c.label for c in self.tree.children if c.kind == IRNodeKind.SECTION and c.label is not None]
-        keys = [_default_sort_key(lbl) for lbl in section_labels]
+        keys = [default_label_sort_key(lbl) for lbl in section_labels]
         for i, (left_key, right_key) in enumerate(pairwise(keys)):
             assert left_key <= right_key, (
                 f"Section labels out of order at position {i}: "

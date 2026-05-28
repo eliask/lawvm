@@ -29,8 +29,8 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import (
     Path,
-    _default_sort_key,
     check_invariants,
+    default_label_sort_key,
     find,
     insert_sorted,
     remove_at,
@@ -88,7 +88,7 @@ def well_formed_body(draw) -> IRNode:
                 unique=True,
             )
         ),
-        key=_default_sort_key,
+        key=default_label_sort_key,
     )
     chapters: List[IRNode] = []
     for cl in chapter_labels:
@@ -102,7 +102,7 @@ def well_formed_body(draw) -> IRNode:
                     unique=True,
                 )
             ),
-            key=_default_sort_key,
+            key=default_label_sort_key,
         )
         sections: List[IRNode] = []
         for sl in section_labels:
@@ -129,7 +129,7 @@ def flat_body_unique_sections(draw) -> IRNode:
                 unique=True,
             )
         ),
-        key=_default_sort_key,
+        key=default_label_sort_key,
     )
     sections = tuple(IRNode(kind=IRNodeKind.SECTION, label=lbl, text=draw(SHORT_TEXT)) for lbl in labels)
     return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=sections)
@@ -522,8 +522,8 @@ def test_k3_unsorted_labels_detected(body: IRNode) -> None:
     reversed_sections = list(reversed(sections))
 
     # Only flag if the reversal actually changes order
-    orig_keys = [_default_sort_key(s.label) for s in sections]
-    rev_keys = [_default_sort_key(s.label) for s in reversed_sections]
+    orig_keys = [default_label_sort_key(s.label) for s in sections]
+    rev_keys = [default_label_sort_key(s.label) for s in reversed_sections]
     assume(orig_keys != rev_keys)
 
     new_ch = IRNode(

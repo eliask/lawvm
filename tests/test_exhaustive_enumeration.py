@@ -23,8 +23,8 @@ import pytest
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource, ProvisionTimeline, ProvisionVersion
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.tree_ops import (
-    _default_sort_key,
     check_invariants,
+    default_label_sort_key,
     find,
     resolve,
 )
@@ -186,7 +186,7 @@ TREE_KINDS = ["section", "subsection"]
 
 def _make_flat_body(labels: Sequence[str]) -> IRNode:
     """Create a body with sections having the given labels, sorted."""
-    sorted_labels = sorted(labels, key=_default_sort_key)
+    sorted_labels = sorted(labels, key=default_label_sort_key)
     children = tuple(IRNode(kind=IRNodeKind.SECTION, label=lbl, text=f"text-{lbl}") for lbl in sorted_labels)
     return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=children)
 
@@ -196,7 +196,7 @@ def _make_nested_body(section_labels: Sequence[str], subsection_labels: Sequence
     if not section_labels:
         return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=())
     sec_label = section_labels[0]
-    sorted_sub_labels = sorted(subsection_labels, key=_default_sort_key)
+    sorted_sub_labels = sorted(subsection_labels, key=default_label_sort_key)
     sub_children = tuple(IRNode(kind=IRNodeKind.SUBSECTION, label=lbl, text=f"sub-{lbl}") for lbl in sorted_sub_labels)
     section = IRNode(kind=IRNodeKind.SECTION, label=sec_label, children=sub_children)
     return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=(section,))
@@ -610,7 +610,7 @@ class TestCheckInvariantsExhaustive:
         ]
         for first, second in labels_pairs:
             # Verify these are actually reversed
-            assert _default_sort_key(first) > _default_sort_key(second), f"{first} should sort after {second}"
+            assert default_label_sort_key(first) > default_label_sort_key(second), f"{first} should sort after {second}"
             children = [
                 IRNode(kind=IRNodeKind.SECTION, label=first, text="first"),
                 IRNode(kind=IRNodeKind.SECTION, label=second, text="second"),

@@ -22,9 +22,9 @@ from lawvm.core.ir import (
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import (
-    _default_sort_key,
     _insert_child_sorted,
     _with_children,
+    default_label_sort_key,
     remove_at,
     replace_at,
     strip_nodes,
@@ -131,7 +131,7 @@ def test_insert_child_sorted_same_key_inserts_after():
     )
     # Insert section "2" which has a unique key
     content = IRNode(kind=IRNodeKind.SECTION, label="2", text="second")
-    result = _insert_child_sorted(parent, content, _default_sort_key)
+    result = _insert_child_sorted(parent, content, default_label_sort_key)
     labels = [c.label for c in result.children if c.kind == IRNodeKind.SECTION]
     assert labels == ["1", "2", "3"], f"Wrong order: {labels}"
 
@@ -144,7 +144,7 @@ def test_insert_child_sorted_equal_key_stable_order():
     )
     # Insert another section with label "5" -- same sort key
     new_sec = IRNode(kind=IRNodeKind.SECTION, label="5", text="new-5")
-    result = _insert_child_sorted(parent, new_sec, _default_sort_key)
+    result = _insert_child_sorted(parent, new_sec, default_label_sort_key)
     # With correct > comparison: existing comes first, new appended after
     texts = [c.text for c in result.children if c.kind == IRNodeKind.SECTION]
     assert texts == ["existing-5", "new-5"], f"Equal-key insertion order wrong: {texts}"

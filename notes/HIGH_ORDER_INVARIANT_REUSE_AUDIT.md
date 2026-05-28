@@ -147,6 +147,9 @@ Recent improvement:
 - Finland editorial/corrigendum address builders and UK replay/addressing
   root-path helpers now use shared tree-path aliases where the values are
   actual legal tree path steps, leaving parser pair/range tuples local.
+- tree/property tests now use the public `default_label_sort_key(...)` wrapper
+  instead of importing the private core `_default_sort_key` helper, keeping
+  public label utility behavior covered without private API coupling.
 - `LegalAddress.has_prefix(...)` now owns the core path-prefix plus facet
   matching invariant used by timeline address and temporal scope helpers.
 - `LegalAddress.has_path_prefix(...)` now owns path-only prefix matching for
