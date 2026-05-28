@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.roman import roman_to_arabic
@@ -151,6 +151,8 @@ def uk_schedule_ordinal_paragraph_matches(
     ordinal = int(clean)
     ordinal_matches: list[UKCanonicalNodeMatch] = []
     for curr_node, _, _ in curr_cands:
+        if curr_node is None:
+            continue
         paragraph_children = [
             UKCanonicalNodeMatch(child, curr_node, i)
             for i, child in enumerate(curr_node.children)
@@ -158,6 +160,8 @@ def uk_schedule_ordinal_paragraph_matches(
         ]
         if 1 <= ordinal <= len(paragraph_children):
             wrapper, wrapper_parent, wrapper_idx = paragraph_children[ordinal - 1]
+            if wrapper is None:
+                continue
             wrapper_paragraph_children = [
                 UKCanonicalNodeMatch(child, wrapper, i)
                 for i, child in enumerate(wrapper.children)
@@ -166,7 +170,7 @@ def uk_schedule_ordinal_paragraph_matches(
             exact_children = [
                 row
                 for row in wrapper_paragraph_children
-                if _clean_num(str(row[0].label or "")) == clean
+                if row.node is not None and _clean_num(str(row.node.label or "")) == clean
             ]
             if len(wrapper_paragraph_children) == 1 and len(exact_children) == 1:
                 ordinal_matches.append(exact_children[0])
@@ -239,7 +243,7 @@ def _roman_suffix_sort_key(text: str) -> Optional[tuple[int, str]]:
     return None
 
 
-def _effective_insert_label_key(label: Optional[str], *, peers: list[str], label_sort_key) -> tuple[int, object]:
+def _effective_insert_label_key(label: Optional[str], *, peers: list[str], label_sort_key) -> tuple[int, Any]:
     raw = str(label or "").strip().lower()
     peer_raw = [str(peer or "").strip().lower() for peer in peers if str(peer or "").strip()]
     peer_alpha = bool(peer_raw) and all(re.fullmatch(r"[a-z]+", peer) for peer in peer_raw)
