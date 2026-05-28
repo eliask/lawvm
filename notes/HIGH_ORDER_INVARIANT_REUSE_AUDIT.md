@@ -127,6 +127,8 @@ Recent improvement:
 - `LegalAddress.has_path_prefix(...)` now owns path-only prefix matching for
   timeline lineage/materialization and Finland timeline-target checks that
   intentionally ignore facets.
+- UK replay preparation now preserves rejected operation objects beside their
+  blocking adjudications, making the prepare filter lossless for audit tooling.
 
 ## Ranked Promotion Candidates
 

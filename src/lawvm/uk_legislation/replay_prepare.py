@@ -77,11 +77,13 @@ def prepare_replay_uk_ops(
     )
 
     filtered_ops: list[LegalOperation] = []
+    rejected_ops: list[LegalOperation] = []
     rejected_adjudications: list[CompileAdjudication] = []
     for op in prepared_input_ops:
         if _is_unsafe_schedule_entry_repeal_op(op):
             if verbose:
                 print("  replay_uk_ops: skipping unsafe schedule-entry repeal widened to schedule")
+            rejected_ops.append(op)
             rejected_adjudications.append(
                 append_schedule_entry_repeal_granularity_blocked_adjudication(
                     adjudications_out,
@@ -100,6 +102,7 @@ def prepare_replay_uk_ops(
         if op.op_id in overlap_classification.overlapping_op_ids:
             if verbose:
                 print("  replay_uk_ops: skipping overlapping same-source ordinal text patch")
+            rejected_ops.append(op)
             rejected_adjudications.append(
                 append_same_source_text_patch_overlap_blocked_adjudication(
                     adjudications_out,
@@ -113,6 +116,7 @@ def prepare_replay_uk_ops(
                 continue
             if verbose:
                 print("  replay_uk_ops: skipping unsupported whole_act op")
+            rejected_ops.append(op)
             rejected_adjudications.append(
                 append_unsupported_whole_act_prepare_filter_adjudication(
                     adjudications_out,
@@ -127,5 +131,6 @@ def prepare_replay_uk_ops(
     )
     return UKReplayPrepareResult(
         accepted_ops=tuple(filtered_ops),
+        rejected_ops=tuple(rejected_ops),
         rejected_adjudications=tuple(rejected_adjudications),
     )

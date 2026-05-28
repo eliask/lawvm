@@ -23,6 +23,7 @@ UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
 @dataclass(frozen=True)
 class UKReplayPrepareResult:
     accepted_ops: tuple[LegalOperation, ...]
+    rejected_ops: tuple[LegalOperation, ...]
     rejected_adjudications: tuple[CompileAdjudication, ...]
 
 
