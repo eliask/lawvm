@@ -7,13 +7,14 @@ tree.
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core import tree_ops
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
@@ -39,6 +40,45 @@ class _InvariantTargetRoot(NamedTuple):
     node: UKMutableNode
     initial_path: str
     scope_prefix: str
+
+
+class _InvariantReplaySelf(Protocol):
+    statute: UKMutableStatute
+    adjudications_out: list[CompileAdjudication]
+    _seen_invariant_violations: set[str]
+    _structure_mutation_serial: int
+    _last_invariant_structure_serial: int
+
+    def _find_path_to_node(
+        self,
+        root: UKMutableNode,
+        target_node: UKMutableNode,
+        path: tuple[int, ...] = (),
+    ) -> Optional[tuple[int, ...]]: ...
+
+    def _derive_target_eid(self, addr: LegalAddress) -> str: ...
+
+    def _find_node_and_parent_statute(
+        self,
+        eid: str,
+        *,
+        allow_sequence_match: bool = True,
+    ) -> NodeLookupResult: ...
+
+    def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool: ...
+
+    def _find_node_by_target(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> NodeLookupResult: ...
+
+
+def _invariant_replay_self(replay: object) -> _InvariantReplaySelf:
+    return cast(_InvariantReplaySelf, replay)
 
 
 _DUPLICATE_ORDER_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
@@ -120,7 +160,8 @@ class UKReplayInvariantDiagnosticsMixin:
         for child in root.children:
             if child is node:
                 return f"{root_path}/{child.kind.value}:{child.label or '?'}"
-        path = self._find_path_to_node(root, node)
+        replay = _invariant_replay_self(self)
+        path = replay._find_path_to_node(root, node)
         if path is None:
             return root_path
         parts = [root_path]
@@ -134,25 +175,26 @@ class UKReplayInvariantDiagnosticsMixin:
         self,
         address: LegalAddress,
     ) -> tuple[UKMutableNode | None, UKMutableNode | None]:
+        replay = _invariant_replay_self(self)
         node = None
-        target_eid = self._derive_target_eid(address)
+        target_eid = replay._derive_target_eid(address)
         if target_eid:
-            node, _parent, _idx = self._find_node_and_parent_statute(
+            node, _parent, _idx = replay._find_node_and_parent_statute(
                 target_eid,
                 allow_sequence_match=False,
             )
-            if node is not None and not self._eid_candidate_matches_target_leaf(
+            if node is not None and not replay._eid_candidate_matches_target_leaf(
                 node,
                 address,
             ):
                 node = None
         if node is None:
-            node, _parent, _idx = self._find_node_by_target(
+            node, _parent, _idx = replay._find_node_by_target(
                 address,
                 allow_recursive_match=False,
             )
         if node is None:
-            node, _parent, _idx = self._find_node_by_target(
+            node, _parent, _idx = replay._find_node_by_target(
                 address,
                 allow_recursive_match=True,
             )
@@ -218,16 +260,17 @@ class UKReplayInvariantDiagnosticsMixin:
         top_kind, top_label = op.target.path[0]
         top_address = LegalAddress(path=((top_kind, top_label),), special=None)
         top_node = None
-        top_eid = self._derive_target_eid(top_address)
+        replay = _invariant_replay_self(self)
+        top_eid = replay._derive_target_eid(top_address)
         if top_eid:
-            top_node, _top_parent, _top_idx = self._find_node_and_parent_statute(
+            top_node, _top_parent, _top_idx = replay._find_node_and_parent_statute(
                 top_eid,
                 allow_sequence_match=False,
             )
-            if top_node is not None and not self._eid_candidate_matches_target_leaf(top_node, top_address):
+            if top_node is not None and not replay._eid_candidate_matches_target_leaf(top_node, top_address):
                 top_node = None
         if top_node is None:
-            top_node, _top_parent, _top_idx = self._find_node_by_target(
+            top_node, _top_parent, _top_idx = replay._find_node_by_target(
                 top_address,
                 allow_recursive_match=True,
             )
