@@ -7,6 +7,8 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
+from lawvm.core.diagnostic_records import diagnostic_detail
+
 if TYPE_CHECKING:
     import argparse
 
@@ -26,6 +28,39 @@ _VALIDATION_ERROR_STATUSES = frozenset({"effect_not_found", "input_error"})
 class _ValidationStatus(NamedTuple):
     status: str
     rule_id: str
+
+
+def _manual_frontier_validation_row(
+    *,
+    rule_id: str,
+    validator_status: str,
+    line_number: int,
+    statute_id: str,
+    effect_id: str,
+    reason: str = "",
+    blocking: bool = False,
+    strict_disposition: str = "record",
+    quirks_disposition: str = "record",
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": "lawvm.uk_manual_frontier_validation.v1",
+        **diagnostic_detail(
+            rule_id=rule_id,
+            family="manual_frontier_validation",
+            phase="tooling_diagnostic",
+            reason=reason,
+            blocking=blocking,
+            strict_disposition=strict_disposition,
+            quirks_disposition=quirks_disposition,
+        ),
+        "jurisdiction": "uk",
+        "validator_status": validator_status,
+        "line_number": line_number,
+        "statute_id": statute_id,
+        "effect_id": effect_id,
+        **dict(extra or {}),
+    }
 
 
 def _read_jsonl_rows(path: Path) -> tuple[dict[str, Any], ...]:
@@ -132,33 +167,33 @@ def _validation_row_jsonable(
     original_manual_status = str(row.get("manual_compile_status") or "")
     original_manual_rule_id = str(row.get("manual_compile_rule_id") or "")
     if not statute_id or not effect_id:
-        return {
-            "schema": "lawvm.uk_manual_frontier_validation.v1",
-            "rule_id": "uk_manual_frontier_validator_input_missing_key",
-            "validator_status": "input_error",
-            "line_number": int(row.get("line_number") or 0),
-            "statute_id": statute_id,
-            "effect_id": effect_id,
-            "reason": "Manual-frontier JSONL row must include statute_id and effect_id.",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "block",
-        }
+        return _manual_frontier_validation_row(
+            rule_id="uk_manual_frontier_validator_input_missing_key",
+            validator_status="input_error",
+            line_number=int(row.get("line_number") or 0),
+            statute_id=statute_id,
+            effect_id=effect_id,
+            reason="Manual-frontier JSONL row must include statute_id and effect_id.",
+            blocking=True,
+            strict_disposition="block",
+            quirks_disposition="block",
+        )
     if not effect_found or current_summary is None:
-        return {
-            "schema": "lawvm.uk_manual_frontier_validation.v1",
-            "rule_id": "uk_manual_frontier_validator_effect_not_found",
-            "validator_status": "effect_not_found",
-            "line_number": int(row.get("line_number") or 0),
-            "statute_id": statute_id,
-            "effect_id": effect_id,
-            "original_manual_compile_status": original_manual_status,
-            "original_manual_compile_rule_id": original_manual_rule_id,
-            "reason": "The exported workqueue effect_id is no longer present in the current effect feed for this statute.",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-        }
+        return _manual_frontier_validation_row(
+            rule_id="uk_manual_frontier_validator_effect_not_found",
+            validator_status="effect_not_found",
+            line_number=int(row.get("line_number") or 0),
+            statute_id=statute_id,
+            effect_id=effect_id,
+            reason="The exported workqueue effect_id is no longer present in the current effect feed for this statute.",
+            blocking=True,
+            strict_disposition="block",
+            quirks_disposition="record",
+            extra={
+                "original_manual_compile_status": original_manual_status,
+                "original_manual_compile_rule_id": original_manual_rule_id,
+            },
+        )
     current_manual_status = str(current_summary.manual_compile_status or "")
     current_manual_rule_id = str(current_summary.manual_compile_rule_id or "")
     current_blocking_rules = tuple(current_summary.manual_compile_blocking_lowering_rule_ids)
@@ -168,39 +203,34 @@ def _validation_row_jsonable(
         current_blocking_rules=current_blocking_rules,
         current_compiled_op_count=int(current_summary.n_ops),
     )
-    return {
-        "schema": "lawvm.uk_manual_frontier_validation.v1",
-        "rule_id": validation_status.rule_id,
-        "family": "manual_frontier_validation",
-        "phase": "tooling_diagnostic",
-        "jurisdiction": "uk",
-        "validator_status": validation_status.status,
-        "line_number": int(row.get("line_number") or 0),
-        "statute_id": statute_id,
-        "effect_id": effect_id,
-        "original_manual_compile_status": original_manual_status,
-        "original_manual_compile_rule_id": original_manual_rule_id,
-        "current_manual_compile_status": current_manual_status,
-        "current_manual_compile_rule_id": current_manual_rule_id,
-        "current_manual_compile_reason": str(current_summary.manual_compile_reason or ""),
-        "current_compiled_op_count": int(current_summary.n_ops),
-        "current_lowering_observation_rule_ids": [
-            str(record.get("rule_id") or "unknown")
-            for record in current_summary.lowering_rejections
-        ],
-        "current_blocking_lowering_rule_ids": list(current_blocking_rules),
-        "current_source_pathology": str(current_summary.source_pathology or ""),
-        "current_compare_shape": str(current_summary.compare_shape or ""),
-        "current_replay_applicable": bool(current_summary.replay_applicable),
-        "current_structural_for_replay": bool(current_summary.structural_for_replay),
-        "current_suggested_claim_template_status": (
-            "available" if current_template else "not_available"
-        ),
-        "current_suggested_claim_template": current_template,
-        "blocking": validation_status.status in {"input_error", "effect_not_found"},
-        "strict_disposition": "record",
-        "quirks_disposition": "record",
-    }
+    return _manual_frontier_validation_row(
+        rule_id=validation_status.rule_id,
+        validator_status=validation_status.status,
+        line_number=int(row.get("line_number") or 0),
+        statute_id=statute_id,
+        effect_id=effect_id,
+        extra={
+            "original_manual_compile_status": original_manual_status,
+            "original_manual_compile_rule_id": original_manual_rule_id,
+            "current_manual_compile_status": current_manual_status,
+            "current_manual_compile_rule_id": current_manual_rule_id,
+            "current_manual_compile_reason": str(current_summary.manual_compile_reason or ""),
+            "current_compiled_op_count": int(current_summary.n_ops),
+            "current_lowering_observation_rule_ids": [
+                str(record.get("rule_id") or "unknown")
+                for record in current_summary.lowering_rejections
+            ],
+            "current_blocking_lowering_rule_ids": list(current_blocking_rules),
+            "current_source_pathology": str(current_summary.source_pathology or ""),
+            "current_compare_shape": str(current_summary.compare_shape or ""),
+            "current_replay_applicable": bool(current_summary.replay_applicable),
+            "current_structural_for_replay": bool(current_summary.structural_for_replay),
+            "current_suggested_claim_template_status": (
+                "available" if current_template else "not_available"
+            ),
+            "current_suggested_claim_template": current_template,
+        },
+    )
 
 
 def validate_manual_frontier_rows(
@@ -219,21 +249,20 @@ def validate_manual_frontier_rows(
         for row in rows:
             if str(row.get("validator_status") or "") == "input_error":
                 output.append(
-                    {
-                        "schema": "lawvm.uk_manual_frontier_validation.v1",
-                        "rule_id": str(
+                    _manual_frontier_validation_row(
+                        rule_id=str(
                             row.get("validator_rule_id")
                             or "uk_manual_frontier_validator_input_error"
                         ),
-                        "validator_status": "input_error",
-                        "line_number": int(row.get("line_number") or 0),
-                        "statute_id": "",
-                        "effect_id": "",
-                        "reason": str(row.get("reason") or ""),
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "block",
-                    }
+                        validator_status="input_error",
+                        line_number=int(row.get("line_number") or 0),
+                        statute_id="",
+                        effect_id="",
+                        reason=str(row.get("reason") or ""),
+                        blocking=True,
+                        strict_disposition="block",
+                        quirks_disposition="block",
+                    )
                 )
                 continue
             statute_id = str(row.get("statute_id") or "")
