@@ -74,12 +74,19 @@ def validate_diagnostic_detail(row: Mapping[str, Any]) -> tuple[str, ...]:
     message = row.get("message", "")
     if message is not None and message != "" and not isinstance(message, str):
         issues.append("message must be a string when present")
+    issues.extend(validate_blocking_disposition(row, subject="diagnostic"))
+    return tuple(issues)
+
+
+def validate_blocking_disposition(row: Mapping[str, Any], *, subject: str) -> tuple[str, ...]:
+    """Validate the shared blocking/strict-disposition invariant."""
+
     blocking = row.get("blocking")
     if not isinstance(blocking, bool):
-        issues.append("blocking must be a boolean")
-    elif blocking and row.get("strict_disposition") not in BLOCKING_STRICT_DISPOSITIONS:
-        issues.append("blocking diagnostic must have blocking strict_disposition")
-    return tuple(issues)
+        return ("blocking must be a boolean",)
+    if blocking and row.get("strict_disposition") not in BLOCKING_STRICT_DISPOSITIONS:
+        return (f"blocking {subject} must have blocking strict_disposition",)
+    return ()
 
 
 def _require_non_empty_string(row: Mapping[str, Any], key: str, issues: list[str]) -> None:
