@@ -81,6 +81,8 @@ Implemented progress:
   `duplicate_label`, `illegal_edge`, and `all_tree` detectors;
 - UK replay shape-gap classifiers can consume typed invariant records instead
   of reparsing `"duplicate ..."` / `"out of order ..."` messages.
+- EU replay invariant adjudications consume typed duplicate/order invariant
+  records while preserving the legacy `violation` string in evidence details.
 - core now has a small typed detector-result adapter that preserves legacy
   detector messages while giving tools a typed `InvariantDetectorResult`
   surface.
@@ -274,6 +276,8 @@ Implemented progress:
   `diagnostic_detail` while preserving frontend-local adjudication carriers.
 - Sweden replay adjudication helpers now delegate the same replay envelope
   defaults to `diagnostic_detail`.
+- EU pipeline diagnostics and replay adjudication helpers now delegate their
+  shared envelope defaults to `diagnostic_detail`.
 
 Why high value:
 

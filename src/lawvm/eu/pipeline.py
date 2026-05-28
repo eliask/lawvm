@@ -8,10 +8,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline import Timelines, compile_timelines, materialize_pit
 from lawvm.core import tree_ops
+from lawvm.core.tree_ops import TreeInvariantKind
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.eu.grafter import parse_eu_regulation_ir
@@ -53,17 +55,17 @@ class EUPipelineDiagnostic:
     detail: dict[str, object] = field(default_factory=dict)
 
     def as_detail(self) -> dict[str, object]:
-        payload: dict[str, object] = {
-            "rule_id": self.rule_id,
-            "family": self.family,
-            "phase": self.phase,
-            "reason": self.reason,
-            "celex": self.celex,
-            "exception_type": self.exception_type,
-            "blocking": self.blocking,
-            "strict_disposition": self.strict_disposition,
-            "quirks_disposition": self.quirks_disposition,
-        }
+        payload = diagnostic_detail(
+            rule_id=self.rule_id,
+            family=self.family,
+            phase=self.phase,
+            reason=self.reason,
+            blocking=self.blocking,
+            strict_disposition=self.strict_disposition,
+            quirks_disposition=self.quirks_disposition,
+            celex=self.celex,
+            exception_type=self.exception_type,
+        )
         if self.detail:
             payload["detail"] = dict(self.detail)
         return payload
@@ -87,8 +89,7 @@ def _append_eu_replay_adjudication(
     if adjudications_out is None:
         return
     detail_payload: dict[str, Any] = dict(detail or {})
-    detail_payload.setdefault("rule_id", kind)
-    detail_payload.setdefault("phase", "replay")
+    family = ""
     if kind in {
         "eu_replay_unsupported_action",
         "eu_replay_unknown_action",
@@ -97,12 +98,16 @@ def _append_eu_replay_adjudication(
         "eu_replay_parent_not_found",
         "eu_replay_insert_parent_scope_unresolved",
     }:
-        detail_payload.setdefault("family", "unsupported_or_unresolved_action")
+        family = "unsupported_or_unresolved_action"
     elif kind == "eu_replay_tree_invariant_violation":
-        detail_payload.setdefault("family", "tree_invariant_violation")
-    detail_payload.setdefault("blocking", True)
-    detail_payload.setdefault("strict_disposition", "block")
-    detail_payload.setdefault("quirks_disposition", "record")
+        family = "tree_invariant_violation"
+    detail_payload = diagnostic_detail(
+        rule_id=kind,
+        phase="replay",
+        family=family,
+        blocking=bool(detail_payload.get("blocking", True)),
+        detail=detail_payload,
+    )
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
@@ -191,16 +196,16 @@ def apply_eu_ops(
     skipped = 0
     seen_invariant_violations: set[str] = set()
     seen_duplication_warnings: set[tuple[tuple[str, object], ...]] = set()
+    replay_tree_invariant_families: tuple[TreeInvariantKind, ...] = ("duplicate_label", "sort_order")
 
     def _duplication_warning_key(warning: dict[str, object]) -> tuple[tuple[str, object], ...]:
         return tuple(sorted(warning.items()))
 
     def _record_invariant_violations(op: LegalOperation, target: LegalAddress) -> None:
-        for violation in tree_ops.check_invariants(body):
-            if "duplicate " not in violation and " out of order:" not in violation:
+        for violation in tree_ops.iter_tree_invariant_violations(body, families=replay_tree_invariant_families):
+            if violation.message in seen_invariant_violations:
                 continue
-            if violation in seen_invariant_violations:
-                continue
+            violation_detail = violation.to_dict()
             _append_eu_replay_adjudication(
                 adjudications_out,
                 kind="eu_replay_tree_invariant_violation",
@@ -209,10 +214,13 @@ def apply_eu_ops(
                 detail={
                     "action": str(action),
                     "target": str(target),
-                    "violation": violation,
+                    "violation": violation.message,
+                    "invariant_kind": violation_detail["kind"],
+                    "invariant_path": violation_detail["path"],
+                    "invariant": violation_detail,
                 },
             )
-            seen_invariant_violations.add(violation)
+            seen_invariant_violations.add(violation.message)
 
     def _record_new_duplication_warnings(
         before_body,
