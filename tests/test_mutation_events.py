@@ -16,6 +16,8 @@ from lawvm.core.mutation_events import (
     mutation_event_declared_allowance_paths,
     mutation_event_matching_allowance_rule_ids,
     mutation_event_touched_paths,
+    validate_declared_mutation_allowance,
+    validate_mutation_event_allowances,
 )
 
 TREE_PATHS = st.lists(
@@ -124,6 +126,45 @@ def test_mutation_event_matching_allowance_rule_ids_reports_covering_rules() -> 
         "recover-section",
     )
     assert mutation_event_matching_allowance_rule_ids(event, (("section", "3"),)) == ()
+
+
+def test_validate_declared_mutation_allowance_requires_kind_and_rule_for_paths() -> None:
+    allowance = DeclaredMutationAllowance(
+        kind="",
+        paths=((("section", "1"),),),
+    )
+
+    assert validate_declared_mutation_allowance(allowance) == (
+        "declared mutation allowance requires a non-empty kind",
+        "declared mutation allowance with paths requires a rule_id",
+    )
+
+
+def test_build_mutation_event_path_set_report_rejects_malformed_allowances() -> None:
+    event = MutationEvent(
+        op_id="op",
+        source_statute="src",
+        action="replace",
+        helper="helper",
+        outcome="applied",
+        replaced_paths=((("section", "1"),),),
+        declared_allowances=(
+            DeclaredMutationAllowance(
+                kind="recovery",
+                paths=((("section", "2"),),),
+            ),
+        ),
+    )
+
+    assert validate_mutation_event_allowances(event) == (
+        "declared mutation allowance with paths requires a rule_id",
+    )
+    try:
+        build_mutation_event_path_set_report(event, ((("section", "1"),),))
+    except ValueError as exc:
+        assert "requires a rule_id" in str(exc)
+    else:  # pragma: no cover - explicit failure branch
+        raise AssertionError("expected malformed allowance rejection")
 
 
 def test_build_mutation_event_path_set_report_partitions_target_allowances_and_out_of_scope_paths() -> None:

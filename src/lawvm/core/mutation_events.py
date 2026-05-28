@@ -72,6 +72,26 @@ class MutationEventPathSetReport:
     path_set_invariant_holds: bool = True
 
 
+def validate_declared_mutation_allowance(allowance: DeclaredMutationAllowance) -> tuple[str, ...]:
+    """Return validation issues for one declared non-target mutation allowance."""
+
+    issues: list[str] = []
+    if not allowance.kind:
+        issues.append("declared mutation allowance requires a non-empty kind")
+    if any(path for path in allowance.paths) and not str(allowance.rule_id or "").strip():
+        issues.append("declared mutation allowance with paths requires a rule_id")
+    return tuple(issues)
+
+
+def validate_mutation_event_allowances(event: MutationEvent) -> tuple[str, ...]:
+    """Return validation issues for all declared allowances on one mutation event."""
+
+    issues: list[str] = []
+    for allowance in event.declared_allowances:
+        issues.extend(validate_declared_mutation_allowance(allowance))
+    return tuple(issues)
+
+
 def mutation_event_touched_paths(event: MutationEvent) -> TreePaths:
     """Return all paths touched by one mutation event in first-seen order."""
     touched: list[TreePath] = []
@@ -152,6 +172,9 @@ def build_mutation_event_path_set_report(
 ) -> MutationEventPathSetReport:
     """Partition one event's touched paths through target, recovery, and migration regions."""
 
+    issues = validate_mutation_event_allowances(event)
+    if issues:
+        raise ValueError("; ".join(issues))
     touched_paths = mutation_event_touched_paths(event)
     allowed_roots = dedupe_tree_paths(allowed_effect_region_paths)
     declared_allowance_paths = mutation_event_declared_allowance_paths(event)
