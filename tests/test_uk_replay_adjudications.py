@@ -15,7 +15,12 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.effect_payload_normalization import prepare_uk_operation_payload_node
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind
+from lawvm.uk_legislation.mutable_ir import (
+    UKMutableNode,
+    uk_insert_child_sorted,
+    uk_insert_node_at_index,
+    uk_ir_node_kind,
+)
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
@@ -73,6 +78,23 @@ def _base_statute_with_schedule_1() -> IRStatute:
             children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),),
         ),
         supplements=(IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Existing schedule."),),
+    )
+
+
+def _base_statute_sections_1_2() -> IRStatute:
+    return IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="Section two."),
+            ),
+        ),
+        supplements=(),
     )
 
 
@@ -349,6 +371,22 @@ def test_uk_mutable_sorted_insert_refuses_same_label_replacement() -> None:
     assert [child.text for child in parent.children] == ["Existing text."]
 
 
+def test_uk_mutable_index_insert_refuses_same_label_replacement() -> None:
+    children = [
+        UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
+    ]
+    new_node = UKMutableNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Replacement text.",
+    )
+
+    inserted = uk_insert_node_at_index(children, 0, new_node)
+
+    assert inserted is False
+    assert [child.text for child in children] == ["Existing text."]
+
+
 def test_replay_uk_ops_emit_mutation_event_for_fallback_schedule_insert() -> None:
     mutation_events: list[MutationEvent] = []
     adjudications: list[CompileAdjudication] = []
@@ -405,6 +443,31 @@ def test_replay_uk_ops_refuses_duplicate_fallback_schedule_insert() -> None:
     kinds = [adjudication.kind for adjudication in adjudications]
     assert "uk_replay_body_root_fallback_insert_resolved" not in kinds
     assert kinds == ["uk_replay_missing_root_parent_shape_gap"]
+
+
+def test_replay_uk_ops_refuses_duplicate_indexed_section_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-duplicate-indexed-insert-section",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Duplicate section two."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(
+        _base_statute_sections_1_2(),
+        [op],
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
+
+    assert [section.label for section in replayed.body.children] == ["1", "2"]
+    assert [section.text for section in replayed.body.children] == ["Section one.", "Section two."]
+    assert mutation_events == []
+    assert [adjudication.kind for adjudication in adjudications] == ["uk_replay_payload_mismatch"]
 
 
 def test_replay_uk_ops_emit_mutation_event_for_table_row_insert() -> None:
