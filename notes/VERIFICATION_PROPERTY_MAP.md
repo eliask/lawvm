@@ -54,7 +54,7 @@ bug class it catches. Addresses Pro adversarial review attack #23
 | Shared operation-aware mutation-boundary report | mutation_boundary + property tests | src/lawvm/core/mutation_boundary.py; tests/test_mutation_boundary.py | Open Law audit; reusable by frontends | No, primitive | Snapshot/op changed outside declared target/action region |
 | Phase-local invariant attribution | diagnose-phase | src/lawvm/tools/diagnose_phase.py | Manual/debug | No | Whether a structural violation arose before apply, in apply, fold post-process, or materialization |
 | First-bad invariant bisection | invariant-bisect | src/lawvm/tools/invariant_bisect.py | Manual/debug | No | First amendment introducing duplicate/order/illegal-edge/text-dup/flattened-list symptoms |
-| Apply mutation-boundary accounting | Finland apply_events | src/lawvm/finland/apply_events.py | Finland replay | No, finding/evidence | Successful/failed op mutated outside declared target boundary |
+| Apply mutation-boundary accounting | Finland apply_events + shared boundary partition | src/lawvm/finland/apply_events.py; src/lawvm/core/mutation_boundary.py | Finland replay | No, finding/evidence | Successful/failed op mutated outside declared target boundary |
 | Publication operation boundary accounting | Open Law audit | src/lawvm/open_law/audit.py | Open Law audit | No, finding | Published snapshot changed paths outside declared operation target regions |
 
 ## What is NOT verified
