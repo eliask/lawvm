@@ -307,6 +307,9 @@ Recent improvement:
   matching.
 - branch lifecycle events now record proposal/draft status history as graph
   facts, separate from enacted-state operation replay.
+- branch lifecycle events now carry `scenario_id`; `CorpusGraph` rejects
+  lifecycle scenario mismatches against the registered branch, and CSV/JSON-LD
+  export preserves the scenario axis.
 - `CorpusGraph` now rejects duplicate branch ids and dangling branch edge or
   lifecycle references, keeping proposal/draft graph claims internally
   referentially sound.

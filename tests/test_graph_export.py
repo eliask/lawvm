@@ -35,6 +35,7 @@ def test_export_neo4j_writes_branch_graph_tables(tmp_path, monkeypatch) -> None:
         event_id="event-1",
         branch_id=branch.branch_id,
         event_kind="introduced",
+        scenario_id=branch.scenario_id,
         source_artifact_id="proposal/example/2026/1",
         event_date="2026-01-01",
     )
@@ -89,6 +90,7 @@ def test_export_neo4j_writes_branch_graph_tables(tmp_path, monkeypatch) -> None:
             "event_id": "event-1",
             "branch_id": "proposal:example:2026-1",
             "event_kind": "introduced",
+            "scenario_id": "",
             "source_artifact_id": "proposal/example/2026/1",
             "event_date": "2026-01-01",
             "resulting_status": "unknown",
@@ -116,6 +118,7 @@ def test_export_jsonld_includes_branch_graph_resources(tmp_path, monkeypatch) ->
         event_id="event-1",
         branch_id=branch.branch_id,
         event_kind="introduced",
+        scenario_id=branch.scenario_id,
         source_artifact_id="proposal/example/2026/1",
     )
 
@@ -145,3 +148,4 @@ def test_export_jsonld_includes_branch_graph_resources(tmp_path, monkeypatch) ->
     assert by_type["lawvm:BranchGraphEdge"]["lawvm:edgeKind"] == "would_replace"
     assert by_type["lawvm:BranchGraphEdge"]["lawvm:scenarioId"] == ""
     assert by_type["lawvm:BranchLifecycleEvent"]["lawvm:eventKind"] == "introduced"
+    assert by_type["lawvm:BranchLifecycleEvent"]["lawvm:scenarioId"] == ""

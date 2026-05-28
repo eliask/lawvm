@@ -192,6 +192,7 @@ def test_branch_lifecycle_event_projects_non_mutating_status_fact() -> None:
         "event_id": "event-1",
         "branch_id": "proposal:example:2026-1",
         "event_kind": "withdrawn",
+        "scenario_id": "",
         "source_artifact_id": "proposal/example/2026/1",
         "event_date": "2026-05-01",
         "resulting_status": "withdrawn",
