@@ -306,6 +306,11 @@ UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_broad_schedule_table_shape_gap",
         "uk_replay_annex_schedule_reference_gap",
         "uk_replay_definition_child_shape_gap",
+        "uk_replay_definition_child_structural_sibling_anchor_gap",
+        "uk_replay_definition_child_structural_sibling_conflict_gap",
+        "uk_replay_definition_child_structural_sibling_parent_gap",
+        "uk_replay_definition_child_structural_substitution_parent_gap",
+        "uk_replay_definition_child_structural_substitution_target_gap",
         "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique",
         "uk_replay_definition_anchor_lexical_variant_recovered",
         "uk_replay_definition_entry_shape_gap",
@@ -353,6 +358,7 @@ UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_subsection_descendant_target_collapse_gap",
         "uk_replay_table_shape_gap",
         "uk_replay_table_column_insert_unresolved",
+        "uk_replay_table_cell_child_list_insert_unresolved",
         "uk_replay_table_entry_row_insert_unresolved",
         "uk_replay_table_entry_row_replace_unresolved",
         "uk_replay_table_entry_inline_text_insertion_unresolved",
@@ -403,6 +409,9 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_definition_child_flat_ordinal_text_rewrite_applied",
         "uk_replay_definition_child_final_connector_rewrite_applied",
         "uk_replay_definition_child_structured_text_rewrite_applied",
+        "uk_replay_definition_child_structural_sibling_already_materialized",
+        "uk_replay_definition_child_structural_sibling_insert_applied",
+        "uk_replay_definition_child_structural_substitution_applied",
         "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied",
         "uk_replay_definition_entry_orphan_separator_normalized",
         "uk_replay_definition_entry_qualifier_phrase_normalized",
@@ -525,6 +534,26 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
     ("uk_replay_definition_entry_shape_gap", "uk_definition_entry_shape_gap"),
     ("uk_replay_definition_child_shape_gap", "uk_definition_child_shape_gap"),
     (
+        "uk_replay_definition_child_structural_sibling_parent_gap",
+        "uk_definition_child_structural_sibling_parent_gap",
+    ),
+    (
+        "uk_replay_definition_child_structural_sibling_anchor_gap",
+        "uk_definition_child_structural_sibling_anchor_gap",
+    ),
+    (
+        "uk_replay_definition_child_structural_sibling_conflict_gap",
+        "uk_definition_child_structural_sibling_conflict_gap",
+    ),
+    (
+        "uk_replay_definition_child_structural_substitution_parent_gap",
+        "uk_definition_child_structural_substitution_parent_gap",
+    ),
+    (
+        "uk_replay_definition_child_structural_substitution_target_gap",
+        "uk_definition_child_structural_substitution_target_gap",
+    ),
+    (
         "uk_replay_definition_child_tail_flat_child_boundary_unavailable_anchor_unique",
         "uk_definition_child_tail_boundary_unavailable_anchor_unique",
     ),
@@ -601,6 +630,10 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
         "uk_replace_payload_target_leaf_mismatch_gap",
     ),
     ("uk_replay_table_shape_gap", "uk_table_shape_gap"),
+    (
+        "uk_replay_table_cell_child_list_insert_unresolved",
+        "uk_table_cell_child_list_insert_unresolved",
+    ),
     ("uk_replay_text_target_empty_surface_gap", "uk_text_target_empty_surface_gap"),
     (
         "uk_replay_text_match_citation_tail_surface_gap",

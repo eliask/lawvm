@@ -3779,8 +3779,8 @@ def test_compile_broad_structural_sibling_insert_rejects_without_parent_claim() 
 
     assert len(lowering_records) == 1
     rejection = lowering_records[0]
-    assert rejection["rule_id"] == "uk_effect_definition_child_structural_insert_rejected"
-    assert rejection["reason_code"] == "definition_child_structural_insert_requires_child_and_tail_claim"
+    assert rejection["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+    assert rejection["reason_code"] == "structural_sibling_insert_requires_owned_parent_anchor_payload"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 
@@ -3947,8 +3947,8 @@ def test_compile_child_tail_sibling_insert_rejects_non_contiguous_label() -> Non
 
     assert len(lowering_records) == 1
     rejection = lowering_records[0]
-    assert rejection["rule_id"] == "uk_effect_definition_child_structural_insert_rejected"
-    assert rejection["reason_code"] == "definition_child_structural_insert_requires_child_and_tail_claim"
+    assert rejection["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+    assert rejection["reason_code"] == "structural_sibling_insert_requires_owned_parent_anchor_payload"
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
 
@@ -5502,19 +5502,19 @@ def test_compile_words_inserted_before_definition_entry_for_anchor() -> None:
         lowering_rejections_out=lowering_records,
     )
 
-    assert lowering_records == []
+    assert len(lowering_records) == 1
+    observation = lowering_records[0]
+    assert observation["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+    assert observation["reason_code"] == "explicit_schedule_list_entry_anchor"
+    assert observation["blocking"] is False
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].action is StructuralAction.INSERT
     assert ops[0].target.path == (("section", "23"), ("subsection", "1"))
-    assert ops[0].text_patch is not None
-    assert ops[0].text_patch.selector.match_text == "TEXT_BEFORE_DEFINITION_action"
-    assert ops[0].text_patch.replacement == (
-        "“ the 2015 Act ” means the Welfare Funds (Scotland) Act 2015, ,"
-    )
-    assert (
-        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_definition_entry_text_insertion_patch"
-        in ops[0].provenance_tags
-    )
+    assert ops[0].text_patch is None
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert ops[0].payload.text == "the 2015 Act ” means the Welfare Funds (Scotland) Act 2015"
+    assert any(note.startswith("schedule_list_entry_selector:") for note in ops[0].provenance_tags)
 
     base = IRStatute(
         statute_id="asp/2002/11",
@@ -5529,7 +5529,14 @@ def test_compile_words_inserted_before_definition_entry_for_anchor() -> None:
                         IRNode(
                             kind=IRNodeKind.SUBSECTION,
                             label="1",
-                            text="“action” means an action; “the Ombudsman” means the Scottish Public Services Ombudsman;",
+                            text="",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="action means an action;"),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    text="the Ombudsman means the Scottish Public Services Ombudsman;",
+                                ),
+                            ),
                         ),
                     ),
                 ),
@@ -5538,10 +5545,17 @@ def test_compile_words_inserted_before_definition_entry_for_anchor() -> None:
         supplements=(),
     )
 
-    replayed = replay_uk_ops(base, ops)
-    replayed_text = replayed.body.children[0].children[0].text
-    assert replayed_text.startswith(
-        "“ the 2015 Act ” means the Welfare Funds (Scotland) Act 2015, , “action” means an action;"
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "the 2015 Act ” means the Welfare Funds (Scotland) Act 2015",
+        "action means an action;",
+        "the Ombudsman means the Scottish Public Services Ombudsman;",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_prefix_normalized"
+        for adjudication in adjudications
     )
 
 
@@ -19968,7 +19982,7 @@ def test_compile_repeal_table_mixed_structural_subsection_range_member() -> None
     assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
     assert any(
         record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
-        and record["reason_code"] == "mixed_structural_and_word_repeal_split_structural_target"
+        and record["reason_code"] == "unique_repeal_table_extent_row_structural_repeal"
         and record["target"] == "section:50/subsection:3"
         and record["blocking"] is False
         for record in lowering_records
@@ -20857,11 +20871,11 @@ def test_compile_repeal_table_mixed_following_word_repeal_with_section_context()
         ("paragraph", "a"),
     )
     assert any(
-        record["rule_id"] == "uk_effect_repeal_table_mixed_structural_word_repeal_split"
-        and record["reason_code"] == "mixed_structural_and_word_repeal_split"
+        record["rule_id"] == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        and record["reason_code"] == "parent_target_child_structural_and_text_repeal_split"
         and record["target"] == "section:102/subsection:4/paragraph:a"
         and record["text_target"] == "section:102/subsection:4"
-        and record["text_selector"] == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_a"
+        and record["text_selectors"] == ("TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_a",)
         and record["blocking"] is False
         for record in lowering_records
     )
@@ -27201,18 +27215,24 @@ def test_compile_anchor_onwards_block_substitution_to_range_end() -> None:
         lowering_rejections_out=lowering_records,
     )
 
-    assert len(ops) == 1
-    assert ops[0].action is StructuralAction.TEXT_REPLACE
-    assert ops[0].target.path == (("section", "49"), ("subsection", "4"))
-    assert ops[0].text_patch is not None
-    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_whether as being_TO_END"
-    assert _required_text_patch_replacement(ops[0]).startswith("if he is\u2014")
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.REPLACE,
+        StructuralAction.REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "49"), ("subsection", "4"), ("paragraph", "a")),
+        (("section", "49"), ("subsection", "4"), ("paragraph", "b")),
+    ]
+    assert all(op.text_patch is None for op in ops)
+    assert [op.payload.label if op.payload is not None else None for op in ops] == ["a", "b"]
     assert [record["rule_id"] for record in lowering_records] == [
-        "uk_effect_anchor_to_end_block_substitution_text_patch"
+        "uk_effect_source_carried_structured_tail_substitution_lowered"
     ]
     assert lowering_records[0]["reason_code"] == (
-        "explicit_anchor_to_end_block_substitution_text_patch"
+        "source_carried_structured_tail_substitution"
     )
+    assert lowering_records[0]["trim_selector"] == "TEXT_FROM_whether as being_TO_END"
 
 
 def test_compile_unquoted_range_independent_end_occurrence_block() -> None:
