@@ -4,6 +4,7 @@ import hashlib
 import json
 from argparse import Namespace
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -798,7 +799,8 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
     )
 
     payload = json.loads(capsys.readouterr().out)
-    assert prefetch_seen["kwargs"]["include_enacted"] is True
+    prefetch_kwargs = cast(dict[str, Any], prefetch_seen["kwargs"])
+    assert prefetch_kwargs["include_enacted"] is True
     assert payload["adjudications_count"] == 1
     assert payload["uk_prefetch_report"] == {
         "enabled": True,

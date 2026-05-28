@@ -364,9 +364,6 @@ def test_urllib_nz_transport_uses_explicit_timeout(monkeypatch: Any) -> None:
         def items(self):  # noqa: ANN201
             return super().items()
 
-        def get(self, key: str, default: str = "") -> str:
-            return super().get(key, default)
-
     class FakeResponse:
         headers = FakeHeaders({"Content-Type": "application/json"})
 
