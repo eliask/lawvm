@@ -3,6 +3,7 @@ from lawvm.core.evidence_contracts import (
     CorpusOperationEvidenceRow,
     CorpusRowStatus,
     EvidenceSummary,
+    evidence_row_kind,
     evidence_rule_ids,
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
@@ -267,6 +268,12 @@ def test_evidence_rule_ids_scans_detail_and_evidence_maps_when_both_exist() -> N
     }
 
     assert evidence_rule_ids(row) == {"starter.detail_witness", "starter.evidence_blocker"}
+
+
+def test_evidence_row_kind_classifies_shared_evidence_rows() -> None:
+    assert evidence_row_kind({"row_id": "operation-1"}) == "operation"
+    assert evidence_row_kind({"finding_id": "finding-1"}) == "finding"
+    assert evidence_row_kind({"rule_id": "starter.unsupported.v1"}) == "finding"
 
 
 def test_to_wire_jsonable_normalizes_nested_runtime_shapes() -> None:

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, cast
 
 from lawvm.core.evidence_contracts import (
+    evidence_row_kind,
     evidence_rule_ids,
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
@@ -184,9 +185,7 @@ def _matches(row: Mapping[str, Any], filters: ReportQueryFilters) -> bool:
 
 
 def _classify_evidence_row(row: Mapping[str, Any]) -> str:
-    if "finding_id" in row or "rule_id" in row:
-        return "finding"
-    return "operation"
+    return evidence_row_kind(row)
 
 
 def _iter_embedded_evidence_rows(

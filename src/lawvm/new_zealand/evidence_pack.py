@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, evidence_rule_ids
+from lawvm.core.evidence_contracts import (
+    CorpusFindingEvidenceRow,
+    CorpusOperationEvidenceRow,
+    evidence_row_kind,
+    evidence_rule_ids,
+)
 from lawvm.new_zealand.effect_candidates import (
     NZCanonicalEffectCandidateReport,
     NZEffectCandidatePreflightReport,
@@ -399,9 +404,7 @@ def _evidence_rows_summary(rows: tuple[Mapping[str, Any], ...]) -> dict[str, Any
 
 
 def _row_kind(row: Mapping[str, Any]) -> str:
-    if "finding_id" in row or "rule_id" in row:
-        return "finding"
-    return "operation"
+    return evidence_row_kind(row)
 
 
 def _surface(row: Mapping[str, Any]) -> str:

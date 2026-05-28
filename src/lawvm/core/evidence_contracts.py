@@ -194,6 +194,14 @@ def evidence_rule_ids(row: Mapping[str, Any]) -> set[str]:
     return {value for value in values if value}
 
 
+def evidence_row_kind(row: Mapping[str, Any]) -> str:
+    """Classify a shared evidence row as a finding or operation row."""
+
+    if "finding_id" in row or "rule_id" in row:
+        return "finding"
+    return "operation"
+
+
 def _require_non_empty_string(row: Mapping[str, Any], key: str, issues: list[str]) -> None:
     value = row.get(key)
     if not isinstance(value, str) or not value:
