@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.frozen_values import FrozenDict, _freeze_value
 
 
 TemporalResolutionStatus = Literal[
@@ -99,6 +100,11 @@ class TemporalResolutionEvidence:
                 f"TemporalResolutionEvidence.family must be one of "
                 f"{sorted(_VALID_TEMPORAL_FAMILIES)}"
             )
+        object.__setattr__(
+            self,
+            "detail",
+            _frozen_temporal_resolution_detail("TemporalResolutionEvidence.detail", self.detail),
+        )
         if self.status in {
             TEMPORAL_FIXED_DATE,
             TEMPORAL_SOURCE_BACKED_OVERRIDE,
@@ -147,3 +153,9 @@ def _reject_temporal_overrides(values: Mapping[str, Any]) -> None:
     if overlaps:
         joined = ", ".join(overlaps)
         raise ValueError(f"TemporalResolutionEvidence.detail must not override temporal keys: {joined}")
+
+
+def _frozen_temporal_resolution_detail(source: str, values: Mapping[str, Any]) -> FrozenDict:
+    if not isinstance(values, Mapping):
+        raise ValueError(f"{source} must be a mapping")
+    return FrozenDict({key: _freeze_value(value) for key, value in dict(values).items()})

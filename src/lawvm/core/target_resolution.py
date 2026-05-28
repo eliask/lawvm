@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.frozen_values import FrozenDict, _freeze_value
 
 
 TargetResolutionStatus = Literal[
@@ -83,6 +84,11 @@ class TargetResolutionCandidate:
     def __post_init__(self) -> None:
         if not str(self.target or "").strip():
             raise ValueError("TargetResolutionCandidate.target must be non-empty")
+        object.__setattr__(
+            self,
+            "detail",
+            _frozen_target_resolution_detail("TargetResolutionCandidate.detail", self.detail),
+        )
         _reject_target_candidate_overrides(self.detail)
         _reject_target_resolution_overrides(self.detail)
 
@@ -128,6 +134,17 @@ class TargetResolutionCertificate:
             )
         if not str(self.source_target or "").strip():
             raise ValueError("TargetResolutionCertificate.source_target must be non-empty")
+        candidates = tuple(self.candidates)
+        if not all(isinstance(candidate, TargetResolutionCandidate) for candidate in candidates):
+            raise ValueError(
+                "TargetResolutionCertificate.candidates must contain TargetResolutionCandidate records"
+            )
+        object.__setattr__(self, "candidates", candidates)
+        object.__setattr__(
+            self,
+            "detail",
+            _frozen_target_resolution_detail("TargetResolutionCertificate.detail", self.detail),
+        )
         if self.candidate_count < 0:
             raise ValueError("TargetResolutionCertificate.candidate_count must be non-negative")
         if self.candidate_count < len(self.candidates):
@@ -203,3 +220,9 @@ def _reject_target_candidate_overrides(values: Mapping[str, Any]) -> None:
     if overlaps:
         joined = ", ".join(overlaps)
         raise ValueError(f"target resolution candidate detail must not override candidate keys: {joined}")
+
+
+def _frozen_target_resolution_detail(source: str, values: Mapping[str, Any]) -> FrozenDict:
+    if not isinstance(values, Mapping):
+        raise ValueError(f"{source} must be a mapping")
+    return FrozenDict({key: _freeze_value(value) for key, value in dict(values).items()})

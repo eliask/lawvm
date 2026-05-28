@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from lawvm.core.diagnostic_records import validate_diagnostic_detail
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_FALLBACK,
     SCOPE_CONFIDENCE_INFERRED_FROM_LIVE_UNIQUE,
@@ -200,3 +201,51 @@ def test_target_resolution_candidate_from_mapping_preserves_local_payload() -> N
         "reason": "exact",
         "kind": "section",
     }
+
+
+def test_target_resolution_certificate_normalizes_candidates_and_detail() -> None:
+    candidate_detail = {"nested": {"labels": ["5"]}}
+    candidate = TargetResolutionCandidate(
+        target="section:5",
+        reason="exact",
+        detail=candidate_detail,
+    )
+    candidates = [candidate]
+
+    certificate = TargetResolutionCertificate(
+        rule_id="test_target_exact",
+        phase="elaboration",
+        reason="explicit source target matched exactly one live node",
+        status=TARGET_RESOLVED,
+        source_target="section:5",
+        selected_target="section:5",
+        candidate_count=1,
+        candidates=cast(Any, candidates),
+        detail={"op_id": "op-1"},
+    )
+
+    candidates.clear()
+    candidate_detail["nested"]["labels"].append("mutated")
+
+    assert certificate.candidates == (candidate,)
+    assert isinstance(candidate.detail, FrozenDict)
+    assert candidate.detail["nested"]["labels"] == ("5",)
+    assert certificate.to_diagnostic_detail()["target_candidates"][0]["nested"]["labels"] == (
+        "5",
+    )
+
+
+def test_target_resolution_certificate_rejects_malformed_detail_lanes() -> None:
+    with pytest.raises(ValueError, match="candidates must contain TargetResolutionCandidate"):
+        TargetResolutionCertificate(
+            rule_id="test_target_bad",
+            phase="elaboration",
+            reason="bad candidate",
+            status=TARGET_AMBIGUOUS,
+            source_target="section:5",
+            candidate_count=1,
+            candidates=cast(Any, ("not-a-candidate",)),
+        )
+
+    with pytest.raises(ValueError, match="detail must be a mapping"):
+        TargetResolutionCandidate(target="section:5", detail=cast(Any, []))
