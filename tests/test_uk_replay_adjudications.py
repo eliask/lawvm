@@ -186,6 +186,38 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_insert() -> None:
     assert event.replaced_paths == ()
 
 
+def test_replay_uk_ops_emit_mutation_event_for_fallback_schedule_insert() -> None:
+    mutation_events: list[MutationEvent] = []
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-fallback-insert-schedule",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "99"), ("subsection", "1"))),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Inserted schedule."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replayed = replay_uk_ops(
+        _base_statute(),
+        [op],
+        adjudications_out=adjudications,
+        mutation_events_out=mutation_events,
+    )
+
+    assert [schedule.label for schedule in replayed.supplements] == ["1"]
+    assert [item.kind for item in replayed.body.children] == [IRNodeKind.SECTION]
+    assert [adjudication.kind for adjudication in adjudications] == ["uk_replay_body_root_fallback_insert_resolved"]
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-fallback-insert-schedule"
+    assert event.helper == "_record_supplement_inserted"
+    assert event.outcome == "inserted_node"
+    assert event.resolved_target_path == (("section", "99"), ("subsection", "1"))
+    assert event.parent_path == ()
+    assert event.created_paths == ((("schedule", "1"),),)
+
+
 def test_replay_uk_ops_emit_mutation_event_for_table_row_insert() -> None:
     mutation_events: list[MutationEvent] = []
     selector = {"selector_mode": "row_number", "direction": "after", "row_number": 1}

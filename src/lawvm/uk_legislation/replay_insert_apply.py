@@ -140,6 +140,8 @@ class _InsertReplaySelf(Protocol):
 
     def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
 
+    def _record_supplement_inserted(self, node: UKMutableNode) -> None: ...
+
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool: ...
 
     def _replace_statute(
@@ -758,6 +760,7 @@ class UKReplayInsertApplyMixin:
             supplements = list(self.statute.supplements)
             supplements.append(new_node)
             replay._replace_statute(supplements=supplements)
+            replay._record_supplement_inserted(new_node)
             return True
         else:
             body_children: list[UKMutableNode] = list(self.statute.body.children)

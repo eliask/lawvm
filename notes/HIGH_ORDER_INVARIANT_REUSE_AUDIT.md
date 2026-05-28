@@ -178,9 +178,11 @@ Implemented progress:
 - UK replay emits opt-in core mutation events for central node
   replace/remove/insert helpers, whole-act repeal, direct table/schedule-table
   children-splice helpers, and schedule-list entry insert/repeal/replace
-  helpers. Same-parent sibling renumber emits `renumbered_paths`. Table row
-  splices intentionally record the table container as the changed path because
-  row identity may be unlabeled and non-unique in source XML.
+  helpers. Fallback schedule-root insertion now records the same supplement
+  insertion event as ordinary supplement insertion. Same-parent sibling
+  renumber emits `renumbered_paths`. Table row splices intentionally record the
+  table container as the changed path because row identity may be unlabeled and
+  non-unique in source XML.
 
 Why high value:
 
