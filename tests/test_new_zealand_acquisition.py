@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from lawvm.new_zealand.acquisition import (
+    NZAcquisitionDiagnostic,
     NZHttpResponse,
     NZSyncOptions,
     UrllibNZTransport,
@@ -104,6 +105,36 @@ def _json_response(payload: dict[str, Any], remaining: int = 9999) -> NZHttpResp
         },
         content_type="application/json",
     )
+
+
+def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
+    diagnostic = NZAcquisitionDiagnostic(
+        rule_id="nz_acquire_xml_format_missing",
+        phase="acquisition",
+        family="source_pathology",
+        reason="version detail has no XML format",
+        locator="https://api.legislation.govt.nz/v0/versions/example/",
+        url="https://api.legislation.govt.nz/v0/versions/example/",
+        status_code=200,
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        metadata={"work_id": "act_public_2020_1"},
+    )
+
+    assert diagnostic.to_jsonable() == {
+        "rule_id": "nz_acquire_xml_format_missing",
+        "phase": "acquisition",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "family": "source_pathology",
+        "reason": "version detail has no XML format",
+        "locator": "https://api.legislation.govt.nz/v0/versions/example/",
+        "url": "https://api.legislation.govt.nz/v0/versions/example/",
+        "status_code": 200,
+        "metadata": {"work_id": "act_public_2020_1"},
+    }
 
 
 def test_nz_corpus_sync_fetches_version_detail_and_xml_without_query_key(tmp_path: Path) -> None:
