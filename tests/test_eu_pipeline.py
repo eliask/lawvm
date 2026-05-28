@@ -88,7 +88,11 @@ def test_discover_affecting_acts_records_acquisition_failure(monkeypatch, tmp_pa
     assert diagnostic.celex == "32000R0000"
     assert diagnostic.exception_type == "RuntimeError"
     assert diagnostic.strict_disposition == "block"
-    assert diagnostic.as_detail()["rule_id"] == "eu_affecting_discovery_failed"
+    detail = diagnostic.as_detail()
+    assert detail["rule_id"] == "eu_affecting_discovery_failed"
+    assert detail["family"] == "source_pathology"
+    assert detail["blocking"] is True
+    assert detail["quirks_disposition"] == "record"
 
 
 def test_fetch_amendment_text_strips_html_and_entities(monkeypatch, tmp_path) -> None:
@@ -535,6 +539,11 @@ def test_apply_eu_ops_records_tree_invariant_violation_after_successful_insert()
     assert invariant_adjudications[0].detail["action"] == "insert"
     assert invariant_adjudications[0].detail["target"] == "section:1"
     assert "duplicate section:1" in invariant_adjudications[0].detail["violation"]
+    assert invariant_adjudications[0].detail["invariant_kind"] == "duplicate_label"
+    assert invariant_adjudications[0].detail["invariant_path"] == "body"
+    assert invariant_adjudications[0].detail["invariant"]["kind"] == "duplicate_label"
+    assert invariant_adjudications[0].detail["invariant"]["child_kind"] == "section"
+    assert invariant_adjudications[0].detail["invariant"]["label"] == "1"
     assert invariant_adjudications[0].detail["family"] == "tree_invariant_violation"
     assert invariant_adjudications[0].detail["blocking"] is True
     assert invariant_adjudications[0].detail["strict_disposition"] == "block"
