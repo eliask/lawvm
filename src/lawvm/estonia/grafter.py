@@ -51,6 +51,7 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
@@ -5965,7 +5966,7 @@ def _ee_cleanup_orphan_delete_conjunction(text: str) -> str:
 
 
 def _ee_path_is_excluded(
-    current_path: tuple[tuple[str, str], ...],
+    current_path: TreePath,
     excluded_paths: Any,
 ) -> bool:
     """Return True when the current structural path falls under an excluded path."""
@@ -5983,7 +5984,7 @@ def _ee_path_is_excluded(
 
 
 def _ee_heading_text_is_excluded(
-    current_path: tuple[tuple[str, str], ...],
+    current_path: TreePath,
     excluded_heading_paths: Any,
     node: IRNode,
 ) -> bool:
@@ -6011,7 +6012,7 @@ def _ee_global_text_replace(
     of a repealed section without applying subsequent global renames to it.
     """
 
-    def _walk(node: IRNode, current_path: tuple[tuple[str, str], ...] = ()) -> IRNode:
+    def _walk(node: IRNode, current_path: TreePath = ()) -> IRNode:
         node_path = current_path
         if node.label is not None:
             node_path = current_path + ((str(node.kind), node.label),)
@@ -6059,7 +6060,7 @@ def _ee_global_text_replace_with_spec(
 ) -> IRNode:
     """Apply a typed statute-wide text rewrite while preserving global skips."""
 
-    def _walk(node: IRNode, current_path: tuple[tuple[str, str], ...] = ()) -> IRNode:
+    def _walk(node: IRNode, current_path: TreePath = ()) -> IRNode:
         node_path = current_path
         if node.label is not None:
             node_path = current_path + ((str(node.kind), node.label),)
@@ -6155,7 +6156,7 @@ def _ee_global_generic_minister_plural_replace(
         updated = redundant_tail_pattern.sub(r"\1 \2 ", updated)
         return updated
 
-    def _walk(node: IRNode, current_path: tuple[tuple[str, str], ...] = ()) -> IRNode:
+    def _walk(node: IRNode, current_path: TreePath = ()) -> IRNode:
         node_path = current_path
         if node.label is not None:
             node_path = current_path + ((str(node.kind), node.label),)
@@ -7617,7 +7618,7 @@ def _ee_apply_op(
                 def _walk_case_inflected(
                     node: IRNode,
                     current_chapter: str | None = None,
-                    current_path: tuple[tuple[str, str], ...] = (),
+                    current_path: TreePath = (),
                 ) -> IRNode:
                     chapter_label = current_chapter
                     if node.kind == IRNodeKind.CHAPTER:
@@ -7663,7 +7664,7 @@ def _ee_apply_op(
 
                 def _walk_normitehniline(
                     node: IRNode,
-                    current_path: tuple[tuple[str, str], ...] = (),
+                    current_path: TreePath = (),
                 ) -> IRNode:
                     node_path = current_path
                     if node.label is not None:
@@ -7697,7 +7698,7 @@ def _ee_apply_op(
                 def _walk_scoped(
                     node: IRNode,
                     current_chapter: str | None = None,
-                    current_path: tuple[tuple[str, str], ...] = (),
+                    current_path: TreePath = (),
                 ) -> IRNode:
                     chapter_label = current_chapter
                     if node.kind == IRNodeKind.CHAPTER:
