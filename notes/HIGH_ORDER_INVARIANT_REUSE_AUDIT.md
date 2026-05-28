@@ -177,6 +177,10 @@ Recent improvement:
 - UK affecting-act current-vs-enacted XML source selection now uses the shared
   source-lane evidence carrier for selected and rejected lane attempts while
   preserving UK-local locators, sizes, and previews.
+- Norway amendment-index duplicate logical locator diagnostics now include a
+  nested shared source-lane selection projection for both deterministic
+  byte-identical duplicate selection and conflicting-duplicate blocking,
+  while preserving Norway's source-pathology record as authoritative.
 - source-version bracketing now has shared source-only window selectors; New
   Zealand archived XML date/change windows delegate the bracketing invariant
   while preserving NZ-specific row classes and truth-claim names.

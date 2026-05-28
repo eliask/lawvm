@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Optional, cast
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.norway.grafter import iter_no_document_change_ops, lovdata_amendment_filename_to_id
 from lawvm.norway.sources import (
     NOLocatedArtifact,
@@ -306,6 +307,7 @@ def _no_index_duplicate_logical_locator_diagnostic(
     identical_payloads: bool,
 ) -> dict[str, Any]:
     selected = min(artifacts, key=lambda item: (item.source_name, item.member_name)) if identical_payloads else None
+    selected_locator = _no_artifact_source_lane_locator(selected)
     return diagnostic_detail(
         rule_id=NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
         family="source_pathology",
@@ -324,6 +326,13 @@ def _no_index_duplicate_logical_locator_diagnostic(
         duplicate_count=len(artifacts),
         identical_payloads=identical_payloads,
         payload_digests=sorted({_payload_digest(artifact.payload) for artifact in artifacts}),
+        source_lane_selection=_no_duplicate_logical_locator_source_lane_evidence(
+            logical_id=logical_id,
+            locator=locator,
+            artifacts=artifacts,
+            identical_payloads=identical_payloads,
+            selected=selected,
+        ),
         candidates=[
             {
                 "archive": artifact.source_name,
@@ -334,7 +343,69 @@ def _no_index_duplicate_logical_locator_diagnostic(
         ],
         selected_archive=selected.source_name if selected is not None else "",
         selected_member_name=selected.member_name if selected is not None else "",
+        selected_source_locator=selected_locator,
     )
+
+
+def _no_artifact_source_lane_locator(artifact: NOLocatedArtifact | None) -> str:
+    if artifact is None:
+        return ""
+    return f"{artifact.source_name}:{artifact.member_name}"
+
+
+def _no_duplicate_logical_locator_source_lane_evidence(
+    *,
+    logical_id: str,
+    locator: str,
+    artifacts: list[NOLocatedArtifact],
+    identical_payloads: bool,
+    selected: NOLocatedArtifact | None,
+) -> dict[str, Any]:
+    return SourceLaneSelectionEvidence(
+        rule_id=NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
+        phase="acquisition",
+        reason=(
+            "Norway amendment indexing selected one byte-identical duplicate "
+            "source witness deterministically."
+            if identical_payloads
+            else "Norway amendment indexing found conflicting duplicate source witnesses and selected no lane."
+        ),
+        selected_lane=(
+            "norway_lovtidend_archive_member"
+            if selected is not None
+            else "no_source_lane_selected_conflicting_duplicates"
+        ),
+        selected_locator=_no_artifact_source_lane_locator(selected),
+        attempts=tuple(
+            SourceLaneAttempt(
+                lane="norway_lovtidend_archive_member",
+                locator=_no_artifact_source_lane_locator(artifact),
+                status=(
+                    "selected_identical_duplicate"
+                    if selected is artifact
+                    else (
+                        "duplicate_identical_not_selected"
+                        if identical_payloads
+                        else "blocked_conflicting_duplicate"
+                    )
+                ),
+                detail={
+                    "logical_id": logical_id,
+                    "logical_locator": locator,
+                    "payload_digest": _payload_digest(artifact.payload),
+                },
+            )
+            for artifact in artifacts
+        ),
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="select_first_identical" if identical_payloads else "block",
+        detail={
+            "logical_id": logical_id,
+            "logical_locator": locator,
+            "identical_payloads": identical_payloads,
+        },
+    ).to_diagnostic_detail()
 
 
 def _no_index_unmapped_member_diagnostic(

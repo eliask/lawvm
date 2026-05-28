@@ -132,6 +132,46 @@ def test_build_no_amendment_index_records_identical_duplicate_logical_locator(tm
     assert diagnostic["strict_disposition"] == "block"
     assert diagnostic["quirks_disposition"] == "select_first_identical"
     assert diagnostic["selected_archive"] == "lovtidend-avd1-2025-2026.tar.bz2"
+    assert diagnostic["selected_source_locator"] == (
+        "lovtidend-avd1-2025-2026.tar.bz2:lti/2025/nl-20250202-005.xml"
+    )
+    assert diagnostic["source_lane_selection"] == {
+        "rule_id": NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
+        "family": "source_lane_selection",
+        "phase": "acquisition",
+        "reason": (
+            "Norway amendment indexing selected one byte-identical duplicate "
+            "source witness deterministically."
+        ),
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "select_first_identical",
+        "selected_source_lane": "norway_lovtidend_archive_member",
+        "selected_source_locator": (
+            "lovtidend-avd1-2025-2026.tar.bz2:lti/2025/nl-20250202-005.xml"
+        ),
+        "source_lane_attempts": (
+            {
+                "lane": "norway_lovtidend_archive_member",
+                "status": "selected_identical_duplicate",
+                "locator": "lovtidend-avd1-2025-2026.tar.bz2:lti/2025/nl-20250202-005.xml",
+                "logical_id": "no/lovtid/2025-02-02-5",
+                "logical_locator": "no://lovtid/2025-02-02-5/amendment.xml",
+                "payload_digest": diagnostic["payload_digests"][0],
+            },
+            {
+                "lane": "norway_lovtidend_archive_member",
+                "status": "duplicate_identical_not_selected",
+                "locator": "lovtidend-avd1-2025.tar.bz2:lti/2025/nl-20250202-005.xml",
+                "logical_id": "no/lovtid/2025-02-02-5",
+                "logical_locator": "no://lovtid/2025-02-02-5/amendment.xml",
+                "payload_digest": diagnostic["payload_digests"][0],
+            },
+        ),
+        "logical_id": "no/lovtid/2025-02-02-5",
+        "logical_locator": "no://lovtid/2025-02-02-5/amendment.xml",
+        "identical_payloads": True,
+    }
     assert len(diagnostic["payload_digests"]) == 1
     assert [item["archive"] for item in diagnostic["candidates"]] == [
         "lovtidend-avd1-2025-2026.tar.bz2",
@@ -160,6 +200,14 @@ def test_build_no_amendment_index_blocks_conflicting_duplicate_logical_locator(t
     assert diagnostic["identical_payloads"] is False
     assert diagnostic["quirks_disposition"] == "block"
     assert diagnostic["selected_archive"] == ""
+    source_lane_selection = diagnostic["source_lane_selection"]
+    assert source_lane_selection["selected_source_lane"] == "no_source_lane_selected_conflicting_duplicates"
+    assert source_lane_selection["selected_source_locator"] == ""
+    assert source_lane_selection["quirks_disposition"] == "block"
+    assert {
+        attempt["status"]
+        for attempt in source_lane_selection["source_lane_attempts"]
+    } == {"blocked_conflicting_duplicate"}
     assert len(diagnostic["payload_digests"]) == 2
 
 
