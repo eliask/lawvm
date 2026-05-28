@@ -770,7 +770,7 @@ def _apply_text_replace_deterministic(
             if all(w and xml_ws.count(w) == 1 for w in w_ws_parts):
                 patched_str = xml_ws
                 any_applied = False
-                for w_ws_frag, c_ws_frag in zip(w_ws_parts, c_ws_parts):
+                for w_ws_frag, c_ws_frag in zip(w_ws_parts, c_ws_parts, strict=True):
                     if w_ws_frag and w_ws_frag in patched_str:
                         patched_str = patched_str.replace(w_ws_frag, c_ws_frag, 1)
                         any_applied = True

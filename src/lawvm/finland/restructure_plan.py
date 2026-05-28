@@ -1152,7 +1152,7 @@ def _stabilize_same_parent_relabel_exec_order(
         if len(topo_order) != len(relabel_ops):
             continue
 
-        for pos, rel_idx in zip(keyed_positions[key], topo_order):
+        for pos, rel_idx in zip(keyed_positions[key], topo_order, strict=True):
             result[pos] = relabel_ops[rel_idx]
 
     return tuple(result)
@@ -1186,7 +1186,7 @@ def _prioritize_descendant_relabels(
         )
     ]
     result = list(ops)
-    for pos, op in zip(relabel_positions, ordered_relabels):
+    for pos, op in zip(relabel_positions, ordered_relabels, strict=True):
         result[pos] = op
     return tuple(result)
 

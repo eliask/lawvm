@@ -1681,7 +1681,7 @@ def normalize_source_ir(
         new_children.append(normalized_child)
         if normalized_child is not child:
             children_changed = True
-    if len(initial_children) != len(ir.children) or any(a is not b for a, b in zip(initial_children, ir.children)):
+    if len(initial_children) != len(ir.children) or any(a is not b for a, b in zip(initial_children, ir.children, strict=True)):
         children_changed = True
 
     # Step 2: strip editorial block children (image, note, footnote, authorialNote).
@@ -1691,7 +1691,7 @@ def normalize_source_ir(
     new_children = stripped_children
 
     hoisted_children = _hoist_cross_heading_siblings(new_children, statute_id, current_path, facts)
-    if len(hoisted_children) != len(new_children) or any(a is not b for a, b in zip(hoisted_children, new_children)):
+    if len(hoisted_children) != len(new_children) or any(a is not b for a, b in zip(hoisted_children, new_children, strict=True)):
         children_changed = True
     new_children = hoisted_children
 
@@ -1699,7 +1699,7 @@ def normalize_source_ir(
         new_children, statute_id, current_path, facts
     )
     if len(reparented_children) != len(new_children) or any(
-        a is not b for a, b in zip(reparented_children, new_children)
+        a is not b for a, b in zip(reparented_children, new_children, strict=True)
     ):
         children_changed = True
     new_children = reparented_children
@@ -1732,7 +1732,7 @@ def normalize_source_ir(
     repaired_children = _split_digit_reset_subparagraph_runs(
         new_children, statute_id, current_path, facts
     )
-    if len(repaired_children) != len(new_children) or any(a is not b for a, b in zip(repaired_children, new_children)):
+    if len(repaired_children) != len(new_children) or any(a is not b for a, b in zip(repaired_children, new_children, strict=True)):
         working = IRNode(
             kind=working.kind,
             label=working.label,
@@ -1761,7 +1761,7 @@ def normalize_source_ir(
             new_children, statute_id, current_path, facts
         )
         if len(reparented_children) != len(new_children) or any(
-            a is not b for a, b in zip(reparented_children, new_children)
+            a is not b for a, b in zip(reparented_children, new_children, strict=True)
         ):
             working = IRNode(
                 kind=working.kind,
@@ -1784,7 +1784,7 @@ def normalize_source_ir(
             new_children, statute_id, current_path, facts
         )
         if len(absorbed_children) != len(new_children) or any(
-            a is not b for a, b in zip(absorbed_children, new_children)
+            a is not b for a, b in zip(absorbed_children, new_children, strict=True)
         ):
             working = IRNode(
                 kind=working.kind,
@@ -1807,7 +1807,7 @@ def normalize_source_ir(
             new_children, statute_id, current_path, facts
         )
         if len(recovered_children) != len(new_children) or any(
-            a is not b for a, b in zip(recovered_children, new_children)
+            a is not b for a, b in zip(recovered_children, new_children, strict=True)
         ):
             working = IRNode(
                 kind=working.kind,
