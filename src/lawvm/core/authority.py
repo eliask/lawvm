@@ -263,6 +263,7 @@ class BranchLifecycleEvent:
     event_id: str
     branch_id: str
     event_kind: BranchLifecycleKind
+    scenario_id: str = ""
     source_artifact_id: str = ""
     event_date: str = ""
     resulting_status: LegalStatus = UNKNOWN_STATUS
@@ -287,6 +288,7 @@ class BranchLifecycleEvent:
             "event_id": self.event_id,
             "branch_id": self.branch_id,
             "event_kind": self.event_kind,
+            "scenario_id": self.scenario_id,
             "source_artifact_id": self.source_artifact_id,
             "event_date": self.event_date,
             "resulting_status": self.resulting_status,

@@ -189,6 +189,22 @@ class CorpusGraph:
                 "CorpusGraph.branch_lifecycle_events reference unknown branch_id values: "
                 f"{', '.join(unknown_lifecycle_branches)}"
             )
+        lifecycle_scenario_mismatches = sorted(
+            {
+                event.branch_id
+                for event in self.branch_lifecycle_events
+                if (
+                    event.branch_id in branch_scenarios
+                    and (event.scenario_id or branch_scenarios[event.branch_id])
+                    and event.scenario_id != branch_scenarios[event.branch_id]
+                )
+            }
+        )
+        if lifecycle_scenario_mismatches:
+            raise ValueError(
+                "CorpusGraph.branch_lifecycle_events scenario_id must match registered branch scenario_id: "
+                f"{', '.join(lifecycle_scenario_mismatches)}"
+            )
 
         if failure_count:
             if status_kind != "partial" or not blockers:
