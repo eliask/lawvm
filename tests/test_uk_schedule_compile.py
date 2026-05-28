@@ -35564,6 +35564,124 @@ def test_replay_table_column_insert_adjusts_spanning_header_and_rows() -> None:
     assert adjudications[0].detail["inserted_cells"] == 3
 
 
+def test_replay_table_column_insert_does_not_partially_mutate_on_short_payload() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_column_insert",
+        "selector_mode": "between_columns",
+        "after_column_index": 2,
+        "before_column_index": 3,
+        "source_payload_mode": "single_column_table",
+        "payload_row_count": 2,
+        "allow_implicit_subsection_one_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_insert_short_payload",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress((("section", "122"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.HEADER_CELL,
+                            text="Offence committed on or after 1 May 1984 and before 1 October 1992",
+                        ),
+                    ),
+                ),
+                IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="\u00a350"),)),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_COLUMN_INSERT_SELECTOR}{json.dumps(selector)}",),
+        source=OperationSource(statute_id="ukpga/2022/32"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="122",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.HEADER_CELL,
+                                                    text="Level on the scale",
+                                                    attrs={"rowspan": "2"},
+                                                ),
+                                                IRNode(
+                                                    kind=IRNodeKind.HEADER_CELL,
+                                                    text="Amount of fine",
+                                                    attrs={"colspan": "2"},
+                                                ),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="1983 to 1984"),
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="after 1992"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a325"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a3200"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="2"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a350"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a3500"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert table.children[0].children[1].attrs["colspan"] == "2"
+    assert [cell.text for cell in table.children[1].children] == ["1983 to 1984", "after 1992"]
+    assert [cell.text for cell in table.children[2].children] == ["1", "\u00a325", "\u00a3200"]
+    assert [cell.text for cell in table.children[3].children] == ["2", "\u00a350", "\u00a3500"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_table_column_insert_unresolved"
+    ]
+    detail = adjudications[0].detail
+    assert detail["reason_code"] == "payload_row_count_too_small"
+    assert detail["adjusted_spans"] == 0
+    assert detail["inserted_cells"] == 0
+    assert detail["planned_adjusted_spans"] == 1
+    assert detail["planned_inserted_cells"] == 2
+    assert detail["partial_mutation_applied"] is False
+
+
 def test_compile_direct_table_relating_entry_instruction_uses_owned_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
