@@ -50,6 +50,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
@@ -9818,14 +9819,19 @@ def _append_ee_replay_adjudication(
     """Append an Estonia replay adjudication when sink list is available."""
     if adjudications_out is None:
         return
-    normalized_detail = dict(detail or {})
-    normalized_detail.setdefault("rule_id", kind)
-    normalized_detail.setdefault("phase", "replay")
+    raw_detail = dict(detail or {})
     if kind == "ee_replay_unsupported_action":
-        normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
-        normalized_detail.setdefault("blocking", True)
-        normalized_detail.setdefault("strict_disposition", "block")
-        normalized_detail.setdefault("quirks_disposition", "record")
+        normalized_detail = diagnostic_detail(
+            rule_id=kind,
+            phase="replay",
+            family="unsupported_or_unresolved_action",
+            blocking=True,
+            detail=raw_detail,
+        )
+    else:
+        normalized_detail = raw_detail
+        normalized_detail.setdefault("rule_id", kind)
+        normalized_detail.setdefault("phase", "replay")
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,

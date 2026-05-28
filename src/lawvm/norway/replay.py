@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace as dc_replace
 from pathlib import Path
 from typing import Any, List, Optional
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.norway.commencement import (
@@ -61,13 +62,13 @@ def _no_replay_skip_adjudication(
     detail: dict[str, Any],
     blocking: bool,
 ) -> CompileAdjudication:
-    normalized_detail = dict(detail)
-    normalized_detail.setdefault("rule_id", kind)
-    normalized_detail.setdefault("phase", phase)
-    normalized_detail.setdefault("source_id", source_id)
-    normalized_detail.setdefault("blocking", blocking)
-    normalized_detail.setdefault("strict_disposition", "block" if blocking else "record")
-    normalized_detail.setdefault("quirks_disposition", "record")
+    normalized_detail = diagnostic_detail(
+        rule_id=kind,
+        phase=phase,
+        blocking=blocking,
+        detail=detail,
+        source_id=source_id,
+    )
     return CompileAdjudication(
         kind=kind,
         message=message,

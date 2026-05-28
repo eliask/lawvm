@@ -23,6 +23,7 @@ from typing import Any, Generator, List, Optional, Sequence, Tuple, cast
 from lxml import etree
 
 from lawvm.core import tree_ops
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_int
 from lawvm.core.ir import (
@@ -2915,18 +2916,22 @@ def _append_no_replay_adjudication(
     """Append a Norway replay adjudication when a sink list is available."""
     if adjudications_out is None:
         return
-    normalized_detail = dict(detail or {})
-    normalized_detail.setdefault("rule_id", kind)
-    normalized_detail.setdefault("phase", "replay")
+    raw_detail = dict(detail or {})
     if kind in {"replay_unsupported_action", "replay_unresolved_target", "replay_noop"}:
-        normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
+        family = "unsupported_or_unresolved_action"
     elif kind == "replay_tree_invariant_violation":
-        normalized_detail.setdefault("family", "tree_invariant_violation")
+        family = "tree_invariant_violation"
     elif kind.startswith("no_replay_"):
-        normalized_detail.setdefault("family", "action_family_recovery")
-    normalized_detail.setdefault("blocking", True)
-    normalized_detail.setdefault("strict_disposition", "block")
-    normalized_detail.setdefault("quirks_disposition", "record")
+        family = "action_family_recovery"
+    else:
+        family = ""
+    normalized_detail = diagnostic_detail(
+        rule_id=kind,
+        phase="replay",
+        blocking=True,
+        family=family,
+        detail=raw_detail,
+    )
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
