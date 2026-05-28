@@ -11,10 +11,10 @@ from typing import Tuple
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.mutation_boundary import unexplained_changed_paths
 from lawvm.core.tree_ops import resolve_required
 from lawvm.open_law.audit import (
     OpenLawSnapshotAuditResult,
-    TreePath,
     audit_open_law_snapshot,
     diff_ir_paths,
     replay_open_law_ops,
@@ -338,7 +338,7 @@ def _audit_metadata_operation(
         )
     changed_paths = diff_ir_paths(projected_before, projected_after)
     allowed_prefixes = tuple(mutation.tree_path for mutation in replay.mutations)
-    unexplained_paths = tuple(path for path in changed_paths if not any(_path_has_prefix(path, prefix) for prefix in allowed_prefixes))
+    unexplained_paths = unexplained_changed_paths(changed_paths, allowed_prefixes)
     replay_resolved = resolve_open_law_path(projected_replay, op.path)
     if replay_resolved.status != "resolved":
         findings.append(
@@ -510,10 +510,6 @@ def _lifecycle_lane_row(
         expire_date=op.expire_date,
         findings=(finding,),
     )
-
-
-def _path_has_prefix(path: TreePath, prefix: TreePath) -> bool:
-    return len(path) >= len(prefix) and path[: len(prefix)] == prefix
 
 
 def _project_generated_metadata_history(node: IRNode) -> IRNode:
