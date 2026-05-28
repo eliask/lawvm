@@ -6,6 +6,7 @@ from dataclasses import replace as dc_replace
 from typing import Protocol, cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
@@ -44,6 +45,16 @@ class _RenumberReplaySelf(Protocol):
     def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None: ...
 
     def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+
+    def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None: ...
+
+    def _record_renumber_node_mutation_event(
+        self,
+        *,
+        old_path: TreePath | None,
+        new_node: UKMutableNode,
+        helper: str,
+    ) -> None: ...
 
 
 def _renumber_replay_self(replay: object) -> _RenumberReplaySelf:
@@ -203,8 +214,13 @@ class UKReplayRenumberApplyMixin:
             ),
             attrs={**dict(source_node.attrs), "eId": replay._derive_target_eid(destination)},
         )
+        old_path = replay._tree_path_for_mutable_node(source_node)
         replay._remove_eid_lookup_subtree(source_node)
         source_parent.children.pop(source_idx)
         uk_insert_child_sorted(source_parent, moved)
-        replay._record_child_inserted(source_parent, moved)
+        replay._record_renumber_node_mutation_event(
+            old_path=old_path,
+            new_node=moved,
+            helper="_apply_same_parent_sibling_renumber",
+        )
         return True

@@ -51,6 +51,9 @@ Recent improvement:
   entry splices now emit conservative container-scoped mutation events. Table
   row events record the table path instead of inventing row-level identity for
   unlabeled duplicate table rows.
+- UK same-parent sibling renumber replay now emits a renumber-specific mutation
+  event with old and new paths instead of reporting the destination as an
+  ordinary insertion.
 
 ## Ranked Promotion Candidates
 
@@ -157,9 +160,9 @@ Implemented progress:
 - UK replay emits opt-in core mutation events for central node
   replace/remove/insert helpers, whole-act repeal, direct table/schedule-table
   children-splice helpers, and schedule-list entry insert/repeal/replace
-  helpers. Table row splices intentionally record the table container as the
-  changed path because row identity may be unlabeled and non-unique in source
-  XML.
+  helpers. Same-parent sibling renumber emits `renumbered_paths`. Table row
+  splices intentionally record the table container as the changed path because
+  row identity may be unlabeled and non-unique in source XML.
 
 Why high value:
 
