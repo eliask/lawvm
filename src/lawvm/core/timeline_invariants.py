@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Any, Dict, List, Literal, Mapping, TypedDict
+from typing import Any, Dict, List, Literal, Mapping, NamedTuple, TypedDict
 
 import re
 
@@ -46,6 +46,12 @@ from lawvm.core.timeline import (
     VersionSelectionResult,
     select_active_version_ex,
 )
+
+
+class _ExpiryChainViolation(NamedTuple):
+    index: int
+    override: ExpiryOverride
+    previous_expires: str
 
 
 # ---------------------------------------------------------------------------
@@ -176,17 +182,17 @@ def check_expiry_chain_preserved(timelines: Timelines) -> List[str]:
             if not v.source.expiry_chain:
                 continue
 
-            for i, override, previous in _expiry_chain_violations(source=v.source):
-                if previous == "empty":
+            for violation in _expiry_chain_violations(source=v.source):
+                if violation.previous_expires == "empty":
                     violations.append(
-                        f"{address}: expiry_chain[{i}] has empty new_expires "
-                        f"(source={override.source_statute_id})"
+                        f"{address}: expiry_chain[{violation.index}] has empty new_expires "
+                        f"(source={violation.override.source_statute_id})"
                     )
                     continue
                 violations.append(
-                    f"{address}: expiry_chain[{i}] new_expires="
-                    f"{override.new_expires!r} <= previous "
-                    f"{previous!r} (not monotonically increasing)"
+                    f"{address}: expiry_chain[{violation.index}] new_expires="
+                    f"{violation.override.new_expires!r} <= previous "
+                    f"{violation.previous_expires!r} (not monotonically increasing)"
                 )
 
     return violations
@@ -195,16 +201,16 @@ def check_expiry_chain_preserved(timelines: Timelines) -> List[str]:
 def _expiry_chain_violations(
     *,
     source: OperationSource,
-) -> list[tuple[int, ExpiryOverride, str]]:
-    violations: list[tuple[int, ExpiryOverride, str]] = []
+) -> list[_ExpiryChainViolation]:
+    violations: list[_ExpiryChainViolation] = []
     prev_expires = source.expires_original or ""
     for index, override in enumerate(source.expiry_chain):
         new_expires = override.new_expires or ""
         if not new_expires:
-            violations.append((index, override, "empty"))
+            violations.append(_ExpiryChainViolation(index, override, "empty"))
             continue
         if prev_expires and new_expires <= prev_expires:
-            violations.append((index, override, prev_expires))
+            violations.append(_ExpiryChainViolation(index, override, prev_expires))
         prev_expires = new_expires
     return violations
 
