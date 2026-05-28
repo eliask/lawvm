@@ -9,7 +9,7 @@ executor implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
@@ -19,6 +19,7 @@ from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows_with_physical_index,
     strip_uk_identity_attrs_recursive,
@@ -102,6 +103,25 @@ class _ScheduleTableAnchorRowMatch(NamedTuple):
     row_preview: str
 
 
+class _ScheduleListReplaySelf(Protocol):
+    adjudications_out: list[CompileAdjudication]
+
+    def _find_node_by_target(
+        self,
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> NodeLookupResult: ...
+
+    def _clear_eid_lookup_index(self) -> None: ...
+
+    def _note_structure_mutation(self) -> None: ...
+
+    def _target_under_repealed_prefix(self, target: LegalAddress) -> bool: ...
+
+
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_table_rows_insert_resolved"
 )
@@ -165,7 +185,7 @@ class UKReplayScheduleListApplyMixin:
     adjudications_out: list[CompileAdjudication]
 
     def _insert_schedule_list_entry_table_rows(
-        self,
+        self: _ScheduleListReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -409,7 +429,7 @@ class UKReplayScheduleListApplyMixin:
         return True
 
     def _insert_schedule_list_entry(
-        self,
+        self: _ScheduleListReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
@@ -674,11 +694,8 @@ class UKReplayScheduleListApplyMixin:
                     )
                 ]
                 parenthetical_paragraph_normalized = len(matches) == 1
-        anchor_ordinal = (
-            selector.get("anchor_ordinal")
-            if isinstance(selector.get("anchor_ordinal"), int)
-            else 0
-        )
+        raw_anchor_ordinal = selector.get("anchor_ordinal")
+        anchor_ordinal = raw_anchor_ordinal if isinstance(raw_anchor_ordinal, int) else 0
         if len(matches) > 1 and anchor_ordinal > 0:
             pre_ordinal_anchor_match_count = len(matches)
             ordinal_index = anchor_ordinal - 1
@@ -884,7 +901,7 @@ class UKReplayScheduleListApplyMixin:
         return True
 
     def _repeal_schedule_list_entries(
-        self,
+        self: _ScheduleListReplaySelf,
         target: LegalAddress,
         op: LegalOperation,
         selector: dict[str, Any],
@@ -1128,7 +1145,7 @@ class UKReplayScheduleListApplyMixin:
         return True
 
     def _replace_schedule_list_entry(
-        self,
+        self: _ScheduleListReplaySelf,
         target: LegalAddress,
         new_node: UKMutableNode,
         op: LegalOperation,
