@@ -135,8 +135,8 @@ class CoverageGap:
         unit: The unclaimed ``CoverageUnit``.
         disposition: Typed classifier result — one of ``DISPOSITION_KINDS``.
         suggested_target: A ``LegalAddress`` hint produced by heuristics
-            (e.g. johto regex or label inference).  May be ``None`` when no
-            confident hint is available.
+            (for example preamble regex or label inference). May be ``None``
+            when no confident hint is available.
         evidence: Human-readable chain explaining the disposition decision.
     """
 

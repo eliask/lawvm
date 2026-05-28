@@ -1,12 +1,12 @@
 """Generic `EffectIntent` -> `TemporalEvent` bridge helpers.
 
-The frontend-specific johto/meta-clause parsing and date extraction lives in
-the jurisdiction frontend's lowering module. This module keeps only the
-generic bridge helpers used once parse-layer intents already exist. Lowering
-is explicit: callers must invoke a projection helper at the phase boundary;
+Frontend-specific amendment-preamble/meta-clause parsing and date extraction
+live in jurisdiction lowering modules. This module keeps only the generic
+bridge helpers used once parse-layer intents already exist. Lowering is
+explicit: callers must invoke a projection helper at the phase boundary;
 `PhaseResult` itself does not auto-lower anything. Source provenance may be
-attached to the carrier for audit, but executable temporal dates must come
-from the explicit temporal carrier itself.
+attached to the carrier for audit, but executable temporal dates must come from
+the explicit temporal carrier itself.
 
 API tier
 --------

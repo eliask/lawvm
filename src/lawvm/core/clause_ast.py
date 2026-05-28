@@ -348,11 +348,11 @@ class ClauseAstLoweringDiagnostic:
 
 @dataclass(frozen=True)
 class VerbGroup:
-    """All clause nodes governed by one verb in the johtolause.
+    """All clause nodes governed by one operative amendment verb.
 
-    A single johtolause may contain multiple verb sections:
-      "muutetaan 3 §, kumotaan 5 §, lisätään 7 §"
-    Each verb clause becomes one VerbGroup.
+    A single amendment preamble may contain multiple verb sections, such as
+    replace, repeal, and insert clauses. Each verb clause becomes one
+    VerbGroup.
 
     verb uses the neutral structural action vocabulary:
       "repeal" | "replace" | "insert" | "renumber" | "meta"
@@ -364,14 +364,14 @@ class VerbGroup:
 
 @dataclass(frozen=True)
 class ClauseAST:
-    """Top-level container for a parsed johtolause.
+    """Top-level container for a parsed amendment preamble.
 
-    A johtolause is the leading clause of an amending act that lists all
-    structural amendments the act makes. ClauseAST preserves the full
-    nested structure of that clause: verb groups, scoped blocks, and
+    The amendment preamble is the leading clause of an amending instrument
+    that lists the structural amendments it makes. ClauseAST preserves the
+    full nested structure of that clause: verb groups, scoped blocks, and
     individual operation nodes.
 
-    source_text is the original johtolause string (for debugging and
+    source_text is the original source clause string (for debugging and
     round-trip verification). verb_groups is ordered as they appear in
     the source.
     """
