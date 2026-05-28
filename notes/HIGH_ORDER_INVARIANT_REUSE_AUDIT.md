@@ -314,6 +314,8 @@ Implemented progress:
   delegate source-pathology envelope defaults to `diagnostic_detail`.
 - EU pipeline diagnostics and replay adjudication helpers now delegate their
   shared envelope defaults to `diagnostic_detail`.
+- EU parser extraction diagnostics now delegate their shared envelope defaults
+  to `diagnostic_detail`.
 - EU Cellar acquisition diagnostics and REUL bridge target-resolution
   diagnostics now delegate their shared envelope fields to `diagnostic_detail`.
 - Open Law corpus finding evidence rows now derive their shared disposition

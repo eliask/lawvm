@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import StructuralAction
 
@@ -77,16 +78,16 @@ class EUOpsParserDiagnostic:
     quirks_disposition: str = "record"
 
     def as_detail(self) -> dict[str, object]:
-        return {
-            "rule_id": self.rule_id,
-            "family": self.family,
-            "phase": self.phase,
-            "reason": self.reason,
-            "source_excerpt": self.source_excerpt,
-            "blocking": self.blocking,
-            "strict_disposition": self.strict_disposition,
-            "quirks_disposition": self.quirks_disposition,
-        }
+        return diagnostic_detail(
+            rule_id=self.rule_id,
+            family=self.family,
+            phase=self.phase,
+            reason=self.reason,
+            blocking=self.blocking,
+            strict_disposition=self.strict_disposition,
+            quirks_disposition=self.quirks_disposition,
+            source_excerpt=self.source_excerpt,
+        )
 
 
 @dataclass
