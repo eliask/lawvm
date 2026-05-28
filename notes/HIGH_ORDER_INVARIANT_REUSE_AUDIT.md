@@ -38,6 +38,8 @@ Recent improvement:
 - `TreeInvariantViolation` now exposes a stable dict projection; Finland replay
   metadata emits typed tree-invariant records beside legacy strings, and
   `scripts/audit_invariants.py` prefers typed metadata when available.
+- materialization duplicate regression helpers now consume typed tree invariant
+  records instead of maintaining a parallel duplicate-child scanner.
 
 ## Ranked Promotion Candidates
 
@@ -355,15 +357,13 @@ These are jurisdiction source semantics, not shared invariants.
 
 ## Recommended Next Work
 
-1. Migrate materialization helper tests away from regex/string reconstruction
-   where typed records are available.
-2. Add an opt-in UK replay debug path that emits core mutation-event records
+1. Add an opt-in UK replay debug path that emits core mutation-event records
    from mutation sites without whole-tree snapshots.
-3. Adapt Estonia's comparison-normalization rule registry to the core
+2. Adapt Estonia's comparison-normalization rule registry to the core
    comparison carrier while keeping EE rule taxonomy local.
-4. Continue replacing private `_norm` / `_default_sort_key` frontend imports
+3. Continue replacing private `_norm` / `_default_sort_key` frontend imports
    with the public `normalized_label_key` / `default_label_sort_key` wrappers
    in small, testable batches.
 
-The highest-value order is now UK mutation-event/debug emission, typed
-materialization-test cleanup, and cautious comparison-normalization reuse.
+The highest-value order is now UK mutation-event/debug emission, cautious
+comparison-normalization reuse, and small public-helper migration batches.

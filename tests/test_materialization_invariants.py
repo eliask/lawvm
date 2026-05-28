@@ -13,7 +13,6 @@ These tests pin statutes that historically exhibited each bug family.
 from __future__ import annotations
 
 import os
-from collections import Counter
 from typing import Any, cast
 
 import pytest
@@ -21,7 +20,7 @@ import pytest
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.core.tree_ops import check_invariants
+from lawvm.core.tree_ops import check_invariants, iter_tree_invariant_violations
 
 _CORPUS_AVAILABLE = os.path.exists("data/finlex.farchive")
 pytestmark = pytest.mark.skipif(not _CORPUS_AVAILABLE, reason="corpus data not available")
@@ -237,18 +236,11 @@ def _find_omissions(node: IRNode, path: str = "") -> list[str]:
 
 def _find_duplicates(node: IRNode, path: str = "") -> list[str]:
     """Find children with duplicate (kind, label) pairs."""
-    found = []
-    labels = Counter()
-    for c in node.children:
-        if c.label is not None:
-            key = (c.kind, c.label)
-            labels[key] += 1
-            if labels[key] == 2:
-                found.append(f"{path}/{c.kind}:{c.label}")
-    for c in node.children:
-        cp = f"{path}/{c.kind}:{c.label}" if c.label else f"{path}/{c.kind}"
-        found.extend(_find_duplicates(c, cp))
-    return found
+    del path
+    return [
+        f"{violation.path_text}/{violation.child_kind}:{violation.label}"
+        for violation in iter_tree_invariant_violations(node, families={"duplicate_label"})
+    ]
 
 
 # ---------------------------------------------------------------------------
