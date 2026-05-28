@@ -1391,7 +1391,9 @@ class TestFindingProjection:
             verdict=verdict,
         )
 
-        assert tuple(facade.to_wire_artifact().status.blockers or ()) == ()
+        assert tuple(facade.to_wire_artifact().status.blockers or ()) == (
+            "strict_blocked_by_recovery",
+        )
 
     def test_strict_fail_reasons_includes_violations_even_with_verdict(self):
         verdict = CompileVerdict(

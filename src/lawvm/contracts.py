@@ -15,6 +15,7 @@ from typing import Any, Generic, Literal, TypeVar
 
 
 StatusKind = Literal["complete", "partial", "blocked", "failed"]
+STATUS_KINDS = frozenset({"complete", "partial", "blocked", "failed"})
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,16 @@ class ProcessingStatus:
 
     kind: StatusKind
     blockers: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.kind not in STATUS_KINDS:
+            raise ValueError(f"ProcessingStatus.kind must be one of {sorted(STATUS_KINDS)}")
+        blockers = tuple(str(blocker) for blocker in self.blockers if str(blocker).strip())
+        if self.kind == "complete" and blockers:
+            raise ValueError("ProcessingStatus(kind='complete') must not carry blockers")
+        if self.kind != "complete" and not blockers:
+            raise ValueError(f"ProcessingStatus(kind={self.kind!r}) requires at least one blocker")
+        object.__setattr__(self, "blockers", blockers)
 
     @property
     def is_degraded(self) -> bool:
@@ -48,6 +59,16 @@ class ArtifactEnvelope(Generic[T]):
     version: str
     payload: T
     status: ProcessingStatus = field(default_factory=lambda: ProcessingStatus(kind="complete"))
+
+    def __post_init__(self) -> None:
+        if not str(self.schema or "").strip():
+            raise ValueError("ArtifactEnvelope.schema must be non-empty")
+        if not str(self.producer or "").strip():
+            raise ValueError("ArtifactEnvelope.producer must be non-empty")
+        if not str(self.version or "").strip():
+            raise ValueError("ArtifactEnvelope.version must be non-empty")
+        if not isinstance(self.status, ProcessingStatus):
+            raise ValueError("ArtifactEnvelope.status must be a ProcessingStatus")
 
     def to_jsonable_dict(self) -> dict[str, Any]:
         """Return the wire shape for a persisted artifact envelope."""

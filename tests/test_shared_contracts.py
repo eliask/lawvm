@@ -1,3 +1,7 @@
+from typing import Any, cast
+
+import pytest
+
 from lawvm.core.evidence_contracts import (
     CorpusFindingEvidenceRow,
     CorpusOperationEvidenceRow,
@@ -18,6 +22,23 @@ from lawvm.core.verification_contracts import (
     VerifyIssue,
     VerifySummary,
 )
+
+
+def test_processing_status_validates_degraded_blockers() -> None:
+    assert ProcessingStatus(kind="partial", blockers=cast(Any, ["missing.source"])).blockers == (
+        "missing.source",
+    )
+
+    with pytest.raises(ValueError, match="requires at least one blocker"):
+        ProcessingStatus(kind="partial")
+
+    with pytest.raises(ValueError, match="must not carry blockers"):
+        ProcessingStatus(kind="complete", blockers=("unexpected",))
+
+
+def test_artifact_envelope_validates_identity_fields() -> None:
+    with pytest.raises(ValueError, match="schema"):
+        ArtifactEnvelope(schema="", producer="tests", version="1", payload={})
 
 
 def test_replay_summary_to_dict_is_json_friendly() -> None:

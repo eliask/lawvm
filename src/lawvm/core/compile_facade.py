@@ -354,12 +354,15 @@ class CompileFacade:
         )
         status = ProcessingStatus(kind="complete")
         if self.has_blocking:
+            blockers = strict_fail_reasons_from_findings_and_verdict(
+                self.finding_ledger,
+                verdict=self.verdict,
+            )
+            if not blockers and self.verdict is not None and self.verdict.status != "strict_clean":
+                blockers = (self.verdict.status,)
             status = ProcessingStatus(
                 kind="partial",
-                blockers=strict_fail_reasons_from_findings_and_verdict(
-                    self.finding_ledger,
-                    verdict=self.verdict,
-                ),
+                blockers=blockers,
             )
         return ArtifactEnvelope(
             schema="lawvm.compile_facade",
