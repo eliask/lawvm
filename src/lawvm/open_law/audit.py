@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence, Tuple
 
+from lawvm.core.comparison_normalization import ComparisonNormalizationRule, project_ir_comparison_text
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath, build_mutation_boundary_report
@@ -328,22 +329,26 @@ def _project_annotation_child_for_snapshot_compare(node: IRNode) -> IRNode | Non
     return _project_annotations_for_snapshot_compare(node)
 
 
-_TYPOGRAPHY_TRANSLATION = str.maketrans(
-    {
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-    }
+_TYPOGRAPHY_COMPARISON_RULES = (
+    ComparisonNormalizationRule(
+        name="open_law_quote_typography",
+        rule_class="presentation_cleanup",
+        kind="translation",
+        description="Normalize curly and straight quotation marks for Open Law snapshot comparison.",
+        translation=str.maketrans(
+            {
+                "\u2018": "'",
+                "\u2019": "'",
+                "\u201c": '"',
+                "\u201d": '"',
+            }
+        ),
+    ),
 )
 
 
 def _project_typography_for_snapshot_compare(node: IRNode) -> IRNode:
-    text = node.text.translate(_TYPOGRAPHY_TRANSLATION)
-    children = tuple(_project_typography_for_snapshot_compare(child) for child in node.children)
-    if text == node.text and children == node.children:
-        return node
-    return IRNode(kind=node.kind, label=node.label, text=text, attrs=dict(node.attrs), children=children)
+    return project_ir_comparison_text(node, _TYPOGRAPHY_COMPARISON_RULES)
 
 
 def _is_annotations_node(node: IRNode) -> bool:
