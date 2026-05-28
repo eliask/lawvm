@@ -20529,6 +20529,184 @@ def test_compile_repeal_table_parent_child_text_repeal_splits_ops() -> None:
     ]
 
 
+def test_compile_repeal_table_child_and_word_target_uses_source_parent_scope() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal or revocation</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Armed Forces Act 2006 (c. 52)</td>
+                  <td>In section 125— in subsection (3), paragraph (c) and the “or” preceding it; subsection (4).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_child_and_word_parent_scope",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-02",
+        affected_uri="/id/ukpga/2006/52/section/125/subsection/3/paragraph/c",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 125(3)(c) and word",
+        affecting_uri="/id/ukpga/2011/18/schedule/3/paragraph/6/2/b",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 3 para. 6(2)(b) Sch. 5",
+        affecting_title="Armed Forces Act 2011",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+        affected_title="Armed Forces Act 2006",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.REPEAL,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "125"), ("subsection", "3")),
+        (("section", "125"), ("subsection", "3"), ("paragraph", "c")),
+    ]
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_c"
+    )
+    assert all(
+        op.witness_rule_id
+        == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        for op in ops
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        and record["target"] == "section:125/subsection:3/paragraph:c"
+        and record["text_target"] == "section:125/subsection:3"
+        and record["structural_target"] == "section:125/subsection:3/paragraph:c"
+        and record["extent_cell"]
+        == "In section 125, in subsection (3), paragraph (c) and the “or” preceding it."
+        and record["text_selectors"]
+        == ("TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_c",)
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/2006/52",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="125",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first condition, or"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second condition, or"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="third condition"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    assert subsection.children[1].text == "second condition"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_contextual_word_text_rewrite_applied",
+    ]
+
+
+def test_compile_repeal_table_section_dash_sibling_target_does_not_inherit_child_text() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Reference</th><th>Extent of repeal or revocation</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Armed Forces Act 2006 (c. 52)</td>
+                  <td>In section 125— in subsection (3), paragraph (c) and the “or” preceding it; subsection (4).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_section_dash_sibling_scope",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2012-04-02",
+        affected_uri="/id/ukpga/2006/52/section/125/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="52",
+        affected_provisions="s. 125(4)",
+        affecting_uri="/id/ukpga/2011/18/schedule/3/paragraph/6/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="18",
+        affecting_provisions="Sch. 3 para. 6(3) Sch. 5",
+        affecting_title="Armed Forces Act 2011",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+        affected_title="Armed Forces Act 2006",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.REPEAL]
+    assert ops[0].target.path == (("section", "125"), ("subsection", "4"))
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_parent_child_text_repeal_split"
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_parent_child_text_repeal_ambiguous_child_blocks() -> None:
     source_root = ET.fromstring(
         """
