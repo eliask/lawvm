@@ -410,6 +410,9 @@ Recent improvement:
 - frontend replay adjudication projections and typed timeline invariant
   violations now freeze nested evidence/detail payloads at construction, so
   replay/oracle and timeline diagnostic rows stay stable after emission.
+- capture source-pathology views and New Zealand acquisition diagnostics now
+  freeze nested detail/metadata/source-lane payloads at construction, keeping
+  report-facing source evidence stable after emission.
 
 ## Ranked Promotion Candidates
 

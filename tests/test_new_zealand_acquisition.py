@@ -108,6 +108,8 @@ def _json_response(payload: dict[str, Any], remaining: int = 9999) -> NZHttpResp
 
 
 def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
+    metadata: dict[str, Any] = {"work_id": "act_public_2020_1", "formats": ["XML"]}
+    source_lane_selection: dict[str, Any] = {"attempted_lanes": [{"lane": "version_detail"}]}
     diagnostic = NZAcquisitionDiagnostic(
         rule_id="nz_acquire_xml_format_missing",
         phase="acquisition",
@@ -119,8 +121,11 @@ def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
         blocking=True,
         strict_disposition="block",
         quirks_disposition="record",
-        metadata={"work_id": "act_public_2020_1"},
+        metadata=metadata,
+        source_lane_selection=source_lane_selection,
     )
+    metadata["formats"].append("HTML")
+    source_lane_selection["attempted_lanes"].append({"lane": "mutated"})
 
     assert diagnostic.to_jsonable() == {
         "rule_id": "nz_acquire_xml_format_missing",
@@ -133,7 +138,10 @@ def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
         "locator": "https://api.legislation.govt.nz/v0/versions/example/",
         "url": "https://api.legislation.govt.nz/v0/versions/example/",
         "status_code": 200,
-        "metadata": {"work_id": "act_public_2020_1"},
+        "metadata": {"work_id": "act_public_2020_1", "formats": ("XML",)},
+        "source_lane_selection": {
+            "attempted_lanes": ({"lane": "version_detail"},),
+        },
     }
 
 

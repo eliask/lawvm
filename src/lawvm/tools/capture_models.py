@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator, Mapping
 import warnings
 
+from lawvm.core.frozen_values import freeze_mapping
+
 
 class _DictCompatMixin:
     """Read-only dict-style compatibility over typed payload views."""
@@ -80,6 +82,9 @@ class CaptureSourcePathologyView(_DictCompatMixin):
     target_label: str
     detail: Mapping[str, Any] = field(default_factory=dict)
     target_unit_kind: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
     def to_dict(self) -> dict[str, Any]:
         return {
