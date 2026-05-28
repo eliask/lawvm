@@ -258,12 +258,31 @@ class CompileFacade:
             label_norm=label_norm,
         )
         if compiled.issues:
+            combined_issues = compiled.issues + result.issues
+            status = result.status
+            statute = result.statute
+            if status == "materialized" and any(issue.blocking for issue in combined_issues):
+                from lawvm.core.ir import IRStatute  # noqa: PLC0415
+
+                status = "degraded_timeline_issues"
+                metadata = dict(statute.metadata)
+                metadata["materialization_status"] = status
+                metadata["timeline_issue_rule_ids"] = tuple(
+                    issue.rule_id for issue in combined_issues if issue.blocking
+                )
+                statute = IRStatute(
+                    statute_id=statute.statute_id,
+                    title=statute.title,
+                    body=statute.body,
+                    supplements=statute.supplements,
+                    metadata=metadata,
+                )
             return MaterializationResult(
-                status=result.status,
-                statute=result.statute,
+                status=status,
+                statute=statute,
                 required_dimensions=result.required_dimensions,
                 ambiguous_addresses=result.ambiguous_addresses,
-                issues=compiled.issues + result.issues,
+                issues=combined_issues,
                 certificate=result.certificate,
             )
         return result

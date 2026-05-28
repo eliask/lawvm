@@ -365,7 +365,7 @@ def test_build_verify_facade_ignores_temporal_events_with_nonmatching_group_id()
     )
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "materialized"
+    assert materialized.status == "degraded_timeline_issues"
     assert materialized.required_dimensions == ()
     assert materialized.statute.body.children[0].text == "Base"
 
@@ -429,7 +429,7 @@ def test_build_verify_facade_ignores_temporal_events_with_nonmatching_target_sta
     )
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "materialized"
+    assert materialized.status == "degraded_timeline_issues"
     assert materialized.required_dimensions == ()
     assert materialized.statute.body.children[0].text == "Base"
 
@@ -497,7 +497,7 @@ def test_build_verify_facade_ignores_temporal_events_with_nonmatching_exact_addr
     )
 
     materialized = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized.status == "materialized"
+    assert materialized.status == "degraded_timeline_issues"
     assert materialized.required_dimensions == ()
     assert materialized.statute.body.children[0].text == "Base"
 
@@ -801,11 +801,11 @@ def test_build_verify_facade_does_not_honor_exact_address_descendants_without_op
     )
 
     materialized_2007 = facade.materialize_pit_ex(base, "2007-01-01", base_date="2000-01-01")
-    assert materialized_2007.status == "materialized"
+    assert materialized_2007.status == "degraded_timeline_issues"
     chapter_2007 = next(child for child in materialized_2007.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2007.children[0].children[0].text == "Base"
 
     materialized_2011 = facade.materialize_pit_ex(base, "2011-01-01", base_date="2000-01-01")
-    assert materialized_2011.status == "materialized"
+    assert materialized_2011.status == "degraded_timeline_issues"
     chapter_2011 = next(child for child in materialized_2011.statute.body.children if child.kind == IRNodeKind.CHAPTER)
     assert chapter_2011.children[0].children[0].text == "Base"

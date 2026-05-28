@@ -68,6 +68,7 @@ from lawvm.core.timeline_results import (
     MaterializationCertificate,
     MaterializationLineagePlan,
     MaterializationResult,
+    MaterializationStatus,
     TimelineCompilationResult,
     TimelineIssue,
     TimelineIssueKind,
@@ -1292,7 +1293,7 @@ def materialize_pit_ex(
     statute_id = base.statute_id if base else "unknown/unknown"
     metadata: Dict[str, Any] = dict(base.metadata) if base else {}
     metadata["materialized_as_of"] = as_of
-    status: Literal["materialized", "degraded_missing_scope"] = "materialized"
+    status: MaterializationStatus = "materialized"
     if ambiguous_addresses:
         status = "degraded_missing_scope"
         metadata["materialization_status"] = status
@@ -1301,6 +1302,12 @@ def materialize_pit_ex(
             "/".join(f"{kind}:{label}" for kind, label in address.path)
             for address in sorted(ambiguous_addresses, key=lambda addr: addr.path)
         ]
+    elif any(issue.blocking for issue in issues):
+        status = "degraded_timeline_issues"
+        metadata["materialization_status"] = status
+        metadata["timeline_issue_rule_ids"] = tuple(
+            issue.rule_id for issue in issues if issue.blocking
+        )
 
     statute = IRStatute(
         statute_id=statute_id,

@@ -345,6 +345,10 @@ Recent improvement:
   date-window and change-window evidence; New Zealand effect-candidate rows
   nest date-window and source-change-window projections beside existing flat
   fields so source-only/non-effectivity truth claims are queryable.
+- PIT materialization now has a shared `degraded_timeline_issues` status for
+  rendered statutes with blocking timeline diagnostics. Facade materialization
+  uses it when timeline compilation emits blocking issues, including
+  unresolved contingent temporal events that were not applied.
 
 ## Ranked Promotion Candidates
 
