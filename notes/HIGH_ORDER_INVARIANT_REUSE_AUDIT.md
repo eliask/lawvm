@@ -36,6 +36,9 @@ Recent improvement:
 - UK source acquisition/extraction diagnostics now also delegate their outward
   envelope defaults to `diagnostic_detail` while preserving local source-lane
   rule IDs and payload fields.
+- UK effect-feed and metadata acquisition/parse diagnostics now delegate their
+  outward envelope defaults to `diagnostic_detail` while preserving local feed
+  locator and parser-error payload fields.
 - mutation-boundary partitioning is now shared and reused by Finland apply
   events;
 - operation-aware storage boundaries now encode that insert/repeal/renumber
