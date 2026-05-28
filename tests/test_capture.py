@@ -8,7 +8,7 @@ import pytest
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction, TextPatchSpec, TextSelector
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.tools.capture import build_capture
-from lawvm.tools.capture_models import CaptureSourcePathologyView
+from lawvm.tools.capture_models import CaptureAmendmentView, CapturePayload, CaptureReplayMetaView, CaptureSourcePathologyView
 
 
 def test_capture_source_pathology_view_freezes_detail_recursively() -> None:
@@ -27,6 +27,47 @@ def test_capture_source_pathology_view_freezes_detail_recursively() -> None:
     frozen_detail = cast(Any, view.detail)
     with pytest.raises(TypeError, match="immutable"):
         frozen_detail["extra"] = "blocked"
+
+
+def test_capture_report_views_freeze_nested_rows_and_counts() -> None:
+    observation = {"detail": {"slots": ["2:2"]}}
+    counts = {"ok": 1}
+    replay_meta = CaptureReplayMetaView(
+        payload_completeness_kind_counts=counts,
+        elaboration_observations=(observation,),
+    )
+    observation["detail"]["slots"].append("mutated")
+    counts["new"] = 2
+
+    assert replay_meta.payload_completeness_kind_counts == {"ok": 1}
+    assert replay_meta.elaboration_observations == ({"detail": {"slots": ("2:2",)}},)
+    frozen_observation = cast(Any, replay_meta.elaboration_observations[0])
+    with pytest.raises(TypeError, match="immutable"):
+        frozen_observation["extra"] = "blocked"
+
+    compiled_op = {"target": {"path": ["section:1"]}}
+    amendment = CaptureAmendmentView(
+        statute_id="2020/1",
+        title="Amending Act",
+        issue_date="2020-01-01",
+        effective_date="2020-01-01",
+        included=True,
+        source_available=True,
+        compiled_ops=(compiled_op,),
+    )
+    compiled_op["target"]["path"].append("mutated")
+    assert amendment.compiled_ops == ({"target": {"path": ("section:1",)}},)
+
+    top_level_row = {"kind": "finding", "claims": ["a"]}
+    payload = CapturePayload(
+        statute_id="1990/1",
+        replay_mode="legal_pit",
+        compile_mode="default",
+        profile="default",
+        top_level_projection_rows=(top_level_row,),
+    )
+    top_level_row["claims"].append("mutated")
+    assert payload.top_level_projection_rows == ({"kind": "finding", "claims": ("a",)},)
 
 
 def test_build_capture_preserves_replay_meta_observation_streams(monkeypatch) -> None:
@@ -141,11 +182,13 @@ def test_build_capture_preserves_replay_meta_observation_streams(monkeypatch) ->
     assert replay_meta.apply_mutation_invariant_result_code_counts == {}
     assert replay_meta.elaboration_observations[0]["kind"] == ("ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE")
     assert replay_meta.sparse_slot_bindings[0]["payload_slot_label"] == "2"
-    assert replay_meta.sparse_leftovers[0]["unassigned_slots"] == (["2:2", "3:(unlabeled)"])
+    assert replay_meta.sparse_leftovers[0]["unassigned_slots"] == ("2:2", "3:(unlabeled)")
     assert replay_meta.apply_mutation_events[0]["helper"] == ("_apply_deterministic_subsection_op")
-    assert replay_meta.apply_mutation_events[0]["created_paths"] == [[["chapter", "3"], ["section", "35"]]]
+    assert replay_meta.apply_mutation_events[0]["created_paths"] == ((("chapter", "3"), ("section", "35")),)
     assert replay_meta.apply_mutation_invariant_reports[0]["helper"] == ("_apply_deterministic_subsection_op")
-    assert replay_meta.apply_mutation_invariant_reports[0]["permitted_paths"] == [[["chapter", "3"], ["section", "35"]]]
+    assert replay_meta.apply_mutation_invariant_reports[0]["permitted_paths"] == (
+        (("chapter", "3"), ("section", "35")),
+    )
 
 
 def test_build_capture_summarizes_apply_mutation_invariant_result_codes(monkeypatch) -> None:
@@ -406,10 +449,10 @@ def test_build_capture_threads_per_amendment_source_pathologies_and_mutation_rep
             "source_statute": "1993/805",
             "helper": "_apply_whole_section_op",
             "outcome": "applied",
-            "results": [
+            "results": (
                 {"code": "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"},
                 {"code": "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"},
-            ],
+            ),
         },
     )
     assert second.apply_mutation_invariant_reports == (
@@ -418,9 +461,9 @@ def test_build_capture_threads_per_amendment_source_pathologies_and_mutation_rep
             "source_statute": "1994/900",
             "helper": "_apply_subsection_replace",
             "outcome": "applied",
-            "results": [
+            "results": (
                 {"code": "REPLAY_APPLY_BOUNDARY_UNRESOLVED"},
-            ],
+            ),
         },
     )
     assert first.apply_mutation_invariant_result_code_counts == {
@@ -500,7 +543,7 @@ def test_build_capture_serializes_typed_text_patch(monkeypatch) -> None:
         },
         "replacement": "oikea teksti",
     }
-    assert payload.amendments[0].canonical_ops[0]["provenance_tags"] == ["typed_cap_0"]
+    assert payload.amendments[0].canonical_ops[0]["provenance_tags"] == ("typed_cap_0",)
 
 
 def test_build_capture_projects_legacy_text_fields_from_typed_patch(monkeypatch) -> None:
@@ -567,7 +610,7 @@ def test_build_capture_projects_legacy_text_fields_from_typed_patch(monkeypatch)
     assert "text_match" not in op_payload
     assert "text_replacement" not in op_payload
     assert "text_occurrence" not in op_payload
-    assert op_payload["provenance_tags"] == ["typed_cap_1"]
+    assert op_payload["provenance_tags"] == ("typed_cap_1",)
     assert op_payload["text_patch"] == {
         "kind": "replace",
         "selector": {
