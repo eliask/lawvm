@@ -38,6 +38,10 @@ class _DictCompatMixin:
         return len(self.to_dict())
 
 
+def _freeze_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
+    return tuple(freeze_mapping(row) for row in rows)
+
+
 @dataclass(frozen=True)
 class CaptureBodyShapeView(_DictCompatMixin):
     body_intro_excerpt: str = ""
@@ -139,6 +143,32 @@ class CaptureReplayMetaView(_DictCompatMixin):
     apply_mutation_events: tuple[dict[str, Any], ...] = ()
     apply_mutation_invariant_reports: tuple[dict[str, Any], ...] = ()
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload_completeness_kind_counts",
+            freeze_mapping(self.payload_completeness_kind_counts),
+        )
+        object.__setattr__(
+            self,
+            "payload_completeness_tail_policy_counts",
+            freeze_mapping(self.payload_completeness_tail_policy_counts),
+        )
+        object.__setattr__(
+            self,
+            "apply_mutation_invariant_result_code_counts",
+            freeze_mapping(self.apply_mutation_invariant_result_code_counts),
+        )
+        object.__setattr__(self, "elaboration_observations", _freeze_rows(self.elaboration_observations))
+        object.__setattr__(self, "sparse_slot_bindings", _freeze_rows(self.sparse_slot_bindings))
+        object.__setattr__(self, "sparse_leftovers", _freeze_rows(self.sparse_leftovers))
+        object.__setattr__(self, "apply_mutation_events", _freeze_rows(self.apply_mutation_events))
+        object.__setattr__(
+            self,
+            "apply_mutation_invariant_reports",
+            _freeze_rows(self.apply_mutation_invariant_reports),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "cutoff_date": self.cutoff_date,
@@ -197,6 +227,23 @@ class CaptureAmendmentView(_DictCompatMixin):
     apply_mutation_invariant_reports: tuple[dict[str, Any], ...] = ()
     apply_mutation_invariant_result_code_counts: Mapping[str, int] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "compiled_ops", _freeze_rows(self.compiled_ops))
+        object.__setattr__(self, "canonical_ops", _freeze_rows(self.canonical_ops))
+        object.__setattr__(self, "failed_ops", _freeze_rows(self.failed_ops))
+        object.__setattr__(self, "projection_rows", _freeze_rows(self.projection_rows))
+        object.__setattr__(self, "source_pathologies", _freeze_rows(self.source_pathologies))
+        object.__setattr__(
+            self,
+            "apply_mutation_invariant_reports",
+            _freeze_rows(self.apply_mutation_invariant_reports),
+        )
+        object.__setattr__(
+            self,
+            "apply_mutation_invariant_result_code_counts",
+            freeze_mapping(self.apply_mutation_invariant_result_code_counts),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "statute_id": self.statute_id,
@@ -229,6 +276,9 @@ class CapturePayload(_DictCompatMixin):
     counts: CaptureCountsView | None = None
     top_level_projection_rows: tuple[dict[str, Any], ...] = ()
     amendments: tuple[CaptureAmendmentView, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "top_level_projection_rows", _freeze_rows(self.top_level_projection_rows))
 
     def to_dict(self) -> dict[str, Any]:
         return {

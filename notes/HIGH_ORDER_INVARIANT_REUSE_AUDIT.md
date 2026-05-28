@@ -993,6 +993,10 @@ Risk:
 
 - avoid erasing the distinction between source defect, compiler adjudication,
   replay violation, and oracle adjudication.
+- Capture replay-meta, amendment, and payload report rows now freeze nested
+  row/count payloads at construction time. The JSON-facing `to_dict()` surface
+  remains compatibility-oriented, but in-process captures can no longer be
+  mutated after emission by downstream debug/report code.
 
 ## Keep Local For Now
 
