@@ -167,6 +167,9 @@ Recent improvement:
 - UK source-carried structured-tail recovery now respects the guarded insert
   helper's refusal result before recording a child insertion event or
   successful recovery adjudication.
+- UK nested descendant replacement rebuilding is now copy-on-write, so fallback
+  replacement paths no longer mutate a live body/supplement subtree before
+  `_replace_node_in_statute` records the replacement event.
 - unused UK mutable replay helpers for direct text and text+children mutation
   were removed after their callers moved behind central mutation-event paths.
 - mutation path type aliases (`TreePaths`, `RenumberedTreePaths`) now live in

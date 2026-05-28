@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from typing import Any, NamedTuple, Optional, Sequence, TypeAlias
 
 from lawvm.core.ir_helpers import _kind_str
@@ -629,8 +630,9 @@ class UKReplayStateMixin:
         if not path:
             return new_node
         idx = path[0]
-        root.children[idx] = self._replace_descendant_at_path(root.children[idx], path[1:], new_node)
-        return root
+        children = list(root.children)
+        children[idx] = self._replace_descendant_at_path(children[idx], path[1:], new_node)
+        return dc_replace(root, children=children)
 
     def _parent_tuple_for_path(
         self,
@@ -853,10 +855,9 @@ class UKReplayStateMixin:
                 return True
         body_path = self._find_path_to_node(self.statute.body, old_node)
         if body_path is not None:
-            parent, idx = self._parent_tuple_for_path(self.statute.body, body_path)
             self._remove_eid_lookup_subtree(old_node)
-            self._replace_descendant_at_path(self.statute.body, body_path, new_node)
-            self._add_eid_lookup_subtree(new_node, parent, idx)
+            self.statute.body = self._replace_descendant_at_path(self.statute.body, body_path, new_node)
+            self._clear_eid_lookup_index()
             if structure_changed:
                 self._note_structure_mutation()
             self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
@@ -872,10 +873,9 @@ class UKReplayStateMixin:
                 return True
             sub_path = self._find_path_to_node(root, old_node)
             if sub_path is not None:
-                parent, child_idx = self._parent_tuple_for_path(root, sub_path)
                 self._remove_eid_lookup_subtree(old_node)
-                self._replace_descendant_at_path(root, sub_path, new_node)
-                self._add_eid_lookup_subtree(new_node, parent, child_idx)
+                self.statute.supplements[idx] = self._replace_descendant_at_path(root, sub_path, new_node)
+                self._clear_eid_lookup_index()
                 if structure_changed:
                     self._note_structure_mutation()
                 self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
