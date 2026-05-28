@@ -8,6 +8,8 @@ from lawvm.uk_legislation.source_state import (
     is_uk_affecting_act_xml_source_observation,
     uk_affecting_act_article_schedule_payload_source_extracted,
     uk_affecting_act_block_amendment_payload_descendant_ref_rejection,
+    uk_affecting_act_current_shell_enacted_source_selected,
+    uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_xml_too_small_rejection,
     uk_source_state_wire_tuple,
 )
@@ -120,3 +122,61 @@ def test_article_schedule_payload_source_observation_is_typed_source_diagnostic(
     assert observation["strict_disposition"] == "record"
     assert is_uk_affecting_act_xml_source_observation(observation) is True
     assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
+
+
+def test_current_shell_enacted_source_selection_uses_shared_source_lane_evidence() -> None:
+    observation = uk_affecting_act_current_shell_enacted_source_selected(
+        effect_id="eff-1",
+        affecting_act_id="ukpga/2022/32",
+        affecting_provisions="s. 175(2)(b)",
+        current_locator="current.xml",
+        enacted_locator="enacted.xml",
+        current_source_size=123,
+        enacted_source_size=456,
+        current_text_preview="...",
+        enacted_text_preview="substantive amendment text",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_current_shell_enacted_source_selected"
+    assert observation["family"] == "source_lane_selection"
+    assert observation["selected_source_lane"] == "enacted_xml"
+    assert observation["selected_source_locator"] == "enacted.xml"
+    assert observation["source_lane_attempts"] == (
+        {
+            "lane": "current_xml",
+            "status": "rejected_non_substantive_shell",
+            "locator": "current.xml",
+            "source_size": 123,
+            "text_preview": "...",
+        },
+        {
+            "lane": "enacted_xml",
+            "status": "selected",
+            "locator": "enacted.xml",
+            "source_size": 456,
+            "text_preview": "substantive amendment text",
+        },
+    )
+    assert observation["current_locator"] == "current.xml"
+    assert observation["enacted_locator"] == "enacted.xml"
+    assert observation["blocking"] is False
+
+
+def test_missing_current_enacted_source_selection_uses_shared_source_lane_evidence() -> None:
+    observation = uk_affecting_act_missing_current_enacted_source_selected(
+        effect_id="eff-1",
+        affecting_act_id="ukpga/2022/32",
+        affecting_provisions="s. 175(2)(b)",
+        current_locator="current.xml",
+        enacted_locator="enacted.xml",
+        current_source_size=0,
+        enacted_source_size=456,
+        enacted_text_preview="substantive amendment text",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_missing_current_enacted_source_selected"
+    assert observation["family"] == "source_lane_selection"
+    assert observation["selected_source_lane"] == "enacted_xml"
+    assert observation["source_lane_attempts"][0]["status"] == "missing_same_provision_source"
+    assert observation["source_lane_attempts"][1]["status"] == "selected"
+    assert observation["blocking"] is False
