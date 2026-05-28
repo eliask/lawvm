@@ -184,6 +184,8 @@ Recent improvement:
 - branch impact projections can now be text-enriched from frontend-supplied
   current/branch text maps without letting core infer source text or enacted
   authority.
+- branch lifecycle events now record proposal/draft status history as graph
+  facts, separate from enacted-state operation replay.
 
 ## Ranked Promotion Candidates
 

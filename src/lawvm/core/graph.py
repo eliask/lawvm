@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
-from lawvm.core.authority import BranchGraphEdge, LegalBranch
+from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
 from lawvm.core.timeline import Timelines
 
 
@@ -101,6 +101,7 @@ class StatuteGraph:
     citations: list = field(default_factory=list)      # List[CrossRefEdge]
     branches: List[LegalBranch] = field(default_factory=list)
     branch_edges: List[BranchGraphEdge] = field(default_factory=list)
+    branch_lifecycle_events: List[BranchLifecycleEvent] = field(default_factory=list)
     amendment_chain: List[str] = field(default_factory=list)
     title: str = ""
     statute_type: str = ""
@@ -121,6 +122,7 @@ class CorpusGraph:
     citations: list = field(default_factory=list)      # List[CrossRefEdge]
     branches: List[LegalBranch] = field(default_factory=list)
     branch_edges: List[BranchGraphEdge] = field(default_factory=list)
+    branch_lifecycle_events: List[BranchLifecycleEvent] = field(default_factory=list)
     amendment_index: Dict[str, List[str]] = field(default_factory=dict)
     statute_meta: Dict[str, dict] = field(default_factory=dict)
     build_failures: List[dict] = field(default_factory=list)
@@ -182,6 +184,7 @@ class CorpusGraph:
                 key=lambda branch: branch.branch_id,
             ),
             branch_edges=self.branch_edges_for_statute(sid),
+            branch_lifecycle_events=self.branch_lifecycle_events_for_statute(sid),
             amendment_chain=sorted(self.amendment_index.get(sid, [])),
             title=meta.get("title", ""),
             statute_type=meta.get("statute_type", ""),
@@ -228,6 +231,25 @@ class CorpusGraph:
                 edge.target_statute_id,
                 edge.target_address,
                 edge.operation_id,
+            ),
+        )
+
+    def branch_lifecycle_events_for_statute(self, sid: str) -> List[BranchLifecycleEvent]:
+        """Return branch lifecycle events whose source or enactment touches ``sid``."""
+
+        return sorted(
+            [
+                event
+                for event in self.branch_lifecycle_events
+                if event.source_artifact_id == sid or event.derived_enacted_source_id == sid
+            ],
+            key=lambda event: (
+                event.branch_id,
+                event.event_date,
+                event.event_kind,
+                event.event_id,
+                event.source_artifact_id,
+                event.derived_enacted_source_id,
             ),
         )
 
@@ -388,6 +410,7 @@ class CorpusGraph:
                 "citations": len(self.citations),
                 "branches": len(self.branches),
                 "branch_edges": len(self.branch_edges),
+                "branch_lifecycle_events": len(self.branch_lifecycle_events),
                 "amendment_index": len(self.amendment_index),
                 "statute_meta": len(self.statute_meta),
                 "build_failures": len(self.build_failures),
@@ -411,6 +434,20 @@ class CorpusGraph:
                         edge.target_statute_id,
                         edge.target_address,
                         edge.operation_id,
+                    ),
+                )
+            ),
+            "branch_lifecycle_events": tuple(
+                to_wire_jsonable(event.to_dict())
+                for event in sorted(
+                    self.branch_lifecycle_events,
+                    key=lambda event: (
+                        event.branch_id,
+                        event.event_date,
+                        event.event_kind,
+                        event.event_id,
+                        event.source_artifact_id,
+                        event.derived_enacted_source_id,
                     ),
                 )
             ),
