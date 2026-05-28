@@ -18,6 +18,7 @@ TemporalResolutionStatus = Literal[
     "fixed_date",
     "immediate",
     "source_backed_override",
+    "certified_untriggered",
     "unresolved_contingent",
     "unknown_effective_date",
     "future_effective_date",
@@ -28,6 +29,7 @@ TEMPORAL_RECOVERY_FAMILY = "temporal_recovery"
 TEMPORAL_FIXED_DATE: TemporalResolutionStatus = "fixed_date"
 TEMPORAL_IMMEDIATE: TemporalResolutionStatus = "immediate"
 TEMPORAL_SOURCE_BACKED_OVERRIDE: TemporalResolutionStatus = "source_backed_override"
+TEMPORAL_CERTIFIED_UNTRIGGERED: TemporalResolutionStatus = "certified_untriggered"
 TEMPORAL_UNRESOLVED_CONTINGENT: TemporalResolutionStatus = "unresolved_contingent"
 TEMPORAL_UNKNOWN_EFFECTIVE_DATE: TemporalResolutionStatus = "unknown_effective_date"
 TEMPORAL_FUTURE_EFFECTIVE_DATE: TemporalResolutionStatus = "future_effective_date"

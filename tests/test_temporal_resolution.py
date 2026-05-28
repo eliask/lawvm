@@ -4,6 +4,7 @@ import pytest
 
 from lawvm.core.diagnostic_records import validate_diagnostic_detail
 from lawvm.core.temporal_resolution import (
+    TEMPORAL_CERTIFIED_UNTRIGGERED,
     TEMPORAL_FUTURE_EFFECTIVE_DATE,
     TEMPORAL_SOURCE_BACKED_OVERRIDE,
     TemporalResolutionEvidence,
@@ -53,6 +54,21 @@ def test_temporal_resolution_evidence_blocks_strict_when_blocking() -> None:
     assert detail["blocking"] is True
     assert detail["strict_disposition"] == "block"
     assert detail["temporal_resolution_status"] == "future_effective_date"
+    assert validate_diagnostic_detail(detail) == ()
+
+
+def test_temporal_resolution_evidence_projects_certified_untriggered_status() -> None:
+    detail = TemporalResolutionEvidence(
+        rule_id="test_temporal_certified_untriggered",
+        phase="temporal",
+        reason="coverage proves no trigger as of the query horizon",
+        status=TEMPORAL_CERTIFIED_UNTRIGGERED,
+        as_of="2026-04-07",
+        source_locator="coverage://commencement-instruments",
+    ).to_diagnostic_detail()
+
+    assert detail["temporal_resolution_status"] == "certified_untriggered"
+    assert detail["as_of"] == "2026-04-07"
     assert validate_diagnostic_detail(detail) == ()
 
 

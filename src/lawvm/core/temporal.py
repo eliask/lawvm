@@ -9,7 +9,8 @@ Two primary types:
 
   ActivationRule  — what kind of commencement rule governs an effect
   ResolutionFact  — whether a contingent rule has been resolved by a later
-                    legal instrument (decree, condition fulfilment, etc.)
+                    legal instrument, remains unknown, or is certified
+                    untriggered by source coverage.
 
 And a derived status type:
 
@@ -83,16 +84,22 @@ class ActivationRule:
             )
 
 
-ResolutionStatus = Literal["resolved", "unresolved", "superseded"]
+ResolutionStatus = Literal["resolved", "unresolved", "untriggered_certified", "superseded"]
 
 RESOLVED_STATUS: ResolutionStatus = "resolved"
 UNRESOLVED_STATUS: ResolutionStatus = "unresolved"
+UNTRIGGERED_CERTIFIED_STATUS: ResolutionStatus = "untriggered_certified"
 SUPERSEDED_STATUS: ResolutionStatus = "superseded"
 
 
 @dataclass(frozen=True)
 class ResolutionFact:
-    """Resolution state for a contingent activation rule."""
+    """Resolution state for a contingent activation rule.
+
+    ``unresolved`` means source coverage does not establish the trigger state.
+    ``untriggered_certified`` means checked source coverage establishes that
+    the contingent trigger has not happened as of the relevant query horizon.
+    """
 
     status: ResolutionStatus
     resolved_effective: str = ""
@@ -111,6 +118,10 @@ class ResolutionFact:
     @property
     def is_unresolved(self) -> bool:
         return self.status == UNRESOLVED_STATUS
+
+    @property
+    def is_untriggered_certified(self) -> bool:
+        return self.status == UNTRIGGERED_CERTIFIED_STATUS
 
     @property
     def is_superseded(self) -> bool:
@@ -175,6 +186,9 @@ def derive_temporal_status(
 
     if resolution.is_unresolved:
         return "pending_external_resolution"
+
+    if resolution.is_untriggered_certified:
+        return "inactive"
 
     # resolved
     if resolution.resolved_effective <= as_of:
@@ -295,6 +309,7 @@ __all__ = [
     "ResolutionFact",
     "RESOLVED_STATUS",
     "UNRESOLVED_STATUS",
+    "UNTRIGGERED_CERTIFIED_STATUS",
     "SUPERSEDED_STATUS",
     "TemporalStatus",
     "TemporalEvent",
