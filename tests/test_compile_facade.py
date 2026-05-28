@@ -1028,6 +1028,56 @@ class TestFromPhaseResult:
         assert projected[0].blocking is True
         assert projected[0].detail["rule_id"] == "timeline.missing_replace_payload"
 
+    def test_materialize_pit_ex_preserves_unresolved_contingent_skip(self):
+        base = IRStatute(
+            statute_id="test/facade-contingent-skip",
+            title="Facade contingent skip preservation",
+            body=IRNode(
+                kind=IRNodeKind.BODY,
+                children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base text"),),
+            ),
+        )
+        target = LegalAddress(path=(("section", "1"),))
+        op = LegalOperation(
+            op_id="replace-contingent",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=target,
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Contingent text"),
+            source=OperationSource(
+                statute_id="2020/10",
+                enacted="2020-01-01",
+                effective="2020-01-01",
+            ),
+            group_id="g:facade-contingent-skip",
+        )
+        temporal_event = TemporalEvent(
+            event_id="ev:facade-contingent-skip",
+            group_id="g:facade-contingent-skip",
+            kind="commence",
+            activation_rule=ActivationRule(kind="pending_decree"),
+            scope=TemporalScope(target_statute="test/facade-contingent-skip"),
+        )
+        facade = CompileFacade.from_phase_result(
+            _pr(output=CanonicalBundle(structural_ops=(op,), temporal_events=(temporal_event,))),
+            replay_mode="legal_pit",
+        )
+
+        result = facade.materialize_pit_ex(base, "2021-01-01", base_date="2000-01-01")
+
+        assert any(issue.kind == "skipped_contingent_unresolved" for issue in result.issues)
+        assert result.statute.body.children[0].text == "Base text"
+        artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
+        assert artifact.status == ProcessingStatus(
+            kind="partial",
+            blockers=("timeline.skipped_contingent_unresolved",),
+        )
+        projected = facade.materialize_pit_findings(base, "2021-01-01", base_date="2000-01-01")
+        assert len(projected) == 1
+        assert projected[0].kind == "TIME.TIMELINE_EXECUTION_ISSUE"
+        assert projected[0].blocking is True
+        assert projected[0].detail["rule_id"] == "timeline.skipped_contingent_unresolved"
+
     def test_output_string_raises_type_error(self):
         pr = _pr(output="not ops")
         with pytest.raises(TypeError, match="CanonicalBundle or None"):
