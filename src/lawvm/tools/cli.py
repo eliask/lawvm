@@ -80,6 +80,7 @@ import os
 import re
 import sys
 
+from lawvm.core.invariant_detectors import SUPPORTED_INVARIANT_DETECTORS
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
 
@@ -323,7 +324,7 @@ def _build_parser() -> argparse.ArgumentParser:
     diagnose_phase_p.add_argument(
         "--detector",
         default="duplicate_label",
-        choices=["duplicate_label", "illegal_edge", "all_tree", "text_duplication", "flattened_sublist_family"],
+        choices=SUPPORTED_INVARIANT_DETECTORS,
         help="structural detector to run (default: duplicate_label)",
     )
     diagnose_phase_p.add_argument(
@@ -380,7 +381,7 @@ def _build_parser() -> argparse.ArgumentParser:
     invariant_bisect_p.add_argument(
         "--detector",
         default="duplicate_label",
-        choices=["duplicate_label", "illegal_edge", "all_tree", "text_duplication", "flattened_sublist_family"],
+        choices=SUPPORTED_INVARIANT_DETECTORS,
         help="structural detector to run (default: duplicate_label)",
     )
     invariant_bisect_p.add_argument(
