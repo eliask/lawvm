@@ -269,6 +269,9 @@ Recent improvement:
   set backed by core comparison-normalization validation, replacing duplicate
   ad hoc whitespace and punctuation normalization in instruction-workqueue and
   effect-candidate surfaces.
+- Estonia parse-time target-title rejection diagnostics now carry a nested
+  shared target-resolution rejection certificate while preserving EE-local
+  title and statute-fragment payloads.
 
 ## Ranked Promotion Candidates
 

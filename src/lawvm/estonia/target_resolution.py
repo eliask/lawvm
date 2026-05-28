@@ -15,6 +15,11 @@ import html as html_lib
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.core.target_resolution import (
+    TARGET_REJECTED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+)
 from lawvm.replay_adjudication import CompileAdjudication
 
 from lawvm.estonia.act_identity_registry import (
@@ -74,6 +79,16 @@ def _record_ee_parse_rejection(
 ) -> None:
     if adjudications_out is None:
         return
+    candidates = (
+        (
+            TargetResolutionCandidate(
+                target=statute_fragment,
+                reason="source_statute_fragment",
+            ),
+        )
+        if statute_fragment
+        else ()
+    )
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
@@ -89,6 +104,23 @@ def _record_ee_parse_rejection(
                 quirks_disposition="record",
                 target_title=target_title,
                 statute_fragment=statute_fragment,
+                target_resolution=TargetResolutionCertificate(
+                    rule_id=rule_id,
+                    phase="parse",
+                    reason=reason,
+                    status=TARGET_REJECTED,
+                    source_target=target_title or statute_fragment or source_id,
+                    candidate_count=len(candidates),
+                    candidates=candidates,
+                    blocking=True,
+                    strict_disposition="block",
+                    quirks_disposition="record",
+                    detail={
+                        "jurisdiction_status": reason,
+                        "target_title": target_title,
+                        "statute_fragment": statute_fragment,
+                    },
+                ).to_diagnostic_detail(),
             ),
         )
     )

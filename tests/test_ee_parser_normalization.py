@@ -7154,6 +7154,11 @@ def test_parse_ee_amendment_ops_records_preambul_single_target_title_mismatch() 
     assert adjudications[0].detail["reason"] == "target_title_mismatch"
     assert adjudications[0].detail["target_title"] == "Vale seadus"
     assert adjudications[0].detail["statute_fragment"] == "Riigikogu liikme staatuse seadust"
+    assert adjudications[0].detail["target_resolution"]["target_resolution_status"] == "rejected"
+    assert adjudications[0].detail["target_resolution"]["source_target"] == "Vale seadus"
+    assert adjudications[0].detail["target_resolution"]["target_candidates"] == (
+        {"target": "Riigikogu liikme staatuse seadust", "reason": "source_statute_fragment"},
+    )
     assert adjudications[0].detail["strict_disposition"] == "block"
 
 
@@ -7757,6 +7762,8 @@ def test_parse_ee_amendment_ops_records_new_format_op_text_target_mismatch() -> 
     assert adjudications[0].detail["reason"] == "target_title_mismatch"
     assert adjudications[0].detail["target_title"] == "Toiduseadus"
     assert adjudications[0].detail["statute_fragment"] == "Liiklusseaduse"
+    assert adjudications[0].detail["target_resolution"]["target_resolution_status"] == "rejected"
+    assert adjudications[0].detail["target_resolution"]["source_target"] == "Toiduseadus"
     assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["strict_disposition"] == "block"
 
