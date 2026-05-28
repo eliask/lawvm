@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional, cast
 
+from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.norway.grafter import iter_no_document_change_ops, lovdata_amendment_filename_to_id
 from lawvm.norway.sources import (
     NOLocatedArtifact,
@@ -305,22 +306,25 @@ def _no_index_duplicate_logical_locator_diagnostic(
     identical_payloads: bool,
 ) -> dict[str, Any]:
     selected = min(artifacts, key=lambda item: (item.source_name, item.member_name)) if identical_payloads else None
-    return {
-        "rule_id": NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
-        "family": "source_pathology",
-        "phase": "acquisition",
-        "reason": (
+    return diagnostic_detail(
+        rule_id=NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
+        family="source_pathology",
+        phase="acquisition",
+        reason=(
             "Norway acquisition found duplicate byte-identical artifacts for the same logical source locator; "
             "quirks mode selected a deterministic witness."
             if identical_payloads
             else "Norway acquisition found conflicting artifacts for the same logical source locator; source is ambiguous."
         ),
-        "source_id": logical_id,
-        "locator": locator,
-        "duplicate_count": len(artifacts),
-        "identical_payloads": identical_payloads,
-        "payload_digests": sorted({_payload_digest(artifact.payload) for artifact in artifacts}),
-        "candidates": [
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="select_first_identical" if identical_payloads else "block",
+        source_id=logical_id,
+        locator=locator,
+        duplicate_count=len(artifacts),
+        identical_payloads=identical_payloads,
+        payload_digests=sorted({_payload_digest(artifact.payload) for artifact in artifacts}),
+        candidates=[
             {
                 "archive": artifact.source_name,
                 "member_name": artifact.member_name,
@@ -328,31 +332,28 @@ def _no_index_duplicate_logical_locator_diagnostic(
             }
             for artifact in artifacts
         ],
-        "selected_archive": selected.source_name if selected is not None else "",
-        "selected_member_name": selected.member_name if selected is not None else "",
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "select_first_identical" if identical_payloads else "block",
-    }
+        selected_archive=selected.source_name if selected is not None else "",
+        selected_member_name=selected.member_name if selected is not None else "",
+    )
 
 
 def _no_index_unmapped_member_diagnostic(
     *,
     artifact: NOLocatedArtifact,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": "no_amendment_index_unmapped_lovtidend_xml_member",
-        "family": "source_pathology",
-        "phase": "acquisition",
-        "reason": "Norway Lovtidend XML member filename could not be mapped to a law or amendment source id",
-        "source_id": "",
-        "locator": "",
-        "archive": artifact.source_name,
-        "member_name": artifact.member_name,
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id="no_amendment_index_unmapped_lovtidend_xml_member",
+        family="source_pathology",
+        phase="acquisition",
+        reason="Norway Lovtidend XML member filename could not be mapped to a law or amendment source id",
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        source_id="",
+        locator="",
+        archive=artifact.source_name,
+        member_name=artifact.member_name,
+    )
 
 
 def _no_index_skipped_artifact_diagnostic(
@@ -362,19 +363,19 @@ def _no_index_skipped_artifact_diagnostic(
     reason: str,
     phase: str,
 ) -> dict[str, Any]:
-    return {
-        "rule_id": rule_id,
-        "family": "source_pathology",
-        "phase": phase,
-        "reason": reason,
-        "source_id": artifact.logical_id,
-        "locator": artifact.locator,
-        "archive": artifact.source_name,
-        "member_name": artifact.member_name,
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    return diagnostic_detail(
+        rule_id=rule_id,
+        family="source_pathology",
+        phase=phase,
+        reason=reason,
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        source_id=artifact.logical_id,
+        locator=artifact.locator,
+        archive=artifact.source_name,
+        member_name=artifact.member_name,
+    )
 
 
 def _no_index_parser_adjudication_diagnostic(
@@ -386,22 +387,23 @@ def _no_index_parser_adjudication_diagnostic(
     rule_id = str(detail.get("rule_id") or adjudication.kind)
     phase = str(detail.get("phase") or "parse")
     family = str(detail.get("family") or "source_pathology")
-    return {
-        "rule_id": rule_id,
-        "kind": adjudication.kind,
-        "family": family,
-        "phase": phase,
-        "reason": adjudication.message,
-        "source_id": adjudication.source_statute,
-        "op_id": adjudication.op_id,
-        "locator": artifact.locator,
-        "archive": artifact.source_name,
-        "member_name": artifact.member_name,
-        "blocking": bool(detail.get("blocking", True)),
-        "strict_disposition": str(detail.get("strict_disposition") or "block"),
-        "quirks_disposition": str(detail.get("quirks_disposition") or "record"),
-        "detail": detail,
-    }
+    diagnostic = diagnostic_detail(
+        rule_id=rule_id,
+        family=family,
+        phase=phase,
+        reason=adjudication.message,
+        blocking=bool(detail.get("blocking", True)),
+        strict_disposition=str(detail.get("strict_disposition") or "block"),
+        quirks_disposition=str(detail.get("quirks_disposition") or "record"),
+        kind=adjudication.kind,
+        source_id=adjudication.source_statute,
+        op_id=adjudication.op_id,
+        locator=artifact.locator,
+        archive=artifact.source_name,
+        member_name=artifact.member_name,
+    )
+    diagnostic["detail"] = detail
+    return diagnostic
 
 
 def load_no_amendment_index(path: Path) -> NOAmendmentIndex:
