@@ -7,8 +7,11 @@ import pytest
 from lawvm.core.observation_registry import validate_finding_projection
 from lawvm.core.phase_result import (
     Finding,
+    Observation,
+    Obligation,
     PhaseBuilder,
     PhaseResult,
+    Violation,
 )
 
 
@@ -131,6 +134,68 @@ def test_phase_builder_rejects_forged_finding_projection() -> None:
 def test_phase_result_rejects_non_finding_ledger_items() -> None:
     with pytest.raises(TypeError, match="Finding instances"):
         PhaseResult(output=None, findings=(cast(Any, object()),))
+
+
+def test_phase_result_finding_detail_is_frozen_recursively() -> None:
+    source_detail: dict[str, Any] = {
+        "target": {"path": ["section", "1"]},
+        "candidates": [{"label": "1"}],
+    }
+
+    finding = Finding(
+        kind="ELAB.SOURCE_PATHOLOGY",
+        role="observation",
+        stage="elab",
+        detail=source_detail,
+    )
+    source_detail["target"]["path"].append("mutated")
+    source_detail["candidates"].append({"label": "2"})
+
+    assert finding.detail == {
+        "target": {"path": ("section", "1")},
+        "candidates": ({"label": "1"},),
+    }
+    frozen_detail = cast(Any, finding.detail)
+    with pytest.raises(TypeError, match="immutable"):
+        frozen_detail["extra"] = "blocked"
+
+
+def test_phase_signal_details_are_frozen_recursively() -> None:
+    observation = Observation(
+        kind="ELAB.SOURCE_PATHOLOGY",
+        stage="elab",
+        detail={"items": ["a"]},
+    )
+    obligation = Obligation(
+        kind="ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY",
+        stage="strict",
+        detail={"items": ["b"]},
+    )
+    violation = Violation(
+        kind="RUNTIME.VIOLATION",
+        stage="apply",
+        detail={"items": ["c"]},
+    )
+
+    assert observation.detail["items"] == ("a",)
+    assert obligation.detail["items"] == ("b",)
+    assert violation.detail["items"] == ("c",)
+
+
+def test_phase_signal_details_reject_non_mappings() -> None:
+    with pytest.raises(TypeError, match="Observation.detail must be a mapping"):
+        Observation(
+            kind="ELAB.SOURCE_PATHOLOGY",
+            stage="elab",
+            detail=cast(Any, ["not", "a", "mapping"]),
+        )
+    with pytest.raises(TypeError, match="Finding.detail must be a mapping"):
+        Finding(
+            kind="ELAB.SOURCE_PATHOLOGY",
+            role="observation",
+            stage="elab",
+            detail=cast(Any, ["not", "a", "mapping"]),
+        )
 
 
 def test_phase_builder_violate_accepts_tree_invariant_violation_kind() -> None:

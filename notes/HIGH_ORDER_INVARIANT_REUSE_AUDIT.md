@@ -401,6 +401,9 @@ Recent improvement:
 - temporal-resolution evidence now freezes nested detail payloads at
   construction, so trigger-coverage certificates and other frontend-local
   temporal witnesses cannot be mutated after the evidence object is created.
+- `PhaseResult` runtime finding carriers now freeze nested detail payloads at
+  construction for observations, obligations, violations, and projected
+  findings, so stage side-channel evidence cannot be rewritten after emission.
 
 ## Ranked Promotion Candidates
 
