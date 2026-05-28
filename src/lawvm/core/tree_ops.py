@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import re
-from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Sequence, Tuple
+from typing import Callable, Collection, Dict, FrozenSet, Iterator, List, Literal, Optional, Protocol, Sequence, Tuple
 
 import icontract
 
@@ -255,6 +255,19 @@ TreeInvariantKind = Literal[
     "sort_order",
     "unexpected_child_kind",
 ]
+
+
+class TreeInvariantNode(Protocol):
+    """Read-only node surface needed by the shared invariant scanner."""
+
+    @property
+    def kind(self) -> IRNodeKind | str: ...
+
+    @property
+    def label(self) -> Optional[str]: ...
+
+    @property
+    def children(self) -> Sequence["TreeInvariantNode"]: ...
 
 
 def _as_path(path: Sequence[PathStep]) -> Path:
@@ -1065,7 +1078,7 @@ class TreeInvariantViolation:
 
 
 def iter_tree_invariant_violations(
-    tree: IRNode,
+    tree: TreeInvariantNode,
     *,
     sort_key: Optional[Callable[[Optional[str]], Tuple[int, str, int]]] = None,
     families: Optional[Collection[TreeInvariantKind]] = None,
@@ -1082,7 +1095,7 @@ def iter_tree_invariant_violations(
     def _wants(kind: TreeInvariantKind) -> bool:
         return selected is None or kind in selected
 
-    def _check(node: IRNode, path: InvariantPath) -> Iterator[TreeInvariantViolation]:
+    def _check(node: TreeInvariantNode, path: InvariantPath) -> Iterator[TreeInvariantViolation]:
         if _wants("duplicate_label"):
             seen: Dict[Tuple[str, str], int] = {}
             for child in node.children:

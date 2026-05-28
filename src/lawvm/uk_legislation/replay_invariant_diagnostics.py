@@ -33,37 +33,28 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_subparagraph_order_shape_gap,
 )
 
-_ORDERED_INVARIANT_KINDS = frozenset(
-    {
-        "section",
-        "chapter",
-        "part",
-        "division",
-        "schedule",
-        "appendix",
-        "paragraph",
-        "subparagraph",
-        "item",
-        "sentence",
-    }
-)
-
-
-class _InvariantWalkEntry(NamedTuple):
-    node: UKMutableNode
-    path: str
-
-
-class _OrderStateEntry(NamedTuple):
-    sort_key: tuple[int, str, int]
-    label: str
-
 
 class _InvariantTargetRoot(NamedTuple):
     root_name: str
     node: UKMutableNode
     initial_path: str
     scope_prefix: str
+
+
+_DUPLICATE_ORDER_INVARIANT_FAMILIES: frozenset[tree_ops.TreeInvariantKind] = frozenset(
+    {
+        "duplicate_label",
+        "sort_order",
+    }
+)
+
+
+def _parse_invariant_path_text(path: str) -> tree_ops.InvariantPath:
+    steps: list[tree_ops.InvariantPathStep] = []
+    for part in path.split("/"):
+        kind, separator, label = part.partition(":")
+        steps.append((kind, label if separator else None))
+    return tuple(steps)
 
 
 def _invariant_detail(
@@ -84,46 +75,19 @@ def _collect_duplicate_order_invariants(root: UKMutableNode, initial_path: str |
     """Return the duplicate/order subset that UK replay diagnostics persist.
 
     ``tree_ops.check_invariants`` also checks nesting and normalized-label
-    aliases, but this caller immediately filters those families out.  Replay
-    invokes this after many individual mutations, so scanning only the families
-    that can be emitted here keeps the diagnostic lane equivalent without
-    paying for discarded checks.
+    aliases, but this caller persists only duplicate/order families.  The
+    shared typed iterator accepts UK's mutable replay nodes through a read-only
+    protocol, so this path does not convert the subtree to frozen IR.
     """
-    violations: list[str] = []
-    stack: list[_InvariantWalkEntry] = [_InvariantWalkEntry(root, initial_path or root.kind.value)]
-    while stack:
-        walk_entry = stack.pop()
-        node = walk_entry.node
-        path = walk_entry.path
-        children = node.children
-        if len(children) >= 2:
-            seen: dict[tuple[str, str], int] = {}
-            order_state: dict[str, _OrderStateEntry] = {}
-            order_violations: list[str] = []
-            for child in children:
-                child_kind = child.kind.value
-                if child.label:
-                    label = str(child.label)
-                    key = (child_kind, label)
-                    seen[key] = seen.get(key, 0) + 1
-                    if child_kind in _ORDERED_INVARIANT_KINDS:
-                        sort_key = tree_ops._default_sort_key(label)
-                        previous = order_state.get(child_kind)
-                        if previous is not None and previous.sort_key > sort_key:
-                            order_violations.append(
-                                f"{path}: {child_kind} out of order: {previous.label} > {label}"
-                            )
-                        order_state[child_kind] = _OrderStateEntry(sort_key, label)
-            for (kind, label), count in seen.items():
-                if count > 1:
-                    violations.append(f"{path}: duplicate {kind}:{label} ({count} times)")
-            violations.extend(order_violations)
-        for child in reversed(children):
-            if not child.children:
-                continue
-            child_path = f"{path}/{child.kind.value}:{child.label or '?'}"
-            stack.append(_InvariantWalkEntry(child, child_path))
-    return violations
+    root_path = _parse_invariant_path_text(initial_path or root.kind.value)
+    return [
+        violation.message
+        for violation in tree_ops.iter_tree_invariant_violations(
+            root,
+            families=_DUPLICATE_ORDER_INVARIANT_FAMILIES,
+            root_path=root_path,
+        )
+    ]
 
 
 class UKReplayInvariantDiagnosticsMixin:
