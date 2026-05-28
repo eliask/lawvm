@@ -42,7 +42,11 @@ class VersionedNodeLookup(NamedTuple):
 
 
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
-_NodeStructuralShape: TypeAlias = tuple[object, Optional[str], tuple[tuple[object, Optional[str]], ...]]
+_NodeStructuralShape: TypeAlias = tuple[
+    object,
+    Optional[str],
+    tuple["_NodeStructuralShape", ...],
+]
 _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
 
@@ -531,8 +535,8 @@ class UKReplayStateMixin:
             helper="_record_supplement_inserted",
         )
 
-    def _child_shape(self, node: UKMutableNode) -> tuple[tuple[object, Optional[str]], ...]:
-        return tuple((child.kind, child.label) for child in node.children)
+    def _child_shape(self, node: UKMutableNode) -> tuple[_NodeStructuralShape, ...]:
+        return tuple(self._structural_shape(child) for child in node.children)
 
     def _structural_shape(self, node: UKMutableNode) -> _NodeStructuralShape:
         return (node.kind, node.label, self._child_shape(node))
