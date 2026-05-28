@@ -17,7 +17,7 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 from lawvm.finland.ops import FailedOp, ReplayProfile, ResolvedOp, _assert_intent_compat
 from lawvm.finland.apply_policy import _resolve_section_path_with_fallbacks, _check_occupancy_policy
 from lawvm.finland.apply_structure_ops import (
@@ -117,9 +117,9 @@ def _materialization_root_move_paths(
     payload_label = str(muutos_ir.label or "").strip()
     if not target_chapter or not target_norm or not payload_label:
         return ()
-    if _tops._norm(payload_label) != _tops._norm(target_norm):
+    if normalized_label_key(payload_label) != normalized_label_key(target_norm):
         return ()
-    matches = state.provision_index.get(("section", _tops._norm(target_norm)), [])
+    matches = state.provision_index.get(("section", normalized_label_key(target_norm)), [])
     root_matches = [
         _tops._as_path(path)
         for path in matches
@@ -143,9 +143,9 @@ def _whole_section_move_rebind_paths(
     payload_label = str(muutos_ir.label or "").strip()
     if not target_chapter or not target_norm or not payload_label:
         return ()
-    if _tops._norm(payload_label) != _tops._norm(target_norm):
+    if normalized_label_key(payload_label) != normalized_label_key(target_norm):
         return ()
-    matches = state.provision_index.get(("section", _tops._norm(target_norm)), [])
+    matches = state.provision_index.get(("section", normalized_label_key(target_norm)), [])
     root_matches = [
         _tops._as_path(path)
         for path in matches
@@ -1013,7 +1013,7 @@ def _apply_intent_relabel(
                 prefix = prefix + ((step_kind, step_label),)
                 if step_kind != kind:
                     continue
-                if _tops._norm(step_label) != _tops._norm(rop.target_norm):
+                if normalized_label_key(step_label) != normalized_label_key(rop.target_norm):
                     continue
                 if _tops.resolve(state.ir, prefix) is not None:
                     src_path = prefix
@@ -1222,7 +1222,7 @@ def _apply_intent_relabel(
 
         rebuilt_subsections = list(subsections)
         rebuilt_subsections[source_idx] = _relabel_subsection_ir(rebuilt_subsections[source_idx], dest_label)
-        rebuilt_subsections.sort(key=lambda child: _tops._default_sort_key(child.label))
+        rebuilt_subsections.sort(key=lambda child: default_label_sort_key(child.label))
         rebuilt_section = _rebuild_section_with_subsections_ir(section_node, rebuilt_subsections)
 
         _emit_apply_mutation_event_for_rop(

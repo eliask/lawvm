@@ -15,7 +15,7 @@ from typing import List, Optional
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.core import tree_ops as _tops
+from lawvm.core.tree_ops import normalized_label_key
 
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
@@ -61,7 +61,7 @@ def _find_amend_paragraph(
                 compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text)
                 m = re.match(r"^(\d+[a-z]?)\s*[\).]", compact, re.I)
                 if m:
-                    return _tops._norm(m.group(1))
+                    return normalized_label_key(m.group(1))
         return None
 
     def _paragraph_with_explicit_item_label(container: IRNode) -> Optional[IRNode]:
@@ -92,20 +92,20 @@ def _find_amend_paragraph(
 
     if amend_sub is not None:
         for p in amend_sub.children:
-            if p.kind == IRNodeKind.PARAGRAPH and p.label and _tops._norm(p.label) == item_norm:
+            if p.kind == IRNodeKind.PARAGRAPH and p.label and normalized_label_key(p.label) == item_norm:
                 return p
     if muutos_ir is not None:
         for sub_child in muutos_ir.children:
             if sub_child.kind == IRNodeKind.SUBSECTION:
                 for p in sub_child.children:
-                    if p.kind == IRNodeKind.PARAGRAPH and p.label and _tops._norm(p.label) == item_norm:
+                    if p.kind == IRNodeKind.PARAGRAPH and p.label and normalized_label_key(p.label) == item_norm:
                         return p
 
     def _check_subparagraph(container: IRNode) -> Optional[IRNode]:
         for child in container.children:
             if child.kind in (IRNodeKind.SUBSECTION, IRNodeKind.PARAGRAPH):
                 for sp in child.children:
-                    if sp.kind == IRNodeKind.SUBPARAGRAPH and sp.label and _tops._norm(sp.label) == item_norm:
+                    if sp.kind == IRNodeKind.SUBPARAGRAPH and sp.label and normalized_label_key(sp.label) == item_norm:
                         return IRNode(kind=IRNodeKind.PARAGRAPH, label=item_norm, children=sp.children, text=sp.text)
         return None
 
@@ -268,7 +268,7 @@ def _flattened_item_paragraph_from_subsection_ir(sub: IRNode) -> Optional[IRNode
     m = re.match(r"^(\d+[a-z]?)\s*\)", content_compact)
     if not m:
         return None
-    item_label = _tops._norm(m.group(1))
+    item_label = normalized_label_key(m.group(1))
     return IRNode(
         kind=IRNodeKind.PARAGRAPH,
         label=item_label,
@@ -284,11 +284,11 @@ def _has_single_intro_numbered_item_list_ir(sub: IRNode) -> bool:
     if intro is None or len(paras) < 3:
         return False
     for p in paras:
-        if not (p.label and _tops._norm(p.label).isdigit()):
+        if not (p.label and normalized_label_key(p.label).isdigit()):
             return False
         text = irnode_to_text(p).lstrip()
         compact = re.sub(r"(\d+)\s+([a-z])", r"\1\2", text, flags=re.I)
-        if not re.match(r"^" + re.escape(_tops._norm(p.label)) + r"\s*[\).]", compact):
+        if not re.match(r"^" + re.escape(normalized_label_key(p.label)) + r"\s*[\).]", compact):
             return False
     return True
 
@@ -315,7 +315,7 @@ def _collapse_intro_list_amend_subsection_ir(muutos_ir: Optional[IRNode]) -> Opt
             return None
         paras.append(flat_para)
 
-    para_labels = [_tops._norm(p.label) for p in paras if p.label]
+    para_labels = [normalized_label_key(p.label) for p in paras if p.label]
     if not _has_consecutive_numeric_labels(para_labels):
         return None
 
