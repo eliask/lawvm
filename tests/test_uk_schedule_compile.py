@@ -48670,6 +48670,7 @@ def test_uk_effective_date_override_uses_single_si_commencement_metadata() -> No
             "effective_date": "1999-02-20",
             "source_locator": "https://www.legislation.gov.uk/uksi/1999/416/data.xml",
             "authority_layer": "AFFECTING_ACT_METADATA",
+            "temporal_resolution_status": "source_backed_override",
             "reason": (
                 "UK effect feed marked this statutory-instrument effect as applied "
                 "but omitted an effect-level in-force date; LawVM used the single "

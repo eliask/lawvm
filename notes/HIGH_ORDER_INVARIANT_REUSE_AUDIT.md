@@ -165,6 +165,10 @@ Recent improvement:
 - evidence row kind classification now lives with the shared evidence
   contracts; New Zealand evidence packs and generic report-query tooling reuse
   the same operation/finding row predicate.
+- temporal-resolution evidence now has a neutral core carrier; UK
+  source-backed SI commencement-date recovery and Norway temporal replay skips
+  emit the shared status/date/source projection while keeping date extraction
+  and commencement policy local.
 
 ## Ranked Promotion Candidates
 
@@ -309,9 +313,13 @@ Evidence:
 
 Promotion:
 
-- add a small temporal resolution record for fixed, immediate, contingent,
-  missing, ambiguous, and source-backed override outcomes;
-- include locator/source text when a recovery or override is used.
+- status: partial first pass exists in
+  `src/lawvm/core/temporal_resolution.py`;
+- current shared statuses cover fixed, immediate, source-backed override,
+  unresolved contingent, unknown effective date, and future effective date;
+- include locator/source text when a recovery or override is used;
+- still not promoted: language-specific date extraction, commencement
+  doctrine, and ambiguous multi-date adjudication policy.
 
 Why high value:
 

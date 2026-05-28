@@ -20,6 +20,13 @@ from typing import Any, List, Optional
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.temporal_resolution import (
+    TEMPORAL_FUTURE_EFFECTIVE_DATE,
+    TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+    TEMPORAL_UNRESOLVED_CONTINGENT,
+    TemporalResolutionEvidence,
+    TemporalResolutionStatus,
+)
 from lawvm.norway.commencement import (
     apply_no_commencement_overrides,
     load_no_commencement_overrides,
@@ -69,6 +76,38 @@ def _no_replay_skip_adjudication(
         detail=detail,
         source_id=source_id,
     )
+    return CompileAdjudication(
+        kind=kind,
+        message=message,
+        source_statute=source_id,
+        detail=normalized_detail,
+    )
+
+
+def _no_replay_temporal_skip_adjudication(
+    *,
+    kind: str,
+    message: str,
+    source_id: str,
+    temporal_status: TemporalResolutionStatus,
+    detail: dict[str, Any],
+    blocking: bool,
+    effective_date: str = "",
+    as_of: str = "",
+) -> CompileAdjudication:
+    normalized_detail = TemporalResolutionEvidence(
+        rule_id=kind,
+        phase="temporal",
+        reason=message,
+        status=temporal_status,
+        blocking=blocking,
+        effective_date=effective_date,
+        as_of=as_of,
+        detail={
+            "source_id": source_id,
+            **detail,
+        },
+    ).to_diagnostic_detail()
     return CompileAdjudication(
         kind=kind,
         message=message,
@@ -170,11 +209,11 @@ def replay_no_to_pit(
         if entry.effective_status == "contingent":
             result.amendments_skipped_contingent.append(source_id)
             result.adjudications.append(
-                _no_replay_skip_adjudication(
+                _no_replay_temporal_skip_adjudication(
                     kind=NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED,
                     message="Norway replay skipped amendment: commencement is contingent and unresolved.",
                     source_id=source_id,
-                    phase="temporal",
+                    temporal_status=TEMPORAL_UNRESOLVED_CONTINGENT,
                     blocking=True,
                     detail={
                         "effective_status": entry.effective_status,
@@ -185,11 +224,11 @@ def replay_no_to_pit(
         if entry.effective_status in {"missing", "unknown"} or effective_date is None:
             result.amendments_skipped_unknown_effective.append(source_id)
             result.adjudications.append(
-                _no_replay_skip_adjudication(
+                _no_replay_temporal_skip_adjudication(
                     kind=NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED,
                     message="Norway replay skipped amendment: effective date is missing or unknown.",
                     source_id=source_id,
-                    phase="temporal",
+                    temporal_status=TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
                     blocking=True,
                     detail={
                         "effective_status": entry.effective_status,
@@ -200,16 +239,16 @@ def replay_no_to_pit(
         if effective_date > as_of:
             result.amendments_skipped_future.append(source_id)
             result.adjudications.append(
-                _no_replay_skip_adjudication(
+                _no_replay_temporal_skip_adjudication(
                     kind=NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED,
                     message="Norway replay skipped amendment: effective date is after the requested point in time.",
                     source_id=source_id,
-                    phase="temporal",
+                    temporal_status=TEMPORAL_FUTURE_EFFECTIVE_DATE,
                     blocking=False,
+                    effective_date=effective_date,
+                    as_of=as_of,
                     detail={
                         "effective_status": entry.effective_status,
-                        "effective_date": effective_date,
-                        "as_of": as_of,
                     },
                 )
             )
