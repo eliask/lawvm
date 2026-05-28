@@ -993,6 +993,23 @@ def test_build_instruction_workqueue_records_latest_oracle_text_witness_for_text
     assert report.summary()["latest_oracle_text_status_counts"] == {"oracle_new_text_only": 1}
     assert evidence_row["detail"]["latest_oracle_text_status"] == "oracle_new_text_only"
     assert evidence_row["detail"]["latest_oracle_new_text_occurrences"] == 1
+    assert evidence_row["detail"]["latest_oracle_target_resolution"] == {
+        "rule_id": "nz_instruction_latest_oracle_target_exact_source_path",
+        "phase": "oracle",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "family": "target_resolution",
+        "reason": "latest oracle source node resolved for instruction text witness",
+        "target_resolution_status": "resolved",
+        "source_target": "section:21",
+        "candidate_count": 1,
+        "selected_target": "prov:21",
+        "selected_target_differs_from_source": True,
+        "scope_confidence": "explicit_source",
+        "jurisdiction_status": "exact_source_path",
+        "source_path": ("prov:21",),
+    }
 
 
 def test_build_instruction_workqueue_records_latest_oracle_text_when_new_contains_old_text() -> None:
@@ -1241,6 +1258,16 @@ def test_build_instruction_workqueue_resolves_latest_oracle_text_through_unlabel
         == "nz_instruction_latest_oracle_target_via_unlabeled_source_carrier"
     )
     assert report.rows[0].latest_oracle_target_source_path == ("prov:21", "subprov#2", "label-para:a")
+    evidence_row = report.operation_evidence_rows()[0].to_dict()
+    assert evidence_row["detail"]["latest_oracle_target_resolution"]["target_resolution_status"] == "recovered"
+    assert (
+        evidence_row["detail"]["latest_oracle_target_resolution"]["jurisdiction_status"]
+        == "via_unlabeled_source_carrier"
+    )
+    assert (
+        evidence_row["detail"]["latest_oracle_target_resolution"]["selected_target"]
+        == "prov:21/subprov#2/label-para:a"
+    )
 
 
 def test_build_instruction_workqueue_latest_oracle_text_ignores_presentation_punctuation_spacing() -> None:

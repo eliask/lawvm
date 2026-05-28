@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from lawvm.core.evidence_contracts import CorpusOperationEvidenceRow, CorpusRowStatus
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    TARGET_RECOVERED,
+    TARGET_RESOLVED,
+    TargetResolutionCertificate,
+)
 from lawvm.new_zealand.effect_readiness import (
     NZEffectReadinessReport,
     build_archived_work_effect_readiness_surface,
@@ -439,7 +445,7 @@ def _workqueue_evidence_row(
 
 
 def _workqueue_evidence_detail(row: NZInstructionWorkQueueRow, *, reason: str) -> dict[str, Any]:
-    return {
+    detail: dict[str, Any] = {
         "reason": reason,
         "queue_status": row.queue_status,
         "effect_readiness_row_id": row.effect_readiness_row_id,
@@ -476,6 +482,41 @@ def _workqueue_evidence_detail(row: NZInstructionWorkQueueRow, *, reason: str) -
         "replay_claims": False,
         "canonical_effect_claims": False,
     }
+    target_resolution = _latest_oracle_target_resolution_evidence(row)
+    if target_resolution:
+        detail["latest_oracle_target_resolution"] = target_resolution
+    return detail
+
+
+def _latest_oracle_target_resolution_evidence(row: NZInstructionWorkQueueRow) -> dict[str, Any]:
+    if not row.latest_oracle_target_resolution_status or not row.latest_oracle_target_resolution_rule_id:
+        return {}
+    if not row.latest_oracle_target_source_path:
+        return {}
+    status = (
+        TARGET_RESOLVED
+        if row.latest_oracle_target_resolution_status == "exact_source_path"
+        else TARGET_RECOVERED
+    )
+    scope_confidence = (
+        SCOPE_CONFIDENCE_EXPLICIT_SOURCE
+        if row.latest_oracle_target_resolution_status == "exact_source_path"
+        else ""
+    )
+    return TargetResolutionCertificate(
+        rule_id=row.latest_oracle_target_resolution_rule_id,
+        phase="oracle",
+        reason="latest oracle source node resolved for instruction text witness",
+        status=status,
+        source_target=row.target_address,
+        selected_target="/".join(row.latest_oracle_target_source_path),
+        candidate_count=1,
+        scope_confidence=scope_confidence,
+        detail={
+            "jurisdiction_status": row.latest_oracle_target_resolution_status,
+            "source_path": row.latest_oracle_target_source_path,
+        },
+    ).to_diagnostic_detail()
 
 
 @dataclass(frozen=True)
