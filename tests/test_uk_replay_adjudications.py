@@ -246,10 +246,10 @@ def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None
     assert "duplicate section:2" in str(invariant_adjudication.detail["violation"])
     assert invariant_adjudication.detail["mutation_event_helper"] == "_replace_node_in_statute"
     assert invariant_adjudication.detail["mutation_event_outcome"] == "replaced_node"
-    assert invariant_adjudication.detail["mutation_event_touched_paths"] == [
-        [("section", "2")],
-        [("section", "1")],
-    ]
+    assert invariant_adjudication.detail["mutation_event_touched_paths"] == (
+        (("section", "2"),),
+        (("section", "1"),),
+    )
 
 
 def test_replay_uk_ops_rescans_invariants_after_descendant_shape_replace() -> None:
