@@ -366,6 +366,9 @@ Recent improvement:
   identifiers, invalid severity values, out-of-range divergence scores,
   filtered divergences without rule/reason evidence, and negative summary or
   coverage counts.
+- shared corpus evidence rows now run their existing row validators at
+  construction time, so invalid operation/finding evidence cannot bypass the
+  envelope contract by skipping explicit validator calls.
 - PIT materialization now has a shared `degraded_timeline_issues` status for
   rendered statutes with blocking timeline diagnostics. Facade materialization
   uses it when timeline compilation emits blocking issues, including
