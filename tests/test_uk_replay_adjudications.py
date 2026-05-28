@@ -4562,6 +4562,60 @@ def test_executor_classifies_existing_destination_for_supported_sibling_renumber
     assert [child.label for child in executor.statute.supplements[0].children] == ["5", "15"]
 
 
+def test_executor_guards_sibling_renumber_collision_after_destination_lookup_miss() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="9", text="Section 9."),
+                IRNode(kind=IRNodeKind.SECTION, label="8", text="Section 8."),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    real_find_node_by_target = executor._find_node_by_target
+
+    def fake_find_node_by_target(
+        target: LegalAddress,
+        *,
+        allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
+    ) -> tuple[UKMutableNode | None, UKMutableNode | None, int | None]:
+        if target.path == (("section", "8"),):
+            return None, None, None
+        return real_find_node_by_target(
+            target,
+            allow_compound_subsection_alias=allow_compound_subsection_alias,
+            allow_recursive_match=allow_recursive_match,
+            target_resolution_op=target_resolution_op,
+        )
+
+    cast(Any, executor)._find_node_by_target = fake_find_node_by_target
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_renumber_destination_collision",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "9"),)),
+            destination=LegalAddress(path=(("section", "8"),)),
+            source=_source(),
+            witness_rule_id="uk_effect_metadata_sibling_renumber_lowered",
+        )
+    )
+
+    assert [child.label for child in executor.statute.body.children] == ["9", "8"]
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "uk_replay_existing_target_conflict_gap"
+    assert adjudication.detail["reason_code"] == "renumber_destination_sibling_collision"
+    assert adjudication.detail["family"] == "source_shape_gap"
+
+
 def test_executor_applies_same_provision_descendant_renumber_then_text_patch() -> None:
     statute = IRStatute(
         statute_id="ukpga/2024/3",
