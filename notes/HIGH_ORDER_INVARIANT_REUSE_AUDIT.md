@@ -360,10 +360,14 @@ Evidence:
 
 Promotion:
 
-- add a core source-version window record with requested date, candidate
-  versions, selected version, selection relation, and tie-break evidence;
-- keep jurisdiction authority and commencement interpretation outside the
-  helper.
+- status: shared source-version date/change window selectors and diagnostic
+  projections exist in `src/lawvm/core/source_version_window.py`;
+- the shared surface records requested source date, surrounding witness
+  versions, truth-claim names, and explicit `replay_claims=False`;
+- New Zealand archived XML version-diff and effect-candidate evidence rows now
+  project date and source-change windows through the shared carrier;
+- jurisdiction authority, commencement interpretation, and oracle truth remain
+  outside the helper.
 
 Why high value:
 
