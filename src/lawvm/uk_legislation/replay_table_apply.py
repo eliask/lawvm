@@ -16,6 +16,7 @@ from lawvm.uk_legislation.replay_records import (
 )
 from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_table_geometry import (
+    UKExpandedTableRow,
     expanded_uk_table_rows_with_physical_index,
     resolve_uk_table_entry_row_replace_span,
     resolve_uk_table_entry_row_insert_index,
@@ -248,13 +249,13 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
-        row_matches: list[tuple[int, dict[int, UKMutableNode]]] = []
-        for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table_selection.tables[0]):
-            first_cell = row_cells.get(1)
+        row_matches: list[UKExpandedTableRow] = []
+        for expanded_row in expanded_uk_table_rows_with_physical_index(table_selection.tables[0]):
+            first_cell = expanded_row.cells_by_column.get(1)
             if first_cell is None:
                 continue
             if _clean_num(str(first_cell.text or "")) == str(source_row_number):
-                row_matches.append((physical_row_index, row_cells))
+                row_matches.append(expanded_row)
         if len(row_matches) != 1:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -272,7 +273,9 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
-        physical_row_index, row_cells = row_matches[0]
+        matched_row = row_matches[0]
+        physical_row_index = matched_row.physical_index
+        row_cells = matched_row.cells_by_column
         cell = row_cells.get(source_column_index)
         if cell is None:
             _append_uk_replay_adjudication(
