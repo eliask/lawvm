@@ -54,7 +54,7 @@ def run_chain(grupi_id: str, label: str, archive) -> dict:
 
     totals: dict = dict(pairs=0, ops=0, mm=0, om=0, cm=0, tot=0, errors=0, perfect=0)
 
-    for base_r, next_r in zip(redactions, redactions[1:]):
+    for base_r, next_r in zip(redactions, redactions[1:], strict=False):
         result = replay_ee_to_pit(
             base_r.aktViide, next_r.effective, archive, verbose=False
         )

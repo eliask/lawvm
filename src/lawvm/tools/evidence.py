@@ -4727,7 +4727,7 @@ def build_ee_evidence_bundle(
     matched_bucket_counts: Counter[str] = Counter()
     unknown_divergence_count = 0
     unknown_divergence_type_counts: Counter[str] = Counter()
-    for divergence, address in zip(result.divergences, divergence_addresses):
+    for divergence, address in zip(result.divergences, divergence_addresses, strict=True):
         bucket = ""
         divergence_type = str(getattr(divergence, "divergence_type", "") or "")
         if residual_summary is not None:

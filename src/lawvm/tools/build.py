@@ -630,6 +630,7 @@ def main(args: "argparse.Namespace") -> None:
         for sid, result in zip(
             statute_ids,
             _build_fi_lightweight_parallel(statute_ids, n_workers, verbose),
+            strict=True,
         ):
             if result is None:
                 n_skip += 1

@@ -146,7 +146,7 @@ class BilingualResult:
             # Same count but different § labels — ordering/numbering mismatch
             mismatched = [
                 f"pos {i+1}: fin={fl!r} swe={sl!r}"
-                for i, (fl, sl) in enumerate(zip(f.sections, s.sections))
+                for i, (fl, sl) in enumerate(zip(f.sections, s.sections, strict=True))
                 if fl != sl
             ]
             if mismatched:
@@ -157,7 +157,7 @@ class BilingualResult:
         elif _ordinals(f.chapters) != _ordinals(s.chapters):
             mismatched = [
                 f"pos {i+1}: fin={fl!r} swe={sl!r}"
-                for i, (fl, sl) in enumerate(zip(f.chapters, s.chapters))
+                for i, (fl, sl) in enumerate(zip(f.chapters, s.chapters, strict=True))
                 if _ordinal(fl) != _ordinal(sl)
             ]
             if mismatched:
@@ -168,7 +168,7 @@ class BilingualResult:
         elif _ordinals(f.parts) != _ordinals(s.parts):
             mismatched = [
                 f"pos {i+1}: fin={fl!r} swe={sl!r}"
-                for i, (fl, sl) in enumerate(zip(f.parts, s.parts))
+                for i, (fl, sl) in enumerate(zip(f.parts, s.parts, strict=True))
                 if _ordinal(fl) != _ordinal(sl)
             ]
             if mismatched:

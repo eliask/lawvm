@@ -155,7 +155,7 @@ def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict:
         "divergences": [],
         "residual_inventory": None,
     }
-    for divergence, address in zip(result.divergences, divergence_addresses):
+    for divergence, address in zip(result.divergences, divergence_addresses, strict=True):
         bucket = None
         evidence = None
         if residual_summary is not None:
@@ -254,7 +254,7 @@ def _build_ee_consistency_payload(args: "argparse.Namespace") -> dict:
         "divergences": [],
         "residual_inventory": None,
     }
-    for divergence, address in zip(divergences, divergence_addresses):
+    for divergence, address in zip(divergences, divergence_addresses, strict=True):
         bucket = None
         evidence = None
         if residual_summary is not None:

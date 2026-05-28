@@ -159,7 +159,7 @@ def audit_lowering_preservation(
         )
 
     # Compare by position (zip stops at shorter)
-    for i, (pop, lop) in enumerate(zip(parsed_ops, legal_ops)):
+    for i, (pop, lop) in enumerate(zip(parsed_ops, legal_ops, strict=False)):
         # Action check
         expected_actions = _VERB_TO_EXPECTED_ACTION.get(pop.verb, set())
         if lop.action.value in expected_actions:

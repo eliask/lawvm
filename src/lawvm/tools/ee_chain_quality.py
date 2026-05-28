@@ -42,7 +42,7 @@ def run_chain(grupi_id: str, label: str, archive) -> dict[str, int]:
         "perfect": 0,
     }
 
-    for base_r, next_r in zip(redactions, redactions[1:]):
+    for base_r, next_r in zip(redactions, redactions[1:], strict=False):
         result = replay_ee_to_pit(
             base_r.aktViide,
             next_r.effective,
