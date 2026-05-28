@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.frozen_values import FrozenDict, _freeze_value
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class SourceLaneAttempt:
             raise ValueError("SourceLaneAttempt.lane must be non-empty")
         if not str(self.status or "").strip():
             raise ValueError("SourceLaneAttempt.status must be non-empty")
+        object.__setattr__(self, "detail", _frozen_source_lane_detail("SourceLaneAttempt.detail", self.detail))
         _reject_source_lane_overrides("SourceLaneAttempt.detail", self.detail, {"lane", "locator", "status"})
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,8 +62,17 @@ class SourceLaneSelectionEvidence:
             raise ValueError("SourceLaneSelectionEvidence.reason must be non-empty")
         if not str(self.selected_lane or "").strip():
             raise ValueError("SourceLaneSelectionEvidence.selected_lane must be non-empty")
-        if not self.attempts:
+        attempts = tuple(self.attempts)
+        if not attempts:
             raise ValueError("SourceLaneSelectionEvidence.attempts must be non-empty")
+        if not all(isinstance(attempt, SourceLaneAttempt) for attempt in attempts):
+            raise ValueError("SourceLaneSelectionEvidence.attempts must contain SourceLaneAttempt records")
+        object.__setattr__(self, "attempts", attempts)
+        object.__setattr__(
+            self,
+            "detail",
+            _frozen_source_lane_detail("SourceLaneSelectionEvidence.detail", self.detail),
+        )
         attempt_lanes = {attempt.lane for attempt in self.attempts}
         has_selected_attempt = any(
             str(attempt.status).startswith("selected") for attempt in self.attempts
@@ -112,3 +123,9 @@ def _reject_source_lane_overrides(source: str, values: Mapping[str, Any], reserv
     if overlaps:
         joined = ", ".join(overlaps)
         raise ValueError(f"{source} must not override source-lane keys: {joined}")
+
+
+def _frozen_source_lane_detail(source: str, values: Mapping[str, Any]) -> FrozenDict:
+    if not isinstance(values, Mapping):
+        raise ValueError(f"{source} must be a mapping")
+    return FrozenDict({key: _freeze_value(value) for key, value in dict(values).items()})

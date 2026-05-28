@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.source_lane import (
     SourceLaneAttempt,
     SourceLaneSelectionEvidence,
@@ -65,6 +68,31 @@ def test_source_lane_attempt_from_mapping_accepts_url_alias() -> None:
     )
 
 
+def test_source_lane_selection_normalizes_attempts_and_detail() -> None:
+    detail = {"nested": {"key": ["value"]}}
+    attempt = SourceLaneAttempt(lane="legacy", status="valid", detail=detail)
+    attempts = [attempt]
+
+    evidence = SourceLaneSelectionEvidence(
+        rule_id="test_source_lane_selected",
+        phase="acquisition",
+        reason="fallback lane selected with evidence",
+        selected_lane="legacy",
+        attempts=cast(Any, attempts),
+        detail={"source_id": "source-1"},
+    )
+
+    attempts.clear()
+    detail["nested"]["key"].append("mutated")
+
+    assert evidence.attempts == (attempt,)
+    assert isinstance(attempt.detail, FrozenDict)
+    assert attempt.detail["nested"]["key"] == ("value",)
+    assert evidence.to_diagnostic_detail()["source_lane_attempts"][0]["nested"]["key"] == (
+        "value",
+    )
+
+
 def test_source_lane_selection_rejects_unowned_selection_shape() -> None:
     with pytest.raises(ValueError, match="selected_lane"):
         SourceLaneSelectionEvidence(
@@ -96,6 +124,18 @@ def test_source_lane_selection_rejects_unowned_selection_shape() -> None:
             attempts=(SourceLaneAttempt(lane="legacy", status="valid"),),
             detail={"selected_source_lane": "override"},
         )
+
+    with pytest.raises(ValueError, match="attempts must contain SourceLaneAttempt"):
+        SourceLaneSelectionEvidence(
+            rule_id="test_source_lane_selected",
+            phase="acquisition",
+            reason="fallback lane selected with evidence",
+            selected_lane="legacy",
+            attempts=cast(Any, ("not-an-attempt",)),
+        )
+
+    with pytest.raises(ValueError, match="detail must be a mapping"):
+        SourceLaneAttempt(lane="legacy", status="valid", detail=cast(Any, []))
 
 
 def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explicit_none() -> None:
