@@ -82,6 +82,7 @@ import re
 from typing import Any, Optional, TYPE_CHECKING
 
 from lawvm.core.ir import LegalAddress, ProvisionTimeline
+from lawvm.core.mutation_boundary import TreePath, TreePathStep
 
 if TYPE_CHECKING:
     from lawvm.core.ir import IRNode
@@ -111,7 +112,7 @@ _AKN_COMPONENT_RE = re.compile(r'^([a-z]+)_(.+)$')
 _VERSIONED_LABEL_RE = re.compile(r'v\d{8}$')
 
 
-def _eid_parent_path(eid: str) -> tuple[tuple[str, str], ...]:
+def _eid_parent_path(eid: str) -> TreePath:
     """Parse an AKN eId and return the LegalAddress path for the PARENT node.
 
     For a stub paragraph eId like ``chp_1__sec_3__subsec_1__para_2v20211030``
@@ -131,7 +132,7 @@ def _eid_parent_path(eid: str) -> tuple[tuple[str, str], ...]:
     raw_parts = eid.split(_AKN_SEP)
     # Drop the last component (the para itself).
     parent_parts = raw_parts[:-1]
-    path: list[tuple[str, str]] = []
+    path: list[TreePathStep] = []
     for part in parent_parts:
         m = _AKN_COMPONENT_RE.match(part)
         if m is None:

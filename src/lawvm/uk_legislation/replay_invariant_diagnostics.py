@@ -11,6 +11,7 @@ from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core import tree_ops
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
@@ -143,7 +144,7 @@ class UKReplayInvariantDiagnosticsMixin:
     _structure_mutation_serial: int
     _last_invariant_structure_serial: int
 
-    def _invariant_root_filter_for_op(self, op: LegalOperation) -> set[tuple[str, str]] | None:
+    def _invariant_root_filter_for_op(self, op: LegalOperation) -> set[TreePathStep] | None:
         if str(op.target.special or "") == "whole_act":
             return None
         if not op.target.path:
@@ -230,7 +231,7 @@ class UKReplayInvariantDiagnosticsMixin:
 
     def _invariant_target_roots(
         self,
-        root_filter: set[tuple[str, str]] | None = None,
+        root_filter: set[TreePathStep] | None = None,
     ) -> list[_InvariantTargetRoot]:
         targets: list[_InvariantTargetRoot] = []
         if root_filter is None or ("body", "") in root_filter:
@@ -281,7 +282,7 @@ class UKReplayInvariantDiagnosticsMixin:
 
     def _collect_invariant_violations(
         self,
-        root_filter: set[tuple[str, str]] | None = None,
+        root_filter: set[TreePathStep] | None = None,
     ) -> set[str]:
         violations: set[str] = set()
         for target_root in self._invariant_target_roots(root_filter):
