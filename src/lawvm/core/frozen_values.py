@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, SupportsIndex
+from typing import Any, Dict, Mapping, SupportsIndex
 
 
 class FrozenDict(dict[str, Any]):
@@ -55,6 +55,20 @@ def _freeze_value(value: Any) -> Any:
     if isinstance(value, set | frozenset):
         return frozenset(_freeze_value(inner) for inner in value)
     return value
+
+
+def freeze_value(value: Any) -> Any:
+    """Recursively freeze mutable containers for public core contract surfaces."""
+
+    return _freeze_value(value)
+
+
+def freeze_mapping(values: Mapping[str, Any]) -> FrozenDict:
+    """Freeze a string-keyed mapping and all nested container values."""
+
+    if not isinstance(values, Mapping):
+        raise ValueError("values must be a mapping")
+    return FrozenDict({key: freeze_value(value) for key, value in dict(values).items()})
 
 
 def _jsonable_value(value: Any, *, path: str) -> Any:

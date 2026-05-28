@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
-from lawvm.core.frozen_values import FrozenDict, _freeze_value
+from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 
 
 TemporalResolutionStatus = Literal[
@@ -158,4 +158,4 @@ def _reject_temporal_overrides(values: Mapping[str, Any]) -> None:
 def _frozen_temporal_resolution_detail(source: str, values: Mapping[str, Any]) -> FrozenDict:
     if not isinstance(values, Mapping):
         raise ValueError(f"{source} must be a mapping")
-    return FrozenDict({key: _freeze_value(value) for key, value in dict(values).items()})
+    return freeze_mapping(values)

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
-from lawvm.core.frozen_values import FrozenDict, _freeze_value
+from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 
 
 @dataclass(frozen=True)
@@ -128,4 +128,4 @@ def _reject_source_lane_overrides(source: str, values: Mapping[str, Any], reserv
 def _frozen_source_lane_detail(source: str, values: Mapping[str, Any]) -> FrozenDict:
     if not isinstance(values, Mapping):
         raise ValueError(f"{source} must be a mapping")
-    return FrozenDict({key: _freeze_value(value) for key, value in dict(values).items()})
+    return freeze_mapping(values)
