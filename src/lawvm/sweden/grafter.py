@@ -552,23 +552,21 @@ def _section_renumber_arity_mismatch_diagnostics(clause: str, sfs_id: str) -> tu
         if len(sources) == len(destinations):
             continue
         diagnostics.append(
-            {
-                "rule_id": "se_official_clause_renumber_arity_mismatch",
-                "family": "source_pathology",
-                "phase": "parse",
-                "reason": (
+            diagnostic_detail(
+                rule_id="se_official_clause_renumber_arity_mismatch",
+                family="source_pathology",
+                phase="parse",
+                blocking=True,
+                reason=(
                     "Sweden official act renumber clause was skipped because source "
                     "and destination label counts differed."
                 ),
-                "sfs_id": sfs_id,
-                "source_labels": list(sources),
-                "destination_labels": list(destinations),
-                "source_fragment": _normalize_space(match.group(1)),
-                "destination_fragment": _normalize_space(match.group(2)),
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-            }
+                sfs_id=sfs_id,
+                source_labels=list(sources),
+                destination_labels=list(destinations),
+                source_fragment=_normalize_space(match.group(1)),
+                destination_fragment=_normalize_space(match.group(2)),
+            )
         )
     return tuple(diagnostics)
 
@@ -819,18 +817,16 @@ def _record_se_official_act_payload_row_diagnostic(
     if diagnostics_out is None:
         return
     diagnostics_out.append(
-        {
-            "rule_id": rule_id,
-            "family": "source_pathology",
-            "phase": "payload",
-            "reason": reason,
-            "sfs_id": sfs_id,
-            "row_family": row_family,
-            "row_index": row_index,
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-        }
+        diagnostic_detail(
+            rule_id=rule_id,
+            family="source_pathology",
+            phase="payload",
+            blocking=True,
+            reason=reason,
+            sfs_id=sfs_id,
+            row_family=row_family,
+            row_index=row_index,
+        )
     )
 
 
@@ -1111,21 +1107,22 @@ def _record_se_amendment_register_diagnostic(
 ) -> None:
     if diagnostics_out is None:
         return
-    diagnostic: dict[str, Any] = {
-        "rule_id": rule_id,
-        "family": "source_pathology",
-        "phase": "extraction",
-        "reason": reason,
-        "base_sfs_id": base_sfs_id,
-        "register_type": register_type,
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    extra: dict[str, Any] = {}
     if row_index is not None:
-        diagnostic["row_index"] = row_index
-        diagnostic["row_type"] = row_type
-    diagnostics_out.append(diagnostic)
+        extra["row_index"] = row_index
+        extra["row_type"] = row_type
+    diagnostics_out.append(
+        diagnostic_detail(
+            rule_id=rule_id,
+            family="source_pathology",
+            phase="extraction",
+            blocking=True,
+            reason=reason,
+            base_sfs_id=base_sfs_id,
+            register_type=register_type,
+            **extra,
+        )
+    )
 
 
 def _record_se_current_text_diagnostic(
@@ -1140,26 +1137,27 @@ def _record_se_current_text_diagnostic(
     marker_text: str = "",
     next_block_text: str = "",
 ) -> None:
-    diagnostic: dict[str, Any] = {
-        "rule_id": rule_id,
-        "family": "source_pathology",
-        "phase": "extraction",
-        "reason": reason,
-        "sfs_id": sfs_id,
-        "block_index": block_index,
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
+    detail: dict[str, Any] = {}
     if item_label:
-        diagnostic["item_label"] = item_label
+        detail["item_label"] = item_label
     if item_text:
-        diagnostic["item_text"] = _normalize_space(item_text)
+        detail["item_text"] = _normalize_space(item_text)
     if marker_text:
-        diagnostic["marker_text"] = _normalize_space(marker_text)
+        detail["marker_text"] = _normalize_space(marker_text)
     if next_block_text:
-        diagnostic["next_block_text"] = _normalize_space(next_block_text)
-    diagnostics_out.append(diagnostic)
+        detail["next_block_text"] = _normalize_space(next_block_text)
+    diagnostics_out.append(
+        diagnostic_detail(
+            rule_id=rule_id,
+            family="source_pathology",
+            phase="extraction",
+            blocking=True,
+            reason=reason,
+            sfs_id=sfs_id,
+            block_index=block_index,
+            detail=detail,
+        )
+    )
 
 
 def parse_se_amendment_register(
@@ -2204,20 +2202,18 @@ def _append_se_official_lowering_adjudication(
             kind="se_official_effect_lowering_skipped",
             message=message,
             source_statute=plan.sfs_id,
-            detail={
-                "rule_id": reason_code,
-                "phase": "lowering",
-                "family": "unsupported_or_unresolved_action",
-                "blocking": True,
-                "strict_disposition": "block",
-                "quirks_disposition": "record",
-                "item_kind": item.kind,
-                "target_label": item.target_label,
-                "destination_label": item.destination_label,
-                "payload_label": item.payload_label,
-                "frontier_classification": plan.frontier_classification,
-                "frontier_detail": plan.frontier_detail,
-            },
+            detail=diagnostic_detail(
+                rule_id=reason_code,
+                phase="lowering",
+                family="unsupported_or_unresolved_action",
+                blocking=True,
+                item_kind=item.kind,
+                target_label=item.target_label,
+                destination_label=item.destination_label,
+                payload_label=item.payload_label,
+                frontier_classification=plan.frontier_classification,
+                frontier_detail=plan.frontier_detail,
+            ),
         )
     )
 
@@ -2240,20 +2236,18 @@ def _append_se_official_plan_adjudication(
             kind=kind,
             message=message,
             source_statute=source_id or plan.sfs_id,
-            detail={
-                "rule_id": rule_id,
-                "phase": phase,
-                "family": "source_pathology",
-                "blocking": blocking,
-                "strict_disposition": "block" if blocking else "record",
-                "quirks_disposition": "record",
-                "sfs_id": plan.sfs_id,
-                "amended_act_sfs_id": plan.amended_act_sfs_id,
-                "is_amending_act": plan.is_amending_act,
-                "frontier_classification": plan.frontier_classification,
-                "frontier_detail": plan.frontier_detail,
-                "planned_operation_count": plan.planned_operation_count,
-            },
+            detail=diagnostic_detail(
+                rule_id=rule_id,
+                phase=phase,
+                family="source_pathology",
+                blocking=blocking,
+                sfs_id=plan.sfs_id,
+                amended_act_sfs_id=plan.amended_act_sfs_id,
+                is_amending_act=plan.is_amending_act,
+                frontier_classification=plan.frontier_classification,
+                frontier_detail=plan.frontier_detail,
+                planned_operation_count=plan.planned_operation_count,
+            ),
         )
     )
 
@@ -2348,18 +2342,16 @@ def _append_se_official_unclaimed_payload_adjudications(
                 kind="se_official_unclaimed_payload_skipped",
                 message="Sweden official-act payload surface was not claimed by any planned effect.",
                 source_statute=plan.sfs_id,
-                detail={
-                    "rule_id": "se_official_effect_plan_unclaimed_payload",
-                    "phase": "lowering",
-                    "family": "source_pathology",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                    "sfs_id": plan.sfs_id,
-                    "frontier_classification": plan.frontier_classification,
-                    "frontier_detail": plan.frontier_detail,
-                    **diagnostic,
-                },
+                detail=diagnostic_detail(
+                    rule_id="se_official_effect_plan_unclaimed_payload",
+                    phase="lowering",
+                    family="source_pathology",
+                    blocking=True,
+                    sfs_id=plan.sfs_id,
+                    frontier_classification=plan.frontier_classification,
+                    frontier_detail=plan.frontier_detail,
+                    detail=diagnostic,
+                ),
             )
         )
 

@@ -732,6 +732,10 @@ Implemented progress:
 - Sweden scraped-document ingest diagnostics, later-chain reverse replay
   exceptions, and official rebuild-chain status diagnostics now also delegate
   their shared envelope defaults to `diagnostic_detail`.
+- Sweden official-act grafter diagnostics for renumber arity, payload rows,
+  amendment-register rows, current-text extraction, effect lowering skips,
+  effect-plan adjudications, and unclaimed payloads now delegate their shared
+  envelope defaults to `diagnostic_detail`.
 - EU pipeline diagnostics and replay adjudication helpers now delegate their
   shared envelope defaults to `diagnostic_detail`.
 - EU parser extraction diagnostics now delegate their shared envelope defaults
