@@ -17,7 +17,7 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
-from lawvm.core.tree_ops import Path
+from lawvm.core.tree_ops import Path, default_label_sort_key, normalized_label_key
 
 from lawvm.finland.ops import (
     AmendmentOp,
@@ -231,17 +231,17 @@ def _preserve_unstated_live_subsection_tail(
 
     candidate_label_map: dict[str, IRNode] = {}
     for subsection in candidate_subsections:
-        norm = _tops._norm(subsection.label or "")
+        norm = normalized_label_key(subsection.label)
         if not norm or norm in candidate_label_map:
             candidate_label_map = {}
             break
         candidate_label_map[norm] = subsection
-    live_label_seq = [_tops._norm(subsection.label or "") for subsection in live_subsections]
+    live_label_seq = [normalized_label_key(subsection.label) for subsection in live_subsections]
     if candidate_label_map and all(live_label_seq):
         merged_subsections: list[IRNode] = []
         used_labels: set[str] = set()
         for live_subsection in live_subsections:
-            norm = _tops._norm(live_subsection.label or "")
+            norm = normalized_label_key(live_subsection.label)
             replacement = candidate_label_map.get(norm)
             if replacement is not None:
                 merged_subsections.append(replacement)
@@ -249,7 +249,7 @@ def _preserve_unstated_live_subsection_tail(
             else:
                 merged_subsections.append(live_subsection)
         for subsection in candidate_subsections:
-            norm = _tops._norm(subsection.label or "")
+            norm = normalized_label_key(subsection.label)
             if norm not in used_labels:
                 merged_subsections.append(subsection)
         candidate_children = [child for child in candidate.children if child.kind is not IRNodeKind.SUBSECTION]
@@ -300,7 +300,7 @@ def _align_section_payload_subsection_labels_from_slot_assignment(
     for binding in slot_assignment.sparse_slot_bindings:
         if binding.target_paragraph is None or binding.target_item or binding.target_special:
             continue
-        slot_label = _tops._norm(str(binding.payload_slot_label or ""))
+        slot_label = normalized_label_key(binding.payload_slot_label)
         if not slot_label:
             continue
         target_label = str(binding.target_paragraph)
@@ -317,7 +317,7 @@ def _align_section_payload_subsection_labels_from_slot_assignment(
     new_children: list[IRNode] = []
     for child in payload.children:
         if child.kind is IRNodeKind.SUBSECTION:
-            slot_label = _tops._norm(child.label or "")
+            slot_label = normalized_label_key(child.label)
             target_label = slot_target_labels.get(slot_label)
             if target_label and target_label != (child.label or ""):
                 child = IRNode(
@@ -456,7 +456,7 @@ def _create_part_and_move_siblings(
     # Determine insertion point: before the part that contains the first sibling
     insert_before_part_label: str | None = None
     if chapters_to_move:
-        chapters_to_move.sort(key=lambda x: _tops._default_sort_key(x[1].label))
+        chapters_to_move.sort(key=lambda x: default_label_sort_key(x[1].label))
         for ch_path, _ in chapters_to_move:
             for step_kind, step_label in ch_path:
                 if step_kind == "part":
@@ -1307,7 +1307,7 @@ def _apply_whole_section_op(
             return (
                 bool(live_sec.label)
                 and bool(replacement.label)
-                and _tops._norm(live_sec.label) == _tops._norm(replacement.label)
+                and normalized_label_key(live_sec.label) == normalized_label_key(replacement.label)
             )
 
         def _carry_heading_if_absent(replacement: IRNode) -> IRNode:
@@ -1471,7 +1471,7 @@ def _apply_whole_section_op(
 
     if _op_type == "REPLACE" and sec_path is None and muutos_ir is not None:
         if _target_chapter and _same_norm_label(muutos_ir.label, _ts):
-            label_norm = _tops._norm(_ts)
+            label_norm = normalized_label_key(_ts)
             matches = [
                 _tops._as_path(path)
                 for path in state.provision_index.get(("section", label_norm), [])
@@ -1668,7 +1668,7 @@ def _apply_whole_section_op(
 
     if _op_type == "INSERT" and muutos_ir is not None:
         if _target_chapter and _same_norm_label(muutos_ir.label, _ts):
-            label_norm = _tops._norm(_ts)
+            label_norm = normalized_label_key(_ts)
             matches = [
                 _tops._as_path(path)
                 for path in state.provision_index.get(("section", label_norm), [])
@@ -2244,7 +2244,7 @@ def _apply_materialization(
             return None
 
     if _target_chapter and _same_norm_label(muutos_ir.label, _ts):
-        label_norm = _tops._norm(_ts)
+        label_norm = normalized_label_key(_ts)
         matches = state.provision_index.get(("section", label_norm), [])
         root_matches = [
             _tops._as_path(path)
