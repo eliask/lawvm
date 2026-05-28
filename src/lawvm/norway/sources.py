@@ -23,6 +23,7 @@ from typing import Any, Iterator, Optional, cast
 from lxml import etree
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -573,6 +574,58 @@ def no_source_metadata(source_path: Path | None = None) -> dict[str, Any]:
     }
 
 
+def _no_archive_member_locator(artifact: NOLocatedArtifact) -> str:
+    return f"{artifact.source_name}:{artifact.member_name}"
+
+
+def _no_ingest_duplicate_locator_source_lane_evidence(
+    *,
+    artifact: NOLocatedArtifact,
+    identical_payloads: bool,
+    existing_payload: bytes,
+) -> dict[str, Any]:
+    return SourceLaneSelectionEvidence(
+        rule_id="no_acquisition_duplicate_logical_locator",
+        phase="acquisition",
+        reason=(
+            "Norway Farchive ingest retained the existing byte-identical source witness."
+            if identical_payloads
+            else "Norway Farchive ingest found a conflicting duplicate source witness and retained the existing lane."
+        ),
+        selected_lane="existing_farchive_locator",
+        selected_locator=artifact.locator,
+        attempts=(
+            SourceLaneAttempt(
+                lane="existing_farchive_locator",
+                locator=artifact.locator,
+                status="selected_existing_identical" if identical_payloads else "selected_existing_conflict",
+                detail={
+                    "logical_id": artifact.logical_id,
+                    "payload_digest": hashlib.sha256(existing_payload).hexdigest(),
+                },
+            ),
+            SourceLaneAttempt(
+                lane="incoming_archive_member",
+                locator=_no_archive_member_locator(artifact),
+                status="duplicate_identical_not_stored" if identical_payloads else "blocked_conflicting_duplicate",
+                detail={
+                    "logical_id": artifact.logical_id,
+                    "logical_locator": artifact.locator,
+                    "payload_digest": hashlib.sha256(artifact.payload).hexdigest(),
+                },
+            ),
+        ),
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="select_existing_identical" if identical_payloads else "block",
+        detail={
+            "logical_id": artifact.logical_id,
+            "logical_locator": artifact.locator,
+            "identical_payloads": identical_payloads,
+        },
+    ).to_diagnostic_detail()
+
+
 def ingest_no_public_archives(
     source_dir: Path,
     db_path: Path | None = None,
@@ -665,6 +718,11 @@ def ingest_no_public_archives(
                 existing_payload_digest=hashlib.sha256(existing_payload).hexdigest(),
                 new_payload_digest=hashlib.sha256(artifact.payload).hexdigest(),
                 identical_payloads=identical_payloads,
+                source_lane_selection=_no_ingest_duplicate_locator_source_lane_evidence(
+                    artifact=artifact,
+                    identical_payloads=identical_payloads,
+                    existing_payload=existing_payload,
+                ),
             )
         )
 

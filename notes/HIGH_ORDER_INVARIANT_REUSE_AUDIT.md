@@ -184,6 +184,9 @@ Recent improvement:
   nested shared source-lane selection projection for both deterministic
   byte-identical duplicate selection and conflicting-duplicate blocking,
   while preserving Norway's source-pathology record as authoritative.
+- Norway public-archive ingest duplicate locator diagnostics now include the
+  same shared source-lane projection for the retained existing farchive witness
+  and incoming duplicate archive member.
 - source-version bracketing now has shared source-only window selectors; New
   Zealand archived XML date/change windows delegate the bracketing invariant
   while preserving NZ-specific row classes and truth-claim names.
