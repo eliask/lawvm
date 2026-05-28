@@ -196,6 +196,10 @@ Recent improvement:
   branch lifecycle events under the `lawvm:` namespace.
 - `lawvm branch-demo` now emits a synthetic branch/authority payload for
   demonstrating default enacted vs selected proposal operation lanes.
+- target-resolution evidence now has a neutral core carrier for source target,
+  candidate count, selected target, status, confidence, and strict/quirks
+  disposition; frontends still own candidate discovery and local fallback
+  policy.
 
 ## Ranked Promotion Candidates
 
@@ -302,9 +306,10 @@ Evidence:
 
 Promotion:
 
-- add a core resolution certificate shape for target/slot selection outcomes;
-- include source target, candidate count, selected target, status, rule ID,
-  confidence, and strict/quirks disposition;
+- status: initial evidence carrier exists in
+  `src/lawvm/core/target_resolution.py`;
+- it includes source target, candidate count, selected target, listed
+  candidates, status, rule ID, confidence, and strict/quirks disposition;
 - keep resolver logic and local target grammar in frontends.
 
 Why high value:
