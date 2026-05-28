@@ -601,6 +601,7 @@ def test_uk_bench_phase_timing_schema_includes_uk_compile_subphases() -> None:
         zip(
             ("phase_total_s", *uk_bench._PHASE_TIMING_HEADERS),
             uk_bench._phase_timing_csv_values(result),
+            strict=True,
         )
     )
 

@@ -168,7 +168,7 @@ def _source_label_changing_substitution_series(
         return ()
 
     substitutions: list[UKSourceLabelChangingSubstitution] = []
-    for source_ref, replacement_ref in zip(anchor_refs, target_refs):
+    for source_ref, replacement_ref in zip(anchor_refs, target_refs, strict=True):
         single = _source_label_changing_substitution(
             f"substituted for {source_ref}",
             [replacement_ref],

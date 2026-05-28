@@ -142,7 +142,7 @@ def _alignment_report(
         if event.get("match_method") == "transparent_wrapper_cleared"
     ]
     changes: list[UKOracleAlignmentChange] = []
-    for (before_path, before_node), (after_path, after_node) in zip(before_rows, after_rows):
+    for (before_path, before_node), (after_path, after_node) in zip(before_rows, after_rows, strict=False):
         if str(after_node.kind).lower() == "body":
             continue
         before_eid = _node_eid(before_node)
