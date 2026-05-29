@@ -1096,6 +1096,8 @@ Risk:
 - mutation-accounting report carriers now validate result-code vocabulary,
   path collections, rule-id collections, result record types, and invariant
   booleans at direct construction time.
+- finding-registry specs now validate family, default enforcement, proof
+  categories, registry role, owner, and description at construction time.
 
 ## Keep Local For Now
 

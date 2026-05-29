@@ -5,7 +5,7 @@ Run:
 """
 from __future__ import annotations
 
-from typing import get_args
+from typing import Any, cast, get_args
 
 import pytest
 
@@ -75,6 +75,59 @@ def test_finding_spec_enforcement_is_valid() -> None:
     for code, spec in FINDING_REGISTRY.items():
         assert spec.default_enforcement in valid_enforcements, (
             f"FindingSpec {code!r} has invalid enforcement {spec.default_enforcement!r}"
+        )
+
+
+def test_finding_spec_validates_direct_construction() -> None:
+    spec = FindingSpec(
+        "TEST.CODE",
+        "test_phase",
+        "audit",
+        "info",
+        "test_owner",
+        "test description",
+        cast(Any, ["strictness"]),
+        role="observation",
+    )
+
+    assert spec.proof_categories == ("strictness",)
+    with pytest.raises(ValueError, match="family"):
+        FindingSpec(
+            "TEST.CODE",
+            "test_phase",
+            cast(Any, "python_order"),
+            "info",
+            "test_owner",
+            "test description",
+        )
+    with pytest.raises(ValueError, match="default_enforcement"):
+        FindingSpec(
+            "TEST.CODE",
+            "test_phase",
+            "audit",
+            cast(Any, "maybe"),
+            "test_owner",
+            "test description",
+        )
+    with pytest.raises(ValueError, match="proof_categories"):
+        FindingSpec(
+            "TEST.CODE",
+            "test_phase",
+            "audit",
+            "info",
+            "test_owner",
+            "test description",
+            cast(Any, ("unknown_proof",)),
+        )
+    with pytest.raises(ValueError, match="role"):
+        FindingSpec(
+            "TEST.CODE",
+            "test_phase",
+            "audit",
+            "info",
+            "test_owner",
+            "test description",
+            role=cast(Any, "runtime"),
         )
 
 

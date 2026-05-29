@@ -40,7 +40,7 @@ authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Literal, Optional
+from typing import Dict, Literal, Optional, get_args
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +77,10 @@ ProofCategory = Literal[
     "non_commensurability",    # "not same-layer contradiction; representation mismatch"
 ]
 
+_VALID_FINDING_FAMILIES = frozenset(get_args(FindingFamily))
+_VALID_ENFORCEMENTS = frozenset(get_args(Enforcement))
+_VALID_PROOF_CATEGORIES = frozenset(get_args(ProofCategory))
+
 
 FindingRole = Literal[
     "observation",  # informational, non-blocking
@@ -90,6 +94,8 @@ FindingRegistryRole = Literal[
     "barrier",      # strictness taxonomy metadata
     "violation",    # runtime contract-break projection
 ]
+
+_VALID_FINDING_REGISTRY_ROLES = frozenset(get_args(FindingRegistryRole))
 
 
 @dataclass(frozen=True)
@@ -119,6 +125,26 @@ class FindingSpec:
             raise ValueError("FindingSpec.code must be non-empty")
         if not self.phase:
             raise ValueError("FindingSpec.phase must be non-empty")
+        if self.family not in _VALID_FINDING_FAMILIES:
+            raise ValueError(f"FindingSpec.family is not a known finding family: {self.family!r}")
+        if self.default_enforcement not in _VALID_ENFORCEMENTS:
+            raise ValueError(
+                f"FindingSpec.default_enforcement is not a known enforcement: {self.default_enforcement!r}"
+            )
+        if not self.owner:
+            raise ValueError("FindingSpec.owner must be non-empty")
+        if not self.description:
+            raise ValueError("FindingSpec.description must be non-empty")
+        proof_categories = tuple(self.proof_categories)
+        unknown_categories = sorted(
+            category for category in proof_categories if category not in _VALID_PROOF_CATEGORIES
+        )
+        if unknown_categories:
+            joined = ", ".join(repr(category) for category in unknown_categories)
+            raise ValueError(f"FindingSpec.proof_categories contains unknown categories: {joined}")
+        object.__setattr__(self, "proof_categories", proof_categories)
+        if self.role not in _VALID_FINDING_REGISTRY_ROLES:
+            raise ValueError(f"FindingSpec.role is not a known registry role: {self.role!r}")
 
     # Role predicates -----------------------------------------------------
 
