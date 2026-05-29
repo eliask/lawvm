@@ -1359,3 +1359,19 @@ removed the dominant bottleneck is ~1.8 s combined.
   `tests/test_regex_batch6_perf.py` (all pass).  Full suite: 10916 passed, 0 failed.
   Bench ukpga/1970/9: score=40.8% (unchanged), wall=1.60 s.  Byte-level edits used
   for files containing curly-quote chars to avoid Edit-tool string-delimiter corruption.
+- §1.9 Cluster B + C cleanup (2026-05-29): `UKMutableNode` and `LegalOperation.payload` /
+  `provenance_tags` typed-carrier getattr drift removed. Cluster B: 5 sites in
+  `replay_repeal_apply.py` (children/kind/label/text on `UKMutableNode`) and 9 sites in
+  `replay_target_gaps.py` (kind/children on `UKMutableNode` in `uk_broad_schedule_table_shape_gap`).
+  Cluster C: 7 `getattr(op, "payload", None)` → `op.payload` in `replay_target_gaps.py`
+  (functions `uk_payload_shape_invariant_violation_records`, `uk_payload_container_shape_gap`,
+  `uk_repeated_form_label_payload_shape_gap`, `uk_existing_target_insert_gap`,
+  `uk_existing_target_insert_already_materialized`, `uk_existing_target_insert_conflict_detail`,
+  `uk_crossheading_insert_target_gap`); downstream payload `kind`/`label` getattr collapsed to
+  `payload.kind.value` / `payload.label`. `text_rewrite_fragments.py` cluster C
+  `provenance_tags` sites were already clean (A20 covered them). Pattern: A6 handled
+  `LegalAddress.path` / `LegalOperation.target` (22 sites); A20 handled `_witness_for_op`
+  return-type root cause and cascaded 17 sites. This commit closes the remaining Sensor E
+  clusters. Shard ownership fix also included: `test_regex_batch6_perf.py` added to `uk`
+  shard in `scripts/test_shard.py` (was unassigned, blocking CI). Adjudication counts
+  identical (4532). ty green. 2431 uk-shard tests passed.
