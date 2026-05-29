@@ -451,6 +451,10 @@ Recent improvement:
   supported event kind, scope/source/activation-rule types, and tuple-normalize
   address/predicate lanes at construction, preventing malformed temporal facts
   from entering timeline replay by type-hint accident.
+- provenance expiry and migration carriers now normalize immutable lanes and
+  validate migration identity, migration kind, and endpoint address types at
+  construction, so lineage/expiry evidence cannot be malformed or mutated by
+  caller-owned input collections.
 
 ## Ranked Promotion Candidates
 

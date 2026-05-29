@@ -23,6 +23,12 @@ class ExpiryOverride:
     new_expires: str = ""
     section_labels: FrozenSet[str] = field(default_factory=frozenset)
 
+    def __post_init__(self) -> None:
+        labels = frozenset(self.section_labels)
+        if not all(isinstance(label, str) for label in labels):
+            raise ValueError("ExpiryOverride.section_labels must contain strings")
+        object.__setattr__(self, "section_labels", labels)
+
 
 @dataclass(frozen=True)
 class OperationSource:
@@ -51,6 +57,10 @@ class OperationSource:
     scenario_id: str = ""
 
     def __post_init__(self) -> None:
+        expiry_chain = tuple(self.expiry_chain)
+        if not all(isinstance(override, ExpiryOverride) for override in expiry_chain):
+            raise ValueError("OperationSource.expiry_chain must contain ExpiryOverride records")
+        object.__setattr__(self, "expiry_chain", expiry_chain)
         BranchContext(
             authority_layer=self.authority_layer,
             legal_status=self.legal_status,
@@ -70,6 +80,18 @@ class MigrationEvent:
     effective: str = ""
     source_statute: str = ""
     witness: object | None = None
+
+    def __post_init__(self) -> None:
+        from lawvm.core.ir import LegalAddress  # noqa: PLC0415
+
+        if not self.event_id:
+            raise ValueError("MigrationEvent.event_id must be non-empty")
+        if self.kind not in {"renumber", "move", "split", "merge"}:
+            raise ValueError(f"unsupported MigrationEvent.kind: {self.kind!r}")
+        if not isinstance(self.from_address, LegalAddress):
+            raise ValueError("MigrationEvent.from_address must be a LegalAddress")
+        if not isinstance(self.to_address, LegalAddress):
+            raise ValueError("MigrationEvent.to_address must be a LegalAddress")
 
 
 def migration_event_sort_key(
