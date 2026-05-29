@@ -528,6 +528,40 @@ Recent improvement:
   registered in `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS` in
   source_adjudication.py; witness fields: source_payload_kind,
   source_payload_label, target_leaf_kind, target_leaf_label.
+- UK payload label realignment (§1.3/§1.5 payload mutation ownership) now emits
+  `uk_effect_payload_label_realigned_to_target_leaf`
+  (family=payload_realignment, blocking=False, strict_disposition=block,
+  quirks_disposition=apply) via `_append_uk_effect_lowering_observation` in
+  `effect_payload_normalization.py:prepare_uk_operation_payload_node` when an
+  insert payload has a blank label but its kind matches the canonical target leaf
+  kind; the label is realigned to the target leaf label (mutation still proceeds
+  in quirks mode); rule ID
+  `_UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID` defined in
+  `effect_payload_normalization.py` and registered in
+  `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS` in `source_adjudication.py`; witness
+  fields: original_payload_label, new_payload_label, payload_kind,
+  target_leaf_kind, target_leaf_label; covered by
+  tests/test_uk_effect_payload_realignment.py (tests 1.1–1.6: positive, result,
+  negative-non-blank, strict-disposition, witness-fields, family).
+- UK payload kind realignment (§1.3/§1.5 payload mutation ownership) now emits
+  `uk_effect_payload_kind_realigned_to_target_leaf`
+  (family=payload_realignment, blocking=False, strict_disposition=block,
+  quirks_disposition=apply) via `_append_uk_effect_lowering_observation` in
+  `effect_payload_normalization.py:prepare_uk_operation_payload_node` when an
+  insert payload has a leafish kind that differs from the canonical target leaf
+  kind but whose label-number matches the target leaf label; the kind is realigned
+  to the canonical target leaf kind (mutation still proceeds in quirks mode); rule
+  ID `_UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID` defined in
+  `effect_payload_normalization.py` and registered in
+  `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS` in `source_adjudication.py`; witness
+  fields: original_payload_kind, new_payload_kind, payload_label, target_leaf_kind,
+  target_leaf_label; the existing test
+  `test_prepare_uk_operation_payload_node_canonicalizes_point_leaf_kind` in
+  `test_uk_replay_adjudications.py` was updated to assert the observation fires
+  for subparagraph→item realignment (previously asserting empty lowering_rejections);
+  covered by tests/test_uk_effect_payload_realignment.py (tests 2.1–2.6: positive,
+  result, negative-matches, strict-disposition, witness-fields, family) plus a
+  cross-site negative for replace action.
 - UK fee-target refinement failure (§1.10 narrow try-except) now emits
   `uk_effect_fee_target_refinement_failed` (family=lowering_rejection,
   blocking=False, strict_disposition=block, quirks_disposition=apply) when the

@@ -492,6 +492,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_children_range_replaced_with_text_applied",
         "uk_replay_proviso_child_structured_text_rewrite_applied",
         "uk_effect_fee_target_refinement_failed",
+        "uk_effect_payload_label_realigned_to_target_leaf",
+        "uk_effect_payload_kind_realigned_to_target_leaf",
     }
 )
 

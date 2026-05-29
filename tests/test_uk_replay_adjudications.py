@@ -6372,7 +6372,14 @@ def test_prepare_uk_operation_payload_node_canonicalizes_point_leaf_kind() -> No
     assert prepared.skip_effect is False
     assert prepared.payload_node is not None
     assert prepared.payload_node.kind == IRNodeKind.ITEM
-    assert lowering_rejections == []
+    # The kind realignment is now owned: a kind-realignment observation fires because
+    # subparagraph != item (canonical for point) but the label matches.
+    # The realignment itself still happens (quirks mode allows it); strict callers
+    # can gate on strict_disposition=block.
+    rule_ids = [r.get("rule_id") for r in lowering_rejections]
+    assert "uk_effect_payload_kind_realigned_to_target_leaf" in rule_ids, (
+        f"Expected kind-realignment observation for subparagraph→item realignment, got {rule_ids!r}"
+    )
 
 
 def test_executor_does_not_materialize_labeled_child_text_without_source_rule() -> None:
