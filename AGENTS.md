@@ -232,6 +232,60 @@ to root (parent_map values, ancestor tuples) that defeat Python reference-count
 GC without explicit removal.  See §source_root_lifecycle in
 `HIGH_ORDER_INVARIANT_REUSE_AUDIT.md`.
 
+### 1.13 Regex versus bespoke recognizer: choosing the right IR
+
+Most performance and correctness pain around string matching in LawVM comes
+from lowering the wrong kind of problem into regex, not from regex itself. The
+deciding question is never "regex or bespoke?" It is:
+
+**Is this a single string predicate, or a small language/grammar?**
+
+- **Single string predicate** ("does drafting pattern P appear / extract X,Y
+  from one fixed phrase shape?") → keep regex, but compile it through the
+  safety layer (`compile_classifier_regex` / `compile_with_prefilter` in
+  `src/lawvm/core/regex_safety.py`), never raw `re.compile` for classifier
+  patterns. The wrapper adds the catastrophic-backtracking lint and a sound
+  required-literal prefilter.
+- **A family of related extraction patterns** (a drafting "language" with
+  productions) → regex is the wrong IR. Build one single-pass structured
+  recognizer (scanner / recursive descent), not dozens of overlapping
+  backtracking passes. The recognizer is still linear; it just stops being a
+  pile of `re.finditer` calls racing each other with span-overlap dedup.
+
+The correct claim is **not** "always a DFA" — drafting languages with balanced
+quotes, nested parentheses, or legal-address substructure may need a recursive
+recognizer. The claim is **single-pass structured recognizer over the text, not
+N overlapping backtracking scans.**
+
+**Triggers that say "this has become a grammar — stop adding regexes, build a
+recognizer":**
+
+- the same phrase family appears as 3+ regex variants;
+- the same text is scanned repeatedly for sibling patterns;
+- captures are legal-domain objects (targets, anchors, replacements), not just
+  strings;
+- pattern names correspond to grammar productions;
+- adding a new legal variant requires another full-text regex pass;
+- profiling shows cumulative regex time across many patterns, not one obvious
+  bad pattern;
+- correctness needs evidence spans, precedence, or conflict resolution between
+  patterns.
+
+**Rule of three:** when the same matching patch (a substring guard, a bound, a
+recovery) lands for the third time, that is a defect in the abstraction, not
+three independent fixes. Stop and build the general thing. The substring-guard
+discipline that became `regex_safety`'s prefilter was hand-written across many
+classifiers before it was recognized as one missing abstraction; the UK
+drafting-phrase recognizer is the same lesson at grammar scale.
+
+LawVM sits at an intersection no off-the-shelf engine serves: PCRE-like features
+(load-bearing lookaround) + owned-pattern corpus + adversarial legal text +
+hot-loop classification + no migration to a linear engine. So the matching
+infrastructure (`regex_safety.py`) is an in-tree, standalone-ready library, and
+domain grammars get bespoke recognizers. Neither "wrap every regex forever" nor
+"rewrite everything bespoke" is correct — match the mechanism to whether the
+problem is a predicate or a language.
+
 ---
 
 ## 2. What LawVM Optimizes For
