@@ -293,6 +293,15 @@ Recent improvement:
 - Norway public-archive ingest duplicate locator diagnostics now include the
   same shared source-lane projection for the retained existing farchive witness
   and incoming duplicate archive member.
+- `_witness_for_op` in `src/lawvm/uk_legislation/witness_sidecars.py` return
+  type tightened from `object | None` to `Optional[UKLoweredOperationWitness]`
+  (Sensor E Cluster D root-cause fix). The untyped-dict fallback branch was
+  confirmed dead at 0 hits on the smoke corpus and removed. Downstream getattr
+  chains collapsed to direct typed attribute access at ~14 sites across
+  `authority_filter.py` (5 sites), `text_rewrite_fragments.py` (4 sites), and
+  `replay_target_gaps.py` (5 sites). All try-except and defensive getattr on
+  `LegalOperation.payload` / `provenance_tags` also removed from
+  `_witness_for_op` itself. Adjudication counts identical (4532). ty green.
 - source-version bracketing now has shared source-only window selectors; New
   Zealand archived XML date/change windows delegate the bracketing invariant
   while preserving NZ-specific row classes and truth-claim names.

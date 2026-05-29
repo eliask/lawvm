@@ -184,34 +184,34 @@ def _lowered_witness_from_payload_data(data: dict[str, Any]) -> UKLoweredOperati
     )
 
 
-def _witness_for_op(op: LegalOperation) -> object | None:
-    """Return the preferred witness payload for UK replay helpers.
+_WITNESS_REQUIRED_KEYS = frozenset({"effect_witness", "extraction_witness", "target_expansion_witness"})
 
-    Prefer the typed payload-sidecar witness when present so sidecar-backed
-    lanes can migrate away from the shared source witness carrier. Payload-
-    less text ops use a provenance-tag sidecar so authority filtering can still
-    inspect their source witness.
+
+def _witness_for_op(op: LegalOperation) -> Optional[UKLoweredOperationWitness]:
+    """Return the typed witness for a UK lowered operation, or None.
+
+    Prefer the payload-sidecar witness when present so sidecar-backed lanes
+    can migrate away from the shared provenance-tag carrier. Payload-less text
+    ops store their witness in a provenance tag.
+
+    All paths that store a sidecar witness use _payload_with_rewrite_witness,
+    which always writes a _WITNESS_REQUIRED_KEYS-complete dict produced by
+    _lowered_witness_to_payload_data. The untyped-dict fallback branch that
+    previously existed here was confirmed dead on the full smoke corpus (0 hits)
+    and has been removed.
     """
-    payload = getattr(op, "payload", None)
-    payload_attrs = getattr(payload, "attrs", None)
-    if isinstance(payload_attrs, dict):
-        witness = payload_attrs.get("rewrite_witness")
-        if isinstance(witness, dict) and {"effect_witness", "extraction_witness", "target_expansion_witness"} <= set(witness):
-            return _lowered_witness_from_payload_data(witness)
-        if witness is not None:
-            return witness
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(NOTE_REWRITE_WITNESS):
+    if op.payload is not None and isinstance(op.payload.attrs, dict):
+        witness_data = op.payload.attrs.get("rewrite_witness")
+        if isinstance(witness_data, dict) and _WITNESS_REQUIRED_KEYS <= set(witness_data):
+            return _lowered_witness_from_payload_data(witness_data)
+    for note in op.provenance_tags:
+        note_str = str(note)
+        if not note_str.startswith(NOTE_REWRITE_WITNESS):
             continue
-        try:
-            witness_payload = json.loads(str(note)[len(NOTE_REWRITE_WITNESS) :])
-        except json.JSONDecodeError:
-            return None
-        if (
-            isinstance(witness_payload, dict)
-            and {"effect_witness", "extraction_witness", "target_expansion_witness"} <= set(witness_payload)
-        ):
-            return _lowered_witness_from_payload_data(witness_payload)
+        raw = note_str[len(NOTE_REWRITE_WITNESS):]
+        parsed = json.loads(raw) if raw else None
+        if isinstance(parsed, dict) and _WITNESS_REQUIRED_KEYS <= set(parsed):
+            return _lowered_witness_from_payload_data(parsed)
     return None
 
 

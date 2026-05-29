@@ -224,13 +224,12 @@ def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: I
     if _action_name(op.action) != "insert":
         return False
     witness = _witness_for_op(op)
-    insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
+    if witness is None:
+        return False
+    insertion_anchor_witness = witness.insertion_anchor_witness
     if insertion_anchor_witness is None:
         return False
-    if not (
-        getattr(insertion_anchor_witness, "preceding_eid", None)
-        or getattr(insertion_anchor_witness, "following_eid", None)
-    ):
+    if not (insertion_anchor_witness.preceding_eid or insertion_anchor_witness.following_eid):
         return False
     target_path = op.target.path
     if not target_path:
@@ -246,14 +245,13 @@ def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: I
 
 def uk_missing_source_target_gap(op: LegalOperation) -> bool:
     witness = _witness_for_op(op)
-    extraction = getattr(witness, "extraction_witness", None)
-    authority_layer = str(getattr(extraction, "authority_layer", "") or "")
-    extraction_failure_kind = str(getattr(extraction, "extraction_failure_kind", "") or "")
-    extracted_source_present = bool(getattr(extraction, "extracted_source_present", False))
+    if witness is None:
+        return False
+    extraction = witness.extraction_witness
     return (
-        authority_layer == "EFFECT_FEED_INDEX"
-        and not extracted_source_present
-        and extraction_failure_kind == "missing_extracted_source"
+        extraction.authority_layer == "EFFECT_FEED_INDEX"
+        and not extraction.extracted_source_present
+        and extraction.extraction_failure_kind == "missing_extracted_source"
     )
 
 

@@ -23,15 +23,17 @@ def _uk_op_allowed_by_authority_mode(
     if authority_mode != "source_text_only":
         return UKAuthorityModeDecision(allowed=True, rejection_reason=None)
     witness = _witness_for_op(op)
-    extraction_witness = getattr(witness, "extraction_witness", None)
-    target_expansion_witness = getattr(witness, "target_expansion_witness", None)
-    authority_layer = str(getattr(extraction_witness, "authority_layer", "") or "")
-    if authority_layer not in {"AFFECTING_ACT_TEXT", "AFFECTING_ACT_ENACTED_TEXT"}:
+    if witness is None:
         return UKAuthorityModeDecision(
             allowed=False,
             rejection_reason="extraction_authority",
         )
-    if str(getattr(target_expansion_witness, "expansion_source", "") or "") == "metadata_split":
+    if witness.extraction_witness.authority_layer not in {"AFFECTING_ACT_TEXT", "AFFECTING_ACT_ENACTED_TEXT"}:
+        return UKAuthorityModeDecision(
+            allowed=False,
+            rejection_reason="extraction_authority",
+        )
+    if witness.target_expansion_witness.expansion_source == "metadata_split":
         return UKAuthorityModeDecision(
             allowed=False,
             rejection_reason="metadata_target_expansion",
@@ -97,23 +99,10 @@ def _uk_authority_filter_diagnostic(
         kept_op_count=compiled_op_count - len(rejected_ops),
         rejected_authority_layers=sorted(
             {
-                str(
-                    getattr(
-                        getattr(_witness_for_op(op), "extraction_witness", None),
-                        "authority_layer",
-                        "",
-                    )
-                    or ""
-                )
+                w.extraction_witness.authority_layer
                 for op in rejected_ops
-                if str(
-                    getattr(
-                        getattr(_witness_for_op(op), "extraction_witness", None),
-                        "authority_layer",
-                        "",
-                    )
-                    or ""
-                )
+                for w in (_witness_for_op(op),)
+                if w is not None and w.extraction_witness.authority_layer
             }
         ),
         rejected_reasons=sorted(rejected_reason_counts),
@@ -158,16 +147,14 @@ def _apply_uk_authority_mode(
 
 def _preceding_eid(op: LegalOperation) -> Optional[str]:
     witness = _witness_for_op(op)
-    insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
-    if insertion_anchor_witness is not None and insertion_anchor_witness.preceding_eid:
-        return insertion_anchor_witness.preceding_eid
-    return None
+    if witness is None or witness.insertion_anchor_witness is None:
+        return None
+    return witness.insertion_anchor_witness.preceding_eid or None
 
 
 def _following_eid(op: LegalOperation) -> Optional[str]:
     witness = _witness_for_op(op)
-    insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
-    following = getattr(insertion_anchor_witness, "following_eid", None)
-    if following:
-        return str(following)
-    return None
+    if witness is None or witness.insertion_anchor_witness is None:
+        return None
+    following = witness.insertion_anchor_witness.following_eid
+    return str(following) if following else None
