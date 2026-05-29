@@ -1,11 +1,14 @@
-"""Regex safety lint for LawVM classifier patterns.
+"""Regex safety lint and sound prefilter for LawVM classifier patterns.
 
 Purpose:
     Static AST-based lint for module-scope ``_*_RE`` / ``_*_PATTERN`` constants
     in ``src/lawvm/``.  Catches catastrophic-backtracking regex patterns before
     they reach production.  This is a CI lint only — not a runtime monkey-patch.
 
-Reference: AGENTS.md §1.11 (Hot-path performance discipline).
+    Also provides ``compile_classifier_regex`` and ``build_regex_prefilter`` for
+    classifier patterns that benefit from a sound necessary-condition prefilter.
+
+Reference: AGENTS.md §1.11, §1.13 (Hot-path performance discipline; regex vs bespoke).
 Used by: ``tests/test_regex_perf_gate.py`` (Sensor H batch 5).
 
 Two risk detectors are combined in ``lawvm_regex_risks()``:
@@ -52,11 +55,568 @@ CATEGORY first-char sets (A18 enhancement, 2026-05-29):
     NOT-category variants (``\\D``, ``\\W``, ``\\S``) are left as ``None``
     (conservative/unknown) because their char-sets are too large to enumerate and
     the overlap test cannot usefully shrink them.
+
+Sound prefilter (``build_regex_prefilter`` / ``compile_classifier_regex``):
+    LawVM occupies an intersection no off-the-shelf engine serves well:
+    load-bearing lookarounds (Estonian morphology lookbehind like
+    ``(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])``, Finnish ``§(?!:)`` discrimination) mean
+    re2/ripgrep/grep are not feasible.  stdlib ``re`` supports all PCRE-like
+    features LawVM needs but has no built-in prefilter.  This module provides one.
+
+    The prefilter extracts a boolean predicate tree (``And``/``Or``/``Lit`` nodes)
+    of *necessary conditions* from the regex AST.  A ``Lit`` node asserts that a
+    literal substring must be present.  ``And`` requires all children; ``Or``
+    requires at least one.  Only conditions that are logically required by the
+    pattern are emitted — when in doubt, ``TRUE`` (no constraint) is returned.
+
+    Soundness invariant (the only guarantee that matters):
+        The prefilter is a NECESSARY-CONDITION filter only.  It will never
+        reject a string that the full regex could match.  It may pass strings
+        that the regex rejects (false positives are fine; false negatives are
+        not).  This guarantee is derived from AST analysis, not from fuzzing —
+        fuzzing is a guardrail; the AST derivation rules are the proof.
+
+    Lookarounds → ``TRUE``:  A lookbehind like ``(?<![A-Za-z])`` constrains the
+    match *position*, not the substring content; using it as a segment-local
+    literal precondition can be unsound.  Lookarounds are always excluded and
+    return ``TRUE``.
+
+    Zero-copy substring checks:  Case-sensitive literals use ``str.find`` (no
+    allocation).  IGNORECASE literals use a tiny per-literal cached ``re.search``
+    on the bounded segment — never ``text.lower()`` over the full document.
+
+    Extraction-readiness:  Pure stdlib, no project-specific imports.  In-tree for
+    now (same pattern as ``farchive`` was before extraction); ready to become a
+    standalone package when the corpus grows to other consumers.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
+from typing import Any, Iterable
+
+try:
+    from re import _parser as _sre  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
+except ImportError:
+    import sre_parse as _sre  # type: ignore[no-redef]  # older Python fallback
+
+# ---------------------------------------------------------------------------
+# Prefilter plan nodes — AND / OR / Lit predicate tree.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _True:
+    """Plan node meaning "no required literal" — always passes."""
+
+
+TRUE: _True = _True()
+
+
+@dataclass(frozen=True)
+class Lit:
+    """Plan node: the given literal substring must be present in the text."""
+
+    text: str
+    flags: int = 0  # only re.IGNORECASE is meaningful here
+
+
+@dataclass(frozen=True)
+class And:
+    """Plan node: all children must pass."""
+
+    parts: tuple[Any, ...]
+
+
+@dataclass(frozen=True)
+class Or:
+    """Plan node: at least one child must pass."""
+
+    parts: tuple[Any, ...]
+
+
+# Mask for flags that affect literal matching (only IGNORECASE changes substring
+# matching; ASCII and LOCALE don't change whether a substring is present).
+_FLAG_MASK: int = re.IGNORECASE | re.ASCII | re.LOCALE
+
+
+def _is_true(x: Any) -> bool:
+    return x is TRUE or isinstance(x, _True)
+
+
+def _lit_implies(a: Lit, b: Lit) -> bool:
+    """Return True when CONTAINS(a.text) implies CONTAINS(b.text).
+
+    This holds when b.text is a substring of a.text and the flags match.
+    Used in AND-simplification to drop weaker (shorter) conditions.
+    """
+    return (
+        isinstance(a, Lit)
+        and isinstance(b, Lit)
+        and a.flags == b.flags
+        and b.text in a.text
+    )
+
+
+def _dedupe(parts: Iterable[Any]) -> list[Any]:
+    out: list[Any] = []
+    seen: set[Any] = set()
+    for p in parts:
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
+
+def _simplify(node: Any, *, max_or: int = 12) -> Any:
+    """Simplify a prefilter plan node."""
+    if _is_true(node) or isinstance(node, Lit):
+        return node
+    if isinstance(node, And):
+        parts: list[Any] = []
+        for p in node.parts:
+            sp = _simplify(p, max_or=max_or)
+            if _is_true(sp):
+                continue
+            if isinstance(sp, And):
+                parts.extend(sp.parts)
+            else:
+                parts.append(sp)
+        parts = _dedupe(parts)
+        # AND: keep stronger/longer literal; drop b when a implies b.
+        drop: set[int] = set()
+        for i, a in enumerate(parts):
+            for j, b in enumerate(parts):
+                if i != j and isinstance(a, Lit) and isinstance(b, Lit) and _lit_implies(a, b):
+                    drop.add(j)
+        parts = [p for i, p in enumerate(parts) if i not in drop]
+        if not parts:
+            return TRUE
+        if len(parts) == 1:
+            return parts[0]
+        return And(tuple(parts))
+    if isinstance(node, Or):
+        parts = []
+        for p in node.parts:
+            sp = _simplify(p, max_or=max_or)
+            if _is_true(sp):
+                return TRUE  # one branch needs nothing → whole OR is unconstrained
+            if isinstance(sp, Or):
+                parts.extend(sp.parts)
+            else:
+                parts.append(sp)
+        parts = _dedupe(parts)
+        # OR: keep weaker/shorter literal; drop a when a implies b (a is stronger).
+        drop = set()
+        for i, a in enumerate(parts):
+            for j, b in enumerate(parts):
+                if i != j and isinstance(a, Lit) and isinstance(b, Lit) and _lit_implies(a, b):
+                    drop.add(i)
+        parts = [p for i, p in enumerate(parts) if i not in drop]
+        if not parts:
+            return TRUE
+        if len(parts) > max_or:
+            return TRUE
+        if len(parts) == 1:
+            return parts[0]
+        return Or(tuple(parts))
+    raise TypeError(f"unexpected prefilter node: {node!r}")
+
+
+def _count_literals(node: Any) -> int:
+    if _is_true(node):
+        return 0
+    if isinstance(node, Lit):
+        return 1
+    if isinstance(node, (And, Or)):
+        return sum(_count_literals(p) for p in node.parts)
+    raise TypeError(f"unexpected prefilter node: {node!r}")
+
+
+def build_regex_prefilter(
+    pattern: str,
+    flags: int = 0,
+    *,
+    min_literal_len: int = 3,
+    max_literals: int = 12,
+    max_or: int = 12,
+) -> And | Or | Lit | None:
+    """Extract a sound necessary-condition predicate plan from a regex pattern.
+
+    Returns a predicate tree (``And``/``Or``/``Lit``) that is a *necessary
+    condition* for the pattern to match.  Returns ``None`` when no useful plan
+    can be derived (pattern has no required literals, or too many).
+
+    Soundness: if ``build_regex_prefilter`` returns a plan P and the plan
+    evaluates to False for a string S, then the regex cannot match S.  The
+    converse is NOT guaranteed: the plan may pass strings the regex rejects.
+
+    Derivation rules (conservative — when in doubt, return TRUE):
+
+    - LITERAL runs concatenate into a Lit; emit only if length >= min_literal_len.
+    - SUBPATTERN: recurse with flag adjustments.
+    - BRANCH (alternation): OR of per-branch plans.  If ANY branch yields TRUE,
+      the whole OR is TRUE.
+    - MAX_REPEAT / MIN_REPEAT / POSSESSIVE_REPEAT: if lo == 0 the body is
+      optional → TRUE.  If lo >= 1 the body is required → recurse.
+    - ATOMIC_GROUP: recurse.
+    - ASSERT / ASSERT_NOT (lookaround): TRUE — excluded for soundness.
+    - GROUPREF_EXISTS (conditional): OR(yes-branch, else-branch-or-TRUE).
+    - Everything else (character classes, categories, dot, anchors, group refs):
+      TRUE — no safe literal can be extracted.
+    """
+    tree = _sre.parse(pattern, flags)
+    POSSESSIVE_REPEAT = getattr(_sre, "POSSESSIVE_REPEAT", None)
+    ATOMIC_GROUP = getattr(_sre, "ATOMIC_GROUP", None)
+    GROUPREF_EXISTS_OP = getattr(_sre, "GROUPREF_EXISTS", object())
+    repeat_ops: set[object] = {_sre.MAX_REPEAT, _sre.MIN_REPEAT}
+    if POSSESSIVE_REPEAT is not None:
+        repeat_ops.add(POSSESSIVE_REPEAT)
+
+    def make_lit(chars: list[int], cur_flags: int) -> Any:
+        if len(chars) < min_literal_len:
+            return TRUE
+        text = "".join(chr(c) for c in chars)
+        lit_flags = cur_flags & _FLAG_MASK
+        if not (lit_flags & re.IGNORECASE):
+            lit_flags = 0
+        lit_flags &= ~re.LOCALE  # LOCALE is bytes-only; strip for str patterns
+        return Lit(text, int(lit_flags))
+
+    def build_seq(sub: Any, cur_flags: int) -> Any:
+        parts: list[Any] = []
+        run: list[int] = []
+        run_flags: int | None = None
+
+        def flush() -> None:
+            nonlocal run, run_flags
+            if run:
+                parts.append(make_lit(run, run_flags or 0))
+                run, run_flags = [], None
+
+        for op, arg in getattr(sub, "data", sub):
+            if op == _sre.LITERAL:
+                lf = cur_flags & _FLAG_MASK
+                if run and run_flags != lf:
+                    flush()
+                run_flags = lf
+                run.append(arg)
+                continue
+            flush()
+            parts.append(build_token(op, arg, cur_flags))
+        flush()
+        return _simplify(And(tuple(parts)), max_or=max_or)
+
+    def build_token(op: object, arg: Any, cur_flags: int) -> Any:
+        if op == _sre.LITERAL:
+            return make_lit([arg], cur_flags)
+        if op == _sre.SUBPATTERN:
+            _g, add_f, del_f, child = arg
+            return build_seq(child, (cur_flags | add_f) & ~del_f)
+        if op == _sre.BRANCH:
+            _n, branches = arg
+            return _simplify(
+                Or(tuple(build_seq(b, cur_flags) for b in branches)),
+                max_or=max_or,
+            )
+        if op in repeat_ops:
+            lo, _hi, child = arg
+            if lo == 0:
+                return TRUE
+            return build_seq(child, cur_flags)
+        if ATOMIC_GROUP is not None and op == ATOMIC_GROUP:
+            return build_seq(arg, cur_flags)
+        if op in (_sre.ASSERT, _sre.ASSERT_NOT):
+            return TRUE  # lookaround excluded — unsound to use as segment precondition
+        if op == GROUPREF_EXISTS_OP:
+            _g, yes_b, no_b = arg
+            branches = [build_seq(yes_b, cur_flags)]
+            branches.append(TRUE if no_b is None else build_seq(no_b, cur_flags))
+            return _simplify(Or(tuple(branches)), max_or=max_or)
+        return TRUE  # character classes, categories, dot, anchors, group refs
+
+    plan = _simplify(build_seq(tree, tree.state.flags), max_or=max_or)
+    if _is_true(plan):
+        return None
+    if _count_literals(plan) > max_literals:
+        return None
+    return plan  # type: ignore[return-value]
+
+
+# ---------------------------------------------------------------------------
+# PrefilteredPattern wrapper
+# ---------------------------------------------------------------------------
+
+# Per-literal IGNORECASE regex cache: maps (literal, flags) → compiled pattern.
+_IGNORECASE_LIT_CACHE: dict[tuple[str, int], re.Pattern[str]] = {}
+
+
+def _get_ic_pattern(text: str, flags: int) -> re.Pattern[str]:
+    """Return a cached tiny regex for IGNORECASE literal search."""
+    key = (text, flags)
+    if key not in _IGNORECASE_LIT_CACHE:
+        _IGNORECASE_LIT_CACHE[key] = re.compile(re.escape(text), flags & re.IGNORECASE)
+    return _IGNORECASE_LIT_CACHE[key]
+
+
+class PrefilteredPattern:
+    """Wraps a compiled ``re.Pattern`` with a sound prefilter plan.
+
+    Before calling the full regex engine, ``search``/``match``/``fullmatch``/
+    ``finditer``/``findall`` evaluate the plan against the text.  If the plan
+    fails the call is short-circuited and the appropriate empty value returned.
+
+    The plan is a NECESSARY CONDITION only — it never produces false negatives.
+    False positives (plan passes but regex doesn't match) are fine.
+
+    Attributes mirror ``re.Pattern``: ``pattern``, ``flags``, ``groups``,
+    ``groupindex``.  Unknown attribute access delegates to the underlying
+    pattern object via ``__getattr__``.
+    """
+
+    def __init__(self, rx: "re.Pattern[str]", plan: Any) -> None:
+        self._rx = rx
+        self._plan = plan
+        # Expose the standard Pattern attributes directly.
+        self.pattern: str = rx.pattern
+        self.flags: int = rx.flags
+        self.groups: int = rx.groups
+        self.groupindex: dict[str, int] = dict(rx.groupindex)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._rx, name)
+
+    def __repr__(self) -> str:
+        return f"PrefilteredPattern({self._rx!r}, plan={self._plan!r})"
+
+    def _literal_present(self, lit: Lit, text: str, pos: int, endpos: int) -> bool:
+        """Check whether lit.text is present in text[pos:endpos]."""
+        if lit.flags & re.IGNORECASE:
+            # Use a tiny cached regex bounded to the segment.
+            return _get_ic_pattern(lit.text, lit.flags).search(text, pos, endpos) is not None
+        return text.find(lit.text, pos, endpos) != -1
+
+    def _plan_passes(self, plan: Any, text: str, pos: int, endpos: int) -> bool:
+        """Evaluate the plan against text[pos:endpos]."""
+        if _is_true(plan):
+            return True
+        if isinstance(plan, Lit):
+            return self._literal_present(plan, text, pos, endpos)
+        if isinstance(plan, And):
+            return all(self._plan_passes(p, text, pos, endpos) for p in plan.parts)
+        if isinstance(plan, Or):
+            return any(self._plan_passes(p, text, pos, endpos) for p in plan.parts)
+        return True  # unknown node type — conservative pass
+
+    def search(
+        self,
+        string: str,
+        pos: int = 0,
+        endpos: int | None = None,
+    ) -> "re.Match[str] | None":
+        ep = len(string) if endpos is None else endpos
+        if not self._plan_passes(self._plan, string, pos, ep):
+            return None
+        return self._rx.search(string, pos, ep)
+
+    def match(
+        self,
+        string: str,
+        pos: int = 0,
+        endpos: int | None = None,
+    ) -> "re.Match[str] | None":
+        ep = len(string) if endpos is None else endpos
+        if not self._plan_passes(self._plan, string, pos, ep):
+            return None
+        return self._rx.match(string, pos, ep)
+
+    def fullmatch(
+        self,
+        string: str,
+        pos: int = 0,
+        endpos: int | None = None,
+    ) -> "re.Match[str] | None":
+        ep = len(string) if endpos is None else endpos
+        if not self._plan_passes(self._plan, string, pos, ep):
+            return None
+        return self._rx.fullmatch(string, pos, ep)
+
+    def finditer(
+        self,
+        string: str,
+        pos: int = 0,
+        endpos: int | None = None,
+    ) -> "Iterable[re.Match[str]]":
+        ep = len(string) if endpos is None else endpos
+        if not self._plan_passes(self._plan, string, pos, ep):
+            return iter([])
+        return self._rx.finditer(string, pos, ep)
+
+    def findall(
+        self,
+        string: str,
+        pos: int = 0,
+        endpos: int | None = None,
+    ) -> list[Any]:
+        ep = len(string) if endpos is None else endpos
+        if not self._plan_passes(self._plan, string, pos, ep):
+            return []
+        return self._rx.findall(string, pos, ep)
+
+
+# ---------------------------------------------------------------------------
+# Prefilter stats / telemetry
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RegexPrefilterStats:
+    """Per-classifier prefilter telemetry.
+
+    Attributes:
+        checked:   Total calls where the prefilter was evaluated.
+        rejected:  Calls where the plan failed (regex not run).
+        passed:    Calls where the plan passed (regex was run).
+        regex_ran: Alias for passed (regex_ran == passed).
+    """
+
+    checked: int = field(default=0)
+    rejected: int = field(default=0)
+    passed: int = field(default=0)
+
+    @property
+    def regex_ran(self) -> int:
+        return self.passed
+
+
+# Module-level telemetry dict keyed by classifier_id.
+_PREFILTER_TELEMETRY: dict[str, RegexPrefilterStats] = {}
+
+
+def dump_prefilter_stats() -> dict[str, dict[str, int]]:
+    """Return a snapshot of per-classifier prefilter telemetry.
+
+    Returns a dict mapping classifier_id to a dict with keys:
+    ``checked``, ``rejected``, ``passed``, ``regex_ran``.
+    """
+    return {
+        cid: {
+            "checked": s.checked,
+            "rejected": s.rejected,
+            "passed": s.passed,
+            "regex_ran": s.regex_ran,
+        }
+        for cid, s in sorted(_PREFILTER_TELEMETRY.items())
+    }
+
+
+# ---------------------------------------------------------------------------
+# compile_classifier_regex — the primary compilation path
+# ---------------------------------------------------------------------------
+
+
+def compile_classifier_regex(
+    pattern: str,
+    flags: int = 0,
+    *,
+    classifier_id: str,
+    enable_prefilter: bool = True,
+) -> "re.Pattern[str] | PrefilteredPattern":
+    """Compile a classifier regex with safety lint and an optional prefilter.
+
+    Steps:
+
+    1. Run ``lawvm_regex_risks`` — raises ``ValueError`` if any backtracking
+       risks are detected.  This gate is MANDATORY and cannot be bypassed.
+    2. Compile the pattern via ``re.compile``.
+    3. If ``enable_prefilter`` is True and ``build_regex_prefilter`` produces a
+       plan, wrap the compiled pattern in ``PrefilteredPattern``.
+    4. Register the classifier in ``_PREFILTER_TELEMETRY`` if a plan was built.
+
+    New hot-path classifiers should prefer ``compile_classifier_regex`` over
+    hand-written substring guards (AGENTS.md §1.11).
+
+    Args:
+        pattern: The regex pattern string.
+        flags: Optional ``re`` flags.
+        classifier_id: Human-readable identifier for error messages and telemetry.
+        enable_prefilter: Whether to build and attach the prefilter plan.
+            Defaults to True.  Set to False only when the caller has a specific
+            reason (e.g., testing the raw regex).
+
+    Raises:
+        ValueError: If ``lawvm_regex_risks()`` detects backtracking risks.
+
+    Returns:
+        A ``PrefilteredPattern`` if a plan was derived, otherwise a plain
+        ``re.Pattern``.
+    """
+    risks = lawvm_regex_risks(pattern, flags)
+    if risks:
+        joined = "\n  - ".join(risks)
+        raise ValueError(
+            f"unsafe classifier regex {classifier_id!r}: {pattern!r}\n"
+            f"  - {joined}"
+        )
+    rx = re.compile(pattern, flags)
+    if not enable_prefilter:
+        return rx
+    plan = build_regex_prefilter(pattern, flags)
+    if plan is None:
+        return rx
+    if classifier_id not in _PREFILTER_TELEMETRY:
+        _PREFILTER_TELEMETRY[classifier_id] = RegexPrefilterStats()
+    return PrefilteredPattern(rx, plan)
+
+
+# ---------------------------------------------------------------------------
+# Self-validation guardrail (NOT proof of soundness — the AST analysis is proof)
+# ---------------------------------------------------------------------------
+
+
+def assert_prefilter_no_false_negatives(
+    pattern: str,
+    flags: int = 0,
+    *,
+    samples: list[str],
+) -> None:
+    """Assert that the prefilter introduces no false negatives on the given samples.
+
+    For each sample string, if the bare regex matches but the wrapped pattern
+    does not, raise AssertionError.
+
+    This is a guardrail test — the soundness guarantee comes from the AST
+    derivation rules in ``build_regex_prefilter``, not from this function.
+    Use in CI test suites with representative and adversarial sample sets.
+
+    Args:
+        pattern: Regex pattern to test.
+        flags: Optional ``re`` flags.
+        samples: List of strings to test against.
+
+    Raises:
+        AssertionError: If any sample triggers a false negative.
+        ValueError: If ``lawvm_regex_risks`` detects backtracking risks.
+    """
+    bare = re.compile(pattern, flags)
+    plan = build_regex_prefilter(pattern, flags)
+    if plan is None:
+        # No plan — prefilter is a pass-through; no false negatives possible.
+        return
+    wrapped = PrefilteredPattern(bare, plan)
+    for s in samples:
+        bare_match = bare.search(s)
+        wrapped_match = wrapped.search(s)
+        if bare_match is not None and wrapped_match is None:
+            raise AssertionError(
+                f"prefilter false negative on {pattern!r}:\n"
+                f"  sample:  {s!r}\n"
+                f"  plan:    {plan!r}\n"
+                f"  bare matched at {bare_match.span()}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Module-level CATEGORY → frozenset[int] mapping (ASCII approximation).

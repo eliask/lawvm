@@ -1340,6 +1340,20 @@ removed the dominant bottleneck is ~1.8 s combined.
 - `src/lawvm/core/regex_safety.py::lawvm_regex_risks` is the shared AST-based
   catastrophic-backtracking lint for module-scope ``_*_RE`` / ``_*_PATTERN``
   constants; validated by ``tests/test_regex_perf_gate.py`` (Sensor H batch 5).
+- `src/lawvm/core/regex_safety.py::compile_classifier_regex` + `build_regex_prefilter`
+  is the Current Shared Surface for sound regex literal prefiltering (2026-05-29).
+  Provides a predicate tree (``And``/``Or``/``Lit``) of necessary conditions extracted
+  from the regex AST.  Soundness invariant: the plan never rejects a string the full
+  regex could match (false negatives are structurally impossible by construction).
+  ``PrefilteredPattern`` wraps compiled patterns to short-circuit calls when the plan
+  fails.  Zero-copy: case-sensitive literals use ``str.find``; IGNORECASE literals use
+  a per-literal cached ``re.search`` on the bounded segment — no ``text.lower()`` over
+  full documents.  New hot-path classifiers should use ``compile_classifier_regex``
+  instead of hand-written substring guards (see AGENTS.md §1.11).  Pure stdlib,
+  standalone-ready (see extraction-readiness note in module docstring).
+  Tested by ``tests/test_regex_prefilter.py`` (soundness battery: 12 real patterns
+  × 10–15 samples each = zero false negatives; 7 expected-plan unit tests all match
+  spec).
   A18 (2026-05-29) enhanced ``first_chars()`` in both detectors to resolve
   CATEGORY escapes (``\d``, ``\w``, ``\s`` and Unicode variants) to concrete
   ASCII frozensets, eliminating 77 CATEGORY false-positive entries across 21
