@@ -221,6 +221,17 @@ Agents encountering a slow statute should:
 
 When wall time looks absurd, it almost certainly is.
 
+**Source-root lifecycle pattern (UK compile):** UK `compile_ops_for_statute`
+evicts affecting-act XML parse trees (ET.Element roots) after each act's last
+effect via `try/finally` + `evict_source_root_caches(root)`.  Without eviction,
+all 229 roots for a large statute accumulate (~2.6 GB peak RSS).  After eviction
+the peak drops to single-digit live roots at any point (~860 MB).  The pattern
+also clears `_source_parent_map_cache`, `_source_ancestor_chain_cache`, and
+`_EXTRACTION_CONTEXT_CACHE` explicitly because their values hold back-references
+to root (parent_map values, ancestor tuples) that defeat Python reference-count
+GC without explicit removal.  See §source_root_lifecycle in
+`HIGH_ORDER_INVARIANT_REUSE_AUDIT.md`.
+
 ---
 
 ## 2. What LawVM Optimizes For

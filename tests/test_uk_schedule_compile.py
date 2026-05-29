@@ -54709,7 +54709,9 @@ def test_uk_replay_projects_flattened_sublist_lints_to_adjudications() -> None:
 
 
 def test_uk_source_ancestor_chain_caches_repeated_source_walks() -> None:
-    _source_ancestor_chain.cache_clear()
+    # WeakKeyDictionary-backed cache: no cache_clear() needed — each root gets
+    # its own entry.  Cache hit is verified by identity equality of the result
+    # tuple (same object returned on second call).
     root = ET.fromstring(
         """
         <Legislation>
@@ -54728,11 +54730,12 @@ def test_uk_source_ancestor_chain_caches_repeated_source_walks() -> None:
     second = _source_ancestor_chain(root, target)
 
     assert first == second
-    assert _source_ancestor_chain.cache_info().hits == 1
+    # Identity check: the same tuple object is returned on cache hit
+    assert first is second
 
 
 def test_uk_source_ancestor_chain_preserves_same_id_fallback() -> None:
-    _source_ancestor_chain.cache_clear()
+    # WeakKeyDictionary-backed cache: no cache_clear() needed.
     root = ET.fromstring(
         """
         <Legislation>

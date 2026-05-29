@@ -72,6 +72,7 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
+    evict_source_root_caches,
 )
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
@@ -268,110 +269,144 @@ class UKReplayPipeline:
         )
         _mark_compile_phase("compile_filter_order_effects")
 
+        # §source_root_lifecycle: Build a last-occurrence index so the compile
+        # loop can evict source-root contexts as soon as their affecting act's
+        # final effect has been processed.  Without eviction, all 229 unique
+        # affecting-act ET.Element trees for ukpga/1970/9 accumulate in memory
+        # simultaneously (~2.5 GB peak RSS).  Evicting after last use reduces
+        # peak to the watermark of the maximum concurrently-live roots, which
+        # drops to single-digit counts in typical ordered traversal.
+        # See Sensor I diagnosis (.tmp/uk_sensor_profile_1970_9_v2.md §memory).
+        _last_effect_idx: dict[str, int] = {}
+        for _j, _e_j in enumerate(replayable):
+            _last_effect_idx[_e_j.affecting_act_id] = _j
+
         ops = []
         extraction_cache: dict[str, UKAffectingSourceContext] = {}
         enacted_extraction_cache: dict[str, UKAffectingSourceContext] = {}
         for i, e in enumerate(replayable):
-            if bool(e.metadata_only) and not allow_metadata_only_effects:
-                append_metadata_only_selection_rejection(
-                    lowering_rejections_out,
+            try:
+                if bool(e.metadata_only) and not allow_metadata_only_effects:
+                    append_metadata_only_selection_rejection(
+                        lowering_rejections_out,
+                        effect=e,
+                    )
+                    continue
+                source_selection = _select_source_for_effect(
                     effect=e,
-                )
-                continue
-            source_selection = _select_source_for_effect(
-                effect=e,
-                archive=archive,
-                applicability_mode=applicability_mode,
-                extraction_cache=extraction_cache,
-                enacted_extraction_cache=enacted_extraction_cache,
-                effect_diagnostics_out=effect_diagnostics_out,
-                current_xml_loader=get_affecting_act_xml_from_archive,
-                enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
-                provision_extractor=extract_provision_element_from_bytes,
-                source_phase_timings_out=compile_phase_timings_out,
-            )
-            if compile_phase_timings_out is None:
-                _mark_compile_phase("compile_source_select")
-            else:
-                phase_t0 = time.perf_counter()
-            source_required_for_replay = source_selection.source_required_for_replay
-            source_context = source_selection.source_context
-            el = source_selection.extracted_el
-            xml_bytes = source_context.xml_bytes
-            root = source_context.root
-
-            structural_for_replay = e.is_structural_for_replay(
-                applicability_mode=applicability_mode
-            )
-            replay_applicable = e.is_applicable_for_replay(
-                applicability_mode=applicability_mode
-            )
-            lowering_rejection_count_before = (
-                len(lowering_rejections_out) if lowering_rejections_out is not None else 0
-            )
-            compiled = compile_effect_to_ir_ops(
-                e,
-                el,
-                sequence=i,
-                fallback_for_missing_extracted_source=(
-                    source_required_for_replay
-                    and xml_bytes is None
-                    and allow_metadata_backfill
-                ),
-                lowering_rejections_out=lowering_rejections_out,
-                source_root=root,
-                source_authority_layer=source_context.authority_layer,
-                lower_phase_timings_out=compile_phase_timings_out,
-            )
-            if compile_phase_timings_out is None:
-                _mark_compile_phase("compile_lower_effect")
-            else:
-                phase_t0 = time.perf_counter()
-            compile_recorded_lowering_rejection = (
-                lowering_rejections_out is not None
-                and len(lowering_rejections_out) > lowering_rejection_count_before
-            )
-            if lowering_rejections_out is not None:
-                mark_nonreplay_lowering_rejections_nonblocking(
-                    e,
-                    structural_for_replay=structural_for_replay,
+                    archive=archive,
                     applicability_mode=applicability_mode,
-                    lowering_rejections=lowering_rejections_out,
-                    start_index=lowering_rejection_count_before,
+                    extraction_cache=extraction_cache,
+                    enacted_extraction_cache=enacted_extraction_cache,
+                    effect_diagnostics_out=effect_diagnostics_out,
+                    current_xml_loader=get_affecting_act_xml_from_archive,
+                    enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
+                    provision_extractor=extract_provision_element_from_bytes,
+                    source_phase_timings_out=compile_phase_timings_out,
                 )
-            extracted_tag_and_text = _extracted_tag_and_text(el)
-            source_pathology = _classify_compiled_effect_source_pathology(
-                effect=e,
-                extracted_tag=extracted_tag_and_text.tag,
-                extracted_text=extracted_tag_and_text.text,
-                compiled_ops=compiled,
-                lowering_rejections=lowering_rejections_out,
-                lowering_rejection_start_index=lowering_rejection_count_before,
-                structural_for_replay=structural_for_replay,
-            )
-            _mark_compile_phase("compile_source_pathology")
-            if lowering_rejections_out is not None:
-                mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
-                    source_pathology=source_pathology,
-                    lowering_rejections=lowering_rejections_out,
-                    start_index=lowering_rejection_count_before,
-                )
-            append_source_pathology_classified_diagnostic(
-                effect_diagnostics_out,
-                effect=e,
-                source_pathology=source_pathology,
-                structural_for_replay=structural_for_replay,
-                replay_applicable=replay_applicable,
-                compiled_op_count=len(compiled),
-            )
+                if compile_phase_timings_out is None:
+                    _mark_compile_phase("compile_source_select")
+                else:
+                    phase_t0 = time.perf_counter()
+                source_required_for_replay = source_selection.source_required_for_replay
+                source_context = source_selection.source_context
+                el = source_selection.extracted_el
+                xml_bytes = source_context.xml_bytes
+                root = source_context.root
 
-            if not compiled:
-                append_no_ops_lowering_rejections(
+                structural_for_replay = e.is_structural_for_replay(
+                    applicability_mode=applicability_mode
+                )
+                replay_applicable = e.is_applicable_for_replay(
+                    applicability_mode=applicability_mode
+                )
+                lowering_rejection_count_before = (
+                    len(lowering_rejections_out) if lowering_rejections_out is not None else 0
+                )
+                compiled = compile_effect_to_ir_ops(
                     e,
-                    structural_for_replay=structural_for_replay,
+                    el,
+                    sequence=i,
+                    fallback_for_missing_extracted_source=(
+                        source_required_for_replay
+                        and xml_bytes is None
+                        and allow_metadata_backfill
+                    ),
                     lowering_rejections_out=lowering_rejections_out,
-                    compile_recorded_lowering_rejection=compile_recorded_lowering_rejection,
-                    applicability_mode=applicability_mode,
+                    source_root=root,
+                    source_authority_layer=source_context.authority_layer,
+                    lower_phase_timings_out=compile_phase_timings_out,
+                )
+                if compile_phase_timings_out is None:
+                    _mark_compile_phase("compile_lower_effect")
+                else:
+                    phase_t0 = time.perf_counter()
+                compile_recorded_lowering_rejection = (
+                    lowering_rejections_out is not None
+                    and len(lowering_rejections_out) > lowering_rejection_count_before
+                )
+                if lowering_rejections_out is not None:
+                    mark_nonreplay_lowering_rejections_nonblocking(
+                        e,
+                        structural_for_replay=structural_for_replay,
+                        applicability_mode=applicability_mode,
+                        lowering_rejections=lowering_rejections_out,
+                        start_index=lowering_rejection_count_before,
+                    )
+                extracted_tag_and_text = _extracted_tag_and_text(el)
+                source_pathology = _classify_compiled_effect_source_pathology(
+                    effect=e,
+                    extracted_tag=extracted_tag_and_text.tag,
+                    extracted_text=extracted_tag_and_text.text,
+                    compiled_ops=compiled,
+                    lowering_rejections=lowering_rejections_out,
+                    lowering_rejection_start_index=lowering_rejection_count_before,
+                    structural_for_replay=structural_for_replay,
+                )
+                _mark_compile_phase("compile_source_pathology")
+                if lowering_rejections_out is not None:
+                    mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
+                        source_pathology=source_pathology,
+                        lowering_rejections=lowering_rejections_out,
+                        start_index=lowering_rejection_count_before,
+                    )
+                append_source_pathology_classified_diagnostic(
+                    effect_diagnostics_out,
+                    effect=e,
+                    source_pathology=source_pathology,
+                    structural_for_replay=structural_for_replay,
+                    replay_applicable=replay_applicable,
+                    compiled_op_count=len(compiled),
+                )
+
+                if not compiled:
+                    append_no_ops_lowering_rejections(
+                        e,
+                        structural_for_replay=structural_for_replay,
+                        lowering_rejections_out=lowering_rejections_out,
+                        compile_recorded_lowering_rejection=compile_recorded_lowering_rejection,
+                        applicability_mode=applicability_mode,
+                    )
+                    append_manual_compile_frontier_diagnostic(
+                        effect_diagnostics_out,
+                        effect=e,
+                        source_pathology=source_pathology,
+                        extracted_tag=extracted_tag_and_text.tag or "",
+                        extracted_text=extracted_tag_and_text.text,
+                        lowering_rejections_out=lowering_rejections_out,
+                        lowering_rejection_start_index=lowering_rejection_count_before,
+                        compiled_op_count=0,
+                        replay_applicable=replay_applicable,
+                        structural_for_replay=structural_for_replay,
+                    )
+                    _mark_compile_phase("compile_filter_effect")
+                    continue
+                source_pathology_filter_rejected = append_source_pathology_filter_lowering_rejections(
+                    e,
+                    source_pathology=source_pathology,
+                    structural_for_replay=structural_for_replay,
+                    compiled_ops=compiled,
+                    lowering_rejections_out=lowering_rejections_out,
                 )
                 append_manual_compile_frontier_diagnostic(
                     effect_diagnostics_out,
@@ -381,80 +416,81 @@ class UKReplayPipeline:
                     extracted_text=extracted_tag_and_text.text,
                     lowering_rejections_out=lowering_rejections_out,
                     lowering_rejection_start_index=lowering_rejection_count_before,
-                    compiled_op_count=0,
+                    compiled_op_count=len(compiled),
                     replay_applicable=replay_applicable,
                     structural_for_replay=structural_for_replay,
                 )
-                _mark_compile_phase("compile_filter_effect")
-                continue
-            source_pathology_filter_rejected = append_source_pathology_filter_lowering_rejections(
-                e,
-                source_pathology=source_pathology,
-                structural_for_replay=structural_for_replay,
-                compiled_ops=compiled,
-                lowering_rejections_out=lowering_rejections_out,
-            )
-            append_manual_compile_frontier_diagnostic(
-                effect_diagnostics_out,
-                effect=e,
-                source_pathology=source_pathology,
-                extracted_tag=extracted_tag_and_text.tag or "",
-                extracted_text=extracted_tag_and_text.text,
-                lowering_rejections_out=lowering_rejections_out,
-                lowering_rejection_start_index=lowering_rejection_count_before,
-                compiled_op_count=len(compiled),
-                replay_applicable=replay_applicable,
-                structural_for_replay=structural_for_replay,
-            )
-            if source_pathology_filter_rejected:
-                _mark_compile_phase("compile_filter_effect")
-                continue
-            should_replay_compiled = structural_for_replay or should_replay_nonstructural_ops(
-                e,
-                compiled,
-                applicability_mode=applicability_mode,
-            )
-            if not should_replay_compiled:
-                append_replay_applicability_filter_diagnostic(
-                    effect_diagnostics_out,
-                    effect=e,
-                    compiled_ops=compiled,
-                    structural_for_replay=structural_for_replay,
-                    replay_applicable=replay_applicable,
+                if source_pathology_filter_rejected:
+                    _mark_compile_phase("compile_filter_effect")
+                    continue
+                should_replay_compiled = structural_for_replay or should_replay_nonstructural_ops(
+                    e,
+                    compiled,
                     applicability_mode=applicability_mode,
                 )
+                if not should_replay_compiled:
+                    append_replay_applicability_filter_diagnostic(
+                        effect_diagnostics_out,
+                        effect=e,
+                        compiled_ops=compiled,
+                        structural_for_replay=structural_for_replay,
+                        replay_applicable=replay_applicable,
+                        applicability_mode=applicability_mode,
+                    )
+                    if authority_mode == "source_text_only":
+                        _apply_uk_authority_mode(
+                            ops=compiled,
+                            effect=e,
+                            authority_mode=authority_mode,
+                            replay_applicable=replay_applicable,
+                            structural_for_replay=structural_for_replay,
+                            diagnostics_out=authority_rejections_out,
+                            rule_id="uk_effect_authority_filter_non_applicable_observed",
+                            blocking=False,
+                            reason=(
+                                "UK source-text-only authority mode observed "
+                                "non-source-text operations on a non-replay-applicable effect"
+                            ),
+                        )
+                    _mark_compile_phase("compile_filter_effect")
+                    continue
                 if authority_mode == "source_text_only":
-                    _apply_uk_authority_mode(
+                    compiled = _apply_uk_authority_mode(
                         ops=compiled,
                         effect=e,
                         authority_mode=authority_mode,
                         replay_applicable=replay_applicable,
                         structural_for_replay=structural_for_replay,
                         diagnostics_out=authority_rejections_out,
-                        rule_id="uk_effect_authority_filter_non_applicable_observed",
-                        blocking=False,
-                        reason=(
-                            "UK source-text-only authority mode observed "
-                            "non-source-text operations on a non-replay-applicable effect"
-                        ),
                     )
+                    if not compiled:
+                        _mark_compile_phase("compile_filter_effect")
+                        continue
+                if should_replay_compiled:
+                    ops.extend(compiled)
                 _mark_compile_phase("compile_filter_effect")
-                continue
-            if authority_mode == "source_text_only":
-                compiled = _apply_uk_authority_mode(
-                    ops=compiled,
-                    effect=e,
-                    authority_mode=authority_mode,
-                    replay_applicable=replay_applicable,
-                    structural_for_replay=structural_for_replay,
-                    diagnostics_out=authority_rejections_out,
-                )
-                if not compiled:
-                    _mark_compile_phase("compile_filter_effect")
-                    continue
-            if should_replay_compiled:
-                ops.extend(compiled)
-            _mark_compile_phase("compile_filter_effect")
+            finally:
+                # §source_root_lifecycle: evict affecting-act source context once
+                # its last effect in the ordered sequence has been processed.
+                # The finally block runs on both continue and fall-through paths,
+                # so eviction fires exactly once per act at its last occurrence.
+                # Re-accessed acts (non-contiguous in ordered sequence) will be
+                # re-parsed from archive bytes on demand — transparent because the
+                # cache-miss path in source_context_for_effect already loads XML.
+                if _last_effect_idx.get(e.affecting_act_id) == i:
+                    evicted_ctx = extraction_cache.pop(e.affecting_act_id, None)
+                    evicted_enacted_ctx = enacted_extraction_cache.pop(
+                        e.affecting_act_id, None
+                    )
+                    # Explicitly release module-level source-root caches so the
+                    # reference cycle (parent_map → root as value, ancestor
+                    # tuples → root as terminal) is broken immediately, making
+                    # root eligible for reference-count GC instead of waiting for
+                    # a cyclic-GC sweep.  See evict_source_root_caches docstring.
+                    if evicted_ctx is not None:
+                        evict_source_root_caches(evicted_ctx.root)
+                    if evicted_enacted_ctx is not None:
+                        evict_source_root_caches(evicted_enacted_ctx.root)
 
         ops = _order_schedule_materialization_ops(ops)
         ordered_ops = _order_uk_text_patch_preimage_chains(
