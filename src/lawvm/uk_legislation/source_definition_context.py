@@ -96,7 +96,7 @@ def _source_definition_child_context_for_direct_section_paragraph(
     target: LegalAddress,
     parent_context_text: str,
 ) -> SourceDefinitionDirectChildContext:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if len(path) != 2:
         return SourceDefinitionDirectChildContext(term="", label="")
     section_kind, section_label = path[0]
@@ -269,7 +269,7 @@ def _source_definition_child_refined_target(
         "uk_effect_source_carried_definition_child_at_end_insert_text_patch",
     }:
         return None
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if len(path) < 2:
         return None
     if str(path[0][0] or "").lower() != "section" or str(path[1][0] or "").lower() != "paragraph":
