@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Any, cast
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -56,6 +58,65 @@ def test_mutation_event_touched_paths_dedupes_all_path_channels() -> None:
         (("section", "2"),),
         (("section", "3"),),
     )
+
+
+def test_mutation_accounting_result_validates_direct_construction() -> None:
+    result = MutationAccountingResult(
+        code="REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+        op_id="op",
+        helper="helper",
+        touched_count=1,
+        allowed_roots=cast(Any, [[("section", "1")]]),
+        matched_allowance_rule_ids=cast(Any, ["rule"]),
+    )
+
+    assert result.allowed_roots == ((("section", "1"),),)
+    assert result.matched_allowance_rule_ids == ("rule",)
+    with pytest.raises(ValueError, match="known mutation-accounting code"):
+        MutationAccountingResult(
+            code="PYTHON_ORDER_GUESSED",
+            op_id="op",
+            helper="helper",
+        )
+    with pytest.raises(ValueError, match="touched_count"):
+        MutationAccountingResult(
+            code="REPLAY_FAILED_OP_MUTATED_TREE",
+            op_id="op",
+            helper="helper",
+            touched_count=cast(Any, -1),
+        )
+
+
+def test_mutation_invariant_report_validates_direct_construction() -> None:
+    result = MutationAccountingResult(
+        code="REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+        op_id="op",
+        helper="helper",
+    )
+    report = MutationInvariantReport(
+        op_id="op",
+        helper="helper",
+        outcome="applied",
+        touched_paths=cast(Any, [[("section", "2")]]),
+        results=cast(Any, [result]),
+    )
+
+    assert report.touched_paths == ((("section", "2"),),)
+    assert report.results == (result,)
+    with pytest.raises(ValueError, match="path_set_invariant_holds"):
+        MutationInvariantReport(
+            op_id="op",
+            helper="helper",
+            outcome="applied",
+            path_set_invariant_holds=cast(Any, "yes"),
+        )
+    with pytest.raises(ValueError, match="results"):
+        MutationInvariantReport(
+            op_id="op",
+            helper="helper",
+            outcome="applied",
+            results=cast(Any, [object()]),
+        )
 
 
 def test_mutation_event_declared_allowance_paths_dedupes_non_empty_paths() -> None:
