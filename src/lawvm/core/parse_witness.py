@@ -32,6 +32,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Tuple
 
+from lawvm.core.frozen_values import freeze_mapping
+
+
+def _normalized_token_span(span: tuple[int, int] | list[int] | None, *, field_name: str) -> tuple[int, int] | None:
+    if span is None:
+        return None
+    normalized = tuple(span)
+    if len(normalized) != 2:
+        raise ValueError(f"{field_name} must be a two-item half-open token span")
+    start, end = normalized
+    if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end <= start:
+        raise ValueError(f"{field_name} must be a non-empty half-open token span")
+    return (start, end)
+
 
 @dataclass(frozen=True)
 class ParseWitness:
@@ -52,10 +66,13 @@ class ParseWitness:
     def __post_init__(self) -> None:
         if not self.rule_id:
             raise ValueError("ParseWitness.rule_id must be non-empty")
-        if self.source_span is not None:
-            start, end = self.source_span
-            if start < 0 or end <= start:
-                raise ValueError("ParseWitness.source_span must be a non-empty half-open token span")
+        object.__setattr__(
+            self,
+            "source_span",
+            _normalized_token_span(self.source_span, field_name="ParseWitness.source_span"),
+        )
+        if self.resolution is not None and not isinstance(self.resolution, ResolutionWitness):
+            raise ValueError("ParseWitness.resolution must be a ResolutionWitness when provided")
 
 
 @dataclass(frozen=True)
@@ -75,9 +92,13 @@ class ResolutionWitness:
     def __post_init__(self) -> None:
         if not self.resolver_rule_id:
             raise ValueError("ResolutionWitness.resolver_rule_id must be non-empty")
-        if self.antecedent_span is not None:
-            start, end = self.antecedent_span
-            if start < 0 or end <= start:
-                raise ValueError(
-                    "ResolutionWitness.antecedent_span must be a non-empty half-open token span"
-                )
+        object.__setattr__(
+            self,
+            "antecedent_span",
+            _normalized_token_span(
+                self.antecedent_span,
+                field_name="ResolutionWitness.antecedent_span",
+            ),
+        )
+        if self.context is not None:
+            object.__setattr__(self, "context", freeze_mapping(self.context))

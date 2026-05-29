@@ -455,6 +455,9 @@ Recent improvement:
   validate migration identity, migration kind, and endpoint address types at
   construction, so lineage/expiry evidence cannot be malformed or mutated by
   caller-owned input collections.
+- parse witness and resolution witness carriers now normalize token spans,
+  validate nested resolution witness type, and freeze resolution context payloads
+  at construction, keeping parser evidence stable after emission.
 
 ## Ranked Promotion Candidates
 
