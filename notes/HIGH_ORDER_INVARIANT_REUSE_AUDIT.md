@@ -472,6 +472,10 @@ Recent improvement:
 - unit-registry publication now validates unit specs, freezes the unit-kind
   mapping, normalizes facet vocabularies, and rejects mismatched registry keys,
   so lowering targets cannot depend on caller-owned mutable registry state.
+- timeline/materialization result carriers now validate issue kinds, degradation
+  status obligations, certificate/result count agreement, and freeze timeline
+  mapping keys at emission time, keeping PIT result evidence internally
+  consistent.
 
 ## Ranked Promotion Candidates
 

@@ -261,6 +261,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_replay_small_model.py",
         "test_timeline.py",
         "test_timeline_invariants.py",
+        "test_timeline_results_contracts.py",
         "test_timeline_selection_contracts.py",
     ),
     "core_surface_semantic": (
