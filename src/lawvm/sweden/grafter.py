@@ -449,13 +449,33 @@ def _extract_labels_from_label_list(text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+# Compiled at module scope per §1.11.  The tempered-greedy idiom
+# (?:(?!anchor).)+? stops at the negative-lookahead anchor but was unbounded,
+# risking O(N^2) backtracking on long inputs (Sensor H #14).  Bounding with
+# {0,400}? caps the per-segment scan depth while preserving the stop-at-anchor
+# semantic: "up to 400 chars before the dels-att anchor."
+_SE_REPLACE_CLAUSE_RE = re.compile(
+    r"(?:dels\s+att|att)\s+((?:(?!\bdels\s+att\b).){0,400}?)\s+ska(?:ll)? ha följande lydelse",
+    re.IGNORECASE | re.DOTALL,
+)
+_SE_REPEAL_CLAUSE_RE = re.compile(
+    r"(?:dels\s+att|att)\s+((?:(?!\bdels\s+att\b).){0,400}?)\s+ska(?:ll)? upphöra att gälla",
+    re.IGNORECASE | re.DOTALL,
+)
+# Renumber patterns: .+? lazy captures bounded to 200 chars per segment —
+# typical section-label lists are under 50 chars.
+_SE_RENUMBER_CLAUSE_RE = re.compile(
+    r"nuvarande\s+(.{1,200}?)\s*§{1,2}\s+ska(?:ll)? betecknas\s+(.{1,200}?)\s*§{1,2}",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def _extract_replace_section_labels_from_clause(clause: str) -> tuple[str, ...]:
+    # Fast guard: "följande lydelse" is required by the regex terminal.
+    if 'följande lydelse' not in clause and 'följande lydelse' not in clause.lower():
+        return ()
     out: list[str] = []
-    for match in re.finditer(
-        r"(?:dels\s+att|att)\s+((?:(?!\bdels\s+att\b).)+?)\s+ska(?:ll)? ha följande lydelse",
-        clause,
-        re.IGNORECASE | re.DOTALL,
-    ):
+    for match in _SE_REPLACE_CLAUSE_RE.finditer(clause):
         segment = match.group(1)
         for section_match in re.finditer(
             r"(?:den\s+nya\s+)?((?:\d+\s*[a-z]?\s*(?:,|\s+och\s+)?\s*)+)\s*§{1,2}",
@@ -469,12 +489,11 @@ def _extract_replace_section_labels_from_clause(clause: str) -> tuple[str, ...]:
 
 
 def _extract_repealed_section_labels_from_clause(clause: str) -> tuple[str, ...]:
+    # Fast guard: "upphöra att gälla" is required by the regex terminal.
+    if 'upphöra att gälla' not in clause and 'upphöra att gälla' not in clause.lower():
+        return ()
     out: list[str] = []
-    for match in re.finditer(
-        r"(?:dels\s+att|att)\s+((?:(?!\bdels\s+att\b).)+?)\s+ska(?:ll)? upphöra att gälla",
-        clause,
-        re.IGNORECASE | re.DOTALL,
-    ):
+    for match in _SE_REPEAL_CLAUSE_RE.finditer(clause):
         segment = match.group(1)
         for section_match in re.finditer(
             r"((?:\d+\s*[a-z]?\s*(?:,|\s+och\s+)?\s*)+)\s*§{1,2}",
@@ -524,12 +543,12 @@ def _extract_inserted_point_labels_from_clause(clause: str) -> tuple[str, ...]:
 
 
 def _extract_section_renumber_pairs_from_clause(clause: str) -> tuple[tuple[str, str], ...]:
+    # Fast guard: "betecknas" is required by the regex.
+    lo = clause.lower()
+    if 'betecknas' not in lo:
+        return ()
     out: list[tuple[str, str]] = []
-    for match in re.finditer(
-        r"nuvarande\s+(.+?)\s*§{1,2}\s+ska(?:ll)? betecknas\s+(.+?)\s*§{1,2}",
-        clause,
-        re.IGNORECASE | re.DOTALL,
-    ):
+    for match in _SE_RENUMBER_CLAUSE_RE.finditer(clause):
         sources = _extract_labels_from_label_list(match.group(1))
         destinations = _extract_labels_from_label_list(match.group(2))
         if len(sources) != len(destinations):
@@ -541,12 +560,12 @@ def _extract_section_renumber_pairs_from_clause(clause: str) -> tuple[tuple[str,
 
 
 def _section_renumber_arity_mismatch_diagnostics(clause: str, sfs_id: str) -> tuple[dict[str, Any], ...]:
+    # Fast guard: "betecknas" is required by the regex.
+    lo = clause.lower()
+    if 'betecknas' not in lo:
+        return ()
     diagnostics: list[dict[str, Any]] = []
-    for match in re.finditer(
-        r"nuvarande\s+(.+?)\s*§{1,2}\s+ska(?:ll)? betecknas\s+(.+?)\s*§{1,2}",
-        clause,
-        re.IGNORECASE | re.DOTALL,
-    ):
+    for match in _SE_RENUMBER_CLAUSE_RE.finditer(clause):
         sources = _extract_labels_from_label_list(match.group(1))
         destinations = _extract_labels_from_label_list(match.group(2))
         if len(sources) == len(destinations):
@@ -2140,8 +2159,11 @@ def _classify_se_official_effects_plan_frontier_detail(
     return "unclassified_clause_targets"
 
 
+# Bounded per Sensor H #14 — two unbounded .*? / .* with DOTALL risked
+# O(N^2) backtracking.  400 chars per segment covers any realistic
+# word-substitution clause in Swedish legislation.
 _SE_WORD_SUBSTITUTION_RE = re.compile(
-    r"\b(?:ordet|orden)\b.*?(?:bytas ut mot|ersättas med).*",
+    r"\b(?:ordet|orden)\b.{0,400}?(?:bytas ut mot|ersättas med).{0,400}",
     re.IGNORECASE | re.DOTALL,
 )
 

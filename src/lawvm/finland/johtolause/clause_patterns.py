@@ -37,31 +37,47 @@ class NamedTableRowSingleClause:
     raw_text: str
 
 
+# Compiled at module scope per §1.11.  Bounded lazy quantifiers replace
+# unbounded .+? / .*? to prevent O(N^2) backtracking on long non-matching
+# inputs (Sensor H #13).  200 chars per named-court segment is generous —
+# typical käräjäoikeus names are 10–40 chars.
 _MIXED_ROW_PATTERNS = [
     (
         "kohdat",
         re.compile(
-            r"(\d+\s*[a-zäöå]?)\s*§:n\s+(.+?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohd[a-zäöå]*\s+"
-            r"(?:sekä|ja)\s+muut[a-zäöå]*\s+(.+?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohd[a-zäöå]*(?:\s+seuraavasti)?",
+            r"(\d+\s*[a-zäöå]?)\s*§:n\s+(.{1,200}?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohd[a-zäöå]*\s+"
+            r"(?:sekä|ja)\s+muut[a-zäöå]*\s+(.{1,200}?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohd[a-zäöå]*(?:\s+seuraavasti)?",
             flags=re.I,
         ),
     ),
     (
         "kohta",
         re.compile(
-            r"(\d+\s*[a-zäöå]?)\s*§:n\s+(.+?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohta\s+"
-            r"(?:sekä|ja)\s+muut[a-zäöå]*\s+(.+?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohta(?:\s+seuraavasti)?",
+            r"(\d+\s*[a-zäöå]?)\s*§:n\s+(.{1,200}?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohta\s+"
+            r"(?:sekä|ja)\s+muut[a-zäöå]*\s+(.{1,200}?)\s+käräjäoikeu[a-zäöå]*(?:\s+koskev[a-zäöå]*)?\s+kohta(?:\s+seuraavasti)?",
             flags=re.I,
         ),
     ),
     (
         "osalta",
         re.compile(
-            r"(\d+\s*[a-zäöå]?)\s*§:n.*?(.+?)\s+käräjäoikeuden\s+osalta\s+ja\s+muut[a-zäöå]*\s+\d+\s*[a-zäöå]?\s*§:n.*?(.+?)\s+käräjäoikeuden\s+osalta(?:\s+seuraavasti)?",
+            r"(\d+\s*[a-zäöå]?)\s*§:n.{0,200}?(.{1,200}?)\s+käräjäoikeuden\s+osalta\s+ja\s+muut[a-zäöå]*\s+\d+\s*[a-zäöå]?\s*§:n.{0,200}?(.{1,200}?)\s+käräjäoikeuden\s+osalta(?:\s+seuraavasti)?",
             flags=re.I,
         ),
     ),
 ]
+
+# Lifted to module scope per §1.11 and bounded per Sensor H #13.
+# .*? before the section label and .+? for the court name segment are both
+# bounded at 200 chars — amply covers any realistic Finnish johtolause clause.
+_SINGLE_ROW_REPLACE_RE = re.compile(
+    r"muut[a-zäöå]*\s+.{0,200}?(\d+\s*[a-zäöå]?)\s*§:n\s+(.{1,200}?)\s+käräjäoikeutta\s+koskev[a-zäöå]*\s+kohd[a-zäöå]*",
+    flags=re.I,
+)
+_SINGLE_ROW_REPEAL_RE = re.compile(
+    r"kumot[a-zäöå]*\s+.{0,200}?(\d+\s*[a-zäöå]?)\s*§:n\s+(.{1,200}?)\s+käräjäoikeutta\s+koskev[a-zäöå]*\s+kohd[a-zäöå]*",
+    flags=re.I,
+)
 
 _MODIFIER_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
     ("version_qualifier", re.compile(r"\bsellais(?:ena|ina)\b", flags=re.I)),
@@ -156,20 +172,8 @@ def parse_named_table_row_single_clauses(johto: str) -> List[NamedTableRowSingle
         return []
 
     patterns = [
-        (
-            "replace",
-            re.compile(
-                r"muut[a-zäöå]*\s+.*?(\d+\s*[a-zäöå]?)\s*§:n\s+(.+?)\s+käräjäoikeutta\s+koskev[a-zäöå]*\s+kohd[a-zäöå]*",
-                flags=re.I,
-            ),
-        ),
-        (
-            "repeal",
-            re.compile(
-                r"kumot[a-zäöå]*\s+.*?(\d+\s*[a-zäöå]?)\s*§:n\s+(.+?)\s+käräjäoikeutta\s+koskev[a-zäöå]*\s+kohd[a-zäöå]*",
-                flags=re.I,
-            ),
-        ),
+        ("replace", _SINGLE_ROW_REPLACE_RE),
+        ("repeal", _SINGLE_ROW_REPEAL_RE),
     ]
 
     clauses: List[NamedTableRowSingleClause] = []

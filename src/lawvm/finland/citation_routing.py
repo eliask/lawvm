@@ -7,6 +7,31 @@ from __future__ import annotations
 
 import re
 
+# Compiled at module scope per §1.11.  Two unbounded .* with re.DOTALL would
+# cause O(N^2) backtracking on long non-matching inputs (Sensor H #12).
+# Bounded to {0,400}? (lazy) — legitimate meta-repeal clauses are well under
+# 400 chars per segment; 400 provides generous headroom.
+_FI_META_REPEAL_RE = re.compile(
+    r'kumotaan\b.{0,400}?muuttamisesta\s+.{0,400}?annetun\s+lain\s*\(\s*\d',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _looks_like_fi_meta_repeal(text: str) -> bool:
+    """Return True when *text* is a meta-repeal of a prior amendment act.
+
+    Fast substring guards eliminate the regex path for the vast majority of
+    inputs that obviously cannot match.  Lowercase once for guard comparisons
+    since the regex uses re.IGNORECASE and input case may vary.
+    """
+    lo = text.lower()
+    if 'muuttamisesta' not in lo:
+        return False
+    if 'annetun' not in lo:
+        return False
+    return bool(_FI_META_REPEAL_RE.search(text))
+
+
 OP_KEYWORDS = {
     'muutetaan', 'muutettu', 'muuttaa', 'muuttanut',
     'kumotaan', 'kumottu', 'kumoaa', 'kumonnut',
@@ -272,11 +297,7 @@ def route_amendment(
         else:
             # Tier 2: johtolause explicitly cites a different statute.
             # Sub-case: meta-repeal targets a prior amendment act, not the parent.
-            if re.search(
-                r'kumotaan\b.*muuttamisesta\s+.*annetun\s+lain\s*\(\s*\d',
-                johto,
-                re.IGNORECASE | re.DOTALL,
-            ):
+            if _looks_like_fi_meta_repeal(johto):
                 return False, "citation_mismatch_skip"
             return False, "citation_mismatch_skip"
 
