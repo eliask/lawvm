@@ -1376,3 +1376,31 @@ removed the dominant bottleneck is ~1.8 s combined.
   clusters. Shard ownership fix also included: `test_regex_batch6_perf.py` added to `uk`
   shard in `scripts/test_shard.py` (was unassigned, blocking CI). Adjudication counts
   identical (4532). ty green. 2431 uk-shard tests passed.
+- Sensor H batch 4 / AGENTS.md §1.11 module-scope regex hygiene (Actuator 23, 2026-05-29):
+  3 commits across 3 files.
+  (1) `uk_legislation/source_parent_payloads.py`: 1 site — parametrized alpha-label continuation
+  pattern in `_source_carried_top_level_alpha_matches` wrapped with `@lru_cache(maxsize=256)`
+  factory `_uk_alpha_continuation_re(expected)`. `functools.lru_cache` import added.
+  (2) `finland/scope.py`: 3 sites in `restrict_sec1_fallback_to_parent` — `_FI_NUMBERED_ITEM_RE`
+  and `_FI_CUT_RE` lifted as static constants; bracketed-citation pattern lifted as
+  `@lru_cache(maxsize=1024)` factory `_fi_statute_citation_re(parent_id)` (returns `None` when
+  parent_id parse fails; replaces the original try/except early-return). `functools.lru_cache`
+  import added.
+  (3) `estonia/grafter.py`: 18 sites total. Static lifts: `_EE_ITEM_LABEL_RE`,
+  `_EE_QUOTED_TITLE_RE` (2 duplicate sites), `_EE_ALPHA_WORD_RE`,
+  `_EE_MINISTRY_WORD_REPLACE_EXCEPTION_RE`, `_EE_MINISTRY_SECTION_REF_RE`.
+  New lru_cache factories: `_ee_cross_act_repeal_re(target_title)` (maxsize=512),
+  `_ee_text_replace_regex_ci(old_variant)` (maxsize=8192; used at 6 call sites),
+  `_ee_surface_pattern_compiled_ci(surface)` (maxsize=4096),
+  `_ee_lahter_heading_re(lahter_label)` (maxsize=512),
+  `_ee_inline_item_label_re(item_label)` (maxsize=512).
+  Existing `_ee_text_replace_regex` cache used at 1 additional site
+  (`_ee_text_replace_match_spans`).
+  Skipped: 3 patterns in `_ee_global_generic_minister_plural_replace` (`singular_pattern`,
+  `shared_head_pattern`, `redundant_tail_pattern`) — parametrized on `old_titles`
+  (unhashable list) and called once per statute cold pass; not worthwhile to restructure.
+  All byte-identical to original patterns (verified via raw bytes for curly-quote chars).
+  Bench parity: UK score=40.8% (ukpga/1970/9, unchanged); FI structural accuracy=95.06%,
+  mean error=4.94%, 346 perfect (matches prior run ee_wide_after_textual_invalidation).
+  EE Total 2200 OK (unchanged). ty + all CI shards green. Regex perf gate (core_ir_contracts
+  shard) passes for new module-scope constants.
