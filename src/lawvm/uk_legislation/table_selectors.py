@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import re
 import xml.etree.ElementTree as ET
 import weakref
@@ -99,6 +100,27 @@ _NORMALIZED_ELEMENT_TEXT_CACHE: weakref.WeakKeyDictionary[
     ET.Element,
     str,
 ] = weakref.WeakKeyDictionary()
+
+# Site 2 module-scope patterns per §1.11.  The alternation below previously
+# appeared as a single re.search call with two .*? lazy quantifiers sharing one
+# alternation; on non-matching inputs the trailing $ causes catastrophic
+# backtracking (6.8 ms/call × 558 inner calls = 3.80 s on ukpga/1970/9 —
+# Sensor I cand 3).  Split into two separate patterns to kill the cross-product.
+# .*? bounded to {0,300}? — legal column/omit phrases are well under 300 chars.
+_UK_COLUMN_OMIT_ENTRIES_RELATING_RE = re.compile(
+    r"\bin\s+(?:the\s+)?"
+    r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    r"\s+column|column\s+(?P<column_number>\d+))\b"
+    r".{0,300}?\bomit\s+(?:the\s+)?entries\s+relating\s+to\s*[—–-]?\s*$",
+    re.I,
+)
+_UK_OMIT_FROM_COLUMN_ENTRIES_RELATING_RE = re.compile(
+    r"\bomit\s+from\s+(?:the\s+)?"
+    r"(?:(?P<from_column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    r"\s+column|column\s+(?P<from_column_number>\d+))\b"
+    r".{0,300}?\b(?:the\s+)?entries\s+relating\s+to\s*[—–-]?\s*$",
+    re.I,
+)
 
 
 class _TableCellSourceTargetContext(NamedTuple):
@@ -254,6 +276,19 @@ def _uk_table_child_structural_insert_detail(
     return detail
 
 
+# Pattern factory compiled per §1.11.  22,696 calls with ~5,062 distinct
+# (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio) — Sensor I cand 2.
+# Dynamic rf"\bin\s+section\s+{re.escape(label)}\b" thrashes Python's 512-entry
+# re._compile cache.  Factory keyed on label (low cardinality: one per target
+# section) keeps patterns alive without process-global unbounded retention.
+# Substring guard ("in section" not in text_lower) eliminates ~99% of calls
+# before any regex walk.
+@functools.lru_cache(maxsize=2048)
+def _section_label_pattern(label: str) -> re.Pattern[str]:
+    """Return a compiled pattern for `\\bin\\s+section\\s+{label}\\b`, case-insensitive."""
+    return re.compile(rf"\bin\s+section\s+{re.escape(label)}\b", re.I)
+
+
 def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
     """Return true when source text explicitly names the broad table carrier."""
     if not text or not target.path:
@@ -268,14 +303,10 @@ def _source_names_containing_target_for_table_cell(text: str, target: LegalAddre
                 break
     if leaf_kind != "section" or not leaf_label:
         return False
-    return (
-        re.search(
-            rf"\bin\s+section\s+{re.escape(leaf_label)}\b",
-            text,
-            flags=re.I,
-        )
-        is not None
-    )
+    # Fast substring guard: eliminates ~99% of calls before regex walk.
+    if "in section" not in text.lower():
+        return False
+    return _section_label_pattern(str(leaf_label)).search(text) is not None
 
 
 def _source_instruction_surface(text: str) -> str:
@@ -982,25 +1013,27 @@ def _uk_source_parent_table_column_entry_omission_text_patch_claim(
         )
         if not target_names_table and not parent_names_target:
             continue
-        match = re.search(
-            r"(?:\bin\s+(?:the\s+)?"
-            r"(?:(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
-            r"\s+column|column\s+(?P<column_number>\d+))\b"
-            r".*?\bomit\s+(?:the\s+)?entries\s+relating\s+to|"
-            r"\bomit\s+from\s+(?:the\s+)?"
-            r"(?:(?P<from_column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
-            r"\s+column|column\s+(?P<from_column_number>\d+))\b"
-            r".*?\b(?:the\s+)?entries\s+relating\s+to)\s*[—–-]?\s*$",
-            lead_text,
-            flags=re.I,
-        )
+        # Substring fast-guard: "entries relating to" is required by both
+        # alternatives.  Eliminates the regex walk for the vast majority of
+        # lead_text inputs.  .lower() computed once here (conservative — the
+        # substring is load-bearing in the pattern semantic).
+        if "entries relating to" not in lead_text.lower():
+            continue
+        # Two separate patterns to kill the alternation cross-product that
+        # produced 6.8 ms/call backtracking on non-matching inputs (Sensor I
+        # cand 3, ukpga/1970/9).  Try the "in column … omit entries" form first,
+        # then the "omit from column … entries" form.
+        match = _UK_COLUMN_OMIT_ENTRIES_RELATING_RE.search(lead_text)
+        if match is None:
+            match = _UK_OMIT_FROM_COLUMN_ENTRIES_RELATING_RE.search(lead_text)
         if match is None:
             continue
+        gd = match.groupdict()
         column_token = (
-            match.group("column_ordinal")
-            or match.group("column_number")
-            or match.group("from_column_ordinal")
-            or match.group("from_column_number")
+            gd.get("column_ordinal")
+            or gd.get("column_number")
+            or gd.get("from_column_ordinal")
+            or gd.get("from_column_number")
         )
         column_index = _uk_ordinal_to_int(column_token or "")
         if column_index is None or column_index < 1:

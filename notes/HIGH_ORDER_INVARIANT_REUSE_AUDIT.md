@@ -1246,3 +1246,26 @@ The highest-value order is now remaining UK mutation-event/debug gaps,
 target-gap family centralization once real witnesses justify it, cautious
 comparison-normalization reuse where a frontend already has named projection
 rules, and small type-surface cleanup batches.
+
+## Actuator 12 — UK table-selector regex hotspots (2026-05-29)
+
+Site 1 (§1.11 applied): `_source_names_containing_target_for_table_cell` replaced
+dynamic `re.search(rf"\\bin\\s+section\\s+{re.escape(label)}\\b", ...)` with (a)
+`"in section" not in text.lower()` substring guard eliminating ~99% of calls
+before any regex walk, and (b) `@functools.lru_cache(maxsize=2048)` factory
+`_section_label_pattern(label)` keyed on label string — low cardinality (one per
+target section), keeps patterns alive without unbounded retention.  22,696 calls /
+~5,062 distinct (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio, Sensor I
+cand 2).
+
+Site 2 (§1.11 applied): `_uk_source_parent_table_column_entry_omission_text_patch_claim`
+inner re.search replaced with (a) `"entries relating to" not in lead_text.lower()`
+substring guard before any regex, and (b) split into two module-scope patterns
+`_UK_COLUMN_OMIT_ENTRIES_RELATING_RE` + `_UK_OMIT_FROM_COLUMN_ENTRIES_RELATING_RE`
+— kills the alternation cross-product that caused 6.8 ms/call catastrophic
+backtracking on non-matching inputs (same shape as Actuator 8).  Bounded `{0,300}?`
+replaces `.*?` (Sensor I cand 3).  Combined wall-time saving: 30.49 s → 28.67 s
+(−1.8 s) on ukpga/1970/9.  Adjudications identical (score=40.8%, replay=80.0%,
+ops=2001, effect_rows=3265).  Note: cProfile cumtime overestimated the saving
+because it is inclusive of shared callees; actual exclusive saving after Actuator 8
+removed the dominant bottleneck is ~1.8 s combined.
