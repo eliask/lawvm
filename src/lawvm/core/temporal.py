@@ -38,13 +38,11 @@ See also
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 
 from lawvm.core.frozen_values import freeze_mapping
-
-if TYPE_CHECKING:
-    from lawvm.core.ir import LegalAddress, OperationSource
-
+from lawvm.core.ir import LegalAddress
+from lawvm.core.provenance import OperationSource
 
 ActivationKind = Literal[
     "immediate",
@@ -357,6 +355,19 @@ class TemporalScope:
     predicates: tuple[Any, ...] = ()
     include_future_descendants: bool = False
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "exact_addresses", tuple(self.exact_addresses))
+        object.__setattr__(self, "address_prefixes", tuple(self.address_prefixes))
+        object.__setattr__(self, "predicates", tuple(self.predicates))
+        if not isinstance(self.target_statute, str):
+            raise ValueError("TemporalScope.target_statute must be a string")
+        if not all(isinstance(address, LegalAddress) for address in self.exact_addresses):
+            raise ValueError("TemporalScope.exact_addresses must contain LegalAddress records")
+        if not all(isinstance(address, LegalAddress) for address in self.address_prefixes):
+            raise ValueError("TemporalScope.address_prefixes must contain LegalAddress records")
+        if not isinstance(self.include_future_descendants, bool):
+            raise ValueError("TemporalScope.include_future_descendants must be a boolean")
+
 
 @dataclass(frozen=True)
 class TemporalEvent:
@@ -371,6 +382,31 @@ class TemporalEvent:
     activation_rule: Optional[ActivationRule] = None
     group_id: Optional[str] = None
     derived_from_effect_intent: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.event_id:
+            raise ValueError("TemporalEvent.event_id must be non-empty")
+        if self.kind not in {"commence", "expire", "suspend", "revive", "set_applicability"}:
+            raise ValueError(f"unsupported TemporalEvent.kind: {self.kind!r}")
+        if not isinstance(self.scope, TemporalScope):
+            raise ValueError("TemporalEvent.scope must be a TemporalScope")
+        if not isinstance(self.effective, str):
+            raise ValueError("TemporalEvent.effective must be a string")
+        if not isinstance(self.expires, str):
+            raise ValueError("TemporalEvent.expires must be a string")
+        if self.source is not None and not isinstance(self.source, OperationSource):
+            raise ValueError("TemporalEvent.source must be an OperationSource when provided")
+        if self.activation_rule is not None and not isinstance(self.activation_rule, ActivationRule):
+            raise ValueError("TemporalEvent.activation_rule must be an ActivationRule when provided")
+        if self.group_id is not None and not isinstance(self.group_id, str):
+            raise ValueError("TemporalEvent.group_id must be a string when provided")
+        if self.derived_from_effect_intent is not None and not isinstance(
+            self.derived_from_effect_intent,
+            str,
+        ):
+            raise ValueError(
+                "TemporalEvent.derived_from_effect_intent must be a string when provided"
+            )
 
     @property
     def has_activation_rule(self) -> bool:

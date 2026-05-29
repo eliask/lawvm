@@ -447,6 +447,10 @@ Recent improvement:
 - invariant detector result rows now validate required identity/message fields
   and freeze nested detail payloads at construction, so typed detector evidence
   cannot be rewritten after message projection.
+- temporal scope and event carriers now validate executable event identity,
+  supported event kind, scope/source/activation-rule types, and tuple-normalize
+  address/predicate lanes at construction, preventing malformed temporal facts
+  from entering timeline replay by type-hint accident.
 
 ## Ranked Promotion Candidates
 

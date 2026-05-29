@@ -124,6 +124,51 @@ def test_temporal_event_and_scope_live_in_temporal_module_with_compile_result_co
     assert isinstance(event, CompatTemporalEvent)
 
 
+def test_temporal_scope_normalizes_address_lanes() -> None:
+    exact = [LegalAddress(path=(("section", "1"),))]
+    prefixes = [LegalAddress(path=(("chapter", "1"),))]
+    predicates = ["territory:fi"]
+
+    scope = TemporalScope(
+        target_statute="1991/1",
+        exact_addresses=cast(Any, exact),
+        address_prefixes=cast(Any, prefixes),
+        predicates=cast(Any, predicates),
+    )
+    exact.append(LegalAddress(path=(("section", "2"),)))
+    prefixes.append(LegalAddress(path=(("chapter", "2"),)))
+    predicates.append("territory:se")
+
+    assert scope.exact_addresses == (LegalAddress(path=(("section", "1"),)),)
+    assert scope.address_prefixes == (LegalAddress(path=(("chapter", "1"),)),)
+    assert scope.predicates == ("territory:fi",)
+
+
+def test_temporal_scope_rejects_non_address_scope_entries() -> None:
+    with pytest.raises(ValueError, match="exact_addresses must contain LegalAddress"):
+        TemporalScope(exact_addresses=cast(Any, ("section:1",)))
+
+
+def test_temporal_event_rejects_invalid_kind_and_scope() -> None:
+    with pytest.raises(ValueError, match="unsupported TemporalEvent.kind"):
+        TemporalEvent(
+            event_id="ev-invalid",
+            kind=cast(Any, "publish"),
+            scope=TemporalScope(),
+        )
+    with pytest.raises(ValueError, match="TemporalEvent.scope must be a TemporalScope"):
+        TemporalEvent(
+            event_id="ev-invalid-scope",
+            kind="commence",
+            scope=cast(Any, object()),
+        )
+
+
+def test_temporal_event_requires_non_empty_event_id() -> None:
+    with pytest.raises(ValueError, match="event_id must be non-empty"):
+        TemporalEvent(event_id="", kind="commence", scope=TemporalScope())
+
+
 def test_timeline_temporal_event_helpers_match_group_and_scope() -> None:
     op = LegalOperation(
         op_id="op-1",
