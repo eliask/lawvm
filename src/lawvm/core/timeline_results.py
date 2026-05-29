@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Optional
+from types import MappingProxyType
+from typing import Literal, Optional, get_args
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline
@@ -66,6 +68,10 @@ MaterializationStatus = Literal[
     "degraded_timeline_issues",
 ]
 
+_TIMELINE_ISSUE_KINDS = frozenset(get_args(TimelineIssueKind))
+_MATERIALIZATION_STATUSES = frozenset(get_args(MaterializationStatus))
+_MATERIALIZATION_QUERY_TYPES = frozenset({"governing", "in_force"})
+
 
 @dataclass(frozen=True)
 class MaterializationCertificate:
@@ -77,6 +83,29 @@ class MaterializationCertificate:
     selected_address_count: int = 0
     ambiguous_address_count: int = 0
     required_dimensions: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.as_of, str) or not self.as_of:
+            raise ValueError("MaterializationCertificate.as_of must be a non-empty string")
+        if self.query_type not in _MATERIALIZATION_QUERY_TYPES:
+            raise ValueError("MaterializationCertificate.query_type is not supported")
+        if self.territory is not None and not isinstance(self.territory, str):
+            raise TypeError("MaterializationCertificate.territory must be a string or None")
+        if not isinstance(self.selected_address_count, int) or isinstance(
+            self.selected_address_count, bool
+        ):
+            raise TypeError("MaterializationCertificate.selected_address_count must be an integer")
+        if not isinstance(self.ambiguous_address_count, int) or isinstance(
+            self.ambiguous_address_count, bool
+        ):
+            raise TypeError("MaterializationCertificate.ambiguous_address_count must be an integer")
+        if self.selected_address_count < 0:
+            raise ValueError("MaterializationCertificate.selected_address_count must be non-negative")
+        if self.ambiguous_address_count < 0:
+            raise ValueError("MaterializationCertificate.ambiguous_address_count must be non-negative")
+        object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
+        if any(not isinstance(dimension, str) or not dimension for dimension in self.required_dimensions):
+            raise ValueError("MaterializationCertificate.required_dimensions must contain strings")
 
 
 def _address_wire_path(address: Optional[LegalAddress]) -> tuple[dict[str, str], ...]:
@@ -93,6 +122,16 @@ class TimelineIssue:
     message: str
     address: Optional[LegalAddress] = None
     source_statute: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in _TIMELINE_ISSUE_KINDS:
+            raise ValueError("TimelineIssue.kind is not supported")
+        if not isinstance(self.message, str) or not self.message:
+            raise ValueError("TimelineIssue.message must be a non-empty string")
+        if self.address is not None and not isinstance(self.address, LegalAddress):
+            raise TypeError("TimelineIssue.address must be LegalAddress or None")
+        if not isinstance(self.source_statute, str):
+            raise TypeError("TimelineIssue.source_statute must be a string")
 
     @property
     def rule_id(self) -> str:
@@ -174,6 +213,44 @@ class MaterializationResult:
     issues: tuple[TimelineIssue, ...] = ()
     certificate: Optional[MaterializationCertificate] = None
 
+    def __post_init__(self) -> None:
+        if self.status not in _MATERIALIZATION_STATUSES:
+            raise ValueError("MaterializationResult.status is not supported")
+        if not isinstance(self.statute, IRStatute):
+            raise TypeError("MaterializationResult.statute must be IRStatute")
+        object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
+        if any(not isinstance(dimension, str) or not dimension for dimension in self.required_dimensions):
+            raise ValueError("MaterializationResult.required_dimensions must contain strings")
+        object.__setattr__(self, "ambiguous_addresses", tuple(self.ambiguous_addresses))
+        if any(not isinstance(address, LegalAddress) for address in self.ambiguous_addresses):
+            raise TypeError("MaterializationResult.ambiguous_addresses must contain LegalAddress")
+        object.__setattr__(self, "issues", tuple(self.issues))
+        if any(not isinstance(issue, TimelineIssue) for issue in self.issues):
+            raise TypeError("MaterializationResult.issues must contain TimelineIssue")
+        if self.certificate is not None and not isinstance(
+            self.certificate, MaterializationCertificate
+        ):
+            raise TypeError("MaterializationResult.certificate must be MaterializationCertificate or None")
+
+        blocking_issues = tuple(issue for issue in self.issues if issue.blocking)
+        if self.status == "materialized" and blocking_issues:
+            raise ValueError("MaterializationResult materialized status cannot carry blocking issues")
+        if self.status == "degraded_missing_scope" and not self.required_dimensions:
+            raise ValueError("MaterializationResult degraded_missing_scope requires required_dimensions")
+        if self.status == "degraded_timeline_issues" and not blocking_issues:
+            raise ValueError("MaterializationResult degraded_timeline_issues requires blocking issues")
+        if self.certificate is not None:
+            if self.certificate.ambiguous_address_count != len(self.ambiguous_addresses):
+                raise ValueError(
+                    "MaterializationResult certificate ambiguous_address_count "
+                    "must match ambiguous_addresses"
+                )
+            if self.certificate.required_dimensions != self.required_dimensions:
+                raise ValueError(
+                    "MaterializationResult certificate required_dimensions "
+                    "must match result required_dimensions"
+                )
+
     @property
     def is_degraded(self) -> bool:
         return self.status != "materialized"
@@ -221,6 +298,27 @@ class TimelineCompilationResult:
 
     timelines: Timelines
     issues: tuple[TimelineIssue, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.timelines, Mapping):
+            raise TypeError("TimelineCompilationResult.timelines must be a mapping")
+        normalized_timelines: dict[LegalAddress, ProvisionTimeline] = {}
+        for address, timeline in self.timelines.items():
+            if not isinstance(address, LegalAddress):
+                raise TypeError("TimelineCompilationResult.timelines keys must be LegalAddress")
+            if not isinstance(timeline, ProvisionTimeline):
+                raise TypeError(
+                    "TimelineCompilationResult.timelines values must be ProvisionTimeline"
+                )
+            if timeline.address != address:
+                raise ValueError(
+                    "TimelineCompilationResult timeline address must match mapping key"
+                )
+            normalized_timelines[address] = timeline
+        object.__setattr__(self, "timelines", MappingProxyType(normalized_timelines))
+        object.__setattr__(self, "issues", tuple(self.issues))
+        if any(not isinstance(issue, TimelineIssue) for issue in self.issues):
+            raise TypeError("TimelineCompilationResult.issues must contain TimelineIssue")
 
     def to_wire_artifact(
         self,
