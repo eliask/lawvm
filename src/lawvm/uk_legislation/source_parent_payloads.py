@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 import xml.etree.ElementTree as ET
 from typing import Any, Optional, Sequence
 
@@ -295,6 +296,15 @@ _UK_AFFECTING_TERMINAL_LABEL_RE = re.compile(
 )
 
 
+@lru_cache(maxsize=256)
+def _uk_alpha_continuation_re(expected: str) -> re.Pattern[str]:
+    """Compile (cached) a continuation pattern for the given alpha label."""
+    return re.compile(
+        rf"[,;]\s+(?:(?:and|or)\s+)?(?P<label>{re.escape(expected)})\s+",
+        flags=re.I,
+    )
+
+
 def _next_alpha_label(label: str) -> str:
     chars = list(label.strip().lower())
     if not chars or any(not ("a" <= char <= "z") for char in chars):
@@ -352,11 +362,7 @@ def _source_carried_top_level_alpha_matches(payload_tail: str) -> list[re.Match[
     expected = _next_alpha_label(_source_parent_range_label(first.group("label")))
     search_start = first.end()
     while expected:
-        pattern = re.compile(
-            rf"[,;]\s+(?:(?:and|or)\s+)?(?P<label>{re.escape(expected)})\s+",
-            flags=re.I,
-        )
-        match = pattern.search(payload_tail, search_start)
+        match = _uk_alpha_continuation_re(expected).search(payload_tail, search_start)
         if match is None:
             break
         matches.append(match)
