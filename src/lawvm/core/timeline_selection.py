@@ -10,6 +10,11 @@ import icontract
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
 from lawvm.core.ir_helpers import irnode_content_hash
 
+_VERSION_SELECTION_STATUSES = frozenset({"selected", "absent", "ambiguous_missing_scope"})
+_VERSION_SELECTION_RAILS = frozenset(
+    {"overlay", "background", "absent", "ambiguous_missing_scope"}
+)
+
 
 @dataclass(frozen=True)
 class VersionSelectionCertificate:
@@ -25,6 +30,38 @@ class VersionSelectionCertificate:
     selected_enacted: str = ""
     required_dimensions: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.address, LegalAddress):
+            raise TypeError("VersionSelectionCertificate.address must be LegalAddress")
+        if not isinstance(self.as_of, str) or not self.as_of:
+            raise ValueError("VersionSelectionCertificate.as_of must be a non-empty string")
+        if not isinstance(self.query_type, str) or not self.query_type:
+            raise ValueError("VersionSelectionCertificate.query_type must be a non-empty string")
+        if self.territory is not None and not isinstance(self.territory, str):
+            raise TypeError("VersionSelectionCertificate.territory must be a string or None")
+        if self.selected_rail not in _VERSION_SELECTION_RAILS:
+            raise ValueError(
+                "VersionSelectionCertificate.selected_rail must be one of "
+                f"{sorted(_VERSION_SELECTION_RAILS)!r}"
+            )
+        if not isinstance(self.candidate_count, int) or isinstance(self.candidate_count, bool):
+            raise TypeError("VersionSelectionCertificate.candidate_count must be an integer")
+        if self.candidate_count < 0:
+            raise ValueError("VersionSelectionCertificate.candidate_count must be non-negative")
+        if not isinstance(self.selected_effective, str):
+            raise TypeError("VersionSelectionCertificate.selected_effective must be a string")
+        if not isinstance(self.selected_enacted, str):
+            raise TypeError("VersionSelectionCertificate.selected_enacted must be a string")
+        object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
+        if any(not isinstance(dimension, str) or not dimension for dimension in self.required_dimensions):
+            raise ValueError(
+                "VersionSelectionCertificate.required_dimensions must contain non-empty strings"
+            )
+        if self.selected_rail in {"overlay", "background"} and not self.selected_effective:
+            raise ValueError(
+                "VersionSelectionCertificate.selected_effective is required for selected rails"
+            )
+
 
 @dataclass(frozen=True)
 class VersionSelectionResult:
@@ -34,6 +71,55 @@ class VersionSelectionResult:
     version: Optional[ProvisionVersion] = None
     required_dimensions: tuple[str, ...] = ()
     certificate: Optional[VersionSelectionCertificate] = None
+
+    def __post_init__(self) -> None:
+        if self.status not in _VERSION_SELECTION_STATUSES:
+            raise ValueError(
+                "VersionSelectionResult.status must be one of "
+                f"{sorted(_VERSION_SELECTION_STATUSES)!r}"
+            )
+        if self.version is not None and not isinstance(self.version, ProvisionVersion):
+            raise TypeError("VersionSelectionResult.version must be ProvisionVersion or None")
+        object.__setattr__(self, "required_dimensions", tuple(self.required_dimensions))
+        if any(not isinstance(dimension, str) or not dimension for dimension in self.required_dimensions):
+            raise ValueError(
+                "VersionSelectionResult.required_dimensions must contain non-empty strings"
+            )
+        if self.certificate is not None and not isinstance(
+            self.certificate, VersionSelectionCertificate
+        ):
+            raise TypeError(
+                "VersionSelectionResult.certificate must be VersionSelectionCertificate or None"
+            )
+        if self.status == "selected":
+            if self.version is None:
+                raise ValueError("VersionSelectionResult selected status requires a version")
+            if self.certificate is not None:
+                if self.certificate.selected_rail not in {"overlay", "background"}:
+                    raise ValueError(
+                        "VersionSelectionResult selected certificate must use overlay/background rail"
+                    )
+                if self.certificate.selected_effective != self.version.effective:
+                    raise ValueError(
+                        "VersionSelectionResult certificate selected_effective "
+                        "must match version.effective"
+                    )
+                if self.certificate.selected_enacted != self.version.enacted:
+                    raise ValueError(
+                        "VersionSelectionResult certificate selected_enacted "
+                        "must match version.enacted"
+                    )
+            return
+        if self.version is not None:
+            raise ValueError("VersionSelectionResult non-selected status cannot carry a version")
+        if self.status == "ambiguous_missing_scope" and not self.required_dimensions:
+            raise ValueError(
+                "VersionSelectionResult ambiguous_missing_scope requires required_dimensions"
+            )
+        if self.certificate is not None and self.certificate.selected_rail != self.status:
+            raise ValueError(
+                "VersionSelectionResult non-selected certificate rail must match result status"
+            )
 
 
 @dataclass(frozen=True)

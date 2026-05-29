@@ -465,6 +465,10 @@ Recent improvement:
 - typed table surface carriers now validate row-key basis/strength vocabularies,
   normalize row/cell lanes, and reject malformed row/body records, keeping
   table-target evidence stable after projection from IR or oracle XML.
+- version-selection certificate/result carriers now validate status and rail
+  vocabularies, candidate counts, selected-version agreement, and missing-scope
+  obligations at construction, so PIT queries cannot emit contradictory
+  selection evidence.
 
 ## Ranked Promotion Candidates
 
