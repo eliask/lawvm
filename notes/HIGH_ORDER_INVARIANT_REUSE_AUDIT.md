@@ -1301,3 +1301,28 @@ removed the dominant bottleneck is ~1.8 s combined.
   tests, positive promotion, observation shape/disposition, 5 negative guards
   including for-substitute instruction text, inferred payload, insert action,
   mismatched label, plain numeric target).
+- UK block-substitution group tail promotion (`uk_effect_block_substitution_tail_promoted_to_insert_after`,
+  rule family `targeted_after_anchor_insert`) implements Sensor K Pattern B: effects
+  whose affected_provisions cover a range like `s. 25(4)-(4B)` decompose into a
+  multi-target group.  Op `_0` (numeric stem) stays Replace; ops `_1..._n` (letter-suffix
+  variants `4a`, `4b`) are promoted to InsertAfter at lowering time.  Anchor = immediately
+  preceding target in the group (chain: `4a` anchors at `4`, `4b` anchors at `4a`).
+  Detection signal: (a) target_index > 0 in a multi-target group, (b) current leaf
+  label is a letter-suffix (e.g. `4a`), (c) group[0] leaf label equals the numeric
+  stem, (d) payload matches target leaf, (e) source_payload_actual_el is non-None.
+  Relationship to A13: Pattern B fires BEFORE the A13 instruction-text check.  A13
+  remains as the tighter clean case (single-op "after X insert" pattern from instruction
+  text).  Pattern B handles multi-op groups where instruction text is "for subsection (N)
+  substitute—" (not "after X insert"), so A13's guard 4 would never match.
+  Adjudication delta on smoke corpus: `uk_replay_replace_materialized_as_insert_for_missing_leaf`
+  66 → 48 (−18); `uk_effect_block_substitution_tail_promoted_to_insert_after` 0 → 15.
+  No new PROVED_REPLAY_BUG (replay_bug=29 before and after).  Witness statute
+  ukpga/1978/29 score=24.0% replay=52.6% (stable vs 52.9% before; 3 ops shifted
+  from Replace to InsertAfter as expected).  Covered by
+  `tests/test_uk_effect_block_substitution_promotion.py` (26 tests: unit helpers
+  for _block_substitution_tail_insert_detail, positive three-op group, observation
+  shape/dispositions/blocking, anchor-EID chaining, 6 negative guards including
+  payload mismatch, standalone tail, consecutive-numeric, no actual_el,
+  stem mismatch).  Pattern A (partial repeal on missing leaf) remains at
+  recovery per diagnosis; Pattern C (single letter-suffix substitution) is a
+  separate follow-on actuator.

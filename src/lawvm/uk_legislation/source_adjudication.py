@@ -495,6 +495,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_effect_payload_label_realigned_to_target_leaf",
         "uk_effect_payload_kind_realigned_to_target_leaf",
         "uk_effect_after_anchor_insert_promoted",
+        "uk_effect_block_substitution_tail_promoted_to_insert_after",
     }
 )
 
