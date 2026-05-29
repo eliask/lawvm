@@ -95,6 +95,20 @@ class AmendmentAcquisitionResult:
 def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dict[str, object]:
     """Project operative-text lane selection through the shared source-lane carrier."""
 
+    selected_attempt_lane = next((candidate.lane for candidate in result.candidates if candidate.selected), "")
+    selection_detail = {
+        "should_apply": result.decision.should_apply,
+        "route_target_amendment_id": result.decision.route_target_amendment_id,
+        "pre_routing_sec1_requested": result.decision.pre_routing_sec1_requested,
+        "pre_routing_sec1_applied": result.decision.pre_routing_sec1_applied,
+        "post_routing_sec1_applied": result.decision.post_routing_sec1_applied,
+        "body_repeal_candidate_used": result.decision.body_repeal_candidate_used,
+    }
+    if selected_attempt_lane and selected_attempt_lane != result.decision.selected_lane:
+        selection_detail["selected_lane_route_from"] = selected_attempt_lane
+        selection_detail["selected_lane_routing_rule"] = (
+            result.decision.route_reason or "operative lane routing"
+        )
     attempts = tuple(
         SourceLaneAttempt(
             lane=candidate.lane,
@@ -116,14 +130,7 @@ def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dic
         blocking=False,
         strict_disposition="record",
         quirks_disposition="record",
-        detail={
-            "should_apply": result.decision.should_apply,
-            "route_target_amendment_id": result.decision.route_target_amendment_id,
-            "pre_routing_sec1_requested": result.decision.pre_routing_sec1_requested,
-            "pre_routing_sec1_applied": result.decision.pre_routing_sec1_applied,
-            "post_routing_sec1_applied": result.decision.post_routing_sec1_applied,
-            "body_repeal_candidate_used": result.decision.body_repeal_candidate_used,
-        },
+        detail=selection_detail,
     ).to_diagnostic_detail()
 
 

@@ -159,11 +159,26 @@ def test_source_lane_selection_requires_selected_lane_to_be_attempted_or_explici
     )
     assert evidence.to_diagnostic_detail()["selected_source_lane"] == "no_source_lane_selected_fetch_failed"
 
+    with pytest.raises(ValueError, match="selected_lane_route_from"):
+        SourceLaneSelectionEvidence(
+            rule_id="test_source_lane_selected_route",
+            phase="acquisition",
+            reason="selected route lacks explicit routing evidence",
+            selected_lane="sec1_fallback_pre_routing",
+            attempts=(SourceLaneAttempt(lane="sec1_fallback", status="selected"),),
+        )
+
     routed = SourceLaneSelectionEvidence(
         rule_id="test_source_lane_selected_route",
         phase="acquisition",
         reason="selected route is a more specific variant of the selected lane",
         selected_lane="sec1_fallback_pre_routing",
         attempts=(SourceLaneAttempt(lane="sec1_fallback", status="selected"),),
+        detail={
+            "selected_lane_route_from": "sec1_fallback",
+            "selected_lane_routing_rule": "pre-routing fallback",
+        },
     )
-    assert routed.to_diagnostic_detail()["source_lane_attempts"][0]["status"] == "selected"
+    routed_detail = routed.to_diagnostic_detail()
+    assert routed_detail["source_lane_attempts"][0]["status"] == "selected"
+    assert routed_detail["selected_lane_route_from"] == "sec1_fallback"

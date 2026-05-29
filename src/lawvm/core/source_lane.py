@@ -74,17 +74,23 @@ class SourceLaneSelectionEvidence:
             _frozen_source_lane_detail("SourceLaneSelectionEvidence.detail", self.detail),
         )
         attempt_lanes = {attempt.lane for attempt in self.attempts}
-        has_selected_attempt = any(
-            str(attempt.status).startswith("selected") for attempt in self.attempts
+        selected_attempt_lanes = frozenset(
+            attempt.lane
+            for attempt in self.attempts
+            if str(attempt.status).startswith("selected")
         )
         if (
             self.selected_lane not in attempt_lanes
-            and not has_selected_attempt
+            and not (
+                self.detail.get("selected_lane_route_from") in selected_attempt_lanes
+                and self.detail.get("selected_lane_routing_rule")
+            )
             and not self.selected_lane.startswith("no_source_lane_selected_")
         ):
             raise ValueError(
                 "SourceLaneSelectionEvidence.selected_lane must match an attempted lane, "
-                "have a selected attempt, or use no_source_lane_selected_*"
+                "record selected_lane_route_from plus selected_lane_routing_rule, "
+                "or use no_source_lane_selected_*"
             )
         _reject_source_lane_overrides(
             "SourceLaneSelectionEvidence.detail",

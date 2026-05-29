@@ -262,6 +262,10 @@ Recent improvement:
 - Finland Finlex latest-PIT sync diagnostics now delegate shared acquisition
   envelope fields to `diagnostic_detail` while preserving statute/version
   locator payloads.
+- source-lane selection evidence now requires a selected lane either to match
+  an attempted lane, to use an explicit `no_source_lane_selected_*` marker, or
+  to record `selected_lane_route_from` plus `selected_lane_routing_rule` when a
+  frontend projects a selected attempt into a routed lane.
 - UK commencement-filter observations for unnumbered unique schedules and
   undated commencement-style rows now carry nested shared target-resolution
   and temporal-resolution projections while preserving the legacy flat fields.
