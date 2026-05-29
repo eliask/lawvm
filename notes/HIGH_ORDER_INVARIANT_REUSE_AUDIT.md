@@ -458,6 +458,10 @@ Recent improvement:
 - parse witness and resolution witness carriers now normalize token spans,
   validate nested resolution witness type, and freeze resolution context payloads
   at construction, keeping parser evidence stable after emission.
+- coverage report carriers now validate claim-kind and gap-disposition
+  vocabularies, normalize coverage/evidence lanes, and reject malformed report
+  rows at construction, so uncovered-body classifications cannot disappear by
+  falling outside known buckets.
 
 ## Ranked Promotion Candidates
 
