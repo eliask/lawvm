@@ -1329,3 +1329,9 @@ removed the dominant bottleneck is ~1.8 s combined.
 - `src/lawvm/core/regex_safety.py::lawvm_regex_risks` is the shared AST-based
   catastrophic-backtracking lint for module-scope ``_*_RE`` / ``_*_PATTERN``
   constants; validated by ``tests/test_regex_perf_gate.py`` (Sensor H batch 5).
+  A18 (2026-05-29) enhanced ``first_chars()`` in both detectors to resolve
+  CATEGORY escapes (``\d``, ``\w``, ``\s`` and Unicode variants) to concrete
+  ASCII frozensets, eliminating 77 CATEGORY false-positive entries across 21
+  files (219 → 142 total; gate allowlist reduced from 69 → 48 files). Genuine
+  ``\w+\d+`` overlaps and ``.{0,N}?`` adjacent-repeat pairs still flagged
+  correctly. Patterns like ``\d+[a-z]?`` now correctly reported as disjoint.

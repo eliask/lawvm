@@ -112,11 +112,15 @@ def _scan_patterns(src_root: Path) -> dict[str, list[tuple[int, str, str, list[s
 # ---------------------------------------------------------------------------
 # Group A — allowlist
 #
-# ALL files in this set had pre-existing violations as of 2026-05-29 baseline
-# scan (Sensor H batch 5).  The bulk of these are conservative false positives
-# from CATEGORY escapes (\\d, \\w, \\s treated as unknown first-char sets);
-# approximately 22 files have genuine .+/.* adjacent-repeat risks awaiting
-# Sensor H batch 6 cleanup.
+# Files in this set have pre-existing violations as of 2026-05-29 (Sensor H
+# batch 5), updated by A18 (2026-05-29) CATEGORY first-char analysis.
+#
+# A18 eliminated 21 files (77 pattern entries) that were pure CATEGORY
+# false-positives — \\d+[a-z]? / \\d+\\s+ shapes that are provably disjoint
+# now that first_chars() resolves CATEGORY_DIGIT, CATEGORY_WORD,
+# CATEGORY_SPACE to concrete ASCII frozensets.  Remaining 48 files have
+# genuine adjacent-repeat risks (.{0,N}?/.+ adjacent pairs, nested
+# quantifiers, or mixed CATEGORY+bounded patterns) awaiting batch 6 cleanup.
 #
 # Rules:
 #   - Removing a file from this set = you have fixed all its violations.
@@ -125,37 +129,20 @@ def _scan_patterns(src_root: Path) -> dict[str, list[tuple[int, str, str, list[s
 # ---------------------------------------------------------------------------
 
 _KNOWN_UNFIXED: dict[str, str] = {
-    # core
-    "src/lawvm/core/tree_ops.py": (
-        "Pre-existing baseline: \\d+/[a-z]* CATEGORY false-positive in "
-        "_LETTER_SUFFIX_SORT_LABEL_RE. Sensor H batch 6."
-    ),
     # estonia
     "src/lawvm/estonia/compare.py": (
         "Pre-existing baseline: adjacent-repeat patterns in identifier/footnote "
-        "normalisation regexes. Sensor H batch 6."
+        "normalisation regexes (nested quantifiers + date digit-group adjacency). "
+        "Sensor H batch 6."
     ),
     "src/lawvm/estonia/grafter.py": (
         "Pre-existing baseline: _EE_RT_INLINE_CHANGE_NOTE_RE nested+adjacent "
         "quantifiers. Sensor H batch 6."
     ),
-    # eu
-    "src/lawvm/eu/ops_parser.py": (
-        "Pre-existing baseline: adjacent .{0,N}? in _CONTEXT_RE / _TARGET_RE. "
-        "Sensor H batch 6."
-    ),
     # finland
     "src/lawvm/finland/address_parse.py": (
         "Pre-existing baseline: complex nested quantifiers in subsection address "
         "parsing patterns. Sensor H batch 6."
-    ),
-    "src/lawvm/finland/body_pairing.py": (
-        "Pre-existing baseline: CATEGORY false-positive in _PART_CROSS_HEADING_RE. "
-        "Sensor H batch 6."
-    ),
-    "src/lawvm/finland/chapter_seed.py": (
-        "Pre-existing baseline: adjacent bounded .{0,N}? repeats in "
-        "_MISSING_CHAPTER_SPAN_RE (bounded, low actual risk). Sensor H batch 6."
     ),
     "src/lawvm/finland/citation_routing.py": (
         "Pre-existing baseline: _FI_META_REPEAL_RE — bounded .{0,400}? with "
@@ -166,21 +153,19 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: _CONSOLIDATED_LOCATOR_RE has nested quantifiers "
         "and adjacent .{0,N} repeats. Sensor H batch 6."
     ),
-    "src/lawvm/finland/constraints.py": (
-        "Pre-existing baseline: CATEGORY false-positive in _PART_CROSS_HEADING_RE "
-        "(same pattern as body_pairing.py). Sensor H batch 6."
-    ),
     "src/lawvm/finland/corrigendum.py": (
         "Pre-existing baseline: multiple patterns in corrigendum parse regexes "
-        "(CATEGORY false-positives + some nested quantifiers). Sensor H batch 6."
+        "(nested quantifiers; CATEGORY false-positives resolved by A18). "
+        "Sensor H batch 6."
     ),
     "src/lawvm/finland/cross_refs.py": (
         "Pre-existing baseline: _REF_PATTERN has nested quantifiers. "
         "Sensor H batch 6."
     ),
     "src/lawvm/finland/frontend_compile.py": (
-        "Pre-existing baseline: address/label patterns with adjacent CATEGORY "
-        "repeats. Sensor H batch 6."
+        "Pre-existing baseline: address/label patterns with adjacent repeats "
+        "(CATEGORY false-positives partially resolved by A18; genuine nested "
+        "quantifiers remain). Sensor H batch 6."
     ),
     "src/lawvm/finland/frontend_observations.py": (
         "Pre-existing baseline: _SAME_LABEL_MOVE_CLAUSE_RE — complex nested "
@@ -196,24 +181,17 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "bounded variants). Sensor H batch 6."
     ),
     "src/lawvm/finland/johtolause/lexicon.py": (
-        "Pre-existing baseline: _CITE_RE, _YEAR_NUM_RE, _NPYKALA_RE with "
-        "CATEGORY/nested quantifiers. Sensor H batch 6."
-    ),
-    "src/lawvm/finland/labels.py": (
-        "Pre-existing baseline: _ARABIC_SUFFIX_RE CATEGORY false-positive. "
-        "Sensor H batch 6."
-    ),
-    "src/lawvm/finland/metadata.py": (
-        "Pre-existing baseline: _LEADING_SECTION_MARKER_AFTER_CITATION_RE "
-        "complex adjacent repeats. Sensor H batch 6."
+        "Pre-existing baseline: _CITE_RE nested quantifiers (CATEGORY false-"
+        "positives resolved by A18). Sensor H batch 6."
     ),
     "src/lawvm/finland/normalize.py": (
         "Pre-existing baseline: _SECTION_TOKEN_RE nested quantifiers. "
         "Sensor H batch 6."
     ),
     "src/lawvm/finland/profile/normalize.py": (
-        "Pre-existing baseline: multiple embedded-number patterns with adjacent "
-        "CATEGORY/range repeats. Sensor H batch 6."
+        "Pre-existing baseline: embedded-number patterns with adjacent repeats "
+        "(CATEGORY false-positives partially resolved by A18; bounded .{N} "
+        "adjacent pairs remain). Sensor H batch 6."
     ),
     "src/lawvm/finland/scope.py": (
         "Pre-existing baseline: _SAME_LABEL_MOVE_CLAUSE_RE and "
@@ -221,12 +199,14 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Sensor H batch 6."
     ),
     "src/lawvm/finland/source_normalize.py": (
-        "Pre-existing baseline: _ITEM_NUM_RE, _ARABIC_LABEL_RE, "
-        "_NUM_IN_INTRO_CAPTURE_RE CATEGORY false-positives. Sensor H batch 6."
+        "Pre-existing baseline: _NUM_IN_INTRO_CAPTURE_RE adjacent repeat "
+        "(CATEGORY false-positives on _ITEM_NUM_RE/_ARABIC_LABEL_RE resolved "
+        "by A18). Sensor H batch 6."
     ),
     "src/lawvm/finland/temporal_lowering.py": (
-        "Pre-existing baseline: date/commencement patterns with adjacent repeats "
-        "(CATEGORY false-positives in date digit groups). Sensor H batch 6."
+        "Pre-existing baseline: date/commencement patterns with adjacent bounded "
+        "repeats (CATEGORY digit-group false-positives partially resolved by A18; "
+        "\\s+/\\d+ adjacency in BRANCH context remains). Sensor H batch 6."
     ),
     # new zealand
     "src/lawvm/new_zealand/dependencies.py": (
@@ -239,8 +219,9 @@ _KNOWN_UNFIXED: dict[str, str] = {
     ),
     # norway
     "src/lawvm/norway/grafter.py": (
-        "Pre-existing baseline: filename/amendment patterns with adjacent "
-        "CATEGORY+range repeats. Sensor H batch 6."
+        "Pre-existing baseline: filename/amendment patterns with adjacent repeats "
+        "(CATEGORY+range combos partially resolved by A18; bounded pairs remain). "
+        "Sensor H batch 6."
     ),
     "src/lawvm/norway/statsrad.py": (
         "Pre-existing baseline: adjacent repeat patterns in statsrad regexes. "
@@ -255,11 +236,10 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: adjacent .+/.* patterns. Sensor H batch 6."
     ),
     # semantic
-    "src/lawvm/semantic/diff.py": (
-        "Pre-existing baseline: CATEGORY false-positive. Sensor H batch 6."
-    ),
     "src/lawvm/semantic/projection.py": (
-        "Pre-existing baseline: CATEGORY false-positives. Sensor H batch 6."
+        "Pre-existing baseline: adjacent repeat (CATEGORY false-positive "
+        "partially resolved by A18; genuine adjacent-repeat remains). "
+        "Sensor H batch 6."
     ),
     # sweden
     "src/lawvm/sweden/fetch.py": (
@@ -268,63 +248,38 @@ _KNOWN_UNFIXED: dict[str, str] = {
     ),
     "src/lawvm/sweden/grafter.py": (
         "Pre-existing baseline: clause extractor patterns (partially fixed by "
-        "A10; lint still flags some bounded+CATEGORY combinations). Sensor H batch 6."
+        "A10; lint still flags bounded adjacent pairs). Sensor H batch 6."
     ),
     # tools
-    "src/lawvm/tools/audit.py": (
-        "Pre-existing baseline: CATEGORY false-positives. Sensor H batch 6."
-    ),
-    "src/lawvm/tools/bench.py": (
-        "Pre-existing baseline: CATEGORY false-positives in bench patterns. "
-        "Sensor H batch 6."
-    ),
-    "src/lawvm/tools/corrigendum.py": (
-        "Pre-existing baseline: adjacent quantifiers. Sensor H batch 6."
-    ),
     "src/lawvm/tools/divergence_heuristics.py": (
         "Pre-existing baseline: _SECTION_KEY_RE nested quantifiers (lint flags "
-        "optional prefix group). Adjacent patterns fixed by A10; residual "
-        "CATEGORY/nested flags remain. Sensor H batch 6."
+        "optional prefix group). Sensor H batch 6."
     ),
     "src/lawvm/tools/editorial_hygiene.py": (
-        "Pre-existing baseline: CATEGORY false-positive. Sensor H batch 6."
-    ),
-    "src/lawvm/tools/ee_publication_db.py": (
-        "Pre-existing baseline: CATEGORY false-positive. Sensor H batch 6."
+        "Pre-existing baseline: adjacent repeat (CATEGORY false-positive "
+        "partially resolved by A18; genuine adjacent-repeat remains). "
+        "Sensor H batch 6."
     ),
     "src/lawvm/tools/evidence.py": (
         "Pre-existing baseline: adjacent repeats. Sensor H batch 6."
     ),
-    "src/lawvm/tools/faults.py": (
-        "Pre-existing baseline: adjacent CATEGORY repeat. Sensor H batch 6."
-    ),
     "src/lawvm/tools/section_keys.py": (
-        "Pre-existing baseline: CATEGORY false-positives. Sensor H batch 6."
-    ),
-    "src/lawvm/tools/sweden.py": (
-        "Pre-existing baseline: adjacent quantifier. Sensor H batch 6."
+        "Pre-existing baseline: adjacent repeats (CATEGORY false-positives "
+        "partially resolved by A18). Sensor H batch 6."
     ),
     "src/lawvm/tools/verify_chain.py": (
-        "Pre-existing baseline: multiple CATEGORY/adjacent patterns. "
+        "Pre-existing baseline: adjacent quantifiers (CATEGORY false-positives "
+        "partially resolved by A18; bounded adjacent pairs remain). "
         "Sensor H batch 6."
     ),
     # uk_legislation
     "src/lawvm/uk_legislation/effect_lowering_tail.py": (
-        "Pre-existing baseline: residual flag after A14 fixes — bounded pattern "
-        "still triggers CATEGORY adjacent-repeat check. Sensor H batch 6."
-    ),
-    "src/lawvm/uk_legislation/effect_substitution_normalization.py": (
-        "Pre-existing baseline: adjacent quantifier pattern. Sensor H batch 6."
+        "Pre-existing baseline: bounded .{0,N}? adjacent-repeat (not CATEGORY; "
+        "genuine bounded-pair risk). Sensor H batch 6."
     ),
     "src/lawvm/uk_legislation/nlp_parser.py": (
         "Sensor H batch 3: NLP parser regexes slated for replacement by "
         "surface pipeline. Not yet fixed."
-    ),
-    "src/lawvm/uk_legislation/ordering.py": (
-        "Pre-existing baseline: CATEGORY false-positive. Sensor H batch 6."
-    ),
-    "src/lawvm/uk_legislation/provision_extractor.py": (
-        "Pre-existing baseline: adjacent quantifier. Sensor H batch 6."
     ),
     "src/lawvm/uk_legislation/replay_table_apply.py": (
         "Pre-existing baseline: adjacent .{0,N} repeats. Sensor H batch 6."
@@ -344,9 +299,6 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: adjacent .{0,N}? repeats in child-tail rewrite "
         "patterns. Sensor H batch 6."
     ),
-    "src/lawvm/uk_legislation/source_context.py": (
-        "Pre-existing baseline: adjacent quantifier. Sensor H batch 6."
-    ),
     "src/lawvm/uk_legislation/source_definition_context.py": (
         "Pre-existing baseline: adjacent .{0,N}? repeats in definition context "
         "patterns. Sensor H batch 6."
@@ -364,15 +316,9 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "fragment context patterns — highest violation count in UK cluster. "
         "Sensor H batch 6."
     ),
-    "src/lawvm/uk_legislation/source_labeled_child_parts.py": (
-        "Pre-existing baseline: adjacent repeat patterns. Sensor H batch 6."
-    ),
     "src/lawvm/uk_legislation/source_parent_payloads.py": (
         "Pre-existing baseline: largest single-file violation count — adjacent "
         ".{0,N}? repeats in parent payload classification. Sensor H batch 6."
-    ),
-    "src/lawvm/uk_legislation/source_payload_elaboration.py": (
-        "Pre-existing baseline: adjacent quantifier. Sensor H batch 6."
     ),
     "src/lawvm/uk_legislation/source_structural_sibling.py": (
         "Pre-existing baseline: adjacent .+ repeat. Sensor H batch 6."
@@ -390,11 +336,8 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Sensor H batch 6."
     ),
     "src/lawvm/uk_legislation/table_sources.py": (
-        "Pre-existing baseline: residual flag after A14 fix — bounded pattern "
-        "still triggers adjacent-repeat check. Sensor H batch 6."
-    ),
-    "src/lawvm/uk_legislation/text_matching.py": (
-        "Pre-existing baseline: CATEGORY adjacent false-positive. Sensor H batch 6."
+        "Pre-existing baseline: bounded adjacent-repeat (not CATEGORY; genuine "
+        "bounded-pair risk). Sensor H batch 6."
     ),
 }
 
@@ -436,6 +379,77 @@ class TestRegexSanitySelf:
 
     def test_simple_digit_safe(self) -> None:
         assert lawvm_regex_risks(r"\d+") == []
+
+
+class TestCategoryFirstCharSets:
+    """A18: CATEGORY escapes resolved to concrete ASCII char-sets in first_chars().
+
+    These tests verify the reduction of false positives introduced in A18
+    (2026-05-29).  The canonical LawVM label shape ``\\d+[a-z]?`` was the
+    single most common false-positive before this fix.
+    """
+
+    # --- patterns that are genuinely disjoint — must NOT flag ---
+
+    def test_digit_then_lower_disjoint(self) -> None:
+        """\\d and [a-z] have no common ASCII code-points."""
+        assert lawvm_regex_risks(r"\d+[a-z]+") == []
+
+    def test_digit_then_optional_lower_disjoint(self) -> None:
+        """Canonical LawVM label suffix shape \\d+[a-z]? must be clean."""
+        assert lawvm_regex_risks(r"\d+[a-z]?") == []
+
+    def test_digit_then_optional_any_case_letter_disjoint(self) -> None:
+        """\\d+[a-zA-Z]? — digits and ASCII letters are disjoint."""
+        assert lawvm_regex_risks(r"\d+[a-zA-Z]?") == []
+
+    def test_digit_then_space_disjoint(self) -> None:
+        """\\d and \\s have no common ASCII code-points."""
+        assert lawvm_regex_risks(r"\d+\s+") == []
+
+    def test_space_then_lower_disjoint(self) -> None:
+        """\\s and [a-z] are disjoint."""
+        assert lawvm_regex_risks(r"\s+[a-z]+") == []
+
+    def test_word_then_space_disjoint(self) -> None:
+        """\\w and \\s are disjoint (no char is both word and whitespace)."""
+        assert lawvm_regex_risks(r"\w+\s+") == []
+
+    def test_space_then_digit_disjoint(self) -> None:
+        """\\s and \\d are disjoint."""
+        assert lawvm_regex_risks(r"\s+\d+") == []
+
+    def test_anchored_digit_suffix_clean(self) -> None:
+        """Common legal label pattern: anchored, disjoint suffix."""
+        assert lawvm_regex_risks(r"^(\d+)([a-z]*)$") == []
+
+    # --- patterns with genuine overlap — MUST flag ---
+
+    def test_word_then_digit_overlaps(self) -> None:
+        """\\w includes digits, so \\w+ and \\d+ share first chars."""
+        assert lawvm_regex_risks(r"\w+\d+") != []
+
+    def test_word_then_word_overlaps(self) -> None:
+        """Identical CATEGORY: \\w+\\w+ is a genuine adjacent-repeat risk."""
+        assert lawvm_regex_risks(r"\w+\w+") != []
+
+    def test_digit_then_digit_overlaps(self) -> None:
+        """Identical CATEGORY: \\d+\\d+ is a genuine adjacent-repeat risk."""
+        assert lawvm_regex_risks(r"\d+\d+") != []
+
+    def test_space_then_space_overlaps(self) -> None:
+        """Identical CATEGORY: \\s+\\s+ is a genuine adjacent-repeat risk."""
+        assert lawvm_regex_risks(r"\s+\s+") != []
+
+    # --- existing checks must remain unaffected ---
+
+    def test_dot_plus_still_flagged(self) -> None:
+        """A18 must not regress the .+.+ detector."""
+        assert lawvm_regex_risks(r".+.+") != []
+
+    def test_nested_quantifiers_still_flagged(self) -> None:
+        """A18 must not regress the nested-quantifier detector."""
+        assert lawvm_regex_risks(r"(a+)+$") != []
 
 
 class TestAstLintGate:
