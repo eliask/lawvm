@@ -80,6 +80,27 @@ def test_replay_contracts_reject_invalid_envelope_shapes() -> None:
     with pytest.raises(ValueError, match="divergence_count"):
         ReplaySummary(jurisdiction="no", base_id="base", as_of="2026-01-01", divergence_count=-1)
 
+    with pytest.raises(ValueError, match="op_count"):
+        ReplaySummary(
+            jurisdiction="no",
+            base_id="base",
+            as_of="2026-01-01",
+            op_count=1,
+            steps=(ReplayAmendmentStep(source_id="source", op_count=2),),
+        )
+
+    with pytest.raises(ValueError, match="amendment_count"):
+        ReplaySummary(
+            jurisdiction="no",
+            base_id="base",
+            as_of="2026-01-01",
+            amendment_count=1,
+            steps=(
+                ReplayAmendmentStep(source_id="source-1"),
+                ReplayAmendmentStep(source_id="source-2"),
+            ),
+        )
+
     with pytest.raises(ValueError, match="step_index"):
         ReplayCheckpoint(
             parent_id="base",
@@ -166,6 +187,22 @@ def test_verify_contracts_reject_invalid_envelope_shapes() -> None:
 
     with pytest.raises(ValueError, match="jurisdiction"):
         VerifySummary(jurisdiction="", base_id="base")
+
+    with pytest.raises(ValueError, match="issue_count"):
+        VerifySummary(
+            jurisdiction="ee",
+            base_id="base",
+            issue_count=2,
+            issues=(VerifyIssue(code="parse.bad", message="bad parse"),),
+        )
+
+    with pytest.raises(ValueError, match="consistent=True"):
+        VerifySummary(
+            jurisdiction="ee",
+            base_id="base",
+            consistent=True,
+            divergences=(DivergenceRecord(address="section:1", kind="MISMATCH"),),
+        )
 
 
 def test_verify_contracts_freeze_detail_and_normalize_lanes() -> None:

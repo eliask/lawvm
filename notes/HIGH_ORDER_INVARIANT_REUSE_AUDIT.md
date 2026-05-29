@@ -476,6 +476,10 @@ Recent improvement:
   status obligations, certificate/result count agreement, and freeze timeline
   mapping keys at emission time, keeping PIT result evidence internally
   consistent.
+- shared replay and verification summaries now reject non-integer counters,
+  incompatible consistency/divergence rows, and obvious emitted-row count drift,
+  while preserving zero-count defaults for legacy callers that omit summary
+  counts.
 
 ## Ranked Promotion Candidates
 
