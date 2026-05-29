@@ -175,7 +175,10 @@ Regex policy:
   parametrized inputs;
 - always substring-guard before any regex scan on long legal text:
   `if "keyword" not in text: return False` eliminates ~99% of calls and
-  costs nanoseconds;
+  costs nanoseconds. New hot-path classifiers should prefer
+  `compile_classifier_regex` over hand-written substring guards — it runs the
+  backtracking lint and attaches a sound predicate-tree prefilter automatically
+  (see `src/lawvm/core/regex_safety.py`);
 - replace regex with direct string operations only when the equivalence is
   obvious, tested, and not semantic guesswork.
 
