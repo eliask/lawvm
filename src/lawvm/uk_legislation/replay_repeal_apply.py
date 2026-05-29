@@ -109,12 +109,12 @@ class UKReplayRepealApplyMixin:
         parent_node, _, _ = replay._find_node_by_target(parent_target)
         if parent_node is None:
             return False
-        for child in getattr(parent_node, "children", ()) or ():
-            child_kind = str(getattr(child, "kind", "") or "").lower()
-            child_label = str(getattr(child, "label", "") or "").strip().lower()
+        for child in parent_node.children:
+            child_kind = child.kind.value.lower()
+            child_label = (child.label or "").strip().lower()
             if child_kind == leaf_kind and child_label == leaf_label.lower():
                 return False
-        return bool((getattr(parent_node, "text", "") or "").strip() or getattr(parent_node, "children", ()))
+        return bool(parent_node.text.strip() or parent_node.children)
 
     def _apply_repeal_op(
         self,

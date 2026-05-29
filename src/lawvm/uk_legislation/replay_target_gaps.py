@@ -125,16 +125,16 @@ def uk_broad_schedule_table_shape_gap(target: LegalAddress, node: UKMutableNode)
     leaf_kind = str(path[-1][0] or "").lower()
     if leaf_kind not in {"schedule", "part"}:
         return False
-    node_kind = str(getattr(node, "kind", "") or "").lower()
+    node_kind = node.kind.value.lower()
     if node_kind not in {"schedule", "part"}:
         return False
     descendant_kinds: set[str] = set()
-    stack = list(getattr(node, "children", []) or [])
+    stack = list(node.children)
     while stack:
         curr = stack.pop()
-        curr_kind = str(getattr(curr, "kind", "") or "").lower()
+        curr_kind = curr.kind.value.lower()
         descendant_kinds.add(curr_kind)
-        stack.extend(list(getattr(curr, "children", []) or []))
+        stack.extend(list(curr.children))
     if descendant_kinds & {"table", "row", "cell", "header_cell"}:
         return False
     provision_kinds = {"paragraph", "subparagraph", "item", "point", "p1group", "section"}
@@ -146,7 +146,7 @@ def uk_payload_shape_invariant_violations(op: LegalOperation) -> list[str]:
 
 
 def uk_payload_shape_invariant_violation_records(op: LegalOperation) -> list[tree_ops.TreeInvariantViolation]:
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     if payload is None or _action_name(op.action) not in {"insert", "replace"}:
         return []
     return list(
@@ -160,14 +160,14 @@ def uk_payload_shape_invariant_violation_records(op: LegalOperation) -> list[tre
 def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_duplicate_violation(scoped_violation, "part"):
         return False
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     if payload is None or _action_name(op.action) != "replace":
         return False
     target_path = op.target.path
     if not target_path or str(target_path[-1][0] or "").lower() != "part":
         return False
-    payload_kind = str(getattr(payload, "kind", "") or "").lower()
-    payload_label = _clean_num(str(getattr(payload, "label", "") or ""))
+    payload_kind = payload.kind.value.lower()
+    payload_label = _clean_num(payload.label or "")
     return payload_kind == "part" and payload_label in {"", "part"}
 
 
@@ -175,13 +175,13 @@ def uk_repeated_form_label_payload_shape_gap(
     op: LegalOperation,
     payload_violations: Sequence[InvariantViolation],
 ) -> bool:
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     if payload is None or _action_name(op.action) != "insert":
         return False
     target_path = op.target.path
     if len(target_path) != 1 or str(target_path[0][0] or "").lower() != "schedule":
         return False
-    if str(getattr(payload, "kind", "") or "").lower() != "schedule":
+    if payload.kind.value.lower() != "schedule":
         return False
     if not payload_violations:
         return False
@@ -486,11 +486,11 @@ def uk_existing_target_insert_gap(
 ) -> bool:
     if _action_name(op.action) != "insert" or node is None:
         return False
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     if payload is None:
         return True
-    payload_kind = str(getattr(payload, "kind", "") or "")
-    payload_label = _clean_num(str(getattr(payload, "label", "") or ""))
+    payload_kind = payload.kind.value
+    payload_label = _clean_num(payload.label or "")
     target_kind = _addr_leaf_kind(target) or ""
     target_label = _addr_leaf_label(target) or ""
     if not (
@@ -504,18 +504,18 @@ def uk_existing_target_insert_gap(
     ):
         return False
     return uk_kind_matches(
-        node_kind=str(getattr(node, "kind", "") or ""),
+        node_kind=node.kind.value,
         target_kind=target_kind,
-        node_label=_clean_num(str(getattr(node, "label", "") or "")),
+        node_label=_clean_num(node.label or ""),
         target_label=_clean_num(target_label),
-    ) and _clean_num(str(getattr(node, "label", "") or "")) == _clean_num(target_label)
+    ) and _clean_num(node.label or "") == _clean_num(target_label)
 
 
 def uk_existing_target_insert_already_materialized(
     node: UKMutableNode | None,
     op: LegalOperation,
 ) -> bool:
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     if node is None or payload is None:
         return False
     existing_text = _normalized_replay_subtree_text(node)
@@ -527,7 +527,7 @@ def uk_existing_target_insert_conflict_detail(
     node: UKMutableNode | None,
     op: LegalOperation,
 ) -> dict[str, str] | None:
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     if node is None or payload is None:
         return None
     existing_text = _normalized_replay_subtree_text(node)
@@ -541,13 +541,13 @@ def uk_existing_target_insert_conflict_detail(
 
 
 def uk_crossheading_insert_target_gap(target: LegalAddress, op: LegalOperation) -> bool:
-    payload = getattr(op, "payload", None)
+    payload = op.payload
     return (
         _action_name(op.action) == "insert"
         and _addr_leaf_kind(target) == "crossheading"
         and not _clean_num(_addr_leaf_label(target) or "")
         and payload is not None
-        and str(getattr(payload, "kind", "") or "").lower() == "crossheading"
+        and payload.kind.value.lower() == "crossheading"
     )
 
 

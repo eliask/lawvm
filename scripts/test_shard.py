@@ -89,6 +89,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "uk": (
         "test_uk_*.py",
         "test_acquire_uk_corpus.py",
+        "test_regex_batch6_perf.py",
     ),
     "eu": (
         "test_eu_*.py",
