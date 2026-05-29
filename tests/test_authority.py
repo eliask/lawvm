@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from lawvm.core.authority import (
@@ -20,7 +22,7 @@ from lawvm.core.authority import (
     branch_overlay_materialization_ops,
 )
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.core.provenance import OperationSource
+from lawvm.core.provenance import ExpiryOverride, MigrationEvent, OperationSource
 from lawvm.core.semantic_types import StructuralAction
 
 
@@ -239,4 +241,58 @@ def test_branch_lifecycle_enacted_event_requires_derived_source() -> None:
             branch_id="proposal:example:2026-1",
             event_kind="enacted",
             resulting_status="commenced",
+        )
+
+
+def test_expiry_override_normalizes_section_labels() -> None:
+    labels = ["1", "2"]
+
+    override = ExpiryOverride(source_statute_id="2024/1", section_labels=cast(Any, labels))
+    labels.append("3")
+
+    assert override.section_labels == frozenset({"1", "2"})
+
+
+def test_operation_source_normalizes_expiry_chain() -> None:
+    override = ExpiryOverride(source_statute_id="2024/1", section_labels=frozenset({"1"}))
+    chain = [override]
+
+    source = OperationSource(statute_id="2024/2", expiry_chain=cast(Any, chain))
+    chain.append(ExpiryOverride(source_statute_id="2024/3", section_labels=frozenset({"2"})))
+
+    assert source.expiry_chain == (override,)
+
+
+def test_operation_source_rejects_malformed_expiry_chain() -> None:
+    with pytest.raises(ValueError, match="expiry_chain must contain ExpiryOverride"):
+        OperationSource(statute_id="2024/2", expiry_chain=cast(Any, ("bad",)))
+
+
+def test_migration_event_validates_identity_kind_and_addresses() -> None:
+    from_addr = LegalAddress(path=(("section", "1"),))
+    to_addr = LegalAddress(path=(("section", "2"),))
+
+    event = MigrationEvent(
+        event_id="mig-1",
+        kind="renumber",
+        from_address=from_addr,
+        to_address=to_addr,
+    )
+
+    assert event.from_address == from_addr
+    with pytest.raises(ValueError, match="event_id must be non-empty"):
+        MigrationEvent(event_id="", kind="renumber", from_address=from_addr, to_address=to_addr)
+    with pytest.raises(ValueError, match="unsupported MigrationEvent.kind"):
+        MigrationEvent(
+            event_id="mig-2",
+            kind=cast(Any, "teleport"),
+            from_address=from_addr,
+            to_address=to_addr,
+        )
+    with pytest.raises(ValueError, match="from_address must be a LegalAddress"):
+        MigrationEvent(
+            event_id="mig-3",
+            kind="renumber",
+            from_address=cast(Any, "section:1"),
+            to_address=to_addr,
         )
