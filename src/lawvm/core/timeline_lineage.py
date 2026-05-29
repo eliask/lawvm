@@ -25,12 +25,29 @@ class LineageSegment:
     to_address: LegalAddress
     event: MigrationEvent | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.from_address, LegalAddress):
+            raise ValueError("LineageSegment.from_address must be a LegalAddress")
+        if not isinstance(self.to_address, LegalAddress):
+            raise ValueError("LineageSegment.to_address must be a LegalAddress")
+        if self.event is not None and not isinstance(self.event, MigrationEvent):
+            raise ValueError("LineageSegment.event must be a MigrationEvent or None")
+
 
 @dataclass(frozen=True)
 class ScopeMigrationClassification:
     active_scope_changing: bool
     noncolliding: bool
     destination_occupancy_collision: bool
+
+    def __post_init__(self) -> None:
+        _validate_bool_field("ScopeMigrationClassification", "active_scope_changing", self.active_scope_changing)
+        _validate_bool_field("ScopeMigrationClassification", "noncolliding", self.noncolliding)
+        _validate_bool_field(
+            "ScopeMigrationClassification",
+            "destination_occupancy_collision",
+            self.destination_occupancy_collision,
+        )
 
 
 @dataclass(frozen=True)
@@ -42,6 +59,38 @@ class MaterializationLineageBridgeClassification:
     active_scope_changing: bool = False
     noncolliding_scope_migrations: bool = False
     destination_occupancy_collision: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_bool_field(
+            "MaterializationLineageBridgeClassification",
+            "native_rebirth_after_renumber",
+            self.native_rebirth_after_renumber,
+        )
+        _validate_bool_field(
+            "MaterializationLineageBridgeClassification",
+            "leaf_stable_scope_renumber",
+            self.leaf_stable_scope_renumber,
+        )
+        _validate_bool_field(
+            "MaterializationLineageBridgeClassification",
+            "active_scope_changing",
+            self.active_scope_changing,
+        )
+        _validate_bool_field(
+            "MaterializationLineageBridgeClassification",
+            "noncolliding_scope_migrations",
+            self.noncolliding_scope_migrations,
+        )
+        _validate_bool_field(
+            "MaterializationLineageBridgeClassification",
+            "destination_occupancy_collision",
+            self.destination_occupancy_collision,
+        )
+
+
+def _validate_bool_field(carrier_name: str, field_name: str, value: bool) -> None:
+    if not isinstance(value, bool):
+        raise ValueError(f"{carrier_name}.{field_name} must be a bool")
 
 
 _RetargetVersionContentFn = Callable[[ProvisionVersion, LegalAddress], ProvisionVersion]
