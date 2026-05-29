@@ -57,6 +57,16 @@ CompletenessBlockerKind = Literal[
     "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
     "TIME.MISSING_EFFECTIVE_DATE",
 ]
+_ALL_BLOCKER_KINDS = frozenset(
+    (
+        SOURCE_INCOMPLETE_BLOCKER,
+        EXTRACTION_FALLBACK_BLOCKER,
+        FAILED_OPERATION_BLOCKER,
+        REJECTED_OPERATION_BLOCKER,
+        *BOUNDARY_VIOLATION_BLOCKERS,
+        MISSING_EFFECTIVE_DATE_BLOCKER,
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +77,18 @@ class CompletenessBlocker:
     scope_kind: str
     scope_ref: str
     source_statute: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in _ALL_BLOCKER_KINDS:
+            raise ValueError("CompletenessBlocker.kind is not supported")
+        for field_name, value in (
+            ("scope_kind", self.scope_kind),
+            ("scope_ref", self.scope_ref),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"CompletenessBlocker.{field_name} must be a non-empty string")
+        if not isinstance(self.source_statute, str):
+            raise TypeError("CompletenessBlocker.source_statute must be a string")
 
 
 @dataclass(frozen=True, init=False)
@@ -89,9 +111,16 @@ class ChainCompletenessStatus:
         is_complete: bool,
         blockers: list[CompletenessBlocker] | tuple[CompletenessBlocker, ...] | None = None,
     ) -> None:
+        if not isinstance(section_label, str) or not section_label:
+            raise ValueError("ChainCompletenessStatus.section_label must be a non-empty string")
+        if not isinstance(is_complete, bool):
+            raise TypeError("ChainCompletenessStatus.is_complete must be a bool")
+        normalized_blockers = tuple(blockers or ())
+        if any(not isinstance(blocker, CompletenessBlocker) for blocker in normalized_blockers):
+            raise TypeError("ChainCompletenessStatus.blockers must contain CompletenessBlocker")
         object.__setattr__(self, "section_label", section_label)
         object.__setattr__(self, "is_complete", is_complete)
-        object.__setattr__(self, "blockers", tuple(blockers or ()))
+        object.__setattr__(self, "blockers", normalized_blockers)
         if bool(self.blockers) == bool(self.is_complete):
             raise ValueError(
                 "ChainCompletenessStatus.is_complete contradicts the blocker ledger: "
