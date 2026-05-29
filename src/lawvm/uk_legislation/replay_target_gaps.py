@@ -112,14 +112,14 @@ def _is_mixed_subunit_order_label(text: str) -> bool:
 
 
 def uk_table_target_shape_gap(target: LegalAddress) -> bool:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if not path:
         return False
     return any(_clean_num(label or "") == "table" for _, label in path)
 
 
 def uk_broad_schedule_table_shape_gap(target: LegalAddress, node: UKMutableNode) -> bool:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if _addr_container(target) != "schedule" or not path:
         return False
     leaf_kind = str(path[-1][0] or "").lower()
@@ -163,7 +163,7 @@ def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: Invaria
     payload = getattr(op, "payload", None)
     if payload is None or _action_name(op.action) != "replace":
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path or str(target_path[-1][0] or "").lower() != "part":
         return False
     payload_kind = str(getattr(payload, "kind", "") or "").lower()
@@ -178,7 +178,7 @@ def uk_repeated_form_label_payload_shape_gap(
     payload = getattr(op, "payload", None)
     if payload is None or _action_name(op.action) != "insert":
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if len(target_path) != 1 or str(target_path[0][0] or "").lower() != "schedule":
         return False
     if str(getattr(payload, "kind", "") or "").lower() != "schedule":
@@ -194,7 +194,7 @@ def uk_repeated_form_label_payload_shape_gap(
 def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if _action_name(op.action) != "replace" or op.payload is None:
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path:
         return False
     target_kind = str(target_path[-1][0] or "").lower()
@@ -232,7 +232,7 @@ def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: I
         or getattr(insertion_anchor_witness, "following_eid", None)
     ):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path:
         return False
     target_kind = str(target_path[-1][0] or "").lower()
@@ -260,7 +260,7 @@ def uk_missing_source_target_gap(op: LegalOperation) -> bool:
 def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_order_violation(scoped_violation, "part"):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path:
         return False
     part_labels = [str(label or "") for kind, label in target_path if str(kind or "").lower() == "part"]
@@ -287,7 +287,7 @@ def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViola
 def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_order_violation(scoped_violation, "chapter"):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path or str(target_path[-1][0] or "").lower() != "chapter":
         return False
     labels = _order_labels(scoped_violation, "chapter")
@@ -307,7 +307,7 @@ def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: InvariantVi
 def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_order_violation(scoped_violation, "section"):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path or str(target_path[-1][0] or "").lower() != "section":
         return False
     leaf_text = _clean_num(str(target_path[-1][1] or ""))
@@ -330,7 +330,7 @@ def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: InvariantVi
 def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_order_violation(scoped_violation, "paragraph"):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path:
         return False
     paragraph_labels = [str(label or "") for kind, label in target_path if str(kind or "").lower() == "paragraph"]
@@ -364,7 +364,7 @@ def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: Invariant
 def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_order_violation(scoped_violation, "subparagraph"):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path or str(target_path[-1][0] or "").lower() != "subparagraph":
         return False
     leaf_text = _clean_num(str(target_path[-1][1] or ""))
@@ -392,7 +392,7 @@ def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: Invari
 def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViolation) -> bool:
     if not _is_order_violation(scoped_violation, "item"):
         return False
-    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    target_path = op.target.path
     if not target_path or str(target_path[-1][0] or "").lower() not in {"subparagraph", "item", "point"}:
         return False
     in_schedule = any(str(kind or "").lower() == "schedule" for kind, _ in target_path)
@@ -440,7 +440,7 @@ def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: InvariantViola
 
 
 def uk_malformed_target_placeholder_label_gap(target: LegalAddress) -> bool:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     return any(
         str(kind or "").lower() in {"item", "point", "paragraph", "subparagraph"}
         and bool(re.fullmatch(r"\[[^\]]+\]", str(label or "").strip()))
@@ -449,7 +449,7 @@ def uk_malformed_target_placeholder_label_gap(target: LegalAddress) -> bool:
 
 
 def uk_malformed_target_note_or_crossheading_gap(target: LegalAddress) -> bool:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if any(_clean_num(label or "").lower() == "note" for _, label in path):
         return True
     return any(
@@ -459,7 +459,7 @@ def uk_malformed_target_note_or_crossheading_gap(target: LegalAddress) -> bool:
 
 
 def uk_malformed_target_sectionlike_label_gap(target: LegalAddress) -> bool:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if not path:
         return False
     root_kind, root_label = path[0]
@@ -474,7 +474,7 @@ def uk_malformed_target_sectionlike_label_gap(target: LegalAddress) -> bool:
 
 
 def uk_malformed_target_schedule_root_label_gap(target: LegalAddress) -> bool:
-    path = tuple(getattr(target, "path", ()) or ())
+    path = target.path
     if _addr_container(target) != "schedule" or not path:
         return False
     first_kind, first_label = path[0]

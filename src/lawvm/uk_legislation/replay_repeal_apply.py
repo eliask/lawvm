@@ -98,7 +98,7 @@ def _repeal_replay_self(replay: object) -> _RepealReplaySelf:
 class UKReplayRepealApplyMixin:
     def _present_parent_absent_leaf_repeal_gap(self, target: LegalAddress) -> bool:
         replay = _repeal_replay_self(self)
-        path = tuple(getattr(target, "path", ()) or ())
+        path = target.path
         if len(path) < 2:
             return False
         leaf_kind = str(path[-1][0] or "").lower()

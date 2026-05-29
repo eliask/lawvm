@@ -196,7 +196,7 @@ def _fragment_substitution(op: LegalOperation) -> Optional[list]:
                 fragment["end_occurrence"] = str(text_rewrite_witness.end_occurrence)
             fragments.append(fragment)
         return fragments
-    for note in getattr(op, "provenance_tags", ()) or ():
+    for note in op.provenance_tags:
         if not str(note).startswith(NOTE_FRAGMENT_SUB):
             continue
         try:
@@ -228,7 +228,7 @@ def _text_rewrite_rule_ids_for_op(op: LegalOperation) -> tuple[str, ...]:
     rewrite_source = getattr(text_rewrite_witness, "rewrite_source", "")
     if rewrite_source:
         rule_ids.append(str(rewrite_source))
-    for note in getattr(op, "provenance_tags", ()) or ():
+    for note in op.provenance_tags:
         note_text = str(note)
         if not note_text.startswith(NOTE_TEXT_REWRITE_RULE):
             continue
