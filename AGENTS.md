@@ -189,7 +189,10 @@ Catastrophic-backtracking discipline:
 - the tempered-greedy idiom `(?:(?!anchor).){0,N}?` is the canonical safe
   pattern for "match up to the next anchor;" the unbounded version is unsafe;
 - every new boolean classifier pattern in a hot path needs an adversarial
-  perf test: long worst-case input, tight wall budget (e.g. <100 ms).
+  perf test: long worst-case input, tight wall budget (e.g. <100 ms);
+- module-scope `_NAME_RE` / `_NAME_PATTERN` constants are validated by
+  `tests/test_regex_perf_gate.py` against `lawvm_regex_risks()` (Sensor H batch 5
+  gate; see `src/lawvm/core/regex_safety.py`).
 
 LawVM stays on stdlib `re`. Lookarounds are load-bearing for Estonian
 morphology (`(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])`) and Finnish `§(?!:)` discrimination,
