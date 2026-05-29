@@ -2934,7 +2934,11 @@ def _uk_build_fee_table_index(
     entries: list[_UKFeeTableIndexEntry] = []
     table_index = 0
     for el in source_root.iter():
-        if el.tag.split("}")[-1].lower() != "table":
+        tag = el.tag
+        # iter() yields comment/PI nodes whose tag is a callable, not a str.
+        if not isinstance(tag, str):
+            continue
+        if tag.split("}")[-1].lower() != "table":
             continue
         raw_rows = _uk_table_rows_with_rowspans(el)
         # Check if this is a fee table (same logic as _uk_table_is_fee_table)
