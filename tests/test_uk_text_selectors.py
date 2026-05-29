@@ -8,6 +8,8 @@ behaviorally identical.  No parser code is exercised here yet.
 
 from __future__ import annotations
 
+import pytest
+
 from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
     AfterChildSelector,
@@ -113,3 +115,96 @@ class TestFragmentToLegacyDict:
             occurrence="-1",
         )
         assert fragment_to_legacy_dict(frag)["occurrence"] == "-1"
+
+
+class TestParserProductionParity:
+    """Byte-exact parity gate for the families migrated to typed fragments (B1).
+
+    Each case asserts the full ``parse_fragment_substitution`` output for an
+    input that triggers a migrated production.  The expected dicts were captured
+    from the parser *before* the migration; a typed-fragment rewrite that
+    serializes through ``fragment_to_legacy_dict`` must reproduce them exactly.
+    """
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            (
+                'from "the date specified" to the end, substitute "the appointed day"',
+                [{
+                    "original": "TEXT_FROM_the date specified_TO_END",
+                    "replacement": "the appointed day",
+                    "rule_id": "uk_effect_anchor_to_end_substitution_text_patch",
+                }],
+            ),
+            (
+                'for "old text" to the end, substitute— the new block text here',
+                [{
+                    "original": "TEXT_FROM_old text_TO_END",
+                    "replacement": "the new block text here",
+                    "rule_id": "uk_effect_quoted_anchor_to_end_block_substitution_text_patch",
+                }],
+            ),
+            (
+                'for the words "old words" to the end, substitute "new words"',
+                [{
+                    "original": "TEXT_FROM_old words_TO_END",
+                    "replacement": "new words",
+                    "rule_id": "uk_effect_quoted_words_anchor_to_end_substitution_text_patch",
+                }],
+            ),
+            (
+                'for words "phrase" to the end, substitute the replacement block',
+                [{
+                    "original": "TEXT_FROM_phrase_TO_END",
+                    "replacement": "the replacement block",
+                    "rule_id": "uk_effect_anchor_to_end_block_substitution_text_patch",
+                }],
+            ),
+            (
+                'for the words from "start phrase" to the end, substitute " — new opening block',
+                [{
+                    "original": "TEXT_FROM_start phrase_TO_END",
+                    "replacement": "new opening block",
+                    "rule_id": "uk_effect_range_to_end_open_quote_block_substitution_text_patch",
+                }],
+            ),
+            (
+                'for words from "term" where it second occurs to the end, substitute the block text',
+                [{
+                    "original": "TEXT_FROM_term_TO_END",
+                    "replacement": "the block text",
+                    "occurrence": "2",
+                    "rule_id": "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
+                }],
+            ),
+            (
+                'for the words after "anchor word" substitute "inserted text"',
+                [{
+                    "original": "TEXT_AFTER_anchor word_TO_END",
+                    "replacement": "inserted text",
+                    "rule_id": "uk_effect_after_anchor_to_end_substitution_text_patch",
+                }],
+            ),
+            (
+                'for the opening words substitute "New opening words"',
+                [{
+                    "original": "TEXT_OPENING_WORDS",
+                    "replacement": "New opening words",
+                    "rule_id": "uk_effect_opening_words_substitution_text_patch",
+                }],
+            ),
+            (
+                'for words before paragraph (a), substitute "preamble text"',
+                [{
+                    "original": "TEXT_BEFORE_CHILD_paragraph_a",
+                    "replacement": "preamble text",
+                    "rule_id": "uk_effect_before_child_text_substitution_patch",
+                }],
+            ),
+        ],
+    )
+    def test_migrated_family_parity(self, text: str, expected: list) -> None:
+        from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+
+        assert parse_fragment_substitution(text) == expected

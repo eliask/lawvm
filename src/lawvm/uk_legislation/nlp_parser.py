@@ -62,6 +62,14 @@ from functools import lru_cache
 from typing import List, Dict
 
 from lawvm.uk_legislation.source_text_normalization import normalize_uk_parser_text
+from lawvm.uk_legislation.text_selectors import (
+    AfterAnchorToEndSelector,
+    BeforeChildSelector,
+    OpeningWordsSelector,
+    RangeToEndSelector,
+    UKTextRewriteFragment,
+    fragment_to_legacy_dict,
+)
 
 # ASCII Unit Separator
 US = "\x1f"
@@ -1174,11 +1182,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_anchor_to_end_substituted:
         subs.append(
-            {
-                "original": f"TEXT_FROM_{m.group(1).strip()}_TO_END",
-                "replacement": m.group(2).strip(),
-                "rule_id": "uk_effect_anchor_to_end_substitution_text_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeToEndSelector(m.group(1).strip()),
+                    replacement=m.group(2).strip(),
+                    rule_id="uk_effect_anchor_to_end_substitution_text_patch",
+                )
+            )
         )
 
     matches_quoted_anchor_to_end_block_substituted = re.finditer(
@@ -1192,11 +1202,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         replacement = m.group(2).strip()
         if replacement:
             subs.append(
-                {
-                    "original": f"TEXT_FROM_{m.group(1).strip()}_TO_END",
-                    "replacement": replacement,
-                    "rule_id": "uk_effect_quoted_anchor_to_end_block_substitution_text_patch",
-                }
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=RangeToEndSelector(m.group(1).strip()),
+                        replacement=replacement,
+                        rule_id="uk_effect_quoted_anchor_to_end_block_substitution_text_patch",
+                    )
+                )
             )
 
     matches_quoted_words_anchor_to_end_substituted = re.finditer(
@@ -1208,11 +1220,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_quoted_words_anchor_to_end_substituted:
         subs.append(
-            {
-                "original": f"TEXT_FROM_{m.group('anchor').strip()}_TO_END",
-                "replacement": m.group("replacement").strip(),
-                "rule_id": "uk_effect_quoted_words_anchor_to_end_substitution_text_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeToEndSelector(m.group("anchor").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_quoted_words_anchor_to_end_substitution_text_patch",
+                )
+            )
         )
 
     matches_anchor_to_end_block_substituted = re.finditer(
@@ -1226,11 +1240,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         replacement = m.group(2).strip()
         if replacement and not replacement.startswith(("“", '"', "'", "‘")):
             subs.append(
-                {
-                    "original": f"TEXT_FROM_{m.group(1).strip()}_TO_END",
-                    "replacement": replacement,
-                    "rule_id": UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
-                }
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=RangeToEndSelector(m.group(1).strip()),
+                        replacement=replacement,
+                        rule_id=UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
+                    )
+                )
             )
 
     matches_range_to_end_open_quote_block_substituted = re.finditer(
@@ -1246,14 +1262,19 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         replacement = m.group("replacement").strip()
         if not replacement or replacement.endswith(("”", '"', "'", "’")):
             continue
-        patch = {
-            "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
-            "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
-            "rule_id": "uk_effect_range_to_end_open_quote_block_substitution_text_patch",
-        }
-        if m.group("ordinal"):
-            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
-        subs.append(patch)
+        occurrence = (
+            _ORDINAL_OCCURRENCES[m.group("ordinal").lower()] if m.group("ordinal") else ""
+        )
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeToEndSelector(m.group("start").strip()),
+                    replacement=re.sub(r"\s+\.$", "", replacement).strip(),
+                    rule_id="uk_effect_range_to_end_open_quote_block_substitution_text_patch",
+                    occurrence=occurrence,
+                )
+            )
+        )
 
     matches_range_to_end_block_substituted = re.finditer(
         r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’]"
@@ -1268,13 +1289,16 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         replacement = m.group("replacement").strip()
         if replacement.startswith(("“", '"', "'", "‘")):
             continue
-        patch = {
-            "original": f"TEXT_FROM_{m.group('start').strip()}_TO_END",
-            "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
-            "occurrence": _ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
-            "rule_id": UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
-        }
-        subs.append(patch)
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeToEndSelector(m.group("start").strip()),
+                    replacement=re.sub(r"\s+\.$", "", replacement).strip(),
+                    rule_id=UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
+                    occurrence=_ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
+                )
+            )
+        )
 
     definition_child_tail_after_anchor_spans: list[tuple[int, int]] = []
     matches_definition_child_tail_after_anchor_substituted = re.finditer(
@@ -1316,11 +1340,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         if any(start <= m.start() and m.end() <= end for start, end in definition_child_tail_after_anchor_spans):
             continue
         subs.append(
-            {
-                "original": f"TEXT_AFTER_{m.group(1).strip()}_TO_END",
-                "replacement": m.group(2).strip(),
-                "rule_id": "uk_effect_after_anchor_to_end_substitution_text_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterAnchorToEndSelector(m.group(1).strip()),
+                    replacement=m.group(2).strip(),
+                    rule_id="uk_effect_after_anchor_to_end_substitution_text_patch",
+                )
+            )
         )
 
 
@@ -1332,11 +1358,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_opening_words_substituted:
         subs.append(
-            {
-                "original": "TEXT_OPENING_WORDS",
-                "replacement": m.group(1).strip(),
-                "rule_id": "uk_effect_opening_words_substitution_text_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=OpeningWordsSelector(),
+                    replacement=m.group(1).strip(),
+                    rule_id="uk_effect_opening_words_substitution_text_patch",
+                )
+            )
         )
 
     matches_words_before_child_substituted = re.finditer(
@@ -1349,11 +1377,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     for m in matches_words_before_child_substituted:
         unit_kind = m.group(1).lower().replace("-", "")
         subs.append(
-            {
-                "original": f"TEXT_BEFORE_CHILD_{unit_kind}_{m.group(2).strip()}",
-                "replacement": m.group(3).strip(),
-                "rule_id": UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=BeforeChildSelector(unit_kind, m.group(2).strip()),
+                    replacement=m.group(3).strip(),
+                    rule_id=UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
+                )
+            )
         )
 
     matches_words_before_child_block_substituted = re.finditer(
