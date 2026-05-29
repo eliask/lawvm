@@ -1027,6 +1027,9 @@ Risk:
 - mutation-boundary report carriers now normalize and validate directly
   constructed path collections, while preserving changed-path multiplicity for
   total partition accounting.
+- divergence partitions now normalize primary and filtered divergence rows to
+  tuples and reject malformed filtered records, preventing post-partition
+  mutation of verification evidence lanes.
 
 ## Keep Local For Now
 
