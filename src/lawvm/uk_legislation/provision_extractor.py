@@ -21,6 +21,32 @@ class UKExtractionContext(NamedTuple):
     sequence_map: dict[tuple[str, ...], ET.Element]
 
 
+# ---------------------------------------------------------------------------
+# §1.11 Hot-path: extraction context cache, built once per source root
+#
+# Sensor I's cProfile of ukpga/1970/9 showed _build_extraction_context called
+# 113 times × 50ms each = 5.72s cumtime.  The function is a pure function of
+# root identity: it walks the tree building parent_map, exact_id_map, and
+# sequence_map.  The tree is immutable during compilation, so the result can be
+# cached for the lifetime of the root ET.Element.
+#
+# Cache: WeakKeyDictionary keyed on root ET.Element — same pattern as
+# _uk_get_fee_table_index in table_sources.py (Actuator 9, commit 4bfb7f30).
+# Note: the cached UKExtractionContext holds ET.Element objects (via parent_map
+# values) that can include root itself, creating a reference cycle.  CPython's
+# cyclic GC will collect these; for process-scope safety the cache is also
+# bounded via the dict's natural per-session scope (compile session creates a
+# fresh extraction_cache dict that holds roots alive; when that dict drops, roots
+# and WeakKeyDictionary entries are released together).  64 entries is enough for
+# the largest UK statutes (ukpga/1970/9 has ~113 distinct affecting-act roots but
+# within any single compile call there are far fewer active simultaneously).
+# ---------------------------------------------------------------------------
+
+_EXTRACTION_CONTEXT_CACHE: WeakKeyDictionary[
+    ET.Element, UKExtractionContext
+] = WeakKeyDictionary()
+
+
 def _instruction_text_before_amendment_container(el: ET.Element) -> str:
     """Collect lead-in text before the first amendment payload container."""
     cached = _INSTRUCTION_TEXT_CACHE.get(el)
@@ -143,6 +169,9 @@ def _get_ref_sequence(path: list[tuple[Optional[str], str]] | tuple[tuple[Option
 def _build_extraction_context(
     root: ET.Element,
 ) -> UKExtractionContext:
+    cached = _EXTRACTION_CONTEXT_CACHE.get(root)
+    if cached is not None:
+        return cached
     parent_map: dict[ET.Element, ET.Element] = {}
     exact_id_map: dict[str, ET.Element] = {}
     sequence_map: dict[tuple[str, ...], ET.Element] = {}
@@ -157,7 +186,9 @@ def _build_extraction_context(
                 sequence_map[seq] = el
         for child in el:
             parent_map[child] = el
-    return UKExtractionContext(parent_map, exact_id_map, sequence_map)
+    ctx = UKExtractionContext(parent_map, exact_id_map, sequence_map)
+    _EXTRACTION_CONTEXT_CACHE[root] = ctx
+    return ctx
 
 
 @lru_cache(maxsize=65536)
