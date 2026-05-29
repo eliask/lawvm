@@ -235,7 +235,11 @@ class MaterializationResult:
         blocking_issues = tuple(issue for issue in self.issues if issue.blocking)
         if self.status == "materialized" and blocking_issues:
             raise ValueError("MaterializationResult materialized status cannot carry blocking issues")
-        if self.status == "degraded_missing_scope" and not self.required_dimensions:
+        if (
+            self.status == "degraded_missing_scope"
+            and not self.required_dimensions
+            and not self.ambiguous_addresses
+        ):
             raise ValueError("MaterializationResult degraded_missing_scope requires required_dimensions")
         if self.status == "degraded_timeline_issues" and not blocking_issues:
             raise ValueError("MaterializationResult degraded_timeline_issues requires blocking issues")
