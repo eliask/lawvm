@@ -209,8 +209,12 @@ def oracle_text_reduces_to_replay_by_dropping_sentences(
     return False
 
 
+# Compiled at module scope per §1.11.  Bounded per Sensor H #15 — unbounded
+# .*? with DOTALL risked O(N^2) backtracking on long oracle excerpts.
+# 500 chars is generous: the banner + prior-wording header fits in ~100 chars
+# in practice; 500 provides safety margin for edge cases.
 _REPEAL_PRIOR_WORDING_BANNER_RE = re.compile(
-    r"\bon\s+kumottu\b.*?\baiempi\s+sanamuoto\s+kuuluu\s*:",
+    r"\bon\s+kumottu\b.{0,500}?\baiempi\s+sanamuoto\s+kuuluu\s*:",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -221,11 +225,15 @@ def oracle_has_repeal_banner_with_prior_wording(text: str) -> bool:
     squashed = re.sub(r"\s+", " ", text or "").strip()
     if not squashed:
         return False
+    # Fast guard: "aiempi sanamuoto" is required by the regex terminal.
+    if 'aiempi sanamuoto' not in squashed.lower():
+        return False
     return bool(_REPEAL_PRIOR_WORDING_BANNER_RE.search(squashed))
 
 
+# Three-anchor variant: each .*? segment bounded to 500 chars (Sensor H #15).
 _FUTURE_REPEAL_OVERLAY_RE = re.compile(
-    r"on\s+kumottu\b.*?\bjoka\s+tulee\s+voimaan\b.*?\baiempi\s+sanamuoto\s+kuuluu\s*:",
+    r"on\s+kumottu\b.{0,500}?\bjoka\s+tulee\s+voimaan\b.{0,500}?\baiempi\s+sanamuoto\s+kuuluu\s*:",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -243,6 +251,12 @@ def oracle_has_future_repeal_overlay(text: str) -> bool:
     """
     squashed = re.sub(r"\s+", " ", text or "").strip()
     if not squashed:
+        return False
+    # Fast guards: both anchors are required by the regex.
+    lo = squashed.lower()
+    if 'aiempi sanamuoto' not in lo:
+        return False
+    if 'tulee voimaan' not in lo:
         return False
     return bool(_FUTURE_REPEAL_OVERLAY_RE.search(squashed))
 

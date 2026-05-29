@@ -498,6 +498,7 @@ from lawvm.finland.grafter_uncovered import (  # noqa: E402, F401
 from lawvm.finland.citation_routing import (  # noqa: E402
     OP_KEYWORDS,
     _johtolause_references_parent,  # noqa: F401  (re-exported)
+    _looks_like_fi_meta_repeal,
     _title_explicitly_targets_other_statute,
     route_amendment,  # noqa: F401  (re-exported)
 )
@@ -6437,9 +6438,7 @@ def process_muutoslaki(
                 )
             else:
                 # citation_mismatch_skip — covers meta-repeal and title mismatch
-                if re.search(
-                    r"kumotaan\b.*muuttamisesta\s+.*annetun\s+lain\s*\(\s*\d", johto, re.IGNORECASE | re.DOTALL
-                ):
+                if _looks_like_fi_meta_repeal(johto):
                     logger.debug("  [%s] SKIPPED — meta-repeal targets prior amendment act, not %s", amendment_id, parent_id)
                 elif _title_explicitly_targets_other_statute(source_title, ctx.title):
                     _replay_print(f"  [{amendment_id}] SKIPPED — title targets different statute (not {parent_id})")

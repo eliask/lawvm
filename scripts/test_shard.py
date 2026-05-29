@@ -117,6 +117,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_clause_surface.py",
         "test_fi_num_in_intro_recovery.py",
         "test_fi_profile_normalize.py",
+        "test_fi_se_tools_regex_perf.py",
         "test_fi_source_pathology_observations.py",
         "test_fi_xml_ir.py",
         "test_frontend_observations.py",
