@@ -148,6 +148,15 @@ def test_compiled_op_scope_witness_rejects_empty_or_untyped_fields() -> None:
 
 
 def test_admissible_binding_certificate_rejects_count_contradictions() -> None:
+    assert (
+        AdmissibleBindingCertificate(
+            slot_id=1,
+            amendment_id="",
+            candidate_count=1,
+            admissibility="single",
+        ).amendment_id
+        == ""
+    )
     with pytest.raises(ValueError, match="single admissibility"):
         AdmissibleBindingCertificate(
             slot_id=1,

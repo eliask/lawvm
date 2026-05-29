@@ -328,8 +328,6 @@ class AdmissibleBindingCertificate:
     def __post_init__(self) -> None:
         _require_nonnegative_int("AdmissibleBindingCertificate", "slot_id", self.slot_id)
         _require_nonnegative_int("AdmissibleBindingCertificate", "candidate_count", self.candidate_count)
-        if not self.amendment_id:
-            raise ValueError("AdmissibleBindingCertificate.amendment_id must be non-empty")
         if self.admissibility not in {"single", "ambiguous", "fallback"}:
             raise ValueError("AdmissibleBindingCertificate.admissibility must be single, ambiguous, or fallback")
         if self.admissibility == "single" and self.candidate_count != 1:
