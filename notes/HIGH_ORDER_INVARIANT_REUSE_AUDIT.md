@@ -1111,6 +1111,17 @@ Do not promote yet:
 
 These are jurisdiction source semantics, not shared invariants.
 
+- UK recursive-descent target recovery is now gated on uniqueness.
+  `uk_replay_target_resolved_by_recursive_descent` (family=target_resolution_recovery,
+  blocking=False, strict_disposition=block, quirks_disposition=apply) is emitted when
+  exactly one deeper descendant matches the expected kind/label after direct path fails.
+  `uk_replay_target_ambiguous_recursive_descent` (family=target_resolution_recovery,
+  blocking=True) is emitted and no target is selected when multiple descendants match.
+  Both rule IDs are owned in UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS and
+  UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS respectively. The fix is family-level
+  (§1.1 target_resolution_recovery), gating all target lookup paths that previously
+  accepted `curr_cands[0]` without uniqueness checking.
+
 ## Recommended Next Work
 
 1. Continue replacing local path tuple spellings with shared aliases such as

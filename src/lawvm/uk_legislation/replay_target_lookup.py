@@ -13,6 +13,7 @@ from lawvm.uk_legislation.canonicalize import (
     canonicalize_uk_address,
     uk_compound_subsection_candidate,
     uk_recursive_kind_match,
+    uk_recursive_kind_match_all,
     uk_schedule_ordinal_paragraph_matches,
     uk_schedule_root_candidates,
 )
@@ -38,6 +39,12 @@ _UK_REPLAY_SCHEDULE_ITEM_TARGET_FROM_PARENT_SUBSTITUTION_RULE_ID = (
 )
 _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID = (
     "uk_replay_schedule_p1group_paragraph_wrapper_resolved"
+)
+UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID = (
+    "uk_replay_target_resolved_by_recursive_descent"
+)
+UK_REPLAY_TARGET_AMBIGUOUS_RECURSIVE_DESCENT_RULE_ID = (
+    "uk_replay_target_ambiguous_recursive_descent"
 )
 
 
@@ -296,22 +303,77 @@ class UKReplayTargetLookupMixin:
                                         break
                             next_cands = ordinal_matches
                     if not next_cands:
-                        for curr_node, _, _ in curr_cands:
-                            if curr_node is None:
-                                continue
-                            if allow_recursive_match:
-                                for child in curr_node.children:
-                                    res_node, res_p, res_i = self._find_recursive_match(
-                                        cast(UKMutableNode, child), p_kind, p_label
+                        if allow_recursive_match:
+                            all_recursive: list[UKCanonicalNodeMatch] = []
+                            for curr_node, _, _ in curr_cands:
+                                if curr_node is None:
+                                    continue
+                                uk_recursive_kind_match_all(
+                                    cast(IRNode, curr_node),
+                                    kind=str(p_kind),
+                                    label=str(p_label),
+                                    match_kind_label=uk_match_kind_label,
+                                    out=all_recursive,
+                                )
+                            if len(all_recursive) == 1:
+                                res_node, res_p, res_i = all_recursive[0]
+                                if target_resolution_op is not None:
+                                    _append_uk_replay_adjudication(
+                                        self.adjudications_out,
+                                        kind=UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID,
+                                        message=(
+                                            "UK replay resolved a target step by recursive "
+                                            "descent because the direct path failed but exactly "
+                                            "one deeper descendant matched the expected "
+                                            "kind/label."
+                                        ),
+                                        op=target_resolution_op,
+                                        detail=uk_replay_recovery_action_target_detail(
+                                            target_resolution_op,
+                                            target,
+                                            family="target_resolution_recovery",
+                                            recovered_kind=str(res_node.kind) if res_node is not None else "",
+                                            recovered_label=str(res_node.label or "") if res_node is not None else "",
+                                            original_target_path=str(target),
+                                            recovered_path_step_kind=str(p_kind),
+                                            recovered_path_step_label=str(p_label),
+                                        ),
                                     )
-                                    if res_node:
-                                        next_cands.append(
-                                            UKCanonicalNodeMatch(
-                                                cast(IRNode, res_node),
-                                                cast(Optional[IRNode], res_p),
-                                                res_i,
-                                            )
-                                        )
+                                next_cands.append(
+                                    UKCanonicalNodeMatch(
+                                        cast(IRNode, res_node),
+                                        cast(Optional[IRNode], res_p),
+                                        res_i,
+                                    )
+                                )
+                            elif len(all_recursive) > 1:
+                                candidate_paths = tuple(
+                                    f"{str(m[0].kind)}:{str(m[0].label or '')}" if m[0] is not None else "?"
+                                    for m in all_recursive
+                                )
+                                if target_resolution_op is not None:
+                                    _append_uk_replay_adjudication(
+                                        self.adjudications_out,
+                                        kind=UK_REPLAY_TARGET_AMBIGUOUS_RECURSIVE_DESCENT_RULE_ID,
+                                        message=(
+                                            "UK replay refused recursive-descent target "
+                                            "recovery: multiple descendants matched the "
+                                            "expected kind/label — ambiguous, not applied."
+                                        ),
+                                        op=target_resolution_op,
+                                        detail=uk_replay_action_target_detail(
+                                            target_resolution_op,
+                                            target,
+                                            blocking=True,
+                                            family="target_resolution_recovery",
+                                            original_target_path=str(target),
+                                            recovered_path_step_kind=str(p_kind),
+                                            recovered_path_step_label=str(p_label),
+                                            candidate_count=len(all_recursive),
+                                            candidate_paths=candidate_paths,
+                                        ),
+                                    )
+                                # Do not populate next_cands — ambiguity means no resolution
                 if not next_cands:
                     return NodeLookupResult(node=None, parent=None, index=None)
                 curr_cands = next_cands
