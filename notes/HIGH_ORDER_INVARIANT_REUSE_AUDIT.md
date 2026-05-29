@@ -469,6 +469,9 @@ Recent improvement:
   vocabularies, candidate counts, selected-version agreement, and missing-scope
   obligations at construction, so PIT queries cannot emit contradictory
   selection evidence.
+- unit-registry publication now validates unit specs, freezes the unit-kind
+  mapping, normalizes facet vocabularies, and rejects mismatched registry keys,
+  so lowering targets cannot depend on caller-owned mutable registry state.
 
 ## Ranked Promotion Candidates
 
