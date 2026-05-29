@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
@@ -88,7 +88,7 @@ def resolve_uk_insertion_anchor_context(
     target: LegalAddress,
     chained_insert_preceding_eid: Optional[str],
     chained_insert_preceding_eid_source: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> UKInsertionAnchorContext:
     preceding_eid = None
@@ -153,8 +153,8 @@ _UK_OVERLAP_ACTION_WORD_RE = re.compile(
 
 def _source_payload_parent_instruction_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> dict[str, str]:
     """Return nearest source parent instruction context for payload-only failures."""
@@ -166,7 +166,7 @@ def _source_payload_parent_instruction_context(
         instruction_text = " ".join(
             _instruction_text_before_amendment_container(ancestor).split()
         ).strip()
-        context_text = instruction_text or " ".join(" ".join(ancestor.itertext()).split()).strip()
+        context_text = instruction_text or " ".join(" ".join(ancestor.itertext()).split()).strip()  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
         if not context_text or context_text == payload_text:
             continue
         if _UK_OVERLAP_ACTION_WORD_RE.search(context_text) is None:
@@ -441,14 +441,14 @@ def append_unlowered_overlap_substitution_rejection(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     effect_type: str,
     original_targets_str: list[str],
     target_candidate_count: int,
     unlowered_overlap_substitution_targets: list[str],
     unlowered_overlap_substitution_reason: str,
-    source_root: Optional[ET.Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> None:
     source_parent_appropriate_place_definition_entry = (
         _source_parent_appropriate_place_definition_entry_insert_context(
@@ -559,7 +559,7 @@ def append_source_parent_at_end_added_observation(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     source_parent_at_end_added_payload: Optional[dict[str, Any]],
 ) -> None:
@@ -592,7 +592,7 @@ def append_no_targets_rejection(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> None:
     _append_uk_effect_lowering_rejection(
@@ -620,7 +620,7 @@ def append_chained_insertion_anchor_observation(
     preceding_eid: Optional[str],
     preceding_eid_source: str,
     used_chained_insert_anchor: bool,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> None:
     if not used_chained_insert_anchor:
@@ -650,7 +650,7 @@ def append_chained_insertion_anchor_observation(
 def build_crossheading_insert_ops(
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     sequence: int,
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,

@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-04T18:03:05.942675847Z"
+exclude-newer = "2026-05-22T21:51:51.807107858Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -625,7 +625,7 @@ requires-dist = [
     { name = "farchive", git = "https://github.com/eliask/farchive.git?rev=5ec162e9d80a1ba96b0e6116198bc396b2950430" },
     { name = "hypothesis", marker = "extra == 'test'", specifier = ">=6.100" },
     { name = "icontract", specifier = ">=2.7.3" },
-    { name = "lxml", specifier = ">=5.1.0" },
+    { name = "lxml", specifier = ">=6.0.0" },
     { name = "ortools", specifier = ">=9.15.6755" },
     { name = "pyarrow", marker = "extra == 'analytics'", specifier = ">=15.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },

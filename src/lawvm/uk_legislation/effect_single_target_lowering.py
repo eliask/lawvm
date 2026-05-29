@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol, Sequence
 
@@ -142,9 +142,9 @@ class _EffectTargetLoweringInput:
     existing_ops_count: int
     effect_witness: UKEffectWitness
     extraction_witness: UKProvisionExtractionWitness
-    extracted_el: Optional[ET.Element]
+    extracted_el: Optional[ET._Element]
     extracted_text: Optional[str]
-    source_root: Optional[ET.Element]
+    source_root: Optional[ET._Element]
     chained_insert_anchor: _ChainedInsertAnchorState
     lowering_rejections_out: Optional[list[dict[str, Any]]]
 

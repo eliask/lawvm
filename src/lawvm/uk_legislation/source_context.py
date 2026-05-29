@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import copy
 import re
-import weakref
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import dataclass, field
 from typing import Any, Callable, NamedTuple, Optional, Sequence
 
@@ -58,16 +57,16 @@ _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
 @dataclass(frozen=True)
 class UKAffectingSourceContext:
     xml_bytes: Optional[bytes]
-    root: Optional[ET.Element]
-    parent_map: Optional[dict[ET.Element, ET.Element]]
-    exact_id_map: dict[str, ET.Element]
-    sequence_map: dict[tuple[str, ...], ET.Element]
+    root: Optional[ET._Element]
+    parent_map: Optional[dict[ET._Element, ET._Element]]
+    exact_id_map: dict[str, ET._Element]
+    sequence_map: dict[tuple[str, ...], ET._Element]
     source_status: str
     source_size: int
     locator: str
     authority_layer: str
-    provision_extractor: Callable[..., Optional[ET.Element]] = extract_provision_element_from_bytes
-    provision_element_cache: dict[str, Optional[ET.Element]] = field(
+    provision_extractor: Callable[..., Optional[ET._Element]] = extract_provision_element_from_bytes
+    provision_element_cache: dict[str, Optional[ET._Element]] = field(
         default_factory=dict,
         compare=False,
         repr=False,
@@ -81,12 +80,12 @@ class UKAffectingSourceContextBuild(NamedTuple):
 
 class UKSelectedAffectingSource(NamedTuple):
     source_context: UKAffectingSourceContext
-    extracted_element: Optional[ET.Element]
+    extracted_element: Optional[ET._Element]
     observations: tuple[dict[str, Any], ...]
 
 
 class UKSourceExtractionResult(NamedTuple):
-    extracted_element: Optional[ET.Element]
+    extracted_element: Optional[ET._Element]
     observations: tuple[dict[str, Any], ...]
 
 
@@ -95,13 +94,13 @@ _NO_SOURCE_EXTRACTION = UKSourceExtractionResult(extracted_element=None, observa
 
 @dataclass(frozen=True, slots=True)
 class UKEnactedScheduleTableRowMatch:
-    row: ET.Element
-    cells: tuple[ET.Element, ...]
+    row: ET._Element
+    cells: tuple[ET._Element, ...]
     part_label: str
     source_label_text: str
 
 
-def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]:
+def _first_amendment_container(el: Optional[ET._Element]) -> Optional[ET._Element]:
     if el is None:
         return None
     if _tag(el) in ("BlockAmendment", "InlineAmendment"):
@@ -113,76 +112,76 @@ def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]
 
 
 # ---------------------------------------------------------------------------
-# §source_root_lifecycle: WeakKeyDictionary-backed parent-map and ancestor-
-# chain caches with explicit eviction.
+# §source_root_lifecycle: Plain-dict-backed parent-map and ancestor-chain
+# caches with explicit eviction.
 #
-# The original @lru_cache decorators held source_root (ET.Element) as a strong
-# key reference, preventing GC regardless of what callers did.  With 229 unique
-# affecting-act roots for ukpga/1970/9 (~6 MB raw XML × ~400x in-memory ET tree
-# expansion ≈ 2.3 GB), all roots accumulated for the full compile call.
+# Originally these were WeakKeyDictionary-backed, but lxml _Element objects do
+# not support weak references, so plain dicts are used instead.  Memory safety
+# is maintained entirely by explicit eviction via evict_source_root_caches()
+# which the compile loop calls at each root's last-occurrence point.
 #
-# WeakKeyDictionary-backed caches are used so that:
-#   (a) the caches do not permanently extend the lifetime of roots across
-#       compile sessions — once extraction_cache evicts a context and the
-#       caller explicitly calls evict_source_root_caches(root), the cache
-#       entries are released and root becomes GC-eligible;
-#   (b) the caches behave as process-global compile-phase speedups within
-#       a session, without hard-wiring O(N) retention across sessions.
+# With 229 unique affecting-act roots for ukpga/1970/9 (~6 MB raw XML), all
+# roots would accumulate if not evicted.  Explicit eviction keeps at most a
+# handful of live roots at any point during compilation.
 #
 # IMPORTANT: These caches create reference cycles (parent_map values include
 # root as a parent element, ancestor tuples include root as a terminal ancestor).
-# Python's cyclic GC can collect the cycle, but only if NO strong external
-# reference remains.  The compile loop in compile_ops_for_statute must call
-# evict_source_root_caches(root) at the last-occurrence point to release
-# the strong cycle.  Without explicit eviction, GC may not fire in time
-# because the cycle is not purely isolated — it crosses the WeakKeyDict values.
+# Explicit eviction via evict_source_root_caches(root) must be called at the
+# last-occurrence point to break the cycles immediately.  Without it, GC may
+# not reclaim the memory promptly.
 #
 # _source_parent_map_cache:
-#   WeakKeyDictionary[source_root → dict[child, parent]]
+#   dict[source_root → dict[child, parent]]
 #   Values contain root as a parent element (creates cycle).
 #
 # _source_ancestor_chain_cache:
-#   WeakKeyDictionary[source_root → dict[id(el), tuple[ET.Element, ...]]]
+#   dict[source_root → dict[id(el), tuple[ET._Element, ...]]]
 #   Inner tuples may contain root as terminal ancestor (creates cycle).
 #   id(el) inner key is safe: el is alive while source_root is alive.
 # ---------------------------------------------------------------------------
 
-_source_parent_map_cache: weakref.WeakKeyDictionary[
-    ET.Element, dict[ET.Element, ET.Element]
-] = weakref.WeakKeyDictionary()
+_source_parent_map_cache: dict[ET._Element, dict[ET._Element, ET._Element]] = {}
 
-_source_ancestor_chain_cache: weakref.WeakKeyDictionary[
-    ET.Element, dict[int, tuple[ET.Element, ...]]
-] = weakref.WeakKeyDictionary()
+_source_ancestor_chain_cache: dict[ET._Element, dict[int, tuple[ET._Element, ...]]] = {}
 
 
-def evict_source_root_caches(root: Optional[ET.Element]) -> None:
+def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     """Explicitly release module-level cache entries for root.
 
     Call this after the last effect for a source root has been processed.
-    Without explicit eviction, module-level WeakKeyDictionary caches hold
-    reference cycles that keep root alive:
+    Plain-dict caches (lxml _Element objects do not support weak references)
+    retain root until explicit eviction.  Cycles exist because cache values
+    include root as a parent element or terminal ancestor element:
       - _source_parent_map_cache: values contain root as a parent element
       - _source_ancestor_chain_cache: inner tuples contain root as terminal ancestor
       - _EXTRACTION_CONTEXT_CACHE: UKExtractionContext.parent_map contains root
+      - table_sources caches: fee-table index and repeal-extent table hold root
     Explicit removal breaks these cycles immediately, making root eligible for
-    reference-count GC instead of waiting for a cyclic-GC sweep.
+    reference-count GC.
     """
     if root is None:
         return
     _source_parent_map_cache.pop(root, None)
     _source_ancestor_chain_cache.pop(root, None)
     _EXTRACTION_CONTEXT_CACHE.pop(root, None)
+    # Lazy import to avoid circular dependency: table_sources → uk_grafter → ...
+    # does not import source_context, so this is safe.
+    from lawvm.uk_legislation.table_sources import (  # noqa: PLC0415
+        _REPEAL_EXTENT_TABLE_CACHE,
+        _UK_FEE_TABLE_INDEX_CACHE,
+    )
+    _REPEAL_EXTENT_TABLE_CACHE.pop(root, None)
+    _UK_FEE_TABLE_INDEX_CACHE.pop(root, None)
 
 
 def _source_parent_map(
-    source_root: ET.Element,
-) -> dict[ET.Element, ET.Element]:
+    source_root: ET._Element,
+) -> dict[ET._Element, ET._Element]:
     """Return a cached parent map for source XML ancestor queries."""
     cached = _source_parent_map_cache.get(source_root)
     if cached is not None:
         return cached
-    result: dict[ET.Element, ET.Element] = {
+    result: dict[ET._Element, ET._Element] = {
         child: parent for parent in source_root.iter() for child in parent
     }
     _source_parent_map_cache[source_root] = result
@@ -190,9 +189,9 @@ def _source_parent_map(
 
 
 def _source_ancestor_chain(
-    source_root: Optional[ET.Element],
-    el: Optional[ET.Element],
-) -> tuple[ET.Element, ...]:
+    source_root: Optional[ET._Element],
+    el: Optional[ET._Element],
+) -> tuple[ET._Element, ...]:
     """Return closest-first source ancestors for an extracted source element."""
     if source_root is None or el is None:
         return ()
@@ -207,7 +206,7 @@ def _source_ancestor_chain(
         return inner[el_key]
     parent_map = _source_parent_map(source_root)
     if el in parent_map:
-        ancestors: list[ET.Element] = []
+        ancestors: list[ET._Element] = []
         parent = parent_map.get(el)
         while parent is not None:
             ancestors.append(parent)
@@ -219,9 +218,9 @@ def _source_ancestor_chain(
         return result
 
     target_id = el.get("id")
-    path: list[ET.Element] = []
+    path: list[ET._Element] = []
 
-    def _walk(node: ET.Element, ancestors: tuple[ET.Element, ...]) -> bool:
+    def _walk(node: ET._Element, ancestors: tuple[ET._Element, ...]) -> bool:
         if node is el or (target_id and node.get("id") == target_id):
             path.extend(reversed(ancestors))
             return True
@@ -239,9 +238,9 @@ def _source_ancestor_chain(
 
 
 def _unique_source_ancestor_chain_by_tag_text(
-    source_root: Optional[ET.Element],
-    el: Optional[ET.Element],
-) -> tuple[ET.Element, ...]:
+    source_root: Optional[ET._Element],
+    el: Optional[ET._Element],
+) -> tuple[ET._Element, ...]:
     """Reattach a detached extracted fragment to a unique same-text source node."""
     if source_root is None or el is None:
         return ()
@@ -249,9 +248,9 @@ def _unique_source_ancestor_chain_by_tag_text(
     target_text = " ".join(_text_content(el).split())
     if not target_tag or not target_text:
         return ()
-    matches: list[tuple[ET.Element, ...]] = []
+    matches: list[tuple[ET._Element, ...]] = []
 
-    def _walk(node: ET.Element, ancestors: tuple[ET.Element, ...]) -> None:
+    def _walk(node: ET._Element, ancestors: tuple[ET._Element, ...]) -> None:
         if _tag(node) == target_tag and " ".join(_text_content(node).split()) == target_text:
             matches.append(tuple(reversed(ancestors)))
         for child in node:
@@ -264,8 +263,8 @@ def _unique_source_ancestor_chain_by_tag_text(
 
 
 def _source_text_before_extracted_child(
-    parent: ET.Element,
-    extracted_el: Optional[ET.Element],
+    parent: ET._Element,
+    extracted_el: Optional[ET._Element],
 ) -> str:
     """Return source text in an immediate parent before the extracted child row."""
     extracted_id = extracted_el.get("id") if extracted_el is not None else None
@@ -283,8 +282,8 @@ def _source_text_before_extracted_child(
 
 def _source_previous_table_entry_label_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     rule_id: str,
 ) -> dict[str, str]:
     """Return an explicit table entry label from a previous sibling source row."""
@@ -321,8 +320,8 @@ def _source_previous_table_entry_label_context(
 
 def _source_previous_table_entry_relating_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     rule_id: str,
 ) -> dict[str, Any]:
     """Return a source-owned table-entry relation from a previous sibling row."""
@@ -388,13 +387,13 @@ def _build_affecting_source_context(
     xml_bytes: Optional[bytes],
     locator: str,
     authority_layer: str,
-    provision_extractor: Callable[..., Optional[ET.Element]] = extract_provision_element_from_bytes,
+    provision_extractor: Callable[..., Optional[ET._Element]] = extract_provision_element_from_bytes,
 ) -> UKAffectingSourceContextBuild:
     source_status, source_size = uk_source_state_wire_tuple(xml_bytes)
     root = None
     parent_map = None
-    exact_id_map: dict[str, ET.Element] = {}
-    sequence_map: dict[tuple[str, ...], ET.Element] = {}
+    exact_id_map: dict[str, ET._Element] = {}
+    sequence_map: dict[tuple[str, ...], ET._Element] = {}
     parse_error = None
     if xml_bytes and source_status == "available":
         try:
@@ -460,7 +459,7 @@ def _append_affecting_source_context_diagnostic(
 def _extract_from_affecting_source_context(
     context: UKAffectingSourceContext,
     provision_ref: str,
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     if context.xml_bytes is None or context.root is None:
         return None
     cached = context.provision_element_cache.get(provision_ref)
@@ -547,7 +546,7 @@ def _compound_reference_split_observation(
     first_part: str,
     second_part: str,
     selected_part: str,
-    split_el: ET.Element,
+    split_el: ET._Element,
 ) -> dict[str, Any]:
     return uk_affecting_act_compound_reference_split_fallback(
         effect_id=str(effect.effect_id or ""),
@@ -564,7 +563,7 @@ def _compound_reference_split_observation(
 
 def _source_child_has_parent_table_column_omission(
     context: UKAffectingSourceContext,
-    el: ET.Element,
+    el: ET._Element,
 ) -> bool:
     for ancestor in _source_ancestor_chain(context.root, el)[:3]:
         text = " ".join(_text_content(ancestor).split())
@@ -579,7 +578,7 @@ def _source_child_has_parent_table_column_omission(
     return False
 
 
-def _source_is_broad_repeal_extent_part(el: ET.Element) -> bool:
+def _source_is_broad_repeal_extent_part(el: ET._Element) -> bool:
     if _tag(el) not in {"Part", "Schedule"}:
         return False
     text = " ".join(_text_content(el).split()).lower()
@@ -589,8 +588,8 @@ def _source_is_broad_repeal_extent_part(el: ET.Element) -> bool:
 def _compound_first_instruction_overrides_broad_repeal_part(
     context: UKAffectingSourceContext,
     *,
-    first_el: Optional[ET.Element],
-    second_el: Optional[ET.Element],
+    first_el: Optional[ET._Element],
+    second_el: Optional[ET._Element],
 ) -> bool:
     if first_el is None or second_el is None:
         return False
@@ -603,7 +602,7 @@ def _compound_first_instruction_overrides_broad_repeal_part(
 def _extract_compound_reference_component(
     context: UKAffectingSourceContext,
     component_ref: str,
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     component_el = _extract_from_affecting_source_context(context, component_ref)
     if component_el is not None:
         return _source_range_child_with_context(context, component_el)
@@ -624,7 +623,7 @@ def _extract_compound_reference_component(
 def _extract_source_ref_with_schedule_part_context(
     context: UKAffectingSourceContext,
     provision_ref: str,
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     el = _extract_from_affecting_source_context(context, provision_ref)
     if el is not None:
         return el
@@ -644,8 +643,8 @@ def _extract_source_ref_with_schedule_part_context(
 
 def _source_range_child_with_context(
     context: UKAffectingSourceContext,
-    el: ET.Element,
-) -> ET.Element:
+    el: ET._Element,
+) -> ET._Element:
     if _tag(el) not in {"BlockAmendment", "InlineAmendment"} or context.parent_map is None:
         return el
     parent = context.parent_map.get(el)
@@ -659,15 +658,15 @@ def _source_range_child_with_context(
 def _compound_payload_only_amendment_container(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-    el: ET.Element,
+    el: ET._Element,
 ) -> UKSourceExtractionResult:
     """Select a nested amendment payload when the source row is only a carrier label."""
     if _tag(el) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}:
         return UKSourceExtractionResult(el, ())
-    amendment_containers: list[ET.Element] = []
+    amendment_containers: list[ET._Element] = []
     outside_text: list[str] = []
 
-    def _walk(node: ET.Element, *, inside_amendment: bool) -> None:
+    def _walk(node: ET._Element, *, inside_amendment: bool) -> None:
         tag = _tag(node)
         next_inside_amendment = inside_amendment or tag in {"BlockAmendment", "InlineAmendment"}
         if tag in {"BlockAmendment", "InlineAmendment"}:
@@ -700,14 +699,14 @@ def _compound_payload_only_amendment_container(
     return UKSourceExtractionResult(payload, (observation,))
 
 
-def _has_amendment_payload_descendant(el: ET.Element) -> bool:
+def _has_amendment_payload_descendant(el: ET._Element) -> bool:
     return any(
         child is not el and _tag(child) in {"BlockAmendment", "InlineAmendment"}
         for child in el.iter()
     )
 
 
-def _direct_structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
+def _direct_structural_children(el: ET._Element) -> tuple[ET._Element, ...]:
     child_tags = {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}
     return tuple(
         descendant
@@ -724,7 +723,7 @@ def _direct_structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
 def _single_amendment_child_source(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-    el: Optional[ET.Element],
+    el: Optional[ET._Element],
 ) -> UKSourceExtractionResult:
     if el is None or _tag(el) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}:
         return UKSourceExtractionResult(el, ())
@@ -752,8 +751,8 @@ def _single_amendment_child_source(
 
 def _payload_source_instruction_ancestor(
     context: UKAffectingSourceContext,
-    el: ET.Element,
-) -> Optional[ET.Element]:
+    el: ET._Element,
+) -> Optional[ET._Element]:
     if context.parent_map is None:
         return None
     passed_amendment_payload = False
@@ -787,7 +786,7 @@ def _payload_source_instruction_ancestor(
 def _block_amendment_payload_descendant_source_rejection(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
-    el: Optional[ET.Element],
+    el: Optional[ET._Element],
 ) -> dict[str, Any] | None:
     if el is None or context.parent_map is None:
         return None
@@ -883,7 +882,7 @@ def _article_schedule_payload_ref(provision_ref: str) -> str | None:
     return f"rule {label}"
 
 
-def _unique_root_schedule_payload(context: UKAffectingSourceContext) -> Optional[ET.Element]:
+def _unique_root_schedule_payload(context: UKAffectingSourceContext) -> Optional[ET._Element]:
     if context.root is None:
         return None
     schedules = [el for el in context.root.iter() if _tag(el) == "Schedule"]
@@ -930,7 +929,7 @@ def _extract_article_schedule_payload_source(
 
 def _has_matching_part_ancestor(
     context: UKAffectingSourceContext,
-    el: ET.Element,
+    el: ET._Element,
     requested_part_label: str,
 ) -> bool:
     if context.parent_map is None:
@@ -1065,7 +1064,7 @@ def _extract_parenthesized_range_source_ref(
     wanted_labels = _expand_source_child_label_range(start_label, end_label)
     if not wanted_labels:
         return _NO_SOURCE_EXTRACTION
-    selected: list[ET.Element] = []
+    selected: list[ET._Element] = []
     for label in wanted_labels:
         child = _extract_source_ref_with_schedule_part_context(
             context,
@@ -1078,7 +1077,7 @@ def _extract_parenthesized_range_source_ref(
         parent_el = _extract_source_ref_with_schedule_part_context(context, parent_ref)
         if parent_el is None:
             return _NO_SOURCE_EXTRACTION
-        by_label: dict[str, ET.Element] = {}
+        by_label: dict[str, ET._Element] = {}
         for child in parent_el.iter():
             if child is parent_el:
                 continue
@@ -1146,7 +1145,7 @@ def _schedule_table_row_label_key(label: str) -> str:
     return re.sub(r"\s+", "", _clean_num(label))
 
 
-def _source_part_label_from_element(part_el: ET.Element) -> str:
+def _source_part_label_from_element(part_el: ET._Element) -> str:
     number_el = part_el.find(f"./{{{_LEG_NS}}}Number")
     number_text = _text_content(number_el) if number_el is not None else ""
     match = re.search(r"\bpart\s+(?P<label>[0-9A-Za-zIVXLC]+)\b", number_text, flags=re.I)
@@ -1160,7 +1159,7 @@ def _source_part_label_from_element(part_el: ET.Element) -> str:
     return ""
 
 
-def _direct_table_row_cells(row: ET.Element) -> tuple[ET.Element, ...]:
+def _direct_table_row_cells(row: ET._Element) -> tuple[ET._Element, ...]:
     return tuple(
         child
         for child in list(row)
@@ -1173,9 +1172,9 @@ def _synthetic_schedule_table_row_paragraph_source(
     schedule_label: str,
     part_label: str,
     target_label: str,
-    row: ET.Element,
-    cells: Sequence[ET.Element],
-) -> ET.Element | None:
+    row: ET._Element,
+    cells: Sequence[ET._Element],
+) -> ET._Element | None:
     if len(cells) < 2:
         return None
     payload_text = " ".join(_text_content(cell) for cell in cells[1:]).strip()
@@ -1474,7 +1473,7 @@ def _extract_from_affecting_source_context_with_observations(
     return UKSourceExtractionResult(None, ())
 
 
-def _extracted_element_text(el: Optional[ET.Element]) -> str:
+def _extracted_element_text(el: Optional[ET._Element]) -> str:
     return _text_content(el) if el is not None else ""
 
 
@@ -1492,7 +1491,7 @@ def _looks_like_non_substantive_shell_text(text: str) -> bool:
     return normalized.count(".") >= 4
 
 
-def _looks_like_non_substantive_shell_element(el: Optional[ET.Element]) -> bool:
+def _looks_like_non_substantive_shell_element(el: Optional[ET._Element]) -> bool:
     if el is None:
         return False
     if _tag(el) == "SourceRange":
@@ -1509,7 +1508,7 @@ def _select_enacted_source_for_current_shell(
     effect: UKEffectRecord,
     archive: Any,
     current_context: UKAffectingSourceContext,
-    current_el: Optional[ET.Element],
+    current_el: Optional[ET._Element],
     enacted_context_cache: dict[str, UKAffectingSourceContext],
     enacted_xml_loader: Callable[[str, Any], Optional[bytes]] = get_affecting_act_enacted_xml_from_archive,
 ) -> UKSelectedAffectingSource:

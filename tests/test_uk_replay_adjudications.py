@@ -1,7 +1,7 @@
 """UK replay adjudication emission tests."""
 from __future__ import annotations
 import json
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from pathlib import Path
 from typing import Any, cast
 

@@ -1,7 +1,7 @@
 """Source-backed temporal recovery for UK effects."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.temporal_resolution import (

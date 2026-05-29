@@ -1,7 +1,7 @@
 """UK lowering-phase diagnostic record builders."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 import re
 from typing import Any, Optional, Sequence
 
@@ -21,7 +21,7 @@ from lawvm.uk_legislation.source_payload_helpers import (
 )
 
 
-def _extracted_tag(extracted_el: Optional[ET.Element]) -> str:
+def _extracted_tag(extracted_el: Optional[ET._Element]) -> str:
     if extracted_el is None:
         return ""
     return extracted_el.tag.rsplit("}", 1)[-1]
@@ -34,7 +34,7 @@ def _effect_lowering_record_base(
     reason_code: str,
     reason: str,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     blocking: bool,
 ) -> dict[str, Any]:
@@ -90,7 +90,7 @@ def _append_uk_effect_lowering_rejection(
     reason_code: str,
     reason: str,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     detail: Optional[dict[str, Any]] = None,
 ) -> None:
@@ -119,7 +119,7 @@ def _append_uk_effect_lowering_observation(
     reason_code: str,
     reason: str,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     detail: Optional[dict[str, Any]] = None,
 ) -> None:

@@ -33,7 +33,7 @@ Tests:
 from __future__ import annotations
 
 import time
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 import pytest
 
@@ -58,7 +58,7 @@ def _addr_subsection_table(section_label: str) -> LegalAddress:
     return LegalAddress(path=(("section", section_label), ("subsection", "table")))
 
 
-def _make_element_with_id(tag: str = "Amendment", eid: str = "e-001") -> ET.Element:
+def _make_element_with_id(tag: str = "Amendment", eid: str = "e-001") -> ET._Element:
     el = ET.Element(tag)
     el.set("id", eid)
     return el
@@ -180,8 +180,8 @@ def test_site1_word_boundary_no_false_positive() -> None:
 def _make_omission_call(
     *,
     extracted_text: str,
-    extracted_el: ET.Element,
-    source_root: ET.Element,
+    extracted_el: ET._Element,
+    source_root: ET._Element,
     target: LegalAddress,
     target_names_table: bool = True,
     source_names_containing_target: bool = True,
@@ -199,7 +199,7 @@ def _make_omission_call(
     )
 
 
-def _build_source_root_with_parent_instruction(instruction: str) -> tuple[ET.Element, ET.Element]:
+def _build_source_root_with_parent_instruction(instruction: str) -> tuple[ET._Element, ET._Element]:
     """Return (source_root, extracted_el) with a parent carrying the given instruction text."""
     root = ET.Element("Amendment")
     root.set("id", "a-001")

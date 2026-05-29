@@ -6,7 +6,7 @@ patch fragments. They do not resolve targets against live state or mutate IR.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -220,8 +220,8 @@ def _source_explicit_heading_facet_word_patch_supported(
     effect_type: str,
     extracted_text: Optional[str],
     *,
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> bool:
     """Return True when source text itself targets a heading/title/sidenote facet."""
     text = " ".join((extracted_text or "").split()).strip()
@@ -313,8 +313,8 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
 
 def _heading_facet_source_parent_full_replacement_fragment(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
 ) -> Optional[dict[str, Any]]:
     """Return a heading replacement carried by the parent source instruction."""
     ancestors = _source_ancestor_chain(source_root, extracted_el)
@@ -337,8 +337,8 @@ def _is_heading_facet_word_patch_supported(
     effect_type: str,
     extracted_text: Optional[str] = None,
     *,
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> bool:
     """Return whether a UK heading-facet effect can carry an explicit text patch."""
     normalized = " ".join((effect_type or "").lower().split())

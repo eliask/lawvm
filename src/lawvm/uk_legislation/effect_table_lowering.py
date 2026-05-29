@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace as dc_replace
 import json
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, TextPatchSpec, TextSelector
@@ -126,7 +126,7 @@ def try_lower_table_column_insert(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     effect_witness: UKEffectWitness,
@@ -232,9 +232,9 @@ def try_lower_table_row_insert(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     sequence: int,
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,
@@ -591,7 +591,7 @@ def try_lower_table_row_replace(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     effect_witness: UKEffectWitness,
@@ -699,9 +699,9 @@ def try_lower_table_cell_child_list_insert(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     sequence: int,
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,
@@ -795,9 +795,9 @@ def try_lower_repeal_table_effect(
     effect: UKEffectRecord,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     sequence: int,
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,
@@ -1298,9 +1298,9 @@ def try_lower_table_column_entry_omission(
     effect: UKEffectRecord,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     sequence: int,
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,
@@ -1402,9 +1402,9 @@ def prepare_table_cell_text_patch_context(
     effect: UKEffectRecord,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTableCellContext:
     table_cell_selector = _uk_table_entry_inline_text_selector(
@@ -1610,7 +1610,7 @@ def prepare_table_cell_text_patch_context(
 
 def _source_parent_flat_block_text_table_row_insert(
     selector: dict[str, Any],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
 ) -> bool:
     """Return true when source-parent table lowering would invent row structure."""
     if "source_parent_id" not in selector or extracted_el is None:

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
-from weakref import WeakKeyDictionary
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -170,8 +169,10 @@ _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE = re.compile(
     r"(|(?:the )?words?) ?[—–-]? ?$",
     flags=re.I,
 )
-_SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
-_SOURCE_TAIL_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
+# lxml _Element objects do not support weak references; use plain dicts.
+# Eviction is handled by explicit evict_source_root_caches() calls.
+_SOURCE_LEAD_TEXT_CACHE: dict[ET._Element, str] = {}
+_SOURCE_TAIL_TEXT_CACHE: dict[ET._Element, str] = {}
 
 
 def append_source_fragment_context_observations(
@@ -183,7 +184,7 @@ def append_source_fragment_context_observations(
     op_text_match: Optional[str],
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -535,8 +536,8 @@ def append_source_fragment_context_observations(
 
 def _fragment_substitution_after_words_inserted_by_sibling(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve "after the words inserted by sub-paragraph (a)" from a source sibling."""
@@ -576,7 +577,7 @@ def _fragment_substitution_after_words_inserted_by_sibling(
     return None
 
 
-def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
+def _source_lead_text_before_subordinate_rows(el: ET._Element) -> str:
     cached = _SOURCE_LEAD_TEXT_CACHE.get(el)
     if cached is not None:
         return cached
@@ -594,7 +595,7 @@ def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
     return text
 
 
-def _source_tail_text_after_subordinate_rows(el: ET.Element) -> str:
+def _source_tail_text_after_subordinate_rows(el: ET._Element) -> str:
     cached = _SOURCE_TAIL_TEXT_CACHE.get(el)
     if cached is not None:
         return cached
@@ -615,7 +616,7 @@ def _source_tail_text_after_subordinate_rows(el: ET.Element) -> str:
     return text
 
 
-def _source_has_subordinate_row_scope(el: ET.Element) -> bool:
+def _source_has_subordinate_row_scope(el: ET._Element) -> bool:
     """Return true when an ancestor can contain unrelated sibling amendment rows."""
     if _tag(el) in {"Legislation", "Body", "Pblock"}:
         return True
@@ -629,7 +630,7 @@ def _source_has_subordinate_row_scope(el: ET.Element) -> bool:
     return False
 
 
-def _source_local_instruction_text_for_carried_payload(ancestor: ET.Element) -> str:
+def _source_local_instruction_text_for_carried_payload(ancestor: ET._Element) -> str:
     """Collect only source-local instruction text for a carried BlockAmendment.
 
     Broad containers such as Pblock/P1/P1para may contain earlier sibling rows
@@ -644,7 +645,7 @@ def _source_local_instruction_text_for_carried_payload(ancestor: ET.Element) -> 
     return _instruction_text_before_amendment_container(ancestor)
 
 
-def _is_flat_source_list_item_quote(row: ET.Element) -> bool:
+def _is_flat_source_list_item_quote(row: ET._Element) -> bool:
     if _tag(row) not in _SOURCE_SUBORDINATE_ROW_TAGS:
         return False
     if not any(_tag(child) == "Pnumber" and _text_content(child).strip() for child in row):
@@ -666,7 +667,7 @@ def _is_flat_source_list_item_quote(row: ET.Element) -> bool:
     return bool(_text_content(para_children[0]).strip())
 
 
-def _source_payload_has_disallowed_text_flattening_descendant(el: ET.Element) -> bool:
+def _source_payload_has_disallowed_text_flattening_descendant(el: ET._Element) -> bool:
     for descendant in el.iter():
         if descendant is el:
             continue
@@ -687,7 +688,7 @@ def _source_payload_has_disallowed_text_flattening_descendant(el: ET.Element) ->
     return False
 
 
-def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET.Element) -> str:
+def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET._Element) -> str:
     """Classify source payload shapes that can safely become word-level appends."""
     direct_children = list(extracted_el)
     subordinate_rows = [
@@ -711,7 +712,7 @@ def _source_parent_at_end_text_insert_payload_shape(extracted_el: ET.Element) ->
     return "quoted_list_item_flattened_text"
 
 
-def _source_parent_word_range_payload_shape(extracted_el: ET.Element) -> str:
+def _source_parent_word_range_payload_shape(extracted_el: ET._Element) -> str:
     """Classify replacement payloads safe to flatten for word-range substitution."""
     direct_children = list(extracted_el)
     subordinate_rows = [
@@ -730,8 +731,8 @@ def _source_parent_word_range_payload_shape(extracted_el: ET.Element) -> str:
 
 def _fragment_substitution_grouped_anchor_occurrence(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve child rows like "the first time it appears" from a carried parent anchor."""
@@ -770,8 +771,8 @@ def _fragment_substitution_grouped_anchor_occurrence(
 
 def _previous_source_sibling_first_occurrence_rule(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     anchor: str,
 ) -> Optional[dict[str, str]]:
     ancestors = _source_ancestor_chain(source_root, extracted_el)
@@ -802,8 +803,8 @@ def _previous_source_sibling_first_occurrence_rule(
 
 def _fragment_substitution_each_other_place_from_sibling(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve relative `each other place` only when a sibling owns the first occurrence."""
@@ -854,8 +855,8 @@ def _fragment_substitution_each_other_place_from_sibling(
 
 def _fragment_substitution_grouped_after_insert_from_parent(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve grouped `after-- child rows insert "X"` source fragments."""
@@ -900,8 +901,8 @@ def _fragment_substitution_grouped_after_insert_from_parent(
 
 def _fragment_substitutions_source_parent_each_provision_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> tuple[dict[str, str], ...]:
     """Resolve child target rows governed by a parent `In each provision ...` substitution."""
@@ -945,8 +946,8 @@ def _fragment_substitutions_source_parent_each_provision_substitution(
 
 def _fragment_substitution_source_parent_following_provisions_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve child target rows governed by a parent `In the following provisions` substitution."""
@@ -990,8 +991,8 @@ def _fragment_substitution_source_parent_following_provisions_substitution(
 
 def _fragment_substitution_source_parent_tail_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve target-list child rows governed by a substitution in the parent tail."""
@@ -1034,8 +1035,8 @@ def _fragment_substitution_source_parent_tail_substitution(
 
 def _fragment_substitution_source_parent_prefix_substitute(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve child rows governed by a parent `Substitute "X"` prefix."""
@@ -1072,8 +1073,8 @@ def _fragment_substitution_source_parent_prefix_substitute(
 
 def _fragment_substitution_source_parent_word_range_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve payload-only replacements governed by a local word-range parent."""
@@ -1118,8 +1119,8 @@ def _fragment_substitution_source_parent_word_range_substitution(
 
 def _fragment_substitution_source_parent_at_end_text_insert(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve payload-only text governed by a local `at the end insert` parent."""

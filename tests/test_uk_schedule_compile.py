@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any
 
 import pytest
@@ -181,7 +181,7 @@ def test_first_component_matches_preserves_document_order_with_number_index() ->
     matches = _first_component_matches(root, "section", "7")
 
     assert [element.tag for element in matches] == ["P1", "Section", "P1group"]
-    assert [" ".join(element.itertext()).strip() for element in matches] == [
+    assert [" ".join(element.itertext()).strip() for element in matches] == [  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
         "7 first section-like node",
         "7 second section-like node",
         "7 third section-like node",
@@ -566,7 +566,7 @@ def test_parse_effects_from_metadata_records_malformed_xml(tmp_path: Path) -> No
     assert rejection["phase"] == "parse"
     assert rejection["statute_id"] == "ukpga/2000/10"
     assert rejection["metadata_path"] == str(metadata_path)
-    assert rejection["exception_type"] == "ParseError"
+    assert rejection["exception_type"] in ("ParseError", "XMLSyntaxError")  # lxml raises XMLSyntaxError
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
     assert rejection["quirks_disposition"] == "record"
@@ -4201,7 +4201,7 @@ def test_extract_provision_bytes_keeps_block_substitution_instruction_context() 
 
     assert extracted is not None
     assert extracted.tag.split("}")[-1] == "P2"
-    extracted_text = "".join(extracted.itertext())
+    extracted_text = "".join(extracted.itertext())  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
     assert 'for "with" to the end substitute' in extracted_text
     assert "£2,000,000" in extracted_text
 
@@ -4269,7 +4269,7 @@ def test_extract_provision_bytes_keeps_descendant_block_insert_instruction_conte
 
     assert extracted is not None
     assert extracted.tag.split("}")[-1] == "P2"
-    extracted_text = "".join(extracted.itertext())
+    extracted_text = "".join(extracted.itertext())  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
     assert 'after the definition of "2013 Act" insert-' in extracted_text
     assert "corporate joint committee" in extracted_text
 
@@ -49902,7 +49902,7 @@ def test_pipeline_compile_ops_records_malformed_affecting_act_xml_source_diagnos
     assert parse_diagnostic["effect_id"] == "uk_test_malformed_affecting_xml"
     assert parse_diagnostic["affecting_act_id"] == "ukpga/2024/13"
     assert parse_diagnostic["locator"] == "https://www.legislation.gov.uk/ukpga/2024/13/data.xml"
-    assert parse_diagnostic["exception_type"] == "ParseError"
+    assert parse_diagnostic["exception_type"] in ("ParseError", "XMLSyntaxError")  # lxml raises XMLSyntaxError
     assert parse_diagnostic["blocking"] is True
     assert parse_diagnostic["strict_disposition"] == "block"
     assert parse_diagnostic["quirks_disposition"] == "record"
@@ -54770,7 +54770,7 @@ def test_uk_source_context_caches_repeated_provision_extraction() -> None:
     assert target is not None
     calls: list[str] = []
 
-    def extractor(_xml_bytes: bytes, provision_ref: str, **_kwargs: Any) -> ET.Element | None:
+    def extractor(_xml_bytes: bytes, provision_ref: str, **_kwargs: Any) -> ET._Element | None:
         calls.append(provision_ref)
         return target
 
@@ -54799,7 +54799,7 @@ def test_uk_source_context_caches_missing_provision_extraction() -> None:
     root = ET.fromstring("<Legislation><Body /></Legislation>")
     calls: list[str] = []
 
-    def extractor(_xml_bytes: bytes, provision_ref: str, **_kwargs: Any) -> ET.Element | None:
+    def extractor(_xml_bytes: bytes, provision_ref: str, **_kwargs: Any) -> ET._Element | None:
         calls.append(provision_ref)
         return None
 

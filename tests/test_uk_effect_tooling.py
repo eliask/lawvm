@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -1325,7 +1325,7 @@ def test_summarize_uk_effect_uses_observed_source_extraction(monkeypatch) -> Non
         "strict_disposition": "record",
         "quirks_disposition": "record",
     }
-    seen_extracted: list[ET.Element | None] = []
+    seen_extracted: list[ET._Element | None] = []
 
     def fake_extract_with_observations(_context, effect_arg):  # noqa: ANN001
         assert effect_arg is effect
@@ -1648,7 +1648,7 @@ def test_summarize_uk_effect_records_malformed_affecting_act_xml(monkeypatch) ->
     assert rejection["effect_id"] == "eff-malformed-source"
     assert rejection["affecting_act_id"] == "ukpga/2025/1"
     assert rejection["locator"] == "https://www.legislation.gov.uk/ukpga/2025/1/data.xml"
-    assert rejection["exception_type"] == "ParseError"
+    assert rejection["exception_type"] in ("ParseError", "XMLSyntaxError")  # lxml raises XMLSyntaxError
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
     assert rejection["quirks_disposition"] == "record"

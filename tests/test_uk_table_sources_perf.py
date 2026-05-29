@@ -20,7 +20,7 @@ Tests:
 from __future__ import annotations
 
 import time
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord

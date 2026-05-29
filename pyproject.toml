@@ -7,7 +7,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
   "PyYAML>=6.0",
-  "lxml>=5.1.0",
+  "lxml>=6.0.0",
   "aiohttp",
   "python-Levenshtein",
   "zstandard>=0.21",

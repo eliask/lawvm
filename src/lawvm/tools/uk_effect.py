@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
@@ -54,21 +54,21 @@ class _TargetShape(NamedTuple):
     texts: list[str]
 
 
-def _tag(el: ET.Element) -> str:
+def _tag(el: ET._Element) -> str:
     return el.tag.rsplit("}", 1)[-1]
 
 
-def _text_snippet(el: Optional[ET.Element], *, limit: int = 300) -> str:
+def _text_snippet(el: Optional[ET._Element], *, limit: int = 300) -> str:
     if el is None:
         return ""
-    text = " ".join(t.strip() for t in el.itertext() if t and t.strip())
+    text = " ".join(t.strip() for t in el.itertext() if t and t.strip())  # type: ignore[union-attr]  # ty: ignore[no-matching-overload]
     text = " ".join(text.split())
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
 
 
-def _element_id(el: Optional[ET.Element]) -> str:
+def _element_id(el: Optional[ET._Element]) -> str:
     if el is None:
         return ""
     return el.get("id") or el.get("eId") or ""
@@ -189,7 +189,7 @@ def _manual_compile_claim_template_for_effect_report(
     statute_id: str,
     effect,  # noqa: ANN001
     source_pathology: str,
-    extracted: Optional[ET.Element],
+    extracted: Optional[ET._Element],
     lowering_rejections: list[dict[str, Any]],
     manual_frontier: dict[str, Any],
     show_text: bool,
@@ -239,7 +239,7 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
     statute_id: str,
     effect,  # noqa: ANN001
     source_pathology: str,
-    extracted: Optional[ET.Element],
+    extracted: Optional[ET._Element],
     lowering_rejections: list[dict[str, Any]],
     compare_shape: str,
     candidate: bool,

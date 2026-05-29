@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, cast
 
 from lawvm.core.ir import IRNode

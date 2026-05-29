@@ -1,7 +1,7 @@
 """Extraction-context cache tests for provision_extractor._build_extraction_context.
 
 §1.11 Hot-path: _build_extraction_context builds parent_map / exact_id_map /
-sequence_map once per root ET.Element instead of repeating the walk on every
+sequence_map once per root ET._Element instead of repeating the walk on every
 call.  A WeakKeyDictionary keyed on root releases entries when root is GC'd.
 
 Tests:
@@ -14,7 +14,7 @@ Tests:
 from __future__ import annotations
 
 import time
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 
 from lawvm.uk_legislation.provision_extractor import (
     _EXTRACTION_CONTEXT_CACHE,
@@ -133,7 +133,7 @@ def test_extraction_context_cache_speedup() -> None:
 def test_extraction_context_cache_entry_per_root_identity() -> None:
     """Cache entries are keyed on root identity; a new root (same XML) is a miss.
 
-    Note: UKExtractionContext holds ET.Element objects in parent_map (including
+    Note: UKExtractionContext holds ET._Element objects in parent_map (including
     root as a parent value for its children), so the WeakKeyDictionary cannot
     release entries purely via weak-reference expiry while the context is live.
     The cache is bounded per compile session: the extraction_cache dict in

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -110,7 +110,7 @@ def _prepare_effect_target_prelude(
     effect: UKEffectRecord,
     effect_type: str,
     action: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     source_parent_substitution_range_payload: Optional[dict[str, Any]],
     source_parent_at_end_added_payload: Optional[dict[str, Any]],
@@ -194,12 +194,12 @@ def _prepare_effect_target_prelude(
 
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     sequence: int = 0,
     fallback_for_missing_extracted_source: bool = False,
     lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
     allow_payload_identity_synthesis: bool = True,
-    source_root: Optional[ET.Element] = None,
+    source_root: Optional[ET._Element] = None,
     source_authority_layer: str = "",
     lower_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> list[LegalOperation]:

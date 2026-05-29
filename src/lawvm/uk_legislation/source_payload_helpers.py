@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Callable, Optional
 
 from lawvm.core.ir import IRNodeKind, LegalAddress
@@ -102,7 +102,7 @@ def infer_source_payload_from_target(
     }
 
 
-def _direct_payload_text(el: ET.Element) -> str:
+def _direct_payload_text(el: ET._Element) -> str:
     """Collect direct/local text for extracted payload compilation only."""
     structural_tags = {
         "part",
@@ -132,7 +132,7 @@ def _direct_payload_text(el: ET.Element) -> str:
     }
     editorial_tags = {"commentary", "citation", "citationsubref"}
 
-    def _collect_local(node: ET.Element) -> list[str]:
+    def _collect_local(node: ET._Element) -> list[str]:
         parts: list[str] = []
         if node.text:
             parts.append(node.text)
@@ -152,8 +152,8 @@ def _direct_payload_text(el: ET.Element) -> str:
 
 
 def _inserted_section_p1group_heading_text(
-    actual_el: ET.Element,
-    extracted_el: ET.Element,
+    actual_el: ET._Element,
+    extracted_el: ET._Element,
     target: LegalAddress,
 ) -> Optional[str]:
     """Return a source-owned P1group title for an inserted provision payload.
@@ -213,7 +213,7 @@ def _prepend_inserted_section_heading_carrier(
 
 
 def _flat_p1para_schedule_paragraph_insert_payload(
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     target: LegalAddress,
     *,
     fallback_target_eid: Callable[[LegalAddress], str],

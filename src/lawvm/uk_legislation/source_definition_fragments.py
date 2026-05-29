@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -133,7 +133,7 @@ def _source_definition_child_range_payloads(payload: str) -> tuple[dict[str, str
 
 def source_definition_child_range_substitution(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
@@ -406,7 +406,7 @@ def lower_metadata_pseudo_definition_entry_insertions(
     action: str,
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> Optional[UKPseudoDefinitionEntryRangeTextPatches]:
@@ -482,7 +482,7 @@ def lower_metadata_pseudo_definition_entry_range_insertions(
     action: str,
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> Optional[UKPseudoDefinitionEntryRangeTextPatches]:
@@ -648,7 +648,7 @@ def lower_metadata_pseudo_definition_child_substitution(
     action: str,
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> Optional[UKPseudoDefinitionChildTextPatch]:
@@ -715,7 +715,7 @@ def refine_source_definition_child_target(
     target: LegalAddress,
     fragment: dict[str, str],
     target_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:
@@ -761,7 +761,7 @@ def append_source_definition_fragment_observations(
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
     op_text_end_occurrence: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -1191,8 +1191,8 @@ def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> boo
 
 def _source_parent_appropriate_place_definition_entry_insert_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Detect parent-owned appropriate-place definition entry insertions.
@@ -1233,8 +1233,8 @@ def _source_parent_appropriate_place_definition_entry_insert_context(
 
 def _fragment_substitution_source_carried_definition_child_at_end_insert(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve BlockAmendment payloads inserted at the end of a carried definition child."""
@@ -1272,8 +1272,8 @@ def _fragment_substitution_source_carried_definition_child_at_end_insert(
 
 def _previous_source_sibling_label(
     *,
-    parent: ET.Element,
-    extracted_el: Optional[ET.Element],
+    parent: ET._Element,
+    extracted_el: Optional[ET._Element],
 ) -> str:
     children = list(parent)
     extracted_id = extracted_el.get("id") if extracted_el is not None else None
@@ -1287,8 +1287,8 @@ def _previous_source_sibling_label(
 
 def _fragment_substitution_source_carried_definition_child_insert(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve definition-child insertions whose child row says only "that paragraph"."""
@@ -1333,8 +1333,8 @@ def _fragment_substitution_source_carried_definition_child_insert(
 
 def _fragment_substitution_source_carried_definition_child_text_omission(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve definition-child word omissions whose parent supplies the term."""
@@ -1392,8 +1392,8 @@ def lower_source_carried_definition_child_text_omission(
     op_text_replacement: Optional[str],
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKDefinitionTextPatchLowering:
@@ -1463,8 +1463,8 @@ def lower_source_carried_definition_child_at_end_insert(
     op_text_replacement: Optional[str],
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKDefinitionTextPatchLowering:
@@ -1537,8 +1537,8 @@ def lower_source_carried_definition_child_at_end_insert(
 
 def _fragment_substitution_source_carried_definition_entry_insert(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve definition-entry insertions whose payload omits the parent anchor."""
@@ -1589,8 +1589,8 @@ def _fragment_substitution_source_carried_definition_entry_insert(
 
 def _fragment_substitution_source_carried_definition_entry_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve definition substitutions whose block payload omits the old term."""
@@ -1629,8 +1629,8 @@ def _fragment_substitution_source_carried_definition_entry_substitution(
 
 def _fragment_substitution_source_carried_following_words_repeal(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve block payloads whose parent says the following words are repealed."""
@@ -1666,8 +1666,8 @@ def _fragment_substitution_source_carried_following_words_repeal(
 
 def _fragment_substitution_source_carried_after_quoted_anchor_insert(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve block payloads whose parent instruction gives the after-anchor."""
@@ -1723,8 +1723,8 @@ def _fragment_substitution_source_carried_after_quoted_anchor_insert(
 
 def _fragment_substitution_source_carried_quoted_text_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve block payloads whose parent instruction gives the quoted preimage."""

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json as json  # noqa: F401
 import time
-import xml.etree.ElementTree as ET  # noqa: F401
+from lxml import etree as ET  # noqa: F401
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -272,7 +272,7 @@ class UKReplayPipeline:
         # §source_root_lifecycle: Build a last-occurrence index so the compile
         # loop can evict source-root contexts as soon as their affecting act's
         # final effect has been processed.  Without eviction, all 229 unique
-        # affecting-act ET.Element trees for ukpga/1970/9 accumulate in memory
+        # affecting-act ET._Element trees for ukpga/1970/9 accumulate in memory
         # simultaneously (~2.5 GB peak RSS).  Evicting after last use reduces
         # peak to the watermark of the maximum concurrently-live roots, which
         # drops to single-digit counts in typical ordered traversal.

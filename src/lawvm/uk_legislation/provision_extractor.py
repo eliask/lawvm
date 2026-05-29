@@ -2,23 +2,24 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple, Optional
-from weakref import WeakKeyDictionary
 
 from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 
-_INSTRUCTION_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
+# lxml _Element objects do not support weak references; use a plain dict.
+# Eviction is explicit via the compile-loop lifecycle (evict_source_root_caches).
+_INSTRUCTION_TEXT_CACHE: dict[ET._Element, str] = {}
 _NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
 
 
 class UKExtractionContext(NamedTuple):
-    parent_map: dict[ET.Element, ET.Element]
-    exact_id_map: dict[str, ET.Element]
-    sequence_map: dict[tuple[str, ...], ET.Element]
+    parent_map: dict[ET._Element, ET._Element]
+    exact_id_map: dict[str, ET._Element]
+    sequence_map: dict[tuple[str, ...], ET._Element]
 
 
 # ---------------------------------------------------------------------------
@@ -28,26 +29,25 @@ class UKExtractionContext(NamedTuple):
 # 113 times × 50ms each = 5.72s cumtime.  The function is a pure function of
 # root identity: it walks the tree building parent_map, exact_id_map, and
 # sequence_map.  The tree is immutable during compilation, so the result can be
-# cached for the lifetime of the root ET.Element.
+# cached for the lifetime of the root ET._Element.
 #
-# Cache: WeakKeyDictionary keyed on root ET.Element — same pattern as
-# _uk_get_fee_table_index in table_sources.py (Actuator 9, commit 4bfb7f30).
-# Note: the cached UKExtractionContext holds ET.Element objects (via parent_map
-# values) that can include root itself, creating a reference cycle.  CPython's
-# cyclic GC will collect these; for process-scope safety the cache is also
-# bounded via the dict's natural per-session scope (compile session creates a
-# fresh extraction_cache dict that holds roots alive; when that dict drops, roots
-# and WeakKeyDictionary entries are released together).  64 entries is enough for
-# the largest UK statutes (ukpga/1970/9 has ~113 distinct affecting-act roots but
-# within any single compile call there are far fewer active simultaneously).
+# Cache: plain dict keyed on root lxml _Element — lxml elements are not
+# weakly-referenceable, so WeakKeyDictionary cannot be used.  Memory safety
+# is maintained by explicit eviction via evict_source_root_caches() in the
+# compile loop (source_context.py).  The cached UKExtractionContext holds
+# _Element objects (via parent_map values) that can include root itself;
+# explicit eviction breaks this cycle at compile-loop boundaries.  64 entries
+# is enough for the largest UK statutes (ukpga/1970/9 has ~113 distinct
+# affecting-act roots but within any single compile call far fewer are
+# simultaneously active).
 # ---------------------------------------------------------------------------
 
-_EXTRACTION_CONTEXT_CACHE: WeakKeyDictionary[
-    ET.Element, UKExtractionContext
-] = WeakKeyDictionary()
+# lxml _Element objects do not support weak references; use a plain dict.
+# Eviction is explicit via evict_source_root_caches() in the compile loop.
+_EXTRACTION_CONTEXT_CACHE: dict[ET._Element, UKExtractionContext] = {}
 
 
-def _instruction_text_before_amendment_container(el: ET.Element) -> str:
+def _instruction_text_before_amendment_container(el: ET._Element) -> str:
     """Collect lead-in text before the first amendment payload container."""
     cached = _INSTRUCTION_TEXT_CACHE.get(el)
     if cached is not None:
@@ -55,7 +55,7 @@ def _instruction_text_before_amendment_container(el: ET.Element) -> str:
     parts: list[str] = []
     stopped = False
 
-    def _walk(node: ET.Element) -> None:
+    def _walk(node: ET._Element) -> None:
         nonlocal stopped
         if stopped:
             return
@@ -167,14 +167,14 @@ def _get_ref_sequence(path: list[tuple[Optional[str], str]] | tuple[tuple[Option
 
 
 def _build_extraction_context(
-    root: ET.Element,
+    root: ET._Element,
 ) -> UKExtractionContext:
     cached = _EXTRACTION_CONTEXT_CACHE.get(root)
     if cached is not None:
         return cached
-    parent_map: dict[ET.Element, ET.Element] = {}
-    exact_id_map: dict[str, ET.Element] = {}
-    sequence_map: dict[tuple[str, ...], ET.Element] = {}
+    parent_map: dict[ET._Element, ET._Element] = {}
+    exact_id_map: dict[str, ET._Element] = {}
+    sequence_map: dict[tuple[str, ...], ET._Element] = {}
     for el in root.iter():
         el_id = el.get("id") or el.get("Id")
         if el_id:
@@ -272,7 +272,7 @@ def _normalized_provision_num(num: str) -> str:
     return _ROMAN_NUMERAL_LABELS.get(target_num, target_num)
 
 
-def _node_raw_number_values(el: ET.Element) -> list[str]:
+def _node_raw_number_values(el: ET._Element) -> list[str]:
     found_raw_nums = []
     if el.get("Number"):
         found_raw_nums.append(el.get("Number"))
@@ -291,7 +291,7 @@ def _node_raw_number_values(el: ET.Element) -> list[str]:
 
 
 def _match_node_prepared(
-    el: ET.Element,
+    el: ET._Element,
     *,
     kind_synonyms: Optional[tuple[str, ...]],
     target_num: str,
@@ -308,7 +308,7 @@ def _match_node_prepared(
     return False
 
 
-def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
+def _match_node(el: ET._Element, kind: Optional[str], num: str) -> bool:
     """Check if an element matches a provision kind and/or number."""
     tag = _tag(el).lower()
     if kind:
@@ -327,8 +327,8 @@ def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
 
 
 def _find_provision_greedy(
-    el: ET.Element, path: list[tuple[Optional[str], str]], depth: int = 0
-) -> tuple[Optional[ET.Element], int]:
+    el: ET._Element, path: list[tuple[Optional[str], str]], depth: int = 0
+) -> tuple[Optional[ET._Element], int]:
     """Recursively find a provision."""
     best_node = el if depth > 0 else None
     best_depth = depth
@@ -350,9 +350,9 @@ def _find_provision_greedy(
 
 
 @lru_cache(maxsize=1024)
-def _first_component_number_index(search_root: ET.Element) -> dict[str, tuple[ET.Element, ...]]:
+def _first_component_number_index(search_root: ET._Element) -> dict[str, tuple[ET._Element, ...]]:
     """Index provision-like elements by normalized visible number in document order."""
-    by_num: dict[str, list[ET.Element]] = {}
+    by_num: dict[str, list[ET._Element]] = {}
     for el in search_root.iter():
         if el is search_root:
             continue
@@ -368,10 +368,10 @@ def _first_component_number_index(search_root: ET.Element) -> dict[str, tuple[ET
 
 @lru_cache(maxsize=32768)
 def _first_component_matches(
-    search_root: ET.Element,
+    search_root: ET._Element,
     target_kind: str,
     target_num: str,
-) -> tuple[ET.Element, ...]:
+) -> tuple[ET._Element, ...]:
     """Return source nodes matching the first parsed provision component."""
     kind_synonyms = _PROVISION_KIND_SYNONYMS.get(target_kind, (target_kind,))
     normalized_target_num = _normalized_provision_num(target_num)
@@ -387,16 +387,16 @@ def _first_component_matches(
 
 
 def _find_provision_from_search_root(
-    search_root: ET.Element,
+    search_root: ET._Element,
     path: list[tuple[Optional[str], str]],
-) -> tuple[Optional[ET.Element], int]:
+) -> tuple[Optional[ET._Element], int]:
     if path:
         target_kind, target_num = path[0]
         if target_kind and target_num:
             matches = _first_component_matches(search_root, target_kind, target_num)
             if not matches:
                 return None, 0
-            best_node: Optional[ET.Element] = None
+            best_node: Optional[ET._Element] = None
             best_depth = 0
             for match in matches:
                 candidate_node, candidate_depth = _find_provision_greedy(match, path, 1)
@@ -408,9 +408,9 @@ def _find_provision_from_search_root(
 
 
 def _select_extracted_match(
-    el: ET.Element,
-    parent_map: Optional[dict[ET.Element, ET.Element]] = None,
-) -> ET.Element:
+    el: ET._Element,
+    parent_map: Optional[dict[ET._Element, ET._Element]] = None,
+) -> ET._Element:
     """Prefer structural amendment containers, not naked inline quote nodes."""
     if _tag(el) in ("BlockAmendment", "InlineAmendment"):
         return el
@@ -475,7 +475,7 @@ def _select_extracted_match(
 def extract_provision_element(
     affecting_act_xml: Path,
     provision_ref: str,
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     """Extract the provision element from an affecting act's XML."""
     if not affecting_act_xml.exists():
         return None
@@ -496,13 +496,13 @@ def extract_provision_element(
 
 
 def _extract_provision_element_from_root(
-    root: ET.Element,
+    root: ET._Element,
     provision_ref: str,
     *,
-    parent_map: Optional[dict[ET.Element, ET.Element]] = None,
-    exact_id_map: Optional[dict[str, ET.Element]] = None,
-    sequence_map: Optional[dict[tuple[str, ...], ET.Element]] = None,
-) -> Optional[ET.Element]:
+    parent_map: Optional[dict[ET._Element, ET._Element]] = None,
+    exact_id_map: Optional[dict[str, ET._Element]] = None,
+    sequence_map: Optional[dict[tuple[str, ...], ET._Element]] = None,
+) -> Optional[ET._Element]:
     if parent_map is None or exact_id_map is None or sequence_map is None:
         parent_map, exact_id_map, sequence_map = _build_extraction_context(root)
 
@@ -545,11 +545,11 @@ def extract_provision_element_from_bytes(
     xml_bytes: bytes,
     provision_ref: str,
     *,
-    root: Optional[ET.Element] = None,
-    parent_map: Optional[dict[ET.Element, ET.Element]] = None,
-    exact_id_map: Optional[dict[str, ET.Element]] = None,
-    sequence_map: Optional[dict[tuple[str, ...], ET.Element]] = None,
-) -> Optional[ET.Element]:
+    root: Optional[ET._Element] = None,
+    parent_map: Optional[dict[ET._Element, ET._Element]] = None,
+    exact_id_map: Optional[dict[str, ET._Element]] = None,
+    sequence_map: Optional[dict[tuple[str, ...], ET._Element]] = None,
+) -> Optional[ET._Element]:
     """Extract a provision element from affecting act XML bytes.
 
     Archive-backed alternative to extract_provision_element() - accepts bytes

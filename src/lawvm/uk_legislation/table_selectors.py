@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import functools
 import re
-import xml.etree.ElementTree as ET
-import weakref
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Optional
 
@@ -96,10 +95,9 @@ _UK_TABLE_CHILD_ANCHOR_INSERT_RE = re.compile(
     re.I,
 )
 
-_NORMALIZED_ELEMENT_TEXT_CACHE: weakref.WeakKeyDictionary[
-    ET.Element,
-    str,
-] = weakref.WeakKeyDictionary()
+# lxml _Element objects do not support weak references; use a plain dict.
+# Eviction is handled by explicit evict_source_root_caches() calls.
+_NORMALIZED_ELEMENT_TEXT_CACHE: dict[ET._Element, str] = {}
 
 # Site 2 module-scope patterns per §1.11.  The alternation below previously
 # appeared as a single re.search call with two .*? lazy quantifiers sharing one
@@ -145,16 +143,16 @@ class UKSourcePreviousTableColumnContext:
         }
 
 
-def _normalized_element_text(el: ET.Element) -> str:
+def _normalized_element_text(el: ET._Element) -> str:
     try:
         return _NORMALIZED_ELEMENT_TEXT_CACHE[el]
     except KeyError:
-        text = " ".join(" ".join(el.itertext()).split()).strip()
+        text = " ".join(" ".join(el.itertext()).split()).strip()  # type: ignore[arg-type]  # ty: ignore[no-matching-overload]
         _NORMALIZED_ELEMENT_TEXT_CACHE[el] = text
         return text
 
 
-def _inserted_table_payload_rows(extracted_el: Optional[ET.Element]) -> tuple[tuple[str, ...], ...]:
+def _inserted_table_payload_rows(extracted_el: Optional[ET._Element]) -> tuple[tuple[str, ...], ...]:
     """Return row/cell text from a source-carried inserted table payload."""
     if extracted_el is None:
         return ()
@@ -176,7 +174,7 @@ def _inserted_table_payload_rows(extracted_el: Optional[ET.Element]) -> tuple[tu
     return tuple(rows)
 
 
-def _inserted_ordered_list_units(extracted_el: Optional[ET.Element]) -> tuple[dict[str, str], ...]:
+def _inserted_ordered_list_units(extracted_el: Optional[ET._Element]) -> tuple[dict[str, str], ...]:
     """Return source-owned ordered-list items carried by a table-cell child insertion."""
     if extracted_el is None:
         return ()
@@ -210,8 +208,8 @@ def _inserted_ordered_list_units(extracted_el: Optional[ET.Element]) -> tuple[di
 
 def _source_parent_table_instruction_text(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
 ) -> tuple[str, str]:
     """Return nearest source-local table instruction context for a carried child row."""
     for ancestor in _source_ancestor_chain(source_root, extracted_el):
@@ -229,8 +227,8 @@ def _source_parent_table_instruction_text(
 def _uk_table_child_structural_insert_detail(
     *,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
 ) -> dict[str, Any]:
     """Extract non-executable evidence for table-cell nested child insertions."""
     child_text = " ".join((extracted_text or "").split()).strip()
@@ -331,8 +329,8 @@ def _source_or_parent_names_containing_target_for_table_cell(
     *,
     text: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
 ) -> _TableCellSourceTargetContext:
     if _source_names_containing_target_for_table_cell(text, target):
         return _TableCellSourceTargetContext(
@@ -361,8 +359,8 @@ def _uk_table_entry_inline_text_selector(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> dict[str, Any] | None:
     """Extract a deterministic base-table cell selector from inline table-entry wording."""
     text = " ".join((extracted_text or "").split())
@@ -696,8 +694,8 @@ def _uk_table_column_entry_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> dict[str, Any] | None:
     """Extract quoted table-column entry text patches without inventing rows."""
     text = " ".join((extracted_text or "").split())
@@ -768,8 +766,8 @@ def _uk_table_column_entry_omission_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> dict[str, Any] | None:
     """Extract direct single-cell table-entry omissions without deleting rows."""
     text = " ".join((extracted_text or "").split())
@@ -884,8 +882,8 @@ def _uk_source_previous_table_column_entry_omission_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     target_names_table: bool,
     source_names_containing_target: bool,
     source_parent_id: str,
@@ -935,8 +933,8 @@ def _uk_source_previous_table_column_entry_omission_text_patch_claim(
 
 def _source_previous_table_column_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     rule_id: str,
 ) -> UKSourcePreviousTableColumnContext | None:
     """Return an explicit table column from a previous sibling source row."""
@@ -982,8 +980,8 @@ def _uk_source_parent_table_column_entry_omission_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     target_names_table: bool,
     source_names_containing_target: bool,
     source_parent_id: str,
@@ -1064,8 +1062,8 @@ def _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     target_names_table: bool,
     source_names_containing_target: bool,
     source_parent_id: str,
@@ -1140,7 +1138,7 @@ def _uk_source_parent_table_column_entry_omitted_child_fragment_claim(
     return None
 
 
-def _strip_source_row_leading_label(text: str, extracted_el: ET.Element) -> str:
+def _strip_source_row_leading_label(text: str, extracted_el: ET._Element) -> str:
     label = ""
     for child in extracted_el:
         if _tag(child) == "Pnumber":
@@ -1209,8 +1207,8 @@ def _uk_table_target_column_text_patch_claim(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> dict[str, Any] | None:
     """Extract quoted text patches scoped only to one named table column."""
     text = " ".join((extracted_text or "").split())
@@ -1343,8 +1341,8 @@ def _uk_table_entry_row_insert_selector(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> dict[str, Any] | None:
     """Extract an explicit table-row insertion selector from ordinal entry wording."""
     text = " ".join((extracted_text or "").split())
@@ -2043,8 +2041,8 @@ def _uk_table_entry_row_insert_selector(
 
 def _source_prior_inserted_words_anchor_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     source_parent_label: str,
     source_label: str,
     rule_id: str,
@@ -2058,9 +2056,9 @@ def _source_prior_inserted_words_anchor_context(
         return {}
     extracted_id = extracted_el.get("id") or extracted_el.get("Id")
     current_ancestors = frozenset(_source_ancestor_chain(source_root, extracted_el))
-    prior: list[ET.Element] = []
+    prior: list[ET._Element] = []
 
-    def _walk(node: ET.Element) -> bool:
+    def _walk(node: ET._Element) -> bool:
         if node is extracted_el or (extracted_id and node.get("id") == extracted_id):
             return True
         prior.append(node)
@@ -2219,8 +2217,8 @@ def _uk_broad_table_entry_instruction(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
     effect_type: str = "",
 ) -> dict[str, Any] | None:
     """Detect table-entry instructions that are unsafe as broad host mutations."""
@@ -2473,7 +2471,7 @@ def _uk_schedule_table_end_rows_selector(
     }
 
 
-def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET._Element]) -> IRNode | None:
     amendment = _first_amendment_container(extracted_el)
     if amendment is None or _tag(amendment) != "BlockAmendment":
         return None
@@ -2498,9 +2496,9 @@ def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET.Element]) ->
 
 
 def _source_root_element_by_id(
-    source_root: Optional[ET.Element],
-    extracted_el: Optional[ET.Element],
-) -> Optional[ET.Element]:
+    source_root: Optional[ET._Element],
+    extracted_el: Optional[ET._Element],
+) -> Optional[ET._Element]:
     if source_root is None or extracted_el is None:
         return extracted_el
     extracted_id = str(extracted_el.get("id") or "")
@@ -2513,9 +2511,9 @@ def _source_root_element_by_id(
 
 
 def _uk_column_entry_list_row_payload(
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     *,
-    source_root: Optional[ET.Element] = None,
+    source_root: Optional[ET._Element] = None,
     column_index: int,
 ) -> IRNode | None:
     extracted_el = _source_root_element_by_id(source_root, extracted_el)
@@ -2584,7 +2582,7 @@ def _column_end_payload_needs_owned_list(inserted_text: str) -> bool:
     )
 
 
-def _uk_single_table_row_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+def _uk_single_table_row_payload(extracted_el: Optional[ET._Element]) -> IRNode | None:
     table_node = _uk_schedule_list_entry_table_payload(extracted_el)
     if table_node is None:
         return None
@@ -2598,7 +2596,7 @@ def _uk_single_table_row_payload(extracted_el: Optional[ET.Element]) -> IRNode |
     return rows[0]
 
 
-def _uk_single_logical_table_entry_group_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+def _uk_single_logical_table_entry_group_payload(extracted_el: Optional[ET._Element]) -> IRNode | None:
     """Return one logical table entry encoded as multiple source rows via rowspan."""
     table_node = _uk_schedule_list_entry_table_payload(extracted_el)
     if table_node is None:
@@ -2639,7 +2637,7 @@ def _uk_single_logical_table_entry_group_payload(extracted_el: Optional[ET.Eleme
     return table_node
 
 
-def _uk_single_table_column_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+def _uk_single_table_column_payload(extracted_el: Optional[ET._Element]) -> IRNode | None:
     """Return a source-owned one-column table payload, if exactly one is present."""
     table_node = _uk_schedule_list_entry_table_payload(extracted_el)
     if table_node is None:
@@ -2663,7 +2661,7 @@ def _uk_table_column_insert_selector(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
 ) -> dict[str, Any] | None:
     """Extract a source-owned ``between columns`` table-column insert selector."""
     target_surface = f"{target_ref} {target}".lower()

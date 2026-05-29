@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Callable, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
@@ -65,7 +65,7 @@ class UKFlatP1paraScheduleParagraphInsertLowering:
 @dataclass(frozen=True)
 class UKStructuralPayloadExtraction:
     content_ir: Optional[dict[str, Any]]
-    actual_el: Optional[ET.Element]
+    actual_el: Optional[ET._Element]
     flat_p1para_schedule_insert_lowered: bool
     source_structural_payload_matches_target: bool
 
@@ -90,7 +90,7 @@ def lower_flat_p1para_schedule_paragraph_insert_payload(
     action: str,
     target_ref: str,
     payload_match_target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     fallback_target_eid: Callable[[LegalAddress], str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
@@ -140,8 +140,8 @@ def prepend_inserted_p1group_heading_carrier(
     target_ref: str,
     target: LegalAddress,
     content_ir: dict[str, Any],
-    actual_el: ET.Element,
-    extracted_el: ET.Element,
+    actual_el: ET._Element,
+    extracted_el: ET._Element,
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -197,13 +197,13 @@ def extract_uk_structural_payload_ir(
     target_ref: str,
     target: LegalAddress,
     payload_match_target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     fallback_target_eid: Callable[[LegalAddress], str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKStructuralPayloadExtraction:
     content_ir: Optional[dict[str, Any]] = None
-    actual_el: Optional[ET.Element] = None
+    actual_el: Optional[ET._Element] = None
     flat_p1para_schedule_insert_lowered = False
     source_structural_payload_matches_target = False
     if extracted_el is None:
@@ -288,8 +288,8 @@ def prepare_uk_operation_payload_node(
     payload_match_target: LegalAddress,
     target_replacement_leaf_override: Optional[str],
     target_replacement_leaf_kind: Optional[str],
-    actual_el: Optional[ET.Element],
-    extracted_el: Optional[ET.Element],
+    actual_el: Optional[ET._Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     allow_payload_identity_synthesis: bool,
     lowering_rejections_out: Optional[list[dict[str, Any]]],
@@ -419,9 +419,9 @@ def prepare_uk_operation_payload_node(
 
 def _find_matching_structural_payload_element(
     *,
-    extracted_el: ET.Element,
+    extracted_el: ET._Element,
     payload_match_target: LegalAddress,
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     for am in extracted_el.iter():
         if _tag(am) not in ("BlockAmendment", "InlineAmendment"):
             continue
@@ -438,10 +438,10 @@ def _find_matching_structural_payload_element(
 
 def _extracted_element_as_payload(
     *,
-    extracted_el: ET.Element,
+    extracted_el: ET._Element,
     payload_match_target: LegalAddress,
     extracted_text: Optional[str],
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     if _tag(extracted_el) not in _STRUCTURAL_PAYLOAD_TAGS:
         return None
     target_num = _addr_leaf_label(payload_match_target)
@@ -456,7 +456,7 @@ def _extracted_element_as_payload(
 
 
 def _parse_structural_payload_element(
-    actual_el: ET.Element,
+    actual_el: ET._Element,
     *,
     parse_context: str,
     is_eur: bool = False,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
@@ -383,8 +383,8 @@ def _could_match_source_parent_schedule_entry_insert(text: str) -> bool:
 
 def _source_parent_instruction_with_payload(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     instruction_pattern: re.Pattern[str],
 ) -> Optional[dict[str, str]]:
@@ -419,8 +419,8 @@ def _source_parent_instruction_with_payload(
 
 def _source_parent_prefix_with_child_text(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     instruction_pattern: re.Pattern[str],
 ) -> Optional[dict[str, str]]:
@@ -486,8 +486,8 @@ def _replace_last_parenthetical_label(ref: str, old_label: str, new_label: str) 
 
 def _source_parent_substitution_range_payload(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     target_refs: Sequence[str],
 ) -> Optional[dict[str, Any]]:
@@ -586,8 +586,8 @@ def _source_parent_substitution_range_payload(
 
 def _source_parent_at_end_added_payload(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     target_refs: Sequence[str],
 ) -> Optional[dict[str, Any]]:
@@ -652,8 +652,8 @@ def _source_parent_at_end_added_payload(
 
 def _source_parent_whole_schedule_insert_payload(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     target_refs: Sequence[str],
 ) -> Optional[dict[str, Any]]:
@@ -710,7 +710,7 @@ def _source_parent_whole_schedule_insert_payload(
 
 def _source_after_paragraph_insert_labelled_series(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
@@ -784,7 +784,7 @@ def _source_after_paragraph_insert_labelled_series(
 
 def _source_after_paragraph_insert_connector_sibling(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
@@ -837,7 +837,7 @@ def _source_after_paragraph_insert_connector_sibling(
 
 def _source_after_paragraph_insert_single_label(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
@@ -906,7 +906,7 @@ def _source_after_paragraph_insert_single_label(
 
 def _source_after_paragraph_insert_block_amendment(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
     """Lower `after paragraph (d) insert— <BlockAmendment>` rows."""
@@ -945,13 +945,13 @@ def _source_after_paragraph_insert_block_amendment(
     if not anchor_label:
         return None
 
-    def _label_stripped_text(node: ET.Element, label: str) -> str:
+    def _label_stripped_text(node: ET._Element, label: str) -> str:
         text = " ".join(_text_content(node).split()).strip()
         if label:
             text = re.sub(rf"^\s*{re.escape(label)}\s+", "", text, count=1).strip()
         return text
 
-    def _visible_structural_label(node: ET.Element) -> str:
+    def _visible_structural_label(node: ET._Element) -> str:
         return str(_direct_structural_num(node) or "").strip().strip("()").lower()
 
     child_payloads: list[dict[str, Any]] = []
@@ -997,7 +997,7 @@ def _source_after_paragraph_insert_block_amendment(
 
 def _source_after_section_subsection_range_insert_block_amendment(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
     """Lower `After section N(M) insert <BlockAmendment>` subsection ranges."""
@@ -1060,7 +1060,7 @@ def _source_after_section_subsection_range_insert_block_amendment(
 
 def _source_at_end_section_subsection_insert_block_amendment(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
     """Lower `At the end of section N(M) insert <BlockAmendment>` rows."""
@@ -1123,11 +1123,11 @@ def _source_at_end_section_subsection_insert_block_amendment(
 
 def _source_carried_structured_tail_substitution(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
     affecting_provisions: str = "",
-    source_root: Optional[ET.Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> Optional[dict[str, Any]]:
     """Lower parent-tail word substitutions carrying visible child labels.
 
@@ -1313,7 +1313,7 @@ def _source_carried_structured_tail_substitution(
 
 def _source_carried_parent_quoted_child_substitution(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
