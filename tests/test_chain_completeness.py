@@ -10,7 +10,7 @@ Covers:
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -145,6 +145,28 @@ def _blocker_sources(status: ChainCompletenessStatus, kind: str) -> list[str]:
 
 
 class TestChainCompletenessStatus:
+    def test_blocker_contract_rejects_malformed_records(self) -> None:
+        with pytest.raises(ValueError, match="kind"):
+            CompletenessBlocker(
+                kind=cast(Any, "PYTHON_ORDER_GUESS"),
+                scope_kind="section",
+                scope_ref="1",
+            )
+
+        with pytest.raises(ValueError, match="scope_ref"):
+            CompletenessBlocker(
+                kind=SOURCE_INCOMPLETE_BLOCKER,
+                scope_kind="section",
+                scope_ref="",
+            )
+
+        with pytest.raises(TypeError, match="blockers"):
+            ChainCompletenessStatus(
+                section_label="1",
+                is_complete=False,
+                blockers=cast(Any, ["not-a-blocker"]),
+            )
+
     def test_complete_chain(self) -> None:
         status = ChainCompletenessStatus(
             section_label="1",

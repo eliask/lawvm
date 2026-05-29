@@ -487,6 +487,9 @@ Recent improvement:
   optional date payloads, contingent flags, and raw-text fields at construction,
   preventing malformed temporal/applicability meaning from reaching temporal
   lowering by type-hint accident.
+- chain-completeness blockers now validate their reason-code vocabulary,
+  section/scope identifiers, source-statute type, and blocker lanes at
+  construction, protecting negative-proof evidence from malformed blocker rows.
 
 ## Ranked Promotion Candidates
 
