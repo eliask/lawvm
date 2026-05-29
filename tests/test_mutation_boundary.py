@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Any, cast
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import (
+    ChangedPathPartition,
+    MutationBoundaryReport,
     build_operation_mutation_boundary_report,
     build_mutation_boundary_report,
     dedupe_tree_paths,
@@ -61,6 +65,34 @@ def test_validate_tree_path_allows_root_and_empty_labels_but_rejects_empty_kinds
     assert validate_tree_path((("", "1"),), field_name="event path") == (
         "event path step 0 requires a non-empty kind",
     )
+
+
+def test_mutation_boundary_records_normalize_and_validate_direct_construction() -> None:
+    report = MutationBoundaryReport(
+        changed_paths=cast(Any, [[("section", 1)], [("section", 1)]]),
+        allowed_prefixes=cast(Any, [[("section", 1)]]),
+        covered_changed_paths=cast(Any, [[("section", 1)]]),
+        unexplained_changed_paths=cast(Any, []),
+    )
+
+    assert report.changed_paths == ((("section", "1"),), (("section", "1"),))
+    assert report.allowed_prefixes == ((("section", "1"),),)
+    assert report.unexplained_changed_paths == ()
+
+    partition = ChangedPathPartition(
+        covered_changed_paths=cast(Any, [[("section", 1)]]),
+        unexplained_changed_paths=cast(Any, []),
+    )
+    assert partition.covered_changed_paths == ((("section", "1"),),)
+    assert partition.unexplained_changed_paths == ()
+
+    with pytest.raises(ValueError, match="changed path step 0 requires a non-empty kind"):
+        MutationBoundaryReport(
+            changed_paths=cast(Any, [[("", "1")]]),
+            allowed_prefixes=(),
+            covered_changed_paths=(),
+            unexplained_changed_paths=(),
+        )
 
 
 def test_paths_related_handles_ancestor_descendant_and_ignored_kinds() -> None:

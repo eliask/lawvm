@@ -102,6 +102,18 @@ class ChangedPathPartition:
     covered_changed_paths: TreePaths
     unexplained_changed_paths: TreePaths
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "covered_changed_paths",
+            _validated_tree_paths(self.covered_changed_paths, field_name="covered changed path", dedupe=False),
+        )
+        object.__setattr__(
+            self,
+            "unexplained_changed_paths",
+            _validated_tree_paths(self.unexplained_changed_paths, field_name="unexplained changed path", dedupe=False),
+        )
+
 
 def partition_changed_paths(
     changed_paths: Sequence[TreePath],
@@ -140,6 +152,28 @@ class MutationBoundaryReport:
     allowed_prefixes: TreePaths
     covered_changed_paths: TreePaths
     unexplained_changed_paths: TreePaths
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "changed_paths",
+            _validated_tree_paths(self.changed_paths, field_name="changed path", dedupe=False),
+        )
+        object.__setattr__(
+            self,
+            "allowed_prefixes",
+            _validated_tree_paths(self.allowed_prefixes, field_name="allowed prefix"),
+        )
+        object.__setattr__(
+            self,
+            "covered_changed_paths",
+            _validated_tree_paths(self.covered_changed_paths, field_name="covered changed path", dedupe=False),
+        )
+        object.__setattr__(
+            self,
+            "unexplained_changed_paths",
+            _validated_tree_paths(self.unexplained_changed_paths, field_name="unexplained changed path", dedupe=False),
+        )
 
 
 def build_mutation_boundary_report(
@@ -279,6 +313,20 @@ def dedupe_tree_paths(paths: Iterable[TreePath]) -> TreePaths:
         seen.add(normalized)
         result.append(normalized)
     return tuple(result)
+
+
+def _validated_tree_paths(paths: Sequence[TreePath], *, field_name: str, dedupe: bool = True) -> TreePaths:
+    normalized = dedupe_tree_paths(paths) if dedupe else tuple(
+        tuple((str(kind), str(label)) for kind, label in path) for path in paths
+    )
+    issues = tuple(
+        issue
+        for path in normalized
+        for issue in validate_tree_path(path, field_name=field_name)
+    )
+    if issues:
+        raise ValueError("; ".join(issues))
+    return normalized
 
 
 def _dedupe_tree_paths(paths: Iterable[TreePath]) -> TreePaths:
