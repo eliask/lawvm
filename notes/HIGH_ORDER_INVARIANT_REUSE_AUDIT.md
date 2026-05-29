@@ -444,6 +444,9 @@ Recent improvement:
 - capture source-pathology views and New Zealand acquisition diagnostics now
   freeze nested detail/metadata/source-lane payloads at construction, keeping
   report-facing source evidence stable after emission.
+- invariant detector result rows now validate required identity/message fields
+  and freeze nested detail payloads at construction, so typed detector evidence
+  cannot be rewritten after message projection.
 
 ## Ranked Promotion Candidates
 
