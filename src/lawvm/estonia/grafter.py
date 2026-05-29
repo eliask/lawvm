@@ -765,6 +765,36 @@ _EE_RT_INLINE_CHANGE_NOTE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Sensor H batch 4 — module-scope static regex constants (§1.11)
+# ---------------------------------------------------------------------------
+
+# Matches a numbered item label at the start of a segment, e.g. "3) text".
+_EE_ITEM_LABEL_RE = re.compile(r"^(\d[\d\s_]*)\)\s*(.*)", re.DOTALL)
+
+# Matches quoted titles delimited by „/"/" in Estonian legal text.
+_EE_QUOTED_TITLE_RE = re.compile(r'[„“"]([^„“”"]+)[“”"]')
+
+# Matches an Estonian alphabet word token (used for typo candidate scan).
+_EE_ALPHA_WORD_RE = re.compile(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+")
+
+# Used in _extract_generic_ministry_organization_exceptions.
+_EE_MINISTRY_WORD_REPLACE_EXCEPTION_RE = re.compile(
+    r"\bvälja\s+arvatud\s+(?P<excluded>.+?),\s*loetakse\b"
+    r"(?:(?!\bvälja\s+arvatud\b).)*?"
+    r"\bsõna\s+[„“”\"'](?P<old>[^„“”\"']+)[„“”\"']\s+asendatuks\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Used in _extract_targeted_generic_ministry_exclusion_paths.
+_EE_MINISTRY_SECTION_REF_RE = re.compile(
+    r"(?P<title>[A-Za-zÀ-ž0-9 .–-]+?)\s+§(?:-s|-des)?\s*"
+    r"(?P<section>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)"
+    r"(?:\s+(?:lõikes?|lõigetes)\s+(?P<subsections>.+?))?"
+    r"(?=(?:\s*,\s*[A-Za-zÀ-ž0-9 .–-]+\s+§|\s+ja\s+\d{4}[.]|\s+ja\s+[A-Za-zÀ-ž0-9 .–-]+\s+§|$))",
+    re.IGNORECASE,
+)
+
 
 def _element_has_kehtetu_marker(el: ET.Element, ns_str: str) -> bool:
     for mm in el.findall(_ns(ns_str, "muutmismarge")):
@@ -1075,7 +1105,6 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
         return [re.sub(r"\s+", " ", segment).strip() for segment in segments]
 
     items: List[IRNode] = []
-    item_re = re.compile(r"^(\d[\d\s_]*)\)\s*(.*)", re.DOTALL)
 
     cur_label: Optional[str] = None
     cur_parts: List[str] = []
@@ -1083,7 +1112,7 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
         for segment in _segments(st):
             if not segment:
                 continue
-            match = item_re.match(segment)
+            match = _EE_ITEM_LABEL_RE.match(segment)
             if match is not None:
                 if cur_label is not None:
                     item_text = _normalize_ee_statute_surface_text(" ".join(p for p in cur_parts if p).strip())
@@ -2029,7 +2058,7 @@ def parse_ee_amendment_ops(
             pieces: list[str] = []
             protected = False
             cursor = 0
-            quote_pattern = re.compile(r'[„“"]([^„“”"]+)[“”"]')
+            quote_pattern = _EE_QUOTED_TITLE_RE
             for match in quote_pattern.finditer(text):
                 quoted = match.group(1)
                 quote_is_protected = (
@@ -2555,6 +2584,20 @@ def _space_flexible_literal(text: str) -> str:
     return r"\s+".join(re.escape(part) for part in re.split(r"\s+", text.strip()) if part)
 
 
+@lru_cache(maxsize=512)
+def _ee_cross_act_repeal_re(target_title: str) -> "re.Pattern[str] | None":
+    """Compile (cached) a cross-act transitional-repeal pattern for the given act title."""
+    title_pattern = _space_flexible_literal(target_title)
+    if not title_pattern:
+        return None
+    return re.compile(
+        title_pattern
+        + r"[”\"']?\s+§\s*[" + _EE_DASH_CLASS + r"]d\s+"
+        + r"(?P<labels>.+?)\s+tunnistatakse\s+kehtetuks\b",
+        re.IGNORECASE,
+    )
+
+
 def _parse_cross_act_transitional_section_repeals(
     root: ET.Element,
     *,
@@ -2574,15 +2617,9 @@ def _parse_cross_act_transitional_section_repeals(
     text = re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
     if not text:
         return []
-    title_pattern = _space_flexible_literal(target_title)
-    if not title_pattern:
+    pattern = _ee_cross_act_repeal_re(target_title)
+    if pattern is None:
         return []
-    pattern = re.compile(
-        title_pattern
-        + r"[”\"']?\s+§\s*[" + _EE_DASH_CLASS + r"]d\s+"
-        + r"(?P<labels>.+?)\s+tunnistatakse\s+kehtetuks\b",
-        re.IGNORECASE,
-    )
     ops: List[LegalOperation] = []
     for match in pattern.finditer(text):
         labels_surface = match.group("labels").strip(" .;")
@@ -3040,13 +3077,7 @@ def _extract_generic_ministry_exclusions_by_old_title(
     visible_text = _html.unescape(visible_text)
     visible_text = re.sub(r"\s+", " ", visible_text)
     by_old_title: dict[str, list[tuple[tuple[str, str], ...]]] = {}
-    quote = r"[„“”\"']"
-    pattern = re.compile(
-        rf"\bvälja\s+arvatud\s+(?P<excluded>.+?),\s*loetakse\b"
-        rf"(?:(?!\bvälja\s+arvatud\b).)*?\bsõna\s+{quote}(?P<old>[^„“”\"']+){quote}\s+asendatuks\b",
-        re.IGNORECASE | re.DOTALL,
-    )
-    for match in pattern.finditer(visible_text):
+    for match in _EE_MINISTRY_WORD_REPLACE_EXCEPTION_RE.finditer(visible_text):
         old_title = match.group("old").strip()
         paths = _extract_targeted_generic_ministry_exclusion_paths(
             match.group("excluded"),
@@ -3070,14 +3101,7 @@ def _extract_targeted_generic_ministry_exclusion_paths(
     if not target_title:
         return ()
     paths: list[tuple[tuple[str, str], ...]] = []
-    section_ref = re.compile(
-        r"(?P<title>[A-Za-zÀ-ž0-9 .–-]+?)\s+§(?:-s|-des)?\s*"
-        r"(?P<section>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)"
-        r"(?:\s+(?:lõikes?|lõigetes)\s+(?P<subsections>.+?))?"
-        r"(?=(?:\s*,\s*[A-Za-zÀ-ž0-9 .–-]+\s+§|\s+ja\s+\d{4}[.]|\s+ja\s+[A-Za-zÀ-ž0-9 .–-]+\s+§|$))",
-        re.IGNORECASE,
-    )
-    for match in section_ref.finditer(excluded_clause):
+    for match in _EE_MINISTRY_SECTION_REF_RE.finditer(excluded_clause):
         title_fragment = match.group("title").strip(" ,;")
         if not _title_matches_para(target_title, title_fragment):
             continue
@@ -5025,11 +5049,7 @@ def _ee_text_replace_match_spans(text: str | None, spec: EETextRewriteSpec) -> t
         case_inflected=spec.case_inflected,
     )
     for old_variant, _new_variant in variants:
-        pattern = re.compile(
-            _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-            _ee_text_replace_regex_flags(old_variant, case_inflected=spec.case_inflected),
-        )
-        for match in pattern.finditer(text):
+        for match in _ee_text_replace_regex(old_variant, case_inflected=spec.case_inflected).finditer(text):
             span = match.span()
             if span not in spans:
                 spans.append(span)
@@ -5232,8 +5252,7 @@ def _ee_typo_tolerant_text_replace(
 
     def _collect(current: IRNode, path: tuple[int, ...] = ()) -> None:
         if old.isalpha():
-            candidate_pattern = re.compile(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+")
-            for match in candidate_pattern.finditer(current.text or ""):
+            for match in _EE_ALPHA_WORD_RE.finditer(current.text or ""):
                 candidate = match.group(0)
                 candidate_norm = _ee_normalize_text_replace_surface(candidate)
                 if candidate_norm.lower() == old.lower():
@@ -5269,11 +5288,7 @@ def _ee_typo_tolerant_text_replace(
 
     def _replace(current: IRNode, path: tuple[int, ...] = ()) -> IRNode:
         if path == target_path:
-            pattern = re.compile(
-                _ee_wrap_word_boundaries(_ee_surface_pattern(actual_old), actual_old),
-                re.IGNORECASE,
-            )
-            replaced_text = pattern.sub(replacement_text, current.text or "", count=1)
+            replaced_text = _ee_text_replace_regex_ci(actual_old).sub(replacement_text, current.text or "", count=1)
             return IRNode(
                 kind=current.kind,
                 label=current.label,
@@ -5315,11 +5330,7 @@ def _ee_case_only_tolerant_text_replace(
     def _collect(current: IRNode, path: tuple[int, ...] = ()) -> None:
         text = current.text or ""
         for old_variant, new_variant in variants:
-            pattern = re.compile(
-                _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-                re.IGNORECASE,
-            )
-            for match in pattern.finditer(text):
+            for match in _ee_text_replace_regex_ci(old_variant).finditer(text):
                 actual_old = match.group(0)
                 if actual_old == old_variant:
                     continue
@@ -5335,11 +5346,6 @@ def _ee_case_only_tolerant_text_replace(
 
     def _replace(current: IRNode, path: tuple[int, ...] = ()) -> IRNode:
         if path == target_path:
-            pattern = re.compile(
-                _ee_wrap_word_boundaries(_ee_surface_pattern(actual_old), actual_old),
-                re.IGNORECASE,
-            )
-
             def _repl(match: re.Match[str]) -> str:
                 return _ee_case_preserved_replacement(
                     match,
@@ -5352,7 +5358,7 @@ def _ee_case_only_tolerant_text_replace(
                     ),
                 )
 
-            replaced_text, count = pattern.subn(_repl, current.text or "", count=1)
+            replaced_text, count = _ee_text_replace_regex_ci(actual_old).subn(_repl, current.text or "", count=1)
             if count != 1:
                 return current
             replaced_text = re.sub(r"  +", " ", replaced_text)
@@ -5405,12 +5411,8 @@ def _ee_replace_lahter_text_in_section(
 ) -> tuple[IRNode, bool]:
     """Replace the body text following a ``Lahter N`` heading child."""
     heading_index: int | None = None
-    heading_pattern = re.compile(
-        rf"^\s*Lahter\s+{re.escape(lahter_label)}\b",
-        re.IGNORECASE,
-    )
     for idx, child in enumerate(section.children):
-        if child.text and heading_pattern.search(child.text):
+        if child.text and _ee_lahter_heading_re(lahter_label).search(child.text):
             heading_index = idx
             break
     if heading_index is None:
@@ -5729,7 +5731,7 @@ def _ee_apply_text_replace_value_preserving_quoted_legal_titles(
     pieces: list[str] = []
     protected = False
     cursor = 0
-    quote_pattern = re.compile(r'[„“"]([^„“”"]+)[“”"]')
+    quote_pattern = _EE_QUOTED_TITLE_RE
     for match in quote_pattern.finditer(text):
         quoted = match.group(1)
         quoted_end = match.end()
@@ -5941,11 +5943,7 @@ def _ee_apply_text_replace_spec(
             "enne 2010. aasta 1. jaanuari. Elamu või selle osa soojusvarustuse liigina "
             "peab ehitisregistrisse olema märgitud lokaal-või kohtküte ja energiaallikaliigina tahkekütus"
         )
-        pattern = re.compile(
-            _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-            re.IGNORECASE,
-        )
-        replaced = pattern.sub("", replaced, count=0 if spec.all_occurrences else 1)
+        replaced = _ee_text_replace_regex_ci(old_variant).sub("", replaced, count=0 if spec.all_occurrences else 1)
         replaced = re.sub(r"\s+([.,;:])", r"\1", replaced)
     if (
         replaced is not None
@@ -6216,6 +6214,37 @@ def _ee_text_replace_regex(old_variant: str, *, case_inflected: bool) -> re.Patt
     )
 
 
+@lru_cache(maxsize=8192)
+def _ee_text_replace_regex_ci(old_variant: str) -> re.Pattern[str]:
+    """Compile (cached) a word-boundary-wrapped surface pattern, always IGNORECASE."""
+    return re.compile(
+        _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
+        re.IGNORECASE,
+    )
+
+
+@lru_cache(maxsize=4096)
+def _ee_surface_pattern_compiled_ci(surface: str) -> re.Pattern[str]:
+    """Compile (cached) a bare surface pattern without word-boundary wrapping, IGNORECASE."""
+    return re.compile(_ee_surface_pattern(surface), re.IGNORECASE)
+
+
+@lru_cache(maxsize=512)
+def _ee_lahter_heading_re(lahter_label: str) -> re.Pattern[str]:
+    """Compile (cached) a Lahter-N heading matcher for the given label."""
+    return re.compile(rf"^\s*Lahter\s+{re.escape(lahter_label)}\b", re.IGNORECASE)
+
+
+@lru_cache(maxsize=512)
+def _ee_inline_item_label_re(item_label: str) -> re.Pattern[str]:
+    """Compile (cached) an inline item replacement pattern for the given label."""
+    pat = re.escape(item_label).replace("_", r"\s*")
+    return re.compile(
+        rf"(?P<prefix>(?:^|\s){pat}\)\s*)(?P<body>.*?)(?=(?:\s+\d[\d\s_]*\)\s)|$)",
+        re.DOTALL,
+    )
+
+
 def _ee_replace_case_preserving(
     text: str,
     old: str,
@@ -6266,12 +6295,7 @@ def _ee_case_preserved_replacement(
 
 def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
     """Handle bounded sg_nom/sg_gen ambiguity before narrow modifier contexts."""
-    pattern = re.compile(
-        r"(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])"
-        + _ee_surface_pattern(old)
-        + r"(?![A-Za-zÄÖÕÜäöõüŠŽšž-])",
-        re.IGNORECASE,
-    )
+    pattern = _ee_text_replace_regex_ci(old)
 
     genitive_prefix_cues = {
         "iga",
@@ -6428,10 +6452,7 @@ def _ee_replace_ambiguous_partitive_object(text: str, genitive: str, partitive: 
     """Handle bounded object-position fixes when old sg_gen and sg_part coincide."""
     if not genitive or not partitive or genitive == partitive:
         return text
-    pattern = re.compile(
-        _ee_wrap_word_boundaries(_ee_surface_pattern(genitive), genitive),
-        re.IGNORECASE,
-    )
+    pattern = _ee_text_replace_regex_ci(genitive)
 
     def _repl(match: re.Match[str]) -> str:
         prefix_text = text[:match.start()]
@@ -6503,8 +6524,7 @@ def _ee_match_inside_existing_replacement(
     for surface in surfaces:
         if not surface:
             continue
-        pattern = re.compile(_ee_surface_pattern(surface), re.IGNORECASE)
-        for found in pattern.finditer(text):
+        for found in _ee_surface_pattern_compiled_ci(surface).finditer(text):
             if found.start() <= match_start and match_end <= found.end():
                 return True
     return False
@@ -7175,17 +7195,13 @@ def _ee_replace_inline_item_in_singleton_subsection(
     if not raw_text:
         return body
     replacement = f"{item_label.replace('_', ' ')}) {raw_text}"
-    pattern = re.compile(
-        rf"(?P<prefix>(?:^|\s){item_label_pattern}\)\s*)(?P<body>.*?)(?=(?:\s+\d[\d\s_]*\)\s)|$)",
-        re.DOTALL,
-    )
     current_text = subsection.text or ""
 
     def _repl(match: re.Match[str]) -> str:
         leading = " " if match.group("prefix").startswith(" ") else ""
         return leading + replacement
 
-    new_text, count = pattern.subn(_repl, current_text, count=1)
+    new_text, count = _ee_inline_item_label_re(item_label).subn(_repl, current_text, count=1)
     if count != 1 or new_text == current_text:
         return body
     _append_ee_replay_adjudication(
