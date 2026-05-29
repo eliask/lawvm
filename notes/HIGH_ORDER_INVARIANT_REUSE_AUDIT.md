@@ -1133,6 +1133,11 @@ Risk:
   booleans at direct construction time.
 - finding-registry specs now validate family, default enforcement, proof
   categories, registry role, owner, and description at construction time.
+- `DuplicateChildFinding` now validates classification vocabulary against
+  `_VALID_DUPLICATE_CHILD_CLASSIFICATIONS`, non-empty `child_kind`/`child_label`/
+  `reason`, and `child_count >= 2` at `__post_init__`; `timeline_issue_kind_for_duplicate_classification`
+  raises `ValueError` (not `KeyError`) for unknown classifications, listing
+  supported values.
 
 ## Keep Local For Now
 
