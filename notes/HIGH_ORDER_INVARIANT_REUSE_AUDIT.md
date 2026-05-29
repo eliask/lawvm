@@ -1024,6 +1024,9 @@ Risk:
 - `FrozenDict` now rejects in-place union (`|=`), closing the remaining dict
   mutator path for supposedly frozen core attrs, metadata, and evidence
   detail mappings.
+- mutation-boundary report carriers now normalize and validate directly
+  constructed path collections, while preserving changed-path multiplicity for
+  total partition accounting.
 
 ## Keep Local For Now
 
