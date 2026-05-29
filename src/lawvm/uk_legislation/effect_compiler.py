@@ -43,7 +43,10 @@ from lawvm.uk_legislation.lowering_actions import (
     _is_uk_word_level_effect_type,
     _uk_effect_type_action,
 )
-from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
+from lawvm.uk_legislation.lowering_records import (
+    _append_uk_effect_lowering_observation,
+    _append_uk_effect_lowering_rejection,
+)
 from lawvm.uk_legislation.metadata_rewrites import (
     _uk_affected_target_corrected_renumber_targets,
     _uk_metadata_renumber_targets,
@@ -87,6 +90,8 @@ from lawvm.uk_legislation.table_sources import (
     address_to_citation,
 )
 
+
+_UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
 
 
 @dataclass(frozen=True)
@@ -542,21 +547,49 @@ def compile_effect_to_ir_ops(
     targets_str = target_prelude.targets_str
     refined_targets_str = []
     for t_str in targets_str:
+        _fee_refinement_failed_helper: str = ""
+        _fee_refinement_exc: ValueError | None = None
         try:
+            _fee_refinement_failed_helper = "parse_affected_target"
             parsed_target = _parse_affected_target(t_str)
+            _fee_refinement_failed_helper = "canonicalize"
             target = canonicalize_uk_address(parsed_target)
+            _fee_refinement_failed_helper = "table_driven_refinement"
             refinement_addresses = _uk_table_driven_fee_target_refinements(
                 effect=effect,
                 source_root=source_root,
                 target=target,
             )
+            _fee_refinement_failed_helper = ""
             if refinement_addresses:
                 for ref_target in refinement_addresses:
                     refined_targets_str.append(address_to_citation(ref_target))
             else:
                 refined_targets_str.append(t_str)
-        except Exception:
+        except ValueError as exc:
+            _fee_refinement_exc = exc
             refined_targets_str.append(t_str)
+        if _fee_refinement_exc is not None:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID,
+                family="lowering_rejection",
+                reason_code="fee_target_refinement_failed",
+                reason=(
+                    f"fee-target refinement failed in {_fee_refinement_failed_helper}: "
+                    f"{_fee_refinement_exc}"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "input_t_str": t_str,
+                    "failed_helper": _fee_refinement_failed_helper,
+                    "exc_message": str(_fee_refinement_exc),
+                    "strict_disposition": "block",
+                    "quirks_disposition": "apply",
+                },
+            )
     targets_str = refined_targets_str
     original_targets_str = list(targets_str)
     mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
