@@ -24,22 +24,28 @@ Pure stdlib, no replay/XML imports (extraction-ready, same discipline as
 
 from __future__ import annotations
 
-# Canonical ordered predicate vocabulary, as regex fragments (whitespace as
-# ``\s+``).  Order is preserved so a built alternation is stable.  This is the
-# replay superset; ``shall be construed`` is the only member some sites drop.
-_PREDICATE_FRAGMENTS: tuple[str, ...] = (
-    "means",
-    r"have\s+the\s+same\s+meaning\s+as",
-    r"has\s+the\s+same\s+meaning\s+as",
-    r"have\s+the\s+meaning",
-    r"has\s+the\s+meaning",
-    r"are\s+to\s+be\s+construed",
-    r"is\s+to\s+be\s+construed",
-    r"shall\s+be\s+construed",
-    "includes",
+# Canonical ordered predicate vocabulary.  Each entry pairs the two surface
+# forms the call sites need:
+#   - regex_fragment: verbose-regex form for replay (whitespace as ``\s+``; the
+#     "same meaning" members carry the trailing ``as`` the replay grammar requires);
+#   - substring: plain lower-case form for lowering's substring-membership test
+#     (no trailing ``as`` — "has the same meaning" is a prefix that still matches
+#     "has the same meaning as ...").
+# Order matches replay's historical alternation so the built pattern is identical.
+_PREDICATES: tuple[tuple[str, str], ...] = (
+    ("means", "means"),
+    (r"have\s+the\s+same\s+meaning\s+as", "have the same meaning"),
+    (r"has\s+the\s+same\s+meaning\s+as", "has the same meaning"),
+    (r"have\s+the\s+meaning", "have the meaning"),
+    (r"has\s+the\s+meaning", "has the meaning"),
+    (r"are\s+to\s+be\s+construed", "are to be construed"),
+    (r"is\s+to\s+be\s+construed", "is to be construed"),
+    (r"shall\s+be\s+construed", "shall be construed"),
+    ("includes", "includes"),
 )
 
 _SHALL_BE_CONSTRUED = r"shall\s+be\s+construed"
+_INCLUDES = "includes"
 
 
 def predicate_alternation(*, with_shall: bool = True) -> str:
@@ -51,6 +57,17 @@ def predicate_alternation(*, with_shall: bool = True) -> str:
     ``shall be construed`` member (the ``_WITHOUT_SHALL`` variant).
     """
     fragments = [
-        f for f in _PREDICATE_FRAGMENTS if with_shall or f != _SHALL_BE_CONSTRUED
+        regex for regex, _sub in _PREDICATES if with_shall or regex != _SHALL_BE_CONSTRUED
     ]
     return "\n" + "\n|".join(fragments) + "\n"
+
+
+def predicate_substrings(*, with_includes: bool = False) -> tuple[str, ...]:
+    """Return the plain-text predicate substrings for membership testing.
+
+    ``with_includes=False`` (the lowering default) omits ``includes``, which is
+    matched only when a caller explicitly opts in.
+    """
+    return tuple(
+        sub for _regex, sub in _PREDICATES if with_includes or sub != _INCLUDES
+    )
