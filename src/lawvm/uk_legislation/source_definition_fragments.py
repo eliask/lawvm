@@ -6,6 +6,7 @@ from lxml import etree as ET
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.definition_grammar import predicate_substrings
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -1038,16 +1039,6 @@ _SOURCE_DEFINITION_INSERT_PHRASES = (
     "there shall be inserted",
     "insert",
 )
-_SOURCE_DEFINITION_ENTRY_PREDICATES = (
-    "means",
-    "has the same meaning",
-    "have the same meaning",
-    "has the meaning",
-    "have the meaning",
-    "is to be construed",
-    "are to be construed",
-    "shall be construed",
-)
 
 
 def _is_appropriate_place_instruction_prefix_token(token: str) -> bool:
@@ -1094,9 +1085,7 @@ def _looks_like_definition_entry_payload(text: str, *, include_includes: bool = 
     if not normalized:
         return False
     lower = normalized.lower()
-    predicates = _SOURCE_DEFINITION_ENTRY_PREDICATES
-    if include_includes:
-        predicates = (*predicates, "includes")
+    predicates = predicate_substrings(with_includes=include_includes)
     for pos, char in enumerate(normalized):
         close_quote = _SOURCE_DEFINITION_QUOTE_CLOSE.get(char)
         if close_quote is None:
@@ -1178,6 +1167,11 @@ def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> boo
         return False
     if not re.search(r"\binsert(?:ed|ion)?\b", norm, flags=re.I):
         return False
+    # NOTE: this predicate alternation is a third, narrower encoding of the
+    # definition vocabulary owned by definition_grammar (it omits the plural
+    # have/are variants and the trailing "as"). Reconciling it onto
+    # definition_grammar.predicate_alternation() broadens matching, so it needs
+    # before/after adjudication evidence — left divergent until then.
     return bool(
         re.search(
             r"[\"“][^\"”]{1,160}[\"”]\s*(?:,\s*[^;]{1,180})?\s+"
