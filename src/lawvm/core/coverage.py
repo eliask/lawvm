@@ -57,6 +57,19 @@ OBLIGATION_GAP_DISPOSITIONS: FrozenSet[CoverageDisposition] = frozenset(
         "duplicate_standalone_and_bundled",
     }
 )
+_COVERAGE_CLAIM_KINDS: FrozenSet[CoverageClaimKind] = frozenset(
+    {"explicit", "broad", "fallback", "supplemental"}
+)
+_COVERAGE_DISPOSITIONS: FrozenSet[CoverageDisposition] = (
+    ACTIONABLE_GAP_DISPOSITIONS | NON_ACTIONABLE_GAP_DISPOSITIONS | OBLIGATION_GAP_DISPOSITIONS
+)
+
+
+def _string_tuple(values: Tuple[str, ...], *, field_name: str) -> tuple[str, ...]:
+    result = tuple(values)
+    if not all(isinstance(value, str) for value in result):
+        raise ValueError(f"{field_name} must contain strings")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +109,16 @@ class CoverageUnit:
     payload_ref: Optional[object]
     tags: FrozenSet[str] = frozenset()
 
+    def __post_init__(self) -> None:
+        if not self.unit_id:
+            raise ValueError("CoverageUnit.unit_id must be non-empty")
+        if not self.kind:
+            raise ValueError("CoverageUnit.kind must be non-empty")
+        tags = frozenset(self.tags)
+        if not all(isinstance(tag, str) for tag in tags):
+            raise ValueError("CoverageUnit.tags must contain strings")
+        object.__setattr__(self, "tags", tags)
+
 
 @dataclass(frozen=True)
 class CoverageClaim:
@@ -122,6 +145,19 @@ class CoverageClaim:
     covered_unit_ids: FrozenSet[str]
     evidence: Tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.claim_kind not in _COVERAGE_CLAIM_KINDS:
+            raise ValueError(f"unsupported CoverageClaim.claim_kind: {self.claim_kind!r}")
+        covered_unit_ids = frozenset(self.covered_unit_ids)
+        if not all(isinstance(unit_id, str) and unit_id for unit_id in covered_unit_ids):
+            raise ValueError("CoverageClaim.covered_unit_ids must contain non-empty strings")
+        object.__setattr__(self, "covered_unit_ids", covered_unit_ids)
+        object.__setattr__(
+            self,
+            "evidence",
+            _string_tuple(self.evidence, field_name="CoverageClaim.evidence"),
+        )
+
 
 @dataclass(frozen=True)
 class CoverageGap:
@@ -145,6 +181,17 @@ class CoverageGap:
     suggested_target: Optional[object]
     evidence: Tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.unit, CoverageUnit):
+            raise ValueError("CoverageGap.unit must be a CoverageUnit")
+        if self.disposition not in _COVERAGE_DISPOSITIONS:
+            raise ValueError(f"unsupported CoverageGap.disposition: {self.disposition!r}")
+        object.__setattr__(
+            self,
+            "evidence",
+            _string_tuple(self.evidence, field_name="CoverageGap.evidence"),
+        )
+
 
 @dataclass(frozen=True)
 class CoverageIgnoredUnit:
@@ -162,6 +209,17 @@ class CoverageIgnoredUnit:
     payload_ref: Optional[object] = None
     evidence: Tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if not self.unit_kind:
+            raise ValueError("CoverageIgnoredUnit.unit_kind must be non-empty")
+        if not self.reason:
+            raise ValueError("CoverageIgnoredUnit.reason must be non-empty")
+        object.__setattr__(
+            self,
+            "evidence",
+            _string_tuple(self.evidence, field_name="CoverageIgnoredUnit.evidence"),
+        )
+
 
 @dataclass(frozen=True)
 class CoverageRejectedClaim:
@@ -170,6 +228,15 @@ class CoverageRejectedClaim:
     reason: str
     target: object
     evidence: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.reason:
+            raise ValueError("CoverageRejectedClaim.reason must be non-empty")
+        object.__setattr__(
+            self,
+            "evidence",
+            _string_tuple(self.evidence, field_name="CoverageRejectedClaim.evidence"),
+        )
 
 
 @dataclass(frozen=True)
@@ -192,6 +259,25 @@ class CoverageReport:
     gaps: Tuple[CoverageGap, ...]
     ignored_units: Tuple[CoverageIgnoredUnit, ...] = field(default_factory=tuple)
     rejected_claims: Tuple[CoverageRejectedClaim, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "units", tuple(self.units))
+        object.__setattr__(self, "claims", tuple(self.claims))
+        object.__setattr__(self, "gaps", tuple(self.gaps))
+        object.__setattr__(self, "ignored_units", tuple(self.ignored_units))
+        object.__setattr__(self, "rejected_claims", tuple(self.rejected_claims))
+        if not all(isinstance(unit, CoverageUnit) for unit in self.units):
+            raise ValueError("CoverageReport.units must contain CoverageUnit records")
+        if not all(isinstance(claim, CoverageClaim) for claim in self.claims):
+            raise ValueError("CoverageReport.claims must contain CoverageClaim records")
+        if not all(isinstance(gap, CoverageGap) for gap in self.gaps):
+            raise ValueError("CoverageReport.gaps must contain CoverageGap records")
+        if not all(isinstance(unit, CoverageIgnoredUnit) for unit in self.ignored_units):
+            raise ValueError("CoverageReport.ignored_units must contain CoverageIgnoredUnit records")
+        if not all(isinstance(claim, CoverageRejectedClaim) for claim in self.rejected_claims):
+            raise ValueError(
+                "CoverageReport.rejected_claims must contain CoverageRejectedClaim records"
+            )
 
     @property
     def uncovered_count(self) -> int:

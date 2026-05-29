@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+import pytest
 from lxml import etree
 
 from lawvm.core.coverage import CoverageClaim, CoverageGap, CoverageReport, CoverageUnit
@@ -255,6 +256,72 @@ def test_coverage_report_partitions_actionable_and_obligation_gaps() -> None:
         "container_overbundle_pathology",
         "duplicate_standalone_and_bundled",
     ]
+
+
+def test_coverage_carriers_normalize_collections_and_preserve_evidence() -> None:
+    tags = ["nonoperative"]
+    evidence = ["manual"]
+    covered_unit_ids = ["section_1"]
+
+    unit = CoverageUnit(
+        unit_id="section_1",
+        kind="section",
+        observed_label="1",
+        parent_label=None,
+        payload_ref=None,
+        tags=cast(Any, tags),
+    )
+    claim = CoverageClaim(
+        claim_kind="explicit",
+        target=None,
+        covered_unit_ids=cast(Any, covered_unit_ids),
+        evidence=cast(Any, evidence),
+    )
+    gap = CoverageGap(
+        unit=unit,
+        disposition="ignore_nonoperative",
+        suggested_target=None,
+        evidence=cast(Any, evidence),
+    )
+    report = CoverageReport(
+        units=cast(Any, [unit]),
+        claims=cast(Any, [claim]),
+        gaps=cast(Any, [gap]),
+    )
+    tags.append("later")
+    evidence.append("later")
+    covered_unit_ids.append("section_2")
+
+    assert unit.tags == frozenset({"nonoperative"})
+    assert claim.covered_unit_ids == frozenset({"section_1"})
+    assert claim.evidence == ("manual",)
+    assert gap.evidence == ("manual",)
+    assert report.units == (unit,)
+    assert report.claims == (claim,)
+    assert report.gaps == (gap,)
+
+
+def test_coverage_carriers_reject_unknown_claim_kind_and_gap_disposition() -> None:
+    unit = CoverageUnit(
+        unit_id="section_1",
+        kind="section",
+        observed_label="1",
+        parent_label=None,
+        payload_ref=None,
+    )
+
+    with pytest.raises(ValueError, match="unsupported CoverageClaim.claim_kind"):
+        CoverageClaim(
+            claim_kind=cast(Any, "implicit"),
+            target=None,
+            covered_unit_ids=frozenset({"section_1"}),
+        )
+    with pytest.raises(ValueError, match="unsupported CoverageGap.disposition"):
+        CoverageGap(
+            unit=unit,
+            disposition=cast(Any, "vanished"),
+            suggested_target=None,
+        )
 
 
 # ---------------------------------------------------------------------------
