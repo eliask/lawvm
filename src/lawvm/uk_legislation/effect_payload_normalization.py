@@ -48,6 +48,14 @@ from lawvm.uk_legislation.uk_grafter import (
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
 
 
+_UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
+    "uk_effect_payload_label_realigned_to_target_leaf"
+)
+_UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
+    "uk_effect_payload_kind_realigned_to_target_leaf"
+)
+
+
 @dataclass(frozen=True)
 class UKFlatP1paraScheduleParagraphInsertLowering:
     content_ir: Optional[dict[str, Any]]
@@ -308,6 +316,29 @@ def prepare_uk_operation_payload_node(
             and payload_kind == canonical_leaf_kind
             and not _clean_num(payload_node_mut.label or "")
         ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID,
+                family="payload_realignment",
+                reason_code="insert_payload_blank_label_realigned_to_target_leaf",
+                reason=(
+                    "UK insert payload has a blank label but its kind matches the "
+                    "target leaf kind; the payload label is realigned to the target "
+                    "leaf label so the inserted node carries the expected address."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "original_payload_label": "",
+                    "new_payload_label": leaf_label,
+                    "payload_kind": payload_kind,
+                    "target_leaf_kind": leaf_kind,
+                    "target_leaf_label": leaf_label,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "apply",
+                },
+            )
             payload_node_mut.label = leaf_label
         if (
             leaf_kind in leafish_kinds
@@ -315,6 +346,30 @@ def prepare_uk_operation_payload_node(
             and payload_kind != canonical_leaf_kind
             and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
         ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID,
+                family="payload_realignment",
+                reason_code="insert_payload_kind_realigned_to_canonical_target_leaf_kind",
+                reason=(
+                    "UK insert payload has a leafish kind that differs from the "
+                    "canonical target leaf kind but whose label number matches the "
+                    "target leaf label; the payload kind is realigned to the canonical "
+                    "target leaf kind so the inserted node has the expected structure."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "original_payload_kind": payload_kind,
+                    "new_payload_kind": canonical_leaf_kind,
+                    "payload_label": payload_node_mut.label or "",
+                    "target_leaf_kind": leaf_kind,
+                    "target_leaf_label": leaf_label,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "apply",
+                },
+            )
             payload_node_mut.kind = uk_ir_node_kind(leaf_kind)
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
