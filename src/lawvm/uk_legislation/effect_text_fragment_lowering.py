@@ -91,7 +91,13 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
 )
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.uk_grafter import _clean_num
+
+
+_UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
+    "uk_effect_word_substitution_escalated_to_structural_replace"
+)
 
 
 @dataclass(frozen=True)
@@ -366,6 +372,28 @@ def lower_uk_text_fragment_rewrite(
     ):
         # Some archive-backed UK effects are labeled as word-level substitutions even
         # though the source carries the fully substituted structural node.
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID,
+            family="action_family_recovery",
+            reason_code="word_level_effect_escalated_to_structural_replace",
+            reason=(
+                "UK effect feed row is labeled as a word-level substitution but the "
+                "source carries the fully substituted structural node matching the "
+                "target leaf kind and label; lowering escalates to a structural replace."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "source_payload_kind": str(content_ir.get("kind") or ""),
+                "source_payload_label": str(content_ir.get("label") or ""),
+                "target_leaf_kind": str(_addr_leaf_kind(target) or ""),
+                "target_leaf_label": str(_addr_leaf_label(target) or ""),
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
         return UKTextFragmentLowering(
             target=target,
             curr_action="replace",

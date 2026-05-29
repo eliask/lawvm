@@ -360,9 +360,6 @@ def test_recursive_descent_adjudication_includes_witness_fields() -> None:
 
 def test_executor_find_node_by_target_returns_none_for_ambiguous() -> None:
     """Directly test that _find_node_by_target returns None when ambiguous."""
-    from lawvm.uk_legislation.mutable_ir import UKMutableStatute
-    from lawvm.core.ir import IRStatute as _IRStatute
-
     statute = _statute_ambiguous_depth_match()
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(statute, adjudications_out=adjudications)

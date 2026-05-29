@@ -18,6 +18,7 @@ from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
+    uk_replay_recovery_action_target_detail,
 )
 from lawvm.uk_legislation.replay_schedule_list_apply import (
     _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
@@ -35,6 +36,9 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 _UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
     "uk_replay_source_label_changing_substitution_resolved"
+)
+_UK_REPLAY_REPLACE_MATERIALIZED_AS_INSERT_FOR_MISSING_LEAF_RULE_ID = (
+    "uk_replay_replace_materialized_as_insert_for_missing_leaf"
 )
 
 
@@ -449,6 +453,25 @@ class UKReplayReplaceApplyMixin:
                 if parent_node is not None and leaf_kind not in {"subparagraph", "item", "point"}:
                     inserted = self._insert_node_v2(op.target, new_node, op)
                 if inserted:
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=_UK_REPLAY_REPLACE_MATERIALIZED_AS_INSERT_FOR_MISSING_LEAF_RULE_ID,
+                        message=(
+                            "UK replay materialized a REPLACE op as an INSERT because the "
+                            "target leaf was absent from the base shape but the replacement "
+                            "payload matched the target leaf kind and label exactly."
+                        ),
+                        op=op,
+                        detail=uk_replay_recovery_action_target_detail(
+                            op,
+                            target,
+                            family="target_resolution_recovery",
+                            leaf_kind=leaf_kind,
+                            parent_path=str(parent_target),
+                            payload_kind=str(new_node.kind),
+                            payload_label=str(new_node.label or ""),
+                        ),
+                    )
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
                 else:
