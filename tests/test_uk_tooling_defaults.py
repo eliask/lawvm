@@ -118,15 +118,16 @@ def test_uk_bench_parser_accepts_replay_regime_flags() -> None:
     assert args.uk_authority_mode == "source_text_only"
 
 
-def test_uk_bench_parallel_help_describes_memory_safe_replay_default(capsys) -> None:
+def test_uk_bench_parallel_help_describes_cpu_count_default(capsys) -> None:
     parser = cli._build_parser()
 
     with pytest.raises(SystemExit):
         parser.parse_args(["bench", "-j", "uk", "--help"])
 
     text = capsys.readouterr().out
-    assert "UK replay default is memory-safe, max 4" in text
-    assert "UK/EE default: cpu_count" not in text
+    assert "UK/EE default" in text
+    assert "min(cpu_count, 8)" in text
+    assert "memory-safe, max 4" not in text
 
 
 def test_uk_bench_parser_accepts_no_save_smoke_flag() -> None:

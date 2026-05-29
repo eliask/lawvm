@@ -1029,15 +1029,20 @@ def _bench_compare_primary_score(result: _BenchResult) -> float:
 
 
 def _default_uk_bench_workers(*, do_replay: bool, cpu_count: int | None = None) -> int:
-    """Return the memory-safe default worker count for UK bench runs.
+    """Return the default worker count for UK bench runs.
 
-    Replay rows can materialize large trees and effect programs in each worker.
-    Keep the implicit default conservative for WSL2/full-corpus runs; callers
-    can still opt into higher throughput with ``--parallel``.
+    Prior to commit 89e0e152 ("Evict UK source roots after compile phase to
+    reduce peak RSS"), each replay worker could accumulate ~2.5 GB of XML parse
+    trees, so the replay default was capped at 4.  After source-root eviction
+    the per-worker peak RSS dropped to ~860 MB on the heaviest statutes; at that
+    footprint even 16 workers stay well within a 16 GB memory budget.
+
+    The default is now min(cpu_count, 8) for both replay and non-replay paths,
+    matching the EE/FI non-replay convention.  The per-statute heavy-lane guard
+    (``_partition_uk_replay_heavy_entries``) remains in place as the real
+    memory-safety net.  Pass ``--parallel N`` to override.
     """
     cpus = max(1, cpu_count or os.cpu_count() or 1)
-    if do_replay:
-        return max(1, min(4, cpus // 2 or 1))
     return max(1, min(8, cpus))
 
 
@@ -7373,8 +7378,8 @@ def main(args) -> None:  # noqa: ANN001
     if not score_text:
         print("Text similarity scoring disabled (--no-text-scores); EID scores and replay diagnostics still run.")
 
-    # Parallelism: None means --parallel was not passed → use a memory-safe
-    # default. Pass --parallel explicitly to trade RAM for throughput.
+    # Parallelism: None means --parallel was not passed → use cpu-count-bounded
+    # default (min(cpu_count, 8)). Pass --parallel N to override.
     workers = _par if _par is not None else _default_uk_bench_workers(do_replay=do_replay)
     do_save = not getattr(args, "no_save", False)
 
