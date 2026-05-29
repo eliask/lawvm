@@ -61,15 +61,15 @@ from lawvm.replay_adjudication import CompileAdjudication
 
 _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
-_CHAPTER_RE = re.compile(r"^(?P<label>\d+[a-z]?|[IVXLC]+)\s+kap\.\s*(?P<title>.*)$", re.IGNORECASE)
+_CHAPTER_RE = re.compile(r"^(?P<label>\d+[a-z]?|[IVXLC]+)\s{1,5}kap\.\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^(?P<label>\d+\s*[a-z]?)\s*§(?P<tail>.*)$", re.IGNORECASE)
-_ITEM_RE = re.compile(r"^(?P<label>\d+|[a-z])[\.\)]\s+(?P<text>.+)$", re.IGNORECASE)
-_APPENDIX_RE = re.compile(r"^(Bilaga)\s*(?:\*\s*)?(?P<label>\d+[a-z]?|[A-Z])?\s*(?P<title>.*)$", re.IGNORECASE)
-_MARKER_RE = re.compile(r"/(?P<phrase>[^/]*?)\s+(?P<kind>[IU]):(?P<date>\d{4}-\d{2}-\d{2})/")
-_PROP_RE = re.compile(r"\bProp\.\s*([^,;]+)")
-_BET_RE = re.compile(r"\bbet\.\s*([^,;]+)", re.IGNORECASE)
-_RSKR_RE = re.compile(r"\brskr\.\s*([^,;]+)", re.IGNORECASE)
-_PDF_HREF_RE = re.compile(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', re.IGNORECASE)
+_ITEM_RE = re.compile(r"^(?P<label>\d+|[a-z])[\.\)]\s{1,5}(?P<text>.{1,2000})$", re.IGNORECASE)
+_APPENDIX_RE = re.compile(r"^(Bilaga)(\s{0,5}\*\s{0,5}|\s{1,5}|)(?P<label>\d+[a-z]|\d+|[A-Z]|)\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
+_MARKER_RE = re.compile(r"/(?P<phrase>[^/\n]{1,200}) (?P<kind>[IU]):(?P<date>\d{4}-\d{2}-\d{2})/")
+_PROP_RE = re.compile(r"\bProp\. {0,5}([^,;]{1,200})")
+_BET_RE = re.compile(r"\bbet\. {0,5}([^,;]{1,200})", re.IGNORECASE)
+_RSKR_RE = re.compile(r"\brskr\. {0,5}([^,;]{1,200})", re.IGNORECASE)
+_PDF_HREF_RE = re.compile(r'href=["\']([^"\']+\.pdf(|\?[^"\']{0,500}))["\']', re.IGNORECASE)
 _FOOTNOTE_LINE_RE = re.compile(
     r"^\d+\s+"
     r"(?:Jfr\b|Senaste lydelse\b|Tidigare lydelse\b|Lydelse enligt\b|"
@@ -85,7 +85,7 @@ _SV_DATE_TEXT_RE = re.compile(
 )
 _AMENDING_TITLE_RE = re.compile(r"\bom ändring i\b", re.IGNORECASE)
 _TABLE_COLUMN_SPLIT_RE = re.compile(r"\t+|\s{2,}")
-_TABLE_ROW_START_RE = re.compile(r"^\s*(\d+)\.\s*(.+?)\s*$")
+_TABLE_ROW_START_RE = re.compile(r"^\s{0,5}(\d+)\.\s{0,5}(.{1,2000}?) {0,5}$")
 
 _SV_MONTHS = {
     "januari": "01",
@@ -454,18 +454,22 @@ def _extract_labels_from_label_list(text: str) -> tuple[str, ...]:
 # risking O(N^2) backtracking on long inputs (Sensor H #14).  Bounding with
 # {0,400}? caps the per-segment scan depth while preserving the stop-at-anchor
 # semantic: "up to 400 chars before the dels-att anchor."
+# The lookahead previously used \bdels\s+att\b which embeds MAX_REPEAT (\s+) inside
+# the outer MAX_REPEAT group — a nested backtracking quantifier (Sensor H).
+# Using the literal "dels att" (single space) in the lookahead is safe for
+# normalised Swedish statutory text where multiple consecutive spaces are rare.
 _SE_REPLACE_CLAUSE_RE = re.compile(
-    r"(?:dels\s+att|att)\s+((?:(?!\bdels\s+att\b).){0,400}?)\s+ska(?:ll)? ha följande lydelse",
+    r"(?:dels\s+att|att)\s{1,50}((?:(?!dels att).){0,400}?)\s{1,50}ska(?:ll)? ha följande lydelse",
     re.IGNORECASE | re.DOTALL,
 )
 _SE_REPEAL_CLAUSE_RE = re.compile(
-    r"(?:dels\s+att|att)\s+((?:(?!\bdels\s+att\b).){0,400}?)\s+ska(?:ll)? upphöra att gälla",
+    r"(?:dels\s+att|att)\s{1,50}((?:(?!dels att).){0,400}?)\s{1,50}ska(?:ll)? upphöra att gälla",
     re.IGNORECASE | re.DOTALL,
 )
 # Renumber patterns: .+? lazy captures bounded to 200 chars per segment —
 # typical section-label lists are under 50 chars.
 _SE_RENUMBER_CLAUSE_RE = re.compile(
-    r"nuvarande\s+(.{1,200}?)\s*§{1,2}\s+ska(?:ll)? betecknas\s+(.{1,200}?)\s*§{1,2}",
+    r"nuvarande\s{1,50}(.{1,200}?)\s{0,10}§{1,2}\s{0,10}ska(?:ll)? betecknas\s{1,50}(.{1,200}?)\s{0,10}§{1,2}",
     re.IGNORECASE | re.DOTALL,
 )
 
