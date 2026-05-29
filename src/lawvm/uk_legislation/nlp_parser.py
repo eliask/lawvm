@@ -1,3 +1,61 @@
+"""UK source-carried text-rewrite instruction parser.
+
+This module recognizes a small drafting-instruction language used in UK
+effect/source text and lowers it to legacy fragment-substitution dictionaries.
+It is the grammar boundary: ``parse_fragment_substitution`` normalizes the
+source text and returns ``{original, replacement, occurrence, rule_id, ...}``
+dicts produced by a cached single parse.  The output is not match/no-match; it
+is a lowering from a source phrase to a LawVM text operation.
+
+The semantic grammar (families, not an exhaustive list — see the ``rule_id``
+constants and ``REGEX_TO_GRAMMAR_MIGRATION.md`` for the full inventory):
+
+    substitution:
+        for Selector substitute Payload
+        for Selector there is/are substituted Payload
+        Selector is/are replaced with Payload
+        (quoted / block / passive / child-qualified / mixed body+heading)
+
+    insertion:
+        after Selector insert Payload
+        before Selector insert Payload
+        at the beginning / at the end insert Payload
+
+    omission / repeal:
+        omit Selector
+        Selector is/are omitted / repealed / cease(s) to have effect
+
+    range:
+        from Anchor to Anchor
+        from Anchor to the end
+        after/following Anchor to the end
+
+    definition:
+        in / after / before the definition of Term ...
+        definition child / definition-entry rewrites
+
+    occurrence scope (the ``occurrence`` field):
+        single occurrence
+        all occurrences / wherever occurring / each occasion
+        ordinal occurrence(s) (first..fifth, mapped to "1".."5")
+        respectively-paired substitutions
+
+Selectors: most fragments carry the selected text directly in ``original``, but
+some encode a hidden selector language via ``TEXT_*`` sentinel strings
+(``TEXT_FROM_X_TO_END``, ``TEXT_AFTER_<anchor>_TO_END``, ``TEXT_DEFINITION_CHILD_*``,
+``TEXT_TABLE_CELL_PARAGRAPH_*``, ``TEXT_OPENING_WORDS``, ``TEXT_BEGINNING``,
+``TEXT_END`` …).  These travel parser → lowering → replay and are re-parsed
+downstream.  New code should prefer the typed ``UKTextSelector`` objects in
+``text_selectors.py`` and serialize to legacy strings only at the
+parser/lowering/replay compatibility boundary.
+
+Rule order and span-overlap suppression (``_span_overlaps`` /
+``_deduplicate_fragment_substitutions``) are part of the current semantics.  Do
+NOT reorder recognizers unless parity tests show no corpus-visible change.
+
+See AGENTS.md §1.11/§1.13 for the regex discipline this module follows.
+"""
+
 import re
 from dataclasses import dataclass
 from functools import lru_cache
