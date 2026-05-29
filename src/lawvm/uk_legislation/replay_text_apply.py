@@ -5,6 +5,7 @@ from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TypeAlias
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
+from lawvm.uk_legislation.definition_grammar import predicate_alternation
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.nlp_parser import US
@@ -58,28 +59,11 @@ class DirectChildTextRewriteMatch(NamedTuple):
     child: UKMutableNode
 
 
-_UK_DEFINITION_PREDICATE_PATTERN = r"""
-means
-|have\s+the\s+same\s+meaning\s+as
-|has\s+the\s+same\s+meaning\s+as
-|have\s+the\s+meaning
-|has\s+the\s+meaning
-|are\s+to\s+be\s+construed
-|is\s+to\s+be\s+construed
-|shall\s+be\s+construed
-|includes
-"""
-
-_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL = r"""
-means
-|have\s+the\s+same\s+meaning\s+as
-|has\s+the\s+same\s+meaning\s+as
-|have\s+the\s+meaning
-|has\s+the\s+meaning
-|are\s+to\s+be\s+construed
-|is\s+to\s+be\s+construed
-|includes
-"""
+# Definition predicate vocabulary is owned by definition_grammar (single source
+# of truth shared with lowering). These builders reproduce the historical
+# constants byte-for-byte.
+_UK_DEFINITION_PREDICATE_PATTERN = predicate_alternation(with_shall=True)
+_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL = predicate_alternation(with_shall=False)
 
 _UK_NEXT_DEFINITION_PATTERN = re.compile(
     rf"""
