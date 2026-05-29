@@ -462,6 +462,9 @@ Recent improvement:
   vocabularies, normalize coverage/evidence lanes, and reject malformed report
   rows at construction, so uncovered-body classifications cannot disappear by
   falling outside known buckets.
+- typed table surface carriers now validate row-key basis/strength vocabularies,
+  normalize row/cell lanes, and reject malformed row/body records, keeping
+  table-target evidence stable after projection from IR or oracle XML.
 
 ## Ranked Promotion Candidates
 
