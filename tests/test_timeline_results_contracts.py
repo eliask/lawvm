@@ -5,8 +5,11 @@ from typing import Any, cast
 import pytest
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline
+from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline_results import (
+    MaterializationLineageDecision,
+    MaterializationLineagePlan,
     MaterializationCertificate,
     MaterializationResult,
     TimelineCompilationResult,
@@ -93,4 +96,58 @@ def test_timeline_compilation_result_rejects_mismatched_mapping_key() -> None:
             timelines={
                 _address(): ProvisionTimeline(address=LegalAddress(path=(("section", "2"),)))
             }
+        )
+
+
+def test_materialization_lineage_plan_normalizes_migration_events() -> None:
+    source = _address()
+    destination = LegalAddress(path=(("section", "2"),))
+    event = MigrationEvent(
+        event_id="mig:test:1",
+        kind="move",
+        from_address=source,
+        to_address=destination,
+        effective="2024-01-01",
+    )
+
+    plan = MaterializationLineagePlan(
+        mode="raw_with_migrations",
+        migration_events=cast(Any, [event]),
+    )
+
+    assert plan.migration_events == (event,)
+
+
+def test_materialization_lineage_plan_rejects_invalid_mode() -> None:
+    with pytest.raises(ValueError, match="mode"):
+        MaterializationLineagePlan(mode=cast(Any, "raw_last_write_wins"))
+
+
+def test_materialization_lineage_decision_freezes_timeline_mapping() -> None:
+    address = _address()
+    timelines = {address: ProvisionTimeline(address=address)}
+
+    decision = MaterializationLineageDecision(
+        timelines=timelines,
+        timeline_source="raw",
+        lineage_plan=MaterializationLineagePlan(mode="raw_with_migrations"),
+    )
+
+    timelines[LegalAddress(path=(("section", "2"),))] = ProvisionTimeline(
+        address=LegalAddress(path=(("section", "2"),))
+    )
+
+    assert tuple(decision.timelines) == (address,)
+    with pytest.raises(TypeError):
+        cast(Any, decision.timelines)[LegalAddress(path=(("section", "3"),))] = ProvisionTimeline(
+            address=LegalAddress(path=(("section", "3"),))
+        )
+
+
+def test_materialization_lineage_decision_rejects_invalid_source() -> None:
+    with pytest.raises(ValueError, match="timeline_source"):
+        MaterializationLineageDecision(
+            timelines={_address(): ProvisionTimeline(address=_address())},
+            timeline_source=cast(Any, "python_order"),
+            lineage_plan=MaterializationLineagePlan(mode="raw_with_migrations"),
         )

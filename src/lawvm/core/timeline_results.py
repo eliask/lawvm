@@ -13,6 +13,25 @@ from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE
 from lawvm.core.provenance import MigrationEvent
 
 Timelines = dict[LegalAddress, ProvisionTimeline]
+_LINEAGE_PLAN_MODES = frozenset(
+    {"raw_with_migrations", "rekeyed_with_migrations", "rekeyed_only"}
+)
+_LINEAGE_TIMELINE_SOURCES = frozenset({"raw", "rekeyed"})
+
+
+def _normalize_timelines(timelines: Mapping[LegalAddress, ProvisionTimeline]) -> Mapping[LegalAddress, ProvisionTimeline]:
+    if not isinstance(timelines, Mapping):
+        raise TypeError("timelines must be a mapping")
+    normalized: dict[LegalAddress, ProvisionTimeline] = {}
+    for address, timeline in timelines.items():
+        if not isinstance(address, LegalAddress):
+            raise TypeError("timeline keys must be LegalAddress")
+        if not isinstance(timeline, ProvisionTimeline):
+            raise TypeError("timeline values must be ProvisionTimeline")
+        if timeline.address != address:
+            raise ValueError("timeline address must match mapping key")
+        normalized[address] = timeline
+    return MappingProxyType(normalized)
 
 
 @dataclass(frozen=True)
@@ -21,6 +40,15 @@ class MaterializationLineagePlan:
 
     mode: Literal["raw_with_migrations", "rekeyed_with_migrations", "rekeyed_only"]
     migration_events: tuple[MigrationEvent, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.mode not in _LINEAGE_PLAN_MODES:
+            raise ValueError("MaterializationLineagePlan.mode is not supported")
+        object.__setattr__(self, "migration_events", tuple(self.migration_events))
+        if any(not isinstance(event, MigrationEvent) for event in self.migration_events):
+            raise TypeError(
+                "MaterializationLineagePlan.migration_events must contain MigrationEvent"
+            )
 
 
 @dataclass(frozen=True)
@@ -31,6 +59,17 @@ class MaterializationLineageDecision:
     timeline_source: Literal["raw", "rekeyed"]
     lineage_plan: MaterializationLineagePlan
     reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "timelines", _normalize_timelines(self.timelines))
+        if self.timeline_source not in _LINEAGE_TIMELINE_SOURCES:
+            raise ValueError("MaterializationLineageDecision.timeline_source is not supported")
+        if not isinstance(self.lineage_plan, MaterializationLineagePlan):
+            raise TypeError(
+                "MaterializationLineageDecision.lineage_plan must be MaterializationLineagePlan"
+            )
+        if not isinstance(self.reason, str):
+            raise TypeError("MaterializationLineageDecision.reason must be a string")
 
 TimelineIssueKind = Literal[
     "ambiguous_suffix",
@@ -304,22 +343,7 @@ class TimelineCompilationResult:
     issues: tuple[TimelineIssue, ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.timelines, Mapping):
-            raise TypeError("TimelineCompilationResult.timelines must be a mapping")
-        normalized_timelines: dict[LegalAddress, ProvisionTimeline] = {}
-        for address, timeline in self.timelines.items():
-            if not isinstance(address, LegalAddress):
-                raise TypeError("TimelineCompilationResult.timelines keys must be LegalAddress")
-            if not isinstance(timeline, ProvisionTimeline):
-                raise TypeError(
-                    "TimelineCompilationResult.timelines values must be ProvisionTimeline"
-                )
-            if timeline.address != address:
-                raise ValueError(
-                    "TimelineCompilationResult timeline address must match mapping key"
-                )
-            normalized_timelines[address] = timeline
-        object.__setattr__(self, "timelines", MappingProxyType(normalized_timelines))
+        object.__setattr__(self, "timelines", _normalize_timelines(self.timelines))
         object.__setattr__(self, "issues", tuple(self.issues))
         if any(not isinstance(issue, TimelineIssue) for issue in self.issues):
             raise TypeError("TimelineCompilationResult.issues must contain TimelineIssue")

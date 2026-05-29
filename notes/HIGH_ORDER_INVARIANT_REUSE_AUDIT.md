@@ -480,6 +480,9 @@ Recent improvement:
   incompatible consistency/divergence rows, and obvious emitted-row count drift,
   while preserving zero-count defaults for legacy callers that omit summary
   counts.
+- materialization lineage plan/decision carriers now validate plan modes,
+  timeline sources, migration-event lanes, and freeze the chosen timeline input
+  mapping, so raw-vs-rekeyed PIT decisions cannot be mutated after selection.
 
 ## Ranked Promotion Candidates
 
