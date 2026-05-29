@@ -578,6 +578,7 @@ Recent improvement:
   RuntimeError-propagates).
 
 - boolean text classifiers in `source_adjudication.py` (like `_looks_like_referent_qualified_text_substitution`) follow the bounded-regex + fast-guard pattern per §1.11: three substring guards eliminate the regex path for non-matching inputs, and `.{0,500}` quantifiers replace unbounded `.+` to prevent O(N^3) backtracking; module-scope `re.compile` with `chr()` for non-ASCII quote chars keeps the constant definition ASCII-safe.
+- UK fee-table rows are now indexed once per source_root via `_uk_get_fee_table_index` (§1.11 pattern: structural data walked per effect → walk once and index); a `WeakKeyDictionary` cache keyed on the source_root `ET.Element` holds the pre-built `_UKFeeTableIndexEntry` tuples — including pre-lowercased `col1_lower` — for the lifetime of that source_root, eliminating the 132,140 repeated `source_root.iter()` + `_uk_table_rows_with_rowspans` calls that drove 145M+ str.split/str.lower ops and 2.5 GB RSS on ukpga/1970/9.
 
 ## Ranked Promotion Candidates
 

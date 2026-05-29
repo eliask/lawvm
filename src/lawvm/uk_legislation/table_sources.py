@@ -2888,6 +2888,114 @@ def _uk_table_is_fee_table(table: ET.Element) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# §1.11 Hot-path: fee-table row index, built once per source_root
+#
+# Sensor G's cProfile of ukpga/1970/9 identified _uk_table_driven_fee_target_
+# refinements (2393 calls) and _uk_table_driven_fee_substitution (1033 calls)
+# each walking source_root.iter() and calling _uk_table_rows_with_rowspans for
+# every fee table, per effect row — 132,140 total invocations producing 99M+
+# str.split + str.lower calls.  The same source_root is shared across all
+# effects from the same affecting act (see extraction_cache in
+# uk_amendment_replay.compile_ops_for_statute).
+#
+# Fix: build the fee-table index once per source_root, cache it with a
+# WeakKeyDictionary so it is released when source_root is GC'd.  The cache is
+# bounded per source_root (not process-global) and invalidated automatically.
+# ---------------------------------------------------------------------------
+
+
+class _UKFeeTableIndexRow(NamedTuple):
+    """One row from a fee table with precomputed normalized fields."""
+    cells: tuple[str, ...]
+    col0: str
+    col1: str
+    col1_lower: str
+    col2: str
+    col3: str  # empty string if row has < 4 columns
+    col4: str  # empty string if row has < 5 columns
+
+
+@dataclass(frozen=True)
+class _UKFeeTableIndexEntry:
+    """Pre-built index for one fee table element."""
+    table_index: int
+    rows: tuple[_UKFeeTableIndexRow, ...]
+
+
+# Process-level cache: source_root → list[_UKFeeTableIndexEntry]
+# WeakKeyDictionary releases the entry when source_root is GC'd.
+_UK_FEE_TABLE_INDEX_CACHE: weakref.WeakKeyDictionary[
+    ET.Element, tuple[_UKFeeTableIndexEntry, ...]
+] = weakref.WeakKeyDictionary()
+
+
+def _uk_build_fee_table_index(
+    source_root: ET.Element,
+) -> tuple[_UKFeeTableIndexEntry, ...]:
+    """Walk source_root once, build the fee-table row index, and cache it."""
+    entries: list[_UKFeeTableIndexEntry] = []
+    table_index = 0
+    for el in source_root.iter():
+        if el.tag.split("}")[-1].lower() != "table":
+            continue
+        raw_rows = _uk_table_rows_with_rowspans(el)
+        # Check if this is a fee table (same logic as _uk_table_is_fee_table)
+        is_fee = False
+        for row in raw_rows[:3]:
+            header = " ".join(row).lower()
+            if "enactment specifying fees" in header or "fee payable" in header:
+                is_fee = True
+                break
+        if not is_fee:
+            continue
+        # Build pre-normalized row records
+        index_rows: list[_UKFeeTableIndexRow] = []
+        for row in raw_rows:
+            col0 = row[0].strip() if len(row) > 0 else ""
+            col1 = row[1].strip() if len(row) > 1 else ""
+            col2 = row[2].strip() if len(row) > 2 else ""
+            col3 = row[3].strip() if len(row) > 3 else ""
+            col4 = row[4].strip() if len(row) > 4 else ""
+            index_rows.append(
+                _UKFeeTableIndexRow(
+                    cells=tuple(row),
+                    col0=col0,
+                    col1=col1,
+                    col1_lower=col1.lower(),
+                    col2=col2,
+                    col3=col3,
+                    col4=col4,
+                )
+            )
+        entries.append(
+            _UKFeeTableIndexEntry(
+                table_index=table_index,
+                rows=tuple(index_rows),
+            )
+        )
+        table_index += 1
+    result = tuple(entries)
+    _UK_FEE_TABLE_INDEX_CACHE[source_root] = result
+    return result
+
+
+def _uk_get_fee_table_index(
+    source_root: ET.Element,
+) -> tuple[_UKFeeTableIndexEntry, ...]:
+    """Return the fee-table index for source_root, building it on first call."""
+    cached = _UK_FEE_TABLE_INDEX_CACHE.get(source_root)
+    if cached is not None:
+        return cached
+    return _uk_build_fee_table_index(source_root)
+
+
+# Fee-table column keyword set (used in both fee functions)
+_UK_FEE_TABLE_PROVISION_KEYWORDS: tuple[str, ...] = (
+    "section", "schedule", "s.", "sch.", "para"
+)
+
+
 def _uk_table_driven_fee_substitution(
     *,
     effect: UKEffectRecord,
@@ -2904,42 +3012,36 @@ def _uk_table_driven_fee_substitution(
             )
         return _UKTableDrivenWordSubstitution(recognized=False)
 
-    tables = [
-        el
-        for el in source_root.iter()
-        if el.tag.split("}")[-1].lower() == "table" and _uk_table_is_fee_table(el)
-    ]
-    if not tables:
+    fee_tables = _uk_get_fee_table_index(source_root)
+    if not fee_tables:
         return _UKTableDrivenWordSubstitution(recognized=False)
 
     affected_year = str(effect.affected_year or "")
     matches: list[_UKTableDrivenFeeSubstitutionMatch] = []
 
-    for table_index, table in enumerate(tables):
-        rows = _uk_table_rows_with_rowspans(table)
+    for entry in fee_tables:
         current_chapter = ""
         current_act_title = ""
         current_provision = ""
 
-        for row in rows:
-            if len(row) < 3:
+        for irow in entry.rows:
+            if len(irow.cells) < 3:
                 continue
 
-            col0 = row[0].strip()
-            col1 = row[1].strip()
-            col2 = row[2].strip()
+            col0 = irow.col0
+            col1 = irow.col1
+            col2 = irow.col2
+            col1_lower = irow.col1_lower
 
             if col0:
                 current_chapter = col0
-                col1_lower = col1.lower()
-                if not any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                if not any(x in col1_lower for x in _UK_FEE_TABLE_PROVISION_KEYWORDS):
                     current_act_title = col1
                     current_provision = ""
                     continue
 
             if col1:
-                col1_lower = col1.lower()
-                if any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                if any(x in col1_lower for x in _UK_FEE_TABLE_PROVISION_KEYWORDS):
                     current_provision = col1
 
             if not current_provision:
@@ -2954,16 +3056,16 @@ def _uk_table_driven_fee_substitution(
                 target=target,
                 affected_year=affected_year,
             ):
-                new_fee = row[3].strip() if len(row) > 3 else ""
-                old_fee = row[4].strip() if len(row) > 4 else ""
+                new_fee = irow.col3
+                old_fee = irow.col4
                 original = f"TEXT_FEE_SUM_{old_fee}" if old_fee else "TEXT_FEE_SUM_ANY"
                 if new_fee:
                     matches.append(
                         _UKTableDrivenFeeSubstitutionMatch(
-                            table_index=table_index,
+                            table_index=entry.table_index,
                             original=original,
                             replacement=new_fee,
-                            row_text=" | ".join(row[:4]),
+                            row_text=" | ".join(irow.cells[:4]),
                         )
                     )
 
@@ -3188,42 +3290,36 @@ def _uk_table_driven_fee_target_refinements(
     if source_root is None:
         return []
 
-    tables = [
-        el
-        for el in source_root.iter()
-        if el.tag.split("}")[-1].lower() == "table" and _uk_table_is_fee_table(el)
-    ]
-    if not tables:
+    fee_tables = _uk_get_fee_table_index(source_root)
+    if not fee_tables:
         return []
 
     affected_year = str(effect.affected_year or "")
     refined_targets = []
 
-    for table in tables:
-        rows = _uk_table_rows_with_rowspans(table)
+    for entry in fee_tables:
         current_chapter = ""
         current_act_title = ""
         current_provision = ""
 
-        for row in rows:
-            if len(row) < 3:
+        for irow in entry.rows:
+            if len(irow.cells) < 3:
                 continue
 
-            col0 = row[0].strip()
-            col1 = row[1].strip()
-            col2 = row[2].strip()
+            col0 = irow.col0
+            col1 = irow.col1
+            col2 = irow.col2
+            col1_lower = irow.col1_lower
 
             if col0:
                 current_chapter = col0
-                col1_lower = col1.lower()
-                if not any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                if not any(x in col1_lower for x in _UK_FEE_TABLE_PROVISION_KEYWORDS):
                     current_act_title = col1
                     current_provision = ""
                     continue
 
             if col1:
-                col1_lower = col1.lower()
-                if any(x in col1_lower for x in ["section", "schedule", "s.", "sch.", "para"]):
+                if any(x in col1_lower for x in _UK_FEE_TABLE_PROVISION_KEYWORDS):
                     current_provision = col1
 
             if not current_provision:
