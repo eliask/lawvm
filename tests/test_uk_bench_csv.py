@@ -36,10 +36,20 @@ def test_uk_bench_commencement_score_requires_commenced_eid_evidence() -> None:
     assert uk_bench._score_commenced_eids({"section-1"}, {"section-1", "section-2"}) == 0.5
 
 
-def test_uk_bench_default_workers_are_memory_safe_for_replay() -> None:
+def test_uk_bench_parallel_default_respects_cpu_count() -> None:
+    # After source-root eviction (commit 89e0e152) per-worker peak RSS dropped
+    # to ~860 MB; the old replay cap of 4 is no longer needed.  Both replay and
+    # non-replay paths now use min(cpu_count, 8).
     assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=1) == 1
-    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=4) == 2
-    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=32) == 4
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=4) == 4
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=8) == 8
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=16) == 8
+    assert uk_bench._default_uk_bench_workers(do_replay=True, cpu_count=32) == 8
+
+
+def test_uk_bench_parallel_user_override() -> None:
+    # do_replay=False path is unchanged: min(cpu_count, 8).
+    assert uk_bench._default_uk_bench_workers(do_replay=False, cpu_count=4) == 4
     assert uk_bench._default_uk_bench_workers(do_replay=False, cpu_count=32) == 8
 
 
