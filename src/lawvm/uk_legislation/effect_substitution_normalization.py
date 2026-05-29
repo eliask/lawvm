@@ -16,12 +16,8 @@ from lawvm.uk_legislation.source_payload_elaboration import (
     _substituted_series_new_sibling_insert_detail,
     _substituted_series_pre_anchor_sibling_insert_detail,
 )
-from lawvm.uk_legislation.provision_extractor import (
-    _instruction_text_before_amendment_container,
-)
 from lawvm.uk_legislation.target_anchors import (
     _fallback_target_eid,
-    _source_after_insertion_anchor,
 )
 from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -298,7 +294,7 @@ def lower_substituted_payload_insert_normalization(
                 anchor_preceding_eid_source=UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID,
             )
 
-    # --- Letter-suffix new-leaf insert promotion (A13) ---
+    # --- Letter-suffix new-leaf insert promotion (A13 widened for Pattern C) ---
     # When a Replace op targets a provision with an alphanumeric-suffix label
     # (e.g. section:19/subsection:3a, section:1a) and the payload matches the
     # target leaf exactly, the source is inserting a genuinely new provision
@@ -306,25 +302,27 @@ def lower_substituted_payload_insert_normalization(
     # 3 and 4". Emitting Replace here relies on replay-time recovery
     # (uk_replay_replace_materialized_as_insert_for_missing_leaf). Promoting to
     # Insert with the numeric-stem anchor is the correct lowering shape.
-    # Guard: only promote when the payload came from real source XML (not
-    # synthesized by infer_source_payload_from_target) AND the instruction text
-    # confirms an "after [anchor] insert" pattern. Without the second guard,
-    # any "substituted" effect targeting an existing letter-suffix provision
-    # (e.g. "For subsection (1A) substitute—") would be incorrectly promoted.
+    #
+    # Guard 4 (original A13): instruction text contained "after [anchor] insert".
+    # This was too defensive — Pattern C cases are pure substitutions of a
+    # letter-suffix leaf ("For subsection (1A) substitute—") whose target doesn't
+    # yet exist in the replayed state because an earlier insertion wasn't replayed.
+    # The instruction-text guard excluded them. Widened guard: target leaf label
+    # is structurally a letter-suffix (digits + letters, e.g. 3A, 1B, 6ZA). This
+    # is the same structural signal A13 already uses via _letter_suffix_anchor_address.
+    # Guards 1–3 (real XML payload, payload matches target leaf) are unchanged and
+    # remain the primary false-positive filter: genuine in-place edits on existing
+    # letter-suffix leaves normally carry a text-fragment payload that does NOT
+    # structurally match the leaf, so _source_payload_matches_target_leaf rejects them.
+    #
+    # Pattern B (block-substitution group tail) is handled above by A15 and cannot
+    # reach here (A15 guard requires target_index > 0 within a group of >= 2).
     if (
         curr_action == "replace"
         and source_payload_actual_el is not None
         and _source_payload_matches_target_leaf(content_ir, target)
     ):
-        instruction_text = (
-            _instruction_text_before_amendment_container(extracted_el)
-            if extracted_el is not None
-            else (extracted_text or "")
-        )
-        source_anchor = _source_after_insertion_anchor(instruction_text, target)
-        anchor_addr = (
-            _letter_suffix_anchor_address(target) if source_anchor.eid else None
-        )
+        anchor_addr = _letter_suffix_anchor_address(target)
         if anchor_addr is not None:
             anchor_eid = _fallback_target_eid(anchor_addr)
             leaf_kind = _addr_leaf_kind(target) or ""

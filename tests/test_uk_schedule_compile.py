@@ -30728,7 +30728,11 @@ def test_compile_embedded_table_structural_subsection_substitution_is_not_table_
     )
 
     assert len(ops) == 1
-    assert ops[0].action is StructuralAction.REPLACE
+    # A16 (Actuator 16): the widened letter-suffix structural guard now promotes
+    # letter-suffix targets to Insert regardless of instruction text. subsection:1a
+    # is a letter-suffix label so the op becomes INSERT with the numeric-stem anchor.
+    # Replay-time apply will fall back to Replace semantics if the leaf already exists.
+    assert ops[0].action is StructuralAction.INSERT
     assert ops[0].target == LegalAddress(path=(("section", "132"), ("subsection", "1a")))
     assert ops[0].payload is not None
     assert ops[0].payload.label == "1A"
@@ -30740,6 +30744,11 @@ def test_compile_embedded_table_structural_subsection_substitution_is_not_table_
     )
     assert not any(
         row["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        for row in lowering_rejections
+    )
+    # A16 promotion observation must also be emitted.
+    assert any(
+        row["rule_id"] == "uk_effect_after_anchor_insert_promoted"
         for row in lowering_rejections
     )
 

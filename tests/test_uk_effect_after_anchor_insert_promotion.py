@@ -28,6 +28,7 @@ from typing import Any, Optional
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effect_substitution_normalization import (
     UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID,
+    UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID,
     UKSubstitutedPayloadInsertNormalization,
     _letter_suffix_anchor_address,
     _letter_suffix_anchor_label,
@@ -461,12 +462,14 @@ def test_promotion_with_none_rejections_out_does_not_crash() -> None:
     assert result.curr_action == "insert"
 
 
-def test_substitute_instruction_text_not_promoted() -> None:
-    """Replace for letter-suffix target where source says 'For X substitute' is NOT promoted.
+def test_substitute_instruction_text_promoted_pattern_c() -> None:
+    """Replace for letter-suffix target where source says 'For X substitute' IS promoted (Pattern C).
 
-    'For subsection (1A) substitute—' targets an existing provision; there is no
-    'after [anchor] insert' signal, so the promotion must not fire even though the
-    payload matches the target leaf and actual_el is present.
+    Actuator 16 widened guard 4: the original A13 guard required instruction text to contain
+    'after [anchor] insert', which excluded Pattern C — pure substitutions of a letter-suffix
+    leaf ('For subsection (1A) substitute—') whose target didn't yet exist in the replayed
+    state. The widened structural guard fires whenever the leaf label is a letter-suffix,
+    regardless of instruction text.
     """
     for_substitute_el = ET.fromstring(
         f"""
@@ -505,12 +508,15 @@ def test_substitute_instruction_text_not_promoted() -> None:
         extracted_el=for_substitute_el,
         lowering_rejections_out=observations,
     )
-    assert result.curr_action == "replace", (
-        f"'For X substitute' instruction must NOT be promoted to insert, got {result.curr_action!r}"
+    # Pattern C: 'For X substitute' on a letter-suffix target with matching structural
+    # payload is now promoted to insert (A16 widened guard).
+    assert result.curr_action == "insert", (
+        f"Pattern C 'For X substitute' on letter-suffix target must be promoted to insert, "
+        f"got {result.curr_action!r}"
     )
     rule_ids = [obs.get("rule_id") for obs in observations]
-    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID not in rule_ids, (
-        "Promotion must NOT fire when instruction text says 'For X substitute', not 'after X insert'"
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID in rule_ids, (
+        "Promotion observation must fire for Pattern C 'For X substitute' letter-suffix case"
     )
 
 
@@ -589,3 +595,329 @@ def test_toplevel_section_1a_promoted() -> None:
     assert result.anchor_preceding_eid is not None
     rule_ids = [obs.get("rule_id") for obs in observations]
     assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID in rule_ids
+
+
+# ===========================================================================
+# Pattern C tests (Actuator 16 — widened structural guard)
+# ===========================================================================
+#
+# These tests verify that the widened A13 guard (drop instruction-text
+# requirement, use structural letter-suffix check) correctly handles Pattern C:
+# single letter-suffix substitution with a structural payload where the
+# instruction text says "For X substitute—" not "after X insert".
+
+
+def _pattern_c_actual_el(label: str = "4A") -> ET.Element:
+    """Real source XML element for a letter-suffix provision substitution."""
+    return ET.fromstring(
+        f'<P2 xmlns="{_LEG_NS}" id="section-25-4a"><Pnumber>{label}</Pnumber>'
+        f"<P2para><Text>New subsection ({label}) text.</Text></P2para></P2>"
+    )
+
+
+def _pattern_c_extracted_el_for_substitute(label: str = "4A") -> ET.Element:
+    """Source element with 'For subsection (X) substitute—' instruction text."""
+    return ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-25">
+          <Pnumber>25</Pnumber>
+          <P2para>
+            <Text>For subsection ({label}) substitute—</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>{label}</Pnumber>
+                <P2para><Text>New subsection ({label}) text.</Text></P2para>
+              </P2>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test PC-1: Pattern C positive — single letter-suffix substitution promoted
+# ---------------------------------------------------------------------------
+
+
+def test_pattern_c_single_letter_suffix_substitution_promoted() -> None:
+    """Pattern C: single 'substituted' effect on letter-suffix leaf → Insert.
+
+    Sensor K Case 5: ukpga/1978/29 effect from uksi/2005/2011 targeting
+    schedule:1/paragraph:6A with effect_type='substituted'. Instruction text
+    is 'For paragraph 6A substitute—'. The widened A13 guard must promote this
+    to Insert using the numeric-stem anchor (paragraph:6).
+    """
+    target = LegalAddress(path=(("schedule", "1"), ("paragraph", "6a")))
+    payload: dict[str, Any] = {
+        "kind": "paragraph",
+        "label": "6A",
+        "text": "New paragraph (6A) text.",
+        "children": [],
+    }
+    actual_el = ET.fromstring(
+        f'<P3 xmlns="{_LEG_NS}" id="schedule-1-para-6a"><Pnumber>6A</Pnumber>'
+        "<P3para><Text>New paragraph (6A) text.</Text></P3para></P3>"
+    )
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1">
+          <Pnumber>6</Pnumber>
+          <P3para>
+            <Text>For paragraph 6A substitute—</Text>
+            <BlockAmendment>
+              <P3>
+                <Pnumber>6A</Pnumber>
+                <P3para><Text>New paragraph (6A) text.</Text></P3para>
+              </P3>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    observations: list[dict[str, Any]] = []
+    result = _call_normalization(
+        curr_action="replace",
+        target=target,
+        content_ir=payload,
+        target_ref="Sch. 1 para. 6A",
+        original_target_refs=["Sch. 1 para. 6A"],
+        source_payload_actual_el=actual_el,
+        extracted_el=extracted_el,
+        lowering_rejections_out=observations,
+    )
+    assert result.curr_action == "insert", (
+        f"Pattern C: single letter-suffix substitution must be promoted to insert, "
+        f"got {result.curr_action!r}"
+    )
+    assert result.anchor_preceding_eid is not None, (
+        "anchor_preceding_eid must be set for Pattern C promotion"
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID in rule_ids, (
+        f"Expected {UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID!r} in {rule_ids!r}"
+    )
+
+
+def test_pattern_c_section_32d_substitution_promoted() -> None:
+    """Pattern C: Sensor K Case 4 shape — section:32d substitution promoted.
+
+    ukpga/1978/29, effect from asp/2005/13 targeting section:32d with
+    effect_type='substituted'. Predecessors 32A-32C exist. At replay time
+    section:32d is absent. Widened guard must promote to Insert(anchor=32).
+    """
+    target = LegalAddress(path=(("section", "32d"),))
+    payload: dict[str, Any] = {
+        "kind": "section",
+        "label": "32D",
+        "text": "New section 32D text.",
+        "children": [],
+    }
+    actual_el = ET.fromstring(
+        f'<P1 xmlns="{_LEG_NS}" id="section-32d"><Pnumber>32D</Pnumber>'
+        "<P1para><Text>New section 32D text.</Text></P1para></P1>"
+    )
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-32">
+          <Pnumber>32</Pnumber>
+          <P1para>
+            <Text>For section 32D substitute—</Text>
+            <BlockAmendment>
+              <P1>
+                <Pnumber>32D</Pnumber>
+                <P1para><Text>New section 32D text.</Text></P1para>
+              </P1>
+            </BlockAmendment>
+          </P1para>
+        </P1>
+        """
+    )
+    observations: list[dict[str, Any]] = []
+    result = _call_normalization(
+        curr_action="replace",
+        target=target,
+        content_ir=payload,
+        target_ref="s. 32D",
+        original_target_refs=["s. 32D"],
+        source_payload_actual_el=actual_el,
+        extracted_el=extracted_el,
+        lowering_rejections_out=observations,
+    )
+    assert result.curr_action == "insert", (
+        f"Pattern C section:32D must be promoted to insert, got {result.curr_action!r}"
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID in rule_ids
+
+
+# ---------------------------------------------------------------------------
+# Test PC-2: Pattern C negative — non-letter-suffix label (plain numeric)
+# ---------------------------------------------------------------------------
+
+
+def test_pattern_c_plain_numeric_target_not_promoted() -> None:
+    """Pattern C negative: target=subsection:5 (plain numeric) — no promotion.
+
+    The letter-suffix structural guard requires digits+letters pattern. A plain
+    numeric target (subsection:5) has no letter suffix and must not be promoted.
+    """
+    target = LegalAddress(path=(("section", "25"), ("subsection", "5")))
+    payload: dict[str, Any] = {
+        "kind": "subsection",
+        "label": "5",
+        "text": "Replacement subsection (5) text.",
+        "children": [],
+    }
+    actual_el = ET.fromstring(
+        f'<P2 xmlns="{_LEG_NS}" id="section-25-5"><Pnumber>5</Pnumber>'
+        "<P2para><Text>Replacement subsection (5) text.</Text></P2para></P2>"
+    )
+    observations: list[dict[str, Any]] = []
+    result = _call_normalization(
+        curr_action="replace",
+        target=target,
+        content_ir=payload,
+        target_ref="s. 25(5)",
+        original_target_refs=["s. 25(5)"],
+        source_payload_actual_el=actual_el,
+        extracted_el=_pattern_c_extracted_el_for_substitute("5"),
+        lowering_rejections_out=observations,
+    )
+    assert result.curr_action == "replace", (
+        f"Plain numeric target must NOT be promoted, got {result.curr_action!r}"
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID not in rule_ids, (
+        "Pattern C promotion must NOT fire for plain numeric target"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test PC-3: Pattern C negative — payload doesn't match target leaf
+# ---------------------------------------------------------------------------
+
+
+def test_pattern_c_payload_mismatch_not_promoted() -> None:
+    """Pattern C negative: payload label mismatch (label=99, target label=4a) — no promotion.
+
+    Guard 3 (_source_payload_matches_target_leaf) rejects when the payload label
+    does not match the target leaf label. Use a clearly wrong label (99 vs 4a).
+    """
+    target = LegalAddress(path=(("section", "25"), ("subsection", "4a")))
+    # Wrong label: 99 does not match 4a
+    mismatched_payload: dict[str, Any] = {
+        "kind": "subsection",
+        "label": "99",
+        "text": "Wrong subsection text.",
+        "children": [],
+    }
+    actual_el = _pattern_c_actual_el("4A")
+    observations: list[dict[str, Any]] = []
+    result = _call_normalization(
+        curr_action="replace",
+        target=target,
+        content_ir=mismatched_payload,
+        target_ref="s. 25(4A)",
+        original_target_refs=["s. 25(4A)"],
+        source_payload_actual_el=actual_el,
+        extracted_el=_pattern_c_extracted_el_for_substitute("4A"),
+        lowering_rejections_out=observations,
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID not in rule_ids, (
+        "Promotion must NOT fire when payload label does not match target leaf label"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test PC-4: Pattern C negative — no actual_el (inferred payload)
+# ---------------------------------------------------------------------------
+
+
+def test_pattern_c_no_actual_el_not_promoted() -> None:
+    """Pattern C negative: source_payload_actual_el=None (inferred) — no promotion.
+
+    Guard 2 requires a real source XML element. infer_source_payload_from_target
+    constructs a payload that trivially matches by construction; promotion must
+    not fire without real source evidence.
+    """
+    target = LegalAddress(path=(("section", "25"), ("subsection", "4a")))
+    payload: dict[str, Any] = {
+        "kind": "subsection",
+        "label": "4A",
+        "text": "Inferred subsection (4A) text.",
+        "children": [],
+    }
+    observations: list[dict[str, Any]] = []
+    result = _call_normalization(
+        curr_action="replace",
+        target=target,
+        content_ir=payload,
+        target_ref="s. 25(4A)",
+        original_target_refs=["s. 25(4A)"],
+        source_payload_actual_el=None,  # inferred payload — no actual element
+        extracted_el=_pattern_c_extracted_el_for_substitute("4A"),
+        lowering_rejections_out=observations,
+    )
+    assert result.curr_action == "replace", (
+        f"Inferred payload must NOT be promoted, got {result.curr_action!r}"
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID not in rule_ids, (
+        "Promotion must NOT fire when source_payload_actual_el is None"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test PC-5: A15 still wins for block substitution groups (Pattern B)
+# ---------------------------------------------------------------------------
+
+
+def test_a15_wins_for_block_substitution_group() -> None:
+    """A15 (Pattern B) fires for block-substitution group tail — A13 not reached.
+
+    When an effect decomposes into a group [s.25(4), s.25(4A), s.25(4B)] (ops _0, _1, _2),
+    the tail ops (target_index > 0, group[0] = plain numeric stem) are handled by A15's
+    _block_substitution_tail_insert_detail path. The result carries
+    anchor_preceding_eid_source = UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID,
+    not the A13 rule ID.
+    """
+    # Group: [s.25(4), s.25(4A), s.25(4B)] — tail op at index 1 targeting subsection:4a
+    original_target_refs = ["s. 25(4)", "s. 25(4A)", "s. 25(4B)"]
+    target = LegalAddress(path=(("section", "25"), ("subsection", "4a")))
+    payload: dict[str, Any] = {
+        "kind": "subsection",
+        "label": "4A",
+        "text": "New subsection (4A) text.",
+        "children": [],
+    }
+    actual_el = _pattern_c_actual_el("4A")
+    observations: list[dict[str, Any]] = []
+    result = _call_normalization(
+        curr_action="replace",
+        target=target,
+        content_ir=payload,
+        target_ref="s. 25(4A)",
+        original_target_refs=original_target_refs,
+        target_index=1,
+        source_payload_actual_el=actual_el,
+        extracted_el=_pattern_c_extracted_el_for_substitute("4A"),
+        lowering_rejections_out=observations,
+    )
+    # A15 should have fired: result is insert with A15's rule ID as source
+    assert result.curr_action == "insert", (
+        f"Block-substitution group tail must be promoted to insert (A15), got {result.curr_action!r}"
+    )
+    assert result.anchor_preceding_eid_source == UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID, (
+        f"A15 must win for block-substitution group tail: expected "
+        f"{UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID!r}, "
+        f"got {result.anchor_preceding_eid_source!r}"
+    )
+    rule_ids = [obs.get("rule_id") for obs in observations]
+    assert UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID in rule_ids, (
+        "A15 observation must be emitted for block-substitution group tail"
+    )
+    assert UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID not in rule_ids, (
+        "A13 must NOT fire when A15 wins for block-substitution group"
+    )
