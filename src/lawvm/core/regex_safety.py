@@ -41,16 +41,20 @@ Implementation note:
     Falls back to ``sre_parse`` on older Python (unused in this codebase).
     No project-specific imports.  Pure stdlib.
 
-CATEGORY first-char sets (A18 enhancement, 2026-05-29):
-    ``first_chars()`` now resolves the standard CATEGORY escapes (``\\d``, ``\\w``,
-    ``\\s`` and their Unicode variants) to concrete frozensets of ASCII code-points.
-    This eliminates the bulk of CATEGORY false positives in the gate.
+CATEGORY first-char sets (A18; flag-aware hardening 2026-05-30):
+    ``first_chars()`` resolves the standard CATEGORY escapes (``\\d``, ``\\w``,
+    ``\\s``) to ASCII code-point sets.  Because Python 3 str patterns default to
+    Unicode semantics, that ASCII set *under-approximates* the real membership
+    (``\\w`` matches ``ä``; ``\\d`` matches non-ASCII digits) unless ``re.ASCII``
+    is set.  ``_resolve_category()`` therefore tags such a set as a Unicode
+    approximation, and the overlap test treats it as overlapping whenever the
+    *other* operand carries a non-ASCII char — so ``\\w+[ä]+`` is correctly
+    flagged while genuinely-disjoint pairs like ``\\d``/``\\s`` are not.
 
-    ASCII approximation: Python 3 patterns default to Unicode semantics, so ``\\w``
-    can match letters outside ASCII and ``\\d`` can match Unicode digit characters.
-    For the purposes of this LINT (catching obvious first-char overlap), the ASCII-
-    equivalent sets are sufficient and correct for all LawVM classifier patterns,
-    which operate exclusively on ASCII-range legal text.
+    Under ``re.IGNORECASE`` literal/range char sets are widened to their case
+    variants (``_case_expand``), so ``[a-z]+[A-Z]+`` and ``a+A+`` are flagged.
+    Flags are threaded per-subpattern, so scoped inline flags like ``(?i:a+)A+``
+    resolve correctly.
 
     NOT-category variants (``\\D``, ``\\W``, ``\\S``) are left as ``None``
     (conservative/unknown) because their char-sets are too large to enumerate and
@@ -94,6 +98,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Iterable
 
 try:
@@ -349,16 +354,12 @@ def build_regex_prefilter(
 # PrefilteredPattern wrapper
 # ---------------------------------------------------------------------------
 
-# Per-literal IGNORECASE regex cache: maps (literal, flags) → compiled pattern.
-_IGNORECASE_LIT_CACHE: dict[tuple[str, int], re.Pattern[str]] = {}
-
-
+# Per-literal IGNORECASE regex cache, bounded so the wrapper stays well-behaved
+# if extracted from LawVM's finite owned-pattern corpus into a general library.
+@lru_cache(maxsize=4096)
 def _get_ic_pattern(text: str, flags: int) -> re.Pattern[str]:
     """Return a cached tiny regex for IGNORECASE literal search."""
-    key = (text, flags)
-    if key not in _IGNORECASE_LIT_CACHE:
-        _IGNORECASE_LIT_CACHE[key] = re.compile(re.escape(text), flags & re.IGNORECASE)
-    return _IGNORECASE_LIT_CACHE[key]
+    return re.compile(re.escape(text), flags & re.IGNORECASE)
 
 
 class PrefilteredPattern:
@@ -367,6 +368,9 @@ class PrefilteredPattern:
     Before calling the full regex engine, ``search``/``match``/``fullmatch``/
     ``finditer``/``findall`` evaluate the plan against the text.  If the plan
     fails the call is short-circuited and the appropriate empty value returned.
+    Only these five lookup methods are prefiltered; ``sub``/``subn``/``split``
+    and any other attribute access delegate straight to the underlying pattern
+    (``__getattr__``) and bypass the prefilter.
 
     The plan is a NECESSARY CONDITION only — it never produces false negatives.
     False positives (plan passes but regex doesn't match) are fine.
@@ -376,9 +380,15 @@ class PrefilteredPattern:
     pattern object via ``__getattr__``.
     """
 
-    def __init__(self, rx: "re.Pattern[str]", plan: Any) -> None:
+    def __init__(
+        self,
+        rx: "re.Pattern[str]",
+        plan: Any,
+        stats: "RegexPrefilterStats | None" = None,
+    ) -> None:
         self._rx = rx
         self._plan = plan
+        self._stats = stats
         # Expose the standard Pattern attributes directly.
         self.pattern: str = rx.pattern
         self.flags: int = rx.flags
@@ -390,6 +400,27 @@ class PrefilteredPattern:
 
     def __repr__(self) -> str:
         return f"PrefilteredPattern({self._rx!r}, plan={self._plan!r})"
+
+    @staticmethod
+    def _bounds(string: str, pos: int, endpos: int | None) -> tuple[int, int]:
+        """Clamp pos/endpos the way ``re.Pattern`` does (to ``[0, len]``).
+
+        ``str.find`` interprets negative bounds as slice-style indices, which
+        diverges from ``re``'s positional clamping and could otherwise let the
+        prefilter scan a different region than the engine — a false-negative
+        risk.  Normalizing both to ``re`` semantics keeps the prefilter region
+        identical to the region the regex will actually search.
+        """
+        n = len(string)
+        if pos < 0:
+            pos = 0
+        elif pos > n:
+            pos = n
+        if endpos is None or endpos > n:
+            endpos = n
+        elif endpos < 0:
+            endpos = 0
+        return pos, endpos
 
     def _literal_present(self, lit: Lit, text: str, pos: int, endpos: int) -> bool:
         """Check whether lit.text is present in text[pos:endpos]."""
@@ -410,14 +441,26 @@ class PrefilteredPattern:
             return any(self._plan_passes(p, text, pos, endpos) for p in plan.parts)
         return True  # unknown node type — conservative pass
 
+    def _prefilter_ok(self, string: str, pos: int, endpos: int | None) -> tuple[bool, int, int]:
+        """Normalize bounds, evaluate the plan once, and record telemetry."""
+        npos, nep = self._bounds(string, pos, endpos)
+        passed = self._plan_passes(self._plan, string, npos, nep)
+        if self._stats is not None:
+            self._stats.checked += 1
+            if passed:
+                self._stats.passed += 1
+            else:
+                self._stats.rejected += 1
+        return passed, npos, nep
+
     def search(
         self,
         string: str,
         pos: int = 0,
         endpos: int | None = None,
     ) -> "re.Match[str] | None":
-        ep = len(string) if endpos is None else endpos
-        if not self._plan_passes(self._plan, string, pos, ep):
+        ok, pos, ep = self._prefilter_ok(string, pos, endpos)
+        if not ok:
             return None
         return self._rx.search(string, pos, ep)
 
@@ -427,8 +470,8 @@ class PrefilteredPattern:
         pos: int = 0,
         endpos: int | None = None,
     ) -> "re.Match[str] | None":
-        ep = len(string) if endpos is None else endpos
-        if not self._plan_passes(self._plan, string, pos, ep):
+        ok, pos, ep = self._prefilter_ok(string, pos, endpos)
+        if not ok:
             return None
         return self._rx.match(string, pos, ep)
 
@@ -438,8 +481,8 @@ class PrefilteredPattern:
         pos: int = 0,
         endpos: int | None = None,
     ) -> "re.Match[str] | None":
-        ep = len(string) if endpos is None else endpos
-        if not self._plan_passes(self._plan, string, pos, ep):
+        ok, pos, ep = self._prefilter_ok(string, pos, endpos)
+        if not ok:
             return None
         return self._rx.fullmatch(string, pos, ep)
 
@@ -449,8 +492,8 @@ class PrefilteredPattern:
         pos: int = 0,
         endpos: int | None = None,
     ) -> "Iterable[re.Match[str]]":
-        ep = len(string) if endpos is None else endpos
-        if not self._plan_passes(self._plan, string, pos, ep):
+        ok, pos, ep = self._prefilter_ok(string, pos, endpos)
+        if not ok:
             return iter([])
         return self._rx.finditer(string, pos, ep)
 
@@ -460,8 +503,8 @@ class PrefilteredPattern:
         pos: int = 0,
         endpos: int | None = None,
     ) -> list[Any]:
-        ep = len(string) if endpos is None else endpos
-        if not self._plan_passes(self._plan, string, pos, ep):
+        ok, pos, ep = self._prefilter_ok(string, pos, endpos)
+        if not ok:
             return []
         return self._rx.findall(string, pos, ep)
 
@@ -566,9 +609,8 @@ def compile_classifier_regex(
     plan = build_regex_prefilter(pattern, flags)
     if plan is None:
         return rx
-    if classifier_id not in _PREFILTER_TELEMETRY:
-        _PREFILTER_TELEMETRY[classifier_id] = RegexPrefilterStats()
-    return PrefilteredPattern(rx, plan)
+    stats = _PREFILTER_TELEMETRY.setdefault(classifier_id, RegexPrefilterStats())
+    return PrefilteredPattern(rx, plan, stats)
 
 
 # ---------------------------------------------------------------------------
@@ -623,15 +665,20 @@ def assert_prefilter_no_false_negatives(
 #
 # Populated lazily at first use via _build_category_char_sets().
 # Keys are the CATEGORY_* constants from re._constants (NamedIntConstant).
-# Values are frozenset of ord() values that the category can match (ASCII only).
-# NOT-* variants map to None — they're too broad to enumerate usefully.
+# _CATEGORY_CHAR_SETS values are frozensets of ASCII code-points the category
+# matches; NOT-* variants map to None (too broad to enumerate).
+# _CATEGORY_TESTERS maps each positive category to a compiled Unicode regex that
+# matches exactly one char of that category, so the overlap test can decide
+# membership of a specific non-ASCII char precisely (\\d does NOT match ``ä``;
+# \\w does) instead of conservatively assuming every non-ASCII char overlaps.
 # ---------------------------------------------------------------------------
 _CATEGORY_CHAR_SETS: dict[object, frozenset[int] | None] = {}
+_CATEGORY_TESTERS: dict[object, re.Pattern[str] | None] = {}
 _CATEGORY_SETS_BUILT = False
 
 
 def _build_category_char_sets() -> None:
-    """Populate _CATEGORY_CHAR_SETS on first call.  Idempotent."""
+    """Populate _CATEGORY_CHAR_SETS / _CATEGORY_TESTERS on first call.  Idempotent."""
     global _CATEGORY_SETS_BUILT
     if _CATEGORY_SETS_BUILT:
         return
@@ -659,37 +706,82 @@ def _build_category_char_sets() -> None:
     # Linebreak set: \n and \r
     _linebreak = frozenset({ord("\n"), ord("\r")})
 
+    # Unicode membership testers: match exactly one char of the category.
+    _t_word = re.compile(r"\w")
+    _t_digit = re.compile(r"\d")
+    _t_space = re.compile(r"\s")
+    _t_linebreak = re.compile("[\n\r\x0b\x0c\x1c\x1d\x1e\x85  ]")
+
     def _get(name: str) -> object | None:
         return getattr(_constants, name, None)
 
-    pairs: list[tuple[str, frozenset[int] | None]] = [
-        # Positive sets
-        ("CATEGORY_DIGIT", _digits),
-        ("CATEGORY_UNI_DIGIT", _digits),
-        ("CATEGORY_SPACE", _spaces),
-        ("CATEGORY_UNI_SPACE", _spaces),
-        ("CATEGORY_WORD", _word),
-        ("CATEGORY_UNI_WORD", _word),
-        ("CATEGORY_LOC_WORD", _word),
-        ("CATEGORY_LINEBREAK", _linebreak),
-        ("CATEGORY_UNI_LINEBREAK", _linebreak),
+    pairs: list[tuple[str, frozenset[int] | None, re.Pattern[str] | None]] = [
+        # Positive sets (ascii charset, unicode membership tester)
+        ("CATEGORY_DIGIT", _digits, _t_digit),
+        ("CATEGORY_UNI_DIGIT", _digits, _t_digit),
+        ("CATEGORY_SPACE", _spaces, _t_space),
+        ("CATEGORY_UNI_SPACE", _spaces, _t_space),
+        ("CATEGORY_WORD", _word, _t_word),
+        ("CATEGORY_UNI_WORD", _word, _t_word),
+        ("CATEGORY_LOC_WORD", _word, _t_word),
+        ("CATEGORY_LINEBREAK", _linebreak, _t_linebreak),
+        ("CATEGORY_UNI_LINEBREAK", _linebreak, _t_linebreak),
         # NOT-* variants: too broad — leave as None (conservative)
-        ("CATEGORY_NOT_DIGIT", None),
-        ("CATEGORY_UNI_NOT_DIGIT", None),
-        ("CATEGORY_NOT_SPACE", None),
-        ("CATEGORY_UNI_NOT_SPACE", None),
-        ("CATEGORY_NOT_WORD", None),
-        ("CATEGORY_UNI_NOT_WORD", None),
-        ("CATEGORY_LOC_NOT_WORD", None),
-        ("CATEGORY_NOT_LINEBREAK", None),
-        ("CATEGORY_UNI_NOT_LINEBREAK", None),
+        ("CATEGORY_NOT_DIGIT", None, None),
+        ("CATEGORY_UNI_NOT_DIGIT", None, None),
+        ("CATEGORY_NOT_SPACE", None, None),
+        ("CATEGORY_UNI_NOT_SPACE", None, None),
+        ("CATEGORY_NOT_WORD", None, None),
+        ("CATEGORY_UNI_NOT_WORD", None, None),
+        ("CATEGORY_LOC_NOT_WORD", None, None),
+        ("CATEGORY_NOT_LINEBREAK", None, None),
+        ("CATEGORY_UNI_NOT_LINEBREAK", None, None),
     ]
-    for name, charset in pairs:
+    for name, charset, tester in pairs:
         const = _get(name)
         if const is not None:
             _CATEGORY_CHAR_SETS[const] = charset
+            _CATEGORY_TESTERS[const] = tester
 
     _CATEGORY_SETS_BUILT = True
+
+
+def _case_expand(chars: set[int], flags: int) -> set[int]:
+    """Under IGNORECASE, widen a char set to include its case variants.
+
+    Sound for the overlap test: adding more code-points can only make two sets
+    *more* likely to be judged overlapping (a conservative direction in a safety
+    gate).  Handles ASCII and simple single-char Unicode folds; multi-char folds
+    (e.g. ``ß`` → ``ss``) are skipped, which is safe for first-char analysis.
+    """
+    if not (flags & re.IGNORECASE):
+        return set(chars)
+    out = set(chars)
+    for c in chars:
+        ch = chr(c)
+        for variant in (ch.lower(), ch.upper()):
+            if len(variant) == 1:
+                out.add(ord(variant))
+    return out
+
+
+def _resolve_category(const: object, flags: int) -> tuple[set[int] | None, "re.Pattern[str] | None"]:
+    """Resolve a CATEGORY constant to (ascii_charset, unicode_membership_tester).
+
+    The ASCII charset is the slice of the category within ASCII.  Without
+    ``re.ASCII`` the real (Unicode) membership is larger — ``\\w`` matches ``ä``,
+    ``\\d`` matches non-ASCII digits — so the second element is a tester that
+    decides whether a *specific* non-ASCII char belongs to the category.  The
+    overlap test uses it to flag ``\\w`` vs ``[ä]`` while leaving ``\\d`` vs
+    ``[ä]`` (a digit class vs a letter) correctly disjoint.  Under ``re.ASCII``
+    the ASCII set is exact, so the tester is ``None``.
+    """
+    _build_category_char_sets()
+    cs = _CATEGORY_CHAR_SETS.get(const)
+    if cs is None:
+        return None, None
+    tester = None if (flags & re.ASCII) else _CATEGORY_TESTERS.get(const)
+    return set(cs), tester
 
 
 def regex_risks(pattern: str, flags: int = 0) -> list[str]:
@@ -785,82 +877,125 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
         return True
 
     def has_backtracking_repeat(sub):  # type: ignore[no-untyped-def]
-        return any(op in BACKTRACKING_REPEATS for op, _ in walk(sub))
+        # Do NOT descend into ATOMIC_GROUP: an atomic group discards its inner
+        # backtracking points, so (?>a+)+ is not a nested-backtracking risk.
+        def walk_no_atomic(s):  # type: ignore[no-untyped-def]
+            for op, arg in seq(s):
+                if op == ATOMIC_GROUP:
+                    continue
+                yield op, arg
+                if op == SUBPATTERN:
+                    yield from walk_no_atomic(arg[-1])
+                elif op == BRANCH:
+                    for branch in arg[1]:
+                        yield from walk_no_atomic(branch)
+                elif op in ALL_REPEATS:
+                    yield from walk_no_atomic(arg[2])
+                elif op in (ASSERT, ASSERT_NOT):
+                    yield from walk_no_atomic(arg[1])
+                elif op == GROUPREF_EXISTS:
+                    yield from walk_no_atomic(arg[1])
+                    if arg[2] is not None:
+                        yield from walk_no_atomic(arg[2])
 
-    def first_chars(sub):  # type: ignore[no-untyped-def]
-        _build_category_char_sets()
+        return any(op in BACKTRACKING_REPEATS for op, _ in walk_no_atomic(sub))
+
+    def first_chars(sub, cur_flags):  # type: ignore[no-untyped-def]
+        """Return (nullable, charset_or_None, testers) — see adjacent_repeat_risks."""
         out: set[int] = set()
+        testers: set[Any] = set()
         for op, arg in seq(sub):
             if op == AT or op in (ASSERT, ASSERT_NOT):
                 continue
             if op == LITERAL:
-                out.add(arg)
-                return False, out
+                out.update(_case_expand({arg}, cur_flags))
+                return False, out, testers
             if op in (NOT_LITERAL, ANY):
-                return False, None
+                return False, None, set()
             if op == CATEGORY:
-                cat_chars = _CATEGORY_CHAR_SETS.get(arg)
-                return False, set(cat_chars) if cat_chars is not None else None
+                cat_chars, tester = _resolve_category(arg, cur_flags)
+                if cat_chars is None:
+                    return False, None, set()
+                return False, cat_chars, ({tester} if tester is not None else set())
             if op == IN:
                 chars: set[int] = set()
                 known = True
+                in_testers: set[Any] = set()
                 for iop, iarg in arg:
                     if iop == LITERAL:
-                        chars.add(iarg)
+                        chars.update(_case_expand({iarg}, cur_flags))
                     elif iop == RANGE:
                         lo, hi = iarg
                         if hi - lo <= 256:
-                            chars.update(range(lo, hi + 1))
+                            chars.update(_case_expand(set(range(lo, hi + 1)), cur_flags))
                         else:
                             known = False
                     elif iop == CATEGORY:
-                        cat_chars = _CATEGORY_CHAR_SETS.get(iarg)
+                        cat_chars, tester = _resolve_category(iarg, cur_flags)
                         if cat_chars is not None:
                             chars.update(cat_chars)
+                            if tester is not None:
+                                in_testers.add(tester)
                         else:
                             known = False
                     else:
                         known = False
-                return False, chars if known else None
+                return False, (chars if known else None), in_testers
             if op == SUBPATTERN:
-                n, s = first_chars(arg[-1])
+                _g, add_f, del_f, child = arg
+                n, s, t = first_chars(child, (cur_flags | add_f) & ~del_f)
             elif op == BRANCH:
                 nullable_any = False
                 chars2: set[int] = set()
                 known2 = True
+                br_testers: set[Any] = set()
                 for branch in arg[1]:
-                    bn, bs = first_chars(branch)
+                    bn, bs, bt = first_chars(branch, cur_flags)
                     nullable_any = nullable_any or bn
                     if bs is None:
                         known2 = False
                     elif known2:
                         chars2.update(bs)
-                return nullable_any, chars2 if known2 else None
+                        br_testers |= bt
+                return nullable_any, (chars2 if known2 else None), br_testers
             elif op in ALL_REPEATS:
                 min_, _max, body = arg
-                n, s = first_chars(body)
-                return (min_ == 0) or n, s
+                n, s, t = first_chars(body, cur_flags)
+                return (min_ == 0) or n, s, t
             else:
-                return True, None
+                return True, None, set()
             if s is None:
-                return n, None
+                return n, None, set()
             out.update(s)
+            testers |= t
             if not n:
-                return False, out
-        return True, out
+                return False, out, testers
+        return True, out, testers
 
-    def ambiguous_branch_inside_repeat(sub):  # type: ignore[no-untyped-def]
+    def _branch_overlap(seen, seen_testers, s, s_testers):  # type: ignore[no-untyped-def]
+        if seen & s:
+            return True
+        if any(t.match(chr(c)) for t in seen_testers for c in s if c > 127):
+            return True
+        if any(t.match(chr(c)) for t in s_testers for c in seen if c > 127):
+            return True
+        return False
+
+    def ambiguous_branch_inside_repeat(sub, cur_flags):  # type: ignore[no-untyped-def]
         for op, arg in walk(sub):
             if op == BRANCH:
                 seen: set[int] = set()
+                seen_testers: set[Any] = set()
                 for branch in arg[1]:
-                    _n, s = first_chars(branch)
-                    if _n or s is None or (seen & s):
+                    _n, s, t = first_chars(branch, cur_flags)
+                    if _n or s is None or _branch_overlap(seen, seen_testers, s, t):
                         return True
                     seen |= s
+                    seen_testers |= t
         return False
 
     tree = sre_parse.parse(pattern, flags)
+    eff_flags = tree.state.flags
     risks: list[str] = []
 
     for op, arg in walk(tree):
@@ -872,7 +1007,7 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
                 risks.append("repeats a subpattern that can match empty")
             if has_backtracking_repeat(body):
                 risks.append("has nested backtracking quantifiers")
-            if max_ == MAXREPEAT and ambiguous_branch_inside_repeat(body):
+            if max_ == MAXREPEAT and ambiguous_branch_inside_repeat(body, eff_flags):
                 risks.append("has ambiguous alternation inside an unbounded repeat")
 
     return sorted(set(risks))
@@ -882,16 +1017,25 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
     """Detect adjacent variable backtracking repeats with overlapping first-char sets.
 
     This catches the LawVM-specific bug class: patterns like ``.+.+``,
-    ``(?:.+)(?:.+)``, ``[a-z]+[a-z]+``, etc. where two adjacent unbounded
-    (or variable-length) backtracking repeats can consume the same characters,
-    causing catastrophic backtracking.
+    ``(?:.+)(?:.+)``, ``[a-z]+[a-z]+``, etc. where two variable backtracking
+    repeats — adjacent, or separated only by nullable material like ``a+\\s*a+``
+    — can consume the same characters, causing catastrophic backtracking.
 
-    Conservative note: CATEGORY escapes (``\\d``, ``\\w``, ``\\s``) are treated as
-    "unknown" first-char sets and will trigger this check even when the CATEGORY
-    and its neighbor are disjoint in practice (e.g. ``\\d+[a-z]*``).  The gate
-    test allowlist covers all pre-existing patterns of this type.
+    First-char analysis is flag-aware:
 
-    Source: ChatGPT Pro draft, 2026-05-29.
+    - Under ``IGNORECASE`` literal/range char sets are widened to their case
+      variants, so ``[a-z]+[A-Z]+`` and ``a+A+`` are correctly flagged.
+    - CATEGORY escapes (``\\d``, ``\\w``, ``\\s``) resolve to ASCII sets.  Under
+      Unicode semantics (no ``re.ASCII``) that set under-approximates the real
+      membership, so a category is treated as overlapping when the *other*
+      operand carries a non-ASCII char (the ``\\w`` vs ``[ä]`` case).  Category
+      sets still distinguish genuinely-disjoint pairs like ``\\d``/``\\s``.
+
+    Conservative direction: unknown first-char sets (``.``, ``\\D``, negated
+    classes) are treated as overlapping.  False positives are acceptable in the
+    gate; false negatives are not.
+
+    Source: ChatGPT Pro draft, 2026-05-29; soundness hardening 2026-05-30.
     """
     try:
         from re import _parser as sre  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
@@ -912,134 +1056,185 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
     def data(sub):  # type: ignore[no-untyped-def]
         return getattr(sub, "data", sub)
 
-    def first_chars(sub):  # type: ignore[no-untyped-def]
-        _build_category_char_sets()
+    def first_chars(sub, cur_flags):  # type: ignore[no-untyped-def]
+        """Return (nullable, charset_or_None, testers).
+
+        ``testers`` is a set of Unicode membership testers for any categories in
+        the charset; the charset holds only the ASCII slice, so a tester decides
+        whether a specific non-ASCII char belongs (\\w matches ``ä``, \\d does not).
+        """
         out: set[int] = set()
+        testers: set[Any] = set()
         for op, arg in data(sub):
             if op in (sre.AT, sre.ASSERT, sre.ASSERT_NOT):
                 continue
             if op == sre.LITERAL:
-                out.add(arg)
-                return False, out
+                out.update(_case_expand({arg}, cur_flags))
+                return False, out, testers
             if op in (sre.NOT_LITERAL, sre.ANY) or (
                 ANY_ALL is not None and op == ANY_ALL
             ):
-                return False, None
+                return False, None, set()
             if op == sre.CATEGORY:
-                cat_chars = _CATEGORY_CHAR_SETS.get(arg)
-                return False, set(cat_chars) if cat_chars is not None else None
+                cat_chars, tester = _resolve_category(arg, cur_flags)
+                if cat_chars is None:
+                    return False, None, set()
+                return False, cat_chars, ({tester} if tester is not None else set())
             if op == sre.IN:
                 chars: set[int] = set()
                 known = True
+                in_testers: set[Any] = set()
                 for iop, iarg in arg:
                     if iop == sre.NEGATE:
-                        return False, None
+                        return False, None, set()
                     if iop == sre.LITERAL:
-                        chars.add(iarg)
+                        chars.update(_case_expand({iarg}, cur_flags))
                     elif iop == sre.RANGE:
                         lo, hi = iarg
                         if hi - lo > 512:
                             known = False
                         else:
-                            chars.update(range(lo, hi + 1))
+                            chars.update(_case_expand(set(range(lo, hi + 1)), cur_flags))
                     elif iop == sre.CATEGORY:
-                        cat_chars = _CATEGORY_CHAR_SETS.get(iarg)
+                        cat_chars, tester = _resolve_category(iarg, cur_flags)
                         if cat_chars is not None:
                             chars.update(cat_chars)
+                            if tester is not None:
+                                in_testers.add(tester)
                         else:
                             known = False
                     else:
                         known = False
-                return False, chars if known else None
+                return False, (chars if known else None), in_testers
             if op == sre.SUBPATTERN:
-                nullable, chars2 = first_chars(arg[-1])
+                _g, add_f, del_f, child = arg
+                nullable, chars2, t2 = first_chars(child, (cur_flags | add_f) & ~del_f)
             elif op == sre.BRANCH:
                 nullable_any = False
                 chars3: set[int] = set()
+                br_testers: set[Any] = set()
                 for branch in arg[1]:
-                    b_nullable, b_chars = first_chars(branch)
+                    b_nullable, b_chars, b_testers = first_chars(branch, cur_flags)
                     nullable_any = nullable_any or b_nullable
                     if b_chars is None:
-                        return nullable_any, None
+                        return nullable_any, None, set()
                     chars3.update(b_chars)
-                return nullable_any, chars3
+                    br_testers |= b_testers
+                return nullable_any, chars3, br_testers
             elif op in ALL_REPEAT:
                 lo, _hi, body = arg
-                nullable, chars2 = first_chars(body)
-                return (lo == 0) or nullable, chars2
+                nullable, chars2, t2 = first_chars(body, cur_flags)
+                return (lo == 0) or nullable, chars2, t2
             elif ATOMIC_GROUP is not None and op == ATOMIC_GROUP:
-                nullable, chars2 = first_chars(arg)
+                nullable, chars2, t2 = first_chars(arg, cur_flags)
             else:
-                return False, None
+                return False, None, set()
             if chars2 is None:
-                return nullable, None
+                return nullable, None, set()
             out.update(chars2)
+            testers |= t2
             if not nullable:
-                return False, out
-        return True, out
+                return False, out, testers
+        return True, out, testers
 
-    def flatten_concat(sub):  # type: ignore[no-untyped-def]
+    def flatten_concat(sub, cur_flags):  # type: ignore[no-untyped-def]
+        """Flatten bare subpatterns into a token list, carrying effective flags.
+
+        Carrying per-token flags is what lets ``(?i:a+)A+`` resolve each repeat
+        under the flags actually in force at that position.
+        """
         flat = []
         for op, arg in data(sub):
             if op == sre.SUBPATTERN:
-                flat.extend(flatten_concat(arg[-1]))
+                _g, add_f, del_f, child = arg
+                flat.extend(flatten_concat(child, (cur_flags | add_f) & ~del_f))
             else:
-                flat.append((op, arg))
+                flat.append((op, arg, cur_flags))
         return flat
 
     def is_zero_width(tok):  # type: ignore[no-untyped-def]
-        op, _arg = tok
-        return op in (sre.AT, sre.ASSERT, sre.ASSERT_NOT)
+        return tok[0] in (sre.AT, sre.ASSERT, sre.ASSERT_NOT)
+
+    def nullable_token(tok):  # type: ignore[no-untyped-def]
+        """Conservatively, only ``lo == 0`` repeats can match empty.
+
+        Returning False for anything else stops the look-ahead at the first
+        token that must consume input, which avoids excess false positives.
+        """
+        op, arg, _flags = tok
+        return op in ALL_REPEAT and arg[0] == 0
 
     def repeat_sig(tok):  # type: ignore[no-untyped-def]
-        op, arg = tok
+        op, arg, tflags = tok
         if op not in BACKTRACKING_REPEAT:
             return None
         lo, hi, body = arg
         if lo == hi:
             return None
-        _nullable, chars = first_chars(body)
-        return {"lo": lo, "hi": hi, "first": chars}
+        _nullable, chars, testers = first_chars(body, tflags)
+        return {"lo": lo, "hi": hi, "first": chars, "testers": testers}
 
     def overlaps(a, b):  # type: ignore[no-untyped-def]
-        return a is None or b is None or bool(a & b)
+        ca, cb = a["first"], b["first"]
+        if ca is None or cb is None:
+            return True
+        if ca & cb:
+            return True
+        # ASCII intersection is exact; a Unicode category can additionally
+        # overlap the other operand outside ASCII iff some non-ASCII char there
+        # actually belongs to the category (the \\w vs [ä] case, but not \\d).
+        if any(t.match(chr(c)) for t in a["testers"] for c in cb if c > 127):
+            return True
+        if any(t.match(chr(c)) for t in b["testers"] for c in ca if c > 127):
+            return True
+        return False
 
     tree = sre.parse(pattern, flags)
     risks: list[str] = []
 
-    def scan(sub, where: str = "$") -> None:  # type: ignore[no-untyped-def]
-        flat = [
-            (i, tok)
-            for i, tok in enumerate(flatten_concat(sub))
-            if not is_zero_width(tok)
-        ]
-        for (i, left), (j, right) in zip(flat, flat[1:], strict=False):
-            lsig = repeat_sig(left)
-            rsig = repeat_sig(right)
-            if not lsig or not rsig:
+    def scan(sub, cur_flags, where: str = "$") -> None:  # type: ignore[no-untyped-def]
+        flat = [tok for tok in flatten_concat(sub, cur_flags) if not is_zero_width(tok)]
+        n = len(flat)
+        for i in range(n):
+            lsig = repeat_sig(flat[i])
+            if not lsig:
                 continue
-            if not overlaps(lsig["first"], rsig["first"]):
-                continue
-            if lsig["hi"] == MAXREPEAT or rsig["hi"] == MAXREPEAT:
-                risks.append(
-                    f"{where}: adjacent variable backtracking repeats "
-                    f"at items {i},{j} have overlapping starts"
-                )
+            # Look ahead across nullable tokens: an intervening repeat that can
+            # match empty (\\s*, ,?) still leaves the two variable repeats sharing
+            # a split boundary, so a+\\s*a+ is the same bug as a+a+.
+            k = i + 1
+            while k < n:
+                rtok = flat[k]
+                rsig = repeat_sig(rtok)
+                if (
+                    rsig
+                    and (lsig["hi"] == MAXREPEAT or rsig["hi"] == MAXREPEAT)
+                    and overlaps(lsig, rsig)
+                ):
+                    risks.append(
+                        f"{where}: adjacent variable backtracking repeats "
+                        f"at items {i},{k} have overlapping starts"
+                    )
+                    break
+                if not nullable_token(rtok):
+                    break
+                k += 1
         for idx, (op, arg) in enumerate(data(sub)):
             child_where = f"{where}/{idx}:{op}"
             if op == sre.SUBPATTERN:
-                scan(arg[-1], child_where)
+                _g, add_f, del_f, child = arg
+                scan(child, (cur_flags | add_f) & ~del_f, child_where)
             elif op == sre.BRANCH:
                 for bidx, branch in enumerate(arg[1]):
-                    scan(branch, f"{child_where}|{bidx}")
+                    scan(branch, cur_flags, f"{child_where}|{bidx}")
             elif op in ALL_REPEAT:
-                scan(arg[2], child_where)
+                scan(arg[2], cur_flags, child_where)
             elif ATOMIC_GROUP is not None and op == ATOMIC_GROUP:
-                scan(arg, child_where)
+                scan(arg, cur_flags, child_where)
             elif op in (sre.ASSERT, sre.ASSERT_NOT):
-                scan(arg[1], child_where)
+                scan(arg[1], cur_flags, child_where)
 
-    scan(tree)
+    scan(tree, tree.state.flags)
     return sorted(set(risks))
 
 

@@ -33,6 +33,7 @@ from lawvm.core.regex_safety import (
     build_regex_prefilter,
     compile_classifier_regex,
     dump_prefilter_stats,
+    lawvm_regex_risks,
 )
 
 # ---------------------------------------------------------------------------
@@ -706,3 +707,90 @@ class TestAssertNoFalseNegatives:
 
     def test_empty_samples_is_ok(self) -> None:
         assert_prefilter_no_false_negatives(r"foo.*bar", 0, samples=[])
+
+
+# ---------------------------------------------------------------------------
+# 8. Soundness hardening of the lint (2026-05-30; ChatGPT Pro review C/D/E/G)
+#
+# In a safety gate, false negatives are the dangerous direction: a pattern that
+# slips through the lint can reach a hot path and blow up.  These pin the five
+# bug classes the hardening closed, plus the cases that must stay clean so the
+# fix did not over-fire.
+# ---------------------------------------------------------------------------
+
+
+class TestLintSoundnessHardening:
+    @pytest.mark.parametrize(
+        "pattern,flags",
+        [
+            (r"[a-z]+[A-Z]+", re.IGNORECASE),  # C: IGNORECASE collapses the classes
+            (r"a+A+", re.IGNORECASE),          # C: literal case-fold overlap
+            (r"(?i:a+)A+", 0),                 # C: scoped inline flag, per-token
+            (r"\w+[ä]+", 0),                   # D: Unicode \w matches ä
+            (r"a+\s*a+", 0),                   # E: nullable \s* separator
+            (r"a+,?a+", 0),                    # E: nullable ,? separator
+        ],
+    )
+    def test_now_flagged(self, pattern: str, flags: int) -> None:
+        assert lawvm_regex_risks(pattern, flags), (
+            f"{pattern!r} (flags={flags}) should be flagged but was not"
+        )
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            # genuinely disjoint even under Unicode — must NOT become false positives
+            r"\d+[a-z]+",
+            r"\d+[a-zäöå]?",   # \d is digits; äöå are letters — disjoint
+            r"\d+\s+",
+            r"\s+[a-z]+",
+            r"\w+\s+",         # word vs whitespace — disjoint in Unicode too
+            r"\s+\d+",
+            r"[a-z]+[0-9]+",
+        ],
+    )
+    def test_stays_clean(self, pattern: str) -> None:
+        assert lawvm_regex_risks(pattern) == [], (
+            f"{pattern!r} is genuinely disjoint and must not be flagged"
+        )
+
+    def test_ascii_flag_makes_word_exact(self) -> None:
+        # Under re.ASCII, \w is exactly [a-zA-Z0-9_] — no overlap with ä.
+        assert lawvm_regex_risks(r"\w+[ä]+", re.ASCII) == []
+
+    def test_atomic_group_not_nested_backtracking(self) -> None:
+        # G: an atomic group discards inner backtracking, so (?>a+)+ is safe.
+        assert lawvm_regex_risks(r"(?>a+)+") == []
+
+    def test_existing_risky_still_flagged(self) -> None:
+        for pattern in (r".+.+", r"(a+)+$", r"^(a|aa)+$", r"[a-z]+[a-z]+"):
+            assert lawvm_regex_risks(pattern), f"{pattern!r} regressed to clean"
+
+
+class TestPrefilterTelemetryAndBounds:
+    def test_telemetry_counts_are_recorded(self) -> None:
+        # A: stats were registered but never updated before the hardening.
+        rx = compile_classifier_regex(
+            r"foo.*bar", classifier_id="test_telemetry_counts"
+        )
+        rx.search("nope")             # plan rejects (no foo/bar)
+        rx.search("foo and bar")      # plan passes, regex runs
+        stats = dump_prefilter_stats()["test_telemetry_counts"]
+        assert stats["checked"] == 2
+        assert stats["rejected"] == 1
+        assert stats["passed"] == 1
+        assert stats["regex_ran"] == 1
+
+    def test_negative_pos_does_not_false_negative(self) -> None:
+        # B: str.find treats negative start as slice-style; re clamps to 0.
+        # The wrapper must normalize so the prefilter region matches the engine.
+        rx = compile_classifier_regex(
+            r"section\s+\d+", classifier_id="test_bounds_neg"
+        )
+        assert rx.search("see section 5 here", -100) is not None
+
+    def test_out_of_range_endpos_clamped(self) -> None:
+        rx = compile_classifier_regex(
+            r"section\s+\d+", classifier_id="test_bounds_endpos"
+        )
+        assert rx.search("see section 5 here", 0, 10_000) is not None
