@@ -145,34 +145,34 @@ def _empty_effect_type_as_if_words_omitted(text: str) -> bool:
 
 _DOUBLE_QUOTED_FRAGMENT_RE = re.compile(r'["\u201c]([^"\u201d]+)["\u201d]')
 _CHILD_QUALIFIED_WORD_OMISSION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? |(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? (?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? )"
     r"the\s+words?\s+[\"\u201c](?P<fragment>.*?)[\"\u201d]\s+"
     r"in\s+(?P<child_kind>paragraph|sub-?paragraph|subsection|section)\s+"
     r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s*,?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _PREFIX_SUBSECTION_PARAGRAPH_WORD_OMISSION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? |(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? (?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? )"
     r"in\s+(?P<parent_kind>subsection|sub-?paragraph)\s+\(\s*(?P<parent_label>[0-9A-Za-z]+)\s*\)"
     r"\s*\(\s*(?P<child_label>[0-9A-Za-z]+)\s*\)\s*,?\s+"
     r"the\s+words?\s+[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _PREFIX_CHILD_WORD_OMISSION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? |(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? (?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? )"
     r"in\s+(?P<child_kind>subsection|paragraph|sub-?paragraph)\s+\(\s*(?P<child_label>[0-9A-Za-z]+)\s*\)"
     r"\s*,?\s+the\s+words?\s+[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _PREFIX_SECTION_WORD_OMISSION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? |(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? (?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? )"
     r"in\s+section\s+(?P<section_label>[0-9]+[A-Za-z]?)"
-    r"(?:\s*\(\s*(?P<subsection_label>[0-9A-Za-z]+)\s*\))?\s*,?\s+"
-    r"(?:the\s+words?\s+)?[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
+    r"(\((?P<subsection_label>[0-9A-Za-z]+)\)|),? "
+    r"(|the words? )[\"\u201c](?P<fragment>.*?)[\"\u201d]\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _PREFIX_SUBSECTION_CONJOINED_PARAGRAPH_WORD_OMISSION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? |(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? (?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? )"
     r"in\s+subsection\s+\(\s*(?P<subsection_label>[0-9A-Za-z]+)\s*\)\s*,?\s+"
     r"paragraph\s+\(\s*(?P<other_paragraph_label>[0-9A-Za-z]+)\s*\)\s+and\s+"
     r"in\s+paragraph\s+\(\s*(?P<paragraph_label>[0-9A-Za-z]+)\s*\)\s+"
@@ -181,8 +181,8 @@ _PREFIX_SUBSECTION_CONJOINED_PARAGRAPH_WORD_OMISSION_RE = re.compile(
     flags=re.I | re.S,
 )
 _CHILD_QUALIFIED_FINAL_WORD_OMISSION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
-    r"(?:the\s+)?(?:word\s+)?[\"\u201c](?P<fragment>.*?)[\"\u201d]\s+"
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? |(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? (?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]? )"
+    r"(|the )(?:word )?[\"\u201c](?P<fragment>.*?)[\"\u201d]\s+"
     r"at\s+the\s+end\s+of\s+"
     r"(?P<child_kind>paragraph|sub-?paragraph|subsection|section)\s+"
     r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s*,?\s*(?:and)?\s*;?\s*\.?\s*$",
@@ -473,7 +473,7 @@ def source_structured_tail_substitution_trim_selector(
 
 
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
-    r"(?:^|\b)omit\s+(?:the\s+)?definitions?\s+of(?:\b|[\u2014-])",
+    r"(?:^|\b)omit\s+(|the\s+)definitions?\s+of(?:\b|[\u2014-])",
     flags=re.I,
 )
 
@@ -697,7 +697,7 @@ def lower_quote_only_word_omission(
 # context_norm may be long (ancestor instruction text from source XML).
 _SHALL_APPLY_MODIFICATION_THAT_RE = re.compile(
     r"\bshall\s+apply\b.{0,400}?"
-    r"\bsubject\s+to\s+(?:the\s+)?modification\s+that\b",
+    r"\bsubject\s+to\s+(|the )modification\s+that\b",
     re.I,
 )
 
@@ -736,7 +736,7 @@ _EXTERNAL_ACT_TARGET_RE = re.compile(
     flags=re.I,
 )
 _PARTIAL_WHOLE_ACT_REPEAL_RE = re.compile(
-    r"\b(?:the\s+)?whole\s+Act\s+\(other\s+than\s+(?P<exceptions>[^)]+)\)\s+is\s+repealed\b",
+    r"\b(|the )whole Act \(other than (?P<exceptions>[^)]{1,500})\) is repealed\b",
     flags=re.I,
 )
 

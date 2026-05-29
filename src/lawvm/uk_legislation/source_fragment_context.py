@@ -24,9 +24,11 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
 
+# Sensor H batch 6 (A19): literal spaces replace \s+ inside optional groups;
+# BRANCH (|...) replaces (?:...)?-wrapping-\s+; .{0,1000} bounds block.
 _AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
-    r"\bafter\s+the\s+words\s+inserted\s+by\s+(?:sub-?paragraph|paragraph)\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
-    r"insert(?:\s+[“\"'‘](?P<quoted>.*?)[”\"'’]|\s*[—-]\s*(?P<block>.+?)(?:\s+[.,;])?$)",
+    r"\bafter\s+the\s+words\s+inserted\s+by\s+(?:sub-?paragraph|paragraph)\s+\((?P<label>[0-9A-Za-z]+)\) "
+    r"insert(?: [“\”’’](?P<quoted>[^”\”’’]{0,500})[“\”’’]| ?[—-] ?(?P<block>.{0,1000})(| [.,;])$)",
     flags=re.I,
 )
 
@@ -37,21 +39,26 @@ _GROUPED_ANCHOR_OCCURRENCE_CHILD_RE = re.compile(
     flags=re.I,
 )
 
+# Sensor H batch 6 (A19): (|the words? ) BRANCH replaces (?:the\s+words?\s+)?.
 _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
-    r"(?:^|\b)for\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s*[—-]\s*$",
+    r"(?:^|\b)for (|the words? )[“\”’’](?P<original>[^”\”’’]{0,300})[“\”’’] ?[—-] ?$",
     flags=re.I,
 )
 
+# Sensor H batch 6 (A19): BRANCH (| in both/each places?) replaces
+# (?:,?\s+in\s+...)?; trailing ,?(?:and)? with literal spaces.
 _GROUPED_AFTER_INSERT_CHILD_RE = re.compile(
-    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
-    r"[“\"'‘](?P<anchor>.*?)[”\"'’]"
-    r"(?P<all_occurrences>,?\s+in\s+(?:both|each)\s+places?)?"
-    r"\s*,?\s*(?:and)?\s*$",
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+) "
+    r"[“\”’’](?P<anchor>[^”\”’’]{0,300})[“\”’’]"
+    r"(?P<all_occurrences>|(,| ) in (?:both|each) places?)"
+    r" ?,? *(?:and)? *$",
     flags=re.I,
 )
 
+# Sensor H batch 6 (A19): (| (the )?words?) BRANCH replaces (?:\s+(?:the\s+)?words?)?;
+# \s*→’ ?’ at boundaries; anchor bounded.
 _GROUPED_AFTER_INSERT_PARENT_TAIL_RE = re.compile(
-    r"\binsert(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]\s*\.?\s*$",
+    r"\binsert(| (?:the )?words?) [“\”’’](?P<inserted>[^”\”’’]{0,500})[“\”’’] ?\.? ?$",
     flags=re.I,
 )
 
@@ -62,47 +69,58 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): BRANCH (|the words? ) replaces (?:(?:the\s+)?words?\s+)?;
+# literal spaces replace \s+ inside sub-groups.
 _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
-    r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bfor\s+"
-    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
-    r"(?:there\s+(?:is|are|shall\s+be)\s+substituted|substitute)\s+"
-    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bfor "
+    r"(|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’] "
+    r"(?:there (?:is|are|shall be) substituted|substitute) "
+    r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): same fix strategy as PROVISIONS_SUBSTITUTION above.
 _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_REVERSED_RE = re.compile(
-    r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bsubstitute\s+"
-    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]\s+"
-    r"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]",
+    r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bsubstitute "
+    r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’] "
+    r"for (|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): BRANCH (|the words? ) replaces nested optional groups.
 _SOURCE_PARENT_TAIL_SUBSTITUTION_RE = re.compile(
-    r"\bfor\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
-    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
-    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    r"\bfor (|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’] "
+    r"(?:substitute|there (?:is|are|shall be) substituted) "
+    r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): optional prefix label — (|LABEL ) BRANCH avoids \s*?;
+# bounded anchor.
 _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
-    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*"
-    r"(?:Substitute|For)\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*$",
+    r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+) )"
+    r"(?:Substitute|For) [“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’] ?$",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): BRANCH forms replace (?:X\s+)?; literal spaces throughout.
+# at-end paren qualifier: (| \([^)]{1,80}\)) BRANCH.
+# "of that/the section" optional: (| of that section| of the section).
 _SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
-    r"(?:\bat\s+the\s+end(?:\s+of\s+(?:(?:that|the)\s+)?"
-    r"(?:paragraph|sub-?paragraph|subsection|section)(?:\s+\([^)]+\))?"
-    r"(?:\s+\([^)]*\))?(?:\s+of\s+(?:that|the)\s+section)?)?,?\s+"
-    r"(?:(?:there\s+(?:is|are|shall\s+be)\s+)?insert(?:ed)?"
-    r"(?:\s+the\s+following\s+definition)?|"
-    r"(?:there\s+(?:is|are)\s+)?added)|\binsert(?:ed)?\s+at\s+the\s+end)\s*[—–-]?\s*$",
+    r"(?:\bat the end"
+    r"(| of (|that |the )(?:paragraph|sub-?paragraph|subsection|section)"
+    r"(| \([^)]{1,80}\))(| \([^)]{1,80}\))(| of that section| of the section)),? "
+    r"(?:(|there (?:is|are|shall be) )insert(?:ed)?(| the following definition)|"
+    r"(|there (?:is|are) )added)|\binsert(?:ed)? at the end) ?[—–-]? ?$",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): optional prefix `[A-Z]..., ` — BRANCH (|X ) avoids
+# (?:...\s*)? nested quantifier; literal space for comma separator.
 _SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
-    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+"
-    r"(?:(?:[A-Z][A-Za-z0-9.]*,\s*)?(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+) "
+    r"(?:(|[A-Z][A-Za-z0-9.]*, )(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
     flags=re.I,
 )
+# Sensor H batch 6 (A19): (|the words? ) BRANCH; bounded anchor.
 _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
-    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+for\s+"
-    r"(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s+in\s+",
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+) for "
+    r"(|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’] in ",
     flags=re.I,
 )
 
@@ -114,21 +132,24 @@ def _source_parent_opens_target_list(lead_text: str) -> bool:
     lowered = normalized.lower()
     return lowered.startswith(("in ", "for ")) or " in " in lowered or " for " in lowered
 
+# Sensor H batch 6 (A19): BRANCH forms replace (?:X\s+)?; literal spaces;
+# anchor and inserted bounded; occurrence qualifier simplified with BRANCH.
 _EACH_OTHER_PLACE_AFTER_INSERT_RE = re.compile(
-    r"\bafter\s+(?:the\s+words?\s+)?[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
-    r"in\s+each\s+other\s+place(?:\s+(?:where\s+)?(?:it|they|those\s+words?)?\s*"
-    r"(?:occurs?|occurring|appears?|appear))?,?\s+"
-    r"(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)\s+"
-    r"(?:the\s+words?\s+)?[“\"'‘](?P<inserted>.*?)[”\"'’]",
+    r"\bafter (|the words? )[“\”’’](?P<anchor>[^”\”’’]{0,300})[“\”’’],? "
+    r"in each other place(| (?:where )?(|it|they|those words?) *"
+    r"(?:occurs?|occurring|appears?|appear)),? "
+    r"(?:there (?:is|are|shall be) inserted|insert) "
+    r"(|the words? )[“\”’’](?P<inserted>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
 
+# Sensor H batch 6 (A19): same fix strategy as EACH_OTHER_PLACE_AFTER_INSERT above.
 _EACH_OTHER_PLACE_SUBSTITUTION_RE = re.compile(
-    r"\bfor\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
-    r"in\s+each\s+other\s+place(?:\s+(?:where\s+)?(?:it|they|those\s+words?)?\s*"
-    r"(?:occurs?|occurring|appears?|appear))?,?\s+"
-    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
-    r"(?:the\s+words?\s+)?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+    r"\bfor (|the words? )[“\”’’](?P<original>[^”\”’’]{0,300})[“\”’’],? "
+    r"in each other place(| (?:where )?(|it|they|those words?) *"
+    r"(?:occurs?|occurring|appears?|appear)),? "
+    r"(?:substitute|there (?:is|are|shall be) substituted) "
+    r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
 
@@ -140,11 +161,13 @@ _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
 _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_parent_word_range_substitution_text_patch"
 )
+# Sensor H batch 6 (A19): (|the ) avoids nested (?:the\s+)?; BRANCH for optional
+# “there ... be”; bounded start/end anchors.
 _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE = re.compile(
-    r"\bfor\s+(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]\s+"
-    r"to\s+[“\"'‘](?P<end>.*?)[”\"'’]\s+"
-    r"(?:there\s+(?:is|are|shall\s+be)\s+)?substitut(?:ed|e)\s+"
-    r"(?:(?:the\s+)?words?)?\s*[—–-]?\s*$",
+    r"\bfor (|the )words? from [“\”’’](?P<start>[^”\”’’]{0,300})[“\”’’] "
+    r"to [“\”’’](?P<end>[^”\”’’]{0,300})[“\”’’] "
+    r"(|there (?:is|are|shall be) )substitut(?:ed|e) "
+    r"(|(?:the )?words?) ?[—–-]? ?$",
     flags=re.I,
 )
 _SOURCE_LEAD_TEXT_CACHE: WeakKeyDictionary[ET.Element, str] = WeakKeyDictionary()
