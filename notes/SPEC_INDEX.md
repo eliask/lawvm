@@ -84,3 +84,4 @@ the architecture, keep it explanatory.
 
 - [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)
 - [LAWVM_STACK_MAP.md](LAWVM_STACK_MAP.md)
+- [REGEX_TO_GRAMMAR_MIGRATION.md](REGEX_TO_GRAMMAR_MIGRATION.md) — when string matching stays regex (lint + prefilter) vs becomes a named recognizer/spec; applies AGENTS.md §1.13
