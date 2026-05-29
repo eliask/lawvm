@@ -493,6 +493,24 @@ Recent improvement:
 - resolved target-scope carriers now reject non-neutral unit kinds and
   non-string scope fields when constructed directly, keeping shared proof/report
   scope evidence inside the core section/chapter/part contract.
+- UK REPLACE-as-INSERT recovery (§1.2 action-family conversion) now emits
+  `uk_replay_replace_materialized_as_insert_for_missing_leaf`
+  (family=target_resolution_recovery, blocking=False, strict_disposition=block,
+  quirks_disposition=apply) when a REPLACE op falls through to _insert_node_v2
+  because the target leaf is absent but the replacement payload matches the
+  missing leaf kind and label exactly; rule ID registered in
+  `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS` in source_adjudication.py; witness
+  fields: leaf_kind, parent_path, payload_kind, payload_label.
+- UK word-to-structural substitution escalation (§1.2 action-family conversion)
+  now emits `uk_effect_word_substitution_escalated_to_structural_replace`
+  (family=action_family_recovery, blocking=False, strict_disposition=block,
+  quirks_disposition=apply) via `_append_uk_effect_lowering_observation` in
+  effect_text_fragment_lowering.py when a "substituted for words" effect feed
+  row carries a structural payload whose kind+label match the target leaf; the
+  lowering still proceeds to curr_action="replace" in quirks mode; rule ID
+  registered in `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS` in
+  source_adjudication.py; witness fields: source_payload_kind,
+  source_payload_label, target_leaf_kind, target_leaf_label.
 
 ## Ranked Promotion Candidates
 
