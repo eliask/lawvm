@@ -37,6 +37,7 @@ TimelineIssueKind = Literal[
     "temporal_event_not_matched",
     "unsupported_applicability_dimension",
     "skipped_contingent_unresolved",
+    "excluded_authority_context",
     "ambiguous_missing_scope",
     "equal_rank_same_source_selection_conflict",
     "empty_same_day_interval",

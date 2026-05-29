@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, Sequence
 
 if TYPE_CHECKING:
     from lawvm.core.ir import LegalOperation
+    from lawvm.core.provenance import OperationSource
     from lawvm.core.semantic_types import StructuralAction
 
 
@@ -312,8 +313,7 @@ class BranchLifecycleEvent:
         }
 
 
-def branch_context_from_operation(op: "LegalOperation") -> BranchContext:
-    source = op.source
+def branch_context_from_source(source: "OperationSource | None") -> BranchContext:
     if source is None:
         return DEFAULT_ENACTED_CONTEXT
     return BranchContext(
@@ -324,8 +324,25 @@ def branch_context_from_operation(op: "LegalOperation") -> BranchContext:
     )
 
 
+def branch_context_from_operation(op: "LegalOperation") -> BranchContext:
+    return branch_context_from_source(op.source)
+
+
 def operation_matches_branch_context(op: "LegalOperation", context: BranchContext) -> bool:
     return branch_context_from_operation(op) == context
+
+
+def source_matches_overlay_context(source: "OperationSource | None", context: BranchContext) -> bool:
+    """Return True when a source belongs in the selected materialization lane."""
+
+    source_context = branch_context_from_source(source)
+    if context.is_enacted_default:
+        return source_context.is_enacted_default
+    return source_context.is_enacted_default or source_context == context
+
+
+def operation_matches_overlay_context(op: "LegalOperation", context: BranchContext) -> bool:
+    return source_matches_overlay_context(op.source, context)
 
 
 def enacted_materialization_ops(ops: Sequence["LegalOperation"]) -> tuple["LegalOperation", ...]:
@@ -353,14 +370,7 @@ def branch_overlay_materialization_ops(
     enacted law; callers must explicitly pass a non-default branch context.
     """
 
-    if context.is_enacted_default:
-        return enacted_materialization_ops(ops)
-    return tuple(
-        op
-        for op in ops
-        if branch_context_from_operation(op).is_enacted_default
-        or operation_matches_branch_context(op, context)
-    )
+    return tuple(op for op in ops if operation_matches_overlay_context(op, context))
 
 
 def branch_graph_edge_from_operation(

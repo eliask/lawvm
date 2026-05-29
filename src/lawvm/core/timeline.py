@@ -29,6 +29,14 @@ from lawvm.core.ir import (
     ProvisionTimeline,
     ProvisionVersion,
 )
+from lawvm.core.authority import (
+    BranchContext,
+    DEFAULT_ENACTED_CONTEXT,
+    branch_context_from_operation,
+    branch_context_from_source,
+    operation_matches_overlay_context,
+    source_matches_overlay_context,
+)
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import StructuralAction
@@ -253,6 +261,7 @@ def compile_timelines(
     label_norm: Optional[Callable[[str], str]] = None,
     temporal_events: Tuple[TemporalEvent, ...] = (),
     issue_sink: Optional[List[TimelineIssue]] = None,
+    authority_context: BranchContext = DEFAULT_ENACTED_CONTEXT,
 ) -> Timelines:
     """Build a ProvisionTimeline for each addressable provision.
 
@@ -264,10 +273,17 @@ def compile_timelines(
 
     Args:
         base:       The base statute (unamended original or earliest known state).
-        ops:        LegalOperations; this function re-sorts them by explicit
-                    temporal carrier.
+        ops:        LegalOperations in one or more authority lanes; this
+                    function filters to `authority_context` plus the default
+                    enacted baseline, then re-sorts them by explicit temporal
+                    carrier.
         base_date:  Effective date of the base statute. Falls back to
                     base.metadata["enacted_date"] then "0000-00-00".
+        authority_context:
+                    Materialization authority lane. The default accepts only
+                    enacted/commenced branchless operations. A non-default
+                    context accepts the enacted baseline plus operations and
+                    temporal events that exactly match that context.
 
     Returns:
         Dict mapping each LegalAddress to its complete ProvisionTimeline.
@@ -457,6 +473,52 @@ def compile_timelines(
             emit_warnings=emit_warnings,
         )
 
+    def _context_label(context: BranchContext) -> str:
+        return (
+            f"authority_layer={context.authority_layer!r}, "
+            f"legal_status={context.legal_status!r}, "
+            f"branch_id={context.branch_id!r}, "
+            f"scenario_id={context.scenario_id!r}"
+        )
+
+    executable_ops: list[LegalOperation] = []
+    for op in ops:
+        if operation_matches_overlay_context(op, authority_context):
+            executable_ops.append(op)
+            continue
+        source_context = branch_context_from_operation(op)
+        _src_id = op.source.statute_id if op.source else "?"
+        _record_timeline_issue(
+            issue_sink,
+            kind="excluded_authority_context",
+            message=(
+                "compile_timelines: skipping op outside selected authority context "
+                f"({_context_label(source_context)} not in {_context_label(authority_context)})"
+            ),
+            address=op.target,
+            source_statute=_src_id,
+            emit_warnings=emit_warnings,
+        )
+
+    executable_temporal_events: list[TemporalEvent] = []
+    for event in temporal_events:
+        if source_matches_overlay_context(event.source, authority_context):
+            executable_temporal_events.append(event)
+            continue
+        source_context = branch_context_from_source(event.source)
+        _record_timeline_issue(
+            issue_sink,
+            kind="excluded_authority_context",
+            message=(
+                "compile_timelines: skipping TemporalEvent outside selected "
+                f"authority context (event_id={event.event_id!r}, "
+                f"{_context_label(source_context)} not in {_context_label(authority_context)})"
+            ),
+            source_statute=event.source.statute_id if event.source else "",
+            emit_warnings=emit_warnings,
+        )
+    temporal_events = tuple(executable_temporal_events)
+
     def _append_version(
         timeline: ProvisionTimeline,
         version: ProvisionVersion,
@@ -471,7 +533,7 @@ def compile_timelines(
 
     matched_temporal_event_ids = {
         event.event_id
-        for op in ops
+        for op in executable_ops
         for event in _matching_temporal_events_for_op(
             op,
             temporal_events,
@@ -498,7 +560,7 @@ def compile_timelines(
                 ),
                 op,
             )
-            for op in ops
+            for op in executable_ops
         ),
         key=lambda pair: (pair[0], pair[1].sequence),
     )
@@ -857,6 +919,7 @@ def compile_timelines_ex(
     base_date: str = "",
     label_norm: Optional[Callable[[str], str]] = None,
     temporal_events: Tuple[TemporalEvent, ...] = (),
+    authority_context: BranchContext = DEFAULT_ENACTED_CONTEXT,
 ) -> TimelineCompilationResult:
     """Explicit compile_timelines result with typed issues.
     """
@@ -868,6 +931,7 @@ def compile_timelines_ex(
         label_norm=label_norm,
         temporal_events=temporal_events,
         issue_sink=issues,
+        authority_context=authority_context,
     )
     return TimelineCompilationResult(timelines=timelines, issues=tuple(issues))
 

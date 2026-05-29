@@ -327,6 +327,10 @@ Recent improvement:
 - branch overlay operation selection now has a core helper for explicit
   current-law-plus-selected-branch materialization demos without promoting
   proposal claims into the default enacted lane.
+- timeline compilation now enforces the selected branch/authority context at the
+  core boundary for both operations and temporal events, recording
+  `timeline.excluded_authority_context` instead of letting non-selected branch
+  claims leak into default enacted PIT state.
 - Neo4j graph export now includes branch nodes, branch would-affect edges, and
   branch lifecycle event tables so proposal/draft graph facts have a persistent
   export lane.
