@@ -3092,6 +3092,24 @@ def _uk_table_driven_fee_substitution(
     )
 
 
+# Compiled at module scope per \u00a71.11.  Site #6 (census): three-segment
+# unbounded .*? between column 1/column 2/substitute anchors with quote-char
+# alternation.  Lazy but unbounded .*? can still explode when no closing quote
+# exists \u2014 bound each segment to .{0,400}? and replace inner .*? captures with
+# [^\u201c\u201d"']{0,400}? (character-class terminator eliminates backtracking).
+# Fast-guard: "column 1", "column 2", "substitute" must all appear in text.
+_COLUMN_1_2_SUBSTITUTION_RE = re.compile(
+    r"\bprovisions?\s+listed\s+in\s+column\s+1\b.{0,400}?"
+    r"\bfor\s+the\s+words\s+in\s+the\s+corresponding\s+entry\s+in\s+column\s+2\b"
+    r".{0,400}?"
+    r"\bsubstitute\s+"
+    r"(?:\u201c(?P<curly>[^\u201d]{0,400}?)\u201d"
+    r"|\"(?P<double>[^\"]{0,400}?)\""
+    r"|'(?P<single>[^']{0,400}?)')",
+    re.I,
+)
+
+
 def _uk_table_driven_corresponding_entry_word_substitution(
     *,
     effect: UKEffectRecord,
@@ -3101,13 +3119,11 @@ def _uk_table_driven_corresponding_entry_word_substitution(
 ) -> _UKTableDrivenWordSubstitution:
     """Resolve "column 1 provision / corresponding column 2 words" source tables."""
     text = " ".join((extracted_text or "").split())
-    replacement_match = re.search(
-        r"\bprovisions?\s+listed\s+in\s+column\s+1\b"
-        r".*?\bfor\s+the\s+words\s+in\s+the\s+corresponding\s+entry\s+in\s+column\s+2\b"
-        r".*?\bsubstitute\s+(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
-        text,
-        re.I,
-    )
+    # Fast-guards before the regex (\u00a71.11) \u2014 all three keywords required.
+    text_lower = text.lower()
+    if "column 1" not in text_lower or "column 2" not in text_lower or "substitute" not in text_lower:
+        return _UKTableDrivenWordSubstitution(recognized=False)
+    replacement_match = _COLUMN_1_2_SUBSTITUTION_RE.search(text)
     if not replacement_match:
         return _UKTableDrivenWordSubstitution(recognized=False)
     if source_root is None:

@@ -690,6 +690,18 @@ def lower_quote_only_word_omission(
     )
 
 
+# Compiled at module scope per §1.11.  Site #7 (census): greedy .* between
+# two anchors in _source_parent_application_modification_context — bound to
+# .{0,400}? (lazy).  IGNORECASE set via flag argument.  Fast-guard: "shall"
+# is required by the first anchor; "modification" is required by the terminal.
+# context_norm may be long (ancestor instruction text from source XML).
+_SHALL_APPLY_MODIFICATION_THAT_RE = re.compile(
+    r"\bshall\s+apply\b.{0,400}?"
+    r"\bsubject\s+to\s+(?:the\s+)?modification\s+that\b",
+    re.I,
+)
+
+
 def _source_parent_application_modification_context(
     *,
     extracted_el: Optional[ET.Element],
@@ -703,11 +715,11 @@ def _source_parent_application_modification_context(
         context_norm = " ".join(context_text.split()).strip()
         if not context_norm:
             continue
-        if re.search(
-            r"\bshall\s+apply\b.*\bsubject\s+to\s+(?:the\s+)?modification\s+that\b",
-            context_norm,
-            flags=re.I,
-        ):
+        # Fast-guards before bounded-regex (§1.11).
+        context_lower = context_norm.lower()
+        if "shall" not in context_lower or "modification" not in context_lower:
+            continue
+        if _SHALL_APPLY_MODIFICATION_THAT_RE.search(context_norm):
             return context_norm
     return ""
 
