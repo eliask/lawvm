@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
+from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
 from lawvm.core.ir import IRNode
@@ -34,6 +35,24 @@ _SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
     r"(\d+\s*[a-z]?)\s*§\s*,?\s*joka\s+(?:samalla\s+)?siirretään\s+(\d+\s*[a-z]?)\s+lukuun",
     flags=re.I,
 )
+
+# Module-scope constants for restrict_sec1_fallback_to_parent hot path
+_FI_NUMBERED_ITEM_RE = re.compile(r"^\d+\)\s*", re.M)
+_FI_CUT_RE = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b|\bsiitä\s+on\b", re.I)
+
+
+@lru_cache(maxsize=1024)
+def _fi_statute_citation_re(parent_id: str) -> "re.Pattern[str] | None":
+    """Compile (cached) a statute-citation bracketed-reference pattern for parent_id."""
+    try:
+        year_str, num_str = parent_id.split("/")
+        num = int(num_str)
+    except (ValueError, AttributeError):
+        return None
+    return re.compile(
+        rf"\(\s*{num}\s*/\s*(?:{re.escape(year_str)}|{re.escape(year_str[-2:])})\s*\)",
+        re.IGNORECASE,
+    )
 
 
 def duplicate_section_labels_across_chapters(master_ir: IRNode) -> Set[str]:
@@ -840,15 +859,9 @@ def assign_scope_from_renumber_destinations(
 def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
     if not sec1_text or not parent_id:
         return sec1_text
-    try:
-        year_str, num_str = parent_id.split("/")
-        num = int(num_str)
-    except (ValueError, AttributeError):
+    ref_re = _fi_statute_citation_re(parent_id)
+    if ref_re is None:
         return sec1_text
-    ref_re = re.compile(
-        rf"\(\s*{num}\s*/\s*(?:{re.escape(year_str)}|{re.escape(year_str[-2:])})\s*\)",
-        re.IGNORECASE,
-    )
 
     parts = [
         p.strip()
@@ -872,7 +885,6 @@ def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
     # the same kumotaan clause.  Collect all following numbered list items
     # (those matching "^\d+\)\s*") that follow a ":" intro.
     expanded: List[str] = list(matched)
-    _numbered_item_re = re.compile(r"^\d+\)\s*", re.M)
     for i, part in enumerate(parts):
         if part not in expanded:
             continue
@@ -883,15 +895,14 @@ def restrict_sec1_fallback_to_parent(sec1_text: str, parent_id: str) -> str:
         for following in parts[i + 1:]:
             if following in expanded:
                 break
-            if not _numbered_item_re.match(following):
+            if not _FI_NUMBERED_ITEM_RE.match(following):
                 break
             expanded.append(following)
     matched = expanded
 
-    cut_re = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b|\bsiitä\s+on\b", re.I)
     trimmed: List[str] = []
     for part in matched:
-        cut = cut_re.search(part)
+        cut = _FI_CUT_RE.search(part)
         piece = part[:cut.start()].strip() if cut else part.strip()
         trimmed.append(piece)
 
