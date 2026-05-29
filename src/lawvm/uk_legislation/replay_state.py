@@ -803,6 +803,41 @@ class UKReplayStateMixin:
             )
         )
 
+    def _record_descendant_renumber_mutation_event(
+        self,
+        *,
+        old_path: TreePath | None,
+        new_child_path: TreePath,
+        helper: str,
+    ) -> None:
+        """Record a renumber MutationEvent for the descendant-relocation shape.
+
+        Called after _replace_node_in_statute when a provision is rewritten
+        into a parent-with-child shape (e.g. paragraph 12 → section 12 /
+        sub-paragraph (1)).  The generic replace event records the mechanical
+        in-place rewrite; this event carries the lineage so PIT materialization
+        can see the relocation.
+        """
+        if self.mutation_events_out is None or old_path is None:
+            return
+        op = self._current_mutation_op
+        if op is None:
+            return
+        parent_path = old_path[:-1] if old_path else ()
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper=helper,
+                outcome="renumbered_node",
+                resolved_target_path=tree_path_from_legal_address(op.target),
+                parent_path=parent_path,
+                renumbered_paths=((old_path, new_child_path),),
+            )
+        )
+
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._structural_shape(old_node) != self._structural_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None

@@ -451,6 +451,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved",
         "uk_replay_target_resolved_by_recursive_descent",
         "uk_replay_replace_materialized_as_insert_for_missing_leaf",
+        "uk_replay_descendant_renumber_provision",
         "uk_effect_word_substitution_escalated_to_structural_replace",
         "uk_replay_source_anchored_order_observed",
         "uk_replay_source_carried_table_entry_paragraph_substitution_resolved",

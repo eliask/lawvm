@@ -130,6 +130,23 @@ Recent improvement:
 - UK same-parent sibling renumber replay now also reindexes the moved subtree
   and bumps the structure-mutation serial, so warm eId lookups and
   post-renumber invariant diagnostics observe the changed tree.
+- UK same-provision descendant renumber replay now emits a renumber-specific
+  MutationEvent (outcome=renumbered_node, helper=_apply_same_provision_descendant_renumber)
+  carrying the lineage pair: old_path (the source provision, e.g. section:12)
+  → new_child_path (the relocated content, e.g. section:12/subsection:1).
+  Previously _replace_node_in_statute emitted only a generic replaced_node event
+  with no lineage semantics.  The new event is emitted immediately after the
+  replace succeeds, using the old_path captured before the replace clears the
+  eId lookup index.  Rule ID `uk_replay_descendant_renumber_provision` is
+  registered in UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS in source_adjudication.py
+  (blocking=False, proceed in strict mode — this is a legitimate lineage operation,
+  not a heuristic recovery).  The generic replace event is preserved; the renumber
+  event supplements it with §1.6 migration provenance.  PIT materialization can
+  consume the renumbered_paths pair to reconstruct that the source provision's
+  content was relocated to the child path.  Covered by
+  tests/test_uk_replay_descendant_renumber_mutation_event.py (10 tests: positive,
+  witness fields, PIT-shape, rule-ID, negative-sibling, negative-no-dest,
+  negative-existing-child, no-collection-guard, executor-direct).
 - UK table-column insertion now stages spanning-cell and row-child edits until
   the whole column boundary is proven, so an unresolved short payload cannot
   leave partial table mutations outside an applied mutation event.
@@ -1148,7 +1165,10 @@ These are jurisdiction source semantics, not shared invariants.
    opportunistic call-site cleanup rather than semantic promotion.
 2. Extend UK mutation-event emission to any remaining direct structural
    mutation helpers not routed through central replace/remove/insert or the
-   table/schedule children-splice recorder.
+   table/schedule children-splice recorder.  The descendant-renumber lineage
+   event (uk_replay_descendant_renumber_provision) closes the
+   _apply_same_provision_descendant_renumber gap; both renumber shapes now
+   emit renumber-specific MutationEvents.
 3. Continue caller-specific audit of same-label sorted insertion paths where a
    refusal should emit a more precise conflict diagnostic. The shared mutable
    helper and main body-root/renumber callers now prevent destructive
