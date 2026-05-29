@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import pytest
 
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.parse_witness import ParseWitness, ResolutionWitness
 from lawvm.finland.johtolause.rule_registry import ALL_RULES, all_rule_ids, get_rule
 
@@ -130,6 +131,16 @@ def test_parse_witness_rejects_invalid_source_span() -> None:
         ParseWitness(rule_id="fi.section_ref", source_span=(2, 2))
 
 
+def test_parse_witness_normalizes_span_and_validates_resolution() -> None:
+    span = [1, 3]
+    witness = ParseWitness(rule_id="fi.section_ref", source_span=cast(Any, span))
+    span[1] = 9
+
+    assert witness.source_span == (1, 3)
+    with pytest.raises(ValueError, match="resolution must be a ResolutionWitness"):
+        ParseWitness(rule_id="fi.section_ref", resolution=cast(Any, object()))
+
+
 def test_resolution_witness_rejects_empty_rule_id() -> None:
     with pytest.raises(ValueError, match="resolver_rule_id must be non-empty"):
         ResolutionWitness(resolver_rule_id="")
@@ -138,3 +149,20 @@ def test_resolution_witness_rejects_empty_rule_id() -> None:
 def test_resolution_witness_rejects_invalid_antecedent_span() -> None:
     with pytest.raises(ValueError, match="antecedent_span must be a non-empty half-open token span"):
         ResolutionWitness(resolver_rule_id="resolution.backref", antecedent_span=(-1, 3))
+
+
+def test_resolution_witness_freezes_context_and_normalizes_span() -> None:
+    context = {"is_singular": True}
+    span = [2, 5]
+
+    witness = ResolutionWitness(
+        resolver_rule_id="resolution.backref",
+        antecedent_span=cast(Any, span),
+        context=context,
+    )
+    context["is_singular"] = False
+    span[1] = 9
+
+    assert witness.antecedent_span == (2, 5)
+    assert isinstance(witness.context, FrozenDict)
+    assert witness.context["is_singular"] is True
