@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
+import pytest
+
 from lawvm.core.target_scope import (
     matching_sections_for_scope,
     normalize_target_unit_kind,
@@ -16,6 +20,14 @@ def test_normalize_target_unit_kind_is_strict_neutral() -> None:
     assert normalize_target_unit_kind("annex") == ""
     assert normalize_target_unit_kind("schedule") == ""
     assert normalize_target_unit_kind("unknown-kind") == ""
+
+
+def test_resolved_target_scope_rejects_malformed_direct_construction() -> None:
+    with pytest.raises(ValueError, match="target_unit_kind"):
+        ResolvedTargetScope(target_unit_kind=cast(Any, "annex"))
+
+    with pytest.raises(TypeError, match="target_norm"):
+        ResolvedTargetScope(target_norm=cast(Any, 5))
 
 
 def test_infer_target_unit_kind_from_scope_keeps_section() -> None:

@@ -27,6 +27,18 @@ class ResolvedTargetScope:
     target_part: str = ""
     target_section: str = ""
 
+    def __post_init__(self) -> None:
+        if self.target_unit_kind not in {"", "section", "chapter", "part"}:
+            raise ValueError("ResolvedTargetScope.target_unit_kind is not supported")
+        for field_name, value in (
+            ("target_norm", self.target_norm),
+            ("target_chapter", self.target_chapter),
+            ("target_part", self.target_part),
+            ("target_section", self.target_section),
+        ):
+            if not isinstance(value, str):
+                raise TypeError(f"ResolvedTargetScope.{field_name} must be a string")
+
 
 def normalize_target_unit_kind(value: object) -> NeutralTargetUnitKind:
     normalized = _scope_text(value).lower()

@@ -490,6 +490,9 @@ Recent improvement:
 - chain-completeness blockers now validate their reason-code vocabulary,
   section/scope identifiers, source-statute type, and blocker lanes at
   construction, protecting negative-proof evidence from malformed blocker rows.
+- resolved target-scope carriers now reject non-neutral unit kinds and
+  non-string scope fields when constructed directly, keeping shared proof/report
+  scope evidence inside the core section/chapter/part contract.
 
 ## Ranked Promotion Candidates
 
