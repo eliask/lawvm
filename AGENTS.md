@@ -161,25 +161,62 @@ return rejected operations with reason, source, and blocking/strictness status.
 ### 1.11 Hot-path performance discipline
 
 Do not make broad performance rewrites without a profiler witness or a bounded
-hot-path reason.
+hot-path reason. See §19.1 for the general performance contract; this section
+covers regex specifically because catastrophic backtracking has caused most
+LawVM slowdowns historically.
 
 Regex policy:
 
-- compile static regexes when they are reused, complex, or run in corpus-scale
-  loops;
-- do not blindly replace every `re.search(...)` with `re.compile(...)`; Python
-  already caches recent module-level regex calls;
-- avoid constructing dynamic regex strings inside loops over provisions,
-  effects, source XML, or tree descendants;
-- if a target-specific dynamic regex is unavoidable, build it once per target
-  or function call and reuse the compiled pattern inside the inner loop;
-- prefer cheap string guards before regex scans over large legal text;
+- compile reused regexes at module scope. Do not rely on Python's internal
+  recent-call cache — it thrashes once a hot path mixes many patterns;
+- never construct regex strings dynamically inside loops over provisions,
+  effects, source XML, or tree descendants. For target-specific patterns,
+  use an `@functools.lru_cache`-wrapped compile factory keyed on the
+  parametrized inputs;
+- always substring-guard before any regex scan on long legal text:
+  `if "keyword" not in text: return False` eliminates ~99% of calls and
+  costs nanoseconds;
 - replace regex with direct string operations only when the equivalence is
   obvious, tested, and not semantic guesswork.
+
+Catastrophic-backtracking discipline:
+
+- never write two or more adjacent unbounded quantifiers (`.+.+`, `.*.*`,
+  `[^x]+[^y]+`) in the same pattern — even with tempered-greedy anchors;
+- bound every quantifier in long-text patterns with explicit ceilings
+  (`.{0,400}?`, `[^"]{0,500}`). Typical legal-text segments are well under
+  500 chars; pick generously but pick a number;
+- the tempered-greedy idiom `(?:(?!anchor).){0,N}?` is the canonical safe
+  pattern for "match up to the next anchor;" the unbounded version is unsafe;
+- every new boolean classifier pattern in a hot path needs an adversarial
+  perf test: long worst-case input, tight wall budget (e.g. <100 ms).
+
+LawVM stays on stdlib `re`. Lookarounds are load-bearing for Estonian
+morphology (`(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])`) and Finnish `§(?!:)` discrimination,
+so `re2` is not feasible. The cost of staying on `re` is the discipline above.
 
 Performance changes must preserve findings, rejected operations, diagnostics,
 and strict-mode behavior. Do not optimize away evidence to improve benchmark
 scores or wall time.
+
+### 1.12 Statute compile-cost ceiling
+
+A single-statute compile + replay should not take longer than ~10 seconds.
+This is not a hard SLA but a reality check: legal amendment streams are not
+algorithmically hard. When a single statute exceeds this ceiling, the cause
+is almost always a single fixable hotspot — catastrophic regex backtracking,
+an O(N²) tree walk that should be an O(1) index lookup, a string normalization
+recomputed millions of times — not "the problem is fundamentally large."
+
+Agents encountering a slow statute should:
+
+- run `cProfile` against the single-statute path before reasoning about the
+  cause. Code-reading hypotheses about hot paths are usually wrong;
+- treat "this statute is just hard" as a last resort, not a first hypothesis;
+- if a fix cannot bring a statute under ~10s, document the specific
+  algorithmic reason so the next agent does not re-investigate.
+
+When wall time looks absurd, it almost certainly is.
 
 ---
 
@@ -747,7 +784,8 @@ strict-mode barriers, source-pathology records, or adjudication detail.
 
 In hot replay, benchmark, extraction, and source-scan paths:
 
-* compile regexes once at module scope or cache them when the pattern is reused;
+* see §1.11 for regex discipline (module-scope compile, substring guards,
+  bounded quantifiers, catastrophic-backtracking rules);
 * avoid repeated full-tree XML or mutable-IR walks inside per-operation loops;
 * build explicit indexes for repeated `eId`, sequence, label, table, or source
   lookups;
@@ -759,6 +797,9 @@ In hot replay, benchmark, extraction, and source-scan paths:
 Exceptions are allowed for cold code, one-shot scripts, tests, and genuinely
 dynamic patterns. If a dynamic pattern appears in a hot loop, document why it
 cannot be precompiled or cached.
+
+Single-statute compile cost: see §1.12. When a statute exceeds ~10s wall,
+profile before reasoning.
 
 ---
 
