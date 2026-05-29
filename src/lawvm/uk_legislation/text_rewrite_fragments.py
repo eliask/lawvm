@@ -183,8 +183,8 @@ def _multi_quoted_word_repeal_fragments(
 def _fragment_substitution(op: LegalOperation) -> Optional[list]:
     """Return typed fragment-substitution data from the lowered witness."""
     witness = _witness_for_op(op)
-    text_rewrite_witness = getattr(witness, "text_rewrite_witness", None)
-    if text_rewrite_witness is not None and getattr(text_rewrite_witness, "alternatives", None):
+    text_rewrite_witness = witness.text_rewrite_witness if witness is not None else None
+    if text_rewrite_witness is not None and text_rewrite_witness.alternatives:
         fragments: list[dict[str, str]] = []
         for original, replacement in text_rewrite_witness.alternatives:
             if not original:
@@ -224,8 +224,8 @@ def _fragment_substitution(op: LegalOperation) -> Optional[list]:
 def _text_rewrite_rule_ids_for_op(op: LegalOperation) -> tuple[str, ...]:
     rule_ids: list[str] = []
     witness = _witness_for_op(op)
-    text_rewrite_witness = getattr(witness, "text_rewrite_witness", None)
-    rewrite_source = getattr(text_rewrite_witness, "rewrite_source", "")
+    text_rewrite_witness = witness.text_rewrite_witness if witness is not None else None
+    rewrite_source = text_rewrite_witness.rewrite_source if text_rewrite_witness is not None else ""
     if rewrite_source:
         rule_ids.append(str(rewrite_source))
     for note in op.provenance_tags:
