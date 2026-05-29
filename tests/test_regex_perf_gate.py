@@ -184,6 +184,12 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: _CITE_RE nested quantifiers (CATEGORY false-"
         "positives resolved by A18). Sensor H batch 6."
     ),
+    "src/lawvm/finland/metadata.py": (
+        "Pre-existing baseline: _LEADING_SECTION_MARKER_AFTER_CITATION_RE has "
+        "nullable-separated same-class repeats (\\s* around an optional label) "
+        "newly detected by the 2026-05-30 soundness hardening (nullable-separator "
+        "look-ahead). Anchored short label pattern; low practical risk. Batch 6."
+    ),
     "src/lawvm/finland/normalize.py": (
         "Pre-existing baseline: _SECTION_TOKEN_RE nested quantifiers. "
         "Sensor H batch 6."
@@ -246,8 +252,18 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: fetch patterns with adjacent .{0,N} repeats. "
         "Sensor H batch 6."
     ),
-    # sweden/grafter.py — fixed by A19 (2026-05-29)
+    "src/lawvm/sweden/grafter.py": (
+        "Pre-existing baseline: _SECTION_RE — \\d+\\s*[a-z]? label with trailing "
+        "\\s*§ leaves nullable-separated \\s repeats, newly detected by the "
+        "2026-05-30 soundness hardening (A19 bounded the old risk; this is the "
+        "stricter nullable-separator class). Anchored; low practical risk. Batch 6."
+    ),
     # tools
+    "src/lawvm/tools/audit.py": (
+        "Pre-existing baseline: _HTML_PRESENTATION_RANGE_RE — \\d+\\s*[a-z]? range "
+        "anchors leave nullable-separated \\s repeats, newly detected by the "
+        "2026-05-30 soundness hardening. Anchored short pattern; low risk. Batch 6."
+    ),
     "src/lawvm/tools/divergence_heuristics.py": (
         "Pre-existing baseline: _SECTION_KEY_RE nested quantifiers (lint flags "
         "optional prefix group). Sensor H batch 6."
@@ -259,6 +275,11 @@ _KNOWN_UNFIXED: dict[str, str] = {
     ),
     "src/lawvm/tools/evidence.py": (
         "Pre-existing baseline: adjacent repeats. Sensor H batch 6."
+    ),
+    "src/lawvm/tools/faults.py": (
+        "Pre-existing baseline: _SEC_NUM_RE — \\d+\\s*[a-zäöå]? section label with "
+        "trailing \\s*§ leaves nullable-separated \\s repeats, newly detected by "
+        "the 2026-05-30 soundness hardening. Short label pattern; low risk. Batch 6."
     ),
     "src/lawvm/tools/section_keys.py": (
         "Pre-existing baseline: adjacent repeats (CATEGORY false-positives "
@@ -308,8 +329,22 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: multiple adjacent .{0,N}? repeats in definition "
         "structural insert patterns. Sensor H batch 6."
     ),
-    # source_fragment_context.py — fixed by A19 (2026-05-29)
-    # source_parent_payloads.py — fixed by A19 (2026-05-29)
+    "src/lawvm/uk_legislation/source_fragment_context.py": (
+        "Pre-existing baseline: grouped anchor/insert child patterns leave "
+        "nullable-separated repeats (ordinal/quoted-anchor shapes), newly detected "
+        "by the 2026-05-30 soundness hardening (A19 bounded the old risk). "
+        "Anchored instruction patterns; low practical risk. Batch 6."
+    ),
+    "src/lawvm/uk_legislation/source_labeled_child_parts.py": (
+        "Pre-existing baseline: _ROMAN/_ALPHA_CHILD_LABEL_RE prefix alternation "
+        "leaves \\s*(?:and|or)?\\s+ nullable-separated \\s repeats, newly detected "
+        "by the 2026-05-30 soundness hardening. Anchored; low risk. Batch 6."
+    ),
+    "src/lawvm/uk_legislation/source_parent_payloads.py": (
+        "Pre-existing baseline: after/at-end insert instruction patterns leave "
+        "nullable-separated \\s repeats, newly detected by the 2026-05-30 "
+        "soundness hardening (A19 bounded the old risk). Low risk. Batch 6."
+    ),
     "src/lawvm/uk_legislation/source_structural_sibling.py": (
         "Pre-existing baseline: adjacent .+ repeat. Sensor H batch 6."
     ),
@@ -317,7 +352,12 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: adjacent .{0,N}? repeats in table entry patterns. "
         "Sensor H batch 6."
     ),
-    # source_text_reclassifications.py — fixed by A19 (2026-05-29)
+    "src/lawvm/uk_legislation/source_text_reclassifications.py": (
+        "Pre-existing baseline: word-omission prefix patterns "
+        "(`(?:label)[.)]? `-style optional prefixes) leave nullable-separated "
+        "repeats, newly detected by the 2026-05-30 soundness hardening (A19 "
+        "bounded the old risk). Anchored instruction patterns; low risk. Batch 6."
+    ),
     "src/lawvm/uk_legislation/table_selectors.py": (
         "Pre-existing baseline: adjacent quantifier patterns in table selectors. "
         "Sensor H batch 6."
