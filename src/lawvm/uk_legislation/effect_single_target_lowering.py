@@ -661,11 +661,24 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         target=target,
         content_ir=content_ir,
         source_replaced_sibling_count=ctx.source_replaced_sibling_count,
+        source_payload_actual_el=actual_el,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         lowering_rejections_out=lowering_rejections_out,
     )
     curr_action = substitution_insert_normalization.curr_action
+    # When the substitution normalization promotes to an after-anchor insert it
+    # also supplies a concrete anchor eId derived from the numeric-stem sibling.
+    # Thread it forward so finalize_uk_target_operation uses the correct anchor.
+    if substitution_insert_normalization.anchor_preceding_eid is not None:
+        chained_insert_anchor_override: Optional[_ChainedInsertAnchorState] = (
+            _ChainedInsertAnchorState(
+                preceding_eid=substitution_insert_normalization.anchor_preceding_eid,
+                preceding_eid_source=substitution_insert_normalization.anchor_preceding_eid_source,
+            )
+        )
+    else:
+        chained_insert_anchor_override = None
 
     structural_sibling_insert = lower_source_structural_sibling_insert(
         effect=effect,
@@ -820,9 +833,15 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             op_text_replacement=op_text_replacement,
             op_text_occurrence=op_text_occurrence,
             op_text_end_occurrence=op_text_end_occurrence,
-            chained_insert_preceding_eid=ctx.chained_insert_anchor.preceding_eid,
+            chained_insert_preceding_eid=(
+                chained_insert_anchor_override.preceding_eid
+                if chained_insert_anchor_override is not None
+                else ctx.chained_insert_anchor.preceding_eid
+            ),
             chained_insert_preceding_eid_source=(
-                ctx.chained_insert_anchor.preceding_eid_source
+                chained_insert_anchor_override.preceding_eid_source
+                if chained_insert_anchor_override is not None
+                else ctx.chained_insert_anchor.preceding_eid_source
             ),
             effect_witness=ctx.effect_witness,
             extraction_witness=ctx.extraction_witness,

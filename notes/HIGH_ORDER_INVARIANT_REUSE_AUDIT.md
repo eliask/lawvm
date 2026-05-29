@@ -1269,3 +1269,22 @@ replaces `.*?` (Sensor I cand 3).  Combined wall-time saving: 30.49 s → 28.67 
 ops=2001, effect_rows=3265).  Note: cProfile cumtime overestimated the saving
 because it is inclusive of shared callees; actual exclusive saving after Actuator 8
 removed the dominant bottleneck is ~1.8 s combined.
+- UK letter-suffix new-leaf insert promotion (`uk_effect_after_anchor_insert_promoted`,
+  rule family `targeted_after_anchor_insert`) now promotes Replace→Insert at lowering
+  time when all four conditions hold: (1) source payload actual_el is non-None (real
+  XML, not synthesized by `infer_source_payload_from_target`), (2) payload kind+label
+  matches the target leaf exactly, (3) instruction text contains "after [X] insert"
+  pattern (gated by `_source_after_insertion_anchor`), and (4) the leaf has an
+  alphanumeric-suffix label (`\d+[A-Za-z]+`, e.g. 3A, 1B, 6ZA). The anchor eid is
+  derived from the letter-suffix numeric stem. Phase ownership: AGENTS.md §6 —
+  replay-time `uk_replay_replace_materialized_as_insert_for_missing_leaf` remains
+  as fallback for cases that don't carry all four source signals.  Anchor propagation:
+  `UKSubstitutedPayloadInsertNormalization.anchor_preceding_eid` threads through
+  `chained_insert_anchor_override` in `_lower_effect_target` to the finalization
+  `chained_insert_preceding_eid` parameter.  Observations are nonblocking
+  (strict_disposition=apply, quirks_disposition=apply) and registered in
+  `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS`.  Covered by
+  `tests/test_uk_effect_after_anchor_insert_promotion.py` (26 tests: helper unit
+  tests, positive promotion, observation shape/disposition, 5 negative guards
+  including for-substitute instruction text, inferred payload, insert action,
+  mismatched label, plain numeric target).
