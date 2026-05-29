@@ -1326,3 +1326,6 @@ removed the dominant bottleneck is ~1.8 s combined.
   stem mismatch).  Pattern A (partial repeal on missing leaf) remains at
   recovery per diagnosis; Pattern C (single letter-suffix substitution) is a
   separate follow-on actuator.
+- `src/lawvm/core/regex_safety.py::lawvm_regex_risks` is the shared AST-based
+  catastrophic-backtracking lint for module-scope ``_*_RE`` / ``_*_PATTERN``
+  constants; validated by ``tests/test_regex_perf_gate.py`` (Sensor H batch 5).

@@ -210,6 +210,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ir_*.py",
         "test_meta_parse.py",
         "test_metadata.py",
+        "test_regex_perf_gate.py",
         "test_roman.py",
         "test_scope.py",
         "test_section_keys.py",
