@@ -146,3 +146,100 @@ emits derivation evidence. A pile of regexes is acceptable for lexical facts; it
 is the wrong long-term IR for amendment-instruction LANGUAGES. Specifying those
 grammars is also a byproduct contribution: the formal operational grammar of
 legislation, currently implicit in drafting convention.
+
+## Spec Extraction Yield — the second value axis
+
+A rewrite has two separable payoffs. Judge each candidate on BOTH:
+
+```
+implementation value: faster / safer / simpler / fewer blowups / less duplication
+specification value:  the grammar becomes visible; semantic objects become named;
+                       the ambiguity/precedence policy becomes explicit; residuals
+                       become classifiable; the test corpus becomes generative;
+                       the domain becomes more formal than it was
+```
+
+For some regex uses only implementation value exists (label parsing, normalization,
+bounded boundary checks) — do not rewrite unless profiling demands it. For others
+(the drafting-phrase pile, the TEXT_* sentinels) the **spec yield is the main
+product**, and a rewrite is worth it even at NEUTRAL runtime.
+
+### Classify every discovered regex family into one of five kinds
+
+```
+1. lexical recognizer        -> keep regex (+ safety wrapper)
+2. boolean classifier        -> keep regex (+ compile_classifier_regex prefilter)
+3. parser for a hidden domain language        -> extract a named spec object
+4. string encoding of typed semantic objects  -> extract a named spec object
+5. ambiguity/conflict policy disguised as post-processing -> extract a named spec object
+```
+
+Only kinds 3-5 justify heavier grammar work. Kinds 1-2 stay regex with the
+safety/prefilter layer. The checklist that says "this is 3-5":
+- adding a new legal variant means adding another regex (no generalization)
+- many regexes share the same verbs/nouns/slots
+- captures are semantic objects, not strings
+- match spans overlap and need conflict resolution
+- order of recognizers changes meaning
+- TEXT_* style strings encode typed selectors
+- rule_id names are more stable than the code paths
+- tests are examples of a language, not isolated edge cases
+
+### Sharper characterization of the nlp_parser pile
+
+Not "40 regexes" and not "a union of 40 regular languages." It is:
+
+```
+an untyped string-to-operation transducer
+  + a precedence/conflict policy
+  + a span-overlap suppression policy
+  + a legacy dict/string-sentinel output encoding
+```
+
+i.e. a **surface-to-operation lowering language**. The output is not match/no-match;
+it is `{original, replacement, occurrence, rule_id, source_child_kind, ...}`. The
+hidden object is the lowering from a source phrase to a LawVM operation. The grammar
+rewrite's job is to NAME: the productions, the typed selector algebra, the allowed
+ambiguities, the residual cases, and how a source phrase lowers to an operation.
+
+### SPEC-FIRST ordering (changes step 4)
+
+For the UK drafting-phrase family the FIRST deliverable is NOT better code. It is a
+spec document: **`notes/UK_AMENDMENT_INSTRUCTION_GRAMMAR.md`** enumerating the
+productions (Substitution / Insertion / Omission / Range / Definition families —
+see Pro's draft in the spec discussion). Then:
+
+```
+1. write UK_AMENDMENT_INSTRUCTION_GRAMMAR.md (productions + typed selector algebra)
+2. introduce typed UKTextSelector / UKTextRewriteFragment objects
+3. old regex parser remains AUTHORITY; new grammar runs in SHADOW MODE
+4. record diffs; stabilize typed selector output; legacy dict produced FROM typed objects
+5. flip authority only after corpus parity
+```
+
+This buys insight (and the spec artifact) before any risky migration.
+
+### Spec Extraction Yield as a tracked metric
+
+Alongside runtime-saved / coverage / bugs-fixed, track: new typed object discovered,
+hidden grammar named, string sentinel eliminated, ambiguity policy made explicit,
+residual category created, cross-jurisdiction analogue found, test generator enabled.
+A rewrite with neutral runtime but high spec yield is worth doing. Rough calls:
+- simple label regex: low runtime payoff, low spec yield -> do not rewrite
+- UK substitution pile: medium/high runtime, VERY high spec yield -> rewrite/specify
+- TEXT_* sentinels: low/medium runtime, VERY high spec yield -> do it
+- normalization regexes: low runtime, low/medium spec yield -> mostly do not
+
+### The through-line (standing rule)
+
+```
+Do not let surface notation masquerade as the semantic object.
+```
+- regex pile: surface phrases pretending to be operations
+- LawVM: human amendment text compiled into typed legal operations
+- MeVM: institutional prose/plans forced into typed mechanism objects
+
+Regex is fine as notation for a local lexical fact. Regex is wrong when it becomes
+the ONLY place the operation language exists. Spec extraction is not incidental
+cleanup here — it is part of LawVM's core research yield (the formal operational
+grammar of legislation, made explicit).
