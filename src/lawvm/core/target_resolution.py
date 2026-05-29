@@ -160,6 +160,15 @@ class TargetResolutionCertificate:
                 raise ValueError(
                     f"TargetResolutionCertificate(status={self.status!r}) requires candidate_count >= 1"
                 )
+            if (
+                self.status == TARGET_RESOLVED
+                and self.candidates
+                and self.selected_target not in {candidate.target for candidate in self.candidates}
+            ):
+                raise ValueError(
+                    "TargetResolutionCertificate(status='resolved') selected_target must be one of "
+                    "the listed candidates"
+                )
         if self.scope_confidence and self.scope_confidence not in _VALID_SCOPE_CONFIDENCES:
             raise ValueError(
                 f"TargetResolutionCertificate.scope_confidence must be one of "

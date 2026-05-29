@@ -341,6 +341,9 @@ Recent improvement:
   candidate count, selected target, status, confidence, and strict/quirks
   disposition; frontends still own candidate discovery and local fallback
   policy.
+- target-resolution certificates now reject ordinary `resolved` selections
+  whose selected target is not one of the listed candidates; fallback/recovery
+  statuses remain the explicit lane for named target rebinding.
 - UK source-text schedule-paragraph target overrides now include a nested core
   target-resolution certificate while preserving the existing UK lowering
   observation fields and authority policy.
