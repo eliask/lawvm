@@ -191,6 +191,41 @@ def test_target_resolution_certificate_candidate_count_covers_listed_candidates(
         )
 
 
+def test_target_resolution_certificate_resolved_selection_must_be_listed_candidate() -> None:
+    with pytest.raises(ValueError, match="selected_target must be one of the listed candidates"):
+        TargetResolutionCertificate(
+            rule_id="test_target_bad",
+            phase="elaboration",
+            reason="resolved target selected outside candidates",
+            status=TARGET_RESOLVED,
+            source_target="section:5",
+            selected_target="chapter:2/section:5",
+            candidate_count=1,
+            candidates=(
+                TargetResolutionCandidate(target="chapter:1/section:5"),
+            ),
+        )
+
+
+def test_target_resolution_certificate_recovery_selection_may_differ_from_listed_candidates() -> None:
+    detail = TargetResolutionCertificate(
+        rule_id="test_target_recovery",
+        phase="elaboration",
+        reason="frontend recorded named fallback after listed candidates failed",
+        status=TARGET_FALLBACK_RESOLVED,
+        source_target="section:5",
+        selected_target="chapter:2/section:5",
+        candidate_count=1,
+        candidates=(
+            TargetResolutionCandidate(target="chapter:1/section:5"),
+        ),
+        scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
+    ).to_diagnostic_detail()
+
+    assert detail["target_resolution_status"] == "fallback_resolved"
+    assert detail["selected_target"] == "chapter:2/section:5"
+
+
 def test_target_resolution_candidate_from_mapping_preserves_local_payload() -> None:
     candidate = target_resolution_candidate_from_mapping(
         {"target": "section:5", "reason": "exact", "kind": "section"}
