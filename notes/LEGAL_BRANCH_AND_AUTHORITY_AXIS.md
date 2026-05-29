@@ -43,6 +43,7 @@ Implemented:
 - `enacted_materialization_ops(...)`
 - `branch_materialization_ops(...)`
 - `branch_overlay_materialization_ops(...)`
+- `compile_timelines(..., authority_context=...)`
 - `branch_graph_edge_from_operation(...)`
 - `branch_graph_edges_from_operations(...)`
 - `CorpusGraph.branches`
@@ -103,6 +104,14 @@ This emits a small synthetic payload showing:
 
 It is a contract demo, not a jurisdiction frontend.
 
+`compile_timelines()` is authority-aware. The default call accepts only the
+default enacted/commenced branchless operation and temporal-event lane. It
+records `timeline.excluded_authority_context` for proposal/draft/consultation
+or other non-default claims that were supplied but not selected. Passing an
+explicit non-default `BranchContext` compiles the enacted baseline plus matching
+branch operations and matching branch temporal events as a separate branch
+materialization lane.
+
 `BranchImpactProjection` is the UI/API-facing summary layer for these edges:
 it can say which provisions a branch would affect, optionally with current and
 branch-specific text supplied by a frontend. The projection itself does not
@@ -138,16 +147,16 @@ Done in the core/demo layer:
 - branch overlay operation selection exists for explicit “current law plus this
   branch/scenario” materialization demos; it is a selector only, not promotion
   of proposal claims into enacted law.
+- timeline compilation itself enforces the selected authority context and records
+  skipped non-selected operation or temporal-event lanes as typed timeline
+  issues.
 
 Remaining:
 
 1. Prototype one real frontend lane:
    pick the jurisdiction/source family with the cleanest proposal or bill
    source extraction, otherwise build a synthetic-to-real bridge first.
-2. Add branch-state execution on top of the current branch-overlay operation
-   selector if a frontend needs actual branch-state materialization rather than
-   graph/diff projection.
-3. Add frontend-owned lifecycle import for introduced, amended, withdrawn,
+2. Add frontend-owned lifecycle import for introduced, amended, withdrawn,
    failed, enacted, or superseded statuses once a real source surface exists.
 
 ## Non-Goals For This Layer

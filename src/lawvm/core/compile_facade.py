@@ -49,6 +49,7 @@ from lawvm.core.compile_result import (
 from lawvm.core.phase_result import Finding, PhaseResult
 
 if TYPE_CHECKING:
+    from lawvm.core.authority import BranchContext
     from lawvm.core.compile_result import CompileVerdict
     from lawvm.core.ir import IRStatute, ProvisionTimeline, ProvisionVersion, LegalAddress
     from lawvm.core.timeline_results import MaterializationResult, TimelineCompilationResult
@@ -189,8 +190,10 @@ class CompileFacade:
         *,
         base_date: str = "",
         label_norm: Optional[Callable[[str], str]] = None,
+        authority_context: "BranchContext | None" = None,
     ) -> "TimelineCompilationResult":
         """Compile timelines and preserve typed timeline issues on the facade."""
+        from lawvm.core.authority import DEFAULT_ENACTED_CONTEXT  # noqa: PLC0415
         from lawvm.core.timeline import compile_timelines_ex  # noqa: PLC0415
 
         return compile_timelines_ex(
@@ -199,6 +202,7 @@ class CompileFacade:
             base_date=base_date,
             label_norm=label_norm,
             temporal_events=self.bundle.temporal_events,
+            authority_context=authority_context or DEFAULT_ENACTED_CONTEXT,
         )
 
     def compile_timeline_findings(

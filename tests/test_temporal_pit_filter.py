@@ -29,10 +29,12 @@ from lawvm.core.ir import (
     ProvisionVersion,
     ScopePredicate,
 )
+from lawvm.core.authority import BranchContext, PROPOSAL_AUTHORITY, UNKNOWN_STATUS
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.compile_result import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline import compile_timelines, materialize_pit, select_active_version_ex
 from lawvm.core.timeline import select_background_version
+from lawvm.core.timeline_results import TimelineIssue
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +282,122 @@ def test_compile_timelines_exact_target_applies_update() -> None:
     timelines = compile_timelines(base, [op], base_date="2000-01-01", temporal_events=events)
     pit = materialize_pit(timelines, "2010-12-31", base=base)
     assert _section_text(pit, "1", "3") == "Updated section"
+
+
+def test_compile_timelines_default_authority_excludes_proposal_lane() -> None:
+    """Proposal operations and their temporal events cannot mutate default PIT state."""
+
+    base = _statute(
+        "9999/proposal-default-off",
+        _body(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base section")),
+    )
+    branch_context = BranchContext(
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id="proposal:9999:1",
+        scenario_id="if_enacted_as_introduced",
+    )
+    branch_source = OperationSource(
+        statute_id="proposal/9999/1",
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id=branch_context.branch_id,
+        scenario_id=branch_context.scenario_id,
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+    op = LegalOperation(
+        op_id="proposal-replace-1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=addr,
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Proposal text"),
+        group_id="g:proposal",
+        source=branch_source,
+    )
+    event = TemporalEvent(
+        event_id="ev:proposal",
+        group_id="g:proposal",
+        kind="commence",
+        scope=TemporalScope(target_statute=base.statute_id),
+        effective="2010-01-01",
+        activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-01-01"),
+        source=branch_source,
+    )
+    issues: list[TimelineIssue] = []
+
+    timelines = compile_timelines(
+        base,
+        [op],
+        base_date="2000-01-01",
+        temporal_events=(event,),
+        issue_sink=issues,
+    )
+
+    active = select_active_version_ex(timelines[addr], "2011-01-01").version
+    assert active is not None
+    assert active.content is not None
+    assert active.content.text == "Base section"
+    assert [issue.kind for issue in issues] == [
+        "excluded_authority_context",
+        "excluded_authority_context",
+    ]
+
+
+def test_compile_timelines_explicit_branch_authority_overlays_proposal_lane() -> None:
+    """An explicit branch context can compile current law plus matching proposal ops."""
+
+    base = _statute(
+        "9999/proposal-branch-on",
+        _body(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base section")),
+    )
+    branch_context = BranchContext(
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id="proposal:9999:1",
+        scenario_id="if_enacted_as_introduced",
+    )
+    branch_source = OperationSource(
+        statute_id="proposal/9999/1",
+        authority_layer=PROPOSAL_AUTHORITY,
+        legal_status=UNKNOWN_STATUS,
+        branch_id=branch_context.branch_id,
+        scenario_id=branch_context.scenario_id,
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+    op = LegalOperation(
+        op_id="proposal-replace-1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=addr,
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Proposal text"),
+        group_id="g:proposal",
+        source=branch_source,
+    )
+    event = TemporalEvent(
+        event_id="ev:proposal",
+        group_id="g:proposal",
+        kind="commence",
+        scope=TemporalScope(target_statute=base.statute_id),
+        effective="2010-01-01",
+        activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-01-01"),
+        source=branch_source,
+    )
+    issues: list[TimelineIssue] = []
+
+    timelines = compile_timelines(
+        base,
+        [op],
+        base_date="2000-01-01",
+        temporal_events=(event,),
+        issue_sink=issues,
+        authority_context=branch_context,
+    )
+
+    active = select_active_version_ex(timelines[addr], "2011-01-01").version
+    assert active is not None
+    assert active.content is not None
+    assert active.content.text == "Proposal text"
+    assert issues == []
 
 
 def test_compile_timelines_sparse_target_stays_base_without_exact_match() -> None:
