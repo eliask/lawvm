@@ -18,6 +18,9 @@ Covers:
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any, cast
+
+import pytest
 
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.observation_registry import get_finding_spec
@@ -26,6 +29,8 @@ from lawvm.core.effect_intent import (
     Commencement,
     EffectKind,
     Expiry,
+    Revival,
+    Suspension,
 )
 from lawvm.core.effect_lowering import (
     lower_effect_intents_to_temporal_events,
@@ -386,6 +391,28 @@ def test_lower_effect_intents_to_temporal_events_projects_multiple_variants() ->
     assert all(event.source is not None and event.source.effective == "2024-02-01" for event in events)
     assert events[0].effective == "2025-01-01"
     assert events[1].expires == "2026-12-31"
+
+
+def test_effect_intent_carriers_reject_wrong_discriminants() -> None:
+    with pytest.raises(ValueError, match="Commencement.kind"):
+        Commencement(kind=EffectKind.EXPIRY)
+
+    with pytest.raises(ValueError, match="Applicability.kind"):
+        Applicability(kind=EffectKind.REVIVAL)
+
+
+def test_effect_intent_carriers_reject_malformed_dates_and_raw_text() -> None:
+    with pytest.raises(TypeError, match="effective_date"):
+        Commencement(effective_date=cast(Any, "2025-01-01"))
+
+    with pytest.raises(TypeError, match="raw_text"):
+        Expiry(raw_text=cast(Any, 123))
+
+    with pytest.raises(TypeError, match="suspended_until"):
+        Suspension(suspended_until=cast(Any, "2025-01-01"))
+
+    with pytest.raises(TypeError, match="revived_from"):
+        Revival(revived_from=cast(Any, "2025-01-01"))
 
 
 def test_lower_johto_effects_records_unsupported_valtuutus():
