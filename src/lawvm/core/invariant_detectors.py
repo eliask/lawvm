@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
+from lawvm.core.frozen_values import FrozenDict, freeze_mapping
 from lawvm.core.replay_lints import build_flattened_sublist_findings
 from lawvm.core.tree_ops import (
     TreeInvariantKind,
@@ -37,7 +38,19 @@ class InvariantDetectorResult:
     kind: str
     path_text: str
     message: str
-    detail: dict[str, object]
+    detail: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        if not self.detector:
+            raise ValueError("InvariantDetectorResult.detector must be non-empty")
+        if not self.kind:
+            raise ValueError("InvariantDetectorResult.kind must be non-empty")
+        if not self.message:
+            raise ValueError("InvariantDetectorResult.message must be non-empty")
+        if not isinstance(self.detail, Mapping):
+            raise ValueError("InvariantDetectorResult.detail must be a mapping")
+        if not isinstance(self.detail, FrozenDict):
+            object.__setattr__(self, "detail", freeze_mapping(self.detail))
 
 
 def _detail_sequence(value: object) -> list[object]:
