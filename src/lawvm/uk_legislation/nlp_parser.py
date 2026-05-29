@@ -32,6 +32,19 @@ _ORDINAL_OCCURRENCE_WORDS = (
 )
 
 _QUOTE_CHARS = "\"'\u201c\u201d\u2018\u2019"
+# Character class for "any char except a quote", used to bound the
+# `.*?` captures inside quote pairs in the substitution patterns. Without this
+# bound a long input with many quotes but no terminal "substitute" anchor
+# causes catastrophic backtracking, since the engine tries every reassignment
+# of the lazy quantifiers across the quote pairs. Typical quoted fragments
+# in UK drafting are well under 300 characters; 500 is generous.
+_NON_QUOTE = r"[^\"'\u201c\u201d\u2018\u2019]"
+# Multi-term "in each place" lists rarely exceed 5 terms in real UK drafting.
+# Bounding the repeat protects against catastrophic backtracking on degenerate
+# input where many quoted fragments appear without the trailing "substitute"
+# anchor. Patterns that hit this bound legitimately can be widened later.
+_MULTI_TERM_LIST_MAX = 5
+
 _UK_CARRIED_PARENT_CONTEXT_RE = (
     r"\s+of\s+(?:(?:that|the)\s+)?"
     r"(?:paragraph|sub-paragraph|subsection|section)"
@@ -128,6 +141,27 @@ UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID = (
 )
 UK_MIXED_BODY_HEADING_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch"
+)
+
+# Hot multi-occurrence substitution pattern. Lifted to module scope and
+# bounded after a stack snapshot showed a single tight-bench worker spending
+# 30+ minutes here on a tax-table-heavy statute. The bare `.*?` between
+# quote pairs combined with `(...)*` over another quoted pair triggers
+# catastrophic backtracking when input has many quotes but no terminal
+# "substitute" anchor.
+_UK_MULTI_OCCURRENCE_SUBSTITUTION_RE = re.compile(
+    r"for\s+(?:(?:the\s+)?words?\s+)?"
+    r"(?P<originals>"
+    rf"[“”\"'‘]{_NON_QUOTE}{{0,500}}?[”\"'’]"
+    rf"(?:\s*(?:,|and|or)\s*[“”\"'‘]{_NON_QUOTE}{{0,500}}?[”\"'’]){{0,{_MULTI_TERM_LIST_MAX}}}"
+    r")"
+    r",?\s+in\s+(?:each|both)\s+places?"
+    r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+    r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
+    r"(?:\s*\))?,?\s+"
+    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+    rf"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>{_NON_QUOTE}{{0,500}}?)[”\"'’]",
+    re.I,
 )
 
 
@@ -315,6 +349,27 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     'for "the Lord Chancellor" substitute "the Secretary of State"'
     'from "(a)" to "(b)" are omitted'
     """
+    # Every pattern this function evaluates requires at least one of the
+    # operative verbs below somewhere in the input. Skipping the function
+    # entirely for inputs that contain none eliminates the catastrophic-
+    # backtracking case observed on tax-table-heavy statutes, where the
+    # regex engine would scan thousands of bytes of quoted strings looking
+    # for an anchor that does not exist.
+    lower_text = text.lower()
+    if not any(
+        verb in lower_text
+        for verb in (
+            "substitut",
+            "insert",
+            "omit",
+            "replac",
+            "become",
+            "repeal",
+            "cease",
+        )
+    ):
+        return ()
+
     subs = []
 
     text = normalize_uk_parser_text(text)
@@ -541,18 +596,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         )
 
     all_occurrences_multi_spans: list[tuple[int, int]] = []
-    matches_multi_all_occurrences_substituted = re.finditer(
-        r"for\s+(?:(?:the\s+)?words?\s+)?"
-        r"(?P<originals>[“”\"'‘].*?[”\"'’](?:\s*(?:,|and|or)\s*[“”\"'‘].*?[”\"'’])*)"
-        r",?\s+in\s+(?:each|both)\s+places?"
-        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
-        r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
-        r"(?:\s*\))?,?\s+"
-        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
-        r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>.*?)[”\"'’]",
-        text,
-        re.I,
-    )
+    matches_multi_all_occurrences_substituted = _UK_MULTI_OCCURRENCE_SUBSTITUTION_RE.finditer(text)
     for m in matches_multi_all_occurrences_substituted:
         if _span_overlaps(m.span(), respectively_spans):
             continue

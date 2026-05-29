@@ -1404,3 +1404,11 @@ removed the dominant bottleneck is ~1.8 s combined.
   mean error=4.94%, 346 perfect (matches prior run ee_wide_after_textual_invalidation).
   EE Total 2200 OK (unchanged). ty + all CI shards green. Regex perf gate (core_ir_contracts
   shard) passes for new module-scope constants.
+
+- UK `parse_fragment_substitution` short-circuits on inputs missing any operative
+  verb ("substitut", "insert", "omit", "replac", "become", "repeal", "cease")
+  and the multi-occurrence pattern `_UK_MULTI_OCCURRENCE_SUBSTITUTION_RE` is lifted to
+  module scope with bounded char classes (`[^"'\u201c\u201d\u2018\u2019]{0,500}?`) and
+  a bounded `{0,5}` list repeat. A stack snapshot of a hung tight-bench worker showed
+  this function as the sole CPU consumer for 30+ minutes; adversarial input now finishes
+  in <100 ms via the substring guard and the bounded regex.
