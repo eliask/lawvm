@@ -26,8 +26,15 @@ class ReplayAmendmentStep:
 
     def __post_init__(self) -> None:
         _require_non_empty(self.source_id, "ReplayAmendmentStep.source_id")
-        if self.status and not isinstance(self.status, str):
-            raise ValueError("ReplayAmendmentStep.status must be a string")
+        for field_name, value in (
+            ("action", self.action),
+            ("status", self.status),
+            ("effective_date", self.effective_date),
+        ):
+            if not isinstance(value, str):
+                raise ValueError(f"ReplayAmendmentStep.{field_name} must be a string")
+        if not isinstance(self.op_count, int) or isinstance(self.op_count, bool):
+            raise ValueError("ReplayAmendmentStep.op_count must be an integer")
         if self.op_count < 0:
             raise ValueError("ReplayAmendmentStep.op_count must be non-negative")
         if not isinstance(self.detail, Mapping):
@@ -84,15 +91,40 @@ class ReplaySummary:
         _require_non_empty(self.base_id, "ReplaySummary.base_id")
         _require_non_empty(self.as_of, "ReplaySummary.as_of")
         _require_non_empty(self.status, "ReplaySummary.status")
-        for field_name in ("amendment_count", "applied_count", "skipped_count", "failed_count", "op_count"):
-            if getattr(self, field_name) < 0:
+        count_fields = (
+            ("amendment_count", self.amendment_count),
+            ("applied_count", self.applied_count),
+            ("skipped_count", self.skipped_count),
+            ("failed_count", self.failed_count),
+            ("op_count", self.op_count),
+        )
+        for field_name, value in count_fields:
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"ReplaySummary.{field_name} must be an integer")
+            if value < 0:
                 raise ValueError(f"ReplaySummary.{field_name} must be non-negative")
-        if self.divergence_count is not None and self.divergence_count < 0:
-            raise ValueError("ReplaySummary.divergence_count must be non-negative")
+        if self.divergence_count is not None:
+            if not isinstance(self.divergence_count, int) or isinstance(self.divergence_count, bool):
+                raise ValueError("ReplaySummary.divergence_count must be an integer")
+            if self.divergence_count < 0:
+                raise ValueError("ReplaySummary.divergence_count must be non-negative")
+        if self.error is not None and not isinstance(self.error, str):
+            raise ValueError("ReplaySummary.error must be a string or None")
+        if self.consistent is not None and not isinstance(self.consistent, bool):
+            raise ValueError("ReplaySummary.consistent must be a bool or None")
         steps = tuple(self.steps)
         if not all(isinstance(step, ReplayAmendmentStep) for step in steps):
             raise ValueError("ReplaySummary.steps must contain ReplayAmendmentStep records")
         object.__setattr__(self, "steps", steps)
+        if self.amendment_count and len(steps) > self.amendment_count:
+            raise ValueError("ReplaySummary.amendment_count is smaller than emitted steps")
+        if self.amendment_count and (
+            self.applied_count + self.skipped_count + self.failed_count > self.amendment_count
+        ):
+            raise ValueError("ReplaySummary step status counts exceed amendment_count")
+        step_op_count = sum(step.op_count for step in steps)
+        if self.op_count and step_op_count > self.op_count:
+            raise ValueError("ReplaySummary.op_count is smaller than emitted step op_count total")
         if self.text_view is not None and not isinstance(self.text_view, ReplayTextView):
             raise ValueError("ReplaySummary.text_view must be a ReplayTextView")
         if not isinstance(self.detail, Mapping):

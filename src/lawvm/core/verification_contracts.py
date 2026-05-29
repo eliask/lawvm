@@ -115,14 +115,17 @@ class CoverageAttribution:
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "touched_path_count",
-            "touched_source_count",
-            "touched_op_count",
-            "touched_divergence_count",
-            "untouched_divergence_count",
-        ):
-            if getattr(self, field_name) < 0:
+        count_fields = (
+            ("touched_path_count", self.touched_path_count),
+            ("touched_source_count", self.touched_source_count),
+            ("touched_op_count", self.touched_op_count),
+            ("touched_divergence_count", self.touched_divergence_count),
+            ("untouched_divergence_count", self.untouched_divergence_count),
+        )
+        for field_name, value in count_fields:
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"CoverageAttribution.{field_name} must be an integer")
+            if value < 0:
                 raise ValueError(f"CoverageAttribution.{field_name} must be non-negative")
         if not isinstance(self.detail, Mapping):
             raise ValueError("CoverageAttribution.detail must be a mapping")
@@ -157,9 +160,19 @@ class VerifySummary:
         _require_field(self.jurisdiction, "VerifySummary.jurisdiction")
         _require_field(self.base_id, "VerifySummary.base_id")
         _require_field(self.status, "VerifySummary.status")
-        for field_name in ("issue_count", "divergence_count", "op_count"):
-            if getattr(self, field_name) < 0:
+        for field_name, value in (
+            ("issue_count", self.issue_count),
+            ("divergence_count", self.divergence_count),
+            ("op_count", self.op_count),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"VerifySummary.{field_name} must be an integer")
+            if value < 0:
                 raise ValueError(f"VerifySummary.{field_name} must be non-negative")
+        if self.error is not None and not isinstance(self.error, str):
+            raise ValueError("VerifySummary.error must be a string or None")
+        if self.consistent is not None and not isinstance(self.consistent, bool):
+            raise ValueError("VerifySummary.consistent must be a bool or None")
         issues = tuple(self.issues)
         if not all(isinstance(issue, VerifyIssue) for issue in issues):
             raise ValueError("VerifySummary.issues must contain VerifyIssue records")
@@ -168,6 +181,14 @@ class VerifySummary:
         if not all(isinstance(divergence, DivergenceRecord) for divergence in divergences):
             raise ValueError("VerifySummary.divergences must contain DivergenceRecord records")
         object.__setattr__(self, "divergences", divergences)
+        if self.issue_count and self.issue_count != len(issues):
+            raise ValueError("VerifySummary.issue_count must match emitted issues when non-zero")
+        if self.divergence_count and self.divergence_count != len(divergences):
+            raise ValueError(
+                "VerifySummary.divergence_count must match emitted divergences when non-zero"
+            )
+        if self.consistent is True and divergences:
+            raise ValueError("VerifySummary.consistent=True cannot carry divergences")
         if self.coverage is not None and not isinstance(self.coverage, CoverageAttribution):
             raise ValueError("VerifySummary.coverage must be a CoverageAttribution")
         if not isinstance(self.detail, Mapping):
