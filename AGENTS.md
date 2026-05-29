@@ -289,6 +289,28 @@ domain grammars get bespoke recognizers. Neither "wrap every regex forever" nor
 "rewrite everything bespoke" is correct — match the mechanism to whether the
 problem is a predicate or a language.
 
+**Classify before rewriting (five kinds).** When you find a regex family, name
+which kind it is — only the last three justify grammar work:
+
+1. lexical recognizer → keep regex (+ safety wrapper);
+2. boolean classifier → keep regex (+ `compile_classifier_regex` prefilter);
+3. parser for a hidden domain language → extract a named recognizer/spec;
+4. string encoding of typed semantic objects (e.g. `TEXT_*` sentinels) → extract
+   typed objects;
+5. ambiguity/conflict policy disguised as post-processing (span-overlap dedup,
+   recognizer-order-dependent meaning) → extract an explicit policy.
+
+**Two value axes — judge every candidate on both.** *Implementation value*
+(faster / safer / less duplication) and *specification value* (the hidden grammar
+becomes visible, semantic objects get named, the ambiguity/precedence policy
+becomes explicit, residuals become classifiable). A rewrite with neutral runtime
+but high spec yield is still worth doing — specifying the operational grammar of
+legislation is itself a LawVM output, not incidental cleanup. The standing rule:
+**do not let surface notation masquerade as the semantic object.**
+
+Full ranked targets, keep-list, and spec-first ordering:
+`notes/REGEX_TO_GRAMMAR_MIGRATION.md`.
+
 ---
 
 ## 2. What LawVM Optimizes For
