@@ -483,6 +483,10 @@ Recent improvement:
 - materialization lineage plan/decision carriers now validate plan modes,
   timeline sources, migration-event lanes, and freeze the chosen timeline input
   mapping, so raw-vs-rekeyed PIT decisions cannot be mutated after selection.
+- parse-layer effect-intent carriers now validate their fixed discriminants,
+  optional date payloads, contingent flags, and raw-text fields at construction,
+  preventing malformed temporal/applicability meaning from reaching temporal
+  lowering by type-hint accident.
 
 ## Ranked Promotion Candidates
 

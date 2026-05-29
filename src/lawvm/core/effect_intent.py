@@ -92,6 +92,13 @@ class Commencement:
     is_contingent: bool = False
     raw_text: str = ""
 
+    def __post_init__(self) -> None:
+        _require_effect_kind(self.kind, EffectKind.COMMENCEMENT, "Commencement.kind")
+        _require_optional_date(self.effective_date, "Commencement.effective_date")
+        if not isinstance(self.is_contingent, bool):
+            raise TypeError("Commencement.is_contingent must be a bool")
+        _require_raw_text(self.raw_text, "Commencement.raw_text")
+
 
 @dataclass(frozen=True)
 class Expiry:
@@ -113,6 +120,11 @@ class Expiry:
     kind: EffectKind = EffectKind.EXPIRY
     expiry_date: Optional[dt.date] = None
     raw_text: str = ""
+
+    def __post_init__(self) -> None:
+        _require_effect_kind(self.kind, EffectKind.EXPIRY, "Expiry.kind")
+        _require_optional_date(self.expiry_date, "Expiry.expiry_date")
+        _require_raw_text(self.raw_text, "Expiry.raw_text")
 
 
 @dataclass(frozen=True)
@@ -137,6 +149,11 @@ class Suspension:
     suspended_until: Optional[dt.date] = None
     raw_text: str = ""
 
+    def __post_init__(self) -> None:
+        _require_effect_kind(self.kind, EffectKind.SUSPENSION, "Suspension.kind")
+        _require_optional_date(self.suspended_until, "Suspension.suspended_until")
+        _require_raw_text(self.raw_text, "Suspension.raw_text")
+
 
 @dataclass(frozen=True)
 class Applicability:
@@ -156,6 +173,10 @@ class Applicability:
     """
     kind: EffectKind = EffectKind.APPLICABILITY
     raw_text: str = ""
+
+    def __post_init__(self) -> None:
+        _require_effect_kind(self.kind, EffectKind.APPLICABILITY, "Applicability.kind")
+        _require_raw_text(self.raw_text, "Applicability.raw_text")
 
 
 @dataclass(frozen=True)
@@ -181,6 +202,11 @@ class Revival:
     revived_from: Optional[dt.date] = None
     raw_text: str = ""
 
+    def __post_init__(self) -> None:
+        _require_effect_kind(self.kind, EffectKind.REVIVAL, "Revival.kind")
+        _require_optional_date(self.revived_from, "Revival.revived_from")
+        _require_raw_text(self.raw_text, "Revival.raw_text")
+
 
 # ---------------------------------------------------------------------------
 # Top-level union
@@ -189,3 +215,18 @@ class Revival:
 # Parse-layer sum type. Keep for extraction/lowering; executable temporal
 # authority lives on `TemporalEvent`.
 EffectIntent = Union[Commencement, Expiry, Suspension, Applicability, Revival]
+
+
+def _require_effect_kind(value: EffectKind, expected: EffectKind, name: str) -> None:
+    if value is not expected:
+        raise ValueError(f"{name} must be {expected.value!r}")
+
+
+def _require_optional_date(value: Optional[dt.date], name: str) -> None:
+    if value is not None and not isinstance(value, dt.date):
+        raise TypeError(f"{name} must be a date or None")
+
+
+def _require_raw_text(value: str, name: str) -> None:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
