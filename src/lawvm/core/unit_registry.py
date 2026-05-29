@@ -27,9 +27,11 @@ Stable shared validation/registry surface for intent-target typing.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import FrozenSet, Literal, TYPE_CHECKING
 
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.semantic_types import FacetKind
 
 if TYPE_CHECKING:
@@ -99,6 +101,24 @@ class UnitSpec:
     insertion_policy: Literal["suffix", "shift_ordinal", "inherit_host"] = "suffix"
     repeal_compacts: bool = False
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.unit_kind, str) or not self.unit_kind:
+            raise ValueError("UnitSpec.unit_kind must be a non-empty string")
+        if not isinstance(self.display_name, str) or not self.display_name:
+            raise ValueError("UnitSpec.display_name must be a non-empty string")
+        bool_fields = (
+            ("can_have_heading", self.can_have_heading),
+            ("can_have_intro", self.can_have_intro),
+            ("repeal_compacts", self.repeal_compacts),
+        )
+        for attr, value in bool_fields:
+            if not isinstance(value, bool):
+                raise TypeError(f"UnitSpec.{attr} must be a bool")
+        if self.identity_class not in {"stable_label", "implicit_ordinal", "facet"}:
+            raise ValueError("UnitSpec.identity_class is not a supported value")
+        if self.insertion_policy not in {"suffix", "shift_ordinal", "inherit_host"}:
+            raise ValueError("UnitSpec.insertion_policy is not a supported value")
+
 
 @dataclass(frozen=True)
 class UnitRegistry:
@@ -117,9 +137,30 @@ class UnitRegistry:
         registry is a shared default for core tests/examples; other
         jurisdictions should provide their own registry instances.
     """
-    unit_specs: dict[str, UnitSpec] = field(default_factory=dict)
+    unit_specs: Mapping[str, UnitSpec] = field(default_factory=FrozenDict)
     valid_facets: FrozenSet[str] = frozenset()
     jurisdiction: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.unit_specs, Mapping):
+            raise TypeError("UnitRegistry.unit_specs must be a mapping")
+        normalized_specs: dict[str, UnitSpec] = {}
+        for unit_kind, spec in self.unit_specs.items():
+            if not isinstance(unit_kind, str) or not unit_kind:
+                raise ValueError("UnitRegistry.unit_specs keys must be non-empty strings")
+            if not isinstance(spec, UnitSpec):
+                raise TypeError("UnitRegistry.unit_specs values must be UnitSpec")
+            if spec.unit_kind != unit_kind:
+                raise ValueError("UnitRegistry.unit_specs keys must match UnitSpec.unit_kind")
+            normalized_specs[unit_kind] = spec
+        object.__setattr__(self, "unit_specs", FrozenDict(normalized_specs))
+
+        normalized_facets = frozenset(self.valid_facets)
+        if any(not isinstance(facet, str) or not facet for facet in normalized_facets):
+            raise ValueError("UnitRegistry.valid_facets must contain non-empty strings")
+        object.__setattr__(self, "valid_facets", normalized_facets)
+        if not isinstance(self.jurisdiction, str):
+            raise TypeError("UnitRegistry.jurisdiction must be a string")
 
     def is_valid_unit_kind(self, unit_kind: str) -> bool:
         return unit_kind in self.unit_specs

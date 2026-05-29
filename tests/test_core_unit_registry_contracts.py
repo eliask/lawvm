@@ -61,3 +61,36 @@ def test_validate_intent_target_rejects_unknown_facet() -> None:
     target = FacetTarget(host=_addr(("section", "5")), facet=FacetKind.TABLE)
     with pytest.raises(IntentTargetValidationError, match="Unknown facet"):
         validate_intent_target(target, _registry())
+
+
+def test_unit_registry_normalizes_specs_and_facets() -> None:
+    specs = {"section": UnitSpec("section", "Section")}
+    facets = ["heading"]
+    registry = UnitRegistry(
+        unit_specs=specs,
+        valid_facets=cast(Any, facets),
+        jurisdiction="TEST",
+    )
+
+    specs["subsection"] = UnitSpec("subsection", "Subsection")
+    facets.append("intro")
+
+    assert registry.is_valid_unit_kind("section")
+    assert not registry.is_valid_unit_kind("subsection")
+    assert registry.valid_facets == frozenset({"heading"})
+    with pytest.raises(TypeError):
+        cast(Any, registry.unit_specs)["item"] = UnitSpec("item", "Item")
+
+
+def test_unit_spec_rejects_invalid_identity_values() -> None:
+    with pytest.raises(ValueError, match="identity_class"):
+        UnitSpec(
+            unit_kind="section",
+            display_name="Section",
+            identity_class=cast(Any, "address_order"),
+        )
+
+
+def test_unit_registry_rejects_mismatched_spec_key() -> None:
+    with pytest.raises(ValueError, match="keys must match"):
+        UnitRegistry(unit_specs={"section": UnitSpec("item", "Item")})
