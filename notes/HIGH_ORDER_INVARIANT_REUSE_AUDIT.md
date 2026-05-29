@@ -577,6 +577,8 @@ Recent improvement:
   (5 tests: positive, witness fields, strict-disposition, negative-valid-parse,
   RuntimeError-propagates).
 
+- boolean text classifiers in `source_adjudication.py` (like `_looks_like_referent_qualified_text_substitution`) follow the bounded-regex + fast-guard pattern per §1.11: three substring guards eliminate the regex path for non-matching inputs, and `.{0,500}` quantifiers replace unbounded `.+` to prevent O(N^3) backtracking; module-scope `re.compile` with `chr()` for non-ASCII quote chars keeps the constant definition ASCII-safe.
+
 ## Ranked Promotion Candidates
 
 ### P0. Source-Lane Selection Evidence

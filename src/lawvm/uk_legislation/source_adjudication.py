@@ -1493,14 +1493,36 @@ def _looks_like_relative_other_place_occurrence(text: str) -> bool:
     )
 
 
+# Compiled at module scope per §1.11.  Bounded quantifiers prevent
+# catastrophic backtracking from the three unanchored .+ quantifiers that
+# previously cost ~1.18 s/call (104.74 s total on ukpga/1970/9, 51.4 % of
+# wall time — cProfile witness 2026-05-29, .tmp/uk_sensor_profile_1970_9.md).
+# .{0,500} bounds the per-segment scan depth while .+ allowed O(N^3) backtracking.
+# chr() calls keep ASCII double-quote, left curly quote, right curly quote explicit.
+_REFERENT_QUALIFIED_SUBSTITUTION_RE = re.compile(
+    r"\bfor\b.{0,500}["
+    + chr(0x22) + chr(0x201C) + chr(0x201D)
+    + r"].{0,500}["
+    + chr(0x22) + chr(0x201C) + chr(0x201D)
+    + r"].{0,500}"
+    r"\bwhere\s+(?:it|they|he|him|his|those\s+words?)\s+refers?\s+to\b"
+)
+
+
 def _looks_like_referent_qualified_text_substitution(text: str) -> bool:
     norm = _normalize_effect_text(text)
     if not norm:
         return False
-    return bool(
-        re.search(r"\bfor\b.+[\"“].+[\"”].+\bwhere\s+(?:it|they|he|him|his|those\s+words?)\s+refers?\s+to\b", norm)
-        and re.search(r"\bsubstitute\b", norm)
-    )
+    # Fast substring guards: eliminate the regex path for the vast majority of
+    # inputs that cannot match.  _normalize_effect_text already lowercases, so
+    # plain-string membership tests are correct.
+    if 'where' not in norm:
+        return False
+    if 'refer' not in norm:
+        return False
+    if 'substitute' not in norm:
+        return False
+    return bool(_REFERENT_QUALIFIED_SUBSTITUTION_RE.search(norm))
 
 
 def _target_depth(target_path: str) -> int:
