@@ -528,6 +528,20 @@ Recent improvement:
   registered in `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS` in
   source_adjudication.py; witness fields: source_payload_kind,
   source_payload_label, target_leaf_kind, target_leaf_label.
+- UK fee-target refinement failure (§1.10 narrow try-except) now emits
+  `uk_effect_fee_target_refinement_failed` (family=lowering_rejection,
+  blocking=False, strict_disposition=block, quirks_disposition=apply) when the
+  compile-time fee-target refinement loop in `effect_compiler.py` catches a
+  `ValueError` from `_parse_affected_target`, `canonicalize_uk_address`, or
+  `_uk_table_driven_fee_target_refinements`; the original `t_str` is still
+  appended (fallback preserved); the broad `except Exception` has been narrowed
+  to `except ValueError`, so unanticipated exception types (e.g. RuntimeError)
+  propagate; rule ID `_UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID` defined
+  in `effect_compiler.py` and registered in `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS`
+  in source_adjudication.py; witness fields: input_t_str, failed_helper,
+  exc_message; covered by tests/test_uk_effect_fee_target_refinement.py
+  (5 tests: positive, witness fields, strict-disposition, negative-valid-parse,
+  RuntimeError-propagates).
 
 ## Ranked Promotion Candidates
 
