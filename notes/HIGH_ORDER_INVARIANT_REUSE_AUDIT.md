@@ -1089,6 +1089,10 @@ Risk:
 - timeline lineage bridge carriers now validate address/event and boolean flag
   payloads at construction time, preventing stringly or non-boolean branch
   classifications from entering PIT lineage planning.
+- compile contract carriers now validate strict-profile booleans, source
+  completeness counts, compiled-op provenance/scope witnesses, admissible
+  binding certificates, canonical effect family/target shape, and strict
+  verdict barrier contradictions at construction time.
 
 ## Keep Local For Now
 
