@@ -92,8 +92,15 @@ class FilteredDivergenceRecord:
 class DivergencePartition:
     """Primary divergences plus filtered divergences with explicit rule IDs."""
 
-    primary: list[Any]
-    filtered: list[FilteredDivergenceRecord]
+    primary: tuple[Any, ...]
+    filtered: tuple[FilteredDivergenceRecord, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "primary", tuple(self.primary))
+        filtered = tuple(self.filtered)
+        if not all(isinstance(record, FilteredDivergenceRecord) for record in filtered):
+            raise ValueError("DivergencePartition.filtered must contain FilteredDivergenceRecord records")
+        object.__setattr__(self, "filtered", filtered)
 
 
 @dataclass(frozen=True)

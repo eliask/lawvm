@@ -809,11 +809,11 @@ def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> 
             )
             continue
         primary.append(divergence)
-    return NOPrimaryDivergencePartition(primary=primary, filtered=filtered)
+    return NOPrimaryDivergencePartition(primary=tuple(primary), filtered=tuple(filtered))
 
 
 def _primary_divergences(divergences: list[ConsistencyDivergence]) -> list[ConsistencyDivergence]:
-    return _partition_primary_divergences(divergences).primary
+    return list(_partition_primary_divergences(divergences).primary)
 
 
 def load_no_current_statute(base_id: str, data_dir: Optional[Path] = None) -> IRStatute:
@@ -922,7 +922,7 @@ def verify_no_against_current(
         missing_equals_empty=True,
     )
     partition = _partition_primary_divergences(divergences)
-    primary = partition.primary
+    primary = list(partition.primary)
     counts: dict[str, int] = {}
     raw_counts: dict[str, int] = {}
     filtered_rule_counts: dict[str, int] = {}
@@ -940,7 +940,7 @@ def verify_no_against_current(
     result.raw_divergence_counts = raw_counts
     result.filtered_divergence_count = len(partition.filtered)
     result.filtered_divergence_rule_counts = filtered_rule_counts
-    result.filtered_divergences = partition.filtered
+    result.filtered_divergences = list(partition.filtered)
     result.compare_projection_count = len(compare_projections)
     result.compare_projection_rule_counts = dict(Counter(projection.rule_id for projection in compare_projections))
     result.compare_projections = compare_projections

@@ -204,21 +204,28 @@ def test_verify_contracts_freeze_detail_and_normalize_lanes() -> None:
 
 def test_divergence_partition_preserves_filtered_rule_evidence() -> None:
     divergence = DivergenceRecord(address="section:1", kind="MISMATCH")
+    primary = [divergence]
+    filtered = [
+        FilteredDivergenceRecord(
+            divergence=divergence,
+            rule_id="verify.prefix_descendant_suppressed",
+            reason="parent divergence covered by child divergence",
+        )
+    ]
 
     partition = DivergencePartition(
-        primary=[],
-        filtered=[
-            FilteredDivergenceRecord(
-                divergence=divergence,
-                rule_id="verify.prefix_descendant_suppressed",
-                reason="parent divergence covered by child divergence",
-            )
-        ],
+        primary=cast(Any, primary),
+        filtered=cast(Any, filtered),
     )
+    primary.clear()
+    filtered.clear()
 
-    assert partition.primary == []
+    assert partition.primary == (divergence,)
     assert partition.filtered[0].divergence is divergence
     assert partition.filtered[0].rule_id == "verify.prefix_descendant_suppressed"
+
+    with pytest.raises(ValueError, match="filtered must contain FilteredDivergenceRecord"):
+        DivergencePartition(primary=(), filtered=cast(Any, ("not-a-filtered-record",)))
 
 
 def test_evidence_summary_to_dict_preserves_tuple_fields() -> None:

@@ -927,7 +927,7 @@ def test_primary_divergence_partition_records_prefix_suppression() -> None:
 
     partition = _partition_primary_divergences([parent, child])
 
-    assert partition.primary == [child]
+    assert partition.primary == (child,)
     assert len(partition.filtered) == 1
     assert partition.filtered[0].divergence == parent
     assert partition.filtered[0].rule_id == "no_verify.prefix_descendant_suppressed"
