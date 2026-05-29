@@ -1093,6 +1093,9 @@ Risk:
   completeness counts, compiled-op provenance/scope witnesses, admissible
   binding certificates, canonical effect family/target shape, and strict
   verdict barrier contradictions at construction time.
+- mutation-accounting report carriers now validate result-code vocabulary,
+  path collections, rule-id collections, result record types, and invariant
+  booleans at direct construction time.
 
 ## Keep Local For Now
 

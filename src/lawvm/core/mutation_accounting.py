@@ -8,10 +8,11 @@ covered, or outside declared mutation regions.
 
 from __future__ import annotations
 
+from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, cast
 
-from lawvm.core.mutation_boundary import TreePaths
+from lawvm.core.mutation_boundary import TreePath, TreePaths, validate_tree_path
 from lawvm.core.mutation_events import (
     MutationEvent,
     build_mutation_event_path_set_report,
@@ -25,6 +26,11 @@ MUTATION_ACCOUNTING_HARD_CODES = frozenset(
         "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION",
         "REPLAY_APPLY_BOUNDARY_UNRESOLVED",
         "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+    }
+)
+MUTATION_ACCOUNTING_RESULT_CODES = MUTATION_ACCOUNTING_HARD_CODES | frozenset(
+    {
+        "REPLAY_APPLY_BOUNDARY_TOUCH_ALLOWED",
     }
 )
 
@@ -78,6 +84,39 @@ class MutationAccountingResult:
     allowed_paths: TreePaths = ()
     matched_allowance_rule_ids: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.code not in MUTATION_ACCOUNTING_RESULT_CODES:
+            raise ValueError(f"MutationAccountingResult.code is not a known mutation-accounting code: {self.code!r}")
+        if not isinstance(self.op_id, str):
+            raise ValueError("MutationAccountingResult.op_id must be a string")
+        if not isinstance(self.helper, str):
+            raise ValueError("MutationAccountingResult.helper must be a string")
+        if not isinstance(self.touched_count, int) or isinstance(self.touched_count, bool) or self.touched_count < 0:
+            raise ValueError("MutationAccountingResult.touched_count must be a non-negative int")
+        object.__setattr__(
+            self,
+            "allowed_roots",
+            _normalize_tree_paths("MutationAccountingResult.allowed_roots", self.allowed_roots),
+        )
+        object.__setattr__(
+            self,
+            "out_of_scope_paths",
+            _normalize_tree_paths("MutationAccountingResult.out_of_scope_paths", self.out_of_scope_paths),
+        )
+        object.__setattr__(
+            self,
+            "allowed_paths",
+            _normalize_tree_paths("MutationAccountingResult.allowed_paths", self.allowed_paths),
+        )
+        object.__setattr__(
+            self,
+            "matched_allowance_rule_ids",
+            _normalize_rule_ids(
+                "MutationAccountingResult.matched_allowance_rule_ids",
+                self.matched_allowance_rule_ids,
+            ),
+        )
+
     def as_violation_string(self) -> str:
         base = f"{self.code} op_id={self.op_id or '<missing>'} helper={self.helper}"
         if self.code in {
@@ -111,6 +150,83 @@ class MutationInvariantReport:
     matched_allowance_rule_ids: tuple[str, ...] = ()
     path_set_invariant_holds: bool = True
     results: tuple[MutationAccountingResult, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.op_id, str):
+            raise ValueError("MutationInvariantReport.op_id must be a string")
+        if not isinstance(self.helper, str):
+            raise ValueError("MutationInvariantReport.helper must be a string")
+        if not isinstance(self.outcome, str):
+            raise ValueError("MutationInvariantReport.outcome must be a string")
+        for field_name, paths in (
+            ("touched_paths", self.touched_paths),
+            ("changed_paths", self.changed_paths),
+            ("allowed_roots", self.allowed_roots),
+            ("allowed_effect_region_paths", self.allowed_effect_region_paths),
+            ("declared_allowance_paths", self.declared_allowance_paths),
+            ("declared_recovery_paths", self.declared_recovery_paths),
+            ("declared_migration_paths", self.declared_migration_paths),
+            ("permitted_paths", self.permitted_paths),
+            ("covered_changed_paths", self.covered_changed_paths),
+            ("unexplained_changed_paths", self.unexplained_changed_paths),
+            ("allowed_non_target_paths", self.allowed_non_target_paths),
+            ("out_of_scope_paths", self.out_of_scope_paths),
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _normalize_tree_paths(f"MutationInvariantReport.{field_name}", paths),
+            )
+        object.__setattr__(
+            self,
+            "declared_recovery_rule_ids",
+            _normalize_rule_ids("MutationInvariantReport.declared_recovery_rule_ids", self.declared_recovery_rule_ids),
+        )
+        object.__setattr__(
+            self,
+            "declared_migration_rule_ids",
+            _normalize_rule_ids("MutationInvariantReport.declared_migration_rule_ids", self.declared_migration_rule_ids),
+        )
+        object.__setattr__(
+            self,
+            "matched_allowance_rule_ids",
+            _normalize_rule_ids("MutationInvariantReport.matched_allowance_rule_ids", self.matched_allowance_rule_ids),
+        )
+        if not isinstance(self.path_set_invariant_holds, bool):
+            raise ValueError("MutationInvariantReport.path_set_invariant_holds must be a bool")
+        results = tuple(self.results)
+        if not all(isinstance(result, MutationAccountingResult) for result in results):
+            raise ValueError("MutationInvariantReport.results must contain MutationAccountingResult records")
+        object.__setattr__(self, "results", results)
+
+
+def _normalize_tree_paths(field_name: str, paths: Iterable[Iterable[object]]) -> TreePaths:
+    normalized: list[TreePath] = []
+    for index, path in enumerate(paths):
+        if isinstance(path, str):
+            raise ValueError(f"{field_name}[{index}] must be a tree path, not a string")
+        if not isinstance(path, IterableABC):
+            raise ValueError(f"{field_name}[{index}] must be a tree path")
+        tree_steps: list[tuple[object, ...]] = []
+        for step_index, step in enumerate(path):
+            if isinstance(step, str):
+                raise ValueError(f"{field_name}[{index}] step {step_index} must be a path step, not a string")
+            if not isinstance(step, IterableABC):
+                raise ValueError(f"{field_name}[{index}] step {step_index} must be a path step")
+            tree_steps.append(tuple(cast(Iterable[object], step)))
+        tree_path = cast(TreePath, tuple(tree_steps))
+        issues = validate_tree_path(tree_path, field_name=f"{field_name}[{index}]")
+        if issues:
+            raise ValueError("; ".join(issues))
+        normalized.append(tree_path)
+    return tuple(normalized)
+
+
+def _normalize_rule_ids(field_name: str, rule_ids: Iterable[object]) -> tuple[str, ...]:
+    normalized = tuple(rule_ids)
+    if not all(isinstance(rule_id, str) for rule_id in normalized):
+        raise ValueError(f"{field_name} must contain strings")
+    return cast(tuple[str, ...], normalized)
 
 
 def build_mutation_invariant_reports(
