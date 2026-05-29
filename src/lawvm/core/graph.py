@@ -19,7 +19,7 @@ construction policy are intentionally outside this module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Protocol
+from typing import Dict, List, Optional, Protocol, Sequence
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.authority import BranchGraphEdge, BranchLifecycleEvent, LegalBranch
@@ -99,9 +99,9 @@ class StatuteGraph:
     timelines: Timelines = field(default_factory=dict)
     delegations: list = field(default_factory=list)    # List[DelegationEdge]
     citations: list = field(default_factory=list)      # List[CrossRefEdge]
-    branches: List[LegalBranch] = field(default_factory=list)
-    branch_edges: List[BranchGraphEdge] = field(default_factory=list)
-    branch_lifecycle_events: List[BranchLifecycleEvent] = field(default_factory=list)
+    branches: Sequence[LegalBranch] = field(default_factory=tuple)
+    branch_edges: Sequence[BranchGraphEdge] = field(default_factory=tuple)
+    branch_lifecycle_events: Sequence[BranchLifecycleEvent] = field(default_factory=tuple)
     amendment_chain: List[str] = field(default_factory=list)
     title: str = ""
     statute_type: str = ""
@@ -133,6 +133,18 @@ class CorpusGraph:
 
     def __post_init__(self) -> None:
         """Fail loudly when the build status contradicts the recorded failures."""
+        branches = tuple(self.branches)
+        branch_edges = tuple(self.branch_edges)
+        branch_lifecycle_events = tuple(self.branch_lifecycle_events)
+        if not all(isinstance(branch, LegalBranch) for branch in branches):
+            raise ValueError("CorpusGraph.branches must contain LegalBranch records")
+        if not all(isinstance(edge, BranchGraphEdge) for edge in branch_edges):
+            raise ValueError("CorpusGraph.branch_edges must contain BranchGraphEdge records")
+        if not all(isinstance(event, BranchLifecycleEvent) for event in branch_lifecycle_events):
+            raise ValueError("CorpusGraph.branch_lifecycle_events must contain BranchLifecycleEvent records")
+        object.__setattr__(self, "branches", branches)
+        object.__setattr__(self, "branch_edges", branch_edges)
+        object.__setattr__(self, "branch_lifecycle_events", branch_lifecycle_events)
         failure_count = len(self.build_failures)
         status_kind = self.processing_status.kind
         blockers = tuple(self.processing_status.blockers or ())

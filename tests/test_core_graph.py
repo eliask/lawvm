@@ -177,6 +177,22 @@ def test_corpus_graph_exposes_branch_edges_without_live_materialization_claim() 
     assert artifact_payload["branch_lifecycle_events"][0]["scenario_id"] == "if_enacted_as_introduced"
 
 
+def test_corpus_graph_freezes_branch_collections_after_validation() -> None:
+    branch = LegalBranch(
+        branch_id="proposal:example:2026-1",
+        authority_layer="proposal",
+        source_artifact_id="proposal/example/2026/1",
+    )
+    graph = CorpusGraph(branches=[branch])
+
+    assert graph.branches == (branch,)
+    with pytest.raises(AttributeError):
+        cast(Any, graph.branches).append(branch)
+
+    with pytest.raises(ValueError, match="branch_edges must contain BranchGraphEdge"):
+        CorpusGraph(branches=[branch], branch_edges=cast(Any, ("not-an-edge",)))
+
+
 def test_corpus_graph_rejects_duplicate_branch_ids() -> None:
     branch = LegalBranch(
         branch_id="proposal:example:2026-1",
