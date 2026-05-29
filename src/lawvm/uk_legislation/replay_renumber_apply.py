@@ -6,6 +6,7 @@ from dataclasses import replace as dc_replace
 from typing import Protocol, cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
@@ -18,6 +19,11 @@ from lawvm.uk_legislation.replay_records import (
 )
 from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.uk_grafter import _clean_num
+
+# Rule ID for the descendant-relocation renumber shape (§1.6 migration/lineage).
+# Emitted when a provision is rewritten into a parent-with-child shape and the
+# lineage event carries the old→new path pair for PIT materialization.
+UK_REPLAY_DESCENDANT_RENUMBER_RULE_ID = "uk_replay_descendant_renumber_provision"
 
 
 class _RenumberReplaySelf(Protocol):
@@ -60,6 +66,14 @@ class _RenumberReplaySelf(Protocol):
         *,
         old_path: TreePath | None,
         new_node: UKMutableNode,
+        helper: str,
+    ) -> None: ...
+
+    def _record_descendant_renumber_mutation_event(
+        self,
+        *,
+        old_path: TreePath | None,
+        new_child_path: TreePath,
         helper: str,
     ) -> None: ...
 
@@ -170,6 +184,10 @@ class UKReplayRenumberApplyMixin:
         if not destination_kind:
             return False
 
+        # Capture the old path before replacing; _replace_node_in_statute clears
+        # or updates the eId lookup index, so the path may not be recoverable
+        # from the mutable node afterward.
+        old_path = replay._tree_path_for_mutable_node(source_node)
         child = UKMutableNode(
             kind=uk_ir_node_kind(destination_kind),
             label=destination_label,
@@ -188,7 +206,19 @@ class UKReplayRenumberApplyMixin:
             attrs=dict(source_node.attrs),
             children=[child],
         )
-        return replay._replace_node_in_statute(source_node, replacement)
+        replaced = replay._replace_node_in_statute(source_node, replacement)
+        if replaced and old_path is not None:
+            # Emit a renumber-specific MutationEvent that carries the lineage:
+            # old_path (e.g. paragraph:12) → new_child_path (e.g. paragraph:12/
+            # sub-paragraph:(1)).  The generic replace event already records the
+            # mechanical in-place rewrite; this event exists for §1.6 provenance.
+            new_child_path = old_path + ((_kind_str(child.kind), child.label or ""),)
+            replay._record_descendant_renumber_mutation_event(
+                old_path=old_path,
+                new_child_path=new_child_path,
+                helper="_apply_same_provision_descendant_renumber",
+            )
+        return replaced
 
     def _apply_same_parent_sibling_renumber(self, op: LegalOperation) -> bool:
         replay = _renumber_replay_self(self)
