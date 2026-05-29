@@ -23,31 +23,113 @@ Known-safe examples::
 
     lawvm_regex_risks(r'^[a-z]+$')        # [] — no risk
     lawvm_regex_risks(r'[a-z]+[0-9]+')   # [] — disjoint character classes
+    lawvm_regex_risks(r'\\d+[a-z]+')      # [] — disjoint (CATEGORY_DIGIT vs [a-z])
+    lawvm_regex_risks(r'\\w+\\s+[a-z]+')  # [] — \\s and [a-z] are disjoint
 
 Known-risky examples::
 
     lawvm_regex_risks(r'.+.+')            # adjacent overlapping repeats
     lawvm_regex_risks(r'(a+)+$')          # nested backtracking quantifiers
     lawvm_regex_risks(r'^(a|aa)+$')       # ambiguous alternation in unbounded repeat
-
-Conservative false-positive note:
-    ``adjacent_repeat_risks()`` treats CATEGORY escapes (``\\d``, ``\\w``, ``\\s``)
-    as "unknown" first-char sets and conservatively reports overlap.  This means
-    patterns like ``\\d+[a-z]*`` may be flagged even though ``\\d`` and ``[a-z]``
-    are disjoint.  These are **false positives**: the CATEGORY first-char sets are
-    unknown to the AST walker, but known-disjoint at runtime.  The gate test uses
-    a comprehensive allowlist for all pre-existing violations of this type (see
-    ``tests/test_regex_perf_gate.py``).
+    lawvm_regex_risks(r'\\w+\\d+')        # \\w includes digits — genuine overlap
 
 Implementation note:
     Uses ``re._parser`` (private CPython detail).  Stable across CPython 3.11–3.13.
     Falls back to ``sre_parse`` on older Python (unused in this codebase).
     No project-specific imports.  Pure stdlib.
+
+CATEGORY first-char sets (A18 enhancement, 2026-05-29):
+    ``first_chars()`` now resolves the standard CATEGORY escapes (``\\d``, ``\\w``,
+    ``\\s`` and their Unicode variants) to concrete frozensets of ASCII code-points.
+    This eliminates the bulk of CATEGORY false positives in the gate.
+
+    ASCII approximation: Python 3 patterns default to Unicode semantics, so ``\\w``
+    can match letters outside ASCII and ``\\d`` can match Unicode digit characters.
+    For the purposes of this LINT (catching obvious first-char overlap), the ASCII-
+    equivalent sets are sufficient and correct for all LawVM classifier patterns,
+    which operate exclusively on ASCII-range legal text.
+
+    NOT-category variants (``\\D``, ``\\W``, ``\\S``) are left as ``None``
+    (conservative/unknown) because their char-sets are too large to enumerate and
+    the overlap test cannot usefully shrink them.
 """
 
 from __future__ import annotations
 
 import re
+
+# ---------------------------------------------------------------------------
+# Module-level CATEGORY → frozenset[int] mapping (ASCII approximation).
+#
+# Populated lazily at first use via _build_category_char_sets().
+# Keys are the CATEGORY_* constants from re._constants (NamedIntConstant).
+# Values are frozenset of ord() values that the category can match (ASCII only).
+# NOT-* variants map to None — they're too broad to enumerate usefully.
+# ---------------------------------------------------------------------------
+_CATEGORY_CHAR_SETS: dict[object, frozenset[int] | None] = {}
+_CATEGORY_SETS_BUILT = False
+
+
+def _build_category_char_sets() -> None:
+    """Populate _CATEGORY_CHAR_SETS on first call.  Idempotent."""
+    global _CATEGORY_SETS_BUILT
+    if _CATEGORY_SETS_BUILT:
+        return
+
+    try:
+        from re import _constants  # type: ignore[attr-defined]  # ty: ignore[unresolved-import]
+    except ImportError:
+        try:
+            import sre_constants as _constants  # type: ignore[no-redef]
+        except ImportError:
+            _CATEGORY_SETS_BUILT = True
+            return
+
+    # ASCII digit set: 0-9
+    _digits = frozenset(range(ord("0"), ord("9") + 1))
+    # ASCII space set: space, tab, newline, carriage-return, vertical-tab, form-feed
+    _spaces = frozenset(ord(c) for c in " \t\n\r\x0b\x0c")
+    # ASCII word set: a-z, A-Z, 0-9, _
+    _word = frozenset(
+        set(range(ord("a"), ord("z") + 1))
+        | set(range(ord("A"), ord("Z") + 1))
+        | set(range(ord("0"), ord("9") + 1))
+        | {ord("_")}
+    )
+    # Linebreak set: \n and \r
+    _linebreak = frozenset({ord("\n"), ord("\r")})
+
+    def _get(name: str) -> object | None:
+        return getattr(_constants, name, None)
+
+    pairs: list[tuple[str, frozenset[int] | None]] = [
+        # Positive sets
+        ("CATEGORY_DIGIT", _digits),
+        ("CATEGORY_UNI_DIGIT", _digits),
+        ("CATEGORY_SPACE", _spaces),
+        ("CATEGORY_UNI_SPACE", _spaces),
+        ("CATEGORY_WORD", _word),
+        ("CATEGORY_UNI_WORD", _word),
+        ("CATEGORY_LOC_WORD", _word),
+        ("CATEGORY_LINEBREAK", _linebreak),
+        ("CATEGORY_UNI_LINEBREAK", _linebreak),
+        # NOT-* variants: too broad — leave as None (conservative)
+        ("CATEGORY_NOT_DIGIT", None),
+        ("CATEGORY_UNI_NOT_DIGIT", None),
+        ("CATEGORY_NOT_SPACE", None),
+        ("CATEGORY_UNI_NOT_SPACE", None),
+        ("CATEGORY_NOT_WORD", None),
+        ("CATEGORY_UNI_NOT_WORD", None),
+        ("CATEGORY_LOC_NOT_WORD", None),
+        ("CATEGORY_NOT_LINEBREAK", None),
+        ("CATEGORY_UNI_NOT_LINEBREAK", None),
+    ]
+    for name, charset in pairs:
+        const = _get(name)
+        if const is not None:
+            _CATEGORY_CHAR_SETS[const] = charset
+
+    _CATEGORY_SETS_BUILT = True
 
 
 def regex_risks(pattern: str, flags: int = 0) -> list[str]:
@@ -146,6 +228,7 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
         return any(op in BACKTRACKING_REPEATS for op, _ in walk(sub))
 
     def first_chars(sub):  # type: ignore[no-untyped-def]
+        _build_category_char_sets()
         out: set[int] = set()
         for op, arg in seq(sub):
             if op == AT or op in (ASSERT, ASSERT_NOT):
@@ -153,8 +236,11 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
             if op == LITERAL:
                 out.add(arg)
                 return False, out
-            if op in (NOT_LITERAL, ANY, CATEGORY):
+            if op in (NOT_LITERAL, ANY):
                 return False, None
+            if op == CATEGORY:
+                cat_chars = _CATEGORY_CHAR_SETS.get(arg)
+                return False, set(cat_chars) if cat_chars is not None else None
             if op == IN:
                 chars: set[int] = set()
                 known = True
@@ -165,6 +251,12 @@ def regex_risks(pattern: str, flags: int = 0) -> list[str]:
                         lo, hi = iarg
                         if hi - lo <= 256:
                             chars.update(range(lo, hi + 1))
+                        else:
+                            known = False
+                    elif iop == CATEGORY:
+                        cat_chars = _CATEGORY_CHAR_SETS.get(iarg)
+                        if cat_chars is not None:
+                            chars.update(cat_chars)
                         else:
                             known = False
                     else:
@@ -261,6 +353,7 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
         return getattr(sub, "data", sub)
 
     def first_chars(sub):  # type: ignore[no-untyped-def]
+        _build_category_char_sets()
         out: set[int] = set()
         for op, arg in data(sub):
             if op in (sre.AT, sre.ASSERT, sre.ASSERT_NOT):
@@ -268,13 +361,16 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
             if op == sre.LITERAL:
                 out.add(arg)
                 return False, out
-            if (
-                op in (sre.NOT_LITERAL, sre.ANY, sre.CATEGORY)
-                or (ANY_ALL is not None and op == ANY_ALL)
+            if op in (sre.NOT_LITERAL, sre.ANY) or (
+                ANY_ALL is not None and op == ANY_ALL
             ):
                 return False, None
+            if op == sre.CATEGORY:
+                cat_chars = _CATEGORY_CHAR_SETS.get(arg)
+                return False, set(cat_chars) if cat_chars is not None else None
             if op == sre.IN:
                 chars: set[int] = set()
+                known = True
                 for iop, iarg in arg:
                     if iop == sre.NEGATE:
                         return False, None
@@ -283,11 +379,18 @@ def adjacent_repeat_risks(pattern: str, flags: int = 0) -> list[str]:
                     elif iop == sre.RANGE:
                         lo, hi = iarg
                         if hi - lo > 512:
-                            return False, None
-                        chars.update(range(lo, hi + 1))
+                            known = False
+                        else:
+                            chars.update(range(lo, hi + 1))
+                    elif iop == sre.CATEGORY:
+                        cat_chars = _CATEGORY_CHAR_SETS.get(iarg)
+                        if cat_chars is not None:
+                            chars.update(cat_chars)
+                        else:
+                            known = False
                     else:
-                        return False, None
-                return False, chars
+                        known = False
+                return False, chars if known else None
             if op == sre.SUBPATTERN:
                 nullable, chars2 = first_chars(arg[-1])
             elif op == sre.BRANCH:
