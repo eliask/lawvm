@@ -18,10 +18,16 @@ from types import SimpleNamespace
 from lawvm.core.compile_result import (
     TemporalEvent,
     TemporalScope,
+    AdmissibleBindingCertificate,
     CanonicalBundle,
+    CanonicalEffect,
+    CompiledOpProvenanceTags,
+    CompiledOpScopeWitness,
     StrictProfile,
     CompileFailure,
     CompileVerdict,
+    SectionStrictVerdict,
+    SourceCompletenessInfo,
     SourcePathology,
     _compiled_op_source_statute,
     _compiled_op_matches_section,
@@ -109,6 +115,55 @@ def test_legal_operation_and_provision_version_normalize_sequence_inputs() -> No
     assert isinstance(version.applicability, tuple)
 
 
+def test_strict_profile_rejects_non_boolean_flags() -> None:
+    with pytest.raises(ValueError, match="allows_target_guessing"):
+        StrictProfile(name="strict", allows_target_guessing=cast(Any, "false"))
+
+
+def test_source_completeness_info_rejects_impossible_counts() -> None:
+    with pytest.raises(ValueError, match="source_available"):
+        SourceCompletenessInfo(chain_length=2, source_available=3, dates_available=1)
+
+
+def test_compiled_op_provenance_tags_freeze_and_validate_tag_sets() -> None:
+    tags = CompiledOpProvenanceTags(extraction_tags=cast(Any, ["xml", "feed"]))
+
+    assert tags.extraction_tags == frozenset({"xml", "feed"})
+    with pytest.raises(ValueError, match="scope_tags"):
+        CompiledOpProvenanceTags(scope_tags=cast(Any, ["ok", 1]))
+    with pytest.raises(ValueError, match="not a string"):
+        CompiledOpProvenanceTags(scope_sources=cast(Any, "explicit_chunk"))
+
+
+def test_compiled_op_scope_witness_rejects_empty_or_untyped_fields() -> None:
+    with pytest.raises(ValueError, match="kind"):
+        CompiledOpScopeWitness(kind="", source="explicit_chunk", confidence="explicit")
+    with pytest.raises(ValueError, match="used_legacy_tag_fallback"):
+        CompiledOpScopeWitness(
+            kind="LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED",
+            source="explicit_chunk",
+            confidence="explicit",
+            used_legacy_tag_fallback=cast(Any, "yes"),
+        )
+
+
+def test_admissible_binding_certificate_rejects_count_contradictions() -> None:
+    with pytest.raises(ValueError, match="single admissibility"):
+        AdmissibleBindingCertificate(
+            slot_id=1,
+            amendment_id="2024/100",
+            candidate_count=2,
+            admissibility="single",
+        )
+    with pytest.raises(ValueError, match="ambiguous admissibility"):
+        AdmissibleBindingCertificate(
+            slot_id=1,
+            amendment_id="2024/100",
+            candidate_count=1,
+            admissibility="ambiguous",
+        )
+
+
 # ---------------------------------------------------------------------------
 # _validate_bundle_purity (standalone function)
 # ---------------------------------------------------------------------------
@@ -183,6 +238,26 @@ class TestCanonicalBundleConstructionPurity:
         bad = _FrontendLocalOp()
         with pytest.raises(TypeError, match="non-LegalOperation"):
             CanonicalBundle(structural_ops=(op, bad))  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+
+
+class TestCanonicalEffectContracts:
+    def test_canonical_effect_rejects_unknown_family(self) -> None:
+        with pytest.raises(TypeError, match="family"):
+            CanonicalEffect(
+                effect_id="effect:1",
+                family=cast(Any, "python_order"),
+                action=cast(Any, "replace"),
+                target=LegalAddress(path=(("section", "1"),)),
+            )
+
+    def test_canonical_effect_rejects_untyped_target(self) -> None:
+        with pytest.raises(TypeError, match="target"):
+            CanonicalEffect(
+                effect_id="effect:1",
+                family="text",
+                action="text_patch",
+                target=cast(Any, "section:1"),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +574,32 @@ class TestCompileResultPathologyCarriers:
 
 
 class TestCompileVerdictRail:
+    def test_compile_verdict_rejects_clean_status_with_barriers(self) -> None:
+        with pytest.raises(ValueError, match="strict_clean"):
+            CompileVerdict(
+                mode="strict",
+                profile="test",
+                status="strict_clean",
+                barrier_codes=("APPLY.TREE_INVARIANT_VIOLATION",),
+            )
+
+    def test_compile_verdict_rejects_unknown_status(self) -> None:
+        with pytest.raises(ValueError, match="status"):
+            CompileVerdict(
+                mode="strict",
+                profile="test",
+                status=cast(Any, "last_write_wins"),
+            )
+
+    def test_section_strict_verdict_rejects_clean_status_with_barriers(self) -> None:
+        with pytest.raises(ValueError, match="strict_clean"):
+            SectionStrictVerdict(
+                section_label="1",
+                amendment_id="2024/1",
+                status="strict_clean",
+                barrier_codes=("APPLY.TREE_INVARIANT_VIOLATION",),
+            )
+
     def test_compile_verdict_barrier_codes_authoritatively_override_runtime_projection(self) -> None:
         """Verdict barrier rail is authoritative; runtime findings do not carry barrier kinds."""
         verdict = CompileVerdict(

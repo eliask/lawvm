@@ -51,6 +51,26 @@ if TYPE_CHECKING:
 
 StrictMode = Literal["strict", "quirks"]
 
+
+def _require_bool_field(carrier_name: str, field_name: str, value: bool) -> None:
+    if not isinstance(value, bool):
+        raise ValueError(f"{carrier_name}.{field_name} must be a bool")
+
+
+def _require_nonnegative_int(carrier_name: str, field_name: str, value: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{carrier_name}.{field_name} must be a non-negative int")
+
+
+def _string_frozenset(carrier_name: str, field_name: str, values: Iterable[object]) -> frozenset[str]:
+    if isinstance(values, str):
+        raise ValueError(f"{carrier_name}.{field_name} must be an iterable of strings, not a string")
+    normalized = frozenset(values)
+    if not all(isinstance(value, str) for value in normalized):
+        raise ValueError(f"{carrier_name}.{field_name} must contain strings")
+    return cast(frozenset[str], normalized)
+
+
 def _canonical_migration_events(events: Iterable["MigrationEvent"]) -> tuple["MigrationEvent", ...]:
     """Return migration events in deterministic canonical order."""
     return tuple(sorted(tuple(events), key=migration_event_sort_key))
@@ -75,6 +95,31 @@ class StrictProfile:
     def __post_init__(self):
         if not self.name:
             raise ValueError("StrictProfile.name must be non-empty")
+        _require_bool_field("StrictProfile", "requires_explicit_effective_date", self.requires_explicit_effective_date)
+        _require_bool_field("StrictProfile", "allows_target_guessing", self.allows_target_guessing)
+        _require_bool_field("StrictProfile", "allows_omission_expansion", self.allows_omission_expansion)
+        _require_bool_field(
+            "StrictProfile",
+            "allows_uncovered_body_recovery",
+            self.allows_uncovered_body_recovery,
+        )
+        _require_bool_field(
+            "StrictProfile",
+            "allows_fallback_whole_section_replace",
+            self.allows_fallback_whole_section_replace,
+        )
+        _require_bool_field("StrictProfile", "allows_estimated_dates", self.allows_estimated_dates)
+        _require_bool_field(
+            "StrictProfile",
+            "allows_context_dependent_anchor_resolution",
+            self.allows_context_dependent_anchor_resolution,
+        )
+        _require_bool_field("StrictProfile", "allows_word_substitution", self.allows_word_substitution)
+        _require_bool_field(
+            "StrictProfile",
+            "allows_source_correction_rules",
+            self.allows_source_correction_rules,
+        )
 
 
 @dataclass(frozen=True)
@@ -87,6 +132,15 @@ class SourceCompletenessInfo:
     chain_length: int  # total amendments in parent chain
     source_available: int  # amendments with fetchable XML
     dates_available: int  # amendments with explicit effective date
+
+    def __post_init__(self) -> None:
+        _require_nonnegative_int("SourceCompletenessInfo", "chain_length", self.chain_length)
+        _require_nonnegative_int("SourceCompletenessInfo", "source_available", self.source_available)
+        _require_nonnegative_int("SourceCompletenessInfo", "dates_available", self.dates_available)
+        if self.source_available > self.chain_length:
+            raise ValueError("SourceCompletenessInfo.source_available cannot exceed chain_length")
+        if self.dates_available > self.chain_length:
+            raise ValueError("SourceCompletenessInfo.dates_available cannot exceed chain_length")
 
 
 @dataclass(frozen=True)
@@ -210,6 +264,33 @@ class CompiledOpProvenanceTags:
     scope_sources: frozenset[str] = field(default_factory=frozenset)
     scope_confidences: frozenset[str] = field(default_factory=frozenset)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "extraction_tags",
+            _string_frozenset("CompiledOpProvenanceTags", "extraction_tags", self.extraction_tags),
+        )
+        object.__setattr__(
+            self,
+            "target_guessing_tags",
+            _string_frozenset("CompiledOpProvenanceTags", "target_guessing_tags", self.target_guessing_tags),
+        )
+        object.__setattr__(
+            self,
+            "scope_tags",
+            _string_frozenset("CompiledOpProvenanceTags", "scope_tags", self.scope_tags),
+        )
+        object.__setattr__(
+            self,
+            "scope_sources",
+            _string_frozenset("CompiledOpProvenanceTags", "scope_sources", self.scope_sources),
+        )
+        object.__setattr__(
+            self,
+            "scope_confidences",
+            _string_frozenset("CompiledOpProvenanceTags", "scope_confidences", self.scope_confidences),
+        )
+
 
 @dataclass(frozen=True)
 class CompiledOpScopeWitness:
@@ -221,6 +302,19 @@ class CompiledOpScopeWitness:
     tag: str = ""
     used_legacy_tag_fallback: bool = False
 
+    def __post_init__(self) -> None:
+        if not self.kind:
+            raise ValueError("CompiledOpScopeWitness.kind must be non-empty")
+        if not self.source:
+            raise ValueError("CompiledOpScopeWitness.source must be non-empty")
+        if not self.confidence:
+            raise ValueError("CompiledOpScopeWitness.confidence must be non-empty")
+        _require_bool_field(
+            "CompiledOpScopeWitness",
+            "used_legacy_tag_fallback",
+            self.used_legacy_tag_fallback,
+        )
+
 
 @dataclass(frozen=True)
 class AdmissibleBindingCertificate:
@@ -230,6 +324,18 @@ class AdmissibleBindingCertificate:
     amendment_id: str
     candidate_count: int  # 1 = single admissible, >1 = ambiguous
     admissibility: Literal["single", "ambiguous", "fallback"]
+
+    def __post_init__(self) -> None:
+        _require_nonnegative_int("AdmissibleBindingCertificate", "slot_id", self.slot_id)
+        _require_nonnegative_int("AdmissibleBindingCertificate", "candidate_count", self.candidate_count)
+        if not self.amendment_id:
+            raise ValueError("AdmissibleBindingCertificate.amendment_id must be non-empty")
+        if self.admissibility not in {"single", "ambiguous", "fallback"}:
+            raise ValueError("AdmissibleBindingCertificate.admissibility must be single, ambiguous, or fallback")
+        if self.admissibility == "single" and self.candidate_count != 1:
+            raise ValueError("AdmissibleBindingCertificate single admissibility requires candidate_count=1")
+        if self.admissibility == "ambiguous" and self.candidate_count <= 1:
+            raise ValueError("AdmissibleBindingCertificate ambiguous admissibility requires candidate_count > 1")
 
 
 @dataclass(frozen=True)
@@ -402,19 +508,22 @@ class CanonicalEffect:
         if self.family == "structural":
             if not isinstance(self.action, StructuralAction):
                 raise TypeError("CanonicalEffect family='structural' requires StructuralAction action")
-            return
-        if self.family == "text":
+        elif self.family == "text":
             if self.action != "text_patch":
                 raise TypeError("CanonicalEffect family='text' requires action='text_patch'")
-            return
-        if self.family == "lifecycle" and self.action not in {
-            "commence",
-            "expire",
-            "suspend",
-            "revive",
-            "applicability",
-        }:
-            raise TypeError("CanonicalEffect family='lifecycle' requires lifecycle action")
+        elif self.family == "lifecycle":
+            if self.action not in {
+                "commence",
+                "expire",
+                "suspend",
+                "revive",
+                "applicability",
+            }:
+                raise TypeError("CanonicalEffect family='lifecycle' requires lifecycle action")
+        else:
+            raise TypeError("CanonicalEffect.family must be structural, text, or lifecycle")
+        if not isinstance(self.target, LegalAddress):
+            raise TypeError("CanonicalEffect.target must be a LegalAddress")
 
 
 @dataclass(frozen=True)
@@ -625,6 +734,24 @@ class CompileVerdict:
     profile: str
     status: CompileStatus
     barrier_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"strict", "quirks"}:
+            raise ValueError("CompileVerdict.mode must be strict or quirks")
+        if not self.profile:
+            raise ValueError("CompileVerdict.profile must be non-empty")
+        if self.status not in {
+            "strict_clean",
+            "strict_blocked_by_recovery",
+            "source_incomplete",
+            "internal_failure",
+        }:
+            raise ValueError("CompileVerdict.status is not a known compile status")
+        object.__setattr__(self, "barrier_codes", tuple(self.barrier_codes))
+        if not all(isinstance(code, str) and code for code in self.barrier_codes):
+            raise ValueError("CompileVerdict.barrier_codes must contain non-empty strings")
+        if self.status == "strict_clean" and self.barrier_codes:
+            raise ValueError("CompileVerdict strict_clean status cannot carry barrier_codes")
 
     @property
     def is_strict_clean(self) -> bool:
@@ -1124,6 +1251,24 @@ class SectionStrictVerdict:
     amendment_id: str
     barrier_codes: tuple[str, ...] = ()
     status: CompileStatus = "strict_clean"
+
+    def __post_init__(self) -> None:
+        if not self.section_label:
+            raise ValueError("SectionStrictVerdict.section_label must be non-empty")
+        if not self.amendment_id:
+            raise ValueError("SectionStrictVerdict.amendment_id must be non-empty")
+        if self.status not in {
+            "strict_clean",
+            "strict_blocked_by_recovery",
+            "source_incomplete",
+            "internal_failure",
+        }:
+            raise ValueError("SectionStrictVerdict.status is not a known compile status")
+        object.__setattr__(self, "barrier_codes", tuple(self.barrier_codes))
+        if not all(isinstance(code, str) and code for code in self.barrier_codes):
+            raise ValueError("SectionStrictVerdict.barrier_codes must contain non-empty strings")
+        if self.status == "strict_clean" and self.barrier_codes:
+            raise ValueError("SectionStrictVerdict strict_clean status cannot carry barrier_codes")
 
     @property
     def is_strict_clean(self) -> bool:
