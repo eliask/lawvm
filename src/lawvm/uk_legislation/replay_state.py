@@ -11,6 +11,7 @@ from lawvm.core.mutation_boundary import TreePath, TreePaths, tree_path_from_leg
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
+from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_insert_node_sorted
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
@@ -42,6 +43,8 @@ class VersionedNodeLookup(NamedTuple):
 
 
 TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
+# Key: (id(root_node), kind, label) → (serial, tuple-of-matches capped at 2)
+_RecursiveMatchAllKey: TypeAlias = tuple[int, str, str]
 _NodeStructuralShape: TypeAlias = tuple[
     object,
     Optional[str],
@@ -72,12 +75,14 @@ class UKReplayStateMixin:
     _eid_search_cache: dict[tuple[str, bool], VersionedNodeLookup]
     _target_lookup_cache: dict[TargetLookupKey, VersionedNodeLookup]
     _recursive_match_cache: dict[tuple[int, str, str], VersionedNodeLookup]
+    _recursive_match_all_cache: dict[_RecursiveMatchAllKey, tuple[int, tuple[UKCanonicalNodeMatch, ...]]]
 
     def _note_structure_mutation(self) -> None:
         self._structure_mutation_serial += 1
         self._eid_search_cache.clear()
         self._target_lookup_cache.clear()
         self._recursive_match_cache.clear()
+        self._recursive_match_all_cache.clear()
 
     def _node_eid_values(self, node: UKMutableNode) -> tuple[str, ...]:
         values: list[str] = []
@@ -321,6 +326,28 @@ class UKReplayStateMixin:
             parent,
             idx,
         )
+
+    def _cached_recursive_match_all(
+        self,
+        key: _RecursiveMatchAllKey,
+    ) -> tuple[UKCanonicalNodeMatch, ...] | None:
+        """Return cached all-matches tuple if still valid, or None."""
+        entry = self._recursive_match_all_cache.get(key)
+        if entry is None:
+            return None
+        serial, matches = entry
+        if serial != self._structure_mutation_serial:
+            self._recursive_match_all_cache.pop(key, None)
+            return None
+        return matches
+
+    def _store_recursive_match_all_cache(
+        self,
+        key: _RecursiveMatchAllKey,
+        matches: tuple[UKCanonicalNodeMatch, ...],
+    ) -> None:
+        """Cache an all-matches result (capped at 2) keyed by (id(node), kind, label)."""
+        self._recursive_match_all_cache[key] = (self._structure_mutation_serial, matches)
 
     def _index_eid_subtree(
         self,

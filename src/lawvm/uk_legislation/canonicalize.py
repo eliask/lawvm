@@ -238,18 +238,28 @@ def uk_recursive_kind_match_all(
     label: str,
     match_kind_label,
     out: list[UKCanonicalNodeMatch],
+    limit: int | None = 2,
 ) -> None:
-    """Collect ALL descendant matches (not just the first).
+    """Collect descendant matches, stopping once *limit* are found.
 
-    Unlike ``uk_recursive_kind_match`` this does not short-circuit.  The
-    caller is responsible for passing an empty list as *out* and inspecting
-    it for uniqueness after the call.
+    Callers only need to distinguish 0 / 1 / ≥2 matches to decide between
+    no-recovery / unique-recovery / ambiguous-refuse, so the default *limit*
+    of 2 short-circuits as soon as ambiguity is confirmed.  Any caller that
+    genuinely needs every match (none currently exists) may pass
+    ``limit=None`` to disable the short-circuit.
+
+    Unlike ``uk_recursive_kind_match`` this accumulates into *out* so the
+    caller can inspect the final count.
     """
     for i, child in enumerate(node.children):
+        if limit is not None and len(out) >= limit:
+            return
         if match_kind_label(child, kind, label):
             out.append(UKCanonicalNodeMatch(child, node, i))
-            # Keep descending: a matching node can itself have matching descendants
-            # under different parents (rare but must be counted).
+            if limit is not None and len(out) >= limit:
+                return
+            # Keep descending: a matching node can itself have matching
+            # descendants under different parents (rare but must be counted).
         if child.children:
             uk_recursive_kind_match_all(
                 child,
@@ -257,6 +267,7 @@ def uk_recursive_kind_match_all(
                 label=label,
                 match_kind_label=match_kind_label,
                 out=out,
+                limit=limit,
             )
 
 
