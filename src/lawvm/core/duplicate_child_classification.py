@@ -17,6 +17,16 @@ DuplicateChildClassification = Literal[
     "unresolved_duplicate",
 ]
 
+_VALID_DUPLICATE_CHILD_CLASSIFICATIONS: frozenset[str] = frozenset(
+    {
+        "valid_temporal_overlay",
+        "migrated_native_identity_collision",
+        "carried_tail_or_preserved_live_content",
+        "stale_publisher_or_source_shadow",
+        "unresolved_duplicate",
+    }
+)
+
 
 @dataclass(frozen=True)
 class DuplicateChildFinding:
@@ -29,6 +39,24 @@ class DuplicateChildFinding:
     classification: DuplicateChildClassification
     reason: str
 
+    def __post_init__(self) -> None:
+        if not str(self.child_kind or "").strip():
+            raise ValueError("DuplicateChildFinding.child_kind must be non-empty")
+        if not str(self.child_label or "").strip():
+            raise ValueError("DuplicateChildFinding.child_label must be non-empty")
+        if self.child_count < 2:
+            raise ValueError(
+                f"DuplicateChildFinding.child_count must be >= 2; got {self.child_count}"
+            )
+        if self.classification not in _VALID_DUPLICATE_CHILD_CLASSIFICATIONS:
+            raise ValueError(
+                f"DuplicateChildFinding.classification must be one of "
+                f"{sorted(_VALID_DUPLICATE_CHILD_CLASSIFICATIONS)}; "
+                f"got {self.classification!r}"
+            )
+        if not str(self.reason or "").strip():
+            raise ValueError("DuplicateChildFinding.reason must be non-empty")
+
     @property
     def child_address(self) -> LegalAddress:
         return LegalAddress(path=self.parent_address.path + ((self.child_kind, self.child_label),))
@@ -36,13 +64,19 @@ class DuplicateChildFinding:
 
 def timeline_issue_kind_for_duplicate_classification(classification: DuplicateChildClassification) -> str:
     """Map a duplicate classification to the public timeline issue vocabulary."""
-    return {
+    _map: dict[str, str] = {
         "valid_temporal_overlay": "duplicate_same_label_child_valid_temporal_overlay",
         "migrated_native_identity_collision": "duplicate_same_label_child_migration_collision",
         "carried_tail_or_preserved_live_content": "duplicate_same_label_child_carried_continuity",
         "stale_publisher_or_source_shadow": "duplicate_same_label_child_stale_source_shadow",
         "unresolved_duplicate": "duplicate_same_label_child_unresolved",
-    }[classification]
+    }
+    if classification not in _map:
+        raise ValueError(
+            f"unknown DuplicateChildClassification {classification!r}; "
+            f"supported: {sorted(_VALID_DUPLICATE_CHILD_CLASSIFICATIONS)}"
+        )
+    return _map[classification]
 
 
 def classify_duplicate_child_family(

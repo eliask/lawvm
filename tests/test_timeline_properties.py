@@ -49,6 +49,8 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.duplicate_child_classification import (
     classify_duplicate_child_family,
     collect_duplicate_child_findings,
+    DuplicateChildFinding,
+    timeline_issue_kind_for_duplicate_classification,
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.statute_facets import is_statute_title_address
@@ -2676,6 +2678,95 @@ def test_duplicate_child_classifier_marks_explicit_temporal_overlay() -> None:
     assert finding is not None
     assert finding.child_address == LegalAddress(path=(("section", "1"), ("subsection", "3")))
     assert finding.classification == "valid_temporal_overlay"
+
+
+# ---------------------------------------------------------------------------
+# DuplicateChildFinding __post_init__ validation
+# ---------------------------------------------------------------------------
+
+_VALID_PARENT = LegalAddress(path=(("chapter", "1"),))
+
+
+def test_duplicate_child_finding_rejects_empty_child_kind() -> None:
+    with pytest.raises(ValueError, match="child_kind"):
+        DuplicateChildFinding(
+            parent_address=_VALID_PARENT,
+            child_kind="",
+            child_label="5",
+            child_count=2,
+            classification="valid_temporal_overlay",
+            reason="x",
+        )
+
+
+def test_duplicate_child_finding_rejects_empty_child_label() -> None:
+    with pytest.raises(ValueError, match="child_label"):
+        DuplicateChildFinding(
+            parent_address=_VALID_PARENT,
+            child_kind="section",
+            child_label="",
+            child_count=2,
+            classification="valid_temporal_overlay",
+            reason="x",
+        )
+
+
+def test_duplicate_child_finding_rejects_child_count_less_than_two() -> None:
+    with pytest.raises(ValueError, match="child_count"):
+        DuplicateChildFinding(
+            parent_address=_VALID_PARENT,
+            child_kind="section",
+            child_label="5",
+            child_count=1,
+            classification="valid_temporal_overlay",
+            reason="x",
+        )
+
+
+def test_duplicate_child_finding_rejects_unknown_classification() -> None:
+    with pytest.raises(ValueError, match="not_a_real_status"):
+        DuplicateChildFinding(
+            parent_address=_VALID_PARENT,
+            child_kind="section",
+            child_label="5",
+            child_count=2,
+            classification="not_a_real_status",  # ty: ignore[invalid-argument-type]
+            reason="x",
+        )
+
+
+def test_duplicate_child_finding_unknown_classification_error_lists_supported() -> None:
+    with pytest.raises(ValueError, match="valid_temporal_overlay"):
+        DuplicateChildFinding(
+            parent_address=_VALID_PARENT,
+            child_kind="section",
+            child_label="5",
+            child_count=2,
+            classification="not_a_real_status",  # ty: ignore[invalid-argument-type]
+            reason="x",
+        )
+
+
+def test_duplicate_child_finding_rejects_empty_reason() -> None:
+    with pytest.raises(ValueError, match="reason"):
+        DuplicateChildFinding(
+            parent_address=_VALID_PARENT,
+            child_kind="section",
+            child_label="5",
+            child_count=2,
+            classification="valid_temporal_overlay",
+            reason="",
+        )
+
+
+def test_timeline_issue_kind_for_duplicate_classification_raises_value_error_for_unknown() -> None:
+    with pytest.raises(ValueError, match="not_a_real_status"):
+        timeline_issue_kind_for_duplicate_classification("not_a_real_status")  # ty: ignore[invalid-argument-type]
+
+
+def test_timeline_issue_kind_for_duplicate_classification_error_lists_supported() -> None:
+    with pytest.raises(ValueError, match="valid_temporal_overlay"):
+        timeline_issue_kind_for_duplicate_classification("not_a_real_status")  # ty: ignore[invalid-argument-type]
 
 
 def test_materialize_pit_preserves_duplicate_selected_children_in_timeline_versions() -> None:
