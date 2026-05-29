@@ -16,6 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+_ROW_KEY_BASES = frozenset({"explicit_label", "named_anchor", "header_key", "ordinal"})
+_ROW_KEY_STRENGTHS = frozenset({"strong", "medium", "weak"})
+
 
 @dataclass(frozen=True)
 class RowKey:
@@ -38,8 +41,12 @@ class RowKey:
     strength: Literal["strong", "medium", "weak"]
 
     def __post_init__(self) -> None:
+        if self.basis not in _ROW_KEY_BASES:
+            raise ValueError(f"unsupported RowKey.basis: {self.basis!r}")
         if not self.value:
             raise ValueError("RowKey.value must be non-empty")
+        if self.strength not in _ROW_KEY_STRENGTHS:
+            raise ValueError(f"unsupported RowKey.strength: {self.strength!r}")
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,12 @@ class TableRow:
     source_basis: str = ""  # xml_table / named_row_promotion / etc.
 
     def __post_init__(self) -> None:
+        if not isinstance(self.row_key, RowKey):
+            raise ValueError("TableRow.row_key must be a RowKey")
+        cells = tuple(self.cells)
+        if not all(isinstance(cell, TableCell) for cell in cells):
+            raise ValueError("TableRow.cells must contain TableCell records")
+        object.__setattr__(self, "cells", cells)
         seen: set[str] = set()
         for cell in self.cells:
             if cell.column_key in seen:
@@ -93,8 +106,14 @@ class TableBody:
     def __post_init__(self) -> None:
         if not self.table_id:
             raise ValueError("TableBody.table_id must be non-empty")
+        object.__setattr__(self, "columns", tuple(self.columns))
+        object.__setattr__(self, "rows", tuple(self.rows))
         if any(not column for column in self.columns):
             raise ValueError("TableBody.columns must be non-empty strings")
+        if not all(isinstance(column, str) for column in self.columns):
+            raise ValueError("TableBody.columns must be strings")
+        if not all(isinstance(row, TableRow) for row in self.rows):
+            raise ValueError("TableBody.rows must contain TableRow records")
 
 
 def table_body_to_flat_text(table: TableBody) -> str:
