@@ -2793,7 +2793,7 @@ def test_select_pit_lineage_inputs_prefers_rekeyed_native_rebirth_over_scope_cha
     )
 
     assert len(migration_event.from_address.path) != len(migration_event.to_address.path)
-    assert lineage_decision.timelines is rekeyed_timelines
+    assert dict(lineage_decision.timelines) == rekeyed_timelines
     assert lineage_decision.timeline_source == "rekeyed"
     assert lineage_decision.lineage_plan.migration_events == ()
     assert lineage_decision.lineage_plan.mode == "rekeyed_only"
@@ -2861,7 +2861,7 @@ def test_select_pit_lineage_inputs_keeps_rekeyed_with_migrations_for_leaf_stable
         as_of="2025-01-01",
     )
 
-    assert lineage_decision.timelines is rekeyed_timelines
+    assert dict(lineage_decision.timelines) == rekeyed_timelines
     assert lineage_decision.timeline_source == "rekeyed"
     assert lineage_decision.lineage_plan.migration_events == (migration_event,)
     assert lineage_decision.lineage_plan.mode == "rekeyed_with_migrations"
@@ -2913,7 +2913,7 @@ def test_select_pit_lineage_inputs_keeps_rekeyed_with_migrations_for_noncollidin
         as_of="2002-01-01",
     )
 
-    assert lineage_decision.timelines is rekeyed_timelines
+    assert dict(lineage_decision.timelines) == rekeyed_timelines
     assert lineage_decision.timeline_source == "rekeyed"
     assert lineage_decision.lineage_plan.migration_events == (migration_event,)
     assert lineage_decision.lineage_plan.mode == "rekeyed_with_migrations"
@@ -2966,7 +2966,7 @@ def test_select_pit_lineage_inputs_keeps_rekeyed_with_migrations_for_noncollidin
         as_of="2002-01-01",
     )
 
-    assert lineage_decision.timelines is rekeyed_timelines
+    assert dict(lineage_decision.timelines) == rekeyed_timelines
     assert lineage_decision.timeline_source == "rekeyed"
     assert lineage_decision.lineage_plan.migration_events == (migration_event,)
     assert lineage_decision.lineage_plan.mode == "rekeyed_with_migrations"
@@ -3019,7 +3019,7 @@ def test_select_pit_lineage_inputs_ignores_future_scope_move_when_choosing_curre
         as_of="2004-01-01",
     )
 
-    assert lineage_decision.timelines is rekeyed_timelines
+    assert dict(lineage_decision.timelines) == rekeyed_timelines
     assert lineage_decision.timeline_source == "rekeyed"
     assert lineage_decision.lineage_plan.migration_events == (migration_event,)
     assert lineage_decision.lineage_plan.mode == "rekeyed_with_migrations"
@@ -3082,7 +3082,7 @@ def test_select_pit_lineage_inputs_reports_destination_occupancy_collision_for_s
         as_of="2002-01-01",
     )
 
-    assert lineage_decision.timelines is raw_timelines
+    assert dict(lineage_decision.timelines) == raw_timelines
     assert lineage_decision.timeline_source == "raw"
     assert lineage_decision.lineage_plan.migration_events == (migration_event,)
     assert lineage_decision.lineage_plan.mode == "raw_with_migrations"

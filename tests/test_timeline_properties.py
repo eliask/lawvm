@@ -1787,7 +1787,7 @@ def test_choose_materialization_lineage_decision_maps_destination_occupancy_to_r
         destination_occupancy_collision=True,
     )
 
-    assert decision.timelines is raw_timelines
+    assert dict(decision.timelines) == raw_timelines
     assert decision.timeline_source == "raw"
     assert decision.lineage_plan.mode == "raw_with_migrations"
     assert decision.lineage_plan.migration_events == (migration_event,)
