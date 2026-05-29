@@ -23,7 +23,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_action_target_detail,
     uk_replay_recovery_action_target_detail,
 )
-from lawvm.uk_legislation.replay_state import NodeLookupResult, TargetLookupKey
+from lawvm.uk_legislation.replay_state import NodeLookupResult, TargetLookupKey, _RecursiveMatchAllKey
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_existing_target_insert_gap,
     uk_is_explicit_direct_section_paragraph_target,
@@ -99,6 +99,10 @@ class _TargetLookupSelf(Protocol):
     def _cached_recursive_match(self, key: tuple[int, str, str]) -> NodeLookupResult | None: ...
 
     def _store_recursive_match_cache(self, key: tuple[int, str, str], result: NodeLookupResult) -> None: ...
+
+    def _cached_recursive_match_all(self, key: _RecursiveMatchAllKey) -> tuple[UKCanonicalNodeMatch, ...] | None: ...
+
+    def _store_recursive_match_all_cache(self, key: _RecursiveMatchAllKey, matches: tuple[UKCanonicalNodeMatch, ...]) -> None: ...
 
     def _find_node_by_target(
         self,
@@ -308,13 +312,31 @@ class UKReplayTargetLookupMixin:
                             for curr_node, _, _ in curr_cands:
                                 if curr_node is None:
                                     continue
-                                uk_recursive_kind_match_all(
-                                    cast(IRNode, curr_node),
-                                    kind=str(p_kind),
-                                    label=str(p_label),
-                                    match_kind_label=uk_match_kind_label,
-                                    out=all_recursive,
+                                # Short-circuit: once we have ≥2 matches we
+                                # already know the result is ambiguous.
+                                if len(all_recursive) >= 2:
+                                    break
+                                rma_key: _RecursiveMatchAllKey = (
+                                    id(curr_node),
+                                    str(p_kind),
+                                    str(p_label),
                                 )
+                                cached_all = self._cached_recursive_match_all(rma_key)
+                                if cached_all is not None:
+                                    all_recursive.extend(cached_all)
+                                else:
+                                    per_node: list[UKCanonicalNodeMatch] = []
+                                    uk_recursive_kind_match_all(
+                                        cast(IRNode, curr_node),
+                                        kind=str(p_kind),
+                                        label=str(p_label),
+                                        match_kind_label=uk_match_kind_label,
+                                        out=per_node,
+                                    )
+                                    self._store_recursive_match_all_cache(
+                                        rma_key, tuple(per_node)
+                                    )
+                                    all_recursive.extend(per_node)
                             if len(all_recursive) == 1:
                                 res_node, res_p, res_i = all_recursive[0]
                                 if target_resolution_op is not None:

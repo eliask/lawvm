@@ -80,6 +80,7 @@ class UKReplayExecutor(
         self._eid_search_cache = {}
         self._target_lookup_cache = {}
         self._recursive_match_cache = {}
+        self._recursive_match_all_cache = {}
 
     def _log(self, message: str) -> None:
         if self.verbose:

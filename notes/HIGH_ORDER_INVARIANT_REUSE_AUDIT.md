@@ -1208,7 +1208,10 @@ These are jurisdiction source semantics, not shared invariants.
   Both rule IDs are owned in UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS and
   UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS respectively. The fix is family-level
   (§1.1 target_resolution_recovery), gating all target lookup paths that previously
-  accepted `curr_cands[0]` without uniqueness checking.
+  accepted `curr_cands[0]` without uniqueness checking.  The recursive descent walk is
+  short-circuited at ≥2 matches (callers only need 0/1/≥2 to decide) and the per-node
+  all-matches result is cached in `_recursive_match_all_cache` keyed by (id(node), kind,
+  label), invalidated on any tree mutation via `_note_structure_mutation`.
 
 ## Recommended Next Work
 
