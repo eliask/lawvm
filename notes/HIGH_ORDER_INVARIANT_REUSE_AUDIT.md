@@ -317,6 +317,9 @@ Recent improvement:
 - `CorpusGraph` now rejects duplicate branch ids and dangling branch edge or
   lifecycle references, keeping proposal/draft graph claims internally
   referentially sound.
+- `CorpusGraph` now freezes branch, branch-edge, and lifecycle collections at
+  construction after type validation, preventing post-validation mutation from
+  leaking dangling branch evidence into graph exports.
 - branch graph edges and branch-impact projection rows now carry `scenario_id`,
   and `CorpusGraph` rejects branch-edge scenario mismatches against the
   registered branch so proposal variants cannot merge by branch id alone;
