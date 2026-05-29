@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -98,7 +98,7 @@ def reclassify_word_level_structural_subsection_omission(
     content_ir: Optional[dict[str, Any]],
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTextReclassificationResult:
@@ -480,8 +480,8 @@ _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
 
 def _quote_only_definition_list_omission_payload_match(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[QuoteOnlyDefinitionListOmissionPayload]:
     """Return a definition term inherited from a parent definition-list omission."""
@@ -515,8 +515,8 @@ def lower_quote_only_word_omission(
     targets_str: list[str],
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKQuoteOnlyOmissionLowering:
@@ -704,8 +704,8 @@ _SHALL_APPLY_MODIFICATION_THAT_RE = re.compile(
 
 def _source_parent_application_modification_context(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
 ) -> str:
     if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
         return ""

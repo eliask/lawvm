@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
-import weakref
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Optional, Sequence
 
@@ -232,7 +231,7 @@ class _UKRepealTableColumns(NamedTuple):
 
 
 class _UKRepealExtentSourceTable(NamedTuple):
-    table: ET.Element
+    table: ET._Element
     columns: _UKRepealTableColumns
 
 
@@ -242,10 +241,9 @@ class _UKRepealTableQuotedWordsSelector(NamedTuple):
     end_occurrence: int
 
 
-_REPEAL_EXTENT_TABLE_CACHE: weakref.WeakKeyDictionary[
-    ET.Element,
-    tuple[_UKRepealExtentSourceTable, ...],
-] = weakref.WeakKeyDictionary()
+# lxml _Element objects do not support weak references; use a plain dict.
+# Eviction is handled by explicit evict_source_root_caches() calls.
+_REPEAL_EXTENT_TABLE_CACHE: dict[ET._Element, tuple[_UKRepealExtentSourceTable, ...]] = {}
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -1063,12 +1061,12 @@ def _uk_repeal_schedule_source_text(text: Optional[str]) -> bool:
 
 def _uk_repeal_extent_search_roots(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
-) -> list[ET.Element]:
+    source_root: Optional[ET._Element],
+) -> list[ET._Element]:
     """Select source roots that are legally relevant to repeal-table lookup."""
-    search_roots: list[ET.Element] = []
+    search_roots: list[ET._Element] = []
     if extracted_el is not None:
         search_roots.append(extracted_el)
     if (
@@ -1081,7 +1079,7 @@ def _uk_repeal_extent_search_roots(
 
 
 def _uk_table_is_repeal_extent_source_table(
-    table: ET.Element,
+    table: ET._Element,
     *,
     source_is_repeal_schedule: bool = False,
 ) -> _UKRepealTableColumns | None:
@@ -1103,7 +1101,7 @@ def _uk_table_is_repeal_extent_source_table(
     return None
 
 
-def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[_UKRepealExtentSourceTable, ...]:
+def _uk_repeal_extent_source_tables(root: ET._Element) -> tuple[_UKRepealExtentSourceTable, ...]:
     cached = _REPEAL_EXTENT_TABLE_CACHE.get(root)
     if cached is not None:
         return cached
@@ -1124,7 +1122,7 @@ def _uk_repeal_extent_source_tables(root: ET.Element) -> tuple[_UKRepealExtentSo
 
 
 def _uk_repeal_extent_source_tables_for_roots(
-    roots: Sequence[ET.Element],
+    roots: Sequence[ET._Element],
 ) -> tuple[_UKRepealExtentSourceTable, ...]:
     tables: list[_UKRepealExtentSourceTable] = []
     seen_table_ids: set[int] = set()
@@ -1141,9 +1139,9 @@ def _uk_repeal_extent_source_tables_for_roots(
 def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     target: LegalAddress,
     allow_structural_definition_entry: bool = False,
 ) -> _UKRepealTableQuotedWordsTextRepeal:
@@ -1797,9 +1795,9 @@ def _uk_repeal_table_explicit_child_structural_targets(
 def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     target: LegalAddress,
 ) -> _UKRepealTableParentChildTextRepealSplit:
     """Resolve parent feed targets whose repeal row names child and text deletes."""
@@ -1950,9 +1948,9 @@ def _uk_table_driven_repeal_table_parent_child_text_repeal_split(
 def _uk_table_driven_repeal_table_structural_repeal(
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     target: LegalAddress,
 ) -> _UKRepealTableStructuralRepeal:
     """Resolve repeal-schedule rows that exactly corroborate a provision repeal."""
@@ -2828,7 +2826,7 @@ def _uk_container_label_in_simple_list(
     return False
 
 
-def _uk_table_is_column_1_2_source_table(table: ET.Element) -> bool:
+def _uk_table_is_column_1_2_source_table(table: ET._Element) -> bool:
     rows = _uk_table_rows_with_rowspans(table)
     for row in rows[:3]:
         header = " ".join(row).lower()
@@ -2837,7 +2835,7 @@ def _uk_table_is_column_1_2_source_table(table: ET.Element) -> bool:
     return False
 
 
-def _uk_table_rows_with_rowspans(table: ET.Element) -> list[list[str]]:
+def _uk_table_rows_with_rowspans(table: ET._Element) -> list[list[str]]:
     rows: list[list[str]] = []
     rowspans: dict[int, tuple[int, str]] = {}
     for row in table.iter():
@@ -2879,7 +2877,7 @@ def _uk_table_rows_with_rowspans(table: ET.Element) -> list[list[str]]:
     return rows
 
 
-def _uk_table_is_fee_table(table: ET.Element) -> bool:
+def _uk_table_is_fee_table(table: ET._Element) -> bool:
     rows = _uk_table_rows_with_rowspans(table)
     for row in rows[:3]:
         header = " ".join(row).lower()
@@ -2924,14 +2922,13 @@ class _UKFeeTableIndexEntry:
 
 
 # Process-level cache: source_root → list[_UKFeeTableIndexEntry]
-# WeakKeyDictionary releases the entry when source_root is GC'd.
-_UK_FEE_TABLE_INDEX_CACHE: weakref.WeakKeyDictionary[
-    ET.Element, tuple[_UKFeeTableIndexEntry, ...]
-] = weakref.WeakKeyDictionary()
+# lxml _Element objects do not support weak references; use a plain dict.
+# Eviction is handled by explicit evict_source_root_caches() calls.
+_UK_FEE_TABLE_INDEX_CACHE: dict[ET._Element, tuple[_UKFeeTableIndexEntry, ...]] = {}
 
 
 def _uk_build_fee_table_index(
-    source_root: ET.Element,
+    source_root: ET._Element,
 ) -> tuple[_UKFeeTableIndexEntry, ...]:
     """Walk source_root once, build the fee-table row index, and cache it."""
     entries: list[_UKFeeTableIndexEntry] = []
@@ -2981,7 +2978,7 @@ def _uk_build_fee_table_index(
 
 
 def _uk_get_fee_table_index(
-    source_root: ET.Element,
+    source_root: ET._Element,
 ) -> tuple[_UKFeeTableIndexEntry, ...]:
     """Return the fee-table index for source_root, building it on first call."""
     cached = _UK_FEE_TABLE_INDEX_CACHE.get(source_root)
@@ -3000,7 +2997,7 @@ def _uk_table_driven_fee_substitution(
     *,
     effect: UKEffectRecord,
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     target: LegalAddress,
 ) -> _UKTableDrivenWordSubstitution:
     if source_root is None:
@@ -3114,7 +3111,7 @@ def _uk_table_driven_corresponding_entry_word_substitution(
     *,
     effect: UKEffectRecord,
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     target: LegalAddress,
 ) -> _UKTableDrivenWordSubstitution:
     """Resolve "column 1 provision / corresponding column 2 words" source tables."""
@@ -3200,8 +3197,8 @@ def lower_uk_table_driven_corresponding_entry_word_substitution(
     op_text_replacement: Optional[str],
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTableWordSubstitutionLowering:
@@ -3299,7 +3296,7 @@ def lower_uk_table_driven_corresponding_entry_word_substitution(
 def _uk_table_driven_fee_target_refinements(
     *,
     effect: UKEffectRecord,
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     target: LegalAddress,
 ) -> list[LegalAddress]:
     """Identify if a generic target provision matches multiple refined child targets in a fee table."""

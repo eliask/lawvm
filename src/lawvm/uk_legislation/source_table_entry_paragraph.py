@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -28,7 +28,7 @@ def append_source_carried_table_entry_paragraph_observation(
     primary: dict[str, Any],
     op_text_match: Optional[str],
     op_text_replacement: Optional[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -111,8 +111,8 @@ def _parenthesize_flat_source_subparagraph_labels(text: str) -> str:
 
 def _source_carried_table_entry_paragraph_substitution(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     target_ref: str,
     target: LegalAddress,

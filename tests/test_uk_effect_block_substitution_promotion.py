@@ -27,7 +27,7 @@ AGENTS.md obligations covered:
 """
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -46,7 +46,7 @@ _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
 # ---------------------------------------------------------------------------
 
 
-def _block_amendment_el() -> ET.Element:
+def _block_amendment_el() -> ET._Element:
     """Minimal BlockAmendment XML for 'For subsection (4) substitute—'."""
     return ET.fromstring(
         f"""
@@ -68,7 +68,7 @@ def _block_amendment_el() -> ET.Element:
     )
 
 
-def _real_source_el() -> ET.Element:
+def _real_source_el() -> ET._Element:
     """Minimal real source XML element (simulates actual_el != None)."""
     return ET.fromstring(
         f'<P2 xmlns="{_LEG_NS}" id="section-25-4a"><Pnumber>4A</Pnumber>'
@@ -171,10 +171,10 @@ def _call_normalization(
         effect = _minimal_effect()
     if original_target_refs is None:
         original_target_refs = list(_GROUP_REFS)
-    resolved_actual_el: Optional[ET.Element] = (
+    resolved_actual_el: Optional[ET._Element] = (
         _real_source_el() if source_payload_actual_el is _UNSET else source_payload_actual_el
     )
-    resolved_extracted_el: Optional[ET.Element] = (
+    resolved_extracted_el: Optional[ET._Element] = (
         _block_amendment_el() if extracted_el is _UNSET else extracted_el
     )
     return lower_substituted_payload_insert_normalization(

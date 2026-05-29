@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -20,7 +20,7 @@ def reject_mixed_heading_structural_insert_missing_payload(
     t_str: str,
     mixed_heading_source_ref_by_target: dict[str, str],
     content_ir: Optional[dict[str, Any]],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -54,7 +54,7 @@ def reject_missing_structural_payload(
     effect: UKEffectRecord,
     action: str,
     t_str: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     use_metadata_fallback: bool,
     lowering_rejections_out: Optional[list[dict[str, Any]]],
@@ -90,7 +90,7 @@ def reject_non_substantive_structural_payload(
     curr_action: Optional[str],
     t_str: str,
     payload_node_mut: Any,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -125,8 +125,8 @@ def reject_broad_schedule_flat_replace_payload(
     t_str: str,
     target: LegalAddress,
     payload_node_mut: Any,
-    actual_el: Optional[ET.Element],
-    extracted_el: Optional[ET.Element],
+    actual_el: Optional[ET._Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:

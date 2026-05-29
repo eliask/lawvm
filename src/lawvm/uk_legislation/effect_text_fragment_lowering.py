@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -135,8 +135,8 @@ def lower_uk_text_fragment_rewrite(
     table_cell_selector: Optional[dict[str, Any]],
     selector_rule_id: str,
     structural_sibling_insert_detail: Optional[dict[str, Any]],
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTextFragmentLowering:
@@ -473,8 +473,8 @@ def _extract_text_fragment_substitutions(
     source_carried_table_entry_paragraph_substitution: Optional[dict[str, Any]],
     target: LegalAddress,
     target_ref: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: str,
     allow_heading_source_parent_full_replacement: bool = True,
     allow_source_parent_at_end_text_insert: bool = False,
@@ -904,8 +904,8 @@ def _promote_text_fragment_substitutions(
     target_ref: str,
     table_cell_selector: Optional[dict[str, Any]],
     selector_rule_id: str,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: str,
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTextFragmentLowering:

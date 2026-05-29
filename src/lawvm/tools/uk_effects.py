@@ -458,8 +458,8 @@ def summarize_uk_effect(
         start_index=lowering_rejection_count_before,
     )
     extracted_tag = extracted.tag.rsplit("}", 1)[-1] if extracted is not None else None
-    extracted_text = " ".join(
-        t.strip() for t in extracted.itertext() if t and t.strip()
+    extracted_text = " ".join(  # ty: ignore[no-matching-overload]
+        t.strip() for t in extracted.itertext() if t and t.strip()  # type: ignore[union-attr]
     ) if extracted is not None else ""
     extracted_text_preview = (
         extracted_text if len(extracted_text) <= 500 else extracted_text[:497] + "..."

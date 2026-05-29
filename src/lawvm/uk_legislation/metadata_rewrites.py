@@ -7,7 +7,7 @@ without letting the replay layer infer a move from text coincidence.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Optional
 
@@ -246,9 +246,9 @@ def _uk_affected_target_corrected_renumber_targets(
 
 
 def _select_whole_schedule_element(
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     target: LegalAddress,
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     """Return the whole Schedule node for a schedule-level target when present."""
     if extracted_el is None:
         return None

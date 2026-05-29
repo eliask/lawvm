@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 import json
 import re
 import warnings
@@ -34,7 +34,7 @@ _NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
 # ---------------------------------------------------------------------------
 
 
-def _tag(el: ET.Element) -> str:
+def _tag(el: ET._Element) -> str:
     if el is None:
         return ""
     tag = el.tag
@@ -43,13 +43,13 @@ def _tag(el: ET.Element) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
-def _text_content(el: Optional[ET.Element]) -> str:
+def _text_content(el: Optional[ET._Element]) -> str:
     if el is None:
         return ""
     return "".join(str(_t) for _t in el.itertext()).strip()
 
 
-def _local_structural_text(el: ET.Element) -> str:
+def _local_structural_text(el: ET._Element) -> str:
     """Collect local provision text without absorbing child provisions."""
     structural = {
         "part",
@@ -78,7 +78,7 @@ def _local_structural_text(el: ET.Element) -> str:
     transparent_skip = {"pnumber", "number", "title", "commentaryref"}
     structural_text_skip = {tag.lower() for tag in _EDITORIAL_TAGS - _VISIBLE_INLINE_TEXT_TAGS}
 
-    def _collect(node: ET.Element) -> list[str]:
+    def _collect(node: ET._Element) -> list[str]:
         parts: list[str] = []
         if node.text:
             parts.append(node.text)
@@ -100,7 +100,7 @@ def _local_structural_text(el: ET.Element) -> str:
     return " ".join(" ".join(_collect(el)).split())
 
 
-def _contains_definition_ordered_list(el: ET.Element) -> bool:
+def _contains_definition_ordered_list(el: ET._Element) -> bool:
     """Return whether a list embeds a definition ordered-list payload."""
     for parent in el.iter():
         for child in parent:
@@ -109,7 +109,7 @@ def _contains_definition_ordered_list(el: ET.Element) -> bool:
     return False
 
 
-def _post_child_local_text_tail(el: ET.Element) -> str:
+def _post_child_local_text_tail(el: ET._Element) -> str:
     """Return local text that appears after a structural child in source order."""
     structural = {
         "part",
@@ -139,7 +139,7 @@ def _post_child_local_text_tail(el: ET.Element) -> str:
     transparent_containers = {"p1para", "p2para", "p3para", "p4para"}
     structural_text_skip = {tag.lower() for tag in _EDITORIAL_TAGS - _VISIBLE_INLINE_TEXT_TAGS}
 
-    def _collect(node: ET.Element) -> list[str]:
+    def _collect(node: ET._Element) -> list[str]:
         seen_structural = False
         parts: list[str] = []
         for child in node:
@@ -165,13 +165,13 @@ def _post_child_local_text_tail(el: ET.Element) -> str:
     return " ".join(" ".join(parts).split())
 
 
-def _extract_num(el: Optional[ET.Element]) -> str:
+def _extract_num(el: Optional[ET._Element]) -> str:
     if el is None:
         return ""
     return _text_content(el)
 
 
-def _add_attrs(node: UKMutableNode, el: ET.Element):
+def _add_attrs(node: UKMutableNode, el: ET._Element):
     for attr in ["eId", "id", "Status", "RestrictStartDate", "RestrictEndDate"]:
         val = el.get(attr)
         if val:
@@ -222,7 +222,7 @@ _clean_num_with_cache_attrs.cache_clear = _clean_num_cached.cache_clear
 _clean_num_with_cache_attrs.cache_info = _clean_num_cached.cache_info
 
 
-def _infer_container_number_from_source_uri(el: ET.Element, *, prefix: str) -> str:
+def _infer_container_number_from_source_uri(el: ET._Element, *, prefix: str) -> str:
     """Infer a missing/generic UK container number from an unambiguous source id/eId."""
     for attr_name in ("eId", "id"):
         raw = str(el.get(attr_name) or "").strip()
@@ -239,7 +239,7 @@ def _infer_container_number_from_source_uri(el: ET.Element, *, prefix: str) -> s
 
 def _maybe_infer_container_number(
     node: UKMutableNode,
-    el: ET.Element,
+    el: ET._Element,
     *,
     prefix: str,
     original_label: str,
@@ -293,7 +293,7 @@ _UK_SCHEDULE_ENTRY_BLOCKING_TAGS = frozenset(
 )
 
 
-def _definition_ordered_list_term(parent_el: ET.Element, list_el: ET.Element) -> str:
+def _definition_ordered_list_term(parent_el: ET._Element, list_el: ET._Element) -> str:
     """Return the defined term for a definition-local ordered list, if any."""
     if _tag(list_el) != "OrderedList" or list_el.get("Type", "").lower() != "alpha":
         return ""
@@ -340,7 +340,7 @@ def _alpha_label(index: int) -> str:
     return "".join(reversed(chars))
 
 
-def _parse_definition_ordered_list(el: ET.Element, parent_el: ET.Element) -> list[UKMutableNode]:
+def _parse_definition_ordered_list(el: ET._Element, parent_el: ET._Element) -> list[UKMutableNode]:
     term = _definition_ordered_list_term(parent_el, el)
     if not term:
         return []
@@ -372,7 +372,7 @@ def _parse_definition_ordered_list(el: ET.Element, parent_el: ET.Element) -> lis
 
 
 def _parse_generic_ordered_list(
-    el: ET.Element,
+    el: ET._Element,
     context: str,
     force_active: bool,
     pit_date: Optional[str],
@@ -419,7 +419,7 @@ def _parse_generic_ordered_list(
 
 
 def _schedule_list_entry_node(
-    el: ET.Element,
+    el: ET._Element,
     *,
     source_ordinal: int,
     source_tag: str,
@@ -449,7 +449,7 @@ def _schedule_list_entry_node(
     )
 
 
-def _parse_schedule_body_list_entries(el: ET.Element, *, start_ordinal: int) -> list[UKMutableNode]:
+def _parse_schedule_body_list_entries(el: ET._Element, *, start_ordinal: int) -> list[UKMutableNode]:
     tag = _tag(el)
     if tag != "UnorderedList":
         return []
@@ -469,7 +469,7 @@ def _parse_schedule_body_list_entries(el: ET.Element, *, start_ordinal: int) -> 
     return nodes
 
 
-def _parse_non_schedule_list_entries(el: ET.Element, *, context: str, start_ordinal: int) -> list[UKMutableNode]:
+def _parse_non_schedule_list_entries(el: ET._Element, *, context: str, start_ordinal: int) -> list[UKMutableNode]:
     if _tag(el) != "UnorderedList":
         return []
     nodes: list[UKMutableNode] = []
@@ -490,7 +490,7 @@ def _parse_non_schedule_list_entries(el: ET.Element, *, context: str, start_ordi
     return nodes
 
 
-def _parse_schedule_body_p_entries(el: ET.Element, *, start_ordinal: int) -> list[UKMutableNode]:
+def _parse_schedule_body_p_entries(el: ET._Element, *, start_ordinal: int) -> list[UKMutableNode]:
     if _tag(el) != "P":
         return []
     nodes: list[UKMutableNode] = []
@@ -508,7 +508,7 @@ def _parse_schedule_body_p_entries(el: ET.Element, *, start_ordinal: int) -> lis
     return [node] if node is not None else []
 
 
-def _table_attrs(el: ET.Element, names: tuple[str, ...]) -> dict[str, Any]:
+def _table_attrs(el: ET._Element, names: tuple[str, ...]) -> dict[str, Any]:
     attrs: dict[str, Any] = {}
     for name in names:
         value = el.get(name)
@@ -517,7 +517,7 @@ def _table_attrs(el: ET.Element, names: tuple[str, ...]) -> dict[str, Any]:
     return attrs
 
 
-def _parse_table_row(el: ET.Element, *, header_context: bool) -> UKMutableNode | None:
+def _parse_table_row(el: ET._Element, *, header_context: bool) -> UKMutableNode | None:
     cells: list[UKMutableNode] = []
     for child in el:
         tag = _tag(child).lower()
@@ -552,7 +552,7 @@ def _parse_table_row(el: ET.Element, *, header_context: bool) -> UKMutableNode |
     )
 
 
-def _table_cell_ordered_list_units(el: ET.Element) -> list[dict[str, str]]:
+def _table_cell_ordered_list_units(el: ET._Element) -> list[dict[str, str]]:
     units: list[dict[str, str]] = []
     for ordered_list in el.iter():
         if _tag(ordered_list) != "OrderedList":
@@ -577,7 +577,7 @@ def _table_cell_ordered_list_units(el: ET.Element) -> list[dict[str, str]]:
     return units
 
 
-def _parse_table_rows(el: ET.Element, *, header_context: bool = False) -> list[UKMutableNode]:
+def _parse_table_rows(el: ET._Element, *, header_context: bool = False) -> list[UKMutableNode]:
     rows: list[UKMutableNode] = []
     for child in el:
         tag = _tag(child).lower()
@@ -594,11 +594,11 @@ def _parse_table_rows(el: ET.Element, *, header_context: bool = False) -> list[U
     return rows
 
 
-def _local_table_text(el: ET.Element) -> str:
+def _local_table_text(el: ET._Element) -> str:
     """Collect table-local caption/text without duplicating row cell content."""
     skipped = _UK_TABLE_ROW_TAGS | _UK_TABLE_TRANSPARENT_CONTAINERS | _UK_TABLE_HEADER_CONTAINERS
 
-    def _collect(node: ET.Element) -> list[str]:
+    def _collect(node: ET._Element) -> list[str]:
         parts: list[str] = []
         if node.text:
             parts.append(node.text)
@@ -612,7 +612,7 @@ def _local_table_text(el: ET.Element) -> str:
     return " ".join(" ".join(_collect(el)).split())
 
 
-def _parse_table(el: ET.Element, context, force_active=False, pit_date=None, is_eur=False) -> UKMutableNode | None:
+def _parse_table(el: ET._Element, context, force_active=False, pit_date=None, is_eur=False) -> UKMutableNode | None:
     del context, is_eur
     if _is_zombie(el, force_active, pit_date):
         return None
@@ -625,7 +625,7 @@ def _parse_table(el: ET.Element, context, force_active=False, pit_date=None, is_
 
 
 def _parse_block_amendment_tables(
-    el: ET.Element,
+    el: ET._Element,
     context,
     force_active=False,
     pit_date=None,
@@ -858,7 +858,7 @@ def _record_visible_number_eid_alias(
     )
 
 
-def _is_zombie(el: ET.Element, force_active: bool = False, pit_date: Optional[str] = None) -> bool:
+def _is_zombie(el: ET._Element, force_active: bool = False, pit_date: Optional[str] = None) -> bool:
     if force_active:
         return False
     status = el.get("Status")
@@ -1207,7 +1207,7 @@ _SOURCE_PARSE_OBSERVATION_RULE_IDS = frozenset(
 
 
 def _visible_inline_text_preservation_observation(
-    root: ET.Element,
+    root: ET._Element,
     *,
     statute_id: str,
     version_label: str,
@@ -1388,7 +1388,7 @@ def _infer_statute_id(path: Path) -> str:
 
 
 def _build_ir_from_root(
-    root: ET.Element,
+    root: ET._Element,
     *,
     statute_id: Optional[str],
     version_label: Optional[str],
@@ -1731,14 +1731,10 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
 
 
 def extract_eid_map(xml_path: Path, pit_date: Optional[str] = None) -> Dict[str, Any]:
-    from lxml import etree as LET
-
-    tree = LET.parse(str(xml_path))
+    tree = ET.parse(str(xml_path))
     return _extract_eid_map_from_root(tree.getroot(), pit_date=pit_date)
 
 
 def extract_eid_map_bytes(xml_bytes: bytes, pit_date: Optional[str] = None) -> Dict[str, Any]:
-    from lxml import etree as LET
-
-    root = LET.fromstring(xml_bytes)
+    root = ET.fromstring(xml_bytes)
     return _extract_eid_map_from_root(root, pit_date=pit_date)

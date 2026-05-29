@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -126,7 +126,7 @@ def lower_source_structural_sibling_insert(
     target: LegalAddress,
     content_ir: Optional[dict[str, Any]],
     target_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKStructuralSiblingInsertLowering:

@@ -22,7 +22,7 @@ AGENTS.md obligations covered:
 """
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -39,7 +39,7 @@ from lawvm.uk_legislation.effects import UKEffectRecord
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
 
 
-def _source_backed_actual_el() -> ET.Element:
+def _source_backed_actual_el() -> ET._Element:
     """Minimal source XML element simulating a real extracted provision."""
     return ET.fromstring(
         f'<P2 xmlns="{_LEG_NS}" id="section-19-3a"><Pnumber>3A</Pnumber>'
@@ -47,7 +47,7 @@ def _source_backed_actual_el() -> ET.Element:
     )
 
 
-def _extracted_el_after_anchor_insert() -> ET.Element:
+def _extracted_el_after_anchor_insert() -> ET._Element:
     """Extracted source element whose instruction text contains 'after subsection (3) insert'.
 
     This is the canonical signal of a genuinely new provision being inserted between
@@ -168,14 +168,14 @@ def _call_normalization(
         original_target_refs = [target_ref]
     # Default: simulate a source-backed payload (actual XML element present).
     # Pass source_payload_actual_el=None explicitly to test the inferred-payload guard.
-    resolved_actual_el: Optional[ET.Element] = (
+    resolved_actual_el: Optional[ET._Element] = (
         _source_backed_actual_el() if source_payload_actual_el is _UNSET
         else source_payload_actual_el
     )
     # Default: use an extracted_el whose instruction text says "after subsection (3) insert—"
     # so the after-anchor guard fires. Pass extracted_el=None explicitly to test
     # the case where no "after X insert" pattern exists in the source.
-    resolved_extracted_el: Optional[ET.Element] = (
+    resolved_extracted_el: Optional[ET._Element] = (
         _extracted_el_after_anchor_insert() if extracted_el is _UNSET
         else extracted_el
     )
@@ -607,7 +607,7 @@ def test_toplevel_section_1a_promoted() -> None:
 # instruction text says "For X substitute—" not "after X insert".
 
 
-def _pattern_c_actual_el(label: str = "4A") -> ET.Element:
+def _pattern_c_actual_el(label: str = "4A") -> ET._Element:
     """Real source XML element for a letter-suffix provision substitution."""
     return ET.fromstring(
         f'<P2 xmlns="{_LEG_NS}" id="section-25-4a"><Pnumber>{label}</Pnumber>'
@@ -615,7 +615,7 @@ def _pattern_c_actual_el(label: str = "4A") -> ET.Element:
     )
 
 
-def _pattern_c_extracted_el_for_substitute(label: str = "4A") -> ET.Element:
+def _pattern_c_extracted_el_for_substitute(label: str = "4A") -> ET._Element:
     """Source element with 'For subsection (X) substitute—' instruction text."""
     return ET.fromstring(
         f"""

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.uk_legislation.source_context import _source_ancestor_chain
@@ -171,7 +171,7 @@ def _definition_child_structural_substitution_payload(
 
 def source_definition_child_structural_substitution(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
@@ -223,9 +223,9 @@ def source_definition_child_structural_substitution(
 
 def source_definition_child_structural_sibling_insert(
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     affected_provisions: str,
 ) -> Optional[dict[str, Any]]:
     """Parse a source-local definition child sibling insertion.

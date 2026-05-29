@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -75,7 +75,7 @@ def _block_substitution_tail_insert_detail(
     target_index: int,
     target: LegalAddress,
     content_ir: Optional[dict[str, Any]],
-    source_payload_actual_el: Optional[ET.Element],
+    source_payload_actual_el: Optional[ET._Element],
 ) -> Optional[dict[str, Any]]:
     """Return promotion detail when this op is a block-substitution letter-suffix tail.
 
@@ -162,8 +162,8 @@ def lower_substituted_payload_insert_normalization(
     target: LegalAddress,
     content_ir: Optional[dict[str, Any]],
     source_replaced_sibling_count: Optional[int],
-    source_payload_actual_el: Optional[ET.Element],
-    extracted_el: Optional[ET.Element],
+    source_payload_actual_el: Optional[ET._Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKSubstitutedPayloadInsertNormalization:

@@ -4,7 +4,7 @@ Family: source_root_lifecycle
 Phase: compile (source acquisition + extraction context caching)
 
 Background: Sensor I's cProfile of ukpga/1970/9 showed peak RSS of 2.5–2.6 GB
-from 386 XML feeds (~6 MB raw) expanding to large ET.Element trees all retained
+from 386 XML feeds (~6 MB raw) expanding to large ET._Element trees all retained
 simultaneously in memory.  The cause: extraction_cache held strong references to
 every parsed root for the entire compile_ops_for_statute call, and two @lru_cache
 functions (_source_parent_map, _source_ancestor_chain) also held roots as cache
@@ -12,7 +12,9 @@ keys, preventing GC even after theoretical eviction.
 
 Fix (§source_root_lifecycle):
   1. _source_parent_map and _source_ancestor_chain converted from @lru_cache to
-     WeakKeyDictionary-backed caches keyed on source_root.
+     plain-dict caches keyed on source_root (lxml elements do not support weak
+     references, so WeakKeyDictionary is not usable; explicit eviction via
+     evict_source_root_caches() is the memory-safety contract instead).
   2. compile_ops_for_statute evicts extraction_cache[act_id] and
      enacted_extraction_cache[act_id] after the last effect for each affecting
      act is processed (determined by pre-computed _last_effect_idx).
@@ -20,8 +22,8 @@ Fix (§source_root_lifecycle):
      paths, so every code path through the loop participates.
 
 Tests:
-  1. WeakKeyDict release — parent-map cache releases root when no strong refs remain
-  2. Ancestor-chain release — ancestor cache releases root when no strong refs remain
+  1. Explicit eviction — parent-map cache entry is removed after evict_source_root_caches()
+  2. Explicit eviction — ancestor-chain entry is removed after evict_source_root_caches()
   3. Parent-map correctness — same result as the old lru_cache behavior
   4. Ancestor-chain correctness — same result as the old lru_cache behavior
   5. Eviction index — _last_effect_idx correctly identifies last occurrence
@@ -32,8 +34,7 @@ Tests:
 from __future__ import annotations
 
 import gc
-import weakref
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Optional
 
 from lawvm.uk_legislation.source_context import (
@@ -78,7 +79,7 @@ _ANOTHER_XML = """\
 """
 
 
-def _make_root(xml: str = _SIMPLE_XML) -> ET.Element:
+def _make_root(xml: str = _SIMPLE_XML) -> ET._Element:
     return ET.fromstring(xml)
 
 
@@ -88,28 +89,35 @@ def _make_root(xml: str = _SIMPLE_XML) -> ET.Element:
 
 
 def test_source_parent_map_releases_when_root_gc_d() -> None:
-    """Parent-map cache entry is released after explicit eviction + del."""
+    """Parent-map cache entry is removed after explicit eviction.
+
+    Note: lxml _Element objects do not support weak references, so the memory-
+    safety contract is explicit eviction via evict_source_root_caches() rather
+    than automatic GC release.  This test verifies that explicit eviction
+    correctly removes the entry from the plain-dict cache.
+    """
     root = _make_root()
-    wr = weakref.ref(root)
 
     # Warm the cache
     parent_map = _source_parent_map(root)
     assert root in _source_parent_map_cache, "Root must be in parent-map cache"
     assert len(parent_map) > 0, "Parent map must be non-empty for this XML"
 
-    # Explicit eviction breaks the reference cycle (parent_map holds root as
-    # a value, so GC cannot collect the cycle without explicit help).
+    # Explicit eviction must remove the entry.
     evict_source_root_caches(root)
     assert root not in _source_parent_map_cache, "Cache entry must be removed after eviction"
 
-    # Drop the strong reference held by this frame
+    # Verify that re-warming works after eviction (no stale state).
+    parent_map2 = _source_parent_map(root)
+    assert root in _source_parent_map_cache, "Root must re-enter cache after re-warm"
+    assert len(parent_map2) == len(parent_map), "Re-warmed map must have same length"
+
+    # Cleanup
+    evict_source_root_caches(root)
     del root
     del parent_map
+    del parent_map2
     gc.collect()
-
-    assert wr() is None, (
-        "Root must be GC'd after explicit eviction + all strong refs dropped"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -118,12 +126,16 @@ def test_source_parent_map_releases_when_root_gc_d() -> None:
 
 
 def test_source_ancestor_chain_releases_when_root_gc_d() -> None:
-    """Ancestor-chain cache entry is released after explicit eviction + del."""
+    """Ancestor-chain cache entry is removed after explicit eviction.
+
+    Note: lxml _Element objects do not support weak references, so the memory-
+    safety contract is explicit eviction via evict_source_root_caches() rather
+    than automatic GC release.  This test verifies that explicit eviction
+    correctly removes the entry from the plain-dict cache.
+    """
     root = _make_root()
-    wr = weakref.ref(root)
 
     # Find a child element for the ancestor call — use a direct child of root
-    # via list(root) rather than root.iter() to avoid keeping root in the list
     direct_children = list(root)
     child = direct_children[0] if direct_children else root
 
@@ -133,22 +145,23 @@ def test_source_ancestor_chain_releases_when_root_gc_d() -> None:
     # chain may be empty or non-empty depending on child choice; just ensure call succeeded
     assert isinstance(chain, tuple)
 
-    # Explicit eviction: removes inner dict whose tuples may contain root as
-    # a terminal ancestor value — breaking the cycle.
+    # Explicit eviction must remove the entry.
     evict_source_root_caches(root)
     assert root not in _source_ancestor_chain_cache, "Cache entry must be removed after eviction"
 
-    # Drop ALL strong references — including the child list and chain tuple
-    # which may contain ancestor elements (including root for direct children).
+    # Verify that re-warming works after eviction (no stale state).
+    chain2 = _source_ancestor_chain(root, child)
+    assert root in _source_ancestor_chain_cache, "Root must re-enter cache after re-warm"
+    assert chain2 == chain, "Re-warmed chain must equal original"
+
+    # Cleanup
+    evict_source_root_caches(root)
     del root
     del child
     del chain
+    del chain2
     del direct_children
     gc.collect()
-
-    assert wr() is None, (
-        "Root must be GC'd after explicit eviction + all strong refs dropped"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +198,7 @@ def test_source_ancestor_chain_correctness() -> None:
     parent_map = _source_parent_map(root)
 
     # Find a deeply nested element (Subsection → Section → Legislation)
-    leaf: Optional[ET.Element] = None
+    leaf: Optional[ET._Element] = None
     for el in root.iter():
         if el is not root and el not in (list(root)):
             # Second-level or deeper

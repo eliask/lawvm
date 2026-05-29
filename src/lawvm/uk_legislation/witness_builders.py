@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import TYPE_CHECKING, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation, TextPatchSpec
@@ -100,7 +100,7 @@ def _uk_effect_witness(effect: UKEffectRecord, *, authority_layer: str) -> UKEff
 def _uk_extraction_witness(
     effect: UKEffectRecord,
     *,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     metadata_fallback_used: bool,
     source_authority_layer: str = "",

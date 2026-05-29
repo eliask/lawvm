@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -55,7 +55,7 @@ class SourceDefinitionParentChildContext(NamedTuple):
     sublabel: str
 
 
-def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
+def _source_definition_term_from_ancestors(ancestors: tuple[ET._Element, ...]) -> str:
     for ancestor in ancestors:
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
@@ -67,10 +67,10 @@ def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) ->
 
 
 def _source_definition_term_from_local_ancestor_context(
-    ancestors: tuple[ET.Element, ...],
+    ancestors: tuple[ET._Element, ...],
     *,
     start_index: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
 ) -> str:
     """Find a definition term only in local instruction context for a child row.
 
@@ -144,8 +144,8 @@ def _source_row_names_explicit_target_context(row_text: str) -> bool:
 def _scope_fragment_substitutions_to_source_definition_parent(
     *,
     fragments: list[dict[str, str]],
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     target: LegalAddress,
 ) -> list[dict[str, str]]:
@@ -280,7 +280,7 @@ def _source_definition_child_refined_target(
 
 
 def _source_definition_child_context_from_ancestors(
-    ancestors: tuple[ET.Element, ...],
+    ancestors: tuple[ET._Element, ...],
 ) -> SourceDefinitionChildContext:
     for ancestor in ancestors:
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)

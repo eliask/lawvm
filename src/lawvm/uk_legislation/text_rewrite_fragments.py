@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, cast
 
@@ -260,7 +260,7 @@ def append_all_occurrences_text_rewrite_observations(
     op_text_match: Optional[str],
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -315,7 +315,7 @@ def append_basic_text_rewrite_observations(
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
     op_text_end_occurrence: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -1281,7 +1281,7 @@ def append_source_carried_tail_rewrite_observations(
     fragment_subs: Optional[list[dict[str, Any]]],
     primary: dict[str, Any],
     op_text_match: Optional[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -1347,7 +1347,7 @@ def append_source_carried_substitution_rewrite_observations(
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
     op_text_end_occurrence: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -1591,7 +1591,7 @@ def lower_labeled_child_end_range_selector(
     target_ref: str,
     primary: dict[str, Any],
     curr_action: Optional[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKLabeledChildEndRangeLowering:

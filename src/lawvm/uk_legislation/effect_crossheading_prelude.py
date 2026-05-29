@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, TextPatchSpec, TextSelector
@@ -75,9 +75,9 @@ def build_crossheading_context(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
 ) -> UKCrossheadingContext:
     is_crossheading = _is_crossheading_ref(t_str)
     before_anchor_replacement_text = (
@@ -185,8 +185,8 @@ def _crossheading_child_text_names_following_paragraph(text: str) -> bool:
 
 def _crossheading_source_parent_reference_text_patch_fragment(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve listed cross-heading rows from a parent reference substitution."""
@@ -275,8 +275,8 @@ def _governing_words_substitution_fragment(text: str, paragraph_label: str) -> O
 
 def _crossheading_source_parent_governing_words_text_patch_fragment(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
 ) -> Optional[dict[str, str]]:
     """Resolve listed cross-heading rows governed by an earlier list instruction."""
@@ -312,8 +312,8 @@ def _crossheading_source_parent_governing_words_text_patch_fragment(
 
 def _crossheading_source_parent_tail_text_patch_fragment(
     *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     target: LegalAddress,
 ) -> Optional[dict[str, str]]:
@@ -372,7 +372,7 @@ def reject_unsupported_crossheading_replace(
     action: str,
     t_str: str,
     context: UKCrossheadingContext,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -407,7 +407,7 @@ def reject_crossheading_source_without_crossheading_target(
     effect: UKEffectRecord,
     action: str,
     t_str: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -451,8 +451,8 @@ def refine_crossheading_or_heading_facet_target(
     crossheading_replacement_reason_code: Optional[str],
     crossheading_replacement_reason: Optional[str],
     crossheading_text_patch_fragment: Optional[dict[str, str]],
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:
@@ -624,7 +624,7 @@ def append_crossheading_group_repeal_observation(
     *,
     effect: UKEffectRecord,
     crossheading_group_repeal_selector: dict[str, Any],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -656,7 +656,7 @@ def build_crossheading_compound_heading_op(
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,
     original_targets_str: list[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalOperation:

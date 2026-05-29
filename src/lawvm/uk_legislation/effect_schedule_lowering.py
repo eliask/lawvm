@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace as dc_replace
 import json
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
@@ -150,7 +150,7 @@ def try_lower_schedule_table_end_rows_insert(
     t_str: str,
     target: LegalAddress,
     heading_facet_target: bool,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     effect_witness: UKEffectWitness,
@@ -243,9 +243,9 @@ def try_lower_schedule_list_entry_mutation(
     t_str: str,
     target: LegalAddress,
     heading_facet_target: bool,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     sequence: int,
     effect_witness: UKEffectWitness,
     extraction_witness: UKProvisionExtractionWitness,

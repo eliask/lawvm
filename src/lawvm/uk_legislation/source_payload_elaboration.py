@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
@@ -22,7 +22,7 @@ _LEADING_STRUCTURAL_LABEL_RE = re.compile(
 def _crossheading_and_structural_replacement_heading_text(
     *,
     affected_ref: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     target: LegalAddress,
 ) -> Optional[str]:
     """Return title text for explicit ``paragraph X and cross-heading`` replacements."""
@@ -54,10 +54,10 @@ def _crossheading_and_structural_replacement_heading_text(
 
 
 def _retarget_instruction_element_to_target(
-    extracted_el: ET.Element,
+    extracted_el: ET._Element,
     target: LegalAddress,
     extracted_text: Optional[str],
-) -> Optional[ET.Element]:
+) -> Optional[ET._Element]:
     """Retarget instruction paragraphs like '27 Section 100 ...' to the real target.
 
     Some archive-backed affects extracts hand us the amending schedule paragraph
@@ -106,7 +106,7 @@ def _retarget_instruction_element_to_target(
 
 def _expand_sibling_targets_from_extracted(
     prov_str: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
 ) -> Optional[list[str]]:
     """Expand refs like 'Sch. para. 5(7)(8)' when the payload has sibling nodes.
 
@@ -142,7 +142,7 @@ def _expand_sibling_targets_from_extracted(
 
     child_nums: list[str] = []
     child_raw_nums: list[str] = []
-    source_children: list[ET.Element] = []
+    source_children: list[ET._Element] = []
     for child in list(extracted_el):
         child_tag = _tag(child)
         if child_tag in group_structural_children:
@@ -312,7 +312,7 @@ def _substituted_series_pre_anchor_sibling_insert_detail(
 
 def _extract_crossheading_payload_from_extracted(
     affected_provisions: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
 ) -> Optional[IRNode]:
     """Return a standalone crossheading payload for refs ending in 'and cross-heading'."""
     if extracted_el is None or "cross-heading" not in affected_provisions.lower():
@@ -334,9 +334,9 @@ def _extract_crossheading_payload_from_extracted(
 
 
 def _with_trailing_subordinate_siblings(
-    actual_el: ET.Element,
-    amendment_container: Optional[ET.Element],
-) -> ET.Element:
+    actual_el: ET._Element,
+    amendment_container: Optional[ET._Element],
+) -> ET._Element:
     """Attach direct trailing subordinate siblings for block-amendment payloads.
 
     Some affecting-act extracts encode a replaced paragraph as a `P3` followed by
@@ -424,7 +424,7 @@ def _is_broad_schedule_flat_replace_payload(
     *,
     target: LegalAddress,
     payload_node: Optional[UKMutableNode],
-    actual_source_el: Optional[ET.Element],
+    actual_source_el: Optional[ET._Element],
 ) -> bool:
     """Return True when a broad schedule/part replace would erase descendants.
 

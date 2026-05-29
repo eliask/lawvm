@@ -1,7 +1,7 @@
 """Shared XML helpers for the UK legislation frontend."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from functools import lru_cache
 from typing import Sequence
 
@@ -14,11 +14,11 @@ def _local_tag_name(tag: str) -> str:
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
-def _tag(el: ET.Element) -> str:
+def _tag(el: ET._Element) -> str:
     return _local_tag_name(el.tag)
 
 
-def _text_content(el: ET.Element) -> str:
+def _text_content(el: ET._Element) -> str:
     """Recursively collect normalised text."""
     parts: list[str] = []
     for node in el.iter():
@@ -29,7 +29,7 @@ def _text_content(el: ET.Element) -> str:
     return " ".join(" ".join(parts).split())
 
 
-def _direct_structural_num(el: ET.Element) -> str:
+def _direct_structural_num(el: ET._Element) -> str:
     """Return the node's own structural number, not a descendant's number."""
     num_el = el.find(f"./{{{_LEG_NS}}}Pnumber")
     if num_el is None:
@@ -41,7 +41,7 @@ def _direct_structural_num(el: ET.Element) -> str:
     return _text_content(num_el)
 
 
-def _structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
+def _structural_children(el: ET._Element) -> tuple[ET._Element, ...]:
     structural_tags = {
         "Part",
         "Chapter",
@@ -61,7 +61,7 @@ def _structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
     return tuple(child for child in list(el) if _tag(child) in structural_tags)
 
 
-def _clone_element(el: ET.Element) -> ET.Element:
+def _clone_element(el: ET._Element) -> ET._Element:
     return ET.fromstring(ET.tostring(el, encoding="unicode"))
 
 

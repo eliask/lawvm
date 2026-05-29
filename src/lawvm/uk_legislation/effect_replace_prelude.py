@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
@@ -34,7 +34,7 @@ def plan_replace_effect_prelude(
     *,
     effect: UKEffectRecord,
     original_targets_str: list[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     source_parent_substitution_range_payload: Optional[dict[str, Any]],
     lowering_rejections_out: Optional[list[dict[str, Any]]],

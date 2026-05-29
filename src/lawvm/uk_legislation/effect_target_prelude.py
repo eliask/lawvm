@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
@@ -90,7 +90,7 @@ def append_heading_facet_range_expansion_observation(
     effect: UKEffectRecord,
     raw_affected_provisions: str,
     targets_str: list[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -124,7 +124,7 @@ def append_added_type_source_structuralized_observation(
     effect_type: str,
     action: str,
     targets_str: list[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -161,7 +161,7 @@ def expand_single_target_prelude(
     action: str,
     targets_str: list[str],
     original_targets_str: list[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTargetPrelude:
@@ -294,9 +294,9 @@ def reject_unsupported_target_facet(
     effect: UKEffectRecord,
     t_str: str,
     target_candidate_count: int,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
     if _is_schedule_note_ref(t_str):
@@ -348,7 +348,7 @@ def reject_schedule_entry_missing_source(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -381,7 +381,7 @@ def reject_structural_pseudo_definition_target(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -416,7 +416,7 @@ def reject_external_or_partial_whole_act_scope(
     effect_type: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
@@ -539,7 +539,7 @@ def resolve_effect_target_context(
     replacement_leaf_override: Optional[str],
     replacement_leaf_kind: Optional[str],
     source_parent_substitution_range_payload: Optional[dict[str, Any]],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKPerTargetContext:
@@ -649,7 +649,7 @@ def refine_enacted_schedule_table_row_part_target(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:
@@ -713,7 +713,7 @@ def refine_source_text_schedule_paragraph_target(
     is_word_level: bool,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:
@@ -775,7 +775,7 @@ def refine_flat_p1para_schedule_insert_target(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:
@@ -823,7 +823,7 @@ def append_target_shape_observations(
     effect: UKEffectRecord,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -867,7 +867,7 @@ def refine_numbered_schedule_entry_repeal_target(
     action: str,
     t_str: str,
     target: LegalAddress,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> LegalAddress:

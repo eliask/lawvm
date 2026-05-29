@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 import time
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Optional
@@ -28,7 +28,7 @@ from lawvm.uk_legislation.source_context import (
 @dataclass(frozen=True)
 class EffectSourceSelection:
     source_context: UKAffectingSourceContext
-    extracted_el: Optional[ET.Element]
+    extracted_el: Optional[ET._Element]
     source_required_for_replay: bool
 
 
@@ -149,10 +149,10 @@ def select_source_for_effect(
     )
 
 
-def extracted_tag_and_text(el: Optional[ET.Element]) -> ExtractedTagAndText:
+def extracted_tag_and_text(el: Optional[ET._Element]) -> ExtractedTagAndText:
     if el is None:
         return ExtractedTagAndText(None, "")
     return ExtractedTagAndText(
         tag=el.tag.rsplit("}", 1)[-1],
-        text=" ".join(t.strip() for t in el.itertext() if t and t.strip()),
+        text=" ".join(t.strip() for t in el.itertext() if t and t.strip()),  # type: ignore[union-attr]  # ty: ignore[no-matching-overload]
     )

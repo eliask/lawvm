@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -39,7 +39,7 @@ def append_no_supported_action_rejection(
     *,
     effect: UKEffectRecord,
     effect_type: str,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
@@ -166,9 +166,9 @@ def infer_uk_effect_action_from_source(  # noqa: PLR0913
     effect: UKEffectRecord,
     effect_type: str,
     initial_action: Optional[str],
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
-    source_root: Optional[ET.Element],
+    source_root: Optional[ET._Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKActionInference:
     """Infer a missing UK effect action from source-local evidence.

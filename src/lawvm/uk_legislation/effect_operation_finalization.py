@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -43,7 +43,7 @@ class UKFinalizeTargetOperationInput:
     payload_match_target: LegalAddress
     target_replacement_leaf_override: Optional[str]
     target_replacement_leaf_kind: Optional[str]
-    actual_el: Optional[ET.Element]
+    actual_el: Optional[ET._Element]
     target_ref: str
     original_targets_str: list[str]
     targets_str: list[str]
@@ -63,7 +63,7 @@ class UKFinalizeTargetOperationInput:
     source_parent_substitution_range_payload: Optional[dict[str, Any]]
     source_parent_at_end_added_payload: Optional[dict[str, Any]]
     target_index: int
-    extracted_el: Optional[ET.Element]
+    extracted_el: Optional[ET._Element]
     extracted_text: Optional[str]
     allow_payload_identity_synthesis: bool
     lowering_rejections_out: Optional[list[dict[str, Any]]]

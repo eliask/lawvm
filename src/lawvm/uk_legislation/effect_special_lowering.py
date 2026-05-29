@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 from dataclasses import replace
 from typing import Any, Optional
 
@@ -70,7 +70,7 @@ from lawvm.uk_legislation.witnesses import (
 def lower_uk_metadata_renumber_effect(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     metadata_renumber_targets: UKMetadataRenumberTargets,
@@ -143,7 +143,7 @@ def lower_uk_metadata_renumber_effect(  # noqa: PLR0913
 def lower_uk_after_paragraph_insert_labelled_series(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     after_paragraph_series: dict[str, Any],
@@ -283,7 +283,7 @@ def lower_uk_after_paragraph_insert_labelled_series(  # noqa: PLR0913
 def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     definition_child_insert: dict[str, Any],
@@ -463,7 +463,7 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
 def lower_uk_definition_child_structural_substitution(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     definition_child_substitution: dict[str, Any],
@@ -563,7 +563,7 @@ def lower_uk_definition_child_structural_substitution(  # noqa: PLR0913
 def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     after_paragraph_connector: dict[str, Any],
@@ -698,7 +698,7 @@ def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
 def lower_uk_definition_child_range_substitution(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     definition_child_range: dict[str, Any],
@@ -787,7 +787,7 @@ def lower_uk_definition_child_range_substitution(  # noqa: PLR0913
 def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     after_paragraph_insert: dict[str, Any],
@@ -877,7 +877,7 @@ def lower_uk_after_paragraph_insert_single_label(  # noqa: PLR0913
 def lower_uk_after_section_subsection_range_insert_block_amendment(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     after_section_subsection_range_insert: dict[str, Any],
@@ -1001,7 +1001,7 @@ def lower_uk_after_section_subsection_range_insert_block_amendment(  # noqa: PLR
 def lower_uk_source_carried_structured_tail_substitution(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     structured_tail_substitution: dict[str, Any],
@@ -1085,7 +1085,7 @@ def lower_uk_source_carried_structured_tail_substitution(  # noqa: PLR0913
 def lower_uk_source_carried_parent_quoted_child_substitution(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
-    extracted_el: Optional[ET.Element],
+    extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     sequence: int,
     parent_child_substitution: dict[str, Any],
