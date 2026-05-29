@@ -1335,3 +1335,18 @@ removed the dominant bottleneck is ~1.8 s combined.
   files (219 → 142 total; gate allowlist reduced from 69 → 48 files). Genuine
   ``\w+\d+`` overlaps and ``.{0,N}?`` adjacent-repeat pairs still flagged
   correctly. Patterns like ``\d+[a-z]?`` now correctly reported as disjoint.
+- Sensor H batch 6 (Actuator 19, 2026-05-29): 12+8 HIGH-danger landmines closed
+  across `sweden/grafter.py` (12 violations) and `uk_legislation/source_parent_payloads.py`
+  (8 violations; 4 files total including `source_fragment_context.py`,
+  `source_text_reclassifications.py`).  Fix shapes: (a) `\s+` inside optional groups
+  → bounded `\s{1,N}`; (b) `(?:X\s*)?` nested-quantifier optionals → BRANCH `(X|)`;
+  (c) `[^,]+` unbounded char-class repeats → `[^,]{1,N}`; (d) `\s+` in lookahead
+  `(?!\bdels\s+att\b)` → literal `(?!dels att)` eliminating nested quantifier in
+  zero-width assertion; (e) space before em/en/hyphen-dash handled via ` ?[—–-]`
+  (was missing, caused 2 test failures in `test_uk_schedule_compile.py`); (f) `of
+  section [0-9A-Za-z]{1,20}` context → `of [^,]{1,120}` to cover long act-reference
+  contexts like `of section 86 of the 1990 Act (period of licences)`.  All 4 files
+  removed from `_KNOWN_UNFIXED` allowlist.  32 adversarial perf tests added in
+  `tests/test_regex_batch6_perf.py` (all pass).  Full suite: 10916 passed, 0 failed.
+  Bench ukpga/1970/9: score=40.8% (unchanged), wall=1.60 s.  Byte-level edits used
+  for files containing curly-quote chars to avoid Edit-tool string-delimiter corruption.

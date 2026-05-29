@@ -246,10 +246,7 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: fetch patterns with adjacent .{0,N} repeats. "
         "Sensor H batch 6."
     ),
-    "src/lawvm/sweden/grafter.py": (
-        "Pre-existing baseline: clause extractor patterns (partially fixed by "
-        "A10; lint still flags bounded adjacent pairs). Sensor H batch 6."
-    ),
+    # sweden/grafter.py — fixed by A19 (2026-05-29)
     # tools
     "src/lawvm/tools/divergence_heuristics.py": (
         "Pre-existing baseline: _SECTION_KEY_RE nested quantifiers (lint flags "
@@ -311,15 +308,8 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: multiple adjacent .{0,N}? repeats in definition "
         "structural insert patterns. Sensor H batch 6."
     ),
-    "src/lawvm/uk_legislation/source_fragment_context.py": (
-        "Pre-existing baseline: large cluster of adjacent .{0,N}? repeats in "
-        "fragment context patterns — highest violation count in UK cluster. "
-        "Sensor H batch 6."
-    ),
-    "src/lawvm/uk_legislation/source_parent_payloads.py": (
-        "Pre-existing baseline: largest single-file violation count — adjacent "
-        ".{0,N}? repeats in parent payload classification. Sensor H batch 6."
-    ),
+    # source_fragment_context.py — fixed by A19 (2026-05-29)
+    # source_parent_payloads.py — fixed by A19 (2026-05-29)
     "src/lawvm/uk_legislation/source_structural_sibling.py": (
         "Pre-existing baseline: adjacent .+ repeat. Sensor H batch 6."
     ),
@@ -327,10 +317,7 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "Pre-existing baseline: adjacent .{0,N}? repeats in table entry patterns. "
         "Sensor H batch 6."
     ),
-    "src/lawvm/uk_legislation/source_text_reclassifications.py": (
-        "Pre-existing baseline: multiple adjacent .{0,N}? repeats in text "
-        "reclassification patterns. Sensor H batch 6."
-    ),
+    # source_text_reclassifications.py — fixed by A19 (2026-05-29)
     "src/lawvm/uk_legislation/table_selectors.py": (
         "Pre-existing baseline: adjacent quantifier patterns in table selectors. "
         "Sensor H batch 6."
