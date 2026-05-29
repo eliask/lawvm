@@ -1086,6 +1086,9 @@ Risk:
 - divergence partitions now normalize primary and filtered divergence rows to
   tuples and reject malformed filtered records, preventing post-partition
   mutation of verification evidence lanes.
+- timeline lineage bridge carriers now validate address/event and boolean flag
+  payloads at construction time, preventing stringly or non-boolean branch
+  classifications from entering PIT lineage planning.
 
 ## Keep Local For Now
 
