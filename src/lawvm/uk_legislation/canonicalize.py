@@ -231,6 +231,35 @@ def uk_recursive_kind_match(
     return UKCanonicalNodeMatch(None, None, None)
 
 
+def uk_recursive_kind_match_all(
+    node: IRNode,
+    *,
+    kind: str,
+    label: str,
+    match_kind_label,
+    out: list[UKCanonicalNodeMatch],
+) -> None:
+    """Collect ALL descendant matches (not just the first).
+
+    Unlike ``uk_recursive_kind_match`` this does not short-circuit.  The
+    caller is responsible for passing an empty list as *out* and inspecting
+    it for uniqueness after the call.
+    """
+    for i, child in enumerate(node.children):
+        if match_kind_label(child, kind, label):
+            out.append(UKCanonicalNodeMatch(child, node, i))
+            # Keep descending: a matching node can itself have matching descendants
+            # under different parents (rare but must be counted).
+        if child.children:
+            uk_recursive_kind_match_all(
+                child,
+                kind=kind,
+                label=label,
+                match_kind_label=match_kind_label,
+                out=out,
+            )
+
+
 def _roman_suffix_sort_key(text: str) -> Optional[tuple[int, str]]:
     raw = str(text or "").strip().lower()
     if not raw or not re.fullmatch(r"[a-z]+", raw):

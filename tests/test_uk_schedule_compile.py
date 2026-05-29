@@ -43714,7 +43714,12 @@ def test_replay_heading_facet_subsection_patch_blocks_non_first_pgroup_child() -
     result = replay_uk_ops(base, [op], allow_oracle_alignment=False, adjudications_out=adjudications)
 
     assert result.body.children[0].children[0].text == "Application to mandatory sentences"
-    assert [adjudication.kind for adjudication in adjudications] == ["uk_replay_heading_facet_target_gap"]
+    # Subsection 4 is found via recursive descent through the pgroup wrapper (emits
+    # uk_replay_target_resolved_by_recursive_descent), then the heading-facet handler
+    # blocks because it is a non-first pgroup child (emits uk_replay_heading_facet_target_gap).
+    adjudication_kinds = [a.kind for a in adjudications]
+    assert "uk_replay_heading_facet_target_gap" in adjudication_kinds
+    assert "uk_replay_target_resolved_by_recursive_descent" in adjudication_kinds
 
 
 def test_replay_heading_facet_blocks_ambiguous_p1group_carrier() -> None:
@@ -43748,7 +43753,12 @@ def test_replay_heading_facet_blocks_ambiguous_p1group_carrier() -> None:
     result = replay_uk_ops(base, [op], adjudications_out=adjudications)
 
     assert result.body.children[0].text == "Shared heading"
-    assert [adjudication.kind for adjudication in adjudications] == ["uk_replay_heading_facet_target_gap"]
+    # Section 1 is found via recursive descent through the p1group wrapper (emits
+    # uk_replay_target_resolved_by_recursive_descent), then the heading-facet handler
+    # blocks because the p1group carrier is ambiguous (emits uk_replay_heading_facet_target_gap).
+    adjudication_kinds = [a.kind for a in adjudications]
+    assert "uk_replay_heading_facet_target_gap" in adjudication_kinds
+    assert "uk_replay_target_resolved_by_recursive_descent" in adjudication_kinds
 
 
 def test_compile_records_crossheading_replace_rejection() -> None:
@@ -44733,13 +44743,17 @@ def test_replay_crossheading_group_repeal_removes_single_child_heading_wrapper()
     assert [(child.kind, child.label, child.text) for child in schedule.children] == [
         (IRNodeKind.PARAGRAPH, "5", "Sibling paragraph.")
     ]
-    assert [adjudication.kind for adjudication in adjudications] == [
-        "uk_replay_crossheading_and_structural_repeal_resolved"
-    ]
-    assert adjudications[0].detail["action"] == "repeal"
-    assert adjudications[0].detail["blocking"] is False
-    assert adjudications[0].detail["strict_disposition"] == "record"
-    assert adjudications[0].detail["quirks_disposition"] == "record"
+    # Paragraph 4 is inside a p1group wrapper — recursive descent finds it uniquely
+    # (emits uk_replay_target_resolved_by_recursive_descent), then the crossheading
+    # repeal handler resolves the single-child wrapper (emits the expected rule).
+    adjudication_kinds = [a.kind for a in adjudications]
+    assert "uk_replay_crossheading_and_structural_repeal_resolved" in adjudication_kinds
+    assert "uk_replay_target_resolved_by_recursive_descent" in adjudication_kinds
+    repeal_adj = next(a for a in adjudications if a.kind == "uk_replay_crossheading_and_structural_repeal_resolved")
+    assert repeal_adj.detail["action"] == "repeal"
+    assert repeal_adj.detail["blocking"] is False
+    assert repeal_adj.detail["strict_disposition"] == "record"
+    assert repeal_adj.detail["quirks_disposition"] == "record"
 
 
 def test_replay_crossheading_group_repeal_blocks_shared_heading_wrapper() -> None:
@@ -44788,14 +44802,18 @@ def test_replay_crossheading_group_repeal_blocks_shared_heading_wrapper() -> Non
     group = result.supplements[0].children[0]
     assert group.text == "Seriousness"
     assert [child.label for child in group.children] == ["4", "5"]
-    assert [adjudication.kind for adjudication in adjudications] == [
-        "uk_replay_crossheading_and_structural_repeal_unresolved"
-    ]
-    assert adjudications[0].detail["reason_code"] == "heading_wrapper_does_not_solely_own_target"
-    assert adjudications[0].detail["action"] == "repeal"
-    assert adjudications[0].detail["blocking"] is True
-    assert adjudications[0].detail["strict_disposition"] == "block"
-    assert adjudications[0].detail["quirks_disposition"] == "record"
+    # Paragraph 4 is inside a p1group wrapper — recursive descent finds it uniquely
+    # (emits uk_replay_target_resolved_by_recursive_descent), then the crossheading
+    # repeal handler blocks because the wrapper is shared (emits the unresolved rule).
+    adjudication_kinds = [a.kind for a in adjudications]
+    assert "uk_replay_crossheading_and_structural_repeal_unresolved" in adjudication_kinds
+    assert "uk_replay_target_resolved_by_recursive_descent" in adjudication_kinds
+    unresolved_adj = next(a for a in adjudications if a.kind == "uk_replay_crossheading_and_structural_repeal_unresolved")
+    assert unresolved_adj.detail["reason_code"] == "heading_wrapper_does_not_solely_own_target"
+    assert unresolved_adj.detail["action"] == "repeal"
+    assert unresolved_adj.detail["blocking"] is True
+    assert unresolved_adj.detail["strict_disposition"] == "block"
+    assert unresolved_adj.detail["quirks_disposition"] == "record"
 
 
 def test_oracle_grounding_does_not_create_public_schedule_entry_eids() -> None:

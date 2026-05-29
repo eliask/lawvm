@@ -351,6 +351,7 @@ UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_schedule_paragraph_carrier_gap",
         "uk_replay_schedule_list_entry_anchor_unresolved",
         "uk_replay_schedule_p1group_wrapper_carrier_gap",
+        "uk_replay_target_ambiguous_recursive_descent",
         "uk_replay_schedule_container_text_target_gap",
         "uk_replay_schedule_partition_target_gap",
         "uk_replay_schedule_partition_part_target_gap",
@@ -448,6 +449,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_table_end_rows_insert_resolved",
         "uk_replay_schedule_item_target_from_parent_substitution_resolved",
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved",
+        "uk_replay_target_resolved_by_recursive_descent",
         "uk_replay_source_anchored_order_observed",
         "uk_replay_source_carried_table_entry_paragraph_substitution_resolved",
         "uk_effect_source_parent_each_provision_substitution_text_patch",
@@ -677,6 +679,7 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_ADJUDICATION_KINDS = frozenset(
         "uk_replay_table_entry_inline_text_preimage_gap",
         "uk_replay_table_entry_row_insert_unresolved",
         "uk_replay_table_entry_row_replace_unresolved",
+        "uk_replay_target_ambiguous_recursive_descent",
     }
 )
 
