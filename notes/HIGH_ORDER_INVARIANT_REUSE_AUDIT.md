@@ -1269,6 +1269,19 @@ replaces `.*?` (Sensor I cand 3).  Combined wall-time saving: 30.49 s → 28.67 
 ops=2001, effect_rows=3265).  Note: cProfile cumtime overestimated the saving
 because it is inclusive of shared callees; actual exclusive saving after Actuator 8
 removed the dominant bottleneck is ~1.8 s combined.
+- Sensor H batch 1 (Actuator 14, 2026-05-29): 7 HIGH-danger landmines closed in
+  UK source_adjudication / effect_lowering_tail / table_sources /
+  source_text_reclassifications cluster.  Sites: #1 (carried_tail .+/.+),
+  #2 (repeal_schedule_table .+), #3 (period_specified inline .+), #4
+  (scoped_occurrence three .*), #5 (amendment_table two .*), #6
+  (column_substitution three lazy .*?), #7 (shall_apply .*).  Fix shape per
+  §1.11: module-scope compile, .{0,N}? bounded quantifiers, substring fast-guards.
+  32 new adversarial perf tests in tests/test_uk_regex_batch1_perf.py; all CI
+  shards green (2367 passed).  Adjudications identical on ukpga/1970/9 bench
+  (score=40.8%, replay=80.0%, ops=2001, effect_rows=3265, 28.85 s vs 29.44 s).
+  Wall-time delta on ukpga/1970/9 is small (−0.6 s) because these patterns do
+  not trigger heavily on that statute; expected savings accrue on statutes that
+  exercise the scoped-occurrence / schedule-table / column-substitution paths.
 - UK letter-suffix new-leaf insert promotion (`uk_effect_after_anchor_insert_promoted`,
   rule family `targeted_after_anchor_insert`) now promotes Replace→Insert at lowering
   time when all four conditions hold: (1) source payload actual_el is non-None (real

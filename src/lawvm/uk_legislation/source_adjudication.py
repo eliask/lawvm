@@ -1246,6 +1246,15 @@ def _looks_like_appropriate_place_index_entry_insert_instruction(text: str) -> b
     )
 
 
+# Compiled at module scope per §1.11.  Single greedy .+ between two anchors;
+# Schedule headers can be long so bound to .{0,800}? (lazy).  Fast-guard on
+# "extent" is conservative — the word is required by the terminal anchor.
+_REPEAL_SCHEDULE_TABLE_SOURCE_RE = re.compile(
+    r"\b(?:enactment|reference|chapter|short title|title)\b.{0,800}?"
+    r"\bextent\s+of\s+repeal(?:\s+or\s+revocation)?\b"
+)
+
+
 def _looks_like_repeal_schedule_table_source(
     *,
     extracted_tag: str | None,
@@ -1256,7 +1265,8 @@ def _looks_like_repeal_schedule_table_source(
     if tag not in {"Schedule", "Part", "Table", "Tgroup", "Pblock"}:
         return False
     norm = _normalize_effect_text(text)
-    if re.search(r"\b(?:enactment|reference|chapter|short title|title)\b.+\bextent\s+of\s+repeal(?:\s+or\s+revocation)?\b", norm):
+    # Fast-guard: "extent" is required by the pattern's terminal anchor.
+    if "extent" in norm and _REPEAL_SCHEDULE_TABLE_SOURCE_RE.search(norm):
         return True
     norm_effect_type = _normalize_effect_text(effect_type)
     if not any(term in norm_effect_type for term in ("repeal", "omit")):
@@ -1457,17 +1467,35 @@ def _looks_like_definition_child_and_tail_substitution(text: str) -> bool:
     )
 
 
+# Compiled at module scope per §1.11.
+# Site #1 (census): greedy unbounded .+ between two anchors + second pattern
+# with .+ between short anchors — ReDoS shape.  Bound to .{0,400}? (lazy).
+# Fast-guard: "to the end" is required by the first pattern's terminal anchor;
+# the second variant requires "substitute".  _normalize_effect_text lowercases.
+_CARRIED_TAIL_FROM_TO_END_RE = re.compile(
+    r"\bfor\s+the\s+words\s+from\b.{0,400}?\bto\s+the\s+end\b"
+)
+# The second alternative (no em-dash) needs two roman/alpha label-like tokens.
+# Greedy .+ between them was the ReDoS shape; bound to .{0,400}?.
+_CARRIED_TAIL_LABEL_LABEL_RE = re.compile(
+    r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.{0,400}?\b(?:[ivxlcdm]+)\s+\w"
+)
+
+
 def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
     norm = _normalize_effect_text(text)
     if not norm:
         return False
-    if not re.search(r"\bfor\s+the\s+words\s+from\b.+\bto\s+the\s+end\b", norm):
+    # Fast-guard: "to the end" is the literal terminal anchor.
+    if "to the end" not in norm:
         return False
-    if not re.search(r"\bsubstitute\b", norm):
+    if not _CARRIED_TAIL_FROM_TO_END_RE.search(norm):
+        return False
+    if "substitute" not in norm:
         return False
     if "—" in text or "--" in text or " - " in text:
         return bool(re.search(r"(?:—|--|\s-\s)\s*(?:\(?[a-z0-9]+\)?|[ivxlcdm]+)\s+\w", norm))
-    return bool(re.search(r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.+\b(?:[ivxlcdm]+)\s+\w", norm))
+    return bool(_CARRIED_TAIL_LABEL_LABEL_RE.search(norm))
 
 
 def _looks_like_words_treated_as_substituted_context(text: str) -> bool:
@@ -1901,6 +1929,16 @@ def _has_repeal_table_feed_source_target_gap(
         ):
             has_unmatched_feed_target = True
     return has_source_owned_structural_row and has_unmatched_feed_target
+
+
+# Compiled at module scope per §1.11.  Site #3 (census): greedy .+ between
+# two anchors inside classify_uk_manual_compile_frontier — bound to .{0,600}?
+# (lazy).  Fast-guard: "period specified" is a literal substring of the first
+# anchor phrase; "substituted" is required by the terminal anchor.
+_PERIOD_SPECIFIED_SUBSTITUTED_RE = re.compile(
+    r"\bfor the period specified in\b.{0,600}?"
+    r"\bthere\s+(?:is|are|shall\s+be)\s+substituted\b"
+)
 
 
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
@@ -2344,11 +2382,11 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
 
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
-        and re.search(
-            r"\bfor the period specified in\b.+\bthere\s+(?:is|are|shall\s+be)\s+substituted\b",
-            extracted_text_norm,
-        )
-        and not re.search(r"[“\"'‘]", str(extracted_text or ""))
+        # Fast-guard: both substrings required before running regex.
+        and "period specified" in extracted_text_norm
+        and "substituted" in extracted_text_norm
+        and _PERIOD_SPECIFIED_SUBSTITUTED_RE.search(extracted_text_norm)
+        and not re.search(r"[“\"’’]", str(extracted_text or ""))
     ):
         return {
             "status": "source_insufficient",

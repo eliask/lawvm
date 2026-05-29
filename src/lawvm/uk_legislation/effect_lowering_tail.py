@@ -188,6 +188,25 @@ def _source_payload_parent_instruction_context(
     return {}
 
 
+# Compiled at module scope per §1.11.
+# Site #4 (census): three chained greedy .* between anchors in
+# _unlowered_overlap_source_shape_classification — same shape as ukpga/1970/9
+# incident fixed by Actuator 8.  Bound each segment to .{0,400}? (lazy).
+# Fast-guard: "where", "substitute", "but this" are all required by the pattern.
+_SCOPED_OCCURRENCE_WITH_EXCLUSIONS_RE = re.compile(
+    r"\bwhere\s+it\s+occurs\s+without\b.{0,400}?"
+    r"\bsubstitute\b.{0,400}?"
+    r"\bbut\s+this\s+does\s+not\s+apply\b"
+)
+# Site #5 (census): two chained greedy .* in the amendment-table pattern.
+# re.match is used so pattern is anchored at start; bound each .* to .{0,400}?.
+# Fast-guard: "column 1" and "column 2" required.
+_AMENDMENT_TABLE_PAYLOAD_RE = re.compile(
+    r"^(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*part\s+\d+\s+amendments?\s+of\b"
+    r".{0,400}?\bcolumn\s+1\b.{0,400}?\bcolumn\s+2\b"
+)
+
+
 def _unlowered_overlap_source_shape_classification(
     extracted_text: Optional[str],
     original_targets_str: list[str],
@@ -362,10 +381,12 @@ def _unlowered_overlap_source_shape_classification(
                 "selecting the matching preimage before replay."
             ),
         )
-    if re.search(
-        r"\bwhere\s+it\s+occurs\s+without\b.*\bsubstitute\b.*\bbut\s+this\s+"
-        r"does\s+not\s+apply\b",
-        lowered,
+    if (
+        # Fast-guards before bounded-regex (§1.11).
+        "where" in lowered
+        and "substitute" in lowered
+        and "but this" in lowered
+        and _SCOPED_OCCURRENCE_WITH_EXCLUSIONS_RE.search(lowered)
     ):
         return UnloweredOverlapSourceShapeClassification(
             "uk_effect_scoped_occurrence_substitution_with_exclusions_rejected",
@@ -378,10 +399,11 @@ def _unlowered_overlap_source_shape_classification(
                 "than all-occurrences replay."
             ),
         )
-    if re.match(
-        r"^(?:[0-9A-Za-z]+|[ivxlcdm]+)?\s*part\s+\d+\s+amendments?\s+of\b"
-        r".*\bcolumn\s+1\b.*\bcolumn\s+2\b",
-        lowered,
+    if (
+        # Fast-guards before bounded-regex (§1.11).
+        "column 1" in lowered
+        and "column 2" in lowered
+        and _AMENDMENT_TABLE_PAYLOAD_RE.match(lowered)
     ):
         return UnloweredOverlapSourceShapeClassification(
             "uk_effect_amendment_table_payload_without_row_context_rejected",
