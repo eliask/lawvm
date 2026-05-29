@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import copy
 import re
+import weakref
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any, Callable, NamedTuple, Optional, Sequence
 
 from lawvm.roman import (
@@ -18,6 +18,7 @@ from lawvm.uk_legislation.effects import (
     get_affecting_act_enacted_xml_from_archive,
 )
 from lawvm.uk_legislation.provision_extractor import (
+    _EXTRACTION_CONTEXT_CACHE,
     _build_extraction_context,
     _get_id_sequence,
     _match_node,
@@ -111,15 +112,83 @@ def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]
     return None
 
 
-@lru_cache(maxsize=1024)
+# ---------------------------------------------------------------------------
+# §source_root_lifecycle: WeakKeyDictionary-backed parent-map and ancestor-
+# chain caches with explicit eviction.
+#
+# The original @lru_cache decorators held source_root (ET.Element) as a strong
+# key reference, preventing GC regardless of what callers did.  With 229 unique
+# affecting-act roots for ukpga/1970/9 (~6 MB raw XML × ~400x in-memory ET tree
+# expansion ≈ 2.3 GB), all roots accumulated for the full compile call.
+#
+# WeakKeyDictionary-backed caches are used so that:
+#   (a) the caches do not permanently extend the lifetime of roots across
+#       compile sessions — once extraction_cache evicts a context and the
+#       caller explicitly calls evict_source_root_caches(root), the cache
+#       entries are released and root becomes GC-eligible;
+#   (b) the caches behave as process-global compile-phase speedups within
+#       a session, without hard-wiring O(N) retention across sessions.
+#
+# IMPORTANT: These caches create reference cycles (parent_map values include
+# root as a parent element, ancestor tuples include root as a terminal ancestor).
+# Python's cyclic GC can collect the cycle, but only if NO strong external
+# reference remains.  The compile loop in compile_ops_for_statute must call
+# evict_source_root_caches(root) at the last-occurrence point to release
+# the strong cycle.  Without explicit eviction, GC may not fire in time
+# because the cycle is not purely isolated — it crosses the WeakKeyDict values.
+#
+# _source_parent_map_cache:
+#   WeakKeyDictionary[source_root → dict[child, parent]]
+#   Values contain root as a parent element (creates cycle).
+#
+# _source_ancestor_chain_cache:
+#   WeakKeyDictionary[source_root → dict[id(el), tuple[ET.Element, ...]]]
+#   Inner tuples may contain root as terminal ancestor (creates cycle).
+#   id(el) inner key is safe: el is alive while source_root is alive.
+# ---------------------------------------------------------------------------
+
+_source_parent_map_cache: weakref.WeakKeyDictionary[
+    ET.Element, dict[ET.Element, ET.Element]
+] = weakref.WeakKeyDictionary()
+
+_source_ancestor_chain_cache: weakref.WeakKeyDictionary[
+    ET.Element, dict[int, tuple[ET.Element, ...]]
+] = weakref.WeakKeyDictionary()
+
+
+def evict_source_root_caches(root: Optional[ET.Element]) -> None:
+    """Explicitly release module-level cache entries for root.
+
+    Call this after the last effect for a source root has been processed.
+    Without explicit eviction, module-level WeakKeyDictionary caches hold
+    reference cycles that keep root alive:
+      - _source_parent_map_cache: values contain root as a parent element
+      - _source_ancestor_chain_cache: inner tuples contain root as terminal ancestor
+      - _EXTRACTION_CONTEXT_CACHE: UKExtractionContext.parent_map contains root
+    Explicit removal breaks these cycles immediately, making root eligible for
+    reference-count GC instead of waiting for a cyclic-GC sweep.
+    """
+    if root is None:
+        return
+    _source_parent_map_cache.pop(root, None)
+    _source_ancestor_chain_cache.pop(root, None)
+    _EXTRACTION_CONTEXT_CACHE.pop(root, None)
+
+
 def _source_parent_map(
     source_root: ET.Element,
 ) -> dict[ET.Element, ET.Element]:
     """Return a cached parent map for source XML ancestor queries."""
-    return {child: parent for parent in source_root.iter() for child in parent}
+    cached = _source_parent_map_cache.get(source_root)
+    if cached is not None:
+        return cached
+    result: dict[ET.Element, ET.Element] = {
+        child: parent for parent in source_root.iter() for child in parent
+    }
+    _source_parent_map_cache[source_root] = result
+    return result
 
 
-@lru_cache(maxsize=16384)
 def _source_ancestor_chain(
     source_root: Optional[ET.Element],
     el: Optional[ET.Element],
@@ -129,6 +198,13 @@ def _source_ancestor_chain(
         return ()
     if el is source_root:
         return ()
+    inner = _source_ancestor_chain_cache.get(source_root)
+    if inner is None:
+        inner = {}
+        _source_ancestor_chain_cache[source_root] = inner
+    el_key = id(el)
+    if el_key in inner:
+        return inner[el_key]
     parent_map = _source_parent_map(source_root)
     if el in parent_map:
         ancestors: list[ET.Element] = []
@@ -138,7 +214,9 @@ def _source_ancestor_chain(
             if parent is source_root:
                 break
             parent = parent_map.get(parent)
-        return tuple(ancestors)
+        result = tuple(ancestors)
+        inner[el_key] = result
+        return result
 
     target_id = el.get("id")
     path: list[ET.Element] = []
@@ -153,7 +231,10 @@ def _source_ancestor_chain(
         return False
 
     if _walk(source_root, ()):
-        return tuple(path)
+        result = tuple(path)
+        inner[el_key] = result
+        return result
+    inner[el_key] = ()
     return ()
 
 
