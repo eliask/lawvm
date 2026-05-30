@@ -520,6 +520,50 @@ def append_pit_date_filter_rejection(
     )
 
 
+def append_prospective_pit_commencement_observation(
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    status: str,
+    start_dates: Sequence[str],
+    pit_date: str,
+) -> None:
+    """Record PIT resolution for a prospective-only structural effect."""
+    if diagnostics_out is None:
+        return
+    if status == "resolved_in_force":
+        rule_id = "uk_effect_pit_prospective_commencement_in_force"
+        reason = (
+            "UK prospective-only structural effect is included for the requested "
+            "point-in-time because the affecting provision is in force by that date"
+        )
+    elif status == "resolved_future":
+        rule_id = "uk_effect_pit_prospective_commencement_future_rejected"
+        reason = (
+            "UK prospective-only structural effect is later than the requested "
+            "point-in-time because the affecting provision starts after that date"
+        )
+    else:
+        rule_id = "uk_effect_pit_prospective_commencement_unresolved"
+        reason = (
+            "UK prospective-only structural effect could not be resolved from the "
+            "affecting provision's commencement metadata; existing PIT filtering "
+            "continues without guessing"
+        )
+    diagnostics_out.append(
+        _effect_diagnostic(
+            rule_id=rule_id,
+            family="temporal_filter",
+            effect=effect,
+            reason=reason,
+            blocking=False,
+            pit_date=pit_date,
+            commencement_status=status,
+            start_dates=tuple(start_dates),
+        )
+    )
+
+
 def append_metadata_only_selection_rejection(
     rejections_out: Optional[list[dict[str, Any]]],
     *,
