@@ -49,6 +49,7 @@ def test_si_source_semantics_records_metadata_commencement_and_structure() -> No
     assert commencement["status"] == "single_date"
     assert commencement["coming_into_force_dates"] == ("2022-02-01",)
     assert commencement["coming_into_force_element_count"] == 1
+    assert "si_commencement_default_surface" not in by_family
 
 
 def test_si_source_semantics_records_expected_body_unit_by_minor_type() -> None:
@@ -73,6 +74,47 @@ def test_si_source_semantics_records_expected_body_unit_by_minor_type() -> None:
         assert row["document_minor_type"] == minor_type
         assert row["expected_body_unit_kind"] == expected_unit
         assert bool(row["expected_body_unit_source"]) is bool(expected_unit)
+
+
+def test_si_source_semantics_records_made_date_commencement_default_candidate() -> None:
+    rows = _records(
+        """
+        <Legislation xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+          <ukm:SecondaryMetadata>
+            <ukm:Made Date="2022-02-01"/>
+          </ukm:SecondaryMetadata>
+          <Secondary><Body/></Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(
+        row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
+    )
+    assert row["status"] == "single_made_date"
+    assert row["made_dates"] == ("2022-02-01",)
+    assert row["commencement_default_candidate"] is True
+    assert row["commencement_default_source"] == (
+        "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_3_12"
+    )
+
+
+def test_si_source_semantics_records_unresolved_commencement_default_without_made_date() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary><Body/></Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(
+        row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
+    )
+    assert row["status"] == "missing_made_date"
+    assert row["made_dates"] == ()
+    assert row["commencement_default_candidate"] is False
+    assert row["commencement_default_source"] == ""
 
 
 def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
