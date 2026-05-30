@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 import re
 from typing import Any
 
+from lawvm.core.regex_safety import compile_classifier_regex
+
 from lxml import etree as ET
 
 
@@ -33,15 +35,15 @@ _COMMENCEMENT_CALENDAR_DATE_RE = re.compile(
     re.I,
 )
 _EXTENT_RE = re.compile(r"\b(?:extends?\s+to|does\s+not\s+extend\s+to|extent)\b", re.I)
-_APPLICATION_RE = re.compile(
-    r"\b(?:applies?\s+(?:only\s+)?(?:in\s+relation\s+)?to|do(?:es)?\s+not\s+apply|"
-    r"application\s+of\s+(?:these|this|the)\s+"
-    r"(?:regulations?|order|rules?|article)|(?:these|this|the)\s+"
-    r"(?:regulations?|order|rules?|article)\s+appl(?:y|ies))\b",
-    re.I,
-)
 _REVOCATION_RE = re.compile(r"\b(?:revokes?|revoked|revocation|ceases?\s+to\s+have\s+effect|lapses?)\b", re.I)
 _CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?|reprinted)\b", re.I)
+_TEMPORAL_EFFECT_RE = compile_classifier_regex(
+    r"\b(?:appointed\s+day|days?\s+appointed|day\s+appointed|specified\s+day|day\s+specified|"
+    r"on\s+or\s+after|beginning\s+on\s+the\s+day\s+immediately\s+following|"
+    r"shall\s+continue\s+in\s+force|day\s+after\s+the\s+day\s+on\s+which\s+it\s+is\s+made)\b",
+    re.I,
+    classifier_id="uk_si_temporal_effect_clause",
+)
 _AMENDMENT_PAYLOAD_ANCESTORS = frozenset({"BlockAmendment", "InlineAmendment"})
 _VIRES_MARKERS = (
     ("exercise_of_powers", ("in exercise of",)),
@@ -58,6 +60,16 @@ _REVOCATION_LAPSE_MARKERS = (
 _CORRECTION_MARKERS = (
     ("correction_slip", ("correction slip", "correction slips")),
     ("reprint", ("reprint", "reprinted", "reprints")),
+)
+_TEMPORAL_EFFECT_MARKERS = (
+    ("appointed_day", ("appointed day", "day appointed", "days appointed")),
+    ("specified_day", ("specified day", "day specified")),
+    ("relative_to_made_day", ("day after the day on which it is made",)),
+    ("on_or_after_date", ("on or after",)),
+    (
+        "continuation_period",
+        ("shall continue in force", "beginning on the day immediately following"),
+    ),
 )
 _GEOGRAPHIC_TERM_MARKERS = (
     ("northern_ireland", "northern ireland"),
@@ -246,17 +258,28 @@ def _commencement_default_record(
     if _elements(root, "ComingIntoForce"):
         return None
     made_dates = _made_dates(root)
-    body_commencement_clause_count = len(
-        _body_clauses_with_families(root, {"si_body_commencement_clause_surface"})
+    commencement_clause_counts = _body_clause_counts_by_role(
+        root,
+        family="si_body_commencement_clause_surface",
     )
+    temporal_effect_clause_counts = _body_clause_counts_by_role(
+        root,
+        family="si_temporal_effect_clause_surface",
+    )
+    body_commencement_clause_count = commencement_clause_counts["instrument_body_provision"]
+    body_temporal_effect_clause_count = temporal_effect_clause_counts[
+        "instrument_body_provision"
+    ]
     status = "single_made_date" if len(made_dates) == 1 else "missing_made_date"
     if len(made_dates) > 1:
         status = "multiple_made_dates"
     adjudication_hint = ""
     if len(made_dates) == 1 and body_commencement_clause_count:
         adjudication_hint = "body_commencement_clause_needs_adjudication"
+    elif len(made_dates) == 1 and body_temporal_effect_clause_count:
+        adjudication_hint = "body_temporal_effect_clause_needs_adjudication"
     elif len(made_dates) == 1:
-        adjudication_hint = "no_body_commencement_clause_seen"
+        adjudication_hint = "no_body_commencement_or_temporal_clause_seen"
     return UKSISourceSemanticsRecord(
         family="si_commencement_default_surface",
         statute_id=statute_id,
@@ -267,6 +290,13 @@ def _commencement_default_record(
             "made_dates": made_dates,
             "made_date_count": len(made_dates),
             "body_commencement_clause_count": body_commencement_clause_count,
+            "body_temporal_effect_clause_count": body_temporal_effect_clause_count,
+            "payload_carried_commencement_clause_count": commencement_clause_counts[
+                "amendment_payload_provision"
+            ],
+            "payload_carried_temporal_effect_clause_count": temporal_effect_clause_counts[
+                "amendment_payload_provision"
+            ],
             "commencement_default_candidate": len(made_dates) == 1,
             "commencement_default_adjudication_hint": adjudication_hint,
             "commencement_default_source": (
@@ -326,6 +356,7 @@ def _body_clause_records(
         relation = _extent_application_relation(family_names)
         revocation_lapse_kinds = _revocation_lapse_kinds(text)
         commencement_clause_kinds = _commencement_clause_kinds(text)
+        temporal_effect_clause_kinds = _temporal_effect_clause_kinds(text)
         for family, rule_id in families:
             records.append(
                 UKSISourceSemanticsRecord(
@@ -343,6 +374,7 @@ def _body_clause_records(
                         "extent_application_relation": relation,
                         "revocation_lapse_kinds": revocation_lapse_kinds,
                         "commencement_clause_kinds": commencement_clause_kinds,
+                        "temporal_effect_clause_kinds": temporal_effect_clause_kinds,
                     },
                 )
             )
@@ -377,10 +409,12 @@ def _body_clause_families(text: str) -> tuple[tuple[str, str], ...]:
         out.append(("si_body_commencement_clause_surface", "uk_si_body_commencement_clause_surface_recorded"))
     if _EXTENT_RE.search(text):
         out.append(("si_extent_clause_surface", "uk_si_extent_clause_surface_recorded"))
-    if _APPLICATION_RE.search(text):
+    if _is_application_clause(text):
         out.append(("si_application_clause_surface", "uk_si_application_clause_surface_recorded"))
     if _REVOCATION_RE.search(text):
         out.append(("si_revocation_lapse_surface", "uk_si_revocation_lapse_surface_recorded"))
+    if _TEMPORAL_EFFECT_RE.search(text):
+        out.append(("si_temporal_effect_clause_surface", "uk_si_temporal_effect_clause_surface_recorded"))
     return tuple(out)
 
 
@@ -402,6 +436,53 @@ def _commencement_clause_kinds(text: str) -> tuple[str, ...]:
     if "commencement" in normalized:
         kinds.append("generic_commencement_word")
     return tuple(kinds)
+
+
+def _temporal_effect_clause_kinds(text: str) -> tuple[str, ...]:
+    normalized = str(text or "").lower()
+    kinds = [
+        label
+        for label, markers in _TEMPORAL_EFFECT_MARKERS
+        if any(marker in normalized for marker in markers)
+    ]
+    if kinds and _COMMENCEMENT_CALENDAR_DATE_RE.search(text):
+        kinds.append("calendar_date_text")
+    return tuple(kinds)
+
+
+def _is_application_clause(text: str) -> bool:
+    normalized = _WS_RE.sub(" ", str(text or "").strip().lower())
+    if "appl" not in normalized:
+        return False
+    if "does not apply" in normalized or "do not apply" in normalized:
+        return True
+    subjects = (
+        "these regulations",
+        "this regulation",
+        "this order",
+        "the order",
+        "these rules",
+        "this rule",
+        "this article",
+        "the article",
+    )
+    for subject in subjects:
+        if f"application of {subject}" in normalized:
+            return True
+        if f"{subject} apply" in normalized or f"{subject} applies" in normalized:
+            return True
+    for verb in ("apply", "applies"):
+        for bridge in ("to", "only to", "in relation to", "only in relation to"):
+            if f"{verb} {bridge}" in normalized:
+                return True
+    return False
+
+
+def _body_clause_counts_by_role(root: ET._Element, *, family: str) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for p1, _text_value, _families in _body_clauses_with_families(root, {family}):
+        counts[_body_clause_source_role(p1)] += 1
+    return counts
 
 
 def _correction_record(

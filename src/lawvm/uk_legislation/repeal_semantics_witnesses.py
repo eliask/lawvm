@@ -23,11 +23,9 @@ from lawvm.uk_legislation.source_context import UKAffectingSourceContext
 
 
 _REPEAL_EFFECT_WORDS = ("repeal", "revoke", "omit", "cease")
+_REPEAL_FORMS = frozenset({"repeal", "repealed", "repealing"})
+_ARTICLES = frozenset({"a", "an", "the"})
 _WHITESPACE_RE = re.compile(r"\s+")
-_REPEAL_OF_REPEAL_RE = re.compile(
-    r"\brepeal(?:ed|ing)?\s+of\s+(?:a|an|the)?\s{0,8}repeal(?:ed|ing)?\b",
-    re.I,
-)
 _NO_REVIVE_RE = re.compile(r"\b(?:does\s+not|shall\s+not|is\s+not\s+to)\s+revive\b", re.I)
 _REVIVAL_RE = re.compile(r"\b(?:revive|revives|revived|revival)\b", re.I)
 _SOURCE_PHRASE_TEXT_ELEMENTS = frozenset({"Text", "P"})
@@ -97,11 +95,31 @@ def source_text_repeal_semantics_family(source_text: str) -> str:
         return ""
     if _NO_REVIVE_RE.search(normalized):
         return "repeal_of_repeal_no_revive_phrase"
-    if _REPEAL_OF_REPEAL_RE.search(normalized):
+    if _has_repeal_of_repeal_phrase(normalized):
         return "repeal_of_repeal_phrase"
     if "repeal" in normalized and _REVIVAL_RE.search(normalized):
         return "repeal_revival_phrase"
     return ""
+
+
+def _has_repeal_of_repeal_phrase(normalized_text: str) -> bool:
+    tokens = tuple(
+        token.strip(".,;:()[]{}")
+        for token in normalize_repeal_semantics_text(normalized_text).split(" ")
+        if token
+    )
+    for index, token in enumerate(tokens):
+        if token not in _REPEAL_FORMS:
+            continue
+        next_index = index + 1
+        if next_index >= len(tokens) or tokens[next_index] != "of":
+            continue
+        repeal_index = next_index + 1
+        if repeal_index < len(tokens) and tokens[repeal_index] in _ARTICLES:
+            repeal_index += 1
+        if repeal_index < len(tokens) and tokens[repeal_index] in _REPEAL_FORMS:
+            return True
+    return False
 
 
 def scan_repeal_semantics_source_phrase_xml(

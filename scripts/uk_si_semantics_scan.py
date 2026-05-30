@@ -125,6 +125,10 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     for row in rows:
         for kind in row.get("commencement_clause_kinds") or ():
             commencement_clause_kind_counts[str(kind)] += 1
+    temporal_effect_clause_kind_counts: Counter[str] = Counter()
+    for row in rows:
+        for kind in row.get("temporal_effect_clause_kinds") or ():
+            temporal_effect_clause_kind_counts[str(kind)] += 1
     vires_marker_counts: Counter[str] = Counter()
     for row in rows:
         for marker in row.get("vires_markers") or ():
@@ -149,6 +153,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "extent_application_relations": dict(extent_application_relation_counts),
         "revocation_lapse_kinds": dict(revocation_lapse_kind_counts),
         "commencement_clause_kinds": dict(commencement_clause_kind_counts),
+        "temporal_effect_clause_kinds": dict(temporal_effect_clause_kind_counts),
         "vires_markers": dict(vires_marker_counts),
         "correction_markers": dict(correction_marker_counts),
         "missing_xml": missing,
