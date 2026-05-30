@@ -22,10 +22,11 @@ from typing import Any, NamedTuple
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.http_identity import LAWVM_USER_AGENT
 from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
 
 _LEG_BASE = "https://www.legislation.gov.uk"
-_USER_AGENT = "LawVM UK fetch/0.1 (+https://github.com/lawvm)"
+_USER_AGENT = LAWVM_USER_AGENT
 
 # Minimum inter-request delay (seconds).
 _MIN_DELAY = 0.5

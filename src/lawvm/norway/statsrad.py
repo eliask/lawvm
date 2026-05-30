@@ -273,7 +273,7 @@ def _archive_fetch(
     try:
         import urllib.request
 
-        req = urllib.request.Request(url, headers={"User-Agent": "LawVM-NO/1.0 (+https://github.com/lawvm)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "LawVM-NO/1.0 (+https://lawvm.org)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
     except Exception:

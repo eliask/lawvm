@@ -11,9 +11,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.http_identity import LAWVM_USER_AGENT
 
 _LEG_BASE = "https://www.legislation.gov.uk"
-_USER_AGENT = "LawVM UK replay/0.1 (+https://github.com/lawvm)"
+_USER_AGENT = LAWVM_USER_AGENT
 
 # Effect types that directly imply textual changes we can extract.
 STRUCTURAL_EFFECT_TYPES = frozenset(

@@ -91,7 +91,7 @@ _PIT_XML_MAX_AGE_DAYS: float = 30.0
 _API_RATE_LIMIT_SECS: float = 1.0
 
 # User-agent for the PIT listing request (not html, so urllib is fine)
-_USER_AGENT = "LawVM/0.1 (+https://github.com/lawvm)"
+_USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
 
 # Pattern for PIT suffix in directory listing response.
 # The API returns HTML-like directory listing with entries like:

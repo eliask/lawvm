@@ -46,7 +46,7 @@ from lawvm.finland.consolidated_artifacts import (
 from lawvm.finland.helpers import _parse_iso_date
 
 BASE_URL = "https://opendata.finlex.fi/finlex/avoindata/v1"
-_USER_AGENT = "LawVM/0.1 (+https://github.com/lawvm)"
+_USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
 
 _CONSOLIDATED_COLLECTION_PAGE_LIMIT = 4
 _CONSOLIDATED_COLLECTION_MAX_PAGES = 200

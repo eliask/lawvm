@@ -106,7 +106,7 @@ def _open_zip_source(zip_source: Path | str):
     req = urllib.request.Request(
         str(zip_source),
         headers={
-            "User-Agent": "LawVM/0.1 (+https://github.com/lawvm)",
+            "User-Agent": "LawVM/0.1 (+https://lawvm.org)",
             "Accept": "application/zip, application/octet-stream;q=0.9,*/*;q=0.1",
         },
     )
