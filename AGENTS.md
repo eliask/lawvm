@@ -361,6 +361,21 @@ state to match a possibly-wrong oracle (over-repeal) and force-compiling
 manual-frontier cases that should stay claims. Over-retention (failing to delete)
 is the safe wrong; over-repeal (destroying state) is the forbidden one.
 
+**A saturated metric is not a stop condition.** When a frontend reaches its
+source-faithful frontier — the remaining divergence being oracle-editorial,
+manual-frontier, or missing-source — the high-value work *shifts*, it does not
+end. Strengthening invariants, harmonizing structure and tooling across frontends
+(core-owned primitives, consistent CLI surfaces, shared addressing/lineage/corpus
+conventions), deepening diagnosis and classification, and converting
+statute-by-statute lore into reusable families are first-class outputs in their
+own right — not consolation prizes for a stalled score. Insight and
+core-harmonization are welcome even when the benchmark does not move. Do not
+declare a jurisdiction “done” because the number stopped climbing; declare a
+specific question *resolved* and move to the next structural improvement. The
+only forbidden “continuations” are the ones that violate the discipline itself:
+rebuilding what already exists (verify first), adding guards for bugs with no
+failing case, or benchmaxxing an oracle convention.
+
 ---
 
 ## 3. Source Regimes and Truth Surfaces
