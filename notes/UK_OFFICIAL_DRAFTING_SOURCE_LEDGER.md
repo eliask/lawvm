@@ -186,18 +186,29 @@ frontier lane, not a one-line gate.
 - **VERIFIED NOT A POPULATION** territorial-extent qualifiers (`(EW)`/`(S)`/`(NI)`)
   on dropped effect types — 0 in the sampled `no_supported_action` lane; no win.
 
+- **DONE (sensor phase)** §6.8 prospective-only effects — a non-blocking sensor
+  (`uk_prospective_effect_applied_to_current`, `prospective_effect_warrant.py`) now
+  emits one observation per applied prospective-only structural effect (12 on
+  ukpga/1998/17, 21 on ukpga/1978/30), so the population is visible and countable.
+  Replay-neutral. The resolver phase (item 2 below) is what remains.
+
 Remaining (each needs a verified failing case before building — do not add guards
 for hypothetical bugs):
 
 1. `UK_RULE_INSERTED_PROVISION_EID` (§6.4) — direction (b). LOW score impact: fuzzy
    grounding is rare (e.g. 2 nodes on ukpga/1978/30), so this is a determinism /
    correctness nicety, not a benchmaxx; do it for correctness-by-construction, not score.
-2. `UK_RULE_UNCOMMENCED_EFFECT_OWNED_LANE` (§6.8) — own the prospective-only effects
-   as a PIT-conditional lane (NOT a blanket gate; verified mixed-sign above).
-   Larger temporal-model change; the biggest remaining correctness lever.
+2. `UK_RULE_UNCOMMENCED_EFFECT_RESOLVER` (§6.8) — the PIT-aware *resolver* on top of
+   the sensor: decide application per the oracle version / `authority_mode` instead of
+   silently applying. Verified mixed-sign as a blanket gate, so it needs the version
+   semantics modelled. Biggest remaining correctness lever; largest temporal change.
 3. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) and `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`
    (§6.1.5) — speculative; find a real corpus case first (double-apply of a repeal is
    idempotent, so §6.1.5 may not even be a live bug).
+4. The big EID divergence on the gate statute (ukpga/1978/30) is a Schedule-1
+   **crossheading-representation** mismatch (`schedule-1-crossheading-…` +
+   `_paragraph-wrapperNnM`), i.e. oracle editorial structure vs replay — saturated
+   frontier, not a lowering gap.
 
 Each needs the standard ownership package (`AGENTS.md §7/§15`): stable rule id,
 finding/observation, strict-mode behaviour, synthetic + corpus + negative tests.
