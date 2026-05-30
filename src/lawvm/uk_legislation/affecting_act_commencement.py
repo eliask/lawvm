@@ -8,10 +8,10 @@ its amendments to ``ukpga/1968/20`` prospective). The deterministic, non-guessin
 signal is the affecting act's own per-provision ``RestrictStartDate`` (the date a
 provision's version starts being in force). This module reads that signal.
 
-This is the primitive under the §6.8 prospective resolver (see
-``notes/UK_LAWVM_ROADMAP.md``): given an effect, find the affecting provisions it
-cites, look up their start dates in the affecting act, and report whether they are
-in force as of a point in time. The resolver (apply-gating) is built on top of this.
+This is the primitive under the §6.8 prospective resolver: given an effect, find
+the affecting provisions it cites, look up their start dates in the affecting act,
+and report whether they are in force as of a point in time. The resolver
+(apply-gating) is built on top of this.
 """
 from __future__ import annotations
 
