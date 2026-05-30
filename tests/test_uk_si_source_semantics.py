@@ -102,8 +102,58 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
     assert by_family["si_extent_clause_surface"][0]["provision_title"] == (
         "Citation, commencement and extent"
     )
+    assert by_family["si_extent_clause_surface"][0]["geographic_terms"] == (
+        "england",
+        "wales",
+    )
+    assert (
+        by_family["si_extent_clause_surface"][0]["extent_application_relation"]
+        == "extent_only"
+    )
     assert by_family["si_application_clause_surface"][0]["provision_label"] == "2."
+    assert (
+        by_family["si_application_clause_surface"][0]["extent_application_relation"]
+        == "application_only"
+    )
     assert by_family["si_revocation_lapse_surface"][0]["provision_label"] == "3."
+
+
+def test_si_source_semantics_marks_combined_extent_application_clause() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>2.</Pnumber>
+                <Title>Extent and application</Title>
+                <P1para><Text>
+                  This Order extends to England and Wales and applies in relation
+                  to Scotland only for transitional cases.
+                </Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    scoped_rows = [
+        row.to_dict()
+        for row in rows
+        if row.family in {"si_extent_clause_surface", "si_application_clause_surface"}
+    ]
+
+    assert {row["family"] for row in scoped_rows} == {
+        "si_extent_clause_surface",
+        "si_application_clause_surface",
+    }
+    assert {row["extent_application_relation"] for row in scoped_rows} == {
+        "combined_extent_and_application"
+    }
+    assert {row["geographic_terms"] for row in scoped_rows} == {
+        ("england", "wales", "scotland")
+    }
 
 
 def test_si_source_semantics_records_nested_body_p1_and_correction_slip_marker() -> None:

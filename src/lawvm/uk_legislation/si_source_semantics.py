@@ -26,7 +26,8 @@ _BODY_COMMENCEMENT_RE = re.compile(
 )
 _EXTENT_RE = re.compile(r"\b(?:extends?\s+to|does\s+not\s+extend\s+to|extent)\b", re.I)
 _APPLICATION_RE = re.compile(
-    r"\b(?:applies?\s+to|do(?:es)?\s+not\s+apply|application\s+of\s+(?:these|this|the)\s+"
+    r"\b(?:applies?\s+(?:only\s+)?(?:in\s+relation\s+)?to|do(?:es)?\s+not\s+apply|"
+    r"application\s+of\s+(?:these|this|the)\s+"
     r"(?:regulations?|order|rules?|article)|(?:these|this|the)\s+"
     r"(?:regulations?|order|rules?|article)\s+appl(?:y|ies))\b",
     re.I,
@@ -34,6 +35,16 @@ _APPLICATION_RE = re.compile(
 _REVOCATION_RE = re.compile(r"\b(?:revokes?|revoked|revocation|ceases?\s+to\s+have\s+effect|lapses?)\b", re.I)
 _CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?)\b", re.I)
 _AMENDMENT_PAYLOAD_ANCESTORS = frozenset({"BlockAmendment", "InlineAmendment"})
+_GEOGRAPHIC_TERM_MARKERS = (
+    ("northern_ireland", "northern ireland"),
+    ("england", "england"),
+    ("wales", "wales"),
+    ("scotland", "scotland"),
+    ("great_britain", "great britain"),
+    ("united_kingdom", "united kingdom"),
+    ("channel_islands", "channel islands"),
+    ("isle_of_man", "isle of man"),
+)
 
 
 @dataclass(frozen=True)
@@ -230,6 +241,9 @@ def _body_clause_records(
         title = _own_title(p1)
         source_role = _body_clause_source_role(p1)
         status = "payload_carried" if source_role == "amendment_payload_provision" else "record"
+        family_names = frozenset(family for family, _rule_id in families)
+        geographic_terms = _geographic_terms(text)
+        relation = _extent_application_relation(family_names)
         for family, rule_id in families:
             records.append(
                 UKSISourceSemanticsRecord(
@@ -243,6 +257,8 @@ def _body_clause_records(
                         "provision_label": label,
                         "provision_title": title,
                         "source_role": source_role,
+                        "geographic_terms": geographic_terms,
+                        "extent_application_relation": relation,
                     },
                 )
             )
@@ -320,6 +336,23 @@ def _body_clause_source_role(el: ET._Element) -> str:
         if _local_name(ancestor) in _AMENDMENT_PAYLOAD_ANCESTORS:
             return "amendment_payload_provision"
     return "instrument_body_provision"
+
+
+def _geographic_terms(text: str) -> tuple[str, ...]:
+    normalized = str(text or "").lower()
+    return tuple(label for label, marker in _GEOGRAPHIC_TERM_MARKERS if marker in normalized)
+
+
+def _extent_application_relation(family_names: frozenset[str]) -> str:
+    has_extent = "si_extent_clause_surface" in family_names
+    has_application = "si_application_clause_surface" in family_names
+    if has_extent and has_application:
+        return "combined_extent_and_application"
+    if has_extent:
+        return "extent_only"
+    if has_application:
+        return "application_only"
+    return "not_extent_or_application"
 
 
 def _text(el: ET._Element) -> str:
