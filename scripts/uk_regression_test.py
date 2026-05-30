@@ -13,15 +13,19 @@ CORPUS = [
 ]
 
 BASELINES = {
-    # Baselines post parenthesized-range-expansion fix (2026-03-24).
-    # HRA 1998: 90.3→96.1 via _split_metadata_provisions fix for s.N(MA)-(MD) ranges
-    "ukpga/1998/42": 96.1,
-    "ukpga/1978/30": 72.9,
-    "ukpga/2025/18": 88.3,
+    # UK baselines refreshed 2026-05-30 to lock in cumulative gains since the
+    # 2026-03-24 parenthesized-range-expansion fix (notably asp/2000/6 71.3→90.8
+    # and the ukpga/1978/30 fee-table-index crash fix restoring it to 73.8).
+    "ukpga/1998/42": 97.3,
+    "ukpga/1978/30": 73.8,
+    "ukpga/2025/18": 88.4,
+    # eur/2016/679 left at its pre-regression 80.6 deliberately: the current
+    # -5.4% divergence is an EU-compiler regression tracked separately, and the
+    # gate must keep flagging it until that is resolved.
     "eur/2016/679": 80.6,
     "nia/2000/1": 93.3,
-    "asp/2000/6": 71.3,
-    "asc/2020/1": 99.6
+    "asp/2000/6": 90.8,
+    "asc/2020/1": 100.0
 }
 
 def run_test(statute_id):
