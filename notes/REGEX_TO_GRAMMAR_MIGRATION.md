@@ -105,6 +105,16 @@ implementations; extract the core `legal_address_grammar` only after (farchive
 model — earn independence). `LegalAddress` is already core; the parser need not
 be until proven.
 
+**Re-confirmed 2026-05-30 (user).** Defer stands: extract per-frontend reference
+grammars independently as each frontend warrants it, and unify into a core
+`legal_address_grammar` later *if ever*. The shared design (one rank-ordered
+`LEVEL/LABEL/RANGE/LIST/FACET` grammar + a per-frontend surface lexicon emitting
+the existing core `LegalAddress`) is understood; the only open question is the
+trigger, and the answer is "not yet — independence first." Current duplication to
+keep in mind when touching either: FI `_expand_sec_range`/`_expand_sec_item`/
+`_parse_genitive_tail` vs UK `_expand_parenthesized_range`/`_is_sibling_group_family`/
+`_split_metadata_provisions` are the same range/list/context-distribution algorithms.
+
 ## Implementation order (authoritative)
 
 ```
