@@ -107,8 +107,13 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
    s.15), `REPEAL_NO_DOUBLE_ENTRY`. Speculative — find a real corpus case first.
 6. **Effect-verb lowering long tail** — the remaining ~24/109 `no_supported_action`
    on 1978/30 (e.g. `replaced (by …)`, amendments-to-amending-acts per OPC §6.8.4).
-7. **Layer-2 mutation-boundary detector** (AGENTS.md §9, task #57) — post-replay
-   over-repeal/collateral detector; core-level, jurisdiction-agnostic.
+7. **Layer-2 mutation-boundary detector** (AGENTS.md §9, task #57) — ALREADY BUILT,
+   do not rebuild: `core/mutation_boundary.py` + `mutation_events.py` +
+   `mutation_accounting.py`, wired via `UKReplayInvariantDiagnosticsMixin` /
+   `UKReplayExecutor(mutation_events_out=)`, tested (`test_mutation_boundary.py`,
+   `test_mutation_events.py`), exposed via `invariant-bisect`. Remaining (optional):
+   verify it flags the grounding-collateral class and surface
+   `unexplained_changed_paths` in oracle-check buckets.
 8. **Source mining follow-up** — mine SIP (SI replay/vires), CLS (mechanism families,
    more MeVM-relevant), devolved manuals; extend the source ledger.
 
