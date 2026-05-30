@@ -158,6 +158,31 @@ def _canonicalize_eid_tail_label(label: Optional[str]) -> str:
     return _clean_num(raw)
 
 
+def _uk_canonicalize_eid_letter_case(eid: str) -> str:
+    """Uppercase the letter suffix of digit-led provision-number eId segments.
+
+    UK eId convention: an inserted-provision number's letter suffix is uppercase
+    (``section-20A``, ``section-24-3A``, ``section-23ZA``, ``section-23C-1A``),
+    while pure-letter labels (``paragraph-a``, lettered ``za``, roman ``ia``) and
+    kind names (``section``, ``p1group``) stay lowercase. Operates per ``-``
+    segment and only rewrites segments that begin with a digit and contain a
+    letter, so kind names and lettered/roman labels are untouched.
+
+    This is for EMITTED node eId attributes only. Matching keys (oracle
+    ``eid_map`` keys, grounding flat candidates) stay lowercase and must NOT be
+    routed through this helper \u2014 they are compared case-insensitively.
+    """
+    if not eid:
+        return eid
+    out: list[str] = []
+    for seg in eid.split("-"):
+        if seg and seg[0].isdigit() and any(c.isalpha() for c in seg):
+            out.append(seg.upper())
+        else:
+            out.append(seg)
+    return "-".join(out)
+
+
 def _action_name(action: StructuralAction | str) -> str:
     if isinstance(action, StructuralAction):
         return action.value

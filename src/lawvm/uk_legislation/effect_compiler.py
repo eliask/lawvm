@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from lxml import etree as ET
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.uk_legislation.addressing import _uk_canonicalize_eid_letter_case
 from lawvm.uk_legislation.effects import UKEffectRecord, _COMMENCEMENT_EFFECT_TYPES
 from lawvm.uk_legislation.effect_lowering_tail import (
     append_no_targets_rejection,
@@ -249,6 +250,61 @@ def _withhold_repeal_table_replacement_ops(
     return [op for op in ops if id(op) not in withheld]
 
 
+def _canonicalize_node_eid_letter_case(node: Any) -> tuple[Any, bool]:
+    """Return ``(node, changed)`` with canonical-cased eId/id on the subtree."""
+    new_children: list[Any] = []
+    children_changed = False
+    for child in getattr(node, "children", None) or ():
+        rebuilt_child, child_changed = _canonicalize_node_eid_letter_case(child)
+        new_children.append(rebuilt_child)
+        children_changed = children_changed or child_changed
+    new_attrs: Optional[dict[str, Any]] = None
+    attrs = getattr(node, "attrs", None) or {}
+    for key in ("eId", "id"):
+        value = attrs.get(key)
+        if isinstance(value, str) and value:
+            canonical = _uk_canonicalize_eid_letter_case(value)
+            if canonical != value:
+                if new_attrs is None:
+                    new_attrs = dict(attrs)
+                new_attrs[key] = canonical
+    if new_attrs is None and not children_changed:
+        return node, False
+    replacements: dict[str, Any] = {}
+    if new_attrs is not None:
+        replacements["attrs"] = new_attrs
+    if children_changed:
+        replacements["children"] = new_children
+    return dc_replace(node, **replacements), True
+
+
+def _canonicalize_payload_eid_letter_case(ops: list[LegalOperation]) -> list[LegalOperation]:
+    """Uppercase inserted-provision letter suffixes on emitted payload eIds.
+
+    UK eId convention writes the letter portion of a provision number in upper
+    case (``section-20A``, ``section-24-3A``, ``section-23ZA``).  The lowering
+    pipeline derives payload eIds from labels that were lower-cased during target
+    parsing, so a synthesized inserted provision carries ``section-20a``.  That
+    lower-cased eId is *not* in the oracle's id set, so grounding clears it and
+    re-matches it by fuzzy text (a non-deterministic crutch).  Canonicalizing the
+    letter case here makes the synthesized eId equal to the oracle's structural
+    eId, so grounding preserves it exactly (direction (b), OPC §6.4).
+
+    ``IRNode``/``LegalOperation`` are frozen, so changed payloads are rebuilt via
+    ``dataclasses.replace``.  Only emitted payload eId attributes are touched;
+    matching keys are constructed elsewhere and stay lower-cased.
+    """
+    rebuilt: list[LegalOperation] = []
+    for op in ops:
+        payload = getattr(op, "payload", None)
+        if payload is None:
+            rebuilt.append(op)
+            continue
+        new_payload, changed = _canonicalize_node_eid_letter_case(payload)
+        rebuilt.append(dc_replace(op, payload=new_payload) if changed else op)
+    return rebuilt
+
+
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -277,7 +333,7 @@ def compile_effect_to_ir_ops(
         source_authority_layer=source_authority_layer,
         lower_phase_timings_out=lower_phase_timings_out,
     )
-    return _withhold_repeal_table_replacement_ops(
+    ops = _withhold_repeal_table_replacement_ops(
         ops,
         effect=effect,
         effect_type=(effect.effect_type or "").strip().lower(),
@@ -285,6 +341,7 @@ def compile_effect_to_ir_ops(
         extracted_text=_text_content(extracted_el) if extracted_el is not None else None,
         lowering_rejections_out=lowering_rejections_out,
     )
+    return _canonicalize_payload_eid_letter_case(ops)
 
 
 def _compile_effect_to_ir_ops_impl(
