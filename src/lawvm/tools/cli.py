@@ -3886,6 +3886,32 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Farchive DB path (default: data/uk_legislation.farchive)",
     )
 
+    # --- uk-misses ---
+    uk_misses_p = sub.add_parser(
+        "uk-misses",
+        help="full bucketed replay-vs-oracle EID miss worklist for a UK statute",
+        description=(
+            "Replays a UK statute and prints the complete EID miss sets "
+            "(oracle-only and replay-only), bucketed by structural container "
+            "so the largest miss clusters surface first.  Includes the "
+            "compile-rejection tally for diagnosing what to fix next."
+        ),
+    )
+    uk_misses_p.add_argument(
+        "statute_id",
+        help="UK statute ID, e.g. ukpga/1998/42",
+    )
+    uk_misses_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable miss buckets and rejection counts",
+    )
+    uk_misses_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="Farchive DB path (default: data/uk_legislation.farchive)",
+    )
+
     # --- eu-replay ---
     eu_replay_p = sub.add_parser(
         "eu-replay",
@@ -7121,6 +7147,11 @@ def main() -> None:
         from lawvm.tools.uk_eids import main as uk_eids_main
 
         uk_eids_main(args)
+
+    elif args.command == "uk-misses":
+        from lawvm.tools.uk_misses import main as uk_misses_main
+
+        uk_misses_main(args)
 
     elif args.command == "uk-candidates":
         from lawvm.tools.uk_candidates import main as uk_candidates_main
