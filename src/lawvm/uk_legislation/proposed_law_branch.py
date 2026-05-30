@@ -8,7 +8,7 @@ into the shared branch graph without promoting them into enacted replay.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence, cast
 
 from lawvm.core.authority import (
     BRANCH_FAILED,
@@ -194,6 +194,32 @@ def build_uk_proposed_law_demo_payload() -> UKProposedLawBranchPayload:
     )
 
 
+def build_uk_proposed_law_branch_payload_from_dict(
+    data: Mapping[str, Any],
+) -> UKProposedLawBranchPayload:
+    """Build a UK proposed-law branch graph from an explicit structured claim.
+
+    This is deliberately not a bill parser. It is the import boundary for owned
+    proposed-law claims while source acquisition/parsing remains frontend work.
+    """
+
+    operations_data = data.get("operations")
+    if not isinstance(operations_data, Sequence) or isinstance(operations_data, str):
+        raise ValueError("operations must be a non-empty sequence")
+    specs = tuple(_spec_from_dict(item) for item in operations_data)
+    return build_uk_proposed_law_branch_payload(
+        source_artifact_id=_required_str(data, "source_artifact_id"),
+        title=str(data.get("title") or ""),
+        specs=specs,
+        branch_id=str(data.get("branch_id") or ""),
+        scenario_id=str(data.get("scenario_id") or "if_enacted_as_introduced"),
+        introduced_date=str(data.get("introduced_date") or ""),
+        legal_status=cast(LegalStatus, str(data.get("legal_status") or UNKNOWN_STATUS)),
+        failed_event_id=str(data.get("failed_event_id") or ""),
+        failed_date=str(data.get("failed_date") or ""),
+    )
+
+
 def _operation_from_spec(
     spec: UKProposedLawOperationSpec,
     *,
@@ -261,6 +287,53 @@ def _text_map(
         f"{spec.target_statute_id}#{spec.target}": spec.current_text if current else spec.proposed_text
         for spec in specs
     }
+
+
+def _spec_from_dict(data: Any) -> UKProposedLawOperationSpec:
+    if not isinstance(data, Mapping):
+        raise ValueError("each operation must be an object")
+    proposed_node_data = data.get("proposed_node")
+    return UKProposedLawOperationSpec(
+        operation_id=_required_str(data, "operation_id"),
+        source_unit_id=_required_str(data, "source_unit_id"),
+        target_statute_id=_required_str(data, "target_statute_id"),
+        target=_address_from_data(data.get("target_path")),
+        action=StructuralAction(_required_str(data, "action")),
+        proposed_node=_node_from_dict(proposed_node_data) if proposed_node_data else None,
+        current_text=str(data.get("current_text") or ""),
+        proposed_text=str(data.get("proposed_text") or ""),
+    )
+
+
+def _address_from_data(data: Any) -> LegalAddress:
+    if not isinstance(data, Sequence) or isinstance(data, str):
+        raise ValueError("target_path must be a sequence of [kind, label] pairs")
+    parts: list[tuple[str, str]] = []
+    for item in data:
+        if not isinstance(item, Sequence) or isinstance(item, str) or len(item) != 2:
+            raise ValueError("target_path entries must be [kind, label] pairs")
+        kind, label = item
+        parts.append((str(kind), str(label)))
+    if not parts:
+        raise ValueError("target_path must be non-empty")
+    return LegalAddress(path=tuple(parts))
+
+
+def _node_from_dict(data: Any) -> IRNode:
+    if not isinstance(data, Mapping):
+        raise ValueError("proposed_node must be an object")
+    return IRNode(
+        kind=IRNodeKind(_required_str(data, "kind")),
+        label=str(data.get("label") or ""),
+        text=str(data.get("text") or ""),
+    )
+
+
+def _required_str(data: Mapping[str, Any], key: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{key} must be a non-empty string")
+    return value
 
 
 def _slug(value: str) -> str:
