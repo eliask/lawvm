@@ -3719,6 +3719,67 @@ def _build_parser() -> argparse.ArgumentParser:
         help="emit machine-readable JSON acquisition report",
     )
 
+    # --- uk-corpus (native corpus sync; harmonized with ee-corpus / nz-corpus) ---
+    uk_corpus_p = sub.add_parser(
+        "uk-corpus",
+        help="UK corpus acquisition into the Farchive (enumerate, download, affecting, refresh)",
+        description=(
+            "Native UK corpus sync. Single resumable, idempotent pipeline that only "
+            "fetches what is missing or stale. Replaces the former acquire_uk_corpus.py script."
+        ),
+    )
+    uk_corpus_sub = uk_corpus_p.add_subparsers(dest="uk_corpus_command", metavar="<subcommand>")
+
+    def _uk_corpus_db(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--db", default="data/uk_legislation.farchive", metavar="PATH", help="Farchive DB path"
+        )
+
+    uk_corpus_acquire_p = uk_corpus_sub.add_parser(
+        "acquire", help="enumerate primary acts via CSV and download enacted/current/effects"
+    )
+    _uk_corpus_db(uk_corpus_acquire_p)
+    uk_corpus_acquire_p.add_argument(
+        "--types", nargs="+", default=None, metavar="TYPE", help="primary act types (default: ukpga asp asc nia eur)"
+    )
+    uk_corpus_acquire_p.add_argument(
+        "--enacted-only", dest="enacted_only", action="store_true", help="skip current XML + effects feeds"
+    )
+    uk_corpus_acquire_p.add_argument("--delay", type=float, default=0.3, metavar="SECS")
+
+    uk_corpus_affecting_p = uk_corpus_sub.add_parser(
+        "affecting", help="fetch enacted XML for affecting acts found in effects feeds"
+    )
+    _uk_corpus_db(uk_corpus_affecting_p)
+    uk_corpus_affecting_p.add_argument("--affecting-types", nargs="+", default=None, metavar="TYPE")
+    uk_corpus_affecting_p.add_argument("--events-jsonl", metavar="PATH", help="write acquisition-event rows")
+    uk_corpus_affecting_p.add_argument("--delay", type=float, default=0.3, metavar="SECS")
+
+    uk_corpus_refresh_p = uk_corpus_sub.add_parser(
+        "refresh", help="re-fetch mutable resources (current XML + effects feeds) if stale"
+    )
+    _uk_corpus_db(uk_corpus_refresh_p)
+    uk_corpus_refresh_p.add_argument(
+        "--statute", action="append", default=[], metavar="STATUTE_ID", help="target one statute (repeatable)"
+    )
+    uk_corpus_refresh_p.add_argument(
+        "--force-refresh", dest="force_refresh", action="store_true", help="refetch even if TTL says fresh"
+    )
+    uk_corpus_refresh_p.add_argument("--delay", type=float, default=0.3, metavar="SECS")
+
+    uk_corpus_all_p = uk_corpus_sub.add_parser("all", help="acquire + affecting + refresh")
+    _uk_corpus_db(uk_corpus_all_p)
+    uk_corpus_all_p.add_argument("--types", nargs="+", default=None, metavar="TYPE")
+    uk_corpus_all_p.add_argument("--enacted-only", dest="enacted_only", action="store_true")
+    uk_corpus_all_p.add_argument("--delay", type=float, default=0.3, metavar="SECS")
+
+    uk_corpus_stats_p = uk_corpus_sub.add_parser("stats", help="archive summary")
+    _uk_corpus_db(uk_corpus_stats_p)
+    uk_corpus_traindict_p = uk_corpus_sub.add_parser("train-dict", help="train the xml compression dictionary")
+    _uk_corpus_db(uk_corpus_traindict_p)
+    uk_corpus_repack_p = uk_corpus_sub.add_parser("repack", help="repack xml blobs against the current dictionary")
+    _uk_corpus_db(uk_corpus_repack_p)
+
     # --- uk-effect ---
     uk_effect_p = sub.add_parser(
         "uk-effect",
@@ -7258,6 +7319,11 @@ def main() -> None:
         from lawvm.tools.uk_acquire import main as uk_acquire_main
 
         uk_acquire_main(args)
+
+    elif args.command == "uk-corpus":
+        from lawvm.tools.uk_corpus import main as uk_corpus_main
+
+        uk_corpus_main(args)
 
     elif args.command == "uk-effect":
         from lawvm.tools.uk_effect import main as uk_effect_main

@@ -7217,7 +7217,7 @@ def main(args) -> None:  # noqa: ANN001
     db_path = Path(args.db) if getattr(args, "db", None) else _DEFAULT_DB
     if not db_path.exists():
         print(f"Archive not found: {db_path}", file=sys.stderr)
-        print("Run: uv run python scripts/acquire_uk_corpus.py", file=sys.stderr)
+        print("Run: uv run lawvm uk-corpus all", file=sys.stderr)
         sys.exit(1)
 
     archive = Farchive(db_path)

@@ -9,9 +9,9 @@ from typing import Any, cast
 import pytest
 from lawvm.uk_legislation import uk_prefetch
 
-from lawvm.tools import cli, uk_bench, uk_candidates, uk_effect, uk_effects, uk_eids, uk_replay
+from lawvm.tools import cli, uk_bench, uk_candidates, uk_corpus, uk_effect, uk_effects, uk_eids, uk_replay
 from lawvm.tools.replay_payloads import build_uk_replay_payload
-from scripts import acquire_uk_corpus, fetch_uk_affecting_acts
+from scripts import fetch_uk_affecting_acts
 
 
 def _repo_root() -> Path:
@@ -28,7 +28,7 @@ def test_uk_archives_default_to_data_dir_in_tool_modules() -> None:
     assert uk_replay._DEFAULT_DB == expected
     assert uk_eids._DEFAULT_DB == expected
     assert fetch_uk_affecting_acts._DEFAULT_DB == expected
-    assert acquire_uk_corpus._DEFAULT_ARCHIVE == expected
+    assert uk_corpus._DEFAULT_ARCHIVE == expected
 
 
 def test_uk_cli_help_strings_reference_data_archive_default(capsys) -> None:

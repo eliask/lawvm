@@ -83,7 +83,7 @@ def main(args: argparse.Namespace) -> None:
     # Live run: archive must exist.
     if not db_path.exists():
         print(f"error: archive DB not found: {db_path}", file=sys.stderr)
-        print("Run: uv run python scripts/acquire_uk_corpus.py", file=sys.stderr)
+        print("Run: uv run lawvm uk-corpus all", file=sys.stderr)
         sys.exit(1)
 
     from farchive import Farchive
