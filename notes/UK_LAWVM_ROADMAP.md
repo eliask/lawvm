@@ -110,6 +110,19 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
   §6.8 prospective-effect sensor. (All replay-neutral source-fidelity wins.)
 - Verified delegated `oracle-check/classify/diff -j uk` commit.
 
+## Over-production triage (replay produces more EIDs than oracle)
+Scanned the baseline for `replay > oracle` (the forbidden over-application direction).
+Most are NOT cleanly fixable — do not chase without a new angle:
+- **Feed-incompleteness / old acts repealed elsewhere** — `ukpga/1966/42` (replay 509
+  vs oracle 43, 8.4%), `1951/30`, `1972/5`: tiny oracle stubs, only ~22 effects, so the
+  bulk repeals are simply not in the modern effect feed. Missing source, not a bug.
+- **EU lane** — `eur/2019/2018` etc.: the `ground_ids()` corruption of correct EU
+  article eIds (other agent's lane).
+- **Representation** — `ukpga/1980/65` (+842), `2008/17` (+196): crossheading/wrapper
+  structural differences vs oracle editorial form (saturated frontier).
+- The one **clean** over-application bug found here was the repeals-table overwrite
+  (fixed, item 2 above). The rest need source acquisition or are oracle-editorial.
+
 ## Verified NOT wins (don't repeat)
 - Score-ranked grounding rewrite (net-negative, built on a misdiagnosis).
 - Blanket prospective gate (mixed-sign).
