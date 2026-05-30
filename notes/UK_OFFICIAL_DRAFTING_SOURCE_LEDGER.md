@@ -145,9 +145,10 @@ use when a concrete failing case or architecture task needs the rule boundary.
   inside amendment payload XML rather than the SI's own body provision. Body-clause
   records also expose `geographic_terms` and `extent_application_relation`; current
   summary counts are 9,148 `application_only`, 3,852 `extent_only`, and 1,579
-  `combined_extent_and_application` rows. These are evidence rows only;
-  replay-changing SI rules still require source-level adjudication of a concrete
-  family.
+  `combined_extent_and_application` rows. Revocation/lapse rows expose
+  `revocation_lapse_kinds`; current marker counts are 3,436 `revocation`, 735
+  `cessation`, and 276 `lapse`. These are evidence rows only; replay-changing SI
+  rules still require source-level adjudication of a concrete family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
   with no effect-level in-force date still recover a replay date only from exactly
   one official `ComingIntoForce/DateTime/@Date`. Missing source XML, parse errors,

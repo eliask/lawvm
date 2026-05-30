@@ -116,6 +116,9 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
         == "application_only"
     )
     assert by_family["si_revocation_lapse_surface"][0]["provision_label"] == "3."
+    assert by_family["si_revocation_lapse_surface"][0]["revocation_lapse_kinds"] == (
+        "revocation",
+    )
 
 
 def test_si_source_semantics_marks_combined_extent_application_clause() -> None:
@@ -180,7 +183,31 @@ def test_si_source_semantics_records_nested_body_p1_and_correction_slip_marker()
 
     by_family = {row.family: row.to_dict() for row in rows}
     assert by_family["si_revocation_lapse_surface"]["provision_label"] == "4."
+    assert by_family["si_revocation_lapse_surface"]["revocation_lapse_kinds"] == (
+        "cessation",
+        "lapse",
+    )
     assert "correction slip" in by_family["si_correction_slip_surface"]["text_preview"]
+
+
+def test_si_source_semantics_marks_lapse_clause_kind() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>5.</Pnumber>
+                <P1para><Text>This article lapses at the end of 2026.</Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(row.to_dict() for row in rows if row.family == "si_revocation_lapse_surface")
+    assert row["revocation_lapse_kinds"] == ("lapse",)
 
 
 def test_si_source_semantics_does_not_treat_ordinary_application_as_scope() -> None:

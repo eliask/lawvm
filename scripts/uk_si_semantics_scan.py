@@ -95,6 +95,10 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         for row in rows
         if row.get("extent_application_relation")
     )
+    revocation_lapse_kind_counts: Counter[str] = Counter()
+    for row in rows:
+        for kind in row.get("revocation_lapse_kinds") or ():
+            revocation_lapse_kind_counts[str(kind)] += 1
     output_rows = rows[: args.limit] if args.limit is not None else rows
     return {
         "n_statutes_scanned": len(ids),
@@ -105,6 +109,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "source_roles": dict(source_role_counts),
         "geographic_terms": dict(geographic_term_counts),
         "extent_application_relations": dict(extent_application_relation_counts),
+        "revocation_lapse_kinds": dict(revocation_lapse_kind_counts),
         "missing_xml": missing,
         "records": output_rows,
     }

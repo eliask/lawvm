@@ -35,6 +35,11 @@ _APPLICATION_RE = re.compile(
 _REVOCATION_RE = re.compile(r"\b(?:revokes?|revoked|revocation|ceases?\s+to\s+have\s+effect|lapses?)\b", re.I)
 _CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?)\b", re.I)
 _AMENDMENT_PAYLOAD_ANCESTORS = frozenset({"BlockAmendment", "InlineAmendment"})
+_REVOCATION_LAPSE_MARKERS = (
+    ("revocation", ("revoke", "revoked", "revokes", "revocation")),
+    ("cessation", ("cease to have effect", "ceases to have effect")),
+    ("lapse", ("lapse", "lapses")),
+)
 _GEOGRAPHIC_TERM_MARKERS = (
     ("northern_ireland", "northern ireland"),
     ("england", "england"),
@@ -244,6 +249,7 @@ def _body_clause_records(
         family_names = frozenset(family for family, _rule_id in families)
         geographic_terms = _geographic_terms(text)
         relation = _extent_application_relation(family_names)
+        revocation_lapse_kinds = _revocation_lapse_kinds(text)
         for family, rule_id in families:
             records.append(
                 UKSISourceSemanticsRecord(
@@ -259,6 +265,7 @@ def _body_clause_records(
                         "source_role": source_role,
                         "geographic_terms": geographic_terms,
                         "extent_application_relation": relation,
+                        "revocation_lapse_kinds": revocation_lapse_kinds,
                     },
                 )
             )
@@ -353,6 +360,15 @@ def _extent_application_relation(family_names: frozenset[str]) -> str:
     if has_application:
         return "application_only"
     return "not_extent_or_application"
+
+
+def _revocation_lapse_kinds(text: str) -> tuple[str, ...]:
+    normalized = str(text or "").lower()
+    return tuple(
+        label
+        for label, markers in _REVOCATION_LAPSE_MARKERS
+        if any(marker in normalized for marker in markers)
+    )
 
 
 def _text(el: ET._Element) -> str:
