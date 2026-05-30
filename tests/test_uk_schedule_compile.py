@@ -48913,6 +48913,160 @@ def test_pipeline_compile_ops_records_pit_date_filtered_effects(monkeypatch) -> 
     ]
 
 
+def test_pipeline_pit_filter_uses_prospective_affecting_provision_start_date(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_prospective_future",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/ukpga/2025/18",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="18",
+        affecting_provisions="Sch. 5",
+        affecting_title="Future Affecting Act",
+        in_force_dates=[{"date": "", "prospective": "true"}],
+    )
+    affecting_xml = b"""
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+      <Schedules>
+        <Schedule IdURI="http://www.legislation.gov.uk/id/ukpga/2025/18/schedule/5"
+                  RestrictStartDate="2099-01-01"/>
+      </Schedules>
+    </Legislation>
+    """
+    compile_calls: list[str] = []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: affecting_xml,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+
+    def _compile(effect: UKEffectRecord, _el, sequence=0, **_kwargs):
+        compile_calls.append(effect.effect_id)
+        return []
+
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", _compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    pipeline = UKReplayPipeline(Path("."))
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        pit_date="2026-05-31",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    ) == []
+
+    assert compile_calls == []
+    row = next(
+        row
+        for row in diagnostics
+        if row["rule_id"] == "uk_effect_pit_prospective_commencement_future_rejected"
+    )
+    assert row["effect_id"] == "uk_test_prospective_future"
+    assert row["pit_date"] == "2026-05-31"
+    assert row["commencement_status"] == "resolved_future"
+    assert row["start_dates"] == ("2099-01-01",)
+
+
+def test_pipeline_pit_filter_includes_resolved_in_force_prospective_effect(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_prospective_in_force",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/ukpga/1996/46",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="46",
+        affecting_provisions="s. 17",
+        affecting_title="In Force Affecting Act",
+        in_force_dates=[{"date": "", "prospective": "true"}],
+    )
+    affecting_xml = b"""
+    <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+      <Body>
+        <P1group IdURI="http://www.legislation.gov.uk/id/ukpga/1996/46/section/17"
+                 RestrictStartDate="2009-10-31"/>
+      </Body>
+    </Legislation>
+    """
+    compile_calls: list[str] = []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: affecting_xml,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+
+    def _compile(effect: UKEffectRecord, _el, sequence=0, **_kwargs):
+        compile_calls.append(effect.effect_id)
+        return []
+
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", _compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    pipeline = UKReplayPipeline(Path("."))
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        pit_date="2026-05-31",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    ) == []
+
+    assert compile_calls == ["uk_test_prospective_in_force"]
+    row = next(
+        row
+        for row in diagnostics
+        if row["rule_id"] == "uk_effect_pit_prospective_commencement_in_force"
+    )
+    assert row["commencement_status"] == "resolved_in_force"
+    assert row["start_dates"] == ("2009-10-31",)
+    assert not any(
+        row["rule_id"] == "uk_effect_pit_date_filter_rejected"
+        for row in diagnostics
+    )
+
+
 def test_uk_effective_date_override_uses_single_si_commencement_metadata() -> None:
     class Archive:
         def get(self, locator: str) -> bytes:

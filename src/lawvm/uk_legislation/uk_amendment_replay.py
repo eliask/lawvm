@@ -46,6 +46,10 @@ from lawvm.uk_legislation.effects import (
 from lawvm.uk_legislation.effect_temporal import (
     resolve_uk_effective_date_overrides_for_replay,
 )
+from lawvm.uk_legislation.affecting_act_commencement import (
+    affecting_provision_in_force,
+    affecting_provision_start_dates,
+)
 from lawvm.uk_legislation.addressing import (
     _order_schedule_materialization_ops,
 )
@@ -65,6 +69,7 @@ from lawvm.uk_legislation.lowering_records import (
     append_metadata_only_selection_rejection,
     append_no_ops_lowering_rejections,
     append_pit_date_filter_rejection,
+    append_prospective_pit_commencement_observation,
     append_replay_applicability_filter_diagnostic,
     append_source_pathology_classified_diagnostic,
     append_source_pathology_filter_lowering_rejections,
@@ -252,7 +257,52 @@ class UKReplayPipeline:
         replayable = list(effects)
         if pit_date:
             pit_replayable: list[UKEffectRecord] = []
+            affecting_xml_by_act: dict[str, Optional[bytes]] = {}
             for e in replayable:
+                if e.is_prospective_only and e.is_structural_for_replay(
+                    applicability_mode=applicability_mode,
+                ):
+                    affecting_act_id = e.affecting_act_id
+                    if affecting_act_id not in affecting_xml_by_act:
+                        affecting_xml_by_act[affecting_act_id] = (
+                            get_affecting_act_xml_from_archive(affecting_act_id, archive)
+                        )
+                    affecting_xml = affecting_xml_by_act[affecting_act_id]
+                    start_dates = affecting_provision_start_dates(
+                        e.affecting_provisions,
+                        affecting_xml,
+                    )
+                    in_force = affecting_provision_in_force(
+                        e.affecting_provisions,
+                        affecting_xml,
+                        as_of=pit_date,
+                    )
+                    if in_force is True:
+                        append_prospective_pit_commencement_observation(
+                            effect_diagnostics_out,
+                            effect=e,
+                            status="resolved_in_force",
+                            start_dates=start_dates,
+                            pit_date=pit_date,
+                        )
+                        pit_replayable.append(e)
+                        continue
+                    if in_force is False:
+                        append_prospective_pit_commencement_observation(
+                            effect_diagnostics_out,
+                            effect=e,
+                            status="resolved_future",
+                            start_dates=start_dates,
+                            pit_date=pit_date,
+                        )
+                        continue
+                    append_prospective_pit_commencement_observation(
+                        effect_diagnostics_out,
+                        effect=e,
+                        status="unresolved",
+                        start_dates=start_dates,
+                        pit_date=pit_date,
+                    )
                 effective_date = (
                     effective_date_overrides.get(e.effect_id)
                     or e.effective_date

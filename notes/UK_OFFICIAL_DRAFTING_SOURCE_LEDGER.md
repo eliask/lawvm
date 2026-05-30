@@ -304,7 +304,13 @@ never has to *guess* a deep node's identity by fuzzy text.
   20`. Result: 325 prospective-only structural witnesses; 185 resolved in-force,
   140 unresolved, 0 resolved future. This gives the future PIT resolver an
   auditable workqueue while confirming that a current-corpus blanket gate would
-  still be unsupported.
+  still be unsupported. **PIT-only resolver hook added:** when `compile_ops_for_statute`
+  is called with a `pit_date`, a prospective-only structural effect now consults
+  the affecting provision's `RestrictStartDate`: resolved in-force effects are kept
+  with `uk_effect_pit_prospective_commencement_in_force`, resolved future effects
+  are filtered with `uk_effect_pit_prospective_commencement_future_rejected`, and
+  unresolved effects emit `uk_effect_pit_prospective_commencement_unresolved` before
+  falling through to existing PIT filtering. Default current replay is unchanged.
 
 ### §6.9 Non-textual modifications
 - **6.9.1** a non-textual modification does **not** change the printed text (contrast
