@@ -54,7 +54,8 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
             <SecondaryPrelims>
               <EnactingText>
                 The Secretary of State makes these Regulations in exercise of
-                the powers conferred by section 2.
+                the powers conferred by <Citation>section 2</Citation>, having
+                consulted the Welsh Ministers and with the approval of the Treasury.
               </EnactingText>
             </SecondaryPrelims>
             <Body>
@@ -93,6 +94,14 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
     vires = by_family["si_vires_recital_surface"][0]
     assert vires["status"] == "matched"
     assert vires["has_vires_phrase"] is True
+    assert vires["citation_count"] == 1
+    assert vires["citation_texts"] == ("section 2",)
+    assert vires["vires_markers"] == (
+        "exercise_of_powers",
+        "powers_conferred",
+        "consultation",
+        "approval",
+    )
 
     assert by_family["si_body_commencement_clause_surface"][0]["provision_label"] == "1."
     assert (
