@@ -53163,6 +53163,39 @@ def test_existing_insert_target_under_wrapped_parent_records_conflict_gap() -> N
     assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
+def test_body_root_fallback_insert_records_target_resolution_certificate() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2025/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_body_root_fallback_insert",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "1"), ("section", "2"))),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Inserted section."),
+            source=OperationSource(statute_id="ukpga/2025/2", title="Test Amendment Act"),
+        )
+    )
+
+    assert [child.label for child in executor.statute.body.children] == ["2"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_body_root_fallback_insert_resolved"
+    ]
+    certificate = adjudications[0].detail["target_resolution"]
+    assert certificate["target_resolution_status"] == "recovered"
+    assert certificate["source_target"] == "chapter:1/section:2"
+    assert certificate["selected_target"] == "body_root"
+    assert certificate["selected_target_differs_from_source"] is True
+    assert certificate["scope_confidence"] == "fallback"
+
+
 def test_executor_alpha_suffix_paragraph_insert_sorts_after_base_letter() -> None:
     statute = IRStatute(
         statute_id="asc/2021/1",
