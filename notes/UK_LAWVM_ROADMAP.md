@@ -134,6 +134,23 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
   §6.8 prospective-effect sensor. (All replay-neutral source-fidelity wins.)
 - Verified delegated `oracle-check/classify/diff -j uk` commit.
 
+## Done (2026-05-30, later session)
+- **#56 inserted-provision eId letter-case** (DONE): post-lowering canonicalizer
+  upper-cases the letter suffix of digit-led payload eId segments
+  (`section-20a`→`section-20A`), so grounding preserves them structurally instead
+  of fuzzy-matching. Broad baseline +0.005, 5 statutes up, 0 regressions.
+- **uk-corpus gzip-corruption bug found + fixed + corpus repaired.** The fetcher
+  advertised `Accept-Encoding: gzip` but stored raw undecompressed bodies →
+  5864 `ukpga` consolidated/enacted blobs held gzip bytes. Fixed with
+  `_decode_content_encoding` + a non-XML store guard (`_is_storable_xml`).
+  Repaired the farchive in place (decompress + `store()` the newer consolidation,
+  scrub the 5864 superseded corrupt spans + 5853 orphan blobs, VACUUM 1.5 GB→917 MB,
+  integrity verified). Re-snapshotted the baseline (mean 80.72→80.86; `ukpga/1996/5`
+  →100%). **A backup of the pre-repair farchive exists.**
+- Refuted two roadmap items as misdiagnoses (EU `ground_ids`, `1968/20·70`
+  flattened repeals-table) — see "Verified NOT wins".
+- Removed internal agent codenames (Sensor X / Actuator N) from comments/docstrings.
+
 ## Over-production triage (replay produces more EIDs than oracle)
 Scanned the baseline for `replay > oracle` (the forbidden over-application direction).
 Most are NOT cleanly fixable — do not chase without a new angle:
