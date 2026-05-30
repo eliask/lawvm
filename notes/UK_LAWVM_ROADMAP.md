@@ -24,10 +24,30 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
 - `scripts/baselines/uk_broad_2026-05-30.json` + `uk_grounding_corpus.txt` — 77-statute gate.
 - `lawvm -j uk oracle-check / classify / diff / invariant-bisect / uk-misses / ops / uk-acquire`.
 
+## §6.8 prospective effects — RESOLVED for the current corpus (sensor + primitive)
+- Sensor done (`uk_prospective_effect_applied_to_current`); commencement-lookup
+  primitive done + validated (`affecting_act_commencement.py`, reads the affecting
+  act's per-provision `RestrictStartDate`).
+- **Apply-gating is UNNECESSARY here (verified, conclusive).** Corpus scan of 325
+  prospective-only structural effects across the 77-statute gate: **190 resolve as
+  actually in-force** (the feed's `prospective` flag is stale → they are correctly
+  applied), **0 are genuinely future** (`RestrictStartDate > now`), 135 unresolved
+  (affecting act not cached, or schedule-paragraph granularity below the primitive).
+  So there is no uncommenced over-application to gate on this corpus, and gating
+  would only wrongly drop commenced effects (which is exactly why the blanket gate
+  was mixed-sign). The sensor is the correct deterministic treatment.
+- **Where the primitive WILL matter:** PIT compiles and recent statutes (e.g.
+  `ukpga/2025/18`'s not-yet-commenced provisions) — there, genuinely-future affecting
+  provisions exist, and the primitive supplies the non-guessing apply decision.
+  Wire it into apply-gating only when a corpus with `RestrictStartDate > as_of`
+  effects is in scope; verify on the broad baseline then.
+- **New lead (separate bug):** `ukpga/1996/5` +6.86 when its one prospective effect
+  is dropped is NOT commencement (the affecting provision is in force) — it is a
+  **`repealed in part` over-application** (the partial repeal removes more than its
+  part). Investigate the partial-repeal scope, not commencement. Added to backlog.
+
 ## In progress
-- **§6.8 PIT-aware prospective resolver** — decide application of prospective-only
-  structural effects, instead of silently applying. Sensor phase DONE
-  (`uk_prospective_effect_applied_to_current`).
+- (none — §6.8 resolved to sensor + primitive above; pick the next backlog item)
   - **Resolver is NOT feed-derivable (verified, conclusive).** Compared the
     prospective effects on `ukpga/1996/5` (gating helped → oracle does NOT reflect
     them) vs `ukpga/1968/20` (gating hurt → oracle DOES reflect them): the feed
@@ -58,7 +78,12 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
 
 ## Ranked backlog (highest correctness value first)
 1. **§6.8 resolver** (above) — biggest remaining correctness lever.
-2. **#53 / Theft-Act 24A + 1998/17 17C/D/E** — commencement + spurious-grounding
+2. **`repealed in part` over-application** — concrete case: dropping `ukpga/1996/5`'s
+   one prospective (but actually-commenced) `repealed in part` of Sch.1 para.6 gives
+   +6.86 (→100%). The affecting provision is in force, so this is a partial-repeal
+   *scope* bug (removing the whole para/subtree instead of the named part), not
+   commencement. Verified-bounded lead; check how `repealed in part` lowers + applies.
+3. **#53 / Theft-Act 24A + 1998/17 17C/D/E** — commencement + spurious-grounding
    tangle; resolve the in-force/commencement question (feeds §6.8). Re-land #52
    letter-suffix matcher only after (`_uk_section_label_in_simple_list`,
    `\d+[A-Za-z]*` + substring guard; patch+test drafted, reverted).
