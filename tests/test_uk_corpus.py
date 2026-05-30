@@ -344,7 +344,7 @@ def test_is_storable_xml_accepts_xml_rejects_gzip() -> None:
 
 
 def test_store_if_new_refuses_gzip_payload() -> None:
-    ar = _FakeArchive()
+    ar = cast(Any, _FakeArchive())
     stored = acquire_uk_corpus._store_if_new(ar, "u", b"\x1f\x8b\x08\x00gzipbytes", "xml")
     assert stored is False
     assert ar.store_calls == []
