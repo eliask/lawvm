@@ -194,11 +194,16 @@ allowed to lag the executable implementation.
   *or* a repeal Schedule, never both (`Commissioner of Police v Simeon`). →
   `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`: when the same target is repealed by both a body
   omit and a Schedule extent row, dedup to one op and emit an observation, do not
-  apply twice. **SPEC / WITNESS SEARCH EXISTS.** Diagnostic command:
+  apply twice. **HAVE.** Diagnostic command:
   `uv run python scripts/uk_repeal_semantics_scan.py --ids-file scripts/baselines/uk_grounding_corpus.txt`.
   Current 77-statute gate result: 49 duplicate repeal-target candidates, including
-  8 body-plus-schedule double-entry candidates; these are evidence rows, not replay
-  authority yet.
+  8 body-plus-schedule double-entry candidates. The replay filter is intentionally
+  narrower than that inventory: it drops only exact duplicate structural `REPEAL`
+  operations inside a body+Schedule suffix-pair group and records
+  `uk_effect_repeal_no_double_entry_duplicate_rejected`. Current regression witness:
+  `ukpga/1990/8` affected `s. 203-205` by `ukpga/2008/29`, where `Sch. 13` and
+  `s. 192(6) Sch. 13` previously emitted duplicate repeals for sections 203, 204,
+  and 205.
 - **6.1.6/6.1.7 repeal of amendments only when completely superseded** → diagnostic
   for body-repeals of amending provisions. **SPEC.**
 - **6.1.13 repeal of a repeal does not revive** (Interpretation Act 1978 s.15, subj.
@@ -350,9 +355,10 @@ for hypothetical bugs):
    the sensor: decide application per the oracle version / `authority_mode` instead of
    silently applying. Verified mixed-sign as a blanket gate, so it needs the version
    semantics modelled. Biggest remaining correctness lever; largest temporal change.
-2. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) and `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`
-   (§6.1.5) — speculative; find a real corpus case first (double-apply of a repeal is
-   idempotent, so §6.1.5 may not even be a live bug).
+2. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) — still needs a concrete corpus
+   witness before replay changes. `UK_RULE_REPEAL_NO_DOUBLE_ENTRY` (§6.1.5) is now
+   implemented for exact body+Schedule duplicate structural repeals with diagnostic
+   rejection records.
 3. **DONE (diagnostic surface)** SI semantics from
    `STATUTORY_INSTRUMENT_PRACTICE_5TH_ED`: `scripts/uk_si_semantics_scan.py`
    now records commencement metadata/body clauses, vires/enabling-power recitals,

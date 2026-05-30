@@ -82,6 +82,10 @@ from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
 )
+from lawvm.uk_legislation.repeal_no_double_entry import (
+    collect_repeal_no_double_entry_groups,
+    filter_repeal_no_double_entry_ops,
+)
 from lawvm.uk_legislation.replay_applicability import (
     should_replay_nonstructural_ops,
 )
@@ -271,6 +275,7 @@ class UKReplayPipeline:
             diagnostics_out=effect_diagnostics_out,
             lowering_observations_out=lowering_rejections_out,
         )
+        repeal_no_double_entry_groups = collect_repeal_no_double_entry_groups(replayable)
         _mark_compile_phase("compile_filter_order_effects")
 
         # §source_root_lifecycle: Build a last-occurrence index so the compile
@@ -502,6 +507,11 @@ class UKReplayPipeline:
                         evict_source_root_caches(evicted_enacted_ctx.root)
 
         ops = _order_schedule_materialization_ops(ops)
+        ops = filter_repeal_no_double_entry_ops(
+            ops,
+            repeal_no_double_entry_groups,
+            diagnostics_out=lowering_rejections_out,
+        )
         ordered_ops = _order_uk_text_patch_preimage_chains(
             ops,
             lowering_observations_out=lowering_rejections_out,
