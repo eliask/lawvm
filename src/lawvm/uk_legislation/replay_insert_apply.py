@@ -751,6 +751,7 @@ class UKReplayInsertApplyMixin:
                 op,
                 target,
                 family="target_resolution_recovery",
+                recovery_target="supplement_root" if new_kind == "schedule" else "body_root",
                 payload_kind=str(new_node.kind),
                 payload_label=new_node.label or "",
                 derived_target_eid=target_eid,
