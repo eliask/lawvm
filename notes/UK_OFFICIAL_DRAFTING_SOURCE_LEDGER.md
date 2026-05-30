@@ -153,7 +153,10 @@ use when a concrete failing case or architecture task needs the rule boundary.
   `consultation`, and 1,365 `approval`. Correction rows now record direct
   element/attribute contexts rather than whole-document text, expose
   `correction_marker_kinds`, and currently count 233 `correction_slip` markers
-  and 5 `reprint` markers. These are evidence rows only;
+  and 5 `reprint` markers. Structure rows now expose the SIP Table A expected
+  body-unit vocabulary for mapped minor types: 2,687 `article` order rows, 2,056
+  `regulation` rows, and 108 `rule` rows; 18 rows remain unmapped/unknown
+  (`unknown`, empty, `scheme`, or `resolution`). These are evidence rows only;
   replay-changing SI rules still require source-level adjudication of a concrete
   family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects

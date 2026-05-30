@@ -83,6 +83,17 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
 
     family_counts = Counter(str(row["family"]) for row in rows)
     status_counts = Counter(str(row["status"]) for row in rows)
+    document_minor_type_counts = Counter(
+        str(row["document_minor_type"])
+        for row in rows
+        if row.get("family") == "si_structure_vocabulary"
+    )
+    expected_body_unit_counts = Counter(
+        str(row["expected_body_unit_kind"])
+        for row in rows
+        if row.get("family") == "si_structure_vocabulary"
+        and row.get("expected_body_unit_kind")
+    )
     source_role_counts = Counter(
         str(row["source_role"]) for row in rows if row.get("source_role")
     )
@@ -114,6 +125,8 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "n_records": len(rows),
         "families": dict(family_counts),
         "statuses": dict(status_counts),
+        "document_minor_types": dict(document_minor_type_counts),
+        "expected_body_unit_kinds": dict(expected_body_unit_counts),
         "source_roles": dict(source_role_counts),
         "geographic_terms": dict(geographic_term_counts),
         "extent_application_relations": dict(extent_application_relation_counts),
