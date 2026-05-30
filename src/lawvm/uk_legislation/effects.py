@@ -22,6 +22,8 @@ STRUCTURAL_EFFECT_TYPES = frozenset(
         "entry inserted",
         "words inserted",
         "word inserted",
+        "words added",
+        "word added",
         "words substituted",
         "substituted for words",
         "word substituted",
