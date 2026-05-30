@@ -175,17 +175,29 @@ at the EID level which matches moved, never trust the aggregate delta (`§2.1`).
 Cleanest deterministic wins first; the PIT-conditional one is harder and is a
 frontier lane, not a one-line gate.
 
-1. `UK_RULE_INSERTED_PROVISION_EID` (§6.4) — derive inserted-subtree structural eIds
-   from the official numbering algorithm; retires the fuzzy-grounding crutch
-   (direction b). Deterministic, correct-by-construction, no PIT dependence.
-2. `UK_RULE_NON_TEXTUAL_MODIFICATION_NOT_TEXT_REPLAY` (§6.9) — gate "as if … there
-   were substituted" / "applies … with modifications" out of textual replay.
-3. `UK_RULE_REPEAL_NO_DOUBLE_ENTRY` (§6.1.5) and `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE`
-   (§6.1.13).
-4. `UK_RULE_UNCOMMENCED_EFFECT_OWNED_LANE` (§6.8) — own the prospective-only effects
+- **DONE** §6.9 non-textual modification — the manual-frontier classifier now gives
+  `applied`/`excluded`/`modified`/`disapplied`/`restricted` a distinct
+  out-of-scope-by-construction class (`uk_non_textual_modification_out_of_scope`)
+  instead of the generic unsupported-effect-family lane; on ukpga/1978/30 that is
+  85 of 109 `no_supported_action` rows. Classification only, replay-neutral.
+- **DONE** §6.3.8 `words added`/`word added` lowered as a word-level insert (synonym
+  of `words inserted`); broad similarity unchanged (word inserts edit text within
+  existing nodes), the gain is source fidelity (the words now reach the text).
+- **VERIFIED NOT A POPULATION** territorial-extent qualifiers (`(EW)`/`(S)`/`(NI)`)
+  on dropped effect types — 0 in the sampled `no_supported_action` lane; no win.
+
+Remaining (each needs a verified failing case before building — do not add guards
+for hypothetical bugs):
+
+1. `UK_RULE_INSERTED_PROVISION_EID` (§6.4) — direction (b). LOW score impact: fuzzy
+   grounding is rare (e.g. 2 nodes on ukpga/1978/30), so this is a determinism /
+   correctness nicety, not a benchmaxx; do it for correctness-by-construction, not score.
+2. `UK_RULE_UNCOMMENCED_EFFECT_OWNED_LANE` (§6.8) — own the prospective-only effects
    as a PIT-conditional lane (NOT a blanket gate; verified mixed-sign above).
-   Larger temporal-model change; do after the deterministic wins, with the broad
-   baseline as the guard.
+   Larger temporal-model change; the biggest remaining correctness lever.
+3. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) and `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`
+   (§6.1.5) — speculative; find a real corpus case first (double-apply of a repeal is
+   idempotent, so §6.1.5 may not even be a live bug).
 
 Each needs the standard ownership package (`AGENTS.md §7/§15`): stable rule id,
 finding/observation, strict-mode behaviour, synthetic + corpus + negative tests.
