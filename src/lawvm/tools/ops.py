@@ -289,6 +289,173 @@ def _ops_ee_sync(
             print(f"  ... and {len(adjudication_rows) - 20} more")
 
 
+def _ops_uk_sync(
+    sid: str,
+    source_filter: Optional[str],
+    target_filter: Optional[str],
+    emit_json: bool,
+) -> None:
+    from collections import Counter
+    from pathlib import Path
+
+    from farchive import Farchive
+    from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
+    from lawvm.uk_legislation.source_state import is_uk_affecting_act_xml_source_observation
+    from lawvm.core.compile_records import is_blocking_compile_record
+
+    _repo_root = Path(__file__).resolve().parents[3]
+    db_path = _repo_root / "data" / "uk_legislation.farchive"
+    if not db_path.exists():
+        print(f"ERROR: archive not found at {db_path}", file=sys.stderr)
+        raise SystemExit(1)
+
+    effect_feed_parse_rejections: list[dict[str, Any]] = []
+    effect_diagnostics: list[dict[str, Any]] = []
+    lowering_rejections: list[dict[str, Any]] = []
+    authority_rejections: list[dict[str, Any]] = []
+
+    with Farchive(db_path) as archive:
+        pipeline = uk_replay_module.UKReplayPipeline(_repo_root)
+        ops = pipeline.compile_ops_for_statute(
+            sid,
+            pit_date=None,
+            archive=archive,
+            allow_metadata_backfill=True,
+            applicability_mode="effective_date_plus_feed_applied",
+            authority_mode="current_mixed",
+            allow_metadata_only_effects=True,
+            effect_feed_parse_rejections_out=effect_feed_parse_rejections,
+            effect_diagnostics_out=effect_diagnostics,
+            lowering_rejections_out=lowering_rejections,
+            authority_rejections_out=authority_rejections,
+        )
+
+    effect_source_pathology_observations = [
+        row
+        for row in effect_diagnostics
+        if str(row.get("rule_id") or "") == "uk_effect_source_pathology_classified"
+    ]
+    manual_compile_frontier_observations = [
+        row
+        for row in effect_diagnostics
+        if str(row.get("rule_id") or "") == "uk_manual_compile_frontier_classified"
+    ]
+    source_acquisition_rejections = [
+        row
+        for row in effect_diagnostics
+        if is_uk_affecting_act_xml_source_observation(row)
+    ]
+
+    all_compile_observations: list[dict[str, Any]] = [
+        *effect_feed_parse_rejections,
+        *effect_source_pathology_observations,
+        *manual_compile_frontier_observations,
+        *source_acquisition_rejections,
+        *lowering_rejections,
+        *authority_rejections,
+    ]
+    blocking_rejections = [
+        row for row in all_compile_observations if is_blocking_compile_record(row)
+    ]
+    rejection_rule_counts: dict[str, int] = dict(
+        sorted(Counter(str(row.get("rule_id") or "unknown") for row in blocking_rejections).items())
+    )
+
+    # Apply filters
+    filtered_ops = list(ops)
+    if source_filter:
+        filtered_ops = [
+            op for op in filtered_ops
+            if source_filter.strip() in (op.source.statute_id if op.source is not None else "")
+        ]
+    if target_filter:
+        filtered_ops = [
+            op for op in filtered_ops
+            if target_filter.casefold() in str(op.target).casefold()
+        ]
+
+    if emit_json:
+        def _op_to_dict(op: LegalOperation) -> dict[str, Any]:
+            action = op.action.value if hasattr(op.action, "value") else str(op.action)
+            source_id = op.source.statute_id if op.source is not None else ""
+            row: dict[str, Any] = {
+                "op_id": op.op_id,
+                "sequence": op.sequence,
+                "action": action,
+                "target": str(op.target),
+                "source_statute": source_id,
+            }
+            if op.witness_rule_id:
+                row["witness_rule_id"] = op.witness_rule_id
+            if op.payload is not None:
+                row["payload_kind"] = str(op.payload.kind)
+            if op.destination is not None:
+                row["destination"] = str(op.destination)
+            if op.source is not None and op.source.effective:
+                row["source_effective"] = op.source.effective
+            return row
+
+        rejection_rows = [
+            {
+                "rule_id": str(row.get("rule_id") or ""),
+                "blocking": bool(is_blocking_compile_record(row)),
+                "affected_provision": str(row.get("affected_provision") or row.get("affected_provisions") or ""),
+                "effect_type": str(row.get("effect_type") or ""),
+            }
+            for row in all_compile_observations
+        ]
+        print(json.dumps(
+            {
+                "jurisdiction": "uk",
+                "statute_id": sid,
+                "ops_count": len(ops),
+                "ops_shown": len(filtered_ops),
+                "rejection_rule_counts": rejection_rule_counts,
+                "ops": [_op_to_dict(op) for op in filtered_ops],
+                "rejections": rejection_rows,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ))
+        return
+
+    # Human-readable output
+    print("Jurisdiction: uk")
+    print(f"Statute     : {sid}")
+    print(f"Ops total   : {len(ops)}  shown: {len(filtered_ops)}")
+    if source_filter:
+        print(f"Filter      : source={source_filter}")
+    if target_filter:
+        print(f"Filter      : target={target_filter}")
+    print()
+
+    if not filtered_ops:
+        print("(no operations match filters)")
+    else:
+        current_source = None
+        for idx, op in enumerate(filtered_ops):
+            src = op.source.statute_id if op.source is not None else "?"
+            action = op.action.value if hasattr(op.action, "value") else str(op.action)
+            target_str = str(op.target)
+            if src != current_source:
+                src_title = op.source.title[:60] if op.source is not None and op.source.title else ""
+                print(f"--- {src}  {src_title}")
+                current_source = src
+            rule = f"  [{op.witness_rule_id}]" if op.witness_rule_id else ""
+            print(f"  [{idx:3}] {action.upper():<14}  {target_str}{rule}")
+            if op.payload is not None:
+                print(f"       payload_kind: {op.payload.kind}")
+            if op.destination is not None:
+                print(f"       -> {op.destination}")
+
+    if all_compile_observations:
+        print()
+        print(f"Rejections: {len(blocking_rejections)} blocking, "
+              f"{len(all_compile_observations)} total observations")
+        for rule_id, count in rejection_rule_counts.items():
+            print(f"  {rule_id}: {count}")
+
+
 def main(args) -> None:
     jurisdiction = getattr(args, "jurisdiction", "fi")
     if jurisdiction == "ee":
@@ -299,6 +466,14 @@ def main(args) -> None:
             oracle_id=getattr(args, "oracle_id", "") or "",
             as_of=getattr(args, "as_of", "") or "",
             verbose=getattr(args, "verbose", False),
+            emit_json=getattr(args, "json", False),
+        )
+        return
+    if jurisdiction == "uk":
+        _ops_uk_sync(
+            sid=args.statute_id,
+            source_filter=getattr(args, "source", None),
+            target_filter=getattr(args, "target", None),
             emit_json=getattr(args, "json", False),
         )
         return
