@@ -99,6 +99,12 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         for row in rows
         if row.get("family") == "si_commencement_default_surface"
     )
+    commencement_default_hint_counts = Counter(
+        str(row["commencement_default_adjudication_hint"])
+        for row in rows
+        if row.get("family") == "si_commencement_default_surface"
+        and row.get("commencement_default_adjudication_hint")
+    )
     source_role_counts = Counter(
         str(row["source_role"]) for row in rows if row.get("source_role")
     )
@@ -133,6 +139,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "document_minor_types": dict(document_minor_type_counts),
         "expected_body_unit_kinds": dict(expected_body_unit_counts),
         "commencement_default_statuses": dict(commencement_default_status_counts),
+        "commencement_default_adjudication_hints": dict(commencement_default_hint_counts),
         "source_roles": dict(source_role_counts),
         "geographic_terms": dict(geographic_term_counts),
         "extent_application_relations": dict(extent_application_relation_counts),

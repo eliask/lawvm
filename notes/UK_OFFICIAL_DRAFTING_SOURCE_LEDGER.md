@@ -159,7 +159,10 @@ use when a concrete failing case or architecture task needs the rule boundary.
   (`unknown`, empty, `scheme`, or `resolution`). Commencement-default rows record
   no-`ComingIntoForce` instruments separately from replay fallback: 287 expose a
   single `Made/@Date` as a SIP §3.12 default-commencement candidate, while 4 have
-  no made date and remain unresolved. These are evidence rows only;
+  no made date and remain unresolved. Of the single-made-date candidates, 271 have
+  body commencement clauses and are flagged
+  `body_commencement_clause_needs_adjudication`; only 16 currently have
+  `no_body_commencement_clause_seen`. These are evidence rows only;
   replay-changing SI rules still require source-level adjudication of a concrete
   family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
