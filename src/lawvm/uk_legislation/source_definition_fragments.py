@@ -6,7 +6,10 @@ from lxml import etree as ET
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import LegalAddress
-from lawvm.uk_legislation.definition_grammar import predicate_substrings
+from lawvm.uk_legislation.definition_grammar import (
+    predicate_substring_regex,
+    predicate_substrings,
+)
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -1167,16 +1170,13 @@ def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> boo
         return False
     if not re.search(r"\binsert(?:ed|ion)?\b", norm, flags=re.I):
         return False
-    # NOTE: this predicate alternation is a third, narrower encoding of the
-    # definition vocabulary owned by definition_grammar (it omits the plural
-    # have/are variants and the trailing "as"). Reconciling it onto
-    # definition_grammar.predicate_alternation() broadens matching, so it needs
-    # before/after adjudication evidence — left divergent until then.
+    # Predicate vocabulary is single-sourced from definition_grammar; the
+    # substring form (no trailing "as", plural have/are variants included) is the
+    # one this membership check wants.
     return bool(
         re.search(
             r"[\"“][^\"”]{1,160}[\"”]\s*(?:,\s*[^;]{1,180})?\s+"
-            r"(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
-            r"is\s+to\s+be\s+construed|shall\s+be\s+construed|includes)\b",
+            rf"(?:{predicate_substring_regex(with_includes=True)})\b",
             norm,
             flags=re.I,
         )

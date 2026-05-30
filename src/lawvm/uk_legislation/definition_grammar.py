@@ -71,3 +71,20 @@ def predicate_substrings(*, with_includes: bool = False) -> tuple[str, ...]:
     return tuple(
         sub for _regex, sub in _PREDICATES if with_includes or sub != _INCLUDES
     )
+
+
+def predicate_substring_regex(*, with_includes: bool = False) -> str:
+    """Return the predicate vocabulary as a flat ``\\s+``-flexible regex alternation.
+
+    Built from the plain substrings — so the "same meaning" members carry no
+    trailing ``as`` and "has the meaning" stays a prefix — with internal spaces
+    relaxed to ``\\s+`` for live-text matching.  This is the form lowering's inline
+    appropriate-place definition-entry check needs.  It is a superset of the
+    historical hand-written alternation that check used to carry: it additionally
+    covers the plural ``have``/``are`` variants, so a definition entry that defines
+    several terms at once ("\"x\" and \"y\" have the meaning ...") is now recognized.
+    """
+    return "|".join(
+        sub.replace(" ", r"\s+")
+        for sub in predicate_substrings(with_includes=with_includes)
+    )
