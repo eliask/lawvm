@@ -18,6 +18,7 @@ from lawvm.uk_legislation.text_matching import (
 )
 from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
+    RangeFromToSelector,
     RangeToEndSelector,
     selector_from_legacy_original,
 )
@@ -1418,8 +1419,9 @@ class UKReplayTextApplyMixin:
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_node_local_range_to_end_text_rewrite_applied")
             return rebuilt, True
-        if match.startswith("TEXT_FROM_") and "_TO_" in match:
-            start_text, end_text = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
+        range_from_to_selector = selector_from_legacy_original(match)
+        if isinstance(range_from_to_selector, RangeFromToSelector):
+            start_text, end_text = range_from_to_selector.start, range_from_to_selector.end
             if not end_text:
                 return node, False
             if start_text:
