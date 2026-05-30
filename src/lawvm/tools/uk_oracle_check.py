@@ -48,6 +48,36 @@ def _is_manual_frontier_rule(rule_id: str) -> bool:
     return rule_id.startswith(_MANUAL_FRONTIER_RULE_PREFIX)
 
 
+def _grounding_collateral_eids(
+    replayed_eids: set[str],
+    oracle_eids: set[str],
+    alignment_events: list[dict[str, Any]],
+) -> list[str]:
+    """Replay EIDs that oracle alignment *minted* and the oracle does not have.
+
+    Grounding's ``local_fallback`` fabricates an eId from the parent eId + label
+    when a node matches no oracle id and is produced by no source op (AGENTS.md
+    §9 collateral). Such a minted eId that is absent from the oracle inflates the
+    over-production / deterministic_gap direction without a source warrant — e.g.
+    the ``eur/2019/2018`` annex paragraphs grounding minted with no amendment op.
+
+    Computed on the *raw* replay/oracle EID sets (case-insensitive), not the
+    alias-normalized compare sets, because alignment ``after_eid`` carries the raw
+    node casing and the minting is a raw-eId phenomenon.
+    """
+    minted = {
+        str(ev.get("after_eid")).lower()
+        for ev in alignment_events
+        if ev.get("match_method") == "local_fallback" and ev.get("after_eid")
+    }
+    if not minted:
+        return []
+    oracle_lower = {str(e).lower() for e in oracle_eids}
+    return sorted(
+        e for e in replayed_eids if e.lower() in minted and e.lower() not in oracle_lower
+    )
+
+
 def _collect_replay_eids(replayed_ir: Any) -> set[str]:
     """Collect all non-zombie EIDs from the replayed IR."""
     from lawvm.core.ir_helpers import is_zombie
@@ -276,12 +306,14 @@ def oracle_check_uk_statute(
             authority_rejections_out=authority_rejections,
         )
 
+        alignment_events: list[dict[str, Any]] = []
         replayed_ir = pipeline.apply_ops(
             base_ir,
             ops,
             eid_map=eid_map,
             text_map=text_map,
             allow_oracle_alignment=True,
+            oracle_alignment_events_out=alignment_events,
         )
 
     # Collect replay EID texts + leaf EIDs
@@ -310,6 +342,10 @@ def oracle_check_uk_statute(
 
     only_replay_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_ONLY_REPLAY}
     only_oracle_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_ONLY_ORACLE}
+
+    grounding_collateral_eids = _grounding_collateral_eids(
+        replayed_eids, current_eids, alignment_events
+    )
     text_diff_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_TEXT_DIFF}
     same_count = sum(1 for v in classified.values() if v["kind"] == _CLASS_SAME)
 
@@ -365,6 +401,8 @@ def oracle_check_uk_statute(
         "(replay coherent; oracle may be stale or wrong)",
         f"  text_diff          : {len(buckets['text_diff'])}  "
         "(both sides have the EID but text differs; investigate per-EID)",
+        f"  grounding_collateral: {len(grounding_collateral_eids)}  "
+        "(subset of only-replay EIDs minted by oracle-alignment local_fallback, not a source op)",
         "",
     ]
 
@@ -377,6 +415,17 @@ def oracle_check_uk_statute(
             lines.append(f"  {eid}")
         if len(bucket_eids) > max_sample:
             lines.append(f"  ... ({len(bucket_eids) - max_sample} more)")
+        lines.append("")
+
+    if grounding_collateral_eids:
+        lines.append(
+            f"GROUNDING_COLLATERAL ({len(grounding_collateral_eids)} EIDs minted by "
+            "oracle-alignment local_fallback, no source op):"
+        )
+        for eid in grounding_collateral_eids[:max_sample]:
+            lines.append(f"  {eid}")
+        if len(grounding_collateral_eids) > max_sample:
+            lines.append(f"  ... ({len(grounding_collateral_eids) - max_sample} more)")
         lines.append("")
 
     if n_mf_rejections > 0:

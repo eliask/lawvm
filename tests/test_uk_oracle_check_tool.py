@@ -34,6 +34,7 @@ import pytest
 
 from lawvm.tools.uk_oracle_check import (
     _classify_divergences,
+    _grounding_collateral_eids,
     _is_manual_frontier_rule,
     _REPEAL_NOT_WARRANTED_RULE_ID,
 )
@@ -244,3 +245,43 @@ def test_uk_guard_exits_2(cmd: str, extra_args: list[str]) -> None:
         f"Expected 'does not yet support -j uk' in stderr for 'lawvm -j uk {cmd}'. "
         f"stderr: {proc.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Unit: _grounding_collateral_eids
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_collateral_flags_minted_not_in_oracle() -> None:
+    replayed = {"section-1", "annex-I-paragraph-1", "annex-I-paragraph-2"}
+    oracle = {"section-1"}
+    events = [
+        {"match_method": "local_fallback", "after_eid": "annex-I-paragraph-1"},
+        {"match_method": "local_fallback", "after_eid": "annex-I-paragraph-2"},
+    ]
+    assert _grounding_collateral_eids(replayed, oracle, events) == [
+        "annex-I-paragraph-1",
+        "annex-I-paragraph-2",
+    ]
+
+
+def test_grounding_collateral_excludes_minted_present_in_oracle() -> None:
+    replayed = {"section-1A"}
+    oracle = {"section-1a"}  # oracle has it (case-insensitive) -> not collateral
+    events = [{"match_method": "local_fallback", "after_eid": "section-1A"}]
+    assert _grounding_collateral_eids(replayed, oracle, events) == []
+
+
+def test_grounding_collateral_ignores_non_local_fallback_methods() -> None:
+    replayed = {"section-9"}
+    oracle: set[str] = set()
+    # a fuzzy/flat match aligns to a real oracle id; not minting -> not collateral
+    events = [
+        {"match_method": "fuzzy", "after_eid": "section-9"},
+        {"match_method": "flat", "after_eid": "section-9"},
+    ]
+    assert _grounding_collateral_eids(replayed, oracle, events) == []
+
+
+def test_grounding_collateral_empty_when_no_events() -> None:
+    assert _grounding_collateral_eids({"a", "b"}, set(), []) == []
