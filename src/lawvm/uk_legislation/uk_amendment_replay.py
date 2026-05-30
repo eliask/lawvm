@@ -498,6 +498,14 @@ class UKReplayPipeline:
             lowering_observations_out=lowering_rejections_out,
         )
         _mark_compile_phase("compile_final_order")
+        if effect_diagnostics_out is not None:
+            from lawvm.uk_legislation.repeal_source_warrant import (
+                collect_repeal_source_warrant_observations,
+            )
+
+            effect_diagnostics_out.extend(
+                collect_repeal_source_warrant_observations(ordered_ops)
+            )
         return ordered_ops
 
     def apply_ops(
