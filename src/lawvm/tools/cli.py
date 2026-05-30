@@ -3655,6 +3655,70 @@ def _build_parser() -> argparse.ArgumentParser:
         help="emit JSON including acquisition event rows",
     )
 
+    # --- uk-acquire ---
+    uk_acquire_p = sub.add_parser(
+        "uk-acquire",
+        help="download enacted XML, current XML, and effects feed for one UK statute",
+        description=(
+            "Acquire primary source artifacts for a single UK statute into the "
+            "Farchive DB.  Fetches enacted XML (immutable, stored once), current "
+            "XML (slow-mutable, TTL-governed), and effects feed pages "
+            "(slow-mutable, TTL-governed).  Use --affecting to also pre-fetch "
+            "missing affecting act XMLs.  Use --dry-run to preview without "
+            "downloading anything."
+        ),
+    )
+    uk_acquire_p.add_argument(
+        "statute_id",
+        help="UK statute ID, e.g. ukpga/2020/17",
+    )
+    uk_acquire_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="Farchive DB path (default: data/uk_legislation.farchive)",
+    )
+    uk_acquire_p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="print what would be fetched without downloading anything",
+    )
+    uk_acquire_p.add_argument(
+        "--enacted-only",
+        dest="enacted_only",
+        action="store_true",
+        help="only fetch enacted XML; skip current XML and effects feed",
+    )
+    uk_acquire_p.add_argument(
+        "--affecting",
+        action="store_true",
+        help="also pre-fetch missing affecting act XMLs (like uk-fetch-affecting)",
+    )
+    uk_acquire_p.add_argument(
+        "--force-refresh",
+        dest="force_refresh",
+        action="store_true",
+        help="re-fetch mutable resources (current XML, effects feed) even if TTL says fresh",
+    )
+    uk_acquire_p.add_argument(
+        "--delay",
+        type=float,
+        default=0.5,
+        metavar="SECS",
+        help="seconds between HTTP requests (default: 0.5)",
+    )
+    uk_acquire_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print a line for each resource fetched or skipped",
+    )
+    uk_acquire_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON acquisition report",
+    )
+
     # --- uk-effect ---
     uk_effect_p = sub.add_parser(
         "uk-effect",
@@ -7132,6 +7196,11 @@ def main() -> None:
                     print(f"blocking_event_rules={blocking_rule_text}")
         if errors:
             sys.exit(1)
+
+    elif args.command == "uk-acquire":
+        from lawvm.tools.uk_acquire import main as uk_acquire_main
+
+        uk_acquire_main(args)
 
     elif args.command == "uk-effect":
         from lawvm.tools.uk_effect import main as uk_effect_main
