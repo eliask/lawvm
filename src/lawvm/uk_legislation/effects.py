@@ -201,7 +201,21 @@ class UKEffectRecord:
 
     @property
     def affecting_act_id(self) -> str:
-        """Canonical web path for the affecting act, e.g. 'ukpga/2023/28'."""
+        """Canonical web path for the affecting act, e.g. 'ukpga/2023/28'.
+
+        The effect's ``AffectingURI`` carries the authoritative document slug
+        (``.../id/nia/2016/10``); prefer it when present, since the class-name
+        map cannot enumerate every legislation type (e.g. ``NorthernIrelandAct``
+        has no entry and would otherwise fall back to the invalid slug
+        ``northernirelandact``). Fall back to the class map only when no URI is
+        available.
+        """
+        uri_match = re.search(
+            r"legislation\.gov\.uk/(?:id/)?([a-z]+)/(\d+)/(\d+)\b",
+            str(self.affecting_uri or ""),
+        )
+        if uri_match:
+            return f"{uri_match.group(1)}/{uri_match.group(2)}/{uri_match.group(3)}"
         cls = self.affecting_class
         cls_map = {
             "UnitedKingdomPublicGeneralAct": "ukpga",
