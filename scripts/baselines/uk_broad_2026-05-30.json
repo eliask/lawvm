@@ -133,7 +133,7 @@
     "n_oracle": 105,
     "n_replay": 158,
     "statute_id": "ukpga/1887/55",
-    "unaligned": 56.6
+    "unaligned": 57.23
   },
   "ukpga/1901/7": {
     "aligned": 37.93,
@@ -165,7 +165,7 @@
     "n_oracle": 22,
     "n_replay": 5,
     "statute_id": "ukpga/1961/60",
-    "unaligned": 0.0
+    "unaligned": 22.73
   },
   "ukpga/1966/42": {
     "aligned": 8.45,
@@ -177,19 +177,19 @@
   },
   "ukpga/1968/20": {
     "aligned": 80.73,
-    "n_ops": 263,
+    "n_ops": 258,
     "n_oracle": 545,
     "n_replay": 492,
     "statute_id": "ukpga/1968/20",
-    "unaligned": 50.46
+    "unaligned": 77.43
   },
   "ukpga/1968/70": {
     "aligned": 68.64,
-    "n_ops": 19,
+    "n_ops": 18,
     "n_oracle": 246,
     "n_replay": 338,
     "statute_id": "ukpga/1968/70",
-    "unaligned": 64.35
+    "unaligned": 64.93
   },
   "ukpga/1972/5": {
     "aligned": 20.08,
@@ -224,12 +224,12 @@
     "unaligned": 74.74
   },
   "ukpga/1980/65": {
-    "aligned": 66.85,
-    "n_ops": 287,
-    "n_oracle": 2271,
-    "n_replay": 3113,
+    "aligned": 67.15,
+    "n_ops": 294,
+    "n_oracle": 2302,
+    "n_replay": 3157,
     "statute_id": "ukpga/1980/65",
-    "unaligned": 61.91
+    "unaligned": 63.21
   },
   "ukpga/1981/20": {
     "aligned": 76.15,
@@ -237,15 +237,15 @@
     "n_oracle": 654,
     "n_replay": 529,
     "statute_id": "ukpga/1981/20",
-    "unaligned": 70.34
+    "unaligned": 74.16
   },
   "ukpga/1984/12": {
     "aligned": 34.83,
-    "n_ops": 462,
+    "n_ops": 461,
     "n_oracle": 1786,
     "n_replay": 773,
     "statute_id": "ukpga/1984/12",
-    "unaligned": 27.94
+    "unaligned": 33.65
   },
   "ukpga/1984/59": {
     "aligned": 90.99,
@@ -261,39 +261,39 @@
     "n_oracle": 568,
     "n_replay": 389,
     "statute_id": "ukpga/1986/61",
-    "unaligned": 49.82
+    "unaligned": 50.53
   },
   "ukpga/1990/8": {
-    "aligned": 79.67,
-    "n_ops": 1778,
-    "n_oracle": 8151,
-    "n_replay": 7872,
+    "aligned": 83.29,
+    "n_ops": 1843,
+    "n_oracle": 8180,
+    "n_replay": 8207,
     "statute_id": "ukpga/1990/8",
-    "unaligned": 43.37
+    "unaligned": 73.53
   },
   "ukpga/1990/9": {
-    "aligned": 90.04,
-    "n_ops": 500,
+    "aligned": 89.86,
+    "n_ops": 523,
     "n_oracle": 1607,
-    "n_replay": 1489,
+    "n_replay": 1486,
     "statute_id": "ukpga/1990/9",
-    "unaligned": 61.17
+    "unaligned": 86.37
   },
   "ukpga/1992/41": {
     "aligned": 63.97,
-    "n_ops": 85,
+    "n_ops": 84,
     "n_oracle": 304,
     "n_replay": 469,
     "statute_id": "ukpga/1992/41",
-    "unaligned": 42.21
+    "unaligned": 61.27
   },
   "ukpga/1996/5": {
-    "aligned": 93.14,
-    "n_ops": 1,
+    "aligned": 100.0,
+    "n_ops": 0,
     "n_oracle": 102,
-    "n_replay": 95,
+    "n_replay": 102,
     "statute_id": "ukpga/1996/5",
-    "unaligned": 93.14
+    "unaligned": 100.0
   },
   "ukpga/1996/50": {
     "aligned": 23.67,
@@ -312,12 +312,12 @@
     "unaligned": 51.67
   },
   "ukpga/1998/17": {
-    "aligned": 88.76,
+    "aligned": 88.83,
     "n_ops": 383,
     "n_oracle": 1424,
-    "n_replay": 1313,
+    "n_replay": 1314,
     "statute_id": "ukpga/1998/17",
-    "unaligned": 63.13
+    "unaligned": 82.09
   },
   "ukpga/2002/15": {
     "aligned": 87.5,
@@ -325,7 +325,7 @@
     "n_oracle": 2139,
     "n_replay": 2440,
     "statute_id": "ukpga/2002/15",
-    "unaligned": 85.25
+    "unaligned": 85.45
   },
   "ukpga/2002/25": {
     "aligned": 100.0,
@@ -336,20 +336,20 @@
     "unaligned": 100.0
   },
   "ukpga/2008/17": {
-    "aligned": 94.87,
-    "n_ops": 979,
+    "aligned": 94.92,
+    "n_ops": 980,
     "n_oracle": 4971,
-    "n_replay": 5167,
+    "n_replay": 5175,
     "statute_id": "ukpga/2008/17",
-    "unaligned": 78.9
+    "unaligned": 87.24
   },
   "ukpga/2008/32": {
-    "aligned": 98.57,
-    "n_ops": 231,
+    "aligned": 98.62,
+    "n_ops": 232,
     "n_oracle": 1956,
-    "n_replay": 1937,
+    "n_replay": 1936,
     "statute_id": "ukpga/2008/32",
-    "unaligned": 76.79
+    "unaligned": 83.95
   },
   "ukpga/2011/2": {
     "aligned": 93.55,
@@ -369,11 +369,11 @@
   },
   "ukpga/2015/26": {
     "aligned": 98.67,
-    "n_ops": 74,
-    "n_oracle": 2839,
-    "n_replay": 2867,
+    "n_ops": 77,
+    "n_oracle": 2828,
+    "n_replay": 2856,
     "statute_id": "ukpga/2015/26",
-    "unaligned": 93.98
+    "unaligned": 97.14
   },
   "ukpga/2015/4": {
     "aligned": 93.38,
@@ -381,15 +381,15 @@
     "n_oracle": 282,
     "n_replay": 302,
     "statute_id": "ukpga/2015/4",
-    "unaligned": 88.65
+    "unaligned": 91.84
   },
   "ukpga/2018/12": {
-    "aligned": 97.56,
-    "n_ops": 836,
-    "n_oracle": 7033,
-    "n_replay": 7077,
+    "aligned": 97.61,
+    "n_ops": 838,
+    "n_oracle": 7028,
+    "n_replay": 7070,
     "statute_id": "ukpga/2018/12",
-    "unaligned": 80.38
+    "unaligned": 82.04
   },
   "ukpga/2019/13": {
     "aligned": 100.0,
