@@ -232,8 +232,7 @@ the peak drops to single-digit live roots at any point (~860 MB).  The pattern
 also clears `_source_parent_map_cache`, `_source_ancestor_chain_cache`, and
 `_EXTRACTION_CONTEXT_CACHE` explicitly because their values hold back-references
 to root (parent_map values, ancestor tuples) that defeat Python reference-count
-GC without explicit removal.  See §source_root_lifecycle in
-`HIGH_ORDER_INVARIANT_REUSE_AUDIT.md`.
+GC without explicit removal.
 
 ### 1.13 Regex versus bespoke recognizer: choosing the right IR
 

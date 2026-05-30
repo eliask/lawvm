@@ -128,7 +128,6 @@ For Open Law demo work:
 
 - [docs/open-law-demo.md](docs/open-law-demo.md)
 - [notes/OPEN_LAW_FRONTEND_SPEC.md](notes/OPEN_LAW_FRONTEND_SPEC.md)
-- [notes/OPEN_LAW_CORPUS_REPLAY_PLAN.md](notes/OPEN_LAW_CORPUS_REPLAY_PLAN.md)
 
 For release hygiene:
 
