@@ -132,6 +132,17 @@ use when a concrete failing case or architecture task needs the rule boundary.
   schedules use paragraph/sub-paragraph structures. Destination: address grammar
   and source XML structural normalization.
 
+  **Diagnostic surface added 2026-05-31:** `scripts/uk_si_semantics_scan.py`
+  inventories SI source semantics without replay mutation. Current all-cached-SI
+  command:
+  `uv run python scripts/uk_si_semantics_scan.py --all --pretty --limit 0`.
+  Result: 4,869 SI-like current XML documents scanned, 35,736 diagnostic rows:
+  4,869 structure-vocabulary rows, 4,863 vires-recital rows, 4,578
+  commencement-metadata rows, 7,677 body-commencement clause rows, 3,215 extent
+  rows, 7,779 application rows, 2,750 revocation/lapse rows, and 5
+  correction-slip marker rows. These are evidence rows only; replay-changing SI
+  rules still require source-level adjudication of a concrete family.
+
 ### Process, proposed-law, and authority paths
 
 - **Draft bills are proposed-law artifacts** (`GUIDE_TO_MAKING_LEGISLATION_2025`
@@ -336,10 +347,12 @@ for hypothetical bugs):
 2. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) and `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`
    (§6.1.5) — speculative; find a real corpus case first (double-apply of a repeal is
    idempotent, so §6.1.5 may not even be a live bug).
-3. SI semantics from `STATUTORY_INSTRUMENT_PRACTICE_5TH_ED`: commencement
-   defaults, vires/enabling-power recitals, extent/application distinction,
-   revocation/lapse, correction-slip boundaries, and SI structure vocabulary.
-   These need concrete source-lane tasks before code.
+3. **DONE (diagnostic surface)** SI semantics from
+   `STATUTORY_INSTRUMENT_PRACTICE_5TH_ED`: `scripts/uk_si_semantics_scan.py`
+   now records commencement metadata/body clauses, vires/enabling-power recitals,
+   extent/application candidates, revocation/lapse candidates, correction-slip
+   markers, and SI structure vocabulary. It is deliberately replay-neutral; the
+   next step is adjudicating a concrete family before changing lowering/replay.
 4. Proposed-law authority paths from OPC/Cabinet sources: draft bills, carry-over,
    Parliament Act / Money Bill routes, financial-resolution provisional text, and
    Crown application. These belong to branch/authority/applicability modelling,
