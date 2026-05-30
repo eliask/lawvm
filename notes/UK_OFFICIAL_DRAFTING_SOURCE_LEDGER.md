@@ -104,13 +104,22 @@ never has to *guess* a deep node's identity by fuzzy text.
   amendment is often added to put it beyond doubt.
 - **6.8.17/§6.8.20** transitory `has effect as if …` provisions bridge until a repeal
   commences.
-→ `UK_RULE_UNCOMMENCED_EFFECT_NOT_APPLIED`: an effect whose only in-force date is
-  prospective/empty (`prospective='true'`) must **not** mutate the current/latest
-  consolidation; preserve it as an unapplied/prospective lane. The effect records
-  already carry `applied`/`prospective` flags (`effects.py _best_in_force_date`
-  skips prospective dates) — **verify the apply path actually gates on it**, since
-  over-applying an uncommenced repeal deletes oracle-present state (the forbidden
-  over-repeal, `AGENTS.md §2.1`). **GAP/verify — high priority.**
+→ `UK_RULE_UNCOMMENCED_EFFECT_OWNED_LANE`: prospective-only structural effects are a
+  real and large population — **316 / 3659 (8.6%)** structural-for-replay effects
+  across 16 / 40 sampled statutes — and `is_applicable_for_replay` currently ignores
+  the `prospective` flag entirely (it gates only on `applied`/`metadata_only`), so
+  they are applied to the current consolidation regardless.
+  **A blanket "do not apply prospective" gate is WRONG, verified empirically:** it
+  ranges from `ukpga/1996/5` +6.86 (→100%) and `ukpga/1990/9` +3.74 to `ukpga/1968/20`
+  −3.99 and `ukpga/1998/17` −3.23. The sign flips because whether the *current*
+  oracle XML reflects a prospective change is **point-in-time / editorial dependent**
+  — not uniform. So this is a **manual-compilation-frontier** class (`§2.1`:
+  prospective/contingent commencement, PIT selection), not a deterministic gap.
+  Correct shape: model prospective-only structural effects as a **first-class owned
+  conditional lane** — surface them as a named observation, do not silently apply,
+  and let `authority_mode` / PIT selection decide application per the oracle version
+  being compared (an owned claim, not a guessed blanket rule). **GAP — re-scoped from
+  "gate it off" to "own the PIT-conditional lane".**
 
 ### §6.9 Non-textual modifications
 - **6.9.1** a non-textual modification does **not** change the printed text (contrast
@@ -163,13 +172,20 @@ at the EID level which matches moved, never trust the aggregate delta (`§2.1`).
 
 ## First implementation targets (ranked)
 
-1. `UK_RULE_UNCOMMENCED_EFFECT_NOT_APPLIED` (§6.8) — verify/repair the prospective-effect
-   apply gate; resolves the 1998/17 over-application class.
-2. `UK_RULE_INSERTED_PROVISION_EID` (§6.4) — structural eIds for inserted subtrees;
-   retires the fuzzy-grounding crutch (direction b).
-3. `UK_RULE_NON_TEXTUAL_MODIFICATION_NOT_TEXT_REPLAY` (§6.9).
-4. `UK_RULE_REPEAL_NO_DOUBLE_ENTRY` (§6.1.5) and `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE`
+Cleanest deterministic wins first; the PIT-conditional one is harder and is a
+frontier lane, not a one-line gate.
+
+1. `UK_RULE_INSERTED_PROVISION_EID` (§6.4) — derive inserted-subtree structural eIds
+   from the official numbering algorithm; retires the fuzzy-grounding crutch
+   (direction b). Deterministic, correct-by-construction, no PIT dependence.
+2. `UK_RULE_NON_TEXTUAL_MODIFICATION_NOT_TEXT_REPLAY` (§6.9) — gate "as if … there
+   were substituted" / "applies … with modifications" out of textual replay.
+3. `UK_RULE_REPEAL_NO_DOUBLE_ENTRY` (§6.1.5) and `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE`
    (§6.1.13).
+4. `UK_RULE_UNCOMMENCED_EFFECT_OWNED_LANE` (§6.8) — own the prospective-only effects
+   as a PIT-conditional lane (NOT a blanket gate; verified mixed-sign above).
+   Larger temporal-model change; do after the deterministic wins, with the broad
+   baseline as the guard.
 
 Each needs the standard ownership package (`AGENTS.md §7/§15`): stable rule id,
 finding/observation, strict-mode behaviour, synthetic + corpus + negative tests.
