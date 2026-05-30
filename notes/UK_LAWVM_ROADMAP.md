@@ -150,10 +150,19 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
 - Refuted two roadmap items as misdiagnoses (EU `ground_ids`, `1968/20·70`
   flattened repeals-table) — see "Verified NOT wins".
 - Removed internal agent codenames (Sensor X / Actuator N) from comments/docstrings.
+- **Grounding-collateral diagnostic** in `oracle-check` (`_grounding_collateral_eids`):
+  reports how many over-produced (only-replay) EIDs were *minted* by oracle-alignment
+  `local_fallback` rather than produced by a source op. **Reframes the over-production
+  triage below:** most of it is grounding collateral, not replay over-application —
+  `ukpga/1980/65` 1028 of 1037, `ukpga/1966/42` 462 of 466, `eur/2019/2018` ~237.
+  The real lever for that class is **grounding** (stop minting eIds for nodes that
+  match no oracle id, or exclude minted-collateral from the divergence score), not
+  per-statute replay fixes.
 
 ## Over-production triage (replay produces more EIDs than oracle)
-Scanned the baseline for `replay > oracle` (the forbidden over-application direction).
-Most are NOT cleanly fixable — do not chase without a new angle:
+**Update: most of this is grounding collateral (see the diagnostic above), not replay
+over-application.** Scanned the baseline for `replay > oracle` (the nominally-forbidden
+direction). Most are NOT replay bugs — do not chase per-statute without a new angle:
 - **Feed-incompleteness / old acts repealed elsewhere** — `ukpga/1966/42` (replay 509
   vs oracle 43, 8.4%), `1951/30`, `1972/5`: tiny oracle stubs, only ~22 effects, so the
   bulk repeals are simply not in the modern effect feed. Missing source, not a bug.
