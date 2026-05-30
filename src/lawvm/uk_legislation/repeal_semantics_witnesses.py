@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Iterable
 
+from lxml import etree as ET
+
 from lawvm.uk_legislation.effect_source_selection import (
     extracted_tag_and_text,
     select_source_for_effect,
@@ -28,6 +30,7 @@ _REPEAL_OF_REPEAL_RE = re.compile(
 )
 _NO_REVIVE_RE = re.compile(r"\b(?:does\s+not|shall\s+not|is\s+not\s+to)\s+revive\b", re.I)
 _REVIVAL_RE = re.compile(r"\b(?:revive|revives|revived|revival)\b", re.I)
+_SOURCE_PHRASE_TEXT_ELEMENTS = frozenset({"Text", "P"})
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,59 @@ def source_text_repeal_semantics_family(source_text: str) -> str:
     if "repeal" in normalized and _REVIVAL_RE.search(normalized):
         return "repeal_revival_phrase"
     return ""
+
+
+def scan_repeal_semantics_source_phrase_xml(
+    statute_id: str,
+    xml_bytes: bytes,
+    *,
+    source_locator: str = "",
+) -> tuple[UKRepealSemanticsWitness, ...]:
+    """Scan one source XML blob directly for repeal/revival semantic phrases.
+
+    This is a fast corpus-mining lane. It does not prove that a phrase belongs to
+    an executable effect row, but it can find candidate source documents before
+    the slower effect-linked scan resolves every affecting-source context.
+    """
+    if not xml_bytes:
+        return ()
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.XMLSyntaxError:
+        return ()
+    witnesses: list[UKRepealSemanticsWitness] = []
+    seen: set[tuple[str, str]] = set()
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        local_name = ET.QName(el).localname
+        if local_name not in _SOURCE_PHRASE_TEXT_ELEMENTS:
+            continue
+        text = _element_text(el)
+        family = source_text_repeal_semantics_family(text)
+        if not family:
+            continue
+        key = (family, normalize_repeal_semantics_text(text))
+        if key in seen:
+            continue
+        seen.add(key)
+        witnesses.append(
+            UKRepealSemanticsWitness(
+                family=family,
+                statute_id=statute_id,
+                effect_id="",
+                effect_type="",
+                affected_provisions="",
+                affecting_act_id=statute_id,
+                affecting_provisions="",
+                rule_id=f"uk_repeal_semantics_source_phrase_{family}",
+                source_status="source_phrase_scan",
+                source_tag=local_name,
+                source_text_preview=_preview(text),
+                detail={"source_locator": source_locator} if source_locator else {},
+            )
+        )
+    return tuple(witnesses)
 
 
 def scan_repeal_semantics_witnesses_for_statute(
@@ -274,3 +330,7 @@ def _preview(text: str, *, limit: int = 240) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 3] + "..."
+
+
+def _element_text(el: ET._Element) -> str:
+    return _WHITESPACE_RE.sub(" ", " ".join(part for part in el.itertext() if part)).strip()

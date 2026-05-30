@@ -50,6 +50,7 @@ def ids_from_file(path: Path) -> list[str]:
 def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.repeal_semantics_witnesses import (
+        scan_repeal_semantics_source_phrase_xml,
         scan_repeal_semantics_witnesses,
     )
 
@@ -69,13 +70,28 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     if not ids:
         raise SystemExit("pass --ids, --ids-file, --sample, or --all")
 
-    diagnostics: list[dict[str, Any]] = []
     with Farchive(args.db) as archive:
-        witnesses = scan_repeal_semantics_witnesses(
-            ids,
-            archive,
-            diagnostics_out=diagnostics,
-        )
+        if args.source_phrase_only:
+            diagnostics: list[dict[str, Any]] = []
+            witnesses = []
+            for statute_id in ids:
+                locator = f"{LEG_BASE}/{statute_id}/data.xml"
+                witnesses.extend(
+                    scan_repeal_semantics_source_phrase_xml(
+                        statute_id,
+                        archive.get(locator) or b"",
+                        source_locator=locator,
+                    )
+                )
+        else:
+            diagnostics = []
+            witnesses = list(
+                scan_repeal_semantics_witnesses(
+                    ids,
+                    archive,
+                    diagnostics_out=diagnostics,
+                )
+            )
 
     rows = [witness.to_dict() for witness in witnesses]
     if args.limit is not None:
@@ -103,6 +119,11 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="scan all current statute IDs in archive")
     parser.add_argument("--limit", type=int, help="limit emitted witness rows")
     parser.add_argument("--include-diagnostics", action="store_true")
+    parser.add_argument(
+        "--source-phrase-only",
+        action="store_true",
+        help="scan source XML text directly for repeal/revival phrases without resolving effect rows",
+    )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
 
