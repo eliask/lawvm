@@ -34,6 +34,7 @@ Extraction-readiness:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -118,6 +119,22 @@ class DefinitionAnchorSelector:
     direction: Literal["before", "after"]
 
 
+@dataclass(frozen=True, slots=True)
+class RawSelector:
+    """A not-yet-migrated ``TEXT_*`` sentinel string carried verbatim.
+
+    The parser still emits sentinel families that have no typed selector yet
+    (``TEXT_IN_DEFINITION_*``, ``TEXT_WORD_*``, ``TEXT_PROVISO_CHILD_*`` …).
+    Wrapping the raw string keeps the typed surface *total* — every legacy
+    ``original`` round-trips — without forcing every family to be migrated at
+    once.  A shrinking count of ``RawSelector`` uses is the remaining migration
+    debt; a consumer must never branch on a ``RawSelector``'s inner string (that
+    would re-introduce the stringly-typed IR this module exists to remove).
+    """
+
+    original: str
+
+
 UKTextSelector = (
     LiteralSelector
     | RangeFromToSelector
@@ -129,6 +146,7 @@ UKTextSelector = (
     | BeforeChildSelector
     | AfterChildSelector
     | DefinitionAnchorSelector
+    | RawSelector
 )
 
 
@@ -189,7 +207,51 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
     if isinstance(selector, DefinitionAnchorSelector):
         prefix = "TEXT_BEFORE_DEFINITION" if selector.direction == "before" else "TEXT_AFTER_DEFINITION"
         return f"{prefix}_{selector.term}"
+    if isinstance(selector, RawSelector):
+        return selector.original
     raise TypeError(f"unknown selector: {selector!r}")
+
+
+def selector_from_legacy_original(original: str) -> UKTextSelector:
+    """Parse a legacy ``original`` string back into a typed selector.
+
+    Inverse of :func:`selector_to_legacy_original` for every form that function
+    can emit: ``selector_to_legacy_original(selector_from_legacy_original(s)) == s``
+    for all ``s``.  Recognized sentinels become their typed selector; an
+    unrecognized ``TEXT_*`` sentinel becomes a :class:`RawSelector` (not yet
+    migrated); anything else is a :class:`LiteralSelector`.
+
+    This is the single typed boundary a consumer should cross instead of
+    re-sniffing sentinel prefixes inline.
+    """
+    if original == "TEXT_OPENING_WORDS":
+        return OpeningWordsSelector()
+    if original == "TEXT_BEGINNING":
+        return BeginningSelector()
+    if original == "TEXT_END":
+        return EndSelector()
+    if original.startswith("TEXT_BEFORE_CHILD_"):
+        kind, _, label = original[len("TEXT_BEFORE_CHILD_") :].partition("_")
+        return BeforeChildSelector(kind, label)
+    if original.startswith("TEXT_AFTER_CHILD_"):
+        kind, _, label = original[len("TEXT_AFTER_CHILD_") :].partition("_")
+        return AfterChildSelector(kind, label)
+    if original.startswith("TEXT_BEFORE_DEFINITION_"):
+        return DefinitionAnchorSelector(original[len("TEXT_BEFORE_DEFINITION_") :], "before")
+    if original.startswith("TEXT_AFTER_DEFINITION_"):
+        return DefinitionAnchorSelector(original[len("TEXT_AFTER_DEFINITION_") :], "after")
+    if original.startswith("TEXT_AFTER_") and original.endswith("_TO_END"):
+        return AfterAnchorToEndSelector(original[len("TEXT_AFTER_") : -len("_TO_END")])
+    if original.startswith("TEXT_FROM_") and original.endswith("_TO_END"):
+        return RangeToEndSelector(original[len("TEXT_FROM_") : -len("_TO_END")])
+    if original.startswith("TEXT_FROM_"):
+        body = original[len("TEXT_FROM_") :]
+        if "_TO_" in body:
+            start, _, end = body.partition("_TO_")
+            return RangeFromToSelector(start, end)
+    if original.startswith("TEXT_"):
+        return RawSelector(original)
+    return LiteralSelector(original)
 
 
 def fragment_to_legacy_dict(fragment: UKTextRewriteFragment) -> dict[str, str]:
@@ -201,8 +263,12 @@ def fragment_to_legacy_dict(fragment: UKTextRewriteFragment) -> dict[str, str]:
     out: dict[str, str] = {
         "original": selector_to_legacy_original(fragment.selector),
         "replacement": fragment.replacement,
-        "rule_id": fragment.rule_id,
     }
+    # The parser omits rule_id on a couple of fragments (the reversed-order
+    # substitution fallback, the in-definition substitute); an empty rule_id is
+    # serialized as an absent key so the round-trip is byte-identical.
+    if fragment.rule_id:
+        out["rule_id"] = fragment.rule_id
     if fragment.occurrence:
         out["occurrence"] = fragment.occurrence
     if fragment.end_occurrence:
@@ -216,3 +282,24 @@ def fragment_to_legacy_dict(fragment: UKTextRewriteFragment) -> dict[str, str]:
     if fragment.target_suffix_label:
         out["target_suffix_label"] = fragment.target_suffix_label
     return out
+
+
+def fragment_from_legacy_dict(legacy: Mapping[str, str]) -> UKTextRewriteFragment:
+    """Parse a legacy fragment dict back into a typed fragment.
+
+    Inverse of :func:`fragment_to_legacy_dict`:
+    ``fragment_to_legacy_dict(fragment_from_legacy_dict(d)) == dict(d)`` for any
+    dict the parser produces (absent optional keys stay absent because the
+    reconstructed fragment leaves them empty and the serializer omits empties).
+    """
+    return UKTextRewriteFragment(
+        selector=selector_from_legacy_original(legacy["original"]),
+        replacement=legacy.get("replacement", ""),
+        rule_id=legacy.get("rule_id", ""),
+        occurrence=legacy.get("occurrence", ""),
+        end_occurrence=legacy.get("end_occurrence", ""),
+        source_child_kind=legacy.get("source_child_kind", ""),
+        source_child_label=legacy.get("source_child_label", ""),
+        target_suffix_kind=legacy.get("target_suffix_kind", ""),
+        target_suffix_label=legacy.get("target_suffix_label", ""),
+    )

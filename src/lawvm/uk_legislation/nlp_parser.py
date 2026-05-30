@@ -71,6 +71,7 @@ from lawvm.uk_legislation.text_selectors import (
     RangeFromToSelector,
     RangeToEndSelector,
     UKTextRewriteFragment,
+    fragment_from_legacy_dict,
     fragment_to_legacy_dict,
 )
 
@@ -409,6 +410,23 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
     return fresh dictionaries on every public call.
     """
     return [dict(items) for items in _parse_fragment_substitution_cached(text)]
+
+
+def parse_fragment_substitution_typed(text: str) -> tuple[UKTextRewriteFragment, ...]:
+    """Typed view of :func:`parse_fragment_substitution`.
+
+    Returns the same fragments as ``UKTextRewriteFragment`` objects whose
+    ``selector`` carries the rewrite *meaning* as a type, instead of the legacy
+    ``original`` sentinel string.  It is exactly the legacy parse re-expressed:
+    ``[fragment_to_legacy_dict(f) for f in parse_fragment_substitution_typed(t)]``
+    equals ``parse_fragment_substitution(t)`` for every input.  Consumers that
+    want to branch on selector type (e.g. ``isinstance(f.selector,
+    RangeToEndSelector)``) read this surface; the legacy dict API is unchanged.
+    """
+    return tuple(
+        fragment_from_legacy_dict(dict(items))
+        for items in _parse_fragment_substitution_cached(text)
+    )
 
 
 def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:

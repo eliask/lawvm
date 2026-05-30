@@ -21,8 +21,11 @@ from lawvm.uk_legislation.text_selectors import (
     OpeningWordsSelector,
     RangeFromToSelector,
     RangeToEndSelector,
+    RawSelector,
     UKTextRewriteFragment,
+    fragment_from_legacy_dict,
     fragment_to_legacy_dict,
+    selector_from_legacy_original,
     selector_to_legacy_original,
 )
 
@@ -299,3 +302,99 @@ class TestParserProductionParity:
         from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 
         assert parse_fragment_substitution(text) == expected
+
+
+class TestSelectorFromLegacyOriginal:
+    """The inverse boundary: legacy ``original`` string -> typed selector."""
+
+    @pytest.mark.parametrize(
+        "selector",
+        [
+            LiteralSelector("the words"),
+            LiteralSelector(""),
+            RangeFromToSelector("a", "b"),
+            RangeFromToSelector("", "b"),
+            RangeToEndSelector("foo"),
+            RangeToEndSelector(""),
+            RangeToEndSelector("a_TO_b"),  # inner _TO_ must survive the round-trip
+            AfterAnchorToEndSelector("bar"),
+            OpeningWordsSelector(),
+            BeginningSelector(),
+            EndSelector(),
+            BeforeChildSelector("paragraph", "(a)"),
+            AfterChildSelector("subsection", "(3)"),
+            DefinitionAnchorSelector("the relevant period", "before"),
+            DefinitionAnchorSelector("X", "after"),
+            RawSelector("TEXT_IN_DEFINITION_widget_AT_END"),
+            RawSelector("TEXT_WORD_x_IMMEDIATELY_FOLLOWING_paragraph_2"),
+        ],
+    )
+    def test_serialize_then_parse_is_identity(self, selector) -> None:
+        original = selector_to_legacy_original(selector)
+        assert selector_from_legacy_original(original) == selector
+
+    def test_range_to_end_string_yields_range_to_end_type(self) -> None:
+        assert selector_from_legacy_original("TEXT_FROM_foo_TO_END") == RangeToEndSelector("foo")
+
+    def test_after_anchor_is_not_confused_with_range_to_end(self) -> None:
+        assert selector_from_legacy_original("TEXT_AFTER_bar_TO_END") == AfterAnchorToEndSelector("bar")
+
+    def test_unrecognized_sentinel_becomes_raw(self) -> None:
+        sel = selector_from_legacy_original("TEXT_PROVISO_CHILD_(a)")
+        assert isinstance(sel, RawSelector)
+
+    def test_plain_text_is_literal(self) -> None:
+        assert selector_from_legacy_original("the Lord Chancellor") == LiteralSelector("the Lord Chancellor")
+
+
+class TestFragmentRoundTrip:
+    def test_dict_round_trip_includes_optional_fields(self) -> None:
+        legacy = {
+            "original": "TEXT_FROM_x_TO_END",
+            "replacement": "y",
+            "rule_id": "uk_effect_range_to_end",
+            "occurrence": "2",
+        }
+        assert fragment_to_legacy_dict(fragment_from_legacy_dict(legacy)) == legacy
+
+    def test_dict_round_trip_without_rule_id(self) -> None:
+        # The reversed-substitution fallback emits no rule_id; an empty rule_id
+        # must serialize back to an absent key, not "rule_id": "".
+        legacy = {"original": "the words", "replacement": "new"}
+        assert fragment_to_legacy_dict(fragment_from_legacy_dict(legacy)) == legacy
+
+
+class TestTypedParseAgreesWithLegacy:
+    """Pro acceptance criterion 5: the typed and legacy parse paths agree."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            'from "the date specified" to the end, substitute "the appointed day"',
+            'for the words after "anchor word" substitute "inserted text"',
+            'for the opening words substitute "New opening words"',
+            'after paragraph (a), insert "the new text"',
+            'after the definition of "widget", insert "and gadget"',
+            'the word "X", in each place where it occurs is repealed',
+            'for "the Lord Chancellor" substitute "the Secretary of State"',
+            'omit "the redundant words"',
+        ],
+    )
+    def test_typed_serializes_back_to_legacy(self, text: str) -> None:
+        from lawvm.uk_legislation.nlp_parser import (
+            parse_fragment_substitution,
+            parse_fragment_substitution_typed,
+        )
+
+        legacy = parse_fragment_substitution(text)
+        typed = parse_fragment_substitution_typed(text)
+        assert [fragment_to_legacy_dict(f) for f in typed] == legacy
+
+    def test_range_to_end_input_yields_range_to_end_selector(self) -> None:
+        from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution_typed
+
+        typed = parse_fragment_substitution_typed(
+            'from "the date specified" to the end, substitute "the appointed day"'
+        )
+        assert len(typed) == 1
+        assert typed[0].selector == RangeToEndSelector("the date specified")

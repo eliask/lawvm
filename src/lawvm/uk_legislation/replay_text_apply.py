@@ -16,6 +16,10 @@ from lawvm.uk_legislation.text_matching import (
     _normalize_text,
     _text_patch_pattern,
 )
+from lawvm.uk_legislation.text_selectors import (
+    RangeToEndSelector,
+    selector_from_legacy_original,
+)
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -1384,8 +1388,13 @@ class UKReplayTextApplyMixin:
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
             return rebuilt, True
-        if match.startswith("TEXT_FROM_") and match.endswith("_TO_END"):
-            start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+        # Typed-selector consumer (first vertical slice): branch on the selector
+        # *type* rather than re-sniffing the TEXT_FROM_*_TO_END sentinel shape.
+        # selector_from_legacy_original is the single typed boundary; it yields a
+        # RangeToEndSelector exactly for the strings this branch used to match.
+        range_to_end_selector = selector_from_legacy_original(match)
+        if isinstance(range_to_end_selector, RangeToEndSelector):
+            start_text = range_to_end_selector.start
             if not start_text:
                 return node, False
             ordinal = occurrence if occurrence > 0 else 1
