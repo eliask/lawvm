@@ -76,7 +76,57 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
     NOT a one-liner; build the provision-address→start-date primitive + tests first
     (replay-neutral), then the apply-gating step (replay-changing, broad-verify).
 
-## Ranked backlog (highest correctness value first)
+## HANDOFF — next loop, start here (2026-05-30)
+
+Read first: `AGENTS.md` (esp. §2.1 north star, §9 mutation boundary, §1.13
+grammar-vs-regex), this file's "Done (later session)" + "Verified NOT wins" +
+"Over-production triage", and `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md`.
+
+**Standing discipline (this session burned 3 items that dissolved on inspection —
+EU `ground_ids`, `1968/20·70` table, Finland recognizer):** *verify before
+building.* A backlog "build X" is a hypothesis — reproduce that X actually fails
+(minimal repro) before writing code. Gate = source faithfulness + invariants, NOT
+oracle overlap. Over-retention is the safe wrong; over-repeal is forbidden.
+Verify changes against the **broad baseline** (`scripts/uk_broad_baseline.py
+--ids $(cat scripts/baselines/uk_grounding_corpus.txt)` then `--compare`), not the
+9-statute gate. A flat metric is not a stop condition.
+
+**Running now:** corrected `uk-corpus all` fetch (idempotent/resumable;
+`uv run lawvm uk-corpus stats`) broadening the corpus to all primary acts.
+
+Ranked (post-session):
+1. **GROUNDING is the highest-leverage lever** (new, from the collateral
+   diagnostic). Most replay>oracle "over-production" is grounding `local_fallback`
+   *minting* eIds for nodes that match no oracle id (`ukpga/1980/65` 1028/1037,
+   `1966/42` 462/466, `eur/2019/2018` ~237) — `oracle-check` now reports it as
+   `grounding_collateral`. Two sub-levers: **(a) measurement** — exclude minted
+   collateral from the divergence score in `scripts/uk_broad_baseline.py` +
+   `uk_oracle_check.py` so the metric reflects real replay fidelity (low-risk,
+   high-signal, do first); **(b) structural** — stop minting eIds for unmatched
+   nodes (leave unlabeled like the oracle), the EU-lane root cause where
+   `extract_eid_map_bytes` and `parse_uk_statute_ir_bytes` disagree on annexes
+   (higher blast radius; needs both extractors made consistent).
+2. **After the fetch finishes:** re-snapshot the broad baseline on the *wider*
+   corpus to surface fresh family bugs (the corpus-broadening goal).
+3. **§6.4 inserted-eId casing** — DONE this session (`7c6accba`). The general
+   per-frontend eId-canonical-number helper is still only applied to UK payloads;
+   the `_uk_eid_canonical_number` idea could retire more fuzzy grounding if grounding
+   `local_fallback` also canonicalized (ties into lever 1b).
+4. **§6.8 PIT commencement resolver** — deferred: deterministic primitive exists
+   (`affecting_provision_in_force`), but 0 genuinely-future effects on this corpus →
+   no benchmark signal; needs PIT-*dated* oracles + design alignment. Scope first.
+5. Cross-frontend address grammar — DEFERRED by decision (extract per-frontend
+   if/when warranted; unify "later if ever"). See `REGEX_TO_GRAMMAR_MIGRATION.md`.
+
+**Vision (where this is going):** the north star is correct-by-construction
+consolidation where replay emits the oracle-correct eIds *by construction* and
+grounding becomes a no-op — at which point divergence measures real legal-state
+difference, not grounding noise. Lever 1 is the next concrete step toward that:
+strip grounding's fabrication out of the signal, then out of the pipeline. Cross-
+jurisdiction harmonization (core-owned eId/lineage/corpus primitives) is a
+first-class output even when the UK metric is saturated.
+
+## Ranked backlog (detail — highest correctness value first)
 1. **§6.8 resolver** (above) — biggest remaining correctness lever.
 2. **DONE — `repealed in part` overwrite-with-repeals-table** (`2ce8c213`, +6.86 on
    `ukpga/1996/5`→100). A repeal-family effect whose source is a repeal Schedule was
