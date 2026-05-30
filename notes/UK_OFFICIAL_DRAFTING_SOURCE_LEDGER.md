@@ -252,11 +252,16 @@ allowed to lag the executable implementation.
   `uv run python scripts/uk_repeal_semantics_scan.py --ids-file
   scripts/baselines/uk_grounding_corpus.txt --source-phrase-effect-candidates
   --phrase-all --pretty --limit 0`. Current local result: 77 affected statutes,
-  19,305 phrase-source documents scanned, 27 phrase-bearing Acts, and 20 linked
+  19,315 phrase-source documents scanned, 27 phrase-bearing Acts, and 20 linked
   candidate effect rows (10 no-revive, 10 revival). These rows prove an effect
   uses a phrase-bearing affecting Act, but not that the phrase is in the selected
-  source provision or that the target is itself a repeal. Do not add a replay
-  guard until a selected source/target witness is proved.
+  source provision or that the target is itself a repeal. The candidate lane now
+  has `--audit-selected-source` to resolve the selected source provision for each
+  candidate and report `selected_source_matches_phrase`. Focused witness:
+  `ukpga/1992/41` affected by `ukpga/2006/50` has 9 no-revive candidates, but the
+  selected sources are absent or `Sch. 9` repeal-table surfaces with
+  `selected_source_matches_phrase=false`, so they remain unproved candidates. Do
+  not add a replay guard until a selected source/target witness is proved.
 - **6.1.14 repealing a paragraph with a trailing conjunction** — make the `and`/`or`
   explicit. → connects to existing `tail_connector` modelling. **HAVE (verify).**
 

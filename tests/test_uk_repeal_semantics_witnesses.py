@@ -17,6 +17,7 @@ from lawvm.uk_legislation.repeal_semantics_witnesses import (
     _affecting_act_phrase_effect_witnesses,
     _duplicate_repeal_target_witnesses,
     is_repeal_semantics_effect,
+    scan_repeal_semantics_affecting_act_phrase_candidates_for_statute,
     scan_repeal_semantics_source_phrase_xml,
     source_text_repeal_semantics_family,
 )
@@ -199,6 +200,50 @@ def test_affecting_act_phrase_candidate_links_phrase_act_to_repeal_effect() -> N
     assert row["source_phrase_rule_id"] == phrase.rule_id
     assert row["source_phrase_count"] == 1
     assert row["source_locator"] == "source.xml"
+
+
+@pytest.mark.skipif(
+    not _DB_PATH.exists(),
+    reason="uk_legislation.farchive not present - skipping live selected-source audit",
+)
+def test_affecting_act_phrase_candidate_audits_selected_source_without_proving_phrase() -> None:
+    from farchive import Farchive
+
+    phrase = UKRepealSemanticsWitness(
+        family="repeal_of_repeal_no_revive_phrase",
+        statute_id="ukpga/2006/50",
+        effect_id="",
+        effect_type="",
+        affected_provisions="",
+        affecting_act_id="ukpga/2006/50",
+        affecting_provisions="",
+        rule_id="uk_repeal_semantics_source_phrase_repeal_of_repeal_no_revive_phrase",
+        source_status="source_phrase_scan",
+        source_tag="Text",
+        source_text_preview="The repeal by this Act does not revive any enactment.",
+        detail={"source_locator": "https://www.legislation.gov.uk/ukpga/2006/50/data.xml"},
+    )
+    diagnostics: list[dict[str, object]] = []
+
+    with Farchive(_DB_PATH) as archive:
+        witnesses = scan_repeal_semantics_affecting_act_phrase_candidates_for_statute(
+            "ukpga/1992/41",
+            archive,
+            phrase_witnesses_by_act={"ukpga/2006/50": (phrase,)},
+            audit_selected_source=True,
+            diagnostics_out=diagnostics,
+        )
+
+    rows = [witness.to_dict() for witness in witnesses]
+    no_revive_rows = [
+        row
+        for row in rows
+        if row["family"] == "affecting_act_repeal_of_repeal_no_revive_phrase_candidate"
+    ]
+    assert no_revive_rows
+    assert any(row["selected_source_matches_phrase"] is False for row in no_revive_rows)
+    assert any(row["selected_source_tag"] == "Schedule" for row in no_revive_rows)
+    assert diagnostics
 
 
 def test_no_double_entry_filter_rejects_only_exact_duplicate_repeal_ops() -> None:
