@@ -3,7 +3,7 @@
 Family: source_root_lifecycle
 Phase: compile (source acquisition + extraction context caching)
 
-Background: Sensor I's cProfile of ukpga/1970/9 showed peak RSS of 2.5–2.6 GB
+Background: Profiling ukpga/1970/9 showed peak RSS of 2.5–2.6 GB
 from 386 XML feeds (~6 MB raw) expanding to large ET._Element trees all retained
 simultaneously in memory.  The cause: extraction_cache held strong references to
 every parsed root for the entire compile_ops_for_statute call, and two @lru_cache

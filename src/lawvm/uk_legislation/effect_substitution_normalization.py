@@ -79,7 +79,7 @@ def _block_substitution_tail_insert_detail(
 ) -> Optional[dict[str, Any]]:
     """Return promotion detail when this op is a block-substitution letter-suffix tail.
 
-    Pattern B (Sensor K): an effect whose affected_provisions is a range like
+    Pattern B: an effect whose affected_provisions is a range like
     's. 25(4)-(4B)' decomposes into ops _0/_1/_2 targeting the numeric stem and its
     letter-suffix variants.  Op _0 is a legitimate Replace on the existing numeric
     stem (e.g. subsection:4).  Ops _1..._n target letter-suffix variants (4a, 4b)

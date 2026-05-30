@@ -2,7 +2,7 @@
 
 §1.11 Hot-path: _uk_build_fee_table_index builds rows once per source_root
 instead of re-walking source_root.iter() and calling _uk_table_rows_with_rowspans
-for every effect row.  Sensor G's cProfile of ukpga/1970/9 showed 132,140
+for every effect row.  Profiling ukpga/1970/9 showed 132,140
 invocations of _uk_table_rows_with_rowspans producing 145M+ str ops and 2.5 GB
 RSS.  The index reduces this to one walk per source_root.
 

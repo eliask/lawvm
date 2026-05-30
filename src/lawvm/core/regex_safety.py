@@ -9,7 +9,7 @@ Purpose:
     classifier patterns that benefit from a sound necessary-condition prefilter.
 
 Reference: AGENTS.md §1.11, §1.13 (Hot-path performance discipline; regex vs bespoke).
-Used by: ``tests/test_regex_perf_gate.py`` (Sensor H batch 5).
+Used by: ``tests/test_regex_perf_gate.py``.
 
 Two risk detectors are combined in ``lawvm_regex_risks()``:
 

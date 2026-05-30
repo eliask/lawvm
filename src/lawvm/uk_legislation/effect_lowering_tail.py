@@ -198,7 +198,7 @@ def _source_payload_parent_instruction_context(
 # Compiled at module scope per §1.11.
 # Site #4 (census): three chained greedy .* between anchors in
 # _unlowered_overlap_source_shape_classification — same shape as ukpga/1970/9
-# incident fixed by Actuator 8.  Bound each segment to .{0,400}? (lazy).
+# incident previously fixed.  Bound each segment to .{0,400}? (lazy).
 # Fast-guard: "where", "substitute", "but this" are all required by the pattern.
 _SCOPED_OCCURRENCE_WITH_EXCLUSIONS_RE = re.compile(
     r"\bwhere\s+it\s+occurs\s+without\b.{0,400}?"

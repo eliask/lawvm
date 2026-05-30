@@ -451,11 +451,11 @@ def _extract_labels_from_label_list(text: str) -> tuple[str, ...]:
 
 # Compiled at module scope per §1.11.  The tempered-greedy idiom
 # (?:(?!anchor).)+? stops at the negative-lookahead anchor but was unbounded,
-# risking O(N^2) backtracking on long inputs (Sensor H #14).  Bounding with
+# risking O(N^2) backtracking on long inputs.  Bounding with
 # {0,400}? caps the per-segment scan depth while preserving the stop-at-anchor
 # semantic: "up to 400 chars before the dels-att anchor."
 # The lookahead previously used \bdels\s+att\b which embeds MAX_REPEAT (\s+) inside
-# the outer MAX_REPEAT group — a nested backtracking quantifier (Sensor H).
+# the outer MAX_REPEAT group — a nested backtracking quantifier.
 # Using the literal "dels att" (single space) in the lookahead is safe for
 # normalised Swedish statutory text where multiple consecutive spaces are rare.
 _SE_REPLACE_CLAUSE_RE = re.compile(
@@ -2163,7 +2163,7 @@ def _classify_se_official_effects_plan_frontier_detail(
     return "unclassified_clause_targets"
 
 
-# Bounded per Sensor H #14 — two unbounded .*? / .* with DOTALL risked
+# Bounded — two unbounded .*? / .* with DOTALL risked
 # O(N^2) backtracking.  400 chars per segment covers any realistic
 # word-substitution clause in Swedish legislation.
 _SE_WORD_SUBSTITUTION_RE = re.compile(

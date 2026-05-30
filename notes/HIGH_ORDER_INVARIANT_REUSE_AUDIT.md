@@ -295,7 +295,7 @@ Recent improvement:
   and incoming duplicate archive member.
 - `_witness_for_op` in `src/lawvm/uk_legislation/witness_sidecars.py` return
   type tightened from `object | None` to `Optional[UKLoweredOperationWitness]`
-  (Sensor E Cluster D root-cause fix). The untyped-dict fallback branch was
+  (Cluster D root-cause fix). The untyped-dict fallback branch was
   confirmed dead at 0 hits on the smoke corpus and removed. Downstream getattr
   chains collapsed to direct typed attribute access at ~14 sites across
   `authority_filter.py` (5 sites), `text_rewrite_fragments.py` (4 sites), and
@@ -588,8 +588,8 @@ Recent improvement:
 
 - boolean text classifiers in `source_adjudication.py` (like `_looks_like_referent_qualified_text_substitution`) follow the bounded-regex + fast-guard pattern per §1.11: three substring guards eliminate the regex path for non-matching inputs, and `.{0,500}` quantifiers replace unbounded `.+` to prevent O(N^3) backtracking; module-scope `re.compile` with `chr()` for non-ASCII quote chars keeps the constant definition ASCII-safe.
 - UK fee-table rows are now indexed once per source_root via `_uk_get_fee_table_index` (§1.11 pattern: structural data walked per effect → walk once and index); a `WeakKeyDictionary` cache keyed on the source_root `ET.Element` holds the pre-built `_UKFeeTableIndexEntry` tuples — including pre-lowercased `col1_lower` — for the lifetime of that source_root, eliminating the 132,140 repeated `source_root.iter()` + `_uk_table_rows_with_rowspans` calls that drove 145M+ str.split/str.lower ops and 2.5 GB RSS on ukpga/1970/9.
-- Actuator 8 bounded-regex + fast-guard pattern applied in bulk (Sensor H #12–15) to FI/SE/tools landmines: `citation_routing._looks_like_fi_meta_repeal` (also re-used in `grafter.py`), `clause_patterns._MIXED_ROW_PATTERNS` and `_SINGLE_ROW_{REPLACE,REPEAL}_RE`, `sweden/grafter._SE_{REPLACE,REPEAL,RENUMBER}_CLAUSE_RE` and `_SE_WORD_SUBSTITUTION_RE`, and `divergence_heuristics._REPEAL_PRIOR_WORDING_BANNER_RE`/`_FUTURE_REPEAL_OVERLAY_RE` — all inline/unbounded quantifiers replaced with `{0,200–500}?` bounds and module-scope compiles, matching `f2ee4479` template.
-- UK extraction context (parent_map + exact_id_map + sequence_map) is now built once per root ET.Element via `_build_extraction_context` using a `WeakKeyDictionary` cache (§1.11 pattern, mirroring Actuator 9's fee-table index in `table_sources.py`); eliminates redundant tree-walks when the same root is passed multiple times in non-compile-session code paths (e.g. tools/CLI) while adding negligible overhead for the already-deduplicated compile path.
+- Bounded-regex + fast-guard pattern applied in bulk to FI/SE/tools landmines: `citation_routing._looks_like_fi_meta_repeal` (also re-used in `grafter.py`), `clause_patterns._MIXED_ROW_PATTERNS` and `_SINGLE_ROW_{REPLACE,REPEAL}_RE`, `sweden/grafter._SE_{REPLACE,REPEAL,RENUMBER}_CLAUSE_RE` and `_SE_WORD_SUBSTITUTION_RE`, and `divergence_heuristics._REPEAL_PRIOR_WORDING_BANNER_RE`/`_FUTURE_REPEAL_OVERLAY_RE` — all inline/unbounded quantifiers replaced with `{0,200–500}?` bounds and module-scope compiles, matching `f2ee4479` template.
+- UK extraction context (parent_map + exact_id_map + sequence_map) is now built once per root ET.Element via `_build_extraction_context` using a `WeakKeyDictionary` cache (§1.11 pattern, mirroring the fee-table index in `table_sources.py`); eliminates redundant tree-walks when the same root is passed multiple times in non-compile-session code paths (e.g. tools/CLI) while adding negligible overhead for the already-deduplicated compile path.
 - UK source-root lifecycle (§source_root_lifecycle): `compile_ops_for_statute` now evicts affecting-act source contexts after each act's last effect in the ordered sequence. Eviction covers extraction_cache, enacted_extraction_cache, and three module-level caches (_source_parent_map_cache, _source_ancestor_chain_cache in source_context.py; _EXTRACTION_CONTEXT_CACHE in provision_extractor.py). Explicit eviction is required because these caches create reference cycles (parent_map values include root as a parent element; ancestor-chain tuples include root as terminal ancestor) that prevent Python reference-count GC without explicit help. WSL2 constraint: 96 GB physical RAM but WSL2 hangs under high memory pressure; peak RSS for ukpga/1970/9 was 2.5–2.6 GB (229 unique affecting-act roots × ~400x in-memory ET tree expansion). After fix: rss_mb=857 — 67% reduction from ~2600 MB. Adjudication parity confirmed (score=40.8%, replay=80.0%, ops=1988, effect_rows=3265). Acts with non-contiguous occurrence in the ordered sequence (40 out of 229 for ukpga/1970/9) are transparently re-parsed from archive bytes on re-access. Pattern: try/finally in the compile loop fires eviction on both continue and fall-through paths. Covered by tests/test_uk_source_root_lifecycle.py (8 tests: parent-map eviction, ancestor-chain eviction, parent-map correctness, ancestor-chain correctness, None-inputs, eviction-index construction, cache-hit identity, cache isolation). Note: originally used WeakKeyDictionary; replaced with plain dict after lxml migration (lxml _Element does not support weakref). Memory-safety contract is now explicit eviction only.
 - Phase 1 lxml migration (stdlib ET → lxml): 40+ UK hot-path source files and 10 UK test files migrated from `import xml.etree.ElementTree as ET` to `from lxml import etree as ET`. Key API differences handled: (1) `ET._Element` type annotation (lxml's `ET.Element` is a factory function, not a type); (2) WeakKeyDictionary caches replaced with plain dicts throughout uk_legislation (provision_extractor, source_context, table_sources, table_selectors, source_fragment_context) since lxml elements do not support weakref; (3) `evict_source_root_caches()` extended to also evict table_sources plain-dict caches via lazy import; (4) `itertext()` annotated with `# ty: ignore[no-matching-overload]` since lxml-stubs types it as `Iterator[str | bytes]`; (5) test assertions for `exception_type == "ParseError"` updated to `in ("ParseError", "XMLSyntaxError")` since lxml raises `XMLSyntaxError`; (6) `pyproject.toml` lxml version floor bumped to `>=6.0.0`. Adjudication count: 1757 replay adjudications on hard smoke corpus, byte-identical to pre-migration. Wall time: 32.5s real for 21-statute parallel bench (--parallel 8). UK shard 2444 tests green. ty clean on all migrated files.
 
@@ -1258,7 +1258,7 @@ target-gap family centralization once real witnesses justify it, cautious
 comparison-normalization reuse where a frontend already has named projection
 rules, and small type-surface cleanup batches.
 
-## Actuator 12 — UK table-selector regex hotspots (2026-05-29)
+## UK table-selector regex hotspots (2026-05-29)
 
 Site 1 (§1.11 applied): `_source_names_containing_target_for_table_cell` replaced
 dynamic `re.search(rf"\\bin\\s+section\\s+{re.escape(label)}\\b", ...)` with (a)
@@ -1266,21 +1266,20 @@ dynamic `re.search(rf"\\bin\\s+section\\s+{re.escape(label)}\\b", ...)` with (a)
 before any regex walk, and (b) `@functools.lru_cache(maxsize=2048)` factory
 `_section_label_pattern(label)` keyed on label string — low cardinality (one per
 target section), keeps patterns alive without unbounded retention.  22,696 calls /
-~5,062 distinct (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio, Sensor I
-cand 2).
+~5,062 distinct (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio).
 
 Site 2 (§1.11 applied): `_uk_source_parent_table_column_entry_omission_text_patch_claim`
 inner re.search replaced with (a) `"entries relating to" not in lead_text.lower()`
 substring guard before any regex, and (b) split into two module-scope patterns
 `_UK_COLUMN_OMIT_ENTRIES_RELATING_RE` + `_UK_OMIT_FROM_COLUMN_ENTRIES_RELATING_RE`
 — kills the alternation cross-product that caused 6.8 ms/call catastrophic
-backtracking on non-matching inputs (same shape as Actuator 8).  Bounded `{0,300}?`
-replaces `.*?` (Sensor I cand 3).  Combined wall-time saving: 30.49 s → 28.67 s
+backtracking on non-matching inputs (same catastrophic-backtracking shape).  Bounded `{0,300}?`
+replaces `.*?`.  Combined wall-time saving: 30.49 s → 28.67 s
 (−1.8 s) on ukpga/1970/9.  Adjudications identical (score=40.8%, replay=80.0%,
 ops=2001, effect_rows=3265).  Note: cProfile cumtime overestimated the saving
-because it is inclusive of shared callees; actual exclusive saving after Actuator 8
-removed the dominant bottleneck is ~1.8 s combined.
-- Sensor H batch 1 (Actuator 14, 2026-05-29): 7 HIGH-danger landmines closed in
+because it is inclusive of shared callees; actual exclusive saving after the prior
+bounded-regex fix removed the dominant bottleneck is ~1.8 s combined.
+- Bounded-regex + fast-guard fixes (2026-05-29): 7 HIGH-danger landmines closed in
   UK source_adjudication / effect_lowering_tail / table_sources /
   source_text_reclassifications cluster.  Sites: #1 (carried_tail .+/.+),
   #2 (repeal_schedule_table .+), #3 (period_specified inline .+), #4
@@ -1313,7 +1312,7 @@ removed the dominant bottleneck is ~1.8 s combined.
   including for-substitute instruction text, inferred payload, insert action,
   mismatched label, plain numeric target).
 - UK block-substitution group tail promotion (`uk_effect_block_substitution_tail_promoted_to_insert_after`,
-  rule family `targeted_after_anchor_insert`) implements Sensor K Pattern B: effects
+  rule family `targeted_after_anchor_insert`) implements Pattern B: effects
   whose affected_provisions cover a range like `s. 25(4)-(4B)` decompose into a
   multi-target group.  Op `_0` (numeric stem) stays Replace; ops `_1..._n` (letter-suffix
   variants `4a`, `4b`) are promoted to InsertAfter at lowering time.  Anchor = immediately
@@ -1339,7 +1338,7 @@ removed the dominant bottleneck is ~1.8 s combined.
   separate follow-on actuator.
 - `src/lawvm/core/regex_safety.py::lawvm_regex_risks` is the shared AST-based
   catastrophic-backtracking lint for module-scope ``_*_RE`` / ``_*_PATTERN``
-  constants; validated by ``tests/test_regex_perf_gate.py`` (Sensor H batch 5).
+  constants; validated by ``tests/test_regex_perf_gate.py``.
 - `src/lawvm/core/regex_safety.py::compile_classifier_regex` + `build_regex_prefilter`
   is the Current Shared Surface for sound regex literal prefiltering (2026-05-29).
   Provides a predicate tree (``And``/``Or``/``Lit``) of necessary conditions extracted
@@ -1360,7 +1359,7 @@ removed the dominant bottleneck is ~1.8 s combined.
   files (219 → 142 total; gate allowlist reduced from 69 → 48 files). Genuine
   ``\w+\d+`` overlaps and ``.{0,N}?`` adjacent-repeat pairs still flagged
   correctly. Patterns like ``\d+[a-z]?`` now correctly reported as disjoint.
-- Sensor H batch 6 (Actuator 19, 2026-05-29): 12+8 HIGH-danger landmines closed
+- Literal-space + bounded-quantifier fixes (2026-05-29): 12+8 HIGH-danger landmines closed
   across `sweden/grafter.py` (12 violations) and `uk_legislation/source_parent_payloads.py`
   (8 violations; 4 files total including `source_fragment_context.py`,
   `source_text_reclassifications.py`).  Fix shapes: (a) `\s+` inside optional groups
@@ -1387,11 +1386,11 @@ removed the dominant bottleneck is ~1.8 s combined.
   `payload.kind.value` / `payload.label`. `text_rewrite_fragments.py` cluster C
   `provenance_tags` sites were already clean (A20 covered them). Pattern: A6 handled
   `LegalAddress.path` / `LegalOperation.target` (22 sites); A20 handled `_witness_for_op`
-  return-type root cause and cascaded 17 sites. This commit closes the remaining Sensor E
-  clusters. Shard ownership fix also included: `test_regex_batch6_perf.py` added to `uk`
+  return-type root cause and cascaded 17 sites. This commit closes the remaining
+  getattr-drift clusters. Shard ownership fix also included: `test_regex_batch6_perf.py` added to `uk`
   shard in `scripts/test_shard.py` (was unassigned, blocking CI). Adjudication counts
   identical (4532). ty green. 2431 uk-shard tests passed.
-- Sensor H batch 4 / AGENTS.md §1.11 module-scope regex hygiene (Actuator 23, 2026-05-29):
+- AGENTS.md §1.11 module-scope regex hygiene (2026-05-29):
   3 commits across 3 files.
   (1) `uk_legislation/source_parent_payloads.py`: 1 site — parametrized alpha-label continuation
   pattern in `_source_carried_top_level_alpha_matches` wrapped with `@lru_cache(maxsize=256)`

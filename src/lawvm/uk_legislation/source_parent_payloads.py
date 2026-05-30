@@ -109,7 +109,7 @@ SOURCE_PARENT_TABLE_ENTRY_INSERT_RE = re.compile(
     flags=re.I | re.S,
 )
 
-# Sensor H batch 6 (A19): nested-quantifier fixes.  These patterns match
+# Nested-quantifier fixes.  These patterns match
 # instruction_text that is always normalised to single spaces before being
 # tested (" ".join(text.split()).strip()), so optional \s+ inside ? groups
 # can be replaced with literal ' ' to avoid the nested-quantifier lint flag.
@@ -149,7 +149,7 @@ _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_REF_RE = re.compile(
     r"\((?P<start>[a-z])\)\s*-\s*\((?P<end>[a-z])\)\s+and\s+semicolon\s*$",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): backreference (?P=row_label) replaced with [a-z]
+# Backreference (?P=row_label) replaced with [a-z]
 # (semantically equivalent — the row label is always a single letter);
 # \s+ inside the optional group replaced with literal ' ' (normalised text);
 # .+? bounded to .{0,2000} with terminal $ (payload stripped by caller).
@@ -169,14 +169,14 @@ _UK_SECTION_SUBSECTION_REF_RE = re.compile(
     r"\((?P<subsection>[0-9A-Za-z]+)\)\s*$",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): \s+ between label and text replaced with ' '
+# \s+ between label and text replaced with ' '
 # (normalised text); .+? bounded to .{0,2000} with terminal $ (caller strips).
 _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_TEXT_RE = re.compile(
     r"^\s*after\s+paragraph\s+\((?P<anchor>[a-z]+)\),?\s*"
     r"insert\s*[—–-]?\s*(?P<label>[a-z]+) (?P<text>.{0,2000})$",
     flags=re.I | re.S,
 )
-# Sensor H batch 6 (A19): backreference replaced with [a-z]; \s+ inside
+# Backreference replaced with [a-z]; \s+ inside
 # optional group → literal ' '; .+? bounded to .{0,2000} $ (caller strips).
 _UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_TEXT_RE = re.compile(
     r"^\s*(?P<row_label>[a-z]) (?:[a-z] )?"
@@ -193,7 +193,7 @@ _UK_AFTER_SECTION_SUBSECTION_RANGE_INSERT_REF_RE = re.compile(
     r"\((?P<start>[0-9A-Za-z]+)\s*-\s*(?P<end>[0-9A-Za-z]+)\)\s*$",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): \s+ inside optional group → literal ' ' (normalised
+# \s+ inside optional group → literal ' ' (normalised
 # text); "shall be" written as literal to avoid nested \s+ inside optional.
 _UK_AFTER_SECTION_SUBSECTION_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
     r"\bafter\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
@@ -207,7 +207,7 @@ _UK_AT_END_SECTION_SUBSECTION_BLOCK_AMENDMENT_INSTRUCTION_RE = re.compile(
     r"(?:there (?:is|are|shall be) )?insert(?:ed)?\s*[—–-]?\s*$",
     flags=re.I | re.S,
 )
-# Sensor H batch 6 (A19): "or\s+" inside optional group → "or " (literal
+# "or\s+" inside optional group → "or " (literal
 # space; normalised text).
 _UK_LABELLED_SERIES_ITEM_RE = re.compile(
     r"(?:^|;\s+(?:or )?)(?P<label>[a-z])\s+",
@@ -221,7 +221,7 @@ _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
     r"^\s*(?P<label>[a-z])\s+",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): nested+adjacent-repeat fixes on carried-tail pattern.
+# Nested+adjacent-repeat fixes on carried-tail pattern.
 # Changes from original:
 # - {0,2} repeat of (LABEL\s+) → explicit (|A |A A ) alternation — no nesting
 # - optional “of section X” context: (|...) BRANCH form — no nesting
@@ -242,9 +242,9 @@ _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"(?P<payload>.{0,1000})$",
     flags=re.I | re.S,
 )
-# Sensor H batch 6 (A19): same fix strategy as CARRIED_TAIL above.
+# Same fix strategy as CARRIED_TAIL above.
 # “of [^,]+” optional context → ( of [^,]{1,80}|) BRANCH;
-# anchor: .*? → [^“”\"'‘’]{0,300}; payload: .{0,1000}$.
+# anchor: .*? → [^””\”’’’]{0,300}; payload: .{0,1000}$.
 _UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:|(?:[0-9A-Za-z]+|[ivxlcdm]+) |(?:[0-9A-Za-z]+|[ivxlcdm]+) (?:[0-9A-Za-z]+|[ivxlcdm]+) )"
     r"in\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
@@ -256,8 +256,8 @@ _UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE = re.compile(
     r"[”\"'’]? ?[—–-] ?(?P<payload>.{0,1000})$",
     flags=re.I | re.S,
 )
-# Sensor H batch 6 (A19): same fix strategy. No captures needed (caller uses
-# this as a presence check). anchor: .*? → [^“”\"'‘’]{0,300}.
+# Same fix strategy. No captures needed (caller uses
+# this as a presence check). anchor: .*? → [^””\”’’’]{0,300}.
 _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE = re.compile(
     r"\bin\s+subsection\s+\([0-9A-Za-z]+\)"
     r"( of [^,]{1,120}|)"
@@ -267,7 +267,7 @@ _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_PARENT_RE = re.compile(
     r"(?:there (?:shall be|is|are) substituted|substitute[d]?)\s*$",
     flags=re.I | re.S,
 )
-# Sensor H batch 6 (A19): same fix strategy as CARRIED_TAIL.
+# Same fix strategy as CARRIED_TAIL.
 # paragraph qualifier: ( \(.*?\)|) BRANCH; prefix (|A |A A ); payload .{0,1000}$.
 _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:|(?:[0-9A-Za-z]+|[ivxlcdm]+) |(?:[0-9A-Za-z]+|[ivxlcdm]+) (?:[0-9A-Za-z]+|[ivxlcdm]+) )"
@@ -278,9 +278,9 @@ _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_TAIL_SUBSTITUTION_RE = re.compile(
     r"substitute ?[“\"'‘]?[—–-] ?(?P<payload>.{0,1000})$",
     flags=re.I | re.S,
 )
-# Sensor H batch 6 (A19): backreference (?P=row_label) replaced with
+# Backreference (?P=row_label) replaced with
 # [0-9A-Za-z]+ (equivalent in context — caller validates the groups explicitly);
-# \s+ inside optional → ‘ ‘; anchor → [^“”\"'‘’]{0,300}; payload .{0,1000}$.
+# \s+ inside optional → ‘ ‘; anchor → [^””\”’’’]{0,300}; payload .{0,1000}$.
 _UK_SOURCE_CARRIED_STRUCTURED_SUBPARAGRAPH_EFFECT_CONTEXT_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?P<row_label>[0-9A-Za-z]+|[ivxlcdm]+) "
     r"(|[0-9A-Za-z]+ )"

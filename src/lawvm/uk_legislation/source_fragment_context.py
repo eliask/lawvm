@@ -23,7 +23,7 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
 
-# Sensor H batch 6 (A19): literal spaces replace \s+ inside optional groups;
+# Literal spaces replace \s+ inside optional groups;
 # BRANCH (|...) replaces (?:...)?-wrapping-\s+; .{0,1000} bounds block.
 _AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
     r"\bafter\s+the\s+words\s+inserted\s+by\s+(?:sub-?paragraph|paragraph)\s+\((?P<label>[0-9A-Za-z]+)\) "
@@ -38,13 +38,13 @@ _GROUPED_ANCHOR_OCCURRENCE_CHILD_RE = re.compile(
     flags=re.I,
 )
 
-# Sensor H batch 6 (A19): (|the words? ) BRANCH replaces (?:the\s+words?\s+)?.
+# (|the words? ) BRANCH replaces (?:the\s+words?\s+)?.
 _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
     r"(?:^|\b)for (|the words? )[“\”’’](?P<original>[^”\”’’]{0,300})[“\”’’] ?[—-] ?$",
     flags=re.I,
 )
 
-# Sensor H batch 6 (A19): BRANCH (| in both/each places?) replaces
+# BRANCH (| in both/each places?) replaces
 # (?:,?\s+in\s+...)?; trailing ,?(?:and)? with literal spaces.
 _GROUPED_AFTER_INSERT_CHILD_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+) "
@@ -54,7 +54,7 @@ _GROUPED_AFTER_INSERT_CHILD_RE = re.compile(
     flags=re.I,
 )
 
-# Sensor H batch 6 (A19): (| (the )?words?) BRANCH replaces (?:\s+(?:the\s+)?words?)?;
+# (| (the )?words?) BRANCH replaces (?:\s+(?:the\s+)?words?)?;
 # \s*→’ ?’ at boundaries; anchor bounded.
 _GROUPED_AFTER_INSERT_PARENT_TAIL_RE = re.compile(
     r"\binsert(| (?:the )?words?) [“\”’’](?P<inserted>[^”\”’’]{0,500})[“\”’’] ?\.? ?$",
@@ -68,7 +68,7 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): BRANCH (|the words? ) replaces (?:(?:the\s+)?words?\s+)?;
+# BRANCH (|the words? ) replaces (?:(?:the\s+)?words?\s+)?;
 # literal spaces replace \s+ inside sub-groups.
 _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
     r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bfor "
@@ -77,28 +77,28 @@ _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
     r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): same fix strategy as PROVISIONS_SUBSTITUTION above.
+# Same fix strategy as PROVISIONS_SUBSTITUTION above.
 _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_REVERSED_RE = re.compile(
     r"\bIn\s+the\s+following\s+(?:provisions|enactments)\b.+?\bsubstitute "
     r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’] "
     r"for (|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): BRANCH (|the words? ) replaces nested optional groups.
+# BRANCH (|the words? ) replaces nested optional groups.
 _SOURCE_PARENT_TAIL_SUBSTITUTION_RE = re.compile(
     r"\bfor (|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’] "
     r"(?:substitute|there (?:is|are|shall be) substituted) "
     r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’]",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): optional prefix label — (|LABEL ) BRANCH avoids \s*?;
+# Optional prefix label — (|LABEL ) BRANCH avoids \s*?;
 # bounded anchor.
 _SOURCE_PARENT_PREFIX_SUBSTITUTE_RE = re.compile(
     r"^\s*(|(?:[0-9A-Za-z]+|[ivxlcdm]+) )"
     r"(?:Substitute|For) [“\”’’](?P<replacement>[^”\”’’]{0,500})[“\”’’] ?$",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): BRANCH forms replace (?:X\s+)?; literal spaces throughout.
+# BRANCH forms replace (?:X\s+)?; literal spaces throughout.
 # at-end paren qualifier: (| \([^)]{1,80}\)) BRANCH.
 # "of that/the section" optional: (| of that section| of the section).
 _SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
@@ -109,14 +109,14 @@ _SOURCE_PARENT_AT_END_TEXT_INSERT_RE = re.compile(
     r"(|there (?:is|are) )added)|\binsert(?:ed)? at the end) ?[—–-]? ?$",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): optional prefix `[A-Z]..., ` — BRANCH (|X ) avoids
+# Optional prefix `[A-Z]..., ` — BRANCH (|X ) avoids
 # (?:...\s*)? nested quantifier; literal space for comma separator.
 _SOURCE_CHILD_TARGET_ONLY_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+) "
     r"(?:(|[A-Z][A-Za-z0-9.]*, )(?:sections?|subsections?|paragraphs?|sub-paragraphs?|Schedules?|Parts?)\b|[A-Z][^.;]*?\bAct\s+\d{4}\b)",
     flags=re.I,
 )
-# Sensor H batch 6 (A19): (|the words? ) BRANCH; bounded anchor.
+# (|the words? ) BRANCH; bounded anchor.
 _SOURCE_CHILD_FOR_QUOTED_IN_TARGET_RE = re.compile(
     r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+) for "
     r"(|the words? )[“\”’’](?P<original>[^”\”’’]{0,500})[“\”’’] in ",
@@ -131,7 +131,7 @@ def _source_parent_opens_target_list(lead_text: str) -> bool:
     lowered = normalized.lower()
     return lowered.startswith(("in ", "for ")) or " in " in lowered or " for " in lowered
 
-# Sensor H batch 6 (A19): BRANCH forms replace (?:X\s+)?; literal spaces;
+# BRANCH forms replace (?:X\s+)?; literal spaces;
 # anchor and inserted bounded; occurrence qualifier simplified with BRANCH.
 _EACH_OTHER_PLACE_AFTER_INSERT_RE = re.compile(
     r"\bafter (|the words? )[“\”’’](?P<anchor>[^”\”’’]{0,300})[“\”’’],? "
@@ -142,7 +142,7 @@ _EACH_OTHER_PLACE_AFTER_INSERT_RE = re.compile(
     flags=re.I,
 )
 
-# Sensor H batch 6 (A19): same fix strategy as EACH_OTHER_PLACE_AFTER_INSERT above.
+# Same fix strategy as EACH_OTHER_PLACE_AFTER_INSERT above.
 _EACH_OTHER_PLACE_SUBSTITUTION_RE = re.compile(
     r"\bfor (|the words? )[“\”’’](?P<original>[^”\”’’]{0,300})[“\”’’],? "
     r"in each other place(| (?:where )?(|it|they|those words?) *"
@@ -160,7 +160,7 @@ _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
 _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_parent_word_range_substitution_text_patch"
 )
-# Sensor H batch 6 (A19): (|the ) avoids nested (?:the\s+)?; BRANCH for optional
+# (|the ) avoids nested (?:the\s+)?; BRANCH for optional
 # “there ... be”; bounded start/end anchors.
 _SOURCE_PARENT_WORD_RANGE_SUBSTITUTION_RE = re.compile(
     r"\bfor (|the )words? from [“\”’’](?P<start>[^”\”’’]{0,300})[“\”’’] "

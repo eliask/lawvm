@@ -1,10 +1,10 @@
 """Performance regression tests for UK adjudication/lowering regex landmines.
 
-Actuator 14 batch 1 (2026-05-29): bounded-regex + fast-guard fixes for
-Sensor H findings #1–#7 (UK source_adjudication / effect_lowering_tail /
+Bounded-regex + fast-guard fixes (2026-05-29) for
+backtracking-risk findings #1–#7 (UK source_adjudication / effect_lowering_tail /
 table_sources / source_text_reclassifications cluster).
 
-Template: f2ee4479 (Actuator 8) and 7ffd2e2b (Actuator 10).
+Template: f2ee4479 and 7ffd2e2b.
 
 Sites fixed:
   #1  source_adjudication._looks_like_source_carried_structured_tail_substitution

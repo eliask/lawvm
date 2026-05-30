@@ -39,7 +39,7 @@ class NamedTableRowSingleClause:
 
 # Compiled at module scope per §1.11.  Bounded lazy quantifiers replace
 # unbounded .+? / .*? to prevent O(N^2) backtracking on long non-matching
-# inputs (Sensor H #13).  200 chars per named-court segment is generous —
+# inputs.  200 chars per named-court segment is generous —
 # typical käräjäoikeus names are 10–40 chars.
 _MIXED_ROW_PATTERNS = [
     (
@@ -67,7 +67,7 @@ _MIXED_ROW_PATTERNS = [
     ),
 ]
 
-# Lifted to module scope per §1.11 and bounded per Sensor H #13.
+# Lifted to module scope per §1.11 and bounded (lazy quantifiers).
 # .*? before the section label and .+? for the court name segment are both
 # bounded at 200 chars — amply covers any realistic Finnish johtolause clause.
 _SINGLE_ROW_REPLACE_RE = re.compile(

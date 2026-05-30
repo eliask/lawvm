@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 
 # Compiled at module scope per §1.11.  Two unbounded .* with re.DOTALL would
-# cause O(N^2) backtracking on long non-matching inputs (Sensor H #12).
+# cause O(N^2) backtracking on long non-matching inputs.
 # Bounded to {0,400}? (lazy) — legitimate meta-repeal clauses are well under
 # 400 chars per segment; 400 provides generous headroom.
 _FI_META_REPEAL_RE = re.compile(
