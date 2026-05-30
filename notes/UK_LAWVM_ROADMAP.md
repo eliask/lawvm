@@ -82,16 +82,27 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
    `ukpga/1996/5`→100). A repeal-family effect whose source is a repeal Schedule was
    lowering to a whole-node replace that overwrote the target with the repeals table;
    now withheld (target preserved), while the quoted-words `text_repeal` path is kept.
-   **Residual:** `ukpga/1968/20` (+0.04) and `ukpga/1968/70` (+0.29) have the same bug
-   class but a *flattened* repeals-table source that `_looks_like_repeal_schedule_table_source`
-   doesn't match — small; extend the repeals-table detector if picking this up.
+   **Residual (hypothesis REFUTED 2026-05-30, verify-before-building):** the supposed
+   `ukpga/1968/20` (+0.04) / `ukpga/1968/70` (+0.29) "flattened repeals-table" residual
+   does **not** exist. Inspected every whole-node REPLACE op (payload, no text_patch) on
+   both statutes: 1968/70 has exactly 1 (a legitimate `section:10/subsection:6` definitions
+   substitution from `uksi/2009/2054`), and all 26 on 1968/20 are genuine `"For section X
+   substitute—"` amendments — none is a repeal table (`repeal_ish=False` for all 26).
+   There is nothing to withhold here; doing so would drop real amendments (Prime Directive
+   violation, over-erasure). Do **not** extend the detector for these statutes.
 3. **#53 / Theft-Act 24A + 1998/17 17C/D/E** — commencement + spurious-grounding
    tangle; resolve the in-force/commencement question (feeds §6.8). Re-land #52
    letter-suffix matcher only after (`_uk_section_label_in_simple_list`,
    `\d+[A-Za-z]*` + substring guard; patch+test drafted, reverted).
-3. **§6.4 `UK_RULE_INSERTED_PROVISION_EID`** (direction b) — structural eIds for
-   inserted subtrees so grounding is exact not fuzzy. LOW score impact (fuzzy is
-   rare ~2 nodes/statute); do for correctness-by-construction, not score.
+3. **§6.4 `UK_RULE_INSERTED_PROVISION_EID`** (direction b) — DIAGNOSED 2026-05-30,
+   re-narrowed: the inserted-provision *number* is already derived right; the only gap
+   is **eId letter-case** (synthesis lowercases `section-20a`; oracle uses `section-20A`).
+   Verified failing case `1978/30` section 20A (fuzzy:0.978). Fix = a `_uk_eid_canonical_
+   number` applied at eId-attribute OUTPUT sites only, NOT the lowercase eid_map-key /
+   flat-candidate matching sites (the hazard). LOW/zero score impact (fuzzy already fixes
+   output); pure determinism. Full spec + site list in
+   `UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` §6.3/§6.4. Ready to build with broad-baseline
+   guard; deferred from the autonomous pass as cross-cutting + needs before/after validation.
 4. **Schedule-1 crossheading representation** (ukpga/1978/30) — INVESTIGATED, verdict
    = **oracle-editorial eId convention, not a bug; do NOT chase.** The crossheadings
    themselves match; only the paragraphs *under* them diverge by eId SCHEME: oracle
@@ -129,8 +140,22 @@ Most are NOT cleanly fixable — do not chase without a new angle:
 - **Feed-incompleteness / old acts repealed elsewhere** — `ukpga/1966/42` (replay 509
   vs oracle 43, 8.4%), `1951/30`, `1972/5`: tiny oracle stubs, only ~22 effects, so the
   bulk repeals are simply not in the modern effect feed. Missing source, not a bug.
-- **EU lane** — `eur/2019/2018` etc.: the `ground_ids()` corruption of correct EU
-  article eIds (other agent's lane).
+- **EU lane** — `eur/2019/2018` (aligned 15.2%, unaligned 100%, **0 ops**): NOT a
+  `ground_ids()` corruption (hypothesis **refuted** 2026-05-30, verify-before-building).
+  Root cause is an oracle-side extractor inconsistency: the source XML carries **zero**
+  `eId` attributes (all EU-lane eIds are synthesized by LawVM), and the two synthesizers
+  disagree — `extract_eid_map_bytes` mints 72 ids *including* annex paragraphs
+  (`annex-I-paragraph-N`), while `parse_uk_statute_ir_bytes` synthesizes only 59 and
+  **drops** annex-paragraph eIds. Grounding's `local_fallback` then mints annex eIds on
+  the *replay* side (327 nodes; only 16/327 coincide with an oracle eid_map value), so
+  grounded-replay carries ~329 eIds while the ungrounded oracle-IR baseline carries ~50
+  → the scorer compares grounded-replay vs ungrounded-oracle and reports 15%. Grounding
+  is doing label-only work (node count unchanged); the gap is the annex-eId asymmetry,
+  not replay over-application. The correct-by-construction fix is to make annex paragraphs
+  eId-bearing on **both** sides (parser + eid_map agree) — a broad UK/EU parser change
+  with every-statute blast radius, so it needs a full broad-baseline before/after and is
+  best validated on the broadened corpus after the `uk-corpus` fetch lands. Do **not**
+  "fix grounding" — it is not the defect.
 - **Representation** — `ukpga/1980/65` (+842), `2008/17` (+196): crossheading/wrapper
   structural differences vs oracle editorial form (saturated frontier).
 - The one **clean** over-application bug found here was the repeals-table overwrite
@@ -141,3 +166,8 @@ Most are NOT cleanly fixable — do not chase without a new angle:
 - Blanket prospective gate (mixed-sign).
 - Territorial-extent qualifier normalization (0 population in the dropped lane).
 - Inert oracle-check non-textual bucket tweak.
+- **EU-lane `ground_ids()` "corruption"** (`eur/2019/2018`): refuted — grounding is
+  label-only; the 15% is an oracle-side annex-eId asymmetry between
+  `extract_eid_map_bytes` and `parse_uk_statute_ir_bytes` (see Over-production triage).
+- **`1968/20`/`1968/70` flattened-repeals-table residual**: refuted — every whole-node
+  REPLACE on both is a legitimate substitution, no repeal table to withhold.
