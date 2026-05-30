@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from lxml import etree as ET
+
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 
@@ -37,6 +39,14 @@ class UKSourceStatus(StrEnum):
     AVAILABLE = "available"
 
 
+class UKStatuteXmlContentStatus(StrEnum):
+    ABSENT = "absent"
+    TOO_SMALL = "too_small"
+    PARSE_ERROR = "parse_error"
+    METADATA_ONLY = "metadata_only"
+    AVAILABLE = "available"
+
+
 @dataclass(frozen=True)
 class UKSourceState:
     status: UKSourceStatus
@@ -52,6 +62,33 @@ class UKSourceState:
 
     def as_legacy_tuple(self) -> tuple[str, int]:
         return self.status.value, self.size
+
+
+@dataclass(frozen=True)
+class UKStatuteXmlContentState:
+    status: UKStatuteXmlContentStatus
+    size: int
+    number_of_provisions: str
+    has_body: bool
+    has_schedules: bool
+    parse_error: str = ""
+
+    @property
+    def usable_as_replay_base(self) -> bool:
+        return self.status is UKStatuteXmlContentStatus.AVAILABLE
+
+    def to_dict(self) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "status": self.status.value,
+            "size": self.size,
+            "number_of_provisions": self.number_of_provisions,
+            "has_body": self.has_body,
+            "has_schedules": self.has_schedules,
+            "usable_as_replay_base": self.usable_as_replay_base,
+        }
+        if self.parse_error:
+            row["parse_error"] = self.parse_error
+        return row
 
 
 def classify_uk_source_blob(blob: bytes | None) -> UKSourceState:
@@ -70,6 +107,68 @@ def uk_source_state_wire_tuple(blob: bytes | None) -> tuple[str, int]:
 
 def classify_uk_source_blob_legacy(blob: bytes | None) -> tuple[str, int]:
     return uk_source_state_wire_tuple(blob)
+
+
+def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentState:
+    """Classify whether an act-level XML blob contains replayable legal structure.
+
+    Some historical UK ``/enacted/data.xml`` records are metadata envelopes with
+    ``NumberOfProvisions="0"`` and no body/schedule payload. Parsing them as an
+    empty enacted base is source evidence, not a deterministic replay failure.
+    """
+    source_state = classify_uk_source_blob(blob)
+    if source_state.status is UKSourceStatus.ABSENT:
+        return UKStatuteXmlContentState(
+            status=UKStatuteXmlContentStatus.ABSENT,
+            size=source_state.size,
+            number_of_provisions="",
+            has_body=False,
+            has_schedules=False,
+        )
+    if source_state.status is UKSourceStatus.TOO_SMALL:
+        return UKStatuteXmlContentState(
+            status=UKStatuteXmlContentStatus.TOO_SMALL,
+            size=source_state.size,
+            number_of_provisions="",
+            has_body=False,
+            has_schedules=False,
+        )
+    assert blob is not None
+    try:
+        root = ET.fromstring(blob)
+    except ET.ParseError as exc:
+        return UKStatuteXmlContentState(
+            status=UKStatuteXmlContentStatus.PARSE_ERROR,
+            size=source_state.size,
+            number_of_provisions="",
+            has_body=False,
+            has_schedules=False,
+            parse_error=str(exc),
+        )
+    number_of_provisions = str(root.get("NumberOfProvisions") or "")
+    has_body = _uk_xml_has_local_name(root, "Body")
+    has_schedules = _uk_xml_has_local_name(root, "Schedules") or _uk_xml_has_local_name(
+        root,
+        "Schedule",
+    )
+    if number_of_provisions == "0" and not has_body and not has_schedules:
+        status = UKStatuteXmlContentStatus.METADATA_ONLY
+    else:
+        status = UKStatuteXmlContentStatus.AVAILABLE
+    return UKStatuteXmlContentState(
+        status=status,
+        size=source_state.size,
+        number_of_provisions=number_of_provisions,
+        has_body=has_body,
+        has_schedules=has_schedules,
+    )
+
+
+def _uk_xml_has_local_name(root: ET._Element, local_name: str) -> bool:
+    for el in root.iter():
+        if isinstance(el.tag, str) and ET.QName(el).localname == local_name:
+            return True
+    return False
 
 
 def _uk_source_diagnostic(

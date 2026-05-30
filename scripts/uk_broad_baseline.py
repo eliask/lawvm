@@ -75,6 +75,7 @@ def _similarity(replay_eids: set[str], oracle_eids: set[str]) -> float:
 def score_one(statute_id: str) -> dict[str, Any]:
     """Score one statute from the farchive. Returns a result dict (never raises)."""
     from farchive import Farchive
+    from lawvm.uk_legislation.source_state import classify_uk_statute_xml_content
     from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
     from lawvm.uk_legislation.uk_grafter import extract_eid_map_bytes, parse_uk_statute_ir_bytes
 
@@ -87,6 +88,11 @@ def score_one(statute_id: str) -> dict[str, Any]:
             return {**result, "error": "enacted_missing"}
         if not current:
             return {**result, "error": "current_missing"}
+        base_source = classify_uk_statute_xml_content(enacted)
+        result["base_source_status"] = base_source.status.value
+        result["base_source_number_of_provisions"] = base_source.number_of_provisions
+        result["base_source_has_body"] = base_source.has_body
+        result["base_source_has_schedules"] = base_source.has_schedules
 
         oracle_ir = parse_uk_statute_ir_bytes(current, statute_id=statute_id)
         oracle_eids = _eids([oracle_ir.body]) | {
@@ -195,12 +201,15 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         if "error" in row:
             print(f"[{i}/{len(ids)}] {sid:24s} ERROR {row['error']}", flush=True)
         else:
+            base_status = str(row.get("base_source_status") or "unknown")
+            base_suffix = "" if base_status == "available" else f" base={base_status}"
             print(
                 f"[{i}/{len(ids)}] {sid:24s} aligned={row['aligned']:5.1f}% "
                 f"aligned_no_gc={row.get('aligned_excluding_grounding_collateral', row['aligned']):5.1f}% "
                 f"unaligned={row['unaligned']:5.1f}% "
                 f"gc={row.get('n_grounding_collateral', 0)} "
-                f"(replay={row.get('n_replay')} oracle={row.get('n_oracle')})",
+                f"(replay={row.get('n_replay')} oracle={row.get('n_oracle')})"
+                f"{base_suffix}",
                 flush=True,
             )
 
@@ -219,10 +228,14 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             for r in scored
         ) / len(scored)
         gc_total = sum(r.get("n_grounding_collateral", 0) for r in scored)
+        metadata_only_base_total = sum(
+            1 for r in scored if r.get("base_source_status") == "metadata_only"
+        )
         print(
             f"\nScored {len(scored)} / {len(results)}  "
             f"mean aligned={avg:.2f}%  mean aligned_no_gc={avg_no_gc:.2f}%  "
-            f"grounding_collateral={gc_total}  errors={len(errored)}"
+            f"grounding_collateral={gc_total}  "
+            f"metadata_only_base={metadata_only_base_total}  errors={len(errored)}"
         )
     return 0
 

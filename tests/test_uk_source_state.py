@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from lawvm.uk_legislation.source_state import (
+    UKStatuteXmlContentStatus,
     UKSourceStatus,
+    classify_uk_statute_xml_content,
     classify_uk_source_blob,
     classify_uk_source_blob_legacy,
     is_uk_affecting_act_xml_source_diagnostic,
@@ -44,6 +46,60 @@ def test_uk_source_state_legacy_tuple_preserves_cli_wire_values() -> None:
     assert classify_uk_source_blob_legacy(None) == ("absent", 0)
     assert classify_uk_source_blob_legacy(b"") == ("too_small", 0)
     assert classify_uk_source_blob_legacy(b"x" * 100) == ("available", 100)
+
+
+def test_uk_statute_xml_content_classifies_metadata_only_enacted_envelope() -> None:
+    blob = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="0">
+  <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"/>
+</Legislation>"""
+
+    state = classify_uk_statute_xml_content(blob)
+
+    assert state.status is UKStatuteXmlContentStatus.METADATA_ONLY
+    assert state.number_of_provisions == "0"
+    assert state.has_body is False
+    assert state.has_schedules is False
+    assert state.usable_as_replay_base is False
+    assert state.to_dict()["status"] == "metadata_only"
+
+
+def test_uk_statute_xml_content_available_when_body_present() -> None:
+    blob = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <Body><P1 id="section-1"><Pnumber>1</Pnumber><P1para>Text.</P1para></P1></Body>
+</Legislation>"""
+
+    state = classify_uk_statute_xml_content(blob)
+
+    assert state.status is UKStatuteXmlContentStatus.AVAILABLE
+    assert state.number_of_provisions == "1"
+    assert state.has_body is True
+    assert state.usable_as_replay_base is True
+
+
+def test_uk_statute_xml_content_ignores_comments_when_scanning_shape() -> None:
+    blob = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <!-- publisher comment -->
+  <Body><P1 id="section-1"><Pnumber>1</Pnumber><P1para>Text.</P1para></P1></Body>
+</Legislation>"""
+
+    state = classify_uk_statute_xml_content(blob)
+
+    assert state.status is UKStatuteXmlContentStatus.AVAILABLE
+    assert state.has_body is True
+
+
+def test_uk_statute_xml_content_records_parse_error() -> None:
+    state = classify_uk_statute_xml_content(b"<Legislation>" + b"x" * 100)
+
+    assert state.status is UKStatuteXmlContentStatus.PARSE_ERROR
+    assert state.usable_as_replay_base is False
+    assert state.parse_error
 
 
 def test_affecting_act_xml_too_small_rejection_is_typed_source_diagnostic() -> None:

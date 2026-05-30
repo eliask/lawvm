@@ -196,6 +196,7 @@ def test_oracle_check_uk_statute_has_required_headers() -> None:
     assert "Similarity:" in result
     assert "Similarity excluding grounding collateral:" in result
     assert "Mutation boundary:" in result
+    assert "Base source:" in result
 
 
 @pytest.mark.skipif(
