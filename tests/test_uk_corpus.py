@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
-from scripts import acquire_uk_corpus
+from lawvm.tools import uk_corpus as acquire_uk_corpus
 
 
 class _FakeArchive:
@@ -290,21 +289,15 @@ def test_main_targeted_refresh_skips_corpus_enumeration(monkeypatch, tmp_path, c
     monkeypatch.setattr(acquire_uk_corpus, "_HTTP", lambda delay: object())
     monkeypatch.setattr(acquire_uk_corpus, "do_refresh", fake_do_refresh)
     monkeypatch.setattr(acquire_uk_corpus, "_enumerate_type", fail_enumerate)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "acquire_uk_corpus.py",
-            "refresh",
-            "--archive",
-            str(tmp_path / "uk.farchive"),
-            "--statute",
-            "ukpga/2020/17",
-            "--force-refresh",
-        ],
-    )
 
-    acquire_uk_corpus.main()
+    args = SimpleNamespace(
+        uk_corpus_command="refresh",
+        db=str(tmp_path / "uk.farchive"),
+        statute=["ukpga/2020/17"],
+        force_refresh=True,
+        delay=0.0,
+    )
+    acquire_uk_corpus.main(args)
 
     assert calls == {
         "statute_ids": {"ukpga/2020/17"},

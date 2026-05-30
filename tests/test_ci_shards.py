@@ -244,7 +244,6 @@ def test_ci_static_checks_cover_uk_acquisition_scripts() -> None:
         "src/lawvm/",
         "tests/",
         "scripts/test_shard.py",
-        "scripts/acquire_uk_corpus.py",
         "scripts/fetch_uk_affecting_acts.py",
         "scripts/uk_fetch_affecting_acts.py",
         "scripts/uk_fetch_effects.py",

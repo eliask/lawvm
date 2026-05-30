@@ -2,7 +2,7 @@
 
 Shared library used by:
   - lawvm uk-acquire              (single-statute CLI)
-  - scripts/acquire_uk_corpus.py  (full-corpus batch, via compatible logic)
+  - lawvm uk-corpus               (full-corpus batch)
 
 Handles:
   - Fetching enacted XML for a statute (immutable, stored once).
@@ -10,7 +10,7 @@ Handles:
   - Fetching effects feed pages for a statute (slow-mutable, TTL-governed).
 
 Rate limiting and retry are handled by the caller or by the simple internal
-HTTP helpers here.  For full-corpus acquisition, ``scripts/acquire_uk_corpus.py``
+HTTP helpers here.  For full-corpus acquisition, ``lawvm uk-corpus``
 has its own rate-limiter — this module is tuned for single-statute interactive use.
 """
 
@@ -25,8 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from lawvm.core.http_identity import LAWVM_USER_AGENT
+
 _LEG_BASE = "https://www.legislation.gov.uk"
-_USER_AGENT = "LawVM/1.0 (+https://github.com/lawvm)"
+_USER_AGENT = LAWVM_USER_AGENT
 
 # Default inter-request delay for interactive/single-statute use.
 _DEFAULT_DELAY = 0.5

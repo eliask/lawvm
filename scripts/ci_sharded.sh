@@ -27,7 +27,6 @@ STATIC_CHECK_PATHS=(
     src/lawvm/
     tests/
     scripts/test_shard.py
-    scripts/acquire_uk_corpus.py
     scripts/fetch_uk_affecting_acts.py
     scripts/uk_fetch_affecting_acts.py
     scripts/uk_fetch_effects.py
