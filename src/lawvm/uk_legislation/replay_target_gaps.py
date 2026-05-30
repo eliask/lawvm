@@ -198,7 +198,7 @@ def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: I
     if not target_path:
         return False
     target_kind = str(target_path[-1][0] or "").lower()
-    payload_kind = str(getattr(op.payload, "kind", "") or "").lower()
+    payload_kind = str(op.payload.kind or "").lower()
     if payload_kind == target_kind:
         return False
     return (
