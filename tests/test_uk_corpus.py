@@ -332,3 +332,22 @@ def test_decode_content_encoding_identity_passthrough() -> None:
     assert acquire_uk_corpus._decode_content_encoding(xml, None) == xml
     assert acquire_uk_corpus._decode_content_encoding(xml, "identity") == xml
     assert acquire_uk_corpus._decode_content_encoding(xml, "") == xml
+
+
+def test_is_storable_xml_accepts_xml_rejects_gzip() -> None:
+    assert acquire_uk_corpus._is_storable_xml(b"<Legislation/>")
+    assert acquire_uk_corpus._is_storable_xml(b"\xef\xbb\xbf  \n<Legislation/>")  # BOM + ws
+    assert acquire_uk_corpus._is_storable_xml(b"<?xml version='1.0'?><x/>")
+    assert not acquire_uk_corpus._is_storable_xml(b"\x1f\x8b\x08\x00rest")  # gzip magic
+    assert not acquire_uk_corpus._is_storable_xml(b"\x78\x9crest")  # zlib magic
+    assert not acquire_uk_corpus._is_storable_xml(b"<!doctype html>error".replace(b"<!d", b"err"))
+
+
+def test_store_if_new_refuses_gzip_payload() -> None:
+    ar = _FakeArchive()
+    stored = acquire_uk_corpus._store_if_new(ar, "u", b"\x1f\x8b\x08\x00gzipbytes", "xml")
+    assert stored is False
+    assert ar.store_calls == []
+    # a valid XML payload is stored
+    assert acquire_uk_corpus._store_if_new(ar, "u", b"<Legislation/>", "xml") is True
+    assert len(ar.store_calls) == 1
