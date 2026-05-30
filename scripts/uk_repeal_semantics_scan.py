@@ -113,6 +113,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
                     ids,
                     archive,
                     phrase_witnesses_by_act=phrase_witnesses_by_act,
+                    audit_selected_source=args.audit_selected_source,
                     diagnostics_out=diagnostics,
                 )
             )
@@ -186,6 +187,15 @@ def main() -> int:
         "--phrase-ids-file",
         type=Path,
         help="with --source-phrase-effect-candidates, phrase-source statute IDs file",
+    )
+    parser.add_argument(
+        "--audit-selected-source",
+        action="store_true",
+        help=(
+            "with --source-phrase-effect-candidates, also resolve each candidate's "
+            "selected source provision and report whether that selected source "
+            "contains a repeal/revival phrase"
+        ),
     )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
