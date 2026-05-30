@@ -406,10 +406,10 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
     """Parse source-carried fragment substitutions.
 
     The parser is pure but callers may mutate returned fragment dictionaries
-    while adding replay-specific context. Cache only immutable parse facts and
-    return fresh dictionaries on every public call.
+    while adding replay-specific context. The cache holds immutable typed
+    fragments; serialize a fresh dict from each on every public call.
     """
-    return [dict(items) for items in _parse_fragment_substitution_cached(text)]
+    return [fragment_to_legacy_dict(f) for f in _parse_fragment_substitution_cached(text)]
 
 
 def parse_fragment_substitution_typed(text: str) -> tuple[UKTextRewriteFragment, ...]:
@@ -422,11 +422,11 @@ def parse_fragment_substitution_typed(text: str) -> tuple[UKTextRewriteFragment,
     equals ``parse_fragment_substitution(t)`` for every input.  Consumers that
     want to branch on selector type (e.g. ``isinstance(f.selector,
     RangeToEndSelector)``) read this surface; the legacy dict API is unchanged.
+
+    This is now the canonical cached form, returned directly (the dict API is its
+    serialization), not a per-call reconstruction.
     """
-    return tuple(
-        fragment_from_legacy_dict(dict(items))
-        for items in _parse_fragment_substitution_cached(text)
-    )
+    return _parse_fragment_substitution_cached(text)
 
 
 def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
@@ -3166,9 +3166,13 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
 
 
 @lru_cache(maxsize=8192)
-def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str], ...], ...]:
-    """
-    NLP-enhanced fragment extraction. Returns a list of substitution dicts.
+def _parse_fragment_substitution_cached(text: str) -> tuple[UKTextRewriteFragment, ...]:
+    """NLP-enhanced fragment extraction; returns typed rewrite fragments.
+
+    The recognizers build legacy dicts internally, but the cached result is the
+    typed-fragment form — that is the canonical parse fact. The public dict API
+    (:func:`parse_fragment_substitution`) is the serialization of these fragments,
+    not the other way round.
     'for "the Lord Chancellor" substitute "the Secretary of State"'
     'from "(a)" to "(b)" are omitted'
     """
@@ -3215,7 +3219,9 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
             subs.append({"original": m.group(2).strip(), "replacement": m.group(1).strip()})
 
     subs = _mark_compound_lettered_text_patches(text, subs)
-    return tuple(tuple(sub.items()) for sub in _deduplicate_fragment_substitutions(subs))
+    return tuple(
+        fragment_from_legacy_dict(sub) for sub in _deduplicate_fragment_substitutions(subs)
+    )
 
 def is_whole_node_replacement(text: str, effect_type: str) -> bool:
     """
