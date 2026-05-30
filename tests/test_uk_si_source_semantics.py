@@ -93,7 +93,9 @@ def test_si_source_semantics_records_made_date_commencement_default_candidate() 
     )
     assert row["status"] == "single_made_date"
     assert row["made_dates"] == ("2022-02-01",)
+    assert row["body_commencement_clause_count"] == 0
     assert row["commencement_default_candidate"] is True
+    assert row["commencement_default_adjudication_hint"] == "no_body_commencement_clause_seen"
     assert row["commencement_default_source"] == (
         "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_3_12"
     )
@@ -113,8 +115,40 @@ def test_si_source_semantics_records_unresolved_commencement_default_without_mad
     )
     assert row["status"] == "missing_made_date"
     assert row["made_dates"] == ()
+    assert row["body_commencement_clause_count"] == 0
     assert row["commencement_default_candidate"] is False
+    assert row["commencement_default_adjudication_hint"] == ""
     assert row["commencement_default_source"] == ""
+
+
+def test_si_source_semantics_marks_default_candidate_body_commencement_adjudication() -> None:
+    rows = _records(
+        """
+        <Legislation xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+          <ukm:SecondaryMetadata>
+            <ukm:Made Date="2022-02-01"/>
+          </ukm:SecondaryMetadata>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>1.</Pnumber>
+                <Title>Commencement</Title>
+                <P1para><Text>This Order comes into force on the day after the day on which it is made.</Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(
+        row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
+    )
+    assert row["status"] == "single_made_date"
+    assert row["body_commencement_clause_count"] == 1
+    assert row["commencement_default_adjudication_hint"] == (
+        "body_commencement_clause_needs_adjudication"
+    )
 
 
 def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:

@@ -238,9 +238,17 @@ def _commencement_default_record(
     if _elements(root, "ComingIntoForce"):
         return None
     made_dates = _made_dates(root)
+    body_commencement_clause_count = len(
+        _body_clauses_with_families(root, {"si_body_commencement_clause_surface"})
+    )
     status = "single_made_date" if len(made_dates) == 1 else "missing_made_date"
     if len(made_dates) > 1:
         status = "multiple_made_dates"
+    adjudication_hint = ""
+    if len(made_dates) == 1 and body_commencement_clause_count:
+        adjudication_hint = "body_commencement_clause_needs_adjudication"
+    elif len(made_dates) == 1:
+        adjudication_hint = "no_body_commencement_clause_seen"
     return UKSISourceSemanticsRecord(
         family="si_commencement_default_surface",
         statute_id=statute_id,
@@ -250,7 +258,9 @@ def _commencement_default_record(
         detail={
             "made_dates": made_dates,
             "made_date_count": len(made_dates),
+            "body_commencement_clause_count": body_commencement_clause_count,
             "commencement_default_candidate": len(made_dates) == 1,
+            "commencement_default_adjudication_hint": adjudication_hint,
             "commencement_default_source": (
                 "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_3_12"
                 if len(made_dates) == 1
@@ -298,13 +308,7 @@ def _body_clause_records(
     if body is None:
         return ()
     records: list[UKSISourceSemanticsRecord] = []
-    for p1 in _elements(body, "P1"):
-        text = _text(p1)
-        if not text:
-            continue
-        families = _body_clause_families(text)
-        if not families:
-            continue
+    for p1, text, families in _body_clauses_with_families(body):
         label = _own_number(p1)
         title = _own_title(p1)
         source_role = _body_clause_source_role(p1)
@@ -337,6 +341,24 @@ def _body_clause_records(
 
 def _expected_body_unit_kind(document_minor_type: str) -> str:
     return _EXPECTED_BODY_UNIT_BY_MINOR_TYPE.get(str(document_minor_type or "").lower(), "")
+
+
+def _body_clauses_with_families(
+    root: ET._Element,
+    family_filter: set[str] | None = None,
+) -> tuple[tuple[ET._Element, str, tuple[tuple[str, str], ...]], ...]:
+    records: list[tuple[ET._Element, str, tuple[tuple[str, str], ...]]] = []
+    for p1 in _elements(root, "P1"):
+        text = _text(p1)
+        if not text:
+            continue
+        families = _body_clause_families(text)
+        if family_filter is not None:
+            families = tuple(item for item in families if item[0] in family_filter)
+        if not families:
+            continue
+        records.append((p1, text, families))
+    return tuple(records)
 
 
 def _body_clause_families(text: str) -> tuple[tuple[str, str], ...]:
