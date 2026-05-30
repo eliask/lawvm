@@ -142,6 +142,14 @@ use when a concrete failing case or architecture task needs the rule boundary.
   rows, 7,779 application rows, 2,750 revocation/lapse rows, and 5
   correction-slip marker rows. These are evidence rows only; replay-changing SI
   rules still require source-level adjudication of a concrete family.
+  **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
+  with no effect-level in-force date still recover a replay date only from exactly
+  one official `ComingIntoForce/DateTime/@Date`. Missing source XML, parse errors,
+  textual-only commencement metadata, and multi-date commencement metadata now emit
+  nonblocking `uk_effect_undated_applied_si_commencement_unresolved` observations
+  instead of disappearing as an invisible non-recovery. On the 77-statute broad
+  gate this exposes 312 unresolved non-recoveries (295 textual/missing-date, 17
+  multi-date) alongside 321 existing single-date source-backed overrides.
 
 ### Process, proposed-law, and authority paths
 
