@@ -78,11 +78,13 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
 
 ## Ranked backlog (highest correctness value first)
 1. **§6.8 resolver** (above) — biggest remaining correctness lever.
-2. **`repealed in part` over-application** — concrete case: dropping `ukpga/1996/5`'s
-   one prospective (but actually-commenced) `repealed in part` of Sch.1 para.6 gives
-   +6.86 (→100%). The affecting provision is in force, so this is a partial-repeal
-   *scope* bug (removing the whole para/subtree instead of the named part), not
-   commencement. Verified-bounded lead; check how `repealed in part` lowers + applies.
+2. **DONE — `repealed in part` overwrite-with-repeals-table** (`2ce8c213`, +6.86 on
+   `ukpga/1996/5`→100). A repeal-family effect whose source is a repeal Schedule was
+   lowering to a whole-node replace that overwrote the target with the repeals table;
+   now withheld (target preserved), while the quoted-words `text_repeal` path is kept.
+   **Residual:** `ukpga/1968/20` (+0.04) and `ukpga/1968/70` (+0.29) have the same bug
+   class but a *flattened* repeals-table source that `_looks_like_repeal_schedule_table_source`
+   doesn't match — small; extend the repeals-table detector if picking this up.
 3. **#53 / Theft-Act 24A + 1998/17 17C/D/E** — commencement + spurious-grounding
    tangle; resolve the in-force/commencement question (feeds §6.8). Re-land #52
    letter-suffix matcher only after (`_uk_section_label_in_simple_list`,
