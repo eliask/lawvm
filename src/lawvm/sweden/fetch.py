@@ -148,7 +148,7 @@ def _se_archive_fetch(
 
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "LawVM-SE/1.0 (+https://github.com/lawvm)"},
+                headers={"User-Agent": "LawVM-SE/1.0 (+https://lawvm.org)"},
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = resp.read()
