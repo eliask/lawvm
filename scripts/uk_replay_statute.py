@@ -142,7 +142,13 @@ def main():
         common = replayed_set & current_set
         print(f"Common EIDs ({len(common)}): {sorted(list(common))[:10]}...")
 
-        sim = len(common) / max(len(replayed_set), len(current_set), 1)
+        if not replayed_set and not current_set:
+            # A wholly-repealed act (e.g. the European Communities Act 1972)
+            # leaves both the replay and the oracle empty; that is perfect
+            # agreement, not a 0% miss.
+            sim = 1.0
+        else:
+            sim = len(common) / max(len(replayed_set), len(current_set), 1)
         print(f"Full EID Similarity: {sim:.1%}")
 
         only_in_replayed = replayed_set - current_set
