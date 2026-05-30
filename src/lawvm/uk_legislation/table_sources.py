@@ -8,6 +8,7 @@ from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.mutation_boundary import TreePath
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -47,9 +48,14 @@ _UK_REPEAL_TABLE_PARENT_CHILD_TEXT_REPEAL_SPLIT_RULE_ID = (
     "uk_effect_repeal_table_parent_child_text_repeal_split"
 )
 _UK_DEFINITION_SELECTOR_SEPARATOR = "\x1f"
-_UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE = re.compile(
+# Routed through the sound required-literal prefilter: this is `.search`ed over
+# repeal-table clause text that usually contains no "definition of"/"entry for"
+# phrase, so the prefilter short-circuits those misses. Sound (no false negatives),
+# so .search() results are unchanged.
+_UK_REPEAL_TABLE_DEFINITION_OR_ENTRY_CLAUSE_RE = compile_classifier_regex(
     r"\b(?:definition\s+of|definitions\s+of|entry\s+for|entries\s+for)\b",
     flags=re.I,
+    classifier_id="uk_repeal_table_definition_or_entry_clause",
 )
 
 
