@@ -136,23 +136,27 @@ use when a concrete failing case or architecture task needs the rule boundary.
   inventories SI source semantics without replay mutation. Current all-cached-SI
   command:
   `uv run python scripts/uk_si_semantics_scan.py --all --pretty --limit 0`.
-  Result: 4,869 SI-like current XML documents scanned, 36,851 diagnostic rows:
+  Result: 4,869 SI-like current XML documents scanned, 41,653 diagnostic rows:
   4,869 structure-vocabulary rows, 291 commencement-default rows, 4,863
-  vires-recital rows, 4,578 commencement-metadata rows, 7,676 body-commencement
-  clause rows, 3,214 extent rows, 8,374 application rows, 2,749
-  revocation/lapse rows, and 237 correction/reprint context rows. Body-clause rows now include `source_role`, and
-  the all-cached scan classifies 2,056 rows as `payload_carried` because they sit
+  vires-recital rows, 4,578 commencement-metadata rows, 7,674 body-commencement
+  clause rows, 2,398 temporal-effect rows, 3,214 extent rows, 10,777 application
+  rows, 2,750 revocation/lapse rows, and 239 correction/reprint context rows.
+  Body-clause rows now include `source_role`, and
+  the all-cached scan classifies 2,625 rows as `payload_carried` because they sit
   inside amendment payload XML rather than the SI's own body provision. Body-clause
   records also expose `geographic_terms` and `extent_application_relation`; current
-  summary counts are 9,148 `application_only`, 3,852 `extent_only`, and 1,579
+  summary counts are 12,422 `application_only`, 3,792 `extent_only`, and 2,044
   `combined_extent_and_application` rows. Revocation/lapse rows expose
-  `revocation_lapse_kinds`; current marker counts are 3,436 `revocation`, 735
-  `cessation`, and 276 `lapse`. Vires-recital rows expose `vires_markers` and
-  bounded `citation_texts`; current marker counts are 3,049
-  `exercise_of_powers`, 3,125 `powers_conferred`, 365 `designation`, 178
-  `consultation`, and 1,365 `approval`. Correction rows now record direct
+  `revocation_lapse_kinds`; current marker counts are 3,735 `revocation`, 803
+  `cessation`, and 323 `lapse`. Temporal-effect rows expose
+  `temporal_effect_clause_kinds`; current marker counts are 612 `appointed_day`,
+  153 `specified_day`, 1,083 `relative_to_made_day`, 2,799 `on_or_after_date`,
+  95 `continuation_period`, and 2,366 `calendar_date_text`. Vires-recital rows
+  expose `vires_markers` and bounded `citation_texts`; current marker counts are
+  3,048 `exercise_of_powers`, 3,124 `powers_conferred`, 365 `designation`, 177
+  `consultation`, and 1,364 `approval`. Correction rows now record direct
   element/attribute contexts rather than whole-document text, expose
-  `correction_marker_kinds`, and currently count 233 `correction_slip` markers
+  `correction_marker_kinds`, and currently count 235 `correction_slip` markers
   and 5 `reprint` markers. Structure rows now expose the SIP Table A expected
   body-unit vocabulary for mapped minor types: 2,687 `article` order rows, 2,056
   `regulation` rows, and 108 `rule` rows; 18 rows remain unmapped/unknown
@@ -161,15 +165,14 @@ use when a concrete failing case or architecture task needs the rule boundary.
   single `Made/@Date` as a SIP §3.12 default-commencement candidate, while 4 have
   no made date and remain unresolved. Of the single-made-date candidates, 271 have
   body commencement clauses and are flagged
-  `body_commencement_clause_needs_adjudication`; only 16 currently have
-  `no_body_commencement_clause_seen`. Body commencement rows now expose
-  `commencement_clause_kinds`; all-SI marker counts include 6,841
-  `operative_comes_into_force`, 48 `operative_comes_into_operation`, 438
-  `citation_commencement_title`, 1,290 `relative_to_made_day`, 120
-  `appointed_day_text`, and 6,461 `calendar_date_text`. In the 271 default
-  candidates needing body-clause adjudication, 264 have citation-title language,
-  177 have operative `comes into force`, and 3 have an explicit relative made-day
-  formula. These are evidence rows only;
+  `body_commencement_clause_needs_adjudication`; 13 have no explicit
+  commencement clause but do have body temporal-effect clauses and are flagged
+  `body_temporal_effect_clause_needs_adjudication`; only 3 currently have
+  `no_body_commencement_or_temporal_clause_seen`. Body commencement rows now expose
+  `commencement_clause_kinds`; all-SI marker counts include 7,893
+  `operative_comes_into_force`, 60 `operative_comes_into_operation`, 454
+  `citation_commencement_title`, 1,835 `relative_to_made_day`, 287
+  `appointed_day_text`, and 8,086 `calendar_date_text`. These are evidence rows only;
   replay-changing SI rules still require source-level adjudication of a concrete
   family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects

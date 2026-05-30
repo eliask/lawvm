@@ -94,8 +94,12 @@ def test_si_source_semantics_records_made_date_commencement_default_candidate() 
     assert row["status"] == "single_made_date"
     assert row["made_dates"] == ("2022-02-01",)
     assert row["body_commencement_clause_count"] == 0
+    assert row["body_temporal_effect_clause_count"] == 0
     assert row["commencement_default_candidate"] is True
-    assert row["commencement_default_adjudication_hint"] == "no_body_commencement_clause_seen"
+    assert (
+        row["commencement_default_adjudication_hint"]
+        == "no_body_commencement_or_temporal_clause_seen"
+    )
     assert row["commencement_default_source"] == (
         "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_3_12"
     )
@@ -116,6 +120,7 @@ def test_si_source_semantics_records_unresolved_commencement_default_without_mad
     assert row["status"] == "missing_made_date"
     assert row["made_dates"] == ()
     assert row["body_commencement_clause_count"] == 0
+    assert row["body_temporal_effect_clause_count"] == 0
     assert row["commencement_default_candidate"] is False
     assert row["commencement_default_adjudication_hint"] == ""
     assert row["commencement_default_source"] == ""
@@ -146,8 +151,41 @@ def test_si_source_semantics_marks_default_candidate_body_commencement_adjudicat
     )
     assert row["status"] == "single_made_date"
     assert row["body_commencement_clause_count"] == 1
+    assert row["body_temporal_effect_clause_count"] == 1
     assert row["commencement_default_adjudication_hint"] == (
         "body_commencement_clause_needs_adjudication"
+    )
+
+
+def test_si_source_semantics_marks_default_candidate_temporal_effect_adjudication() -> None:
+    rows = _records(
+        """
+        <Legislation xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+          <ukm:SecondaryMetadata>
+            <ukm:Made Date="2022-02-01"/>
+          </ukm:SecondaryMetadata>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>2.</Pnumber>
+                <P1para><Text>
+                  The day appointed for the purposes of section 4 is 1 March 2022.
+                </Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(
+        row.to_dict() for row in rows if row.family == "si_commencement_default_surface"
+    )
+    assert row["status"] == "single_made_date"
+    assert row["body_commencement_clause_count"] == 0
+    assert row["body_temporal_effect_clause_count"] == 1
+    assert row["commencement_default_adjudication_hint"] == (
+        "body_temporal_effect_clause_needs_adjudication"
     )
 
 
@@ -236,6 +274,32 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
     assert by_family["si_revocation_lapse_surface"][0]["revocation_lapse_kinds"] == (
         "revocation",
     )
+
+
+def test_si_source_semantics_records_temporal_effect_clause_surface() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>2.</Pnumber>
+                <P1para><Text>
+                  The day specified for the purposes of section 8 is 30 November 2001.
+                </Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(
+        row.to_dict() for row in rows if row.family == "si_temporal_effect_clause_surface"
+    )
+    assert row["provision_label"] == "2."
+    assert row["source_role"] == "instrument_body_provision"
+    assert row["temporal_effect_clause_kinds"] == ("specified_day", "calendar_date_text")
 
 
 def test_si_source_semantics_marks_combined_extent_application_clause() -> None:
