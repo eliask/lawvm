@@ -1941,6 +1941,20 @@ _PERIOD_SPECIFIED_SUBSTITUTED_RE = re.compile(
     r"\bthere\s+(?:is|are|shall\s+be)\s+substituted\b"
 )
 
+# Effect-feed verbs that modify a provision's application/operation, not its text.
+# Per OPC Drafting Guidance Part 6.9 a non-textual modification does not change the
+# printed text of the modified enactment, so it is correctly outside textual replay
+# — a distinct lane from an action verb LawVM simply does not yet support.
+_UK_NON_TEXTUAL_MODIFICATION_EFFECT_VERBS = frozenset(
+    {"applied", "excluded", "disapplied", "modified", "restricted"}
+)
+
+
+def _is_uk_non_textual_modification_effect_type(effect_type_norm: str) -> bool:
+    head = effect_type_norm.split("(", 1)[0].strip()
+    first = head.split(maxsplit=1)[0] if head else ""
+    return first in _UK_NON_TEXTUAL_MODIFICATION_EFFECT_VERBS
+
 
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     *,
@@ -2520,6 +2534,22 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
                 "The effect row names the whole Act but has no effect type; replay "
                 "must not infer a destructive whole-Act text/tree action from "
                 "incidental source wording."
+            ),
+        }
+
+    if (
+        "uk_effect_lowering_no_supported_action_rejected" in all_rules
+        and _is_uk_non_textual_modification_effect_type(effect_type_norm)
+    ):
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_non_textual_modification_out_of_scope",
+            "reason": (
+                "The effect type is a non-textual modification (the provision is "
+                "applied, excluded, modified, disapplied or restricted for certain "
+                "purposes) that does not change the printed text of the modified "
+                "enactment (OPC Drafting Guidance Part 6.9). It is correctly outside "
+                "textual replay, not an unsupported action waiting to be closed."
             ),
         }
 

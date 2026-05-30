@@ -2773,12 +2773,37 @@ def test_classify_uk_manual_compile_frontier_marks_naked_payload_source_insuffic
     assert result["rule_id"] == "uk_manual_frontier_payload_without_action_source_insufficient"
 
 
-def test_classify_uk_manual_compile_frontier_keeps_unsupported_family_out_of_scope() -> None:
+def test_classify_uk_manual_compile_frontier_marks_applied_as_non_textual_modification() -> None:
+    # "applied" is a non-textual modification (OPC Part 6.9): it changes how a
+    # provision operates, not its printed text, so it is out of scope for textual
+    # replay by construction — distinct from an action verb LawVM merely lacks.
     result = classify_uk_manual_compile_frontier(
         effect_type="applied",
         source_pathology="",
         extracted_tag="P1",
         extracted_text="This provision is applied.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_non_textual_modification_out_of_scope"
+
+
+def test_classify_uk_manual_compile_frontier_keeps_unsupported_family_out_of_scope() -> None:
+    # A verb that is NOT a non-textual modification still falls to the generic
+    # unsupported-effect-family lane (a deterministic gap that may later close).
+    result = classify_uk_manual_compile_frontier(
+        effect_type="replaced",
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text="This provision is replaced.",
         lowering_rejections=(
             {
                 "rule_id": "uk_effect_lowering_no_supported_action_rejected",
