@@ -307,3 +307,28 @@ def test_main_targeted_refresh_skips_corpus_enumeration(monkeypatch, tmp_path, c
     out = capsys.readouterr().out
     assert "[refresh] mutable resources" in out
     assert "current+1  effects+1" in out
+
+
+def test_decode_content_encoding_gzip_roundtrip() -> None:
+    import gzip
+
+    xml = b"<Legislation><Body/></Legislation>"
+    body = gzip.compress(xml)
+    assert acquire_uk_corpus._decode_content_encoding(body, "gzip") == xml
+
+
+def test_decode_content_encoding_deflate_zlib_and_raw() -> None:
+    import zlib
+
+    xml = b"<Legislation/>"
+    assert acquire_uk_corpus._decode_content_encoding(zlib.compress(xml), "deflate") == xml
+    raw = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    raw_deflate = raw.compress(xml) + raw.flush()
+    assert acquire_uk_corpus._decode_content_encoding(raw_deflate, "deflate") == xml
+
+
+def test_decode_content_encoding_identity_passthrough() -> None:
+    xml = b"<Legislation/>"
+    assert acquire_uk_corpus._decode_content_encoding(xml, None) == xml
+    assert acquire_uk_corpus._decode_content_encoding(xml, "identity") == xml
+    assert acquire_uk_corpus._decode_content_encoding(xml, "") == xml

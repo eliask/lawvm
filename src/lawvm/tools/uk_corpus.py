@@ -27,10 +27,12 @@ import csv
 import hashlib
 import io
 import json
+import gzip
 import re
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zlib
 from collections import Counter
 from pathlib import Path
 from typing import Any, Optional
@@ -89,6 +91,27 @@ def _affecting_acquisition_event(
     }
 
 
+def _decode_content_encoding(data: bytes, content_encoding: Optional[str]) -> bytes:
+    """Decompress an HTTP body per its ``Content-Encoding``.
+
+    We advertise ``Accept-Encoding: gzip, deflate``, so the server may return a
+    compressed body.  ``urllib`` does not auto-decompress, so the raw bytes must
+    be decoded before they are stored — otherwise the archive holds gzip bytes
+    that no XML parser can read (a corpus-corruption bug).
+    """
+    encoding = (content_encoding or "").strip().lower()
+    if not encoding or encoding == "identity":
+        return data
+    if encoding == "gzip":
+        return gzip.decompress(data)
+    if encoding == "deflate":
+        try:
+            return zlib.decompress(data)
+        except zlib.error:
+            return zlib.decompress(data, -zlib.MAX_WBITS)
+    return data
+
+
 class _HTTP:
     """Rate-limited fetcher with retry/backoff."""
 
@@ -115,7 +138,9 @@ class _HTTP:
             req.add_header("Accept-Encoding", "gzip, deflate")
             try:
                 with urlopen(req, timeout=60) as resp:
-                    data = resp.read()
+                    data = _decode_content_encoding(
+                        resp.read(), resp.headers.get("Content-Encoding")
+                    )
                     self.bytes += len(data)
                     return data, resp.getcode()
             except HTTPError as e:
