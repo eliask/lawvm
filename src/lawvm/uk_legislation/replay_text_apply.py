@@ -1557,9 +1557,10 @@ class UKReplayTextApplyMixin:
         """Apply a range-to-end rewrite to parser-marked post-child local text."""
         text = node.text or ""
         post_child_tail = str(node.attrs.get("uk_post_child_text_tail") or "")
-        if not text or not post_child_tail or not match.startswith("TEXT_FROM_") or not match.endswith("_TO_END"):
+        range_to_end_selector = selector_from_legacy_original(match)
+        if not text or not post_child_tail or not isinstance(range_to_end_selector, RangeToEndSelector):
             return node, False
-        start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+        start_text = range_to_end_selector.start
         if not start_text:
             return node, False
         tail_start = _find_text_range_start_index(
