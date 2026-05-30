@@ -72,7 +72,7 @@ _UK_AFFECTING_CLASS_SLUG_MAP = {
     "EuropeanUnionDirective": "eudr",
 }
 
-_UK_AFFECTING_URI_SLUG_RE = re.compile(r"legislation\.gov\.uk/(?:id/)?([a-z]+)/(\d+)/(\d+)\b")
+_UK_AFFECTING_URI_SLUG_RE = re.compile(r"legislation\.gov\.uk/(?:id/)?([a-z]{1,16})/(\d{1,9})/(\d{1,9})\b")
 
 
 def _uk_effect_feed_diagnostic(
@@ -101,9 +101,11 @@ def _is_uk_repealed_by_effect_type(effect_type: str) -> bool:
     return str(effect_type or "").strip().lower().startswith("repealed by ")
 
 
-_UK_EFFECT_TYPE_TRAILING_DATE_RE = re.compile(
-    r"\s*\((\d{1,2}\.\d{1,2}\.\d{4}(?:\s+\d{1,2}\.\d{1,2}\.\d{4})*)\)\s*$"
-)
+# Grab a trailing parenthetical with a single non-nested quantifier, then
+# validate each whitespace-separated token as a dotted date in Python — this
+# keeps the "wholly dates" guard without a nested backtracking quantifier.
+_UK_EFFECT_TYPE_TRAILING_PAREN_RE = re.compile(r"\s{0,8}\(([^)]{0,420})\)\s{0,8}$")
+_UK_DOTTED_DATE_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
 
 
 def _iso_from_uk_dotted_date(token: str) -> str:
@@ -125,10 +127,13 @@ def normalize_uk_effect_type_trailing_date(raw_type: str) -> tuple[str, list[str
     treated as a misplaced commencement date.
     """
     text = str(raw_type or "")
-    match = _UK_EFFECT_TYPE_TRAILING_DATE_RE.search(text)
+    match = _UK_EFFECT_TYPE_TRAILING_PAREN_RE.search(text)
     if match is None:
         return text, []
-    dates = [_iso_from_uk_dotted_date(tok) for tok in match.group(1).split()]
+    tokens = match.group(1).split()
+    if not tokens or not all(_UK_DOTTED_DATE_RE.match(tok) for tok in tokens):
+        return text, []
+    dates = [_iso_from_uk_dotted_date(tok) for tok in tokens]
     return text[: match.start()].rstrip(), dates
 
 
