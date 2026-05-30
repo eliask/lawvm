@@ -260,6 +260,39 @@ class TestParserProductionParity:
                     "rule_id": "uk_effect_after_child_text_insertion_patch",
                 }],
             ),
+            # definition-anchor insertion family (DefinitionAnchorSelector)
+            (
+                'after the definition of "widget", insert "and gadget"',
+                [{
+                    "original": "TEXT_AFTER_DEFINITION_widget",
+                    "replacement": '"and gadget"',
+                    "rule_id": "uk_effect_after_definition_text_insertion_patch",
+                }],
+            ),
+            (
+                'after the definitions of "a" and "b" there is inserted "new clause"',
+                [{
+                    "original": "TEXT_AFTER_DEFINITION_b",
+                    "replacement": '"new clause"',
+                    "rule_id": "uk_effect_after_definitions_text_insertion_patch",
+                }],
+            ),
+            (
+                'before the definition of "zebra", insert "and yak"',
+                [{
+                    "original": "TEXT_BEFORE_DEFINITION_zebra",
+                    "replacement": '"and yak"',
+                    "rule_id": "uk_effect_before_definition_text_insertion_patch",
+                }],
+            ),
+            (
+                'before the entry for "alpha", insert "beta" means a thing;',
+                [{
+                    "original": "TEXT_BEFORE_DEFINITION_alpha",
+                    "replacement": '"beta" means a thing;',
+                    "rule_id": "uk_effect_before_definition_entry_text_insertion_patch",
+                }],
+            ),
         ],
     )
     def test_migrated_family_parity(self, text: str, expected: list) -> None:
