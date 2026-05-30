@@ -109,6 +109,8 @@ def test_si_commencement_override_rejects_multi_date_metadata_with_diagnostic() 
             "effect_type": "words substituted",
             "commencement_metadata_status": "multiple_or_textual",
             "commencement_metadata_dates": ("1999-02-20", "1999-03-01"),
+            "commencement_metadata_made_dates": (),
+            "commencement_default_candidate": False,
             "source_locator": _data_locator(),
             "authority_layer": "AFFECTING_ACT_METADATA",
             "temporal_resolution_status": "unknown_effective_date",
@@ -138,6 +140,8 @@ def test_si_commencement_override_rejects_missing_metadata_source_with_diagnosti
     assert diagnostics[0]["temporal_resolution_status"] == "unknown_effective_date"
     assert diagnostics[0]["commencement_metadata_status"] == "source_xml_unavailable"
     assert diagnostics[0]["commencement_metadata_dates"] == ()
+    assert diagnostics[0]["commencement_metadata_made_dates"] == ()
+    assert diagnostics[0]["commencement_default_candidate"] is False
     assert "source_locator" not in diagnostics[0]
     assert "authority_layer" not in diagnostics[0]
 
@@ -168,6 +172,38 @@ def test_si_commencement_override_rejects_textual_metadata_with_diagnostic() -> 
     assert diagnostics[0]["rule_id"] == UK_UNDATED_APPLIED_SI_COMMENCEMENT_UNRESOLVED_RULE_ID
     assert diagnostics[0]["commencement_metadata_status"] == "textual_or_missing_date"
     assert diagnostics[0]["commencement_metadata_dates"] == ()
+    assert diagnostics[0]["commencement_metadata_made_dates"] == ()
+    assert diagnostics[0]["commencement_default_candidate"] is False
+
+
+def test_si_commencement_override_records_made_date_default_candidate_without_override() -> None:
+    archive = _Archive(
+        {
+            _data_locator(): b"""
+            <Legislation xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+              <ukm:SecondaryMetadata>
+                <ukm:Made Date="1999-02-19"/>
+              </ukm:SecondaryMetadata>
+            </Legislation>
+            """
+        }
+    )
+
+    diagnostics: list[dict[str, Any]] = []
+    overrides = resolve_uk_effective_date_overrides_for_replay(
+        [_undated_applied_si_effect()],
+        archive,
+        diagnostics_out=diagnostics,
+    )
+
+    assert overrides == {}
+    assert diagnostics[0]["rule_id"] == UK_UNDATED_APPLIED_SI_COMMENCEMENT_UNRESOLVED_RULE_ID
+    assert diagnostics[0]["commencement_metadata_status"] == (
+        "default_commencement_made_date_candidate"
+    )
+    assert diagnostics[0]["commencement_metadata_dates"] == ()
+    assert diagnostics[0]["commencement_metadata_made_dates"] == ("1999-02-19",)
+    assert diagnostics[0]["commencement_default_candidate"] is True
 
 
 def test_si_commencement_override_rejects_unparsable_source_with_diagnostic() -> None:
@@ -182,6 +218,8 @@ def test_si_commencement_override_rejects_unparsable_source_with_diagnostic() ->
     assert diagnostics[0]["rule_id"] == UK_UNDATED_APPLIED_SI_COMMENCEMENT_UNRESOLVED_RULE_ID
     assert diagnostics[0]["commencement_metadata_status"] == "source_xml_parse_error"
     assert diagnostics[0]["commencement_metadata_dates"] == ()
+    assert diagnostics[0]["commencement_metadata_made_dates"] == ()
+    assert diagnostics[0]["commencement_default_candidate"] is False
     assert diagnostics[0]["source_locator"] == _data_locator()
     assert diagnostics[0]["authority_layer"] == "AFFECTING_ACT_METADATA"
     assert diagnostics[0]["parse_error"]

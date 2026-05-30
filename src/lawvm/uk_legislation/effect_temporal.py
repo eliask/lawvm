@@ -34,6 +34,7 @@ class UKCommencementMetadata(NamedTuple):
     source_locator: str
     status: str
     dates: tuple[str, ...] = ()
+    made_dates: tuple[str, ...] = ()
     parse_error: str = ""
 
 
@@ -62,12 +63,21 @@ def _instrument_commencement_metadata(
         for elem in root.findall(f".//{{{_UKM_NS}}}ComingIntoForce/{{{_UKM_NS}}}DateTime")
         if str(elem.attrib.get("Date") or "").strip()
     }
+    made_dates = {
+        str(elem.attrib.get("Date") or "").strip()
+        for elem in root.findall(f".//{{{_UKM_NS}}}Made")
+        if str(elem.attrib.get("Date") or "").strip()
+    }
     if len(dates) != 1:
+        status = "textual_or_missing_date" if not dates else "multiple_or_textual"
+        if not dates and len(made_dates) == 1:
+            status = "default_commencement_made_date_candidate"
         return UKCommencementMetadata(
             effective_date="",
             source_locator=source_locator,
-            status="textual_or_missing_date" if not dates else "multiple_or_textual",
+            status=status,
             dates=tuple(sorted(dates)),
+            made_dates=tuple(sorted(made_dates)),
         )
     date = next(iter(dates))
     return UKCommencementMetadata(
@@ -75,6 +85,7 @@ def _instrument_commencement_metadata(
         source_locator=source_locator,
         status="single_date",
         dates=(date,),
+        made_dates=tuple(sorted(made_dates)),
     )
 
 
@@ -141,6 +152,10 @@ def _append_commencement_unresolved_observation(
         **_effect_detail(effect),
         "commencement_metadata_status": metadata.status,
         "commencement_metadata_dates": metadata.dates,
+        "commencement_metadata_made_dates": metadata.made_dates,
+        "commencement_default_candidate": (
+            metadata.status == "default_commencement_made_date_candidate"
+        ),
     }
     if metadata.parse_error:
         detail["parse_error"] = metadata.parse_error
