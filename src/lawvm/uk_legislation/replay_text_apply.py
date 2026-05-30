@@ -17,6 +17,7 @@ from lawvm.uk_legislation.text_matching import (
     _text_patch_pattern,
 )
 from lawvm.uk_legislation.text_selectors import (
+    AfterAnchorToEndSelector,
     RangeToEndSelector,
     selector_from_legacy_original,
 )
@@ -1359,8 +1360,9 @@ class UKReplayTextApplyMixin:
                 )
             return rebuilt, True
 
-        if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
-            anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
+        after_anchor_selector = selector_from_legacy_original(match)
+        if isinstance(after_anchor_selector, AfterAnchorToEndSelector):
+            anchor = after_anchor_selector.anchor
             if not anchor:
                 return node, False
             ordinal = occurrence if occurrence > 0 else 1
@@ -3039,8 +3041,9 @@ class UKReplayTextApplyMixin:
             self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
 
-        if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
-            anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
+        after_anchor_selector = selector_from_legacy_original(match)
+        if isinstance(after_anchor_selector, AfterAnchorToEndSelector):
+            anchor = after_anchor_selector.anchor
             if not anchor:
                 return node, False
 
