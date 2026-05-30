@@ -61,6 +61,11 @@ _GEOGRAPHIC_TERM_MARKERS = (
     ("channel_islands", "channel islands"),
     ("isle_of_man", "isle of man"),
 )
+_EXPECTED_BODY_UNIT_BY_MINOR_TYPE = {
+    "order": "article",
+    "regulation": "regulation",
+    "rule": "rule",
+}
 
 
 @dataclass(frozen=True)
@@ -147,6 +152,7 @@ def _structure_record(
     tag_counts = Counter(_local_name(el) for el in root.iter() if isinstance(el.tag, str))
     main_type = _first_text(root, "DocumentMainType")
     minor_type = _first_text(root, "DocumentMinorType")
+    expected_body_unit = _expected_body_unit_kind(minor_type)
     category = _first_text(root, "DocumentCategory")
     number_of_provisions = str(root.get("NumberOfProvisions") or "")
     return UKSISourceSemanticsRecord(
@@ -157,6 +163,12 @@ def _structure_record(
         detail={
             "document_main_type": main_type,
             "document_minor_type": minor_type,
+            "expected_body_unit_kind": expected_body_unit,
+            "expected_body_unit_source": (
+                "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_TABLE_A"
+                if expected_body_unit
+                else ""
+            ),
             "document_category": category,
             "number_of_provisions": number_of_provisions,
             "has_secondary_prelims": tag_counts["SecondaryPrelims"] > 0,
@@ -283,6 +295,10 @@ def _body_clause_records(
                 )
             )
     return tuple(records)
+
+
+def _expected_body_unit_kind(document_minor_type: str) -> str:
+    return _EXPECTED_BODY_UNIT_BY_MINOR_TYPE.get(str(document_minor_type or "").lower(), "")
 
 
 def _body_clause_families(text: str) -> tuple[tuple[str, str], ...]:

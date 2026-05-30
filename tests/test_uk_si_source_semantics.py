@@ -35,6 +35,11 @@ def test_si_source_semantics_records_metadata_commencement_and_structure() -> No
     structure = by_family["si_structure_vocabulary"].to_dict()
     assert structure["document_main_type"] == "UnitedKingdomStatutoryInstrument"
     assert structure["document_minor_type"] == "order"
+    assert structure["expected_body_unit_kind"] == "article"
+    assert (
+        structure["expected_body_unit_source"]
+        == "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_TABLE_A"
+    )
     assert structure["number_of_provisions"] == "4"
     assert structure["has_secondary_prelims"] is True
     assert structure["has_body"] is True
@@ -44,6 +49,30 @@ def test_si_source_semantics_records_metadata_commencement_and_structure() -> No
     assert commencement["status"] == "single_date"
     assert commencement["coming_into_force_dates"] == ("2022-02-01",)
     assert commencement["coming_into_force_element_count"] == 1
+
+
+def test_si_source_semantics_records_expected_body_unit_by_minor_type() -> None:
+    cases = {
+        "regulation": "regulation",
+        "rule": "rule",
+        "scheme": "",
+    }
+    for minor_type, expected_unit in cases.items():
+        rows = _records(
+            f"""
+            <Legislation>
+              <Metadata>
+                <DocumentMinorType Value="{minor_type}"/>
+              </Metadata>
+              <Secondary><Body/></Secondary>
+            </Legislation>
+            """
+        )
+
+        row = next(row.to_dict() for row in rows if row.family == "si_structure_vocabulary")
+        assert row["document_minor_type"] == minor_type
+        assert row["expected_body_unit_kind"] == expected_unit
+        assert bool(row["expected_body_unit_source"]) is bool(expected_unit)
 
 
 def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
