@@ -133,6 +133,13 @@ def scan_si_source_semantics_root(
     commencement = _commencement_record(statute_id, root, source_path=source_path)
     if commencement is not None:
         records.append(commencement)
+    commencement_default = _commencement_default_record(
+        statute_id,
+        root,
+        source_path=source_path,
+    )
+    if commencement_default is not None:
+        records.append(commencement_default)
     vires = _vires_record(statute_id, root, source_path=source_path)
     if vires is not None:
         records.append(vires)
@@ -218,6 +225,37 @@ def _commencement_record(
             "coming_into_force_element_count": len(coming_into_force),
             "coming_into_force_dates": tuple(dates),
             "coming_into_force_text_count": len(text_values),
+        },
+    )
+
+
+def _commencement_default_record(
+    statute_id: str,
+    root: ET._Element,
+    *,
+    source_path: str,
+) -> UKSISourceSemanticsRecord | None:
+    if _elements(root, "ComingIntoForce"):
+        return None
+    made_dates = _made_dates(root)
+    status = "single_made_date" if len(made_dates) == 1 else "missing_made_date"
+    if len(made_dates) > 1:
+        status = "multiple_made_dates"
+    return UKSISourceSemanticsRecord(
+        family="si_commencement_default_surface",
+        statute_id=statute_id,
+        rule_id="uk_si_commencement_default_surface_recorded",
+        source_path=source_path,
+        status=status,
+        detail={
+            "made_dates": made_dates,
+            "made_date_count": len(made_dates),
+            "commencement_default_candidate": len(made_dates) == 1,
+            "commencement_default_source": (
+                "STATUTORY_INSTRUMENT_PRACTICE_5TH_ED_3_12"
+                if len(made_dates) == 1
+                else ""
+            ),
         },
     )
 
@@ -361,6 +399,15 @@ def _first_text(root: ET._Element, local_name: str) -> str:
     if text:
         return text
     return str(el.get("Value") or "")
+
+
+def _made_dates(root: ET._Element) -> tuple[str, ...]:
+    dates: list[str] = []
+    for el in _elements(root, "Made"):
+        date = str(el.get("Date") or "").strip()
+        if date and date not in dates:
+            dates.append(date)
+    return tuple(dates)
 
 
 def _own_number(el: ET._Element) -> str:

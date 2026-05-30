@@ -136,11 +136,11 @@ use when a concrete failing case or architecture task needs the rule boundary.
   inventories SI source semantics without replay mutation. Current all-cached-SI
   command:
   `uv run python scripts/uk_si_semantics_scan.py --all --pretty --limit 0`.
-  Result: 4,869 SI-like current XML documents scanned, 36,563 diagnostic rows:
-  4,869 structure-vocabulary rows, 4,863 vires-recital rows, 4,578
-  commencement-metadata rows, 7,677 body-commencement clause rows, 3,215 extent
-  rows, 8,374 application rows, 2,750 revocation/lapse rows, and 237
-  correction/reprint context rows. Body-clause rows now include `source_role`, and
+  Result: 4,869 SI-like current XML documents scanned, 36,854 diagnostic rows:
+  4,869 structure-vocabulary rows, 291 commencement-default rows, 4,863
+  vires-recital rows, 4,578 commencement-metadata rows, 7,677 body-commencement
+  clause rows, 3,215 extent rows, 8,374 application rows, 2,750
+  revocation/lapse rows, and 237 correction/reprint context rows. Body-clause rows now include `source_role`, and
   the all-cached scan classifies 2,056 rows as `payload_carried` because they sit
   inside amendment payload XML rather than the SI's own body provision. Body-clause
   records also expose `geographic_terms` and `extent_application_relation`; current
@@ -156,7 +156,10 @@ use when a concrete failing case or architecture task needs the rule boundary.
   and 5 `reprint` markers. Structure rows now expose the SIP Table A expected
   body-unit vocabulary for mapped minor types: 2,687 `article` order rows, 2,056
   `regulation` rows, and 108 `rule` rows; 18 rows remain unmapped/unknown
-  (`unknown`, empty, `scheme`, or `resolution`). These are evidence rows only;
+  (`unknown`, empty, `scheme`, or `resolution`). Commencement-default rows record
+  no-`ComingIntoForce` instruments separately from replay fallback: 287 expose a
+  single `Made/@Date` as a SIP §3.12 default-commencement candidate, while 4 have
+  no made date and remain unresolved. These are evidence rows only;
   replay-changing SI rules still require source-level adjudication of a concrete
   family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
