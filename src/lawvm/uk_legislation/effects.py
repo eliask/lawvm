@@ -275,6 +275,27 @@ class UKEffectRecord:
         return real or any_date
 
     @property
+    def is_prospective_only(self) -> bool:
+        """True when every in-force date is prospective (none commenced).
+
+        The effect carries date metadata but no real (non-prospective) in-force
+        date, so it has not been brought into force. Applying it to the current
+        consolidation may over-apply an uncommenced change (OPC Drafting Guidance
+        Part 6.8). Effects with no date metadata at all are out of scope here —
+        they are handled by other lanes, not treated as a prospective signal.
+        """
+        dates = self.in_force_dates or []
+        if not dates:
+            return False
+        has_real = any(
+            d.get("date") and str(d.get("prospective", "false")).lower() != "true" for d in dates
+        )
+        has_prospective = any(
+            str(d.get("prospective", "false")).lower() == "true" for d in dates
+        )
+        return not has_real and has_prospective
+
+    @property
     def is_structural(self) -> bool:
         return (self.applied or self.metadata_only) and (
             self.effect_type in STRUCTURAL_EFFECT_TYPES

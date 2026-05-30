@@ -74,6 +74,9 @@ from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
     evict_source_root_caches,
 )
+from lawvm.uk_legislation.prospective_effect_warrant import (
+    prospective_effect_applied_observation,
+)
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
@@ -378,6 +381,11 @@ class UKReplayPipeline:
                     replay_applicable=replay_applicable,
                     compiled_op_count=len(compiled),
                 )
+
+                if effect_diagnostics_out is not None and replay_applicable:
+                    prospective_observation = prospective_effect_applied_observation(e)
+                    if prospective_observation is not None:
+                        effect_diagnostics_out.append(prospective_observation)
 
                 if not compiled:
                     append_no_ops_lowering_rejections(
