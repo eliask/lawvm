@@ -227,6 +227,10 @@ def oracle_check_uk_statute(
     )
     from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
     from lawvm.uk_legislation.source_adjudication import normalize_uk_replay_compare_eids
+    from lawvm.uk_legislation.source_state import (
+        UKStatuteXmlContentStatus,
+        classify_uk_statute_xml_content,
+    )
     from lawvm.tools.uk_structural_review import (
         _collect_replay_eid_texts,
         _build_norm_to_raw,
@@ -258,6 +262,7 @@ def oracle_check_uk_statute(
                 f"=== {statute_id} — UK oracle-check ERROR ===\n"
                 f"Enacted XML missing from archive: {enacted_url}\n"
             )
+        base_source = classify_uk_statute_xml_content(base_bytes)
         base_ir = parse_uk_statute_ir_bytes(
             base_bytes,
             statute_id=statute_id,
@@ -417,6 +422,13 @@ def oracle_check_uk_statute(
             f"unexplained_reports={len(mutation_unexplained_reports)}  "
             f"unexplained_paths={mutation_unexplained_path_count}"
         ),
+        (
+            "Base source: "
+            f"{base_source.status.value}  "
+            f"bytes={base_source.size}  "
+            f"NumberOfProvisions={base_source.number_of_provisions or '<unknown>'}  "
+            f"body={base_source.has_body}  schedules={base_source.has_schedules}"
+        ),
         "",
         "DIVERGENCE BUCKET SUMMARY:",
         f"  deterministic_gap  : {len(buckets['deterministic_gap'])}  "
@@ -431,6 +443,20 @@ def oracle_check_uk_statute(
         "(subset of only-replay EIDs minted by oracle-alignment local_fallback, not a source op)",
         "",
     ]
+
+    if base_source.status is UKStatuteXmlContentStatus.METADATA_ONLY:
+        lines.extend(
+            [
+                "BASE_SOURCE_FRONTIER:",
+                (
+                    "  Enacted XML is a metadata-only legal-source envelope. "
+                    "Oracle-only original provisions are source-acquisition frontier "
+                    "evidence here, not proof that replay should synthesize the base "
+                    "from current text."
+                ),
+                "",
+            ]
+        )
 
     for bucket_name, bucket_eids in buckets.items():
         if not bucket_eids:
