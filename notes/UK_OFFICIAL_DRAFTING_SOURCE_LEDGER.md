@@ -165,11 +165,14 @@ use when a concrete failing case or architecture task needs the rule boundary.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
   with no effect-level in-force date still recover a replay date only from exactly
   one official `ComingIntoForce/DateTime/@Date`. Missing source XML, parse errors,
-  textual-only commencement metadata, and multi-date commencement metadata now emit
+  made-date default candidates, textual-only commencement metadata, and multi-date commencement metadata now emit
   nonblocking `uk_effect_undated_applied_si_commencement_unresolved` observations
   instead of disappearing as an invisible non-recovery. On the 77-statute broad
-  gate this exposes 312 unresolved non-recoveries (295 textual/missing-date, 17
-  multi-date) alongside 321 existing single-date source-backed overrides.
+  gate this exposes 312 unresolved non-recoveries (295
+  `default_commencement_made_date_candidate`, 17 `multiple_or_textual`) alongside
+  321 existing single-date source-backed overrides. Made-date default candidates
+  record `commencement_metadata_made_dates` and `commencement_default_candidate`
+  but are not used as replay dates.
 
 ### Process, proposed-law, and authority paths
 
