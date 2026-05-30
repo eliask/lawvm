@@ -1,0 +1,618 @@
+{
+  "asc/2025/5": {
+    "aligned": 65.63,
+    "n_ops": 0,
+    "n_oracle": 632,
+    "n_replay": 963,
+    "statute_id": "asc/2025/5",
+    "unaligned": 65.49
+  },
+  "asp/2011/4": {
+    "aligned": 98.08,
+    "n_ops": 53,
+    "n_oracle": 52,
+    "n_replay": 51,
+    "statute_id": "asp/2011/4",
+    "unaligned": 98.08
+  },
+  "asp/2014/17": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 27,
+    "n_replay": 27,
+    "statute_id": "asp/2014/17",
+    "unaligned": 100.0
+  },
+  "asp/2020/5": {
+    "aligned": 100.0,
+    "n_ops": 23,
+    "n_oracle": 53,
+    "n_replay": 53,
+    "statute_id": "asp/2020/5",
+    "unaligned": 100.0
+  },
+  "asp/2022/1": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 51,
+    "n_replay": 51,
+    "statute_id": "asp/2022/1",
+    "unaligned": 100.0
+  },
+  "eur/2019/1021": {
+    "aligned": 51.18,
+    "n_ops": 105,
+    "n_oracle": 203,
+    "n_replay": 211,
+    "statute_id": "eur/2019/1021",
+    "unaligned": 23.65
+  },
+  "eur/2019/1746": {
+    "aligned": 31.55,
+    "n_ops": 0,
+    "n_oracle": 59,
+    "n_replay": 187,
+    "statute_id": "eur/2019/1746",
+    "unaligned": 100.0
+  },
+  "eur/2019/1841": {
+    "aligned": 61.76,
+    "n_ops": 0,
+    "n_oracle": 21,
+    "n_replay": 34,
+    "statute_id": "eur/2019/1841",
+    "unaligned": 100.0
+  },
+  "eur/2019/2013": {
+    "aligned": 22.15,
+    "n_ops": 2,
+    "n_oracle": 64,
+    "n_replay": 289,
+    "statute_id": "eur/2019/2013",
+    "unaligned": 64.06
+  },
+  "eur/2019/2018": {
+    "aligned": 15.2,
+    "n_ops": 0,
+    "n_oracle": 50,
+    "n_replay": 329,
+    "statute_id": "eur/2019/2018",
+    "unaligned": 100.0
+  },
+  "eur/2020/38": {
+    "aligned": 75.0,
+    "n_ops": 0,
+    "n_oracle": 24,
+    "n_replay": 32,
+    "statute_id": "eur/2020/38",
+    "unaligned": 100.0
+  },
+  "ssi/2002/7": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 32,
+    "n_replay": 32,
+    "statute_id": "ssi/2002/7",
+    "unaligned": 100.0
+  },
+  "ssi/2008/223": {
+    "aligned": 73.03,
+    "n_ops": 0,
+    "n_oracle": 65,
+    "n_replay": 89,
+    "statute_id": "ssi/2008/223",
+    "unaligned": 73.03
+  },
+  "ssi/2012/271": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 71,
+    "n_replay": 71,
+    "statute_id": "ssi/2012/271",
+    "unaligned": 100.0
+  },
+  "ssi/2025/74": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 244,
+    "n_replay": 244,
+    "statute_id": "ssi/2025/74",
+    "unaligned": 100.0
+  },
+  "ukpga/1866/122": {
+    "aligned": 95.0,
+    "n_ops": 3,
+    "n_oracle": 40,
+    "n_replay": 38,
+    "statute_id": "ukpga/1866/122",
+    "unaligned": 92.5
+  },
+  "ukpga/1887/55": {
+    "aligned": 57.59,
+    "n_ops": 14,
+    "n_oracle": 105,
+    "n_replay": 158,
+    "statute_id": "ukpga/1887/55",
+    "unaligned": 56.6
+  },
+  "ukpga/1901/7": {
+    "aligned": 37.93,
+    "n_ops": 0,
+    "n_oracle": 24,
+    "n_replay": 58,
+    "statute_id": "ukpga/1901/7",
+    "unaligned": 32.84
+  },
+  "ukpga/1951/30": {
+    "aligned": 12.55,
+    "n_ops": 2,
+    "n_oracle": 33,
+    "n_replay": 263,
+    "statute_id": "ukpga/1951/30",
+    "unaligned": 11.04
+  },
+  "ukpga/1957/36": {
+    "aligned": 93.33,
+    "n_ops": 1,
+    "n_oracle": 28,
+    "n_replay": 30,
+    "statute_id": "ukpga/1957/36",
+    "unaligned": 93.33
+  },
+  "ukpga/1961/60": {
+    "aligned": 22.73,
+    "n_ops": 3,
+    "n_oracle": 22,
+    "n_replay": 5,
+    "statute_id": "ukpga/1961/60",
+    "unaligned": 0.0
+  },
+  "ukpga/1966/42": {
+    "aligned": 8.45,
+    "n_ops": 7,
+    "n_oracle": 43,
+    "n_replay": 509,
+    "statute_id": "ukpga/1966/42",
+    "unaligned": 7.28
+  },
+  "ukpga/1968/20": {
+    "aligned": 80.73,
+    "n_ops": 263,
+    "n_oracle": 545,
+    "n_replay": 492,
+    "statute_id": "ukpga/1968/20",
+    "unaligned": 50.46
+  },
+  "ukpga/1968/70": {
+    "aligned": 68.64,
+    "n_ops": 19,
+    "n_oracle": 246,
+    "n_replay": 338,
+    "statute_id": "ukpga/1968/70",
+    "unaligned": 64.35
+  },
+  "ukpga/1972/5": {
+    "aligned": 20.08,
+    "n_ops": 0,
+    "n_oracle": 50,
+    "n_replay": 244,
+    "statute_id": "ukpga/1972/5",
+    "unaligned": 17.1
+  },
+  "ukpga/1976/38": {
+    "aligned": 91.92,
+    "n_ops": 17,
+    "n_oracle": 99,
+    "n_replay": 91,
+    "statute_id": "ukpga/1976/38",
+    "unaligned": 91.92
+  },
+  "ukpga/1976/83": {
+    "aligned": 32.89,
+    "n_ops": 0,
+    "n_oracle": 147,
+    "n_replay": 377,
+    "statute_id": "ukpga/1976/83",
+    "unaligned": 30.23
+  },
+  "ukpga/1976/86": {
+    "aligned": 77.78,
+    "n_ops": 15,
+    "n_oracle": 150,
+    "n_replay": 189,
+    "statute_id": "ukpga/1976/86",
+    "unaligned": 74.74
+  },
+  "ukpga/1980/65": {
+    "aligned": 66.85,
+    "n_ops": 287,
+    "n_oracle": 2271,
+    "n_replay": 3113,
+    "statute_id": "ukpga/1980/65",
+    "unaligned": 61.91
+  },
+  "ukpga/1981/20": {
+    "aligned": 76.15,
+    "n_ops": 103,
+    "n_oracle": 654,
+    "n_replay": 529,
+    "statute_id": "ukpga/1981/20",
+    "unaligned": 70.34
+  },
+  "ukpga/1984/12": {
+    "aligned": 34.83,
+    "n_ops": 462,
+    "n_oracle": 1786,
+    "n_replay": 773,
+    "statute_id": "ukpga/1984/12",
+    "unaligned": 27.94
+  },
+  "ukpga/1984/59": {
+    "aligned": 90.99,
+    "n_ops": 9,
+    "n_oracle": 202,
+    "n_replay": 222,
+    "statute_id": "ukpga/1984/59",
+    "unaligned": 90.99
+  },
+  "ukpga/1986/61": {
+    "aligned": 50.88,
+    "n_ops": 102,
+    "n_oracle": 568,
+    "n_replay": 389,
+    "statute_id": "ukpga/1986/61",
+    "unaligned": 49.82
+  },
+  "ukpga/1990/8": {
+    "aligned": 79.67,
+    "n_ops": 1778,
+    "n_oracle": 8151,
+    "n_replay": 7872,
+    "statute_id": "ukpga/1990/8",
+    "unaligned": 43.37
+  },
+  "ukpga/1990/9": {
+    "aligned": 90.04,
+    "n_ops": 500,
+    "n_oracle": 1607,
+    "n_replay": 1489,
+    "statute_id": "ukpga/1990/9",
+    "unaligned": 61.17
+  },
+  "ukpga/1992/41": {
+    "aligned": 63.97,
+    "n_ops": 85,
+    "n_oracle": 304,
+    "n_replay": 469,
+    "statute_id": "ukpga/1992/41",
+    "unaligned": 42.21
+  },
+  "ukpga/1996/5": {
+    "aligned": 93.14,
+    "n_ops": 1,
+    "n_oracle": 102,
+    "n_replay": 95,
+    "statute_id": "ukpga/1996/5",
+    "unaligned": 93.14
+  },
+  "ukpga/1996/50": {
+    "aligned": 23.67,
+    "n_ops": 8,
+    "n_oracle": 51,
+    "n_replay": 207,
+    "statute_id": "ukpga/1996/50",
+    "unaligned": 17.59
+  },
+  "ukpga/1997/7": {
+    "aligned": 85.0,
+    "n_ops": 7,
+    "n_oracle": 120,
+    "n_replay": 105,
+    "statute_id": "ukpga/1997/7",
+    "unaligned": 51.67
+  },
+  "ukpga/1998/17": {
+    "aligned": 88.76,
+    "n_ops": 383,
+    "n_oracle": 1424,
+    "n_replay": 1313,
+    "statute_id": "ukpga/1998/17",
+    "unaligned": 63.13
+  },
+  "ukpga/2002/15": {
+    "aligned": 87.5,
+    "n_ops": 163,
+    "n_oracle": 2139,
+    "n_replay": 2440,
+    "statute_id": "ukpga/2002/15",
+    "unaligned": 85.25
+  },
+  "ukpga/2002/25": {
+    "aligned": 100.0,
+    "n_ops": 3,
+    "n_oracle": 30,
+    "n_replay": 30,
+    "statute_id": "ukpga/2002/25",
+    "unaligned": 100.0
+  },
+  "ukpga/2008/17": {
+    "aligned": 94.87,
+    "n_ops": 979,
+    "n_oracle": 4971,
+    "n_replay": 5167,
+    "statute_id": "ukpga/2008/17",
+    "unaligned": 78.9
+  },
+  "ukpga/2008/32": {
+    "aligned": 98.57,
+    "n_ops": 231,
+    "n_oracle": 1956,
+    "n_replay": 1937,
+    "statute_id": "ukpga/2008/32",
+    "unaligned": 76.79
+  },
+  "ukpga/2011/2": {
+    "aligned": 93.55,
+    "n_ops": 0,
+    "n_oracle": 31,
+    "n_replay": 31,
+    "statute_id": "ukpga/2011/2",
+    "unaligned": 80.65
+  },
+  "ukpga/2013/30": {
+    "aligned": 98.69,
+    "n_ops": 22,
+    "n_oracle": 689,
+    "n_replay": 685,
+    "statute_id": "ukpga/2013/30",
+    "unaligned": 88.39
+  },
+  "ukpga/2015/26": {
+    "aligned": 98.67,
+    "n_ops": 74,
+    "n_oracle": 2839,
+    "n_replay": 2867,
+    "statute_id": "ukpga/2015/26",
+    "unaligned": 93.98
+  },
+  "ukpga/2015/4": {
+    "aligned": 93.38,
+    "n_ops": 4,
+    "n_oracle": 282,
+    "n_replay": 302,
+    "statute_id": "ukpga/2015/4",
+    "unaligned": 88.65
+  },
+  "ukpga/2018/12": {
+    "aligned": 97.56,
+    "n_ops": 836,
+    "n_oracle": 7033,
+    "n_replay": 7077,
+    "statute_id": "ukpga/2018/12",
+    "unaligned": 80.38
+  },
+  "ukpga/2019/13": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 50,
+    "n_replay": 50,
+    "statute_id": "ukpga/2019/13",
+    "unaligned": 100.0
+  },
+  "ukpga/2023/56": {
+    "aligned": 99.72,
+    "n_ops": 0,
+    "n_oracle": 2143,
+    "n_replay": 2149,
+    "statute_id": "ukpga/2023/56",
+    "unaligned": 100.0
+  },
+  "ukpga/2026/12": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 32,
+    "n_replay": 32,
+    "statute_id": "ukpga/2026/12",
+    "unaligned": 100.0
+  },
+  "uksi/2000/1043": {
+    "aligned": 77.67,
+    "n_ops": 0,
+    "n_oracle": 215,
+    "n_replay": 168,
+    "statute_id": "uksi/2000/1043",
+    "unaligned": 75.35
+  },
+  "uksi/2000/2056": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 76,
+    "n_replay": 76,
+    "statute_id": "uksi/2000/2056",
+    "unaligned": 100.0
+  },
+  "uksi/2000/2244": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 90,
+    "n_replay": 90,
+    "statute_id": "uksi/2000/2244",
+    "unaligned": 100.0
+  },
+  "uksi/2000/3315": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 31,
+    "n_replay": 31,
+    "statute_id": "uksi/2000/3315",
+    "unaligned": 100.0
+  },
+  "uksi/2000/428": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 284,
+    "n_replay": 284,
+    "statute_id": "uksi/2000/428",
+    "unaligned": 100.0
+  },
+  "uksi/2002/1397": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 159,
+    "n_replay": 159,
+    "statute_id": "uksi/2002/1397",
+    "unaligned": 100.0
+  },
+  "uksi/2002/2779": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 1923,
+    "n_replay": 1923,
+    "statute_id": "uksi/2002/2779",
+    "unaligned": 100.0
+  },
+  "uksi/2003/3096": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 127,
+    "n_replay": 127,
+    "statute_id": "uksi/2003/3096",
+    "unaligned": 100.0
+  },
+  "uksi/2004/2201": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 99,
+    "n_replay": 99,
+    "statute_id": "uksi/2004/2201",
+    "unaligned": 100.0
+  },
+  "uksi/2007/1031": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 83,
+    "n_replay": 83,
+    "statute_id": "uksi/2007/1031",
+    "unaligned": 100.0
+  },
+  "uksi/2007/3494": {
+    "aligned": 60.49,
+    "n_ops": 0,
+    "n_oracle": 147,
+    "n_replay": 243,
+    "statute_id": "uksi/2007/3494",
+    "unaligned": 60.49
+  },
+  "uksi/2009/3023": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 234,
+    "n_replay": 234,
+    "statute_id": "uksi/2009/3023",
+    "unaligned": 100.0
+  },
+  "uksi/2009/853": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 121,
+    "n_replay": 121,
+    "statute_id": "uksi/2009/853",
+    "unaligned": 100.0
+  },
+  "uksi/2010/1504": {
+    "aligned": 81.25,
+    "n_ops": 0,
+    "n_oracle": 128,
+    "n_replay": 105,
+    "statute_id": "uksi/2010/1504",
+    "unaligned": 81.25
+  },
+  "uksi/2012/1206": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 31,
+    "n_replay": 31,
+    "statute_id": "uksi/2012/1206",
+    "unaligned": 100.0
+  },
+  "uksi/2013/3008": {
+    "aligned": 98.82,
+    "n_ops": 0,
+    "n_oracle": 84,
+    "n_replay": 85,
+    "statute_id": "uksi/2013/3008",
+    "unaligned": 98.82
+  },
+  "uksi/2014/3333": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 25,
+    "n_replay": 25,
+    "statute_id": "uksi/2014/3333",
+    "unaligned": 100.0
+  },
+  "uksi/2015/178": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 20,
+    "n_replay": 20,
+    "statute_id": "uksi/2015/178",
+    "unaligned": 100.0
+  },
+  "uksi/2015/583": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 118,
+    "n_replay": 118,
+    "statute_id": "uksi/2015/583",
+    "unaligned": 100.0
+  },
+  "uksi/2016/1031": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 64,
+    "n_replay": 64,
+    "statute_id": "uksi/2016/1031",
+    "unaligned": 100.0
+  },
+  "uksi/2016/917": {
+    "aligned": 97.22,
+    "n_ops": 0,
+    "n_oracle": 35,
+    "n_replay": 36,
+    "statute_id": "uksi/2016/917",
+    "unaligned": 97.22
+  },
+  "uksi/2022/34": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 144,
+    "n_replay": 144,
+    "statute_id": "uksi/2022/34",
+    "unaligned": 100.0
+  },
+  "wsi/2001/2286": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 29,
+    "n_replay": 29,
+    "statute_id": "wsi/2001/2286",
+    "unaligned": 100.0
+  },
+  "wsi/2013/3005": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 57,
+    "n_replay": 57,
+    "statute_id": "wsi/2013/3005",
+    "unaligned": 100.0
+  },
+  "wsi/2019/772": {
+    "aligned": 100.0,
+    "n_ops": 0,
+    "n_oracle": 92,
+    "n_replay": 92,
+    "statute_id": "wsi/2019/772",
+    "unaligned": 100.0
+  }
+}
