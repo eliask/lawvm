@@ -15,6 +15,7 @@ from lawvm.uk_legislation.repeal_no_double_entry import (
 from lawvm.uk_legislation.repeal_semantics_witnesses import (
     _duplicate_repeal_target_witnesses,
     is_repeal_semantics_effect,
+    scan_repeal_semantics_source_phrase_xml,
     source_text_repeal_semantics_family,
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
@@ -83,6 +84,36 @@ def test_source_text_repeal_semantics_family_detects_no_revive_phrases() -> None
         == "repeal_of_repeal_no_revive_phrase"
     )
     assert source_text_repeal_semantics_family("Section 1 is repealed.") == ""
+
+
+def test_source_phrase_xml_scan_reports_text_level_no_revive_witness() -> None:
+    witnesses = scan_repeal_semantics_source_phrase_xml(
+        "ukpga/2026/1",
+        b"""
+        <Legislation>
+          <Primary>
+            <Body>
+              <P1>
+                <P1para>
+                  <Text>The repeal shall not revive any earlier enactment.</Text>
+                </P1para>
+              </P1>
+            </Body>
+          </Primary>
+        </Legislation>
+        """,
+        source_locator="source.xml",
+    )
+
+    assert len(witnesses) == 1
+    row = witnesses[0].to_dict()
+    assert row["family"] == "repeal_of_repeal_no_revive_phrase"
+    assert row["rule_id"] == (
+        "uk_repeal_semantics_source_phrase_repeal_of_repeal_no_revive_phrase"
+    )
+    assert row["source_status"] == "source_phrase_scan"
+    assert row["source_tag"] == "Text"
+    assert row["source_locator"] == "source.xml"
 
 
 def test_duplicate_repeal_target_witness_requires_multiple_affecting_provisions() -> None:
