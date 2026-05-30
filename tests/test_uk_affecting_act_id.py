@@ -77,3 +77,45 @@ class TestAffectingActIdFromUri:
             number="60",
         )
         assert rec.affecting_act_id == "ukpga/1968/60"
+
+
+class TestAffectingClassIsRecognized:
+    def test_uri_makes_unmapped_class_recognized(self) -> None:
+        rec = _record(
+            affecting_class="NorthernIrelandAct",
+            affecting_uri="http://www.legislation.gov.uk/id/nia/2016/10",
+            year="2016",
+            number="10",
+        )
+        assert rec.affecting_class_is_recognized is True
+
+    def test_mapped_class_without_uri_recognized(self) -> None:
+        rec = _record(
+            affecting_class="ScottishAct", affecting_uri="", year="2000", number="6"
+        )
+        assert rec.affecting_class_is_recognized is True
+
+    def test_unmapped_class_without_uri_not_recognized(self) -> None:
+        # This is the loud case: a guessed "northernirelandact" slug that 404s.
+        rec = _record(
+            affecting_class="NorthernIrelandAct", affecting_uri="", year="2016", number="10"
+        )
+        assert rec.affecting_class_is_recognized is False
+        assert rec.affecting_act_id == "northernirelandact/2016/10"
+
+
+class TestClassUnmappedDiagnostic:
+    def test_diagnostic_shape(self) -> None:
+        from lawvm.uk_legislation.source_state import (
+            uk_affecting_act_class_unmapped_rejection,
+        )
+
+        row = uk_affecting_act_class_unmapped_rejection(
+            effect_id="e1",
+            affecting_act_id="northernirelandact/2016/10",
+            locator="https://www.legislation.gov.uk/northernirelandact/2016/10/data.xml",
+            affecting_class="NorthernIrelandAct",
+        )
+        assert row["rule_id"] == "uk_affecting_act_class_unmapped_rejected"
+        assert row["blocking"] is True
+        assert row["affecting_class"] == "NorthernIrelandAct"

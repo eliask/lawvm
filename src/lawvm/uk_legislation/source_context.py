@@ -38,6 +38,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_outdented_child_source_selected,
     uk_affecting_act_parenthesized_range_source_extracted,
     uk_affecting_act_schedule_part_standalone_split_rejection,
+    uk_affecting_act_class_unmapped_rejection,
     uk_affecting_act_single_amendment_child_source_selected,
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
@@ -429,13 +430,23 @@ def _append_affecting_source_context_diagnostic(
     if diagnostics_out is None or not effect.affecting_act_id:
         return
     if source_context.source_status == "absent":
-        diagnostics_out.append(
-            uk_affecting_act_xml_missing_rejection(
-                effect_id=str(effect.effect_id or ""),
-                affecting_act_id=str(effect.affecting_act_id or ""),
-                locator=source_context.locator,
+        if str(effect.affecting_class or "") and not effect.affecting_class_is_recognized:
+            diagnostics_out.append(
+                uk_affecting_act_class_unmapped_rejection(
+                    effect_id=str(effect.effect_id or ""),
+                    affecting_act_id=str(effect.affecting_act_id or ""),
+                    locator=source_context.locator,
+                    affecting_class=str(effect.affecting_class or ""),
+                )
             )
-        )
+        else:
+            diagnostics_out.append(
+                uk_affecting_act_xml_missing_rejection(
+                    effect_id=str(effect.effect_id or ""),
+                    affecting_act_id=str(effect.affecting_act_id or ""),
+                    locator=source_context.locator,
+                )
+            )
     elif source_context.source_status == "too_small":
         diagnostics_out.append(
             uk_affecting_act_xml_too_small_rejection(

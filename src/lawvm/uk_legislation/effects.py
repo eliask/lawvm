@@ -47,6 +47,31 @@ _COMMENCEMENT_EFFECT_TYPES = frozenset(
 )
 
 
+# Maps an effects-feed AffectingClass to its legislation.gov.uk document type slug.
+# This is necessarily incomplete (legislation.gov.uk has many types), so it is NOT
+# the authoritative source for the affecting-act id — the effect AffectingURI is.
+# A class absent here, with no usable URI, cannot be resolved to a real slug and is
+# surfaced loudly (uk_affecting_act_class_unmapped_rejected) rather than guessed.
+_UK_AFFECTING_CLASS_SLUG_MAP = {
+    "UnitedKingdomPublicGeneralAct": "ukpga",
+    "UnitedKingdomStatutoryInstrument": "uksi",
+    "WelshParliamentAct": "asc",
+    "WelshStatutoryInstrument": "wsi",
+    "ScottishAct": "asp",
+    "ScottishStatutoryInstrument": "ssi",
+    "NorthernIrelandAssemblyMeasure": "mnia",
+    "NorthernIrelandParliamentAct": "apni",
+    "NorthernIrelandStatutoryRule": "nisr",
+    "UnitedKingdomChurchInstrument": "ukci",
+    "UnitedKingdomMinisterialOrder": "ukmo",
+    "EuropeanUnionRegulation": "eur",
+    "EuropeanUnionDecision": "eudn",
+    "EuropeanUnionDirective": "eudr",
+}
+
+_UK_AFFECTING_URI_SLUG_RE = re.compile(r"legislation\.gov\.uk/(?:id/)?([a-z]+)/(\d+)/(\d+)\b")
+
+
 def _uk_effect_feed_diagnostic(
     *,
     rule_id: str,
@@ -210,31 +235,26 @@ class UKEffectRecord:
         ``northernirelandact``). Fall back to the class map only when no URI is
         available.
         """
-        uri_match = re.search(
-            r"legislation\.gov\.uk/(?:id/)?([a-z]+)/(\d+)/(\d+)\b",
-            str(self.affecting_uri or ""),
-        )
+        uri_match = _UK_AFFECTING_URI_SLUG_RE.search(str(self.affecting_uri or ""))
         if uri_match:
             return f"{uri_match.group(1)}/{uri_match.group(2)}/{uri_match.group(3)}"
         cls = self.affecting_class
-        cls_map = {
-            "UnitedKingdomPublicGeneralAct": "ukpga",
-            "UnitedKingdomStatutoryInstrument": "uksi",
-            "WelshParliamentAct": "asc",
-            "WelshStatutoryInstrument": "wsi",
-            "ScottishAct": "asp",
-            "ScottishStatutoryInstrument": "ssi",
-            "NorthernIrelandAssemblyMeasure": "mnia",
-            "NorthernIrelandParliamentAct": "apni",
-            "NorthernIrelandStatutoryRule": "nisr",
-            "UnitedKingdomChurchInstrument": "ukci",
-            "UnitedKingdomMinisterialOrder": "ukmo",
-            "EuropeanUnionRegulation": "eur",
-            "EuropeanUnionDecision": "eudn",
-            "EuropeanUnionDirective": "eudr",
-        }
-        slug = cls_map.get(cls, cls.lower())
+        slug = _UK_AFFECTING_CLASS_SLUG_MAP.get(cls, cls.lower())
         return f"{slug}/{self.affecting_year}/{self.affecting_number}"
+
+    @property
+    def affecting_class_is_recognized(self) -> bool:
+        """True when the affecting-act slug is authoritative, not a guessed fallback.
+
+        The slug is trustworthy when it comes from the AffectingURI or a known
+        class-map entry. A non-empty class that is neither (and has no usable URI)
+        produces a guessed ``cls.lower()`` slug that may not be a real document
+        type — callers should surface that loudly instead of treating a resulting
+        archive miss as a generic "XML missing".
+        """
+        if _UK_AFFECTING_URI_SLUG_RE.search(str(self.affecting_uri or "")):
+            return True
+        return str(self.affecting_class or "") in _UK_AFFECTING_CLASS_SLUG_MAP
 
     @property
     def effective_date(self) -> str:

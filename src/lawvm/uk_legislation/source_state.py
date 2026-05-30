@@ -139,6 +139,31 @@ def uk_affecting_act_xml_missing_rejection(
     )
 
 
+def uk_affecting_act_class_unmapped_rejection(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    locator: str,
+    affecting_class: str,
+) -> dict[str, Any]:
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_class_unmapped_rejected",
+        family="source_pathology",
+        phase="acquisition",
+        reason=(
+            "UK affecting act class has no document-type slug mapping and the effect "
+            "carried no resolvable URI, so the affecting-act id was guessed and did not "
+            "resolve. Add a class-to-slug mapping (or a usable AffectingURI) rather than "
+            "treating this as a generic missing-XML case."
+        ),
+        blocking=True,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        locator=locator,
+        affecting_class=affecting_class,
+    )
+
+
 def uk_affecting_act_xml_parse_rejection(
     *,
     effect_id: str,
