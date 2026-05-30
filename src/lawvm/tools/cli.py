@@ -2965,6 +2965,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="pretty-print JSON output",
     )
 
+    uk_branch_demo_p = sub.add_parser(
+        "uk-branch-demo",
+        help="emit a UK proposed-law branch graph demo payload",
+        description=(
+            "Emit a small UK-shaped proposed-law branch payload. The payload is "
+            "graph-only and proves proposed operations remain outside the "
+            "default enacted replay lane."
+        ),
+    )
+    uk_branch_demo_p.add_argument(
+        "--pretty",
+        action="store_true",
+        help="pretty-print JSON output",
+    )
+
     # --- build ---
     build_p = sub.add_parser(
         "build",
@@ -7624,6 +7639,11 @@ def main() -> None:
         from lawvm.tools.branch_demo import main as branch_demo_main
 
         branch_demo_main(args)
+
+    elif args.command == "uk-branch-demo":
+        from lawvm.tools.uk_branch_demo import main as uk_branch_demo_main
+
+        uk_branch_demo_main(args)
 
     elif args.command == "sql":
         from lawvm.tools.sql_query import main as sql_main
