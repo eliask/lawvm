@@ -170,6 +170,12 @@ use when a concrete failing case or architecture task needs the rule boundary.
   implication, while Scottish and Welsh defaults differ after their statutory
   changes. Destination: applicability dimensions, not replay mutation.
 
+  **UK graph prototype added 2026-05-31:** `lawvm uk-branch-demo` emits a
+  UK-shaped proposed-law branch payload using the shared branch graph contracts:
+  `LegalBranch`, `BranchGraphEdge`, `BranchLifecycleEvent`, and impact projection
+  rows. The adapter is structured-payload only; it does not parse bill sources and
+  does not route proposed operations into default enacted replay.
+
 ---
 
 ## Mined rules → LawVM destinations (OPC Drafting Guidance Part 6)
@@ -353,10 +359,12 @@ for hypothetical bugs):
    extent/application candidates, revocation/lapse candidates, correction-slip
    markers, and SI structure vocabulary. It is deliberately replay-neutral; the
    next step is adjudicating a concrete family before changing lowering/replay.
-4. Proposed-law authority paths from OPC/Cabinet sources: draft bills, carry-over,
-   Parliament Act / Money Bill routes, financial-resolution provisional text, and
-   Crown application. These belong to branch/authority/applicability modelling,
-   not current enacted-text replay.
+4. **PARTIAL (UK branch graph prototype)** Proposed-law authority paths from
+   OPC/Cabinet sources: `lawvm uk-branch-demo` now proves a UK-shaped
+   proposed-law payload can be represented in the shared graph without leaking
+   into enacted replay. Remaining work is real source acquisition/parsing for
+   draft bills, carry-over, Parliament Act / Money Bill routes,
+   financial-resolution provisional text, and Crown application.
 5. The big EID divergence on the gate statute (ukpga/1978/30) is a Schedule-1
    **crossheading-representation** mismatch (`schedule-1-crossheading-…` +
    `_paragraph-wrapperNnM`), i.e. oracle editorial structure vs replay — saturated
