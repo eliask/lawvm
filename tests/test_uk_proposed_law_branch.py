@@ -9,10 +9,12 @@ from lawvm.core.authority import PROPOSAL_AUTHORITY
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.tools import cli
+from lawvm.tools.uk_branch_import import build_uk_branch_import_payload
 from lawvm.tools.uk_branch_demo import build_uk_branch_demo_payload, main
 from lawvm.uk_legislation.proposed_law_branch import (
     UKProposedLawOperationSpec,
     build_uk_proposed_law_branch_payload,
+    build_uk_proposed_law_branch_payload_from_dict,
 )
 
 
@@ -84,6 +86,73 @@ def test_uk_proposed_law_branch_payload_rejects_empty_spec_list() -> None:
         )
 
 
+def test_uk_proposed_law_branch_payload_imports_structured_claim_dict() -> None:
+    payload = build_uk_proposed_law_branch_payload_from_dict(
+        {
+            "source_artifact_id": "uk/bill/2026/structured-bill",
+            "title": "Structured Bill",
+            "introduced_date": "2026-02-01",
+            "operations": [
+                {
+                    "operation_id": "uk-structured-op-1",
+                    "source_unit_id": "clause:4",
+                    "target_statute_id": "ukpga/1978/30",
+                    "target_path": [["section", "4"]],
+                    "action": "replace",
+                    "proposed_node": {
+                        "kind": "section",
+                        "label": "4",
+                        "text": "Structured proposed section text.",
+                    },
+                    "current_text": "Current section text.",
+                    "proposed_text": "Structured proposed section text.",
+                }
+            ],
+        }
+    )
+
+    exported = payload.to_dict()
+    assert exported["default_enacted_operation_ids"] == ()
+    assert exported["branch_operation_ids"] == ("uk-structured-op-1",)
+    assert exported["branch_edges"][0]["edge_kind"] == "would_replace"
+    assert exported["impact_projection"]["rows"][0]["branch_text"] == (
+        "Structured proposed section text."
+    )
+
+
+def test_uk_branch_import_tool_reads_structured_json(tmp_path) -> None:
+    path = tmp_path / "proposal.json"
+    path.write_text(
+        json.dumps(
+            {
+                "source_artifact_id": "uk/bill/2026/imported-bill",
+                "title": "Imported Bill",
+                "operations": [
+                    {
+                        "operation_id": "uk-imported-op-1",
+                        "source_unit_id": "clause:5",
+                        "target_statute_id": "ukpga/1978/30",
+                        "target_path": [["section", "5"]],
+                        "action": "insert",
+                        "proposed_node": {
+                            "kind": "section",
+                            "label": "5",
+                            "text": "Imported proposed text.",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = build_uk_branch_import_payload(str(path))
+
+    assert payload["default_enacted_operation_ids"] == ()
+    assert payload["branch_edges"][0]["source_unit_id"] == "clause:5"
+    assert payload["graph_counts"]["branch_edges"] == 1
+
+
 def test_uk_branch_demo_payload_uses_uk_ids_and_proposal_layer() -> None:
     payload = build_uk_branch_demo_payload()
 
@@ -107,4 +176,14 @@ def test_uk_branch_demo_cli_parser_accepts_pretty_flag() -> None:
     args = parser.parse_args(["uk-branch-demo", "--pretty"])
 
     assert args.command == "uk-branch-demo"
+    assert args.pretty is True
+
+
+def test_uk_branch_import_cli_parser_accepts_input_and_pretty_flag() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["uk-branch-import", "proposal.json", "--pretty"])
+
+    assert args.command == "uk-branch-import"
+    assert args.input == "proposal.json"
     assert args.pretty is True

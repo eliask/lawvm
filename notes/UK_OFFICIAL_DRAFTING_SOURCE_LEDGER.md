@@ -200,6 +200,11 @@ use when a concrete failing case or architecture task needs the rule boundary.
   `LegalBranch`, `BranchGraphEdge`, `BranchLifecycleEvent`, and impact projection
   rows. The adapter is structured-payload only; it does not parse bill sources and
   does not route proposed operations into default enacted replay.
+  **Structured import added 2026-05-31:** `lawvm uk-branch-import <payload.json>`
+  imports an explicit proposed-law claim JSON into the same branch graph lane.
+  This is an owned-claim boundary, not a parser: absent a real draft/proposed bill
+  source artifact, LawVM still refuses to infer proposed operations from guidance
+  documents or demo prose.
 
 ---
 
@@ -421,12 +426,14 @@ for hypothetical bugs):
    extent/application candidates, revocation/lapse candidates, correction-slip
    markers, and SI structure vocabulary. It is deliberately replay-neutral; the
    next step is adjudicating a concrete family before changing lowering/replay.
-4. **PARTIAL (UK branch graph prototype)** Proposed-law authority paths from
-   OPC/Cabinet sources: `lawvm uk-branch-demo` now proves a UK-shaped
-   proposed-law payload can be represented in the shared graph without leaking
-   into enacted replay. Remaining work is real source acquisition/parsing for
-   draft bills, carry-over, Parliament Act / Money Bill routes,
-   financial-resolution provisional text, and Crown application.
+4. **PARTIAL (UK branch graph prototype + structured import)** Proposed-law
+   authority paths from OPC/Cabinet sources: `lawvm uk-branch-demo` proves a
+   UK-shaped proposed-law payload can be represented in the shared graph without
+   leaking into enacted replay, and `lawvm uk-branch-import <payload.json>` now
+   imports explicit owned proposed-law claims into that lane. Remaining work is
+   real source acquisition/parsing for draft bills, carry-over, Parliament Act /
+   Money Bill routes, financial-resolution provisional text, and Crown
+   application.
 5. The big EID divergence on the gate statute (ukpga/1978/30) is a Schedule-1
    **crossheading-representation** mismatch (`schedule-1-crossheading-…` +
    `_paragraph-wrapperNnM`), i.e. oracle editorial structure vs replay — saturated
