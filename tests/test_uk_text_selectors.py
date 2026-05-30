@@ -401,3 +401,50 @@ class TestTypedParseAgreesWithLegacy:
         )
         assert len(typed) == 1
         assert typed[0].selector == RangeToEndSelector("the date specified")
+
+
+class TestTypedModelIsComplete:
+    """The typed fragment must model every field the parser emits.
+
+    parse_fragment_substitution now serializes the typed cache, so any field a
+    production puts in its dict that UKTextRewriteFragment does NOT carry would be
+    silently dropped from the public dict API. These guard against that.
+    """
+
+    TAIL_CONNECTOR_INPUT = (
+        'for paragraph (a) of the definition of "widget" and the or '
+        "at the end of that paragraph substitute— the new tail text"
+    )
+
+    def test_tail_connector_survives_the_typed_cache(self) -> None:
+        from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+
+        out = parse_fragment_substitution(self.TAIL_CONNECTOR_INPUT)
+        assert out, "expected the definition-child-and-tail production to fire"
+        assert out[0].get("tail_connector") == "or"
+
+    def test_every_parsed_fragment_round_trips_losslessly(self) -> None:
+        from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+
+        corpus = [
+            self.TAIL_CONNECTOR_INPUT,
+            'from "the date specified" to the end, substitute "the appointed day"',
+            'for the words after "anchor word" substitute "inserted text"',
+            'for the opening words substitute "New opening words"',
+            'for words before paragraph (a), substitute "preamble text"',
+            "after paragraph (a), insert \"the new text\"",
+            'insert "a new clause" after subsection (3)',
+            'after the definition of "widget", insert "and gadget"',
+            'before the definition of "zebra", insert "and yak"',
+            'the word "X", in each place where it occurs is repealed',
+            'the word "Y", in the second place where it occurs is omitted',
+            "omit the word \"Z\" immediately following paragraph (2)",
+            'leave out "A" and insert "B"',
+            'for "the Lord Chancellor" substitute "the Secretary of State"',
+            'omit "the redundant words"',
+            'repeal the words "spent provision"',
+            'for the words from the beginning to "the cutoff" there shall be substituted "new start"',
+        ]
+        for text in corpus:
+            for d in parse_fragment_substitution(text):
+                assert fragment_to_legacy_dict(fragment_from_legacy_dict(d)) == d, (text, d)
