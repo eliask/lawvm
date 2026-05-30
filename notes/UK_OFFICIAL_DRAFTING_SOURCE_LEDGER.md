@@ -296,6 +296,15 @@ never has to *guess* a deep node's identity by fuzzy text.
   and let `authority_mode` / PIT selection decide application per the oracle version
   being compared (an owned claim, not a guessed blanket rule). **GAP — re-scoped from
   "gate it off" to "own the PIT-conditional lane".**
+  **2026-05-31 witness surface:** `scripts/uk_prospective_commencement_scan.py`
+  classifies prospective-only structural effects against affecting-provision
+  `RestrictStartDate` without changing replay. Current 77-statute command:
+  `uv run python scripts/uk_prospective_commencement_scan.py --ids-file
+  scripts/baselines/uk_grounding_corpus.txt --as-of 2026-05-31 --pretty --limit
+  20`. Result: 325 prospective-only structural witnesses; 185 resolved in-force,
+  140 unresolved, 0 resolved future. This gives the future PIT resolver an
+  auditable workqueue while confirming that a current-corpus blanket gate would
+  still be unsupported.
 
 ### §6.9 Non-textual modifications
 - **6.9.1** a non-textual modification does **not** change the printed text (contrast
