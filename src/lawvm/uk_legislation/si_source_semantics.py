@@ -24,6 +24,14 @@ _BODY_COMMENCEMENT_RE = re.compile(
     r"\b(?:commencement|comes?\s+into\s+force|coming\s+into\s+force|shall\s+come\s+into\s+force)\b",
     re.I,
 )
+_COMMENCEMENT_FORCE_RE = re.compile(r"\b(?:comes?|shall\s+come)\s+into\s+force\b", re.I)
+_COMMENCEMENT_OPERATION_RE = re.compile(r"\b(?:comes?|shall\s+come)\s+into\s+operation\b", re.I)
+_COMMENCEMENT_CALENDAR_DATE_RE = re.compile(
+    r"\b\d{1,2}(?:st|nd|rd|th)?\s+"
+    r"(?:January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+\d{4}\b",
+    re.I,
+)
 _EXTENT_RE = re.compile(r"\b(?:extends?\s+to|does\s+not\s+extend\s+to|extent)\b", re.I)
 _APPLICATION_RE = re.compile(
     r"\b(?:applies?\s+(?:only\s+)?(?:in\s+relation\s+)?to|do(?:es)?\s+not\s+apply|"
@@ -317,6 +325,7 @@ def _body_clause_records(
         geographic_terms = _geographic_terms(text)
         relation = _extent_application_relation(family_names)
         revocation_lapse_kinds = _revocation_lapse_kinds(text)
+        commencement_clause_kinds = _commencement_clause_kinds(text)
         for family, rule_id in families:
             records.append(
                 UKSISourceSemanticsRecord(
@@ -333,6 +342,7 @@ def _body_clause_records(
                         "geographic_terms": geographic_terms,
                         "extent_application_relation": relation,
                         "revocation_lapse_kinds": revocation_lapse_kinds,
+                        "commencement_clause_kinds": commencement_clause_kinds,
                     },
                 )
             )
@@ -372,6 +382,26 @@ def _body_clause_families(text: str) -> tuple[tuple[str, str], ...]:
     if _REVOCATION_RE.search(text):
         out.append(("si_revocation_lapse_surface", "uk_si_revocation_lapse_surface_recorded"))
     return tuple(out)
+
+
+def _commencement_clause_kinds(text: str) -> tuple[str, ...]:
+    normalized = str(text or "").lower()
+    kinds: list[str] = []
+    if _COMMENCEMENT_FORCE_RE.search(text):
+        kinds.append("operative_comes_into_force")
+    if _COMMENCEMENT_OPERATION_RE.search(text):
+        kinds.append("operative_comes_into_operation")
+    if "may be cited as" in normalized and "commencement" in normalized:
+        kinds.append("citation_commencement_title")
+    if _COMMENCEMENT_CALENDAR_DATE_RE.search(text):
+        kinds.append("calendar_date_text")
+    if "day after" in normalized and "made" in normalized:
+        kinds.append("relative_to_made_day")
+    if "appointed day" in normalized or "days appointed" in normalized:
+        kinds.append("appointed_day_text")
+    if "commencement" in normalized:
+        kinds.append("generic_commencement_word")
+    return tuple(kinds)
 
 
 def _correction_record(

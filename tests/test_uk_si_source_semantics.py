@@ -213,6 +213,9 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
         by_family["si_body_commencement_clause_surface"][0]["source_role"]
         == "instrument_body_provision"
     )
+    assert by_family["si_body_commencement_clause_surface"][0][
+        "commencement_clause_kinds"
+    ] == ("operative_comes_into_force", "calendar_date_text", "generic_commencement_word")
     assert by_family["si_extent_clause_surface"][0]["provision_title"] == (
         "Citation, commencement and extent"
     )
@@ -271,6 +274,57 @@ def test_si_source_semantics_marks_combined_extent_application_clause() -> None:
     assert {row["geographic_terms"] for row in scoped_rows} == {
         ("england", "wales", "scotland")
     }
+
+
+def test_si_source_semantics_classifies_citation_only_commencement_surface() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>1.</Pnumber>
+                <P1para><Text>
+                  This Order may be cited as the Example Act 2026
+                  (Commencement No. 1) Order 2026.
+                </Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(row.to_dict() for row in rows if row.family == "si_body_commencement_clause_surface")
+    assert row["commencement_clause_kinds"] == (
+        "citation_commencement_title",
+        "generic_commencement_word",
+    )
+
+
+def test_si_source_semantics_classifies_relative_made_day_commencement_surface() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>1.</Pnumber>
+                <P1para><Text>
+                  This Order comes into force on the day after the day on which it is made.
+                </Text></P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(row.to_dict() for row in rows if row.family == "si_body_commencement_clause_surface")
+    assert row["commencement_clause_kinds"] == (
+        "operative_comes_into_force",
+        "relative_to_made_day",
+    )
 
 
 def test_si_source_semantics_records_nested_body_p1_and_correction_slip_marker() -> None:

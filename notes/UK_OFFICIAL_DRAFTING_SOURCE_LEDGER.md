@@ -136,10 +136,10 @@ use when a concrete failing case or architecture task needs the rule boundary.
   inventories SI source semantics without replay mutation. Current all-cached-SI
   command:
   `uv run python scripts/uk_si_semantics_scan.py --all --pretty --limit 0`.
-  Result: 4,869 SI-like current XML documents scanned, 36,854 diagnostic rows:
+  Result: 4,869 SI-like current XML documents scanned, 36,851 diagnostic rows:
   4,869 structure-vocabulary rows, 291 commencement-default rows, 4,863
-  vires-recital rows, 4,578 commencement-metadata rows, 7,677 body-commencement
-  clause rows, 3,215 extent rows, 8,374 application rows, 2,750
+  vires-recital rows, 4,578 commencement-metadata rows, 7,676 body-commencement
+  clause rows, 3,214 extent rows, 8,374 application rows, 2,749
   revocation/lapse rows, and 237 correction/reprint context rows. Body-clause rows now include `source_role`, and
   the all-cached scan classifies 2,056 rows as `payload_carried` because they sit
   inside amendment payload XML rather than the SI's own body provision. Body-clause
@@ -162,7 +162,14 @@ use when a concrete failing case or architecture task needs the rule boundary.
   no made date and remain unresolved. Of the single-made-date candidates, 271 have
   body commencement clauses and are flagged
   `body_commencement_clause_needs_adjudication`; only 16 currently have
-  `no_body_commencement_clause_seen`. These are evidence rows only;
+  `no_body_commencement_clause_seen`. Body commencement rows now expose
+  `commencement_clause_kinds`; all-SI marker counts include 6,841
+  `operative_comes_into_force`, 48 `operative_comes_into_operation`, 438
+  `citation_commencement_title`, 1,290 `relative_to_made_day`, 120
+  `appointed_day_text`, and 6,461 `calendar_date_text`. In the 271 default
+  candidates needing body-clause adjudication, 264 have citation-title language,
+  177 have operative `comes into force`, and 3 have an explicit relative made-day
+  formula. These are evidence rows only;
   replay-changing SI rules still require source-level adjudication of a concrete
   family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
