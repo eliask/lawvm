@@ -1184,11 +1184,11 @@ def test_compile_synthesizes_local_eids_for_inserted_body_payload_descendants() 
     assert len(ops) == 1
     payload = ops[0].payload
     assert payload is not None
-    assert payload.attrs["eId"] == "section-11-5a"
+    assert payload.attrs["eId"] == "section-11-5A"
     assert [child.attrs["eId"] for child in payload.children] == [
-        "section-11-5a-a",
-        "section-11-5a-b",
-        "section-11-5a-c",
+        "section-11-5A-a",
+        "section-11-5A-b",
+        "section-11-5A-c",
     ]
     assert lowering_records[0]["rule_id"] == "uk_payload_descendant_eid_synthesis"
     assert lowering_records[0]["strict_disposition"] == "record"
@@ -53833,11 +53833,11 @@ def test_compile_synthesizes_local_eids_for_inserted_schedule_payload_descendant
     item = paragraph.children[0]
     crossheading = schedule.children[1]
     crossheading_paragraph = crossheading.children[0]
-    assert schedule.attrs["eId"] == "schedule-10a"
-    assert paragraph.attrs["eId"] == "schedule-10a-paragraph-1"
-    assert item.attrs["eId"] == "schedule-10a-paragraph-1-a"
-    assert crossheading.attrs["eId"] == "schedule-10a-crossheading-unlabelled-heading"
-    assert crossheading_paragraph.attrs["eId"] == "schedule-10a-paragraph-2"
+    assert schedule.attrs["eId"] == "schedule-10A"
+    assert paragraph.attrs["eId"] == "schedule-10A-paragraph-1"
+    assert item.attrs["eId"] == "schedule-10A-paragraph-1-a"
+    assert crossheading.attrs["eId"] == "schedule-10A-crossheading-unlabelled-heading"
+    assert crossheading_paragraph.attrs["eId"] == "schedule-10A-paragraph-2"
     assert lowering_records[0]["rule_id"] == "uk_whole_schedule_payload_descendant_eid_synthesis"
     assert lowering_records[0]["phase"] == "payload_normalization"
     assert lowering_records[0]["blocking"] is False
@@ -53902,9 +53902,9 @@ def test_compile_skips_duplicate_synthetic_schedule_descendant_eids() -> None:
     assert schedule is not None
     paragraph = schedule.children[0]
     first_item, second_item, repeated_item = paragraph.children
-    assert paragraph.attrs["eId"] == "schedule-5a-paragraph-4"
-    assert first_item.attrs["eId"] == "schedule-5a-paragraph-4-a"
-    assert second_item.attrs["eId"] == "schedule-5a-paragraph-4-b"
+    assert paragraph.attrs["eId"] == "schedule-5A-paragraph-4"
+    assert first_item.attrs["eId"] == "schedule-5A-paragraph-4-a"
+    assert second_item.attrs["eId"] == "schedule-5A-paragraph-4-b"
     assert "eId" not in repeated_item.attrs
     assert lowering_records[0]["rule_id"] == "uk_whole_schedule_payload_descendant_eid_synthesis"
     assert lowering_records[0]["synthesized_count"] == 3
