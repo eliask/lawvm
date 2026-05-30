@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.effects import UKEffectRecord, _COMMENCEMENT_EFFECT_TYPES
 from lawvm.uk_legislation.effect_lowering_tail import (
     append_no_targets_rejection,
@@ -192,6 +193,62 @@ def _prepare_effect_target_prelude(
     )
 
 
+def _withhold_repeal_table_replacement_ops(
+    ops: list[LegalOperation],
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> list[LegalOperation]:
+    """Drop whole-node structural replaces whose source is a repeal schedule table.
+
+    When the extracted source is a repeal Schedule (a list of repeals by extent,
+    not replacement content), a deterministic word-level repeal lowers to a
+    ``text_repeal`` (e.g. the quoted ``the words "23,"``) and is kept. But when the
+    same source lowers to a whole-node ``replace`` carrying the table itself as the
+    payload, applying it would overwrite the target with the repeals table — so the
+    op is withheld and the target preserved (over-retention is the safe wrong).
+    """
+    if not ops or extracted_el is None:
+        return ops
+    structural_replaces = [
+        op
+        for op in ops
+        if op.action is StructuralAction.REPLACE and op.payload is not None and op.text_patch is None
+    ]
+    if not structural_replaces:
+        return ops
+    from lawvm.uk_legislation.source_adjudication import _looks_like_repeal_schedule_table_source
+
+    tag = extracted_el.tag
+    extracted_tag = ET.QName(tag).localname if isinstance(tag, str) else None
+    if not _looks_like_repeal_schedule_table_source(
+        extracted_tag=extracted_tag, effect_type=effect_type, text=extracted_text or ""
+    ):
+        return ops
+    withheld = set(id(op) for op in structural_replaces)
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_repeal_table_replacement_payload_rejected",
+        family="source_pathology",
+        reason_code="repeal_table_payload_not_replacement",
+        reason=(
+            "A repeal-family effect lowered to a whole-node replace whose payload is "
+            "a repeal schedule table (a list of repeals by extent), not genuine "
+            "replacement content. Replacing the target with that table would destroy "
+            "legal state, so the operation is withheld and the target preserved "
+            "(over-retention is the safe wrong)."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"effect_type_normalized": effect_type, "withheld_op_count": len(withheld)},
+    )
+    return [op for op in ops if id(op) not in withheld]
+
+
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
     extracted_el: Optional[ET._Element],
@@ -209,6 +266,38 @@ def compile_effect_to_ir_ops(
     lower to canonical replace/repeal/insert operations only when source and
     target evidence support that action family.
     """
+    ops = _compile_effect_to_ir_ops_impl(
+        effect,
+        extracted_el,
+        sequence=sequence,
+        fallback_for_missing_extracted_source=fallback_for_missing_extracted_source,
+        lowering_rejections_out=lowering_rejections_out,
+        allow_payload_identity_synthesis=allow_payload_identity_synthesis,
+        source_root=source_root,
+        source_authority_layer=source_authority_layer,
+        lower_phase_timings_out=lower_phase_timings_out,
+    )
+    return _withhold_repeal_table_replacement_ops(
+        ops,
+        effect=effect,
+        effect_type=(effect.effect_type or "").strip().lower(),
+        extracted_el=extracted_el,
+        extracted_text=_text_content(extracted_el) if extracted_el is not None else None,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+
+
+def _compile_effect_to_ir_ops_impl(
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET._Element],
+    sequence: int = 0,
+    fallback_for_missing_extracted_source: bool = False,
+    lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
+    allow_payload_identity_synthesis: bool = True,
+    source_root: Optional[ET._Element] = None,
+    source_authority_layer: str = "",
+    lower_phase_timings_out: Optional[dict[str, float]] = None,
+) -> list[LegalOperation]:
     phase_t0 = time.perf_counter()
 
     def _mark_lower_phase(name: str) -> None:
