@@ -120,6 +120,20 @@ class DefinitionAnchorSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class FromChildEndSelector:
+    """``from the end of child <kind> <label>`` to an anchor in the node's own text.
+
+    Serializes to the ``US``-separated sentinel
+    ``TEXT_FROM_CHILD_END\\x1f<kind>\\x1f<label>\\x1f<start>``.  ``start`` is held
+    verbatim (the consumer strips it at use time) so the round-trip is exact.
+    """
+
+    child_kind: str
+    child_label: str
+    start: str
+
+
+@dataclass(frozen=True, slots=True)
 class RawSelector:
     """A not-yet-migrated ``TEXT_*`` sentinel string carried verbatim.
 
@@ -146,6 +160,7 @@ UKTextSelector = (
     | BeforeChildSelector
     | AfterChildSelector
     | DefinitionAnchorSelector
+    | FromChildEndSelector
     | RawSelector
 )
 
@@ -207,6 +222,8 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
     if isinstance(selector, DefinitionAnchorSelector):
         prefix = "TEXT_BEFORE_DEFINITION" if selector.direction == "before" else "TEXT_AFTER_DEFINITION"
         return f"{prefix}_{selector.term}"
+    if isinstance(selector, FromChildEndSelector):
+        return f"TEXT_FROM_CHILD_END{US}{selector.child_kind}{US}{selector.child_label}{US}{selector.start}"
     if isinstance(selector, RawSelector):
         return selector.original
     raise TypeError(f"unknown selector: {selector!r}")
@@ -240,6 +257,11 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
         return DefinitionAnchorSelector(original[len("TEXT_BEFORE_DEFINITION_") :], "before")
     if original.startswith("TEXT_AFTER_DEFINITION_"):
         return DefinitionAnchorSelector(original[len("TEXT_AFTER_DEFINITION_") :], "after")
+    if original.startswith(f"TEXT_FROM_CHILD_END{US}"):
+        parts = original.split(US, 3)
+        if len(parts) == 4:
+            return FromChildEndSelector(parts[1], parts[2], parts[3])
+        return RawSelector(original)
     if original.startswith("TEXT_AFTER_") and original.endswith("_TO_END"):
         return AfterAnchorToEndSelector(original[len("TEXT_AFTER_") : -len("_TO_END")])
     if original.startswith("TEXT_FROM_") and original.endswith("_TO_END"):

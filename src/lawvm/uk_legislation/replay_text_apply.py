@@ -18,6 +18,7 @@ from lawvm.uk_legislation.text_matching import (
 )
 from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
+    FromChildEndSelector,
     RangeFromToSelector,
     RangeToEndSelector,
     selector_from_legacy_original,
@@ -2037,13 +2038,11 @@ class UKReplayTextApplyMixin:
             self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
 
-        if match.startswith(f"TEXT_FROM_CHILD_END{US}"):
-            parts = match.split(US, 3)
-            if len(parts) != 4:
-                return node, False
-            child_kind = parts[1]
-            child_label = parts[2]
-            start_text = parts[3].strip()
+        from_child_end_selector = selector_from_legacy_original(match)
+        if isinstance(from_child_end_selector, FromChildEndSelector):
+            child_kind = from_child_end_selector.child_kind
+            child_label = from_child_end_selector.child_label
+            start_text = from_child_end_selector.start.strip()
             if not child_kind or not child_label or not start_text:
                 return node, False
             direct_child_matches = [
