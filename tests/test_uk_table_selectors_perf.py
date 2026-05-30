@@ -1,6 +1,6 @@
 """Performance and behavior regression tests for UK table-selector hotspots.
 
-Covers two Sensor I candidates fixed in Actuator 12 (2026-05-29):
+Covers two hotspots fixed (2026-05-29):
 
 Site 1: _source_names_containing_target_for_table_cell
   - 22,696 calls on ukpga/1970/9 with ~5,062 distinct (text, label) pairs
@@ -12,7 +12,7 @@ Site 1: _source_names_containing_target_for_table_cell
 Site 2: _uk_source_parent_table_column_entry_omission_text_patch_claim (line ~985)
   - 113 calls × 49 ms = 5.51 s on ukpga/1970/9.  Internal re.search with two
     .*? lazy quantifiers in one alternation caused catastrophic backtracking
-    (6.8 ms/call, same shape as Actuator 8).
+    (6.8 ms/call, same catastrophic-backtracking shape).
   - Fix: substring fast-guard ("entries relating to") + split into two
     module-scope compiled patterns to kill the alternation cross-product.
 

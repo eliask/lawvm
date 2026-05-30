@@ -1,6 +1,6 @@
 """Tests for block-substitution tail promotion in UK lowering.
 
-Pattern B (Sensor K diagnosis): an effect whose affected_provisions covers a
+Pattern B: an effect whose affected_provisions covers a
 range like 's. 25(4)-(4B)' decomposes into a multi-target group.  Op _0 is a
 Replace on the numeric stem (subsection:4); ops _1, _2 target letter-suffix
 variants (4a, 4b) that do not yet exist in the materialized state.  Lowering

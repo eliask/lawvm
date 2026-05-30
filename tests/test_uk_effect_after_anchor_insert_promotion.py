@@ -465,7 +465,7 @@ def test_promotion_with_none_rejections_out_does_not_crash() -> None:
 def test_substitute_instruction_text_promoted_pattern_c() -> None:
     """Replace for letter-suffix target where source says 'For X substitute' IS promoted (Pattern C).
 
-    Actuator 16 widened guard 4: the original A13 guard required instruction text to contain
+    Guard 4 was widened: the original guard required instruction text to contain
     'after [anchor] insert', which excluded Pattern C — pure substitutions of a letter-suffix
     leaf ('For subsection (1A) substitute—') whose target didn't yet exist in the replayed
     state. The widened structural guard fires whenever the leaf label is a letter-suffix,
@@ -598,7 +598,7 @@ def test_toplevel_section_1a_promoted() -> None:
 
 
 # ===========================================================================
-# Pattern C tests (Actuator 16 — widened structural guard)
+# Pattern C tests (widened structural guard)
 # ===========================================================================
 #
 # These tests verify that the widened A13 guard (drop instruction-text
@@ -643,7 +643,7 @@ def _pattern_c_extracted_el_for_substitute(label: str = "4A") -> ET._Element:
 def test_pattern_c_single_letter_suffix_substitution_promoted() -> None:
     """Pattern C: single 'substituted' effect on letter-suffix leaf → Insert.
 
-    Sensor K Case 5: ukpga/1978/29 effect from uksi/2005/2011 targeting
+    Case: ukpga/1978/29 effect from uksi/2005/2011 targeting
     schedule:1/paragraph:6A with effect_type='substituted'. Instruction text
     is 'For paragraph 6A substitute—'. The widened A13 guard must promote this
     to Insert using the numeric-stem anchor (paragraph:6).
@@ -700,7 +700,7 @@ def test_pattern_c_single_letter_suffix_substitution_promoted() -> None:
 
 
 def test_pattern_c_section_32d_substitution_promoted() -> None:
-    """Pattern C: Sensor K Case 4 shape — section:32d substitution promoted.
+    """Pattern C: section:32d substitution promoted.
 
     ukpga/1978/29, effect from asp/2005/13 targeting section:32d with
     effect_type='substituted'. Predecessors 32A-32C exist. At replay time

@@ -1,7 +1,7 @@
 """Performance regression tests for FI/SE/tools regex landmines.
 
-Actuator batch 2 (2026-05-29): bounded-regex + fast-guard fixes for
-Sensor H findings #12–15.
+Bounded-regex + fast-guard fixes (2026-05-29) for
+backtracking-risk findings #12–15.
 
 Covered sites:
   #12  citation_routing._looks_like_fi_meta_repeal  (also grafter.py:6441)
@@ -9,7 +9,7 @@ Covered sites:
   #14  sweden/grafter._SE_{REPLACE,REPEAL,RENUMBER}_CLAUSE_RE, _SE_WORD_SUBSTITUTION_RE
   #15  divergence_heuristics._REPEAL_PRIOR_WORDING_BANNER_RE / _FUTURE_REPEAL_OVERLAY_RE
 
-Template: f2ee4479 (Actuator 8 — UK referent-qualified substitution classifier).
+Template: f2ee4479 (UK referent-qualified substitution classifier).
 
 Each fixture tests:
   1. Positive: a known-matching input returns the expected truthy result.

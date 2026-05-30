@@ -1,7 +1,7 @@
 """Performance regression tests for A19 regex landmine fixes.
 
-Actuator 19 batch 6 (2026-05-29): bounded-regex + BRANCH-ordering fixes for
-Sensor H findings across sweden/grafter.py and uk_legislation/source_parent_payloads.py.
+Bounded-regex + BRANCH-ordering fixes (2026-05-29) for
+backtracking-risk findings across sweden/grafter.py and uk_legislation/source_parent_payloads.py.
 
 Sites fixed:
   SE-1  grafter._CHAPTER_RE / _ITEM_RE

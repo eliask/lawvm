@@ -30728,7 +30728,7 @@ def test_compile_embedded_table_structural_subsection_substitution_is_not_table_
     )
 
     assert len(ops) == 1
-    # A16 (Actuator 16): the widened letter-suffix structural guard now promotes
+    # The widened letter-suffix structural guard now promotes
     # letter-suffix targets to Insert regardless of instruction text. subsection:1a
     # is a letter-suffix label so the op becomes INSERT with the numeric-stem anchor.
     # Replay-time apply will fall back to Replace semantics if the leaf already exists.

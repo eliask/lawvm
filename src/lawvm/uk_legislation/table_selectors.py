@@ -103,7 +103,7 @@ _NORMALIZED_ELEMENT_TEXT_CACHE: dict[ET._Element, str] = {}
 # appeared as a single re.search call with two .*? lazy quantifiers sharing one
 # alternation; on non-matching inputs the trailing $ causes catastrophic
 # backtracking (6.8 ms/call × 558 inner calls = 3.80 s on ukpga/1970/9 —
-# Sensor I cand 3).  Split into two separate patterns to kill the cross-product.
+# Split into two separate patterns to kill the cross-product.
 # .*? bounded to {0,300}? — legal column/omit phrases are well under 300 chars.
 _UK_COLUMN_OMIT_ENTRIES_RELATING_RE = re.compile(
     r"\bin\s+(?:the\s+)?"
@@ -275,7 +275,7 @@ def _uk_table_child_structural_insert_detail(
 
 
 # Pattern factory compiled per §1.11.  22,696 calls with ~5,062 distinct
-# (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio) — Sensor I cand 2.
+# (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio).
 # Dynamic rf"\bin\s+section\s+{re.escape(label)}\b" thrashes Python's 512-entry
 # re._compile cache.  Factory keyed on label (low cardinality: one per target
 # section) keeps patterns alive without process-global unbounded retention.
@@ -1018,8 +1018,8 @@ def _uk_source_parent_table_column_entry_omission_text_patch_claim(
         if "entries relating to" not in lead_text.lower():
             continue
         # Two separate patterns to kill the alternation cross-product that
-        # produced 6.8 ms/call backtracking on non-matching inputs (Sensor I
-        # cand 3, ukpga/1970/9).  Try the "in column … omit entries" form first,
+        # produced 6.8 ms/call backtracking on non-matching inputs
+        # (ukpga/1970/9).  Try the "in column … omit entries" form first,
         # then the "omit from column … entries" form.
         match = _UK_COLUMN_OMIT_ENTRIES_RELATING_RE.search(lead_text)
         if match is None:

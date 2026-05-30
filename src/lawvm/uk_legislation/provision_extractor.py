@@ -25,7 +25,7 @@ class UKExtractionContext(NamedTuple):
 # ---------------------------------------------------------------------------
 # §1.11 Hot-path: extraction context cache, built once per source root
 #
-# Sensor I's cProfile of ukpga/1970/9 showed _build_extraction_context called
+# Profiling ukpga/1970/9 showed _build_extraction_context called
 # 113 times × 50ms each = 5.72s cumtime.  The function is a pure function of
 # root identity: it walks the tree building parent_map, exact_id_map, and
 # sequence_map.  The tree is immutable during compilation, so the result can be

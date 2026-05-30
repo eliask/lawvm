@@ -766,7 +766,7 @@ _EE_RT_INLINE_CHANGE_NOTE_RE = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Sensor H batch 4 — module-scope static regex constants (§1.11)
+# Module-scope static regex constants (§1.11)
 # ---------------------------------------------------------------------------
 
 # Matches a numbered item label at the start of a segment, e.g. "3) text".

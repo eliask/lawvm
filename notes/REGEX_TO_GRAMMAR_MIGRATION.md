@@ -90,7 +90,7 @@ bespoke-parser case.
 - **UK `addressing.py`** — pure label normalization + operation ordering, bounded
   `fullmatch` helpers. Route through regex_safety if desired; not parser smell.
 
-## Cross-frontend address grammar — DEFER (Sensor N vs Pro reconciliation)
+## Cross-frontend address grammar — DEFER (Pro reconciliation)
 
 The census flagged §-reference / legal-address extraction as reimplemented in
 FI/EE/NO/SE with the same grammar, different surface tokens, and called shared
@@ -98,7 +98,7 @@ FI/EE/NO/SE with the same grammar, different surface tokens, and called shared
 per-frontend and did NOT push cross-frontend unification.
 
 **Resolution: Pro's ordering wins, per AGENTS.md §12** (do not put jurisdiction
-idioms in core until proven genuinely shared). Sensor N correctly SPOTTED the
+idioms in core until proven genuinely shared). The census correctly SPOTTED the
 shared pattern, but unifying into core now is premature. Path: build per-frontend
 typed recognizers first; let the shared shape emerge from 2-3 real
 implementations; extract the core `legal_address_grammar` only after (farchive

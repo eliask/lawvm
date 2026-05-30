@@ -1,6 +1,6 @@
 """Performance regression tests for UK source_adjudication hot-path functions.
 
-Actuator 8 (2026-05-29): bounded-regex + fast-guard fix for
+Bounded-regex + fast-guard fix (2026-05-29) for
 _looks_like_referent_qualified_text_substitution.
 
 cProfile witness: .tmp/uk_sensor_profile_1970_9.md

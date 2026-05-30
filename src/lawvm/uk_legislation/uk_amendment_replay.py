@@ -279,7 +279,7 @@ class UKReplayPipeline:
         # simultaneously (~2.5 GB peak RSS).  Evicting after last use reduces
         # peak to the watermark of the maximum concurrently-live roots, which
         # drops to single-digit counts in typical ordered traversal.
-        # See Sensor I diagnosis (.tmp/uk_sensor_profile_1970_9_v2.md §memory).
+        # See profiling diagnosis (.tmp/uk_sensor_profile_1970_9_v2.md §memory).
         _last_effect_idx: dict[str, int] = {}
         for _j, _e_j in enumerate(replayable):
             _last_effect_idx[_e_j.affecting_act_id] = _j

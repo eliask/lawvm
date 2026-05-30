@@ -2895,7 +2895,7 @@ def _uk_table_is_fee_table(table: ET._Element) -> bool:
 # ---------------------------------------------------------------------------
 # §1.11 Hot-path: fee-table row index, built once per source_root
 #
-# Sensor G's cProfile of ukpga/1970/9 identified _uk_table_driven_fee_target_
+# Profiling ukpga/1970/9 identified _uk_table_driven_fee_target_
 # refinements (2393 calls) and _uk_table_driven_fee_substitution (1033 calls)
 # each walking source_root.iter() and calling _uk_table_rows_with_rowspans for
 # every fee table, per effect row — 132,140 total invocations producing 99M+
