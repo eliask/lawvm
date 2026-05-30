@@ -64,6 +64,7 @@ from typing import List, Dict
 from lawvm.uk_legislation.source_text_normalization import normalize_uk_parser_text
 from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
+    AfterChildSelector,
     BeforeChildSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
@@ -2122,11 +2123,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     for m in matches_after_child_insert:
         unit_kind = m.group(1).lower().replace("-", "")
         subs.append(
-            {
-                "original": f"TEXT_AFTER_CHILD_{unit_kind}_{m.group(2).strip()}",
-                "replacement": m.group(3).strip(),
-                "rule_id": UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterChildSelector(unit_kind, m.group(2).strip()),
+                    replacement=m.group(3).strip(),
+                    rule_id=UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+                )
+            )
         )
 
     matches_after_child_unquoted_insert = re.finditer(
@@ -2139,11 +2142,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         unit_kind = m.group(1).lower().replace("-", "")
         inserted = f"{m.group(3).strip()} {m.group('tail').strip()}".strip()
         subs.append(
-            {
-                "original": f"TEXT_AFTER_CHILD_{unit_kind}_{m.group(2).strip()}",
-                "replacement": inserted,
-                "rule_id": UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterChildSelector(unit_kind, m.group(2).strip()),
+                    replacement=inserted,
+                    rule_id=UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+                )
+            )
         )
 
     matches_insert_after_child = re.finditer(
@@ -2155,11 +2160,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     for m in matches_insert_after_child:
         unit_kind = m.group(2).lower().replace("-", "")
         subs.append(
-            {
-                "original": f"TEXT_AFTER_CHILD_{unit_kind}_{m.group(3).strip()}",
-                "replacement": m.group(1).strip(),
-                "rule_id": UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterChildSelector(unit_kind, m.group(3).strip()),
+                    replacement=m.group(1).strip(),
+                    rule_id=UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
+                )
+            )
         )
 
     matches_after_compound_subsection_child_insert = re.finditer(

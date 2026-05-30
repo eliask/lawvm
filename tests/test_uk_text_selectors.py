@@ -235,6 +235,31 @@ class TestParserProductionParity:
                     "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
                 }],
             ),
+            # after-child insertion family (AfterChildSelector)
+            (
+                'after paragraph (a), insert "the new text"',
+                [{
+                    "original": "TEXT_AFTER_CHILD_paragraph_a",
+                    "replacement": "the new text",
+                    "rule_id": "uk_effect_after_child_text_insertion_patch",
+                }],
+            ),
+            (
+                'after paragraph (b), insert— and the remaining words;',
+                [{
+                    "original": "TEXT_AFTER_CHILD_paragraph_b",
+                    "replacement": "and the remaining words",
+                    "rule_id": "uk_effect_after_child_text_insertion_patch",
+                }],
+            ),
+            (
+                'insert "a new clause" after subsection (3)',
+                [{
+                    "original": "TEXT_AFTER_CHILD_subsection_3",
+                    "replacement": "a new clause",
+                    "rule_id": "uk_effect_after_child_text_insertion_patch",
+                }],
+            ),
         ],
     )
     def test_migrated_family_parity(self, text: str, expected: list) -> None:
