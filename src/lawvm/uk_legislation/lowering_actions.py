@@ -17,6 +17,8 @@ UK_WORD_LEVEL_EFFECT_TYPES = frozenset(
         "word omitted",
         "words inserted",
         "word inserted",
+        "words added",
+        "word added",
     }
 )
 
@@ -27,6 +29,8 @@ _UK_EFFECT_TYPE_ACTIONS = {
     "words inserted": "insert",
     "entry inserted": "insert",
     "added": "insert",
+    "words added": "insert",
+    "word added": "insert",
     "repealed": "repeal",
     "entry repealed": "repeal",
     "repealed in part": "replace",
