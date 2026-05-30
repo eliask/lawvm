@@ -45,11 +45,24 @@ def _normalize_text(text: str) -> str:
     return _WS_RE.sub(" ", s).strip()
 
 
+def _compare_key(normalized_text: str) -> str:
+    """Whitespace-insensitive equality key over already-normalized text.
+
+    The replay IR text model (``irnode_to_text``) and the oracle XML
+    ``_text_content`` tokenize word/number boundaries differently — e.g. a
+    heading followed by a provision number renders as ``"enactment 1"`` on one
+    side and ``"enactment1"`` on the other. Those spacing artifacts are not legal
+    divergences, so the text-diff equality check ignores whitespace. Display
+    still uses the readable (spaced) text.
+    """
+    return normalized_text.replace(" ", "")
+
+
 # ---------------------------------------------------------------------------
 # Walk replayed IRStatute to collect {eid: raw_text}
 # ---------------------------------------------------------------------------
 
-def _collect_replay_eid_texts(replayed_ir: Any) -> dict[str, str]:
+def _collect_replay_eid_texts(replayed_ir: Any) -> tuple[dict[str, str], set[str]]:
     """Walk replayed IRStatute body + supplements and collect {eid: raw_text}.
 
     Uses irnode_to_text so replay text and oracle text derive from the same
@@ -58,21 +71,34 @@ def _collect_replay_eid_texts(replayed_ir: Any) -> dict[str, str]:
     from lawvm.core.ir_helpers import irnode_to_text, is_zombie
 
     results: dict[str, str] = {}
+    leaf_eids: set[str] = set()
 
-    def _walk(node: Any) -> None:
+    def _walk(node: Any) -> bool:
+        """Return whether this subtree contains any EID-bearing node."""
         if is_zombie(node, pit_date=None):
-            return
+            return False
         eid = node.attrs.get("eId") or node.attrs.get("id")
+        child_has_eid = False
+        for child in node.children:
+            if _walk(child):
+                child_has_eid = True
         if eid:
             results[eid] = irnode_to_text(node)
-        for child in node.children:
-            _walk(child)
+            # A node whose subtree holds no other EID is a text leaf: its
+            # irnode_to_text is its own text, comparable to the oracle's
+            # per-EID text_content. Container nodes concatenate their EID-bearing
+            # descendants differently from the oracle XML walk, so their text
+            # comparison is tokenization noise, not a legal divergence.
+            if not child_has_eid:
+                leaf_eids.add(eid)
+            return True
+        return child_has_eid
 
     _walk(replayed_ir.body)
     for schedule in replayed_ir.supplements:
         _walk(schedule)
 
-    return results
+    return results, leaf_eids
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +181,7 @@ def _classify_eids(
     replay_norm_set: frozenset[str],
     oracle_norm_set: frozenset[str],
     replay_norm_to_raw: dict[str, str],
+    replay_leaf_eids: frozenset[str] = frozenset(),
 ) -> dict[str, dict[str, Any]]:
     """Classify every EID in the union of normalized sets.
 
@@ -187,7 +214,12 @@ def _classify_eids(
             }
         else:
             replay_norm_text = _normalize_text(replay_raw_text)
-            if replay_norm_text == oracle_norm_text:
+            texts_match = _compare_key(replay_norm_text) == _compare_key(oracle_norm_text)
+            # Only trust a text difference at a tree leaf: container nodes
+            # concatenate their EID-bearing descendants differently from the
+            # oracle XML walk, so a container "text_diff" is tokenization noise.
+            is_leaf = raw_replay_eid in replay_leaf_eids
+            if texts_match or not is_leaf:
                 result[norm_eid] = {
                     "kind": _CLASS_SAME,
                     "replay_text": replay_raw_text,
@@ -389,8 +421,8 @@ def dump_uk_statute(
             allow_oracle_alignment=True,
         )
 
-    # 5. Collect replay EID texts (raw EID -> raw text)
-    replay_eid_texts = _collect_replay_eid_texts(replayed_ir)
+    # 5. Collect replay EID texts (raw EID -> raw text) + tree-leaf EIDs
+    replay_eid_texts, replay_leaf_eids = _collect_replay_eid_texts(replayed_ir)
     replayed_eids: set[str] = set(replay_eid_texts)
 
     # 6. Normalize both sets with the canonical normalizer (consistent with uk-misses)
@@ -414,6 +446,7 @@ def dump_uk_statute(
         replay_norm_set=frozenset(replay_compare_eids),
         oracle_norm_set=frozenset(oracle_compare_eids),
         replay_norm_to_raw=replay_norm_to_raw,
+        replay_leaf_eids=frozenset(replay_leaf_eids),
     )
 
     # 10. Compute header stats

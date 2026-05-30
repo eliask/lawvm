@@ -88,6 +88,9 @@ def _make_classify(
         replay_norm_set=frozenset(replay_eids),
         oracle_norm_set=frozenset(oracle_eids),
         replay_norm_to_raw={eid: eid for eid in replay_eids},
+        # The synthetic EIDs are flat (no hierarchy) so they are all tree leaves;
+        # mark them so text_diff classification is exercised.
+        replay_leaf_eids=frozenset(replay_eids),
     )
 
 
@@ -135,6 +138,21 @@ def test_classify_text_diff() -> None:
         oracle_eids={"section-4"},
     )
     assert classified["section-4"]["kind"] == _CLASS_TEXT_DIFF
+
+
+def test_classify_text_diff_suppressed_for_container() -> None:
+    # A node whose text differs but is NOT a tree leaf is a container: its
+    # text is a subtree concatenation that the replay IR and oracle XML walk
+    # differently, so the difference is tokenization noise, not a real divergence.
+    classified = _classify_eids(
+        replay_raw_texts={"section-4": "version A"},
+        oracle_norm_text_map={"section-4": "version b"},
+        replay_norm_set=frozenset({"section-4"}),
+        oracle_norm_set=frozenset({"section-4"}),
+        replay_norm_to_raw={"section-4": "section-4"},
+        replay_leaf_eids=frozenset(),  # section-4 is a container here
+    )
+    assert classified["section-4"]["kind"] == _CLASS_SAME
 
 
 def test_classify_mixed() -> None:
