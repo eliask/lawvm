@@ -19,7 +19,11 @@ BASELINES = {
     # 2026-03-24 parenthesized-range-expansion fix (notably asp/2000/6 71.3→90.8
     # and the ukpga/1978/30 fee-table-index crash fix restoring it to 73.8).
     "ukpga/1998/42": 97.3,
-    "ukpga/1978/30": 73.8,
+    # 78.1 (was 73.8) after recovering effect Types that carry a trailing
+    # commencement date in the feed Type cell (e.g. "added (1.7.1999)"): the
+    # date is split into in-force dates so the base verb classifies structurally
+    # and applies — recovering the cross-act insert of s. 23A and its subtree.
+    "ukpga/1978/30": 78.1,
     "ukpga/2025/18": 88.4,
     # EU Withdrawal Act 2018: 1828 replayed vs 1832 oracle EIDs, a substantial
     # well-supported statute added to the gate 2026-05-30.

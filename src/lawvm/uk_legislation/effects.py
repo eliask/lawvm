@@ -73,6 +73,57 @@ def _is_uk_repealed_by_effect_type(effect_type: str) -> bool:
     return str(effect_type or "").strip().lower().startswith("repealed by ")
 
 
+_UK_EFFECT_TYPE_TRAILING_DATE_RE = re.compile(
+    r"\s*\((\d{1,2}\.\d{1,2}\.\d{4}(?:\s+\d{1,2}\.\d{1,2}\.\d{4})*)\)\s*$"
+)
+
+
+def _iso_from_uk_dotted_date(token: str) -> str:
+    day, month, year = token.split(".")
+    return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+
+
+def normalize_uk_effect_type_trailing_date(raw_type: str) -> tuple[str, list[str]]:
+    """Split a trailing ``(D.M.YYYY ...)`` commencement qualifier off a feed Type.
+
+    legislation.gov.uk sometimes writes the commencement date into the effect
+    ``Type`` cell (e.g. ``"added (1.7.1999)"``) instead of ``InForceDates``. The
+    trailing date defeats the exact-string structural/nonstructural classification
+    in :class:`UKEffectRecord`, so the effect is silently treated as non-replayable
+    and its insert is dropped. This returns ``(base_type, [iso_date, ...])`` where
+    ``base_type`` has the trailing pure-date parenthetical removed and the dates are
+    ISO-normalized. Non-date qualifiers (``"(EW)"``, ``"(temp.)"``, ``"(1)"`` ...)
+    are deliberately left intact — only a parenthetical that is wholly dates is
+    treated as a misplaced commencement date.
+    """
+    text = str(raw_type or "")
+    match = _UK_EFFECT_TYPE_TRAILING_DATE_RE.search(text)
+    if match is None:
+        return text, []
+    dates = [_iso_from_uk_dotted_date(tok) for tok in match.group(1).split()]
+    return text[: match.start()].rstrip(), dates
+
+
+def _apply_uk_effect_type_date_qualifier(
+    raw_type: str,
+    in_force_dates: list[dict[str, Any]],
+) -> str:
+    """Return the base effect type, recovering any trailing date into in-force dates."""
+    base_type, qualifier_dates = normalize_uk_effect_type_trailing_date(raw_type)
+    for iso_date in qualifier_dates:
+        if any(str(existing.get("date") or "") == iso_date for existing in in_force_dates):
+            continue
+        in_force_dates.append(
+            {
+                "date": iso_date,
+                "applied": "true",
+                "prospective": "false",
+                "source": "type_date_qualifier",
+            }
+        )
+    return base_type
+
+
 def uk_nonstructural_replay_candidate_family_for_effect_type(effect_type: str) -> str:
     """Return the nonstructural replay family implied by an effects-feed type."""
     effect_type = " ".join(str(effect_type or "").strip().lower().split())
@@ -296,7 +347,9 @@ def parse_effects_from_feeds(
             records.append(
                 UKEffectRecord(
                     effect_id=effect.get("EffectId", ""),
-                    effect_type=effect.get("Type", ""),
+                    effect_type=_apply_uk_effect_type_date_qualifier(
+                        effect.get("Type", ""), in_force_dates
+                    ),
                     applied=(effect.get("Applied", "false").lower() == "true"),
                     requires_applied=(effect.get("RequiresApplied", "false").lower() == "true"),
                     modified=effect.get("Modified", "")[:10],
@@ -377,7 +430,9 @@ def parse_effects_from_bytes(
             records.append(
                 UKEffectRecord(
                     effect_id=effect.get("EffectId", ""),
-                    effect_type=effect.get("Type", ""),
+                    effect_type=_apply_uk_effect_type_date_qualifier(
+                        effect.get("Type", ""), in_force_dates
+                    ),
                     applied=(effect.get("Applied", "false").lower() == "true"),
                     requires_applied=(effect.get("RequiresApplied", "false").lower() == "true"),
                     modified=effect.get("Modified", "")[:10],
