@@ -91,8 +91,35 @@ never has to *guess* a deep node's identity by fuzzy text.
   → `UK_RULE_INSERTED_PROVISION_EID`: derive the inserted node's structural eId from
   this algorithm so `payload_identity` / synthesis assigns the address the oracle
   will use, instead of generic `paragraph-a/b/c` that fall to fuzzy grounding.
-  **GAP — this is the principled fix that retires the fuzzy-grounding crutch for
-  inserted subtrees (see "Grounding" below).**
+
+  **DIAGNOSED 2026-05-30 (verified failing case found; scope re-narrowed).** The
+  inserted-provision *number* is already derived correctly — `compile_ops_for_statute`
+  on `ukpga/1978/30` emits payloads with `label='20A'`, `'23ZA'`, `'3A'`, `'2A'`, etc.
+  The actual gap is **eId letter-case only**: the synthesized eId lowercases the letter
+  suffix (`section-20a`, `section-23za`, `section-24-3a`, `section-23c-1a`) while the
+  oracle convention is **uppercase** at every level (`section-20A`, `section-23ZA`,
+  `section-24-3A`, `section-23C-1A`; confirmed against the oracle eid_map). Root cause:
+  `_clean_num` (uk_grafter) ends in `.lower()` and is used directly for eId construction
+  (`f"section-{_clean_num(label)}"` and `_canonicalize_eid_tail_label`, which routes
+  alphanumeric labels through `_clean_num`). The pure-letter branch (`paragraph-a`,
+  `(za)`) is correctly lowercase already; only the digit+letter case is wrong.
+  **Verified failing case:** `1978/30` section `20A` is synthesized `section-20a`, then
+  grounding *clears* it (not in `oracle_id_values`) and re-matches it by **fuzzy text**
+  (`fuzzy:0.978`). So the OUTPUT is already correct — the win is **determinism**: a
+  correct-cased synthesized eId is preserved by grounding's pre-seed (exact, structural)
+  instead of depending on a 0.978 text match that drifts under unrelated edits.
+  **Implementation HAZARD (why this is not a one-liner):** the *same* lowercase
+  `_clean_num` output feeds case-insensitive **matching keys** that MUST stay lowercase —
+  `eid_map[...lower()]` (uk_grafter), grounding `flat_cands` (lowercased at lookup),
+  semantic path keys. The fix is a dedicated `_uk_eid_canonical_number(raw)` (uppercase
+  the letters of a digit+letter provision number) applied ONLY at the eId-**attribute**
+  output sites (`_target_anchor_eid`/`_fallback_target_eid`, `_canonicalize_eid_tail_label`
+  alphanumeric branch, `payload_identity` suffixes, grounding `local_fallback`), NEVER at
+  the eid_map-key / flat-candidate sites. ~30 `_clean_num` eId-build sites must be
+  triaged output-vs-key. **LOW/zero score impact (fuzzy already fixes output); do for
+  correctness-by-construction. Needs the broad baseline as a before/after regression guard
+  (WAL allows running it concurrently with the corpus fetch). GAP — ready to build with
+  this spec; not a benchmaxx.**
 
 ### §6.8 Uncommenced material  ← the `ukpga/1998/17` class
 - **6.8.7** amendments should not be in force before the provision they amend.
