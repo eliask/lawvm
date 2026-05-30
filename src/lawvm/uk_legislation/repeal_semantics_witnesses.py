@@ -188,6 +188,56 @@ def scan_repeal_semantics_witnesses_for_statute(
     return tuple(witnesses)
 
 
+def scan_repeal_semantics_affecting_act_phrase_candidates_for_statute(
+    statute_id: str,
+    archive: Any,
+    *,
+    phrase_witnesses_by_act: dict[str, tuple[UKRepealSemanticsWitness, ...]],
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> tuple[UKRepealSemanticsWitness, ...]:
+    """Link repeal effects to phrase-bearing affecting Acts without source extraction.
+
+    This is a bounded candidate lane between the cheap source-phrase scan and the
+    expensive selected-source scan. It proves that a repeal-family effect is made
+    by an affecting Act whose official XML contains a repeal/revival semantic
+    phrase; it does not prove that the phrase is in the selected source provision.
+    """
+    effect_parse_diagnostics: list[dict[str, Any]] = []
+    effects = load_effects_for_statute_from_archive(
+        statute_id,
+        archive,
+        parse_rejections_out=effect_parse_diagnostics,
+    )
+    if diagnostics_out is not None:
+        diagnostics_out.extend(effect_parse_diagnostics)
+    repeal_effects = tuple(effect for effect in effects if is_repeal_semantics_effect(effect))
+    return _affecting_act_phrase_effect_witnesses(
+        statute_id,
+        repeal_effects,
+        phrase_witnesses_by_act,
+    )
+
+
+def scan_repeal_semantics_affecting_act_phrase_candidates(
+    statute_ids: Iterable[str],
+    archive: Any,
+    *,
+    phrase_witnesses_by_act: dict[str, tuple[UKRepealSemanticsWitness, ...]],
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> tuple[UKRepealSemanticsWitness, ...]:
+    witnesses: list[UKRepealSemanticsWitness] = []
+    for statute_id in statute_ids:
+        witnesses.extend(
+            scan_repeal_semantics_affecting_act_phrase_candidates_for_statute(
+                statute_id,
+                archive,
+                phrase_witnesses_by_act=phrase_witnesses_by_act,
+                diagnostics_out=diagnostics_out,
+            )
+        )
+    return tuple(witnesses)
+
+
 def scan_repeal_semantics_witnesses(
     statute_ids: Iterable[str],
     archive: Any,
@@ -205,6 +255,52 @@ def scan_repeal_semantics_witnesses(
                 diagnostics_out=diagnostics_out,
             )
         )
+    return tuple(witnesses)
+
+
+def _affecting_act_phrase_effect_witnesses(
+    statute_id: str,
+    repeal_effects: tuple[UKEffectRecord, ...],
+    phrase_witnesses_by_act: dict[str, tuple[UKRepealSemanticsWitness, ...]],
+) -> tuple[UKRepealSemanticsWitness, ...]:
+    witnesses: list[UKRepealSemanticsWitness] = []
+    for effect in repeal_effects:
+        if not is_repeal_semantics_effect(effect):
+            continue
+        phrase_witnesses = phrase_witnesses_by_act.get(effect.affecting_act_id, ())
+        if not phrase_witnesses:
+            continue
+        by_family: dict[str, list[UKRepealSemanticsWitness]] = defaultdict(list)
+        for phrase_witness in phrase_witnesses:
+            by_family[phrase_witness.family].append(phrase_witness)
+        for phrase_family, family_witnesses in sorted(by_family.items()):
+            first_phrase = family_witnesses[0]
+            witnesses.append(
+                UKRepealSemanticsWitness(
+                    family=f"affecting_act_{phrase_family}_candidate",
+                    statute_id=statute_id,
+                    effect_id=str(effect.effect_id or ""),
+                    effect_type=effect.effect_type,
+                    affected_provisions=effect.affected_provisions,
+                    affecting_act_id=effect.affecting_act_id,
+                    affecting_provisions=effect.affecting_provisions,
+                    rule_id=f"uk_repeal_semantics_affecting_act_{phrase_family}_candidate",
+                    source_status="affecting_act_source_phrase_candidate",
+                    source_tag=first_phrase.source_tag,
+                    source_text_preview=first_phrase.source_text_preview,
+                    detail={
+                        "candidate_reason": (
+                            "repeal-family effect is made by an affecting Act whose "
+                            "official source contains a repeal/revival semantic phrase; "
+                            "selected source provision is not yet proved"
+                        ),
+                        "source_phrase_family": phrase_family,
+                        "source_phrase_rule_id": first_phrase.rule_id,
+                        "source_phrase_count": len(family_witnesses),
+                        "source_locator": first_phrase.detail.get("source_locator", ""),
+                    },
+                )
+            )
     return tuple(witnesses)
 
 
