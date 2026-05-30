@@ -66,6 +66,7 @@ from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
     BeforeChildSelector,
     OpeningWordsSelector,
+    RangeFromToSelector,
     RangeToEndSelector,
     UKTextRewriteFragment,
     fragment_to_legacy_dict,
@@ -1474,11 +1475,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_from_beginning_passive_substituted:
         subs.append(
-            {
-                "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
-                "replacement": m.group("replacement").strip(),
-                "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", m.group("end").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_from_beginning_passive_substitution_text_patch",
+                )
+            )
         )
 
     matches_from_beginning_there_shall_be_substituted = re.finditer(
@@ -1492,11 +1495,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_from_beginning_there_shall_be_substituted:
         subs.append(
-            {
-                "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
-                "replacement": m.group("replacement").strip(),
-                "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", m.group("end").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_from_beginning_passive_substitution_text_patch",
+                )
+            )
         )
 
     matches_from_beginning_omitted = re.finditer(
@@ -1508,11 +1513,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     )
     for m in matches_from_beginning_omitted:
         subs.append(
-            {
-                "original": f"TEXT_FROM__TO_{m.group('end').strip()}",
-                "replacement": "",
-                "rule_id": UK_FROM_BEGINNING_OMISSION_RULE_ID,
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", m.group("end").strip()),
+                    replacement="",
+                    rule_id=UK_FROM_BEGINNING_OMISSION_RULE_ID,
+                )
+            )
         )
 
     matches_from_beginning_block_substituted = re.finditer(
@@ -1525,11 +1532,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         replacement = m.group(2).strip()
         if replacement and not replacement.startswith(("“", '"', "'", "‘")):
             subs.append(
-                {
-                    "original": f"TEXT_FROM__TO_{m.group(1).strip()}",
-                    "replacement": replacement,
-                    "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
-                }
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=RangeFromToSelector("", m.group(1).strip()),
+                        replacement=replacement,
+                        rule_id="uk_effect_from_beginning_block_substitution_text_patch",
+                    )
+                )
             )
 
     matches_proviso_child_substituted = re.finditer(

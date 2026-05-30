@@ -202,6 +202,39 @@ class TestParserProductionParity:
                     "rule_id": "uk_effect_before_child_text_substitution_patch",
                 }],
             ),
+            # from-beginning family (RangeFromToSelector with empty start)
+            (
+                'for the words from the beginning to "the cutoff" is substituted "new start"',
+                [{
+                    "original": "TEXT_FROM__TO_the cutoff",
+                    "replacement": "new start",
+                    "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+                }],
+            ),
+            (
+                'for words from the beginning to "the cutoff" there shall be substituted "new start"',
+                [{
+                    "original": "TEXT_FROM__TO_the cutoff",
+                    "replacement": "new start",
+                    "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+                }],
+            ),
+            (
+                'omit the words from the beginning to "the cutoff"',
+                [{
+                    "original": "TEXT_FROM__TO_the cutoff",
+                    "replacement": "",
+                    "rule_id": "uk_effect_from_beginning_omission_text_patch",
+                }],
+            ),
+            (
+                'for words from the beginning to "the cutoff" substitute— the new block text',
+                [{
+                    "original": "TEXT_FROM__TO_the cutoff",
+                    "replacement": "the new block text",
+                    "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
+                }],
+            ),
         ],
     )
     def test_migrated_family_parity(self, text: str, expected: list) -> None:
