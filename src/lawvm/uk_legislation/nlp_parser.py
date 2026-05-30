@@ -411,6 +411,120 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
     return [dict(items) for items in _parse_fragment_substitution_cached(text)]
 
 
+def _parse_leading_substitutions(text: str, subs: list) -> None:
+    """Recognize the leading ``for "X" substitute "Y"`` substitution family.
+
+    The first contiguous group of independent ``re.finditer`` recognizers in the
+    fragment parser, covering the core quoted-anchor substitution forms before
+    the ``respectively`` overlap-suppression machinery begins.  Reads only
+    ``text`` (already UK-normalized by the caller) and appends to ``subs`` in
+    order.  Extracted verbatim; ordering and output are unchanged.
+    """
+    matches_nested_quote_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.+)[”\"'’],?\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*;?$",
+        text,
+        re.I,
+    )
+    for m in matches_nested_quote_substituted:
+        original = m.group("original").strip()
+        replacement = m.group("replacement").strip()
+        if any(q in original + replacement for q in ("“", "”", '"', "‘", "’", "'")) and not re.search(
+            r"\b(?:in both places where|wherever)\b",
+            original,
+            re.I,
+        ):
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "rule_id": "uk_effect_nested_quote_substitution_text_patch",
+                }
+            )
+
+    matches_quoted_anchor_block_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"substitute\s*[—-]?\s+(?P<replacement>.+?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_quoted_anchor_block_substituted:
+        replacement = m.group("replacement").strip()
+        if replacement and not replacement.startswith(("“", '"', "'", "‘")):
+            subs.append(
+                {
+                    "original": m.group("original").strip(),
+                    "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
+                    "rule_id": "uk_effect_quoted_anchor_block_substitution_text_patch",
+                }
+            )
+
+    matches_child_qualified_quoted_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"in\s+(?P<child_kind>paragraph|sub-paragraph|subsection|section)\s+"
+        r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_child_qualified_quoted_substituted:
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "source_child_kind": m.group("child_kind").strip().lower(),
+                "source_child_label": m.group("child_label").strip(),
+                "rule_id": "uk_effect_child_qualified_quoted_substitution_text_patch",
+            }
+        )
+
+    matches_mixed_body_heading_all_occurrences_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s*"
+        r"\((?P<scope>[^)]*\bin\s+each\s+place\b[^)]*)\)\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I | re.S,
+    )
+    for m in matches_mixed_body_heading_all_occurrences_substituted:
+        heading_scope = r"\bin\s+(?:the\s+)?(?:italic\s+)?heading\b"
+        if not (
+            re.search(heading_scope, m.group("scope"), re.I)
+            or re.search(heading_scope, text[: m.start()], re.I)
+        ):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_MIXED_BODY_HEADING_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+            }
+        )
+
+    matches_respectively_all_occurrences_substituted = re.finditer(
+        r"[“\"](?P<original_1>.*?)[”\"]\s+and\s+"
+        r"[“\"](?P<original_2>.*?)[”\"],?\s+"
+        r"wherever\s+(?:these\s+expressions|they|those\s+words?)\s+"
+        r"(?:occur|occurs|appear|appears),?\s+"
+        r"become,?\s+respectively,?\s+"
+        r"[“\"](?P<replacement_1>.*?)[”\"]\s+and\s+"
+        r"[“\"](?P<replacement_2>.*?)[”\"]",
+        text,
+        re.I,
+    )
+    for m in matches_respectively_all_occurrences_substituted:
+        for original_name, replacement_name in (
+            ("original_1", "replacement_1"),
+            ("original_2", "replacement_2"),
+        ):
+            subs.append(
+                {
+                    "original": m.group(original_name).strip(),
+                    "replacement": m.group(replacement_name).strip(),
+                    "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+                }
+            )
+
+
 def _parse_trailing_inserts(text: str, subs: list) -> None:
     """Recognize the trailing insertion fragment family.
 
@@ -1935,109 +2049,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
     text = normalize_uk_parser_text(text)
     respectively_spans: list[tuple[int, int]] = []
 
-    matches_nested_quote_substituted = re.finditer(
-        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.+)[”\"'’],?\s+"
-        r"substitute\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*;?$",
-        text,
-        re.I,
-    )
-    for m in matches_nested_quote_substituted:
-        original = m.group("original").strip()
-        replacement = m.group("replacement").strip()
-        if any(q in original + replacement for q in ("“", "”", '"', "‘", "’", "'")) and not re.search(
-            r"\b(?:in both places where|wherever)\b",
-            original,
-            re.I,
-        ):
-            subs.append(
-                {
-                    "original": original,
-                    "replacement": replacement,
-                    "rule_id": "uk_effect_nested_quote_substitution_text_patch",
-                }
-            )
-
-    matches_quoted_anchor_block_substituted = re.finditer(
-        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
-        r"substitute\s*[—-]?\s+(?P<replacement>.+?)(?:\s+\.)?$",
-        text,
-        re.I,
-    )
-    for m in matches_quoted_anchor_block_substituted:
-        replacement = m.group("replacement").strip()
-        if replacement and not replacement.startswith(("“", '"', "'", "‘")):
-            subs.append(
-                {
-                    "original": m.group("original").strip(),
-                    "replacement": re.sub(r"\s+\.$", "", replacement).strip(),
-                    "rule_id": "uk_effect_quoted_anchor_block_substitution_text_patch",
-                }
-            )
-
-    matches_child_qualified_quoted_substituted = re.finditer(
-        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
-        r"in\s+(?P<child_kind>paragraph|sub-paragraph|subsection|section)\s+"
-        r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s+"
-        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
-        text,
-        re.I,
-    )
-    for m in matches_child_qualified_quoted_substituted:
-        subs.append(
-            {
-                "original": m.group("original").strip(),
-                "replacement": m.group("replacement").strip(),
-                "source_child_kind": m.group("child_kind").strip().lower(),
-                "source_child_label": m.group("child_label").strip(),
-                "rule_id": "uk_effect_child_qualified_quoted_substitution_text_patch",
-            }
-        )
-
-    matches_mixed_body_heading_all_occurrences_substituted = re.finditer(
-        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s*"
-        r"\((?P<scope>[^)]*\bin\s+each\s+place\b[^)]*)\)\s+"
-        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
-        text,
-        re.I | re.S,
-    )
-    for m in matches_mixed_body_heading_all_occurrences_substituted:
-        heading_scope = r"\bin\s+(?:the\s+)?(?:italic\s+)?heading\b"
-        if not (
-            re.search(heading_scope, m.group("scope"), re.I)
-            or re.search(heading_scope, text[: m.start()], re.I)
-        ):
-            continue
-        subs.append(
-            {
-                "original": m.group("original").strip(),
-                "replacement": m.group("replacement").strip(),
-                "rule_id": UK_MIXED_BODY_HEADING_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
-            }
-        )
-
-    matches_respectively_all_occurrences_substituted = re.finditer(
-        r"[“\"](?P<original_1>.*?)[”\"]\s+and\s+"
-        r"[“\"](?P<original_2>.*?)[”\"],?\s+"
-        r"wherever\s+(?:these\s+expressions|they|those\s+words?)\s+"
-        r"(?:occur|occurs|appear|appears),?\s+"
-        r"become,?\s+respectively,?\s+"
-        r"[“\"](?P<replacement_1>.*?)[”\"]\s+and\s+"
-        r"[“\"](?P<replacement_2>.*?)[”\"]",
-        text,
-        re.I,
-    )
-    for m in matches_respectively_all_occurrences_substituted:
-        for original_name, replacement_name in (
-            ("original_1", "replacement_1"),
-            ("original_2", "replacement_2"),
-        ):
-            subs.append(
-                {
-                    "original": m.group(original_name).strip(),
-                    "replacement": m.group(replacement_name).strip(),
-                    "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
-                }
-            )
+    _parse_leading_substitutions(text, subs)
 
     matches_respectively_there_is_substituted = re.finditer(
         r"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original_1>.*?)[”\"'’]\s+and\s+"
