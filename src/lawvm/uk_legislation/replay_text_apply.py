@@ -3067,8 +3067,13 @@ class UKReplayTextApplyMixin:
                 recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
             return rebuilt, True
 
-        if match.startswith("TEXT_FROM_"):
-            if node.text and ("_TO_" in match and not match.endswith("_TO_END") or not node.children):
+        # Dispatcher routing is type-based: every TEXT_FROM_ that reaches here is a
+        # range selector (CHILD_END returned earlier), so resolve once and branch on
+        # the selector type. The sub-helpers still receive the legacy match string.
+        subtree_range_selector = selector_from_legacy_original(match)
+        if isinstance(subtree_range_selector, (RangeToEndSelector, RangeFromToSelector)):
+            is_range_from_to = isinstance(subtree_range_selector, RangeFromToSelector)
+            if node.text and (is_range_from_to or not node.children):
                 rebuilt, applied = self._apply_text_replace_on_node_text_only(
                     node,
                     match,
@@ -3082,7 +3087,7 @@ class UKReplayTextApplyMixin:
                 if applied:
                     return rebuilt, True
 
-            if node.text and node.children and match.endswith("_TO_END"):
+            if node.text and node.children and not is_range_from_to:
                 rebuilt, applied = self._apply_text_replace_on_marked_post_child_tail(
                     node,
                     match,
@@ -3099,8 +3104,8 @@ class UKReplayTextApplyMixin:
             if not full_text:
                 return node, False
 
-            if match.endswith("_TO_END"):
-                start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+            if not is_range_from_to:
+                start_text = subtree_range_selector.start
                 start_result = _find_text_range_start_index(
                     full_text,
                     start_text,
@@ -3119,7 +3124,9 @@ class UKReplayTextApplyMixin:
                     recovery_rule_ids_out.append("uk_replay_subtree_range_to_end_text_rewrite_flattened")
                 return rebuilt, True
 
-            if "_TO_" in match:
+            if isinstance(subtree_range_selector, RangeFromToSelector):
+                # Routing is type-based above; the start/end anchors are still
+                # recovered from the legacy sentinel here (a contained leftover).
                 parts = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
                 if len(parts) == 2:
                     start_text, end_text = parts[0], parts[1]
