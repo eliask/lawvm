@@ -6,6 +6,7 @@ CORPUS = [
     "ukpga/1998/42",
     "ukpga/1978/30",
     "ukpga/2025/18",
+    "ukpga/2018/16",
     "eur/2016/679",
     "nia/2000/1",
     "asp/2000/6",
@@ -19,6 +20,9 @@ BASELINES = {
     "ukpga/1998/42": 97.3,
     "ukpga/1978/30": 73.8,
     "ukpga/2025/18": 88.4,
+    # EU Withdrawal Act 2018: 1828 replayed vs 1832 oracle EIDs, a substantial
+    # well-supported statute added to the gate 2026-05-30.
+    "ukpga/2018/16": 98.0,
     # eur/2016/679 left at its pre-regression 80.6 deliberately: the current
     # -5.4% divergence is an EU-compiler regression tracked separately, and the
     # gate must keep flagging it until that is resolved.
