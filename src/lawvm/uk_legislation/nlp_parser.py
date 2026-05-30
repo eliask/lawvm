@@ -66,6 +66,7 @@ from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
     AfterChildSelector,
     BeforeChildSelector,
+    DefinitionAnchorSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
     RangeToEndSelector,
@@ -2009,11 +2010,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         inserted = re.sub(r"\s+\.$", "", m.group(2).strip()).strip()
         if inserted:
             subs.append(
-                {
-                    "original": f"TEXT_AFTER_DEFINITION_{m.group(1).strip()}",
-                    "replacement": inserted,
-                    "rule_id": "uk_effect_after_definition_text_insertion_patch",
-                }
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=DefinitionAnchorSelector(m.group(1).strip(), "after"),
+                        replacement=inserted,
+                        rule_id="uk_effect_after_definition_text_insertion_patch",
+                    )
+                )
             )
 
     matches_after_definitions_insert = re.finditer(
@@ -2029,11 +2032,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         inserted = re.sub(r"\s+\.$", "", m.group("inserted").strip()).strip()
         if anchor and inserted:
             subs.append(
-                {
-                    "original": f"TEXT_AFTER_DEFINITION_{anchor}",
-                    "replacement": inserted,
-                    "rule_id": "uk_effect_after_definitions_text_insertion_patch",
-                }
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=DefinitionAnchorSelector(anchor, "after"),
+                        replacement=inserted,
+                        rule_id="uk_effect_after_definitions_text_insertion_patch",
+                    )
+                )
             )
 
     matches_before_definition_insert = re.finditer(
@@ -2049,11 +2054,13 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         inserted = re.sub(r"\s+\.$", "", m.group(3).strip()).strip()
         if inserted:
             subs.append(
-                {
-                    "original": f"TEXT_BEFORE_DEFINITION_{anchor}",
-                    "replacement": inserted,
-                    "rule_id": "uk_effect_before_definition_text_insertion_patch",
-                }
+                fragment_to_legacy_dict(
+                    UKTextRewriteFragment(
+                        selector=DefinitionAnchorSelector(anchor, "before"),
+                        replacement=inserted,
+                        rule_id="uk_effect_before_definition_text_insertion_patch",
+                    )
+                )
             )
 
     matches_definition_entry_insert = re.finditer(
@@ -2072,14 +2079,15 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[tuple[tuple[str, str
         anchor = (m.group("quoted") or m.group("bare") or "").strip()
         if not anchor:
             continue
-        direction = m.group("direction").lower()
-        selector = "TEXT_BEFORE_DEFINITION" if direction == "before" else "TEXT_AFTER_DEFINITION"
+        direction = "before" if m.group("direction").lower() == "before" else "after"
         subs.append(
-            {
-                "original": f"{selector}_{anchor}",
-                "replacement": inserted,
-                "rule_id": f"uk_effect_{direction}_definition_entry_text_insertion_patch",
-            }
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=DefinitionAnchorSelector(anchor, direction),
+                    replacement=inserted,
+                    rule_id=f"uk_effect_{direction}_definition_entry_text_insertion_patch",
+                )
+            )
         )
 
     matches_definition_entry_substituted = re.finditer(
