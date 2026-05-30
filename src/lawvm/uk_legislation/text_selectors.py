@@ -188,6 +188,7 @@ class UKTextRewriteFragment:
     source_child_label: str = ""
     target_suffix_kind: str = ""
     target_suffix_label: str = ""
+    tail_connector: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +304,8 @@ def fragment_to_legacy_dict(fragment: UKTextRewriteFragment) -> dict[str, str]:
         out["target_suffix_kind"] = fragment.target_suffix_kind
     if fragment.target_suffix_label:
         out["target_suffix_label"] = fragment.target_suffix_label
+    if fragment.tail_connector:
+        out["tail_connector"] = fragment.tail_connector
     return out
 
 
@@ -324,4 +327,5 @@ def fragment_from_legacy_dict(legacy: Mapping[str, str]) -> UKTextRewriteFragmen
         source_child_label=legacy.get("source_child_label", ""),
         target_suffix_kind=legacy.get("target_suffix_kind", ""),
         target_suffix_label=legacy.get("target_suffix_label", ""),
+        tail_connector=legacy.get("tail_connector", ""),
     )
