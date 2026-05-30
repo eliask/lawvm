@@ -67,10 +67,9 @@ def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
 
 
 def _similarity(replay_eids: set[str], oracle_eids: set[str]) -> float:
-    if not replay_eids and not oracle_eids:
-        return 1.0
-    common = replay_eids & oracle_eids
-    return len(common) / max(len(replay_eids), len(oracle_eids), 1)
+    from lawvm.uk_legislation.grounding_collateral import eid_set_similarity
+
+    return eid_set_similarity(replay_eids, oracle_eids)
 
 
 def score_one(statute_id: str) -> dict[str, Any]:
@@ -105,15 +104,35 @@ def score_one(statute_id: str) -> dict[str, Any]:
         lanes: dict[str, float] = {}
         for lane, aligned in (("aligned", True), ("unaligned", False)):
             base_ir = parse_uk_statute_ir_bytes(enacted, statute_id=statute_id)
+            alignment_events: list[dict[str, Any]] = []
             replayed = pipeline.apply_ops(
-                base_ir, ops, eid_map=eid_map, text_map=text_map, allow_oracle_alignment=aligned
+                base_ir,
+                ops,
+                eid_map=eid_map,
+                text_map=text_map,
+                allow_oracle_alignment=aligned,
+                oracle_alignment_events_out=alignment_events if aligned else None,
             )
             replay_eids = _eids([replayed.body]) | {
                 e for s in replayed.supplements for e in _eids([s])
             }
             lanes[lane] = round(100.0 * _similarity(replay_eids, oracle_eids), 2)
             if lane == "aligned":
+                from lawvm.uk_legislation.grounding_collateral import (
+                    score_with_grounding_collateral_excluded,
+                )
+
+                collateral_score = score_with_grounding_collateral_excluded(
+                    replay_eids,
+                    oracle_eids,
+                    alignment_events,
+                )
                 result["n_replay"] = len(replay_eids)
+                result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
+                result["aligned_excluding_grounding_collateral"] = round(
+                    100.0 * collateral_score.collateral_excluded_similarity,
+                    2,
+                )
         result["n_oracle"] = len(oracle_eids)
         result["aligned"] = lanes["aligned"]
         result["unaligned"] = lanes["unaligned"]
@@ -178,7 +197,9 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         else:
             print(
                 f"[{i}/{len(ids)}] {sid:24s} aligned={row['aligned']:5.1f}% "
+                f"aligned_no_gc={row.get('aligned_excluding_grounding_collateral', row['aligned']):5.1f}% "
                 f"unaligned={row['unaligned']:5.1f}% "
+                f"gc={row.get('n_grounding_collateral', 0)} "
                 f"(replay={row.get('n_replay')} oracle={row.get('n_oracle')})",
                 flush=True,
             )
@@ -193,7 +214,16 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
     errored = [r for r in results if "error" in r]
     if scored:
         avg = sum(r["aligned"] for r in scored) / len(scored)
-        print(f"\nScored {len(scored)} / {len(results)}  mean aligned={avg:.2f}%  errors={len(errored)}")
+        avg_no_gc = sum(
+            r.get("aligned_excluding_grounding_collateral", r["aligned"])
+            for r in scored
+        ) / len(scored)
+        gc_total = sum(r.get("n_grounding_collateral", 0) for r in scored)
+        print(
+            f"\nScored {len(scored)} / {len(results)}  "
+            f"mean aligned={avg:.2f}%  mean aligned_no_gc={avg_no_gc:.2f}%  "
+            f"grounding_collateral={gc_total}  errors={len(errored)}"
+        )
     return 0
 
 
