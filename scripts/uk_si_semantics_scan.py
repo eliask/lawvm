@@ -83,6 +83,18 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
 
     family_counts = Counter(str(row["family"]) for row in rows)
     status_counts = Counter(str(row["status"]) for row in rows)
+    source_role_counts = Counter(
+        str(row["source_role"]) for row in rows if row.get("source_role")
+    )
+    geographic_term_counts: Counter[str] = Counter()
+    for row in rows:
+        for term in row.get("geographic_terms") or ():
+            geographic_term_counts[str(term)] += 1
+    extent_application_relation_counts = Counter(
+        str(row["extent_application_relation"])
+        for row in rows
+        if row.get("extent_application_relation")
+    )
     output_rows = rows[: args.limit] if args.limit is not None else rows
     return {
         "n_statutes_scanned": len(ids),
@@ -90,6 +102,9 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "n_records": len(rows),
         "families": dict(family_counts),
         "statuses": dict(status_counts),
+        "source_roles": dict(source_role_counts),
+        "geographic_terms": dict(geographic_term_counts),
+        "extent_application_relations": dict(extent_application_relation_counts),
         "missing_xml": missing,
         "records": output_rows,
     }

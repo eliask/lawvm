@@ -136,15 +136,18 @@ use when a concrete failing case or architecture task needs the rule boundary.
   inventories SI source semantics without replay mutation. Current all-cached-SI
   command:
   `uv run python scripts/uk_si_semantics_scan.py --all --pretty --limit 0`.
-  Result: 4,869 SI-like current XML documents scanned, 35,736 diagnostic rows:
+  Result: 4,869 SI-like current XML documents scanned, 36,331 diagnostic rows:
   4,869 structure-vocabulary rows, 4,863 vires-recital rows, 4,578
   commencement-metadata rows, 7,677 body-commencement clause rows, 3,215 extent
-  rows, 7,779 application rows, 2,750 revocation/lapse rows, and 5
+  rows, 8,374 application rows, 2,750 revocation/lapse rows, and 5
   correction-slip marker rows. Body-clause rows now include `source_role`, and
-  the all-cached scan classifies 1,941 rows as `payload_carried` because they sit
-  inside amendment payload XML rather than the SI's own body provision. These are
-  evidence rows only; replay-changing SI rules still require source-level
-  adjudication of a concrete family.
+  the all-cached scan classifies 2,056 rows as `payload_carried` because they sit
+  inside amendment payload XML rather than the SI's own body provision. Body-clause
+  records also expose `geographic_terms` and `extent_application_relation`; current
+  summary counts are 9,148 `application_only`, 3,852 `extent_only`, and 1,579
+  `combined_extent_and_application` rows. These are evidence rows only;
+  replay-changing SI rules still require source-level adjudication of a concrete
+  family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
   with no effect-level in-force date still recover a replay date only from exactly
   one official `ComingIntoForce/DateTime/@Date`. Missing source XML, parse errors,
