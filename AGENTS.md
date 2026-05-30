@@ -327,6 +327,30 @@ LawVM optimizes for:
 The correct outcome of a hard case is often not “make replay match the oracle.”
 It is “classify why replay, source, and oracle differ.”
 
+### 2.1 The North Star: divergence as the product
+
+Compiling source operations is the means, not the end. The end is fidelity high
+enough that a replay-vs-oracle divergence is itself a finding — that LawVM can
+point out compilation errors in an official consolidation. Once a frontend has
+closed the divergences it can deterministically resolve, every remaining
+divergence resolves to one of three buckets:
+
+- **deterministic gap** — LawVM’s compiler is wrong; fix it.
+- **manual-compilation frontier** — the source does not deterministically
+  specify the result (savings/exceptions, prospective or contingent commencement,
+  point-in-time selection, cross-act placement, span-vs-enumeration ambiguity in
+  effect-feed range notation). It needs an owned claim, not a guessed op.
+- **oracle-suspect** — LawVM is right and the official consolidation is
+  stale/editorial/wrong. This bucket is a primary product, not a failure.
+
+A score that measures replay-vs-oracle overlap (e.g. EID-set similarity) is a
+**regression guard, not an objective.** Maximizing such a score rewards deleting
+oracle-present legal state to match a possibly-wrong oracle (over-repeal), and
+rewards force-compiling manual-frontier cases that should stay claims.
+Over-retention (failing to delete) is the safe wrong; over-repeal (destroying
+state) is the forbidden one. Never raise the score by deleting oracle-present
+state or by guessing a manual-frontier result — classify the divergence instead.
+
 ---
 
 ## 3. Source Regimes and Truth Surfaces
