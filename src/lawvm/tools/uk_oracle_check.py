@@ -22,6 +22,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from lawvm.core.mutation_accounting import build_mutation_invariant_reports
+from lawvm.uk_legislation.grounding_collateral import (
+    grounding_collateral_eids as _shared_grounding_collateral_eids,
+    score_with_grounding_collateral_excluded,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 
@@ -53,28 +59,14 @@ def _grounding_collateral_eids(
     oracle_eids: set[str],
     alignment_events: list[dict[str, Any]],
 ) -> list[str]:
-    """Replay EIDs that oracle alignment *minted* and the oracle does not have.
+    """Compatibility wrapper for the shared UK grounding-collateral helper."""
 
-    Grounding's ``local_fallback`` fabricates an eId from the parent eId + label
-    when a node matches no oracle id and is produced by no source op (AGENTS.md
-    §9 collateral). Such a minted eId that is absent from the oracle inflates the
-    over-production / deterministic_gap direction without a source warrant — e.g.
-    the ``eur/2019/2018`` annex paragraphs grounding minted with no amendment op.
-
-    Computed on the *raw* replay/oracle EID sets (case-insensitive), not the
-    alias-normalized compare sets, because alignment ``after_eid`` carries the raw
-    node casing and the minting is a raw-eId phenomenon.
-    """
-    minted = {
-        str(ev.get("after_eid")).lower()
-        for ev in alignment_events
-        if ev.get("match_method") == "local_fallback" and ev.get("after_eid")
-    }
-    if not minted:
-        return []
-    oracle_lower = {str(e).lower() for e in oracle_eids}
-    return sorted(
-        e for e in replayed_eids if e.lower() in minted and e.lower() not in oracle_lower
+    return list(
+        _shared_grounding_collateral_eids(
+            replayed_eids,
+            oracle_eids,
+            alignment_events,
+        )
     )
 
 
@@ -306,6 +298,7 @@ def oracle_check_uk_statute(
             authority_rejections_out=authority_rejections,
         )
 
+        mutation_events: list[Any] = []
         alignment_events: list[dict[str, Any]] = []
         replayed_ir = pipeline.apply_ops(
             base_ir,
@@ -314,6 +307,7 @@ def oracle_check_uk_statute(
             text_map=text_map,
             allow_oracle_alignment=True,
             oracle_alignment_events_out=alignment_events,
+            mutation_events_out=mutation_events,
         )
 
     # Collect replay EID texts + leaf EIDs
@@ -346,6 +340,17 @@ def oracle_check_uk_statute(
     grounding_collateral_eids = _grounding_collateral_eids(
         replayed_eids, current_eids, alignment_events
     )
+    collateral_score = score_with_grounding_collateral_excluded(
+        replay_compare_eids,
+        oracle_compare_eids,
+        [
+            {
+                **event,
+                "after_eid": str(event.get("after_eid") or "").lower(),
+            }
+            for event in alignment_events
+        ],
+    )
     text_diff_eids = {e for e, v in classified.items() if v["kind"] == _CLASS_TEXT_DIFF}
     same_count = sum(1 for v in classified.values() if v["kind"] == _CLASS_SAME)
 
@@ -377,6 +382,16 @@ def oracle_check_uk_statute(
         1 for d in effect_diagnostics
         if str(d.get("rule_id") or "") == _REPEAL_NOT_WARRANTED_RULE_ID
     )
+    mutation_reports = build_mutation_invariant_reports(mutation_events)
+    mutation_unexplained_reports = [
+        report
+        for report in mutation_reports
+        if report.unexplained_changed_paths or not report.path_set_invariant_holds
+    ]
+    mutation_unexplained_path_count = sum(
+        len(report.unexplained_changed_paths)
+        for report in mutation_unexplained_reports
+    )
 
     common = replay_compare_eids & oracle_compare_eids
     similarity = len(common) / max(len(replay_compare_eids), len(oracle_compare_eids), 1)
@@ -388,9 +403,20 @@ def oracle_check_uk_statute(
             f"replay={len(replay_compare_eids)}  oracle={len(oracle_compare_eids)}  "
             f"common={len(common)}  same={same_count}"
         ),
+        (
+            "Similarity excluding grounding collateral: "
+            f"{collateral_score.collateral_excluded_similarity:.1%}  "
+            f"excluded={len(grounding_collateral_eids)}"
+        ),
         f"Ops compiled: {len(ops)}  "
         f"Rejections: det={n_det_rejections} mf={n_mf_rejections}  "
         f"repeal-not-warranted diagnostics={n_rnw_diagnostics}",
+        (
+            f"Mutation boundary: events={len(mutation_events)}  "
+            f"reports={len(mutation_reports)}  "
+            f"unexplained_reports={len(mutation_unexplained_reports)}  "
+            f"unexplained_paths={mutation_unexplained_path_count}"
+        ),
         "",
         "DIVERGENCE BUCKET SUMMARY:",
         f"  deterministic_gap  : {len(buckets['deterministic_gap'])}  "
@@ -426,6 +452,21 @@ def oracle_check_uk_statute(
             lines.append(f"  {eid}")
         if len(grounding_collateral_eids) > max_sample:
             lines.append(f"  ... ({len(grounding_collateral_eids) - max_sample} more)")
+        lines.append("")
+
+    if mutation_unexplained_reports:
+        lines.append(
+            f"MUTATION_BOUNDARY_UNEXPLAINED ({len(mutation_unexplained_reports)} reports):"
+        )
+        for report in mutation_unexplained_reports[:max_sample]:
+            lines.append(
+                "  "
+                f"op_id={report.op_id or '<missing>'} helper={report.helper} "
+                f"outcome={report.outcome} "
+                f"unexplained_paths={len(report.unexplained_changed_paths)}"
+            )
+        if len(mutation_unexplained_reports) > max_sample:
+            lines.append(f"  ... ({len(mutation_unexplained_reports) - max_sample} more)")
         lines.append("")
 
     if n_mf_rejections > 0:

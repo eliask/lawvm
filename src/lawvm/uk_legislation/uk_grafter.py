@@ -427,6 +427,7 @@ def _schedule_list_entry_node(
     source_decoration: str = "",
     source_context: str = "schedule_body",
     source_rule_id: str = _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
+    preserve_source_eid: bool = False,
 ) -> UKMutableNode | None:
     text = _text_content(el)
     if not text:
@@ -441,12 +442,15 @@ def _schedule_list_entry_node(
         attrs["source_list_type"] = source_list_type
     if source_decoration:
         attrs["source_decoration"] = source_decoration
-    return UKMutableNode(
+    node = UKMutableNode(
         kind=IRNodeKind.SCHEDULE_ENTRY,
         label=None,
         text=text,
         attrs=attrs,
     )
+    if preserve_source_eid:
+        _add_attrs(node, el)
+    return node
 
 
 def _parse_schedule_body_list_entries(el: ET._Element, *, start_ordinal: int) -> list[UKMutableNode]:
@@ -490,7 +494,14 @@ def _parse_non_schedule_list_entries(el: ET._Element, *, context: str, start_ord
     return nodes
 
 
-def _parse_schedule_body_p_entries(el: ET._Element, *, start_ordinal: int) -> list[UKMutableNode]:
+def _parse_schedule_body_p_entries(
+    el: ET._Element,
+    *,
+    start_ordinal: int,
+    force_active: bool = False,
+    pit_date: Optional[str] = None,
+    is_eur: bool = False,
+) -> list[UKMutableNode]:
     if _tag(el) != "P":
         return []
     nodes: list[UKMutableNode] = []
@@ -499,12 +510,39 @@ def _parse_schedule_body_p_entries(el: ET._Element, *, start_ordinal: int) -> li
             nodes.extend(_parse_schedule_body_list_entries(child, start_ordinal=start_ordinal + len(nodes)))
     if nodes:
         return nodes
+    ordered_lists = [child for child in el if _tag(child) == "OrderedList"]
+    if ordered_lists and is_eur:
+        node = _schedule_list_entry_node(
+            el,
+            source_ordinal=start_ordinal,
+            source_tag="P",
+            preserve_source_eid=is_eur,
+        )
+        if node is None:
+            return []
+        node.text = _local_structural_text(el)
+        for ordered_list in ordered_lists:
+            node.children.extend(
+                _parse_generic_ordered_list(
+                    ordered_list,
+                    "schedule",
+                    force_active,
+                    pit_date,
+                    is_eur,
+                )
+            )
+        return [node]
     child_tags = {_tag(child).lower() for child in el}
     if child_tags & _UK_SCHEDULE_ENTRY_BLOCKING_TAGS:
         return []
     if child_tags and not child_tags <= _UK_SCHEDULE_ENTRY_TRANSPARENT_TAGS:
         return []
-    node = _schedule_list_entry_node(el, source_ordinal=start_ordinal, source_tag="P")
+    node = _schedule_list_entry_node(
+        el,
+        source_ordinal=start_ordinal,
+        source_tag="P",
+        preserve_source_eid=is_eur,
+    )
     return [node] if node is not None else []
 
 
@@ -1005,7 +1043,13 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
                 children.extend(schedule_entries)
                 continue
         elif context == "schedule" and ct == "P":
-            schedule_entries = _parse_schedule_body_p_entries(child, start_ordinal=schedule_entry_ordinal)
+            schedule_entries = _parse_schedule_body_p_entries(
+                child,
+                start_ordinal=schedule_entry_ordinal,
+                force_active=force_active,
+                pit_date=pit_date,
+                is_eur=is_eur,
+            )
             if schedule_entries:
                 schedule_entry_ordinal += len(schedule_entries)
                 children.extend(schedule_entries)

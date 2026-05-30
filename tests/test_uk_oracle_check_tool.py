@@ -194,6 +194,8 @@ def test_oracle_check_uk_statute_has_required_headers() -> None:
     assert "manual_frontier" in result
     assert "oracle_suspect" in result
     assert "Similarity:" in result
+    assert "Similarity excluding grounding collateral:" in result
+    assert "Mutation boundary:" in result
 
 
 @pytest.mark.skipif(
@@ -285,3 +287,25 @@ def test_grounding_collateral_ignores_non_local_fallback_methods() -> None:
 
 def test_grounding_collateral_empty_when_no_events() -> None:
     assert _grounding_collateral_eids({"a", "b"}, set(), []) == []
+
+
+def test_grounding_collateral_score_excludes_minted_replay_eids() -> None:
+    from lawvm.uk_legislation.grounding_collateral import (
+        score_with_grounding_collateral_excluded,
+    )
+
+    score = score_with_grounding_collateral_excluded(
+        {"section-1", "annex-I-paragraph-1", "annex-I-paragraph-2"},
+        {"section-1"},
+        [
+            {"match_method": "local_fallback", "after_eid": "annex-I-paragraph-1"},
+            {"match_method": "local_fallback", "after_eid": "annex-I-paragraph-2"},
+        ],
+    )
+
+    assert round(score.raw_similarity, 3) == 0.333
+    assert score.collateral_excluded_similarity == 1.0
+    assert score.collateral_eids == (
+        "annex-I-paragraph-1",
+        "annex-I-paragraph-2",
+    )

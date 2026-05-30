@@ -33,6 +33,7 @@ from lawvm.core.ir import (
     IRStatute,
     LegalOperation,
 )
+from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS  # noqa: F401
 from lawvm.uk_legislation.effects import (
@@ -527,6 +528,7 @@ class UKReplayPipeline:
         lo_ops_out: Optional[List[LegalOperation]] = None,
         adjudications_out: Optional[List[CompileAdjudication]] = None,
         oracle_alignment_events_out: Optional[list[dict[str, Any]]] = None,
+        mutation_events_out: Optional[list[MutationEvent]] = None,
     ) -> IRStatute:
         executor = UKReplayExecutor(
             base_ir,
@@ -535,6 +537,7 @@ class UKReplayPipeline:
             verbose=verbose,
             lo_ops_out=lo_ops_out,
             adjudications_out=adjudications_out,
+            mutation_events_out=mutation_events_out,
         )
         prepared_ops = _prepare_replay_uk_ops(
             ops,
