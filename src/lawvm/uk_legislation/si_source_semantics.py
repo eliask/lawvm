@@ -33,6 +33,7 @@ _APPLICATION_RE = re.compile(
 )
 _REVOCATION_RE = re.compile(r"\b(?:revokes?|revoked|revocation|ceases?\s+to\s+have\s+effect|lapses?)\b", re.I)
 _CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?)\b", re.I)
+_AMENDMENT_PAYLOAD_ANCESTORS = frozenset({"BlockAmendment", "InlineAmendment"})
 
 
 @dataclass(frozen=True)
@@ -227,6 +228,8 @@ def _body_clause_records(
             continue
         label = _own_number(p1)
         title = _own_title(p1)
+        source_role = _body_clause_source_role(p1)
+        status = "payload_carried" if source_role == "amendment_payload_provision" else "record"
         for family, rule_id in families:
             records.append(
                 UKSISourceSemanticsRecord(
@@ -234,8 +237,13 @@ def _body_clause_records(
                     statute_id=statute_id,
                     rule_id=rule_id,
                     source_path=source_path,
+                    status=status,
                     text_preview=_preview(text),
-                    detail={"provision_label": label, "provision_title": title},
+                    detail={
+                        "provision_label": label,
+                        "provision_title": title,
+                        "source_role": source_role,
+                    },
                 )
             )
     return tuple(records)
@@ -305,6 +313,13 @@ def _own_title(el: ET._Element) -> str:
         if _local_name(child) == "Title":
             return _text(child)
     return ""
+
+
+def _body_clause_source_role(el: ET._Element) -> str:
+    for ancestor in el.iterancestors():
+        if _local_name(ancestor) in _AMENDMENT_PAYLOAD_ANCESTORS:
+            return "amendment_payload_provision"
+    return "instrument_body_provision"
 
 
 def _text(el: ET._Element) -> str:
