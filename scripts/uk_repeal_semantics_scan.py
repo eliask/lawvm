@@ -50,6 +50,7 @@ def ids_from_file(path: Path) -> list[str]:
 def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.repeal_semantics_witnesses import (
+        scan_repeal_semantics_affecting_act_phrase_candidates,
         scan_repeal_semantics_source_phrase_xml,
         scan_repeal_semantics_witnesses,
     )
@@ -70,6 +71,8 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     if not ids:
         raise SystemExit("pass --ids, --ids-file, --sample, or --all")
 
+    phrase_ids_scanned = 0
+    phrase_witness_act_count = 0
     with Farchive(args.db) as archive:
         if args.source_phrase_only:
             diagnostics: list[dict[str, Any]] = []
@@ -83,6 +86,36 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
                         source_locator=locator,
                     )
                 )
+        elif args.source_phrase_effect_candidates:
+            diagnostics = []
+            phrase_ids: list[str] = []
+            if args.phrase_ids:
+                phrase_ids.extend(args.phrase_ids)
+            if args.phrase_ids_file:
+                phrase_ids.extend(ids_from_file(args.phrase_ids_file))
+            if args.phrase_all:
+                phrase_ids.extend(statute_ids_from_archive(args.db, classes=args.classes))
+            phrase_ids = list(dict.fromkeys(phrase_ids or ids))
+            phrase_ids_scanned = len(phrase_ids)
+            phrase_witnesses_by_act: dict[str, tuple[Any, ...]] = {}
+            for statute_id in phrase_ids:
+                locator = f"{LEG_BASE}/{statute_id}/data.xml"
+                phrase_witnesses = scan_repeal_semantics_source_phrase_xml(
+                    statute_id,
+                    archive.get(locator) or b"",
+                    source_locator=locator,
+                )
+                if phrase_witnesses:
+                    phrase_witnesses_by_act[statute_id] = phrase_witnesses
+            phrase_witness_act_count = len(phrase_witnesses_by_act)
+            witnesses = list(
+                scan_repeal_semantics_affecting_act_phrase_candidates(
+                    ids,
+                    archive,
+                    phrase_witnesses_by_act=phrase_witnesses_by_act,
+                    diagnostics_out=diagnostics,
+                )
+            )
         else:
             diagnostics = []
             witnesses = list(
@@ -103,6 +136,9 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "n_source_diagnostics": len(diagnostics),
         "witnesses": rows,
     }
+    if args.source_phrase_effect_candidates:
+        summary["n_phrase_statutes_scanned"] = phrase_ids_scanned
+        summary["n_phrase_witness_acts"] = phrase_witness_act_count
     if args.include_diagnostics:
         summary["source_diagnostics"] = diagnostics
     return summary
@@ -123,6 +159,33 @@ def main() -> int:
         "--source-phrase-only",
         action="store_true",
         help="scan source XML text directly for repeal/revival phrases without resolving effect rows",
+    )
+    parser.add_argument(
+        "--source-phrase-effect-candidates",
+        action="store_true",
+        help=(
+            "scan source XML for phrase-bearing Acts, then link those Acts to "
+            "repeal-family effect rows without selected-source extraction"
+        ),
+    )
+    parser.add_argument(
+        "--phrase-all",
+        action="store_true",
+        help=(
+            "with --source-phrase-effect-candidates, scan all current XML for "
+            "phrase-bearing Acts while using --ids/--ids-file/--sample/--all as "
+            "the affected-effect scope"
+        ),
+    )
+    parser.add_argument(
+        "--phrase-ids",
+        nargs="+",
+        help="with --source-phrase-effect-candidates, explicit phrase-source statute IDs",
+    )
+    parser.add_argument(
+        "--phrase-ids-file",
+        type=Path,
+        help="with --source-phrase-effect-candidates, phrase-source statute IDs file",
     )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()

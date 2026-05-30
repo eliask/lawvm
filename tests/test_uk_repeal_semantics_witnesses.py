@@ -13,6 +13,8 @@ from lawvm.uk_legislation.repeal_no_double_entry import (
     filter_repeal_no_double_entry_ops,
 )
 from lawvm.uk_legislation.repeal_semantics_witnesses import (
+    UKRepealSemanticsWitness,
+    _affecting_act_phrase_effect_witnesses,
     _duplicate_repeal_target_witnesses,
     is_repeal_semantics_effect,
     scan_repeal_semantics_source_phrase_xml,
@@ -159,6 +161,44 @@ def test_duplicate_repeal_target_witness_ignores_same_source_duplicate() -> None
     )
 
     assert witnesses == ()
+
+
+def test_affecting_act_phrase_candidate_links_phrase_act_to_repeal_effect() -> None:
+    phrase = UKRepealSemanticsWitness(
+        family="repeal_of_repeal_no_revive_phrase",
+        statute_id="ukpga/2026/1",
+        effect_id="",
+        effect_type="",
+        affected_provisions="",
+        affecting_act_id="ukpga/2026/1",
+        affecting_provisions="",
+        rule_id="uk_repeal_semantics_source_phrase_repeal_of_repeal_no_revive_phrase",
+        source_status="source_phrase_scan",
+        source_tag="Text",
+        source_text_preview="The repeal does not revive any earlier enactment.",
+        detail={"source_locator": "source.xml"},
+    )
+
+    witnesses = _affecting_act_phrase_effect_witnesses(
+        "ukpga/2000/1",
+        (
+            _effect(effect_id="e1", effect_type="repealed"),
+            _effect(effect_id="e2", effect_type="inserted"),
+        ),
+        {"ukpga/2026/1": (phrase,)},
+    )
+
+    assert len(witnesses) == 1
+    row = witnesses[0].to_dict()
+    assert row["family"] == "affecting_act_repeal_of_repeal_no_revive_phrase_candidate"
+    assert row["rule_id"] == (
+        "uk_repeal_semantics_affecting_act_repeal_of_repeal_no_revive_phrase_candidate"
+    )
+    assert row["effect_id"] == "e1"
+    assert row["source_status"] == "affecting_act_source_phrase_candidate"
+    assert row["source_phrase_rule_id"] == phrase.rule_id
+    assert row["source_phrase_count"] == 1
+    assert row["source_locator"] == "source.xml"
 
 
 def test_no_double_entry_filter_rejects_only_exact_duplicate_repeal_ops() -> None:

@@ -221,15 +221,23 @@ allowed to lag the executable implementation.
   s.16 savings) → `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE`: a repeal op whose target is
   itself a repealing provision must not resurrect the originally-repealed text.
   **SPEC / WITNESS SEARCH EXISTS.** The same diagnostic scan searches source text
-  for no-revive / repeal-of-repeal phrases. Current 77-statute gate has no
-  effect-linked phrase witnesses. A fast direct source-phrase lane now exists:
+  for no-revive / repeal-of-repeal phrases. The selected-source scan on the
+  77-statute gate has no direct no-revive phrase witnesses. A fast direct
+  source-phrase lane now exists:
   `uv run python scripts/uk_repeal_semantics_scan.py --all --source-phrase-only
   --pretty --limit 0`. Current local all-archive result: 19,295 current XML
   documents scanned, 34 source-phrase witnesses, including 7
   `repeal_of_repeal_no_revive_phrase` witnesses and 27 `repeal_revival_phrase`
-  witnesses. These are source-surface witnesses only, not executable
-  effect-target witnesses; do not add a replay guard until a linked
-  effect/source/target witness is proved.
+  witnesses. A bounded middle lane now links phrase-bearing affecting Acts to
+  repeal-family effect rows without selected-source extraction:
+  `uv run python scripts/uk_repeal_semantics_scan.py --ids-file
+  scripts/baselines/uk_grounding_corpus.txt --source-phrase-effect-candidates
+  --phrase-all --pretty --limit 0`. Current local result: 77 affected statutes,
+  19,305 phrase-source documents scanned, 27 phrase-bearing Acts, and 20 linked
+  candidate effect rows (10 no-revive, 10 revival). These rows prove an effect
+  uses a phrase-bearing affecting Act, but not that the phrase is in the selected
+  source provision or that the target is itself a repeal. Do not add a replay
+  guard until a selected source/target witness is proved.
 - **6.1.14 repealing a paragraph with a trailing conjunction** — make the `and`/`or`
   explicit. → connects to existing `tail_connector` modelling. **HAVE (verify).**
 
@@ -345,10 +353,9 @@ external roadmap before treating an item below as live.
    style for its own sake.
 
 3. **Non-textual modification (§6.9)** is implemented for the structural replay
-   lens. **No-double-entry / no-revive (§6.1)** now have a diagnostic witness
-   search surface. No-revive still has no current 77-statute witness; no-double-entry
-   has candidate effect-feed rows that need source-level adjudication before any
-   replay-changing rule.
+   lens. **No-double-entry / no-revive (§6.1)** now have diagnostic witness
+   surfaces. No-revive has phrase-bearing-affecting-Act candidate effect rows, but
+   still lacks a selected source/target witness for a replay-changing guard.
 
 Verification for any of these uses the broad baseline, not the 9-statute gate:
 `scripts/uk_broad_baseline.py --ids $(cat scripts/baselines/uk_grounding_corpus.txt)
@@ -389,10 +396,11 @@ for hypothetical bugs):
    silently applying. Verified mixed-sign as a blanket gate, so it needs the version
    semantics modelled. Biggest remaining correctness lever; largest temporal change.
 2. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) — now has direct source-phrase
-   witnesses in the all-archive scan, but still needs a linked effect/source/target
-   corpus witness before replay changes. `UK_RULE_REPEAL_NO_DOUBLE_ENTRY` (§6.1.5)
-   is now implemented for exact body+Schedule duplicate structural repeals with
-   diagnostic rejection records.
+   witnesses in the all-archive scan and a bounded phrase-bearing-affecting-Act
+   effect-candidate lane, but still needs a selected source/target corpus witness
+   before replay changes. `UK_RULE_REPEAL_NO_DOUBLE_ENTRY` (§6.1.5) is now
+   implemented for exact body+Schedule duplicate structural repeals with diagnostic
+   rejection records.
 3. **DONE (diagnostic surface)** SI semantics from
    `STATUTORY_INSTRUMENT_PRACTICE_5TH_ED`: `scripts/uk_si_semantics_scan.py`
    now records commencement metadata/body clauses, vires/enabling-power recitals,
