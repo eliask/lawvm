@@ -177,13 +177,19 @@ allowed to lag the executable implementation.
   *or* a repeal Schedule, never both (`Commissioner of Police v Simeon`). →
   `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`: when the same target is repealed by both a body
   omit and a Schedule extent row, dedup to one op and emit an observation, do not
-  apply twice. **GAP — propose.**
+  apply twice. **SPEC / WITNESS SEARCH EXISTS.** Diagnostic command:
+  `uv run python scripts/uk_repeal_semantics_scan.py --ids-file scripts/baselines/uk_grounding_corpus.txt`.
+  Current 77-statute gate result: 49 duplicate repeal-target candidates, including
+  8 body-plus-schedule double-entry candidates; these are evidence rows, not replay
+  authority yet.
 - **6.1.6/6.1.7 repeal of amendments only when completely superseded** → diagnostic
   for body-repeals of amending provisions. **SPEC.**
 - **6.1.13 repeal of a repeal does not revive** (Interpretation Act 1978 s.15, subj.
   s.16 savings) → `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE`: a repeal op whose target is
   itself a repealing provision must not resurrect the originally-repealed text.
-  **GAP — propose + negative test.**
+  **SPEC / WITNESS SEARCH EXISTS.** The same diagnostic scan searches source text
+  for no-revive / repeal-of-repeal phrases. Current 77-statute gate has no phrase
+  witnesses; do not add a guard without a concrete target witness.
 - **6.1.14 repealing a paragraph with a trailing conjunction** — make the `and`/`or`
   explicit. → connects to existing `tail_connector` modelling. **HAVE (verify).**
 
@@ -284,8 +290,10 @@ external roadmap before treating an item below as live.
    style for its own sake.
 
 3. **Non-textual modification (§6.9)** is implemented for the structural replay
-   lens. **No-double-entry / no-revive (§6.1)** remain source-backed hypotheses
-   until a real corpus case proves a live replay risk.
+   lens. **No-double-entry / no-revive (§6.1)** now have a diagnostic witness
+   search surface. No-revive still has no current 77-statute witness; no-double-entry
+   has candidate effect-feed rows that need source-level adjudication before any
+   replay-changing rule.
 
 Verification for any of these uses the broad baseline, not the 9-statute gate:
 `scripts/uk_broad_baseline.py --ids $(cat scripts/baselines/uk_grounding_corpus.txt)
