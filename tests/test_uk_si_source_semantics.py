@@ -95,6 +95,10 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
     assert vires["has_vires_phrase"] is True
 
     assert by_family["si_body_commencement_clause_surface"][0]["provision_label"] == "1."
+    assert (
+        by_family["si_body_commencement_clause_surface"][0]["source_role"]
+        == "instrument_body_provision"
+    )
     assert by_family["si_extent_clause_surface"][0]["provision_title"] == (
         "Citation, commencement and extent"
     )
@@ -148,6 +152,39 @@ def test_si_source_semantics_does_not_treat_ordinary_application_as_scope() -> N
     )
 
     assert "si_application_clause_surface" not in {row.family for row in rows}
+
+
+def test_si_source_semantics_marks_amendment_payload_clause_role() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Body>
+              <P1>
+                <Pnumber>2.</Pnumber>
+                <P1para><Text>After section 233 insert—</Text>
+                  <BlockAmendment>
+                    <P1>
+                      <Pnumber>234.</Pnumber>
+                      <P1para><Text>This section applies to quoted companies.</Text></P1para>
+                    </P1>
+                  </BlockAmendment>
+                </P1para>
+              </P1>
+            </Body>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    rows_by_label = {
+        row.to_dict()["provision_label"]: row.to_dict()
+        for row in rows
+        if row.family == "si_application_clause_surface"
+    }
+
+    assert rows_by_label["234."]["status"] == "payload_carried"
+    assert rows_by_label["234."]["source_role"] == "amendment_payload_provision"
 
 
 def test_si_source_semantics_parse_error_is_blocking_record() -> None:
