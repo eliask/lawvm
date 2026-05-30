@@ -35,6 +35,13 @@ _APPLICATION_RE = re.compile(
 _REVOCATION_RE = re.compile(r"\b(?:revokes?|revoked|revocation|ceases?\s+to\s+have\s+effect|lapses?)\b", re.I)
 _CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?)\b", re.I)
 _AMENDMENT_PAYLOAD_ANCESTORS = frozenset({"BlockAmendment", "InlineAmendment"})
+_VIRES_MARKERS = (
+    ("exercise_of_powers", ("in exercise of",)),
+    ("powers_conferred", ("power conferred", "powers conferred")),
+    ("consultation", ("having consulted", "after consultation", "consulted with")),
+    ("designation", ("designated for the purposes",)),
+    ("approval", ("with the approval", "approved by")),
+)
 _REVOCATION_LAPSE_MARKERS = (
     ("revocation", ("revoke", "revoked", "revokes", "revocation")),
     ("cessation", ("cease to have effect", "ceases to have effect")),
@@ -220,7 +227,9 @@ def _vires_record(
         text_preview=_preview(text),
         detail={
             "citation_count": sum(1 for child in el.iter() if _local_name(child) == "Citation"),
+            "citation_texts": _bounded_child_texts(el, "Citation"),
             "has_vires_phrase": bool(_VIRES_RE.search(text)),
+            "vires_markers": _vires_markers(text),
         },
     )
 
@@ -369,6 +378,28 @@ def _revocation_lapse_kinds(text: str) -> tuple[str, ...]:
         for label, markers in _REVOCATION_LAPSE_MARKERS
         if any(marker in normalized for marker in markers)
     )
+
+
+def _vires_markers(text: str) -> tuple[str, ...]:
+    normalized = str(text or "").lower()
+    return tuple(
+        label
+        for label, markers in _VIRES_MARKERS
+        if any(marker in normalized for marker in markers)
+    )
+
+
+def _bounded_child_texts(el: ET._Element, local_name: str, *, limit: int = 12) -> tuple[str, ...]:
+    texts: list[str] = []
+    for child in el.iter():
+        if _local_name(child) != local_name:
+            continue
+        text = _preview(_text(child), limit=160)
+        if text and text not in texts:
+            texts.append(text)
+        if len(texts) >= limit:
+            break
+    return tuple(texts)
 
 
 def _text(el: ET._Element) -> str:
