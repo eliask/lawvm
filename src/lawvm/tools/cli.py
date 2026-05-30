@@ -7399,7 +7399,23 @@ def main() -> None:
                 oracle_selector_mode=getattr(args, "oracle_selector_mode", "bench_comparable"),
             ))
         elif getattr(args, "dump", False):
-            if getattr(args, "triple", False):
+            _jur = str(getattr(args, "jurisdiction", "fi") or "fi")
+            if _jur == "uk":
+                from lawvm.tools.uk_structural_review import dump_uk_statute
+                from pathlib import Path as _Path
+                if not args.statute_id:
+                    print("ERROR: statute_id required for -j uk --dump", file=sys.stderr)
+                    sys.exit(1)
+                _db_arg = getattr(args, "db", None)
+                _db_path = _Path(_db_arg) if _db_arg else None
+                result = dump_uk_statute(
+                    args.statute_id,
+                    compact=getattr(args, "compact", False),
+                    section_filter=getattr(args, "section", None),
+                    db_path=_db_path,
+                )
+                sys.stdout.write(result)
+            elif getattr(args, "triple", False):
                 from lawvm.tools.structural_review import dump_triple_view
                 if not args.statute_id:
                     print("ERROR: statute_id required for --dump --triple", file=sys.stderr)
