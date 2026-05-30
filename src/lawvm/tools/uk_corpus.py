@@ -112,6 +112,18 @@ def _decode_content_encoding(data: bytes, content_encoding: Optional[str]) -> by
     return data
 
 
+def _is_storable_xml(data: bytes) -> bool:
+    """True if *data* looks like XML text (not gzip/zlib bytes or an error page).
+
+    A defensive guard against the corpus-corruption class where a compressed or
+    non-XML body reaches the archive under an ``xml`` storage class.  Real
+    legislation XML begins with ``<`` after an optional BOM/whitespace; gzip
+    (``1f 8b``) and zlib (``78 xx``) bodies do not.
+    """
+    head = data.lstrip(b"\xef\xbb\xbf \t\r\n")
+    return head[:1] == b"<"
+
+
 class _HTTP:
     """Rate-limited fetcher with retry/backoff."""
 
@@ -213,6 +225,13 @@ def _enumerate_type(act_type: str, http: _HTTP) -> list[dict]:
 
 
 def _store_if_new(archive: Farchive, url: str, data: bytes, sc: str = "xml") -> bool:
+    if sc == "xml" and not _is_storable_xml(data):
+        print(
+            f"  [guard] refusing non-XML payload for {url} "
+            f"(first bytes {data[:4]!r}); not stored",
+            file=sys.stderr,
+        )
+        return False
     spans = archive.history(url)
     if spans:
         digest = hashlib.sha256(data).hexdigest()
@@ -314,8 +333,7 @@ def do_download(
         enacted_url = f"{base}/enacted/data.xml"
         if not archive.has(enacted_url):
             data = http.get(enacted_url)
-            if data and len(data) > 50:
-                archive.store(enacted_url, data, storage_class="xml")
+            if data and len(data) > 50 and _store_if_new(archive, enacted_url, data, "xml"):
                 n_enacted += 1
         if not enacted_only:
             current_url = f"{base}/data.xml"
@@ -352,7 +370,7 @@ def do_affecting(
     for i, aid in enumerate(to_fetch, 1):
         url = f"{_LEG_BASE}/{aid}/enacted/data.xml"
         data, status = http.get_with_status(url)
-        if data and len(data) > 50:
+        if data and len(data) > 50 and _is_storable_xml(data):
             archive.store(url, data, storage_class="xml")
             n_ok += 1
         elif status in {404, 410}:
