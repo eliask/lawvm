@@ -92,9 +92,17 @@ docs: `notes/UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md` (authority rules → destina
 3. **§6.4 `UK_RULE_INSERTED_PROVISION_EID`** (direction b) — structural eIds for
    inserted subtrees so grounding is exact not fuzzy. LOW score impact (fuzzy is
    rare ~2 nodes/statute); do for correctness-by-construction, not score.
-4. **Schedule-1 crossheading representation** (ukpga/1978/30's 50 deterministic-gaps)
-   — replay vs oracle editorial crossheading/`paragraph-wrapper` structure. Saturated
-   frontier; clarify whether it is our bug or oracle-editorial before touching.
+4. **Schedule-1 crossheading representation** (ukpga/1978/30) — INVESTIGATED, verdict
+   = **oracle-editorial eId convention, not a bug; do NOT chase.** The crossheadings
+   themselves match; only the paragraphs *under* them diverge by eId SCHEME: oracle
+   uses a positional `<crossheading>_paragraph-wrapperNnM`, replay uses label-based
+   `<crossheading>-paragraph-<letter>` (and some crossheading-child paragraphs get no
+   structural eId, so they fall to fuzzy/local-fallback). The legal content (the
+   Interpretation Act definitions) is present in the enacted base — this is an
+   addressing-convention mismatch, and replay's label-based scheme is arguably more
+   stable than the oracle's opaque positional `wrapperNnM`. Matching it would be
+   benchmaxxing the oracle's convention (forbidden, §2.1). The ~78% on 1978/30 is
+   essentially source-faithful; the residual is editorial eId scheme.
 5. **§6.1 repeal guards** — `REPEAL_OF_REPEAL_NO_REVIVE` (Interpretation Act 1978
    s.15), `REPEAL_NO_DOUBLE_ENTRY`. Speculative — find a real corpus case first.
 6. **Effect-verb lowering long tail** — the remaining ~24/109 `no_supported_action`
