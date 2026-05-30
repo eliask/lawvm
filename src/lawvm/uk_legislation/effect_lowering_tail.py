@@ -8,6 +8,7 @@ from lxml import etree as ET
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -143,11 +144,17 @@ def resolve_uk_insertion_anchor_context(
     )
 
 
-_UK_OVERLAP_ACTION_WORD_RE = re.compile(
+# First production adopter of the sound required-literal prefilter
+# (compile_classifier_regex): this classifier is `.search`ed over source
+# instruction context that very often contains no amendment verb at all, so the
+# prefilter short-circuits those misses without running the alternation. The
+# prefilter is sound (never a false negative), so `.search()` results are identical.
+_UK_OVERLAP_ACTION_WORD_RE = compile_classifier_regex(
     r"\b(?:insert|inserted|inserting|omit|omitted|omitting|repeal|repealed|"
     r"substitute|substituted|substituting|replace|replaced|replacing|"
     r"amend|amended|amending|change|changed|changing)\b",
-    re.I,
+    flags=re.I,
+    classifier_id="uk_overlap_action_word",
 )
 
 
