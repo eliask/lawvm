@@ -6568,16 +6568,28 @@ def main() -> None:
         bisect_section_main(args)
 
     elif args.command == "dump":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm dump does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.dump import main as dump_main
 
         dump_main(args)
 
     elif args.command == "source-dump":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm source-dump does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.source_dump import main as source_dump_main
 
         source_dump_main(args)
 
     elif args.command == "inspect-amendment":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm inspect-amendment does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.inspect_amendment import main as inspect_amendment_main
 
         inspect_amendment_main(args)
@@ -6593,11 +6605,19 @@ def main() -> None:
         invariant_bisect_main(args)
 
     elif args.command == "snapshot-debug":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm snapshot-debug does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.snapshot_debug import main as snapshot_debug_main
 
         snapshot_debug_main(args)
 
     elif args.command == "product-debug":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm product-debug does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.product_debug import main as product_debug_main
 
         product_debug_main(args)
@@ -6623,6 +6643,10 @@ def main() -> None:
         replay_plan_main(args)
 
     elif args.command == "trace-section":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm trace-section does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.trace_section import main as trace_section_main
 
         trace_section_main(args)
@@ -6650,9 +6674,15 @@ def main() -> None:
             raise SystemExit(2)
 
     elif args.command == "classify":
-        from lawvm.tools.classify import main as classify_main
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            from lawvm.tools.uk_oracle_check import main as uk_classify_main
 
-        classify_main(args)
+            uk_classify_main(args)
+        else:
+            from lawvm.tools.classify import main as classify_main
+
+            classify_main(args)
 
     elif args.command == "bench":
         j = getattr(args, "jurisdiction", "fi")
@@ -6676,6 +6706,9 @@ def main() -> None:
             from lawvm.tools.ee_blame import main as ee_blame_main
 
             ee_blame_main(args)
+        elif j == "uk":
+            print("ERROR: lawvm blame does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         else:
             from lawvm.tools.blame import main as blame_main
 
@@ -7009,9 +7042,19 @@ def main() -> None:
         no_verify_workqueue_main(args)
 
     elif args.command == "diff":
-        from lawvm.tools.diff import main as diff_main
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            from lawvm.tools.uk_structural_review import dump_uk_statute
+            from pathlib import Path as _Path
 
-        diff_main(args)
+            _db_arg = getattr(args, "db", None)
+            _db_path = _Path(_db_arg) if _db_arg else None
+            _sid = getattr(args, "statute_id", "")
+            print(dump_uk_statute(_sid, compact=True, db_path=_db_path), end="")
+        else:
+            from lawvm.tools.diff import main as diff_main
+
+            diff_main(args)
 
     elif args.command == "ops":
         from lawvm.tools.ops import main as ops_main
@@ -7019,19 +7062,33 @@ def main() -> None:
         ops_main(args)
 
     elif args.command == "replay-debug":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm replay-debug does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.replay_debug import main as replay_debug_main
 
         replay_debug_main(args)
 
     elif args.command == "replay-inspect":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm replay-inspect does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.replay_inspect import main as replay_inspect_main
 
         replay_inspect_main(args)
 
     elif args.command == "oracle-check":
-        from lawvm.tools.oracle_check import main as oracle_check_main
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            from lawvm.tools.uk_oracle_check import main as uk_oracle_check_main
 
-        oracle_check_main(args)
+            uk_oracle_check_main(args)
+        else:
+            from lawvm.tools.oracle_check import main as oracle_check_main
+
+            oracle_check_main(args)
 
     elif args.command == "gold":
         from lawvm.tools.gold import main as gold_main
@@ -7263,11 +7320,19 @@ def main() -> None:
         capture_main(args)
 
     elif args.command == "audit-trail":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm audit-trail does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.audit_trail import main as audit_trail_main
 
         audit_trail_main(args)
 
     elif args.command == "lower-audit":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm lower-audit does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.lower_audit import main as lower_audit_main
 
         lower_audit_main(args)
@@ -7313,6 +7378,10 @@ def main() -> None:
         freshness_main(args)
 
     elif args.command == "step-attribution":
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "uk":
+            print("ERROR: lawvm step-attribution does not yet support -j uk", file=sys.stderr)
+            raise SystemExit(2)
         from lawvm.tools.step_attribution import main as sa_main
 
         sa_main(args)
