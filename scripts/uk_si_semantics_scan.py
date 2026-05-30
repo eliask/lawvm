@@ -103,6 +103,10 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     for row in rows:
         for marker in row.get("vires_markers") or ():
             vires_marker_counts[str(marker)] += 1
+    correction_marker_counts: Counter[str] = Counter()
+    for row in rows:
+        for marker in row.get("correction_marker_kinds") or ():
+            correction_marker_counts[str(marker)] += 1
     output_rows = rows[: args.limit] if args.limit is not None else rows
     return {
         "n_statutes_scanned": len(ids),
@@ -115,6 +119,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "extent_application_relations": dict(extent_application_relation_counts),
         "revocation_lapse_kinds": dict(revocation_lapse_kind_counts),
         "vires_markers": dict(vires_marker_counts),
+        "correction_markers": dict(correction_marker_counts),
         "missing_xml": missing,
         "records": output_rows,
     }

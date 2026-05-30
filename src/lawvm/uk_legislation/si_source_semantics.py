@@ -33,7 +33,7 @@ _APPLICATION_RE = re.compile(
     re.I,
 )
 _REVOCATION_RE = re.compile(r"\b(?:revokes?|revoked|revocation|ceases?\s+to\s+have\s+effect|lapses?)\b", re.I)
-_CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?)\b", re.I)
+_CORRECTION_RE = re.compile(r"\b(?:correction\s+slips?|reprints?|reprinted)\b", re.I)
 _AMENDMENT_PAYLOAD_ANCESTORS = frozenset({"BlockAmendment", "InlineAmendment"})
 _VIRES_MARKERS = (
     ("exercise_of_powers", ("in exercise of",)),
@@ -46,6 +46,10 @@ _REVOCATION_LAPSE_MARKERS = (
     ("revocation", ("revoke", "revoked", "revokes", "revocation")),
     ("cessation", ("cease to have effect", "ceases to have effect")),
     ("lapse", ("lapse", "lapses")),
+)
+_CORRECTION_MARKERS = (
+    ("correction_slip", ("correction slip", "correction slips")),
+    ("reprint", ("reprint", "reprinted", "reprints")),
 )
 _GEOGRAPHIC_TERM_MARKERS = (
     ("northern_ireland", "northern ireland"),
@@ -300,15 +304,25 @@ def _correction_record(
     *,
     source_path: str,
 ) -> UKSISourceSemanticsRecord | None:
-    text = _text(root)
-    if not _CORRECTION_RE.search(text):
+    matches = _correction_matches(root)
+    if not matches:
         return None
+    marker_kinds: list[str] = []
+    for match in matches:
+        for kind in match["marker_kinds"]:
+            if kind not in marker_kinds:
+                marker_kinds.append(kind)
     return UKSISourceSemanticsRecord(
         family="si_correction_slip_surface",
         statute_id=statute_id,
         rule_id="uk_si_correction_slip_surface_recorded",
         source_path=source_path,
-        text_preview=_preview(text),
+        text_preview=matches[0]["text_preview"],
+        detail={
+            "correction_marker_kinds": tuple(marker_kinds),
+            "correction_match_count": len(matches),
+            "correction_contexts": tuple(matches[:12]),
+        },
     )
 
 
@@ -387,6 +401,51 @@ def _vires_markers(text: str) -> tuple[str, ...]:
         for label, markers in _VIRES_MARKERS
         if any(marker in normalized for marker in markers)
     )
+
+
+def _correction_matches(root: ET._Element) -> tuple[dict[str, Any], ...]:
+    matches: list[dict[str, Any]] = []
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        fields: list[tuple[str, str]] = []
+        if el.text and _CORRECTION_RE.search(el.text):
+            fields.append(("text", el.text))
+        if el.tail and _CORRECTION_RE.search(el.tail):
+            fields.append(("tail", el.tail))
+        for key, value in el.attrib.items():
+            if _CORRECTION_RE.search(value):
+                fields.append((f"attr:{ET.QName(key).localname}", value))
+        for source_field, text in fields:
+            matches.append(
+                {
+                    "source_tag": _local_name(el),
+                    "source_field": source_field,
+                    "source_path_hint": _element_path_hint(el),
+                    "marker_kinds": _correction_marker_kinds(text),
+                    "text_preview": _preview(text),
+                }
+            )
+    return tuple(matches)
+
+
+def _correction_marker_kinds(text: str) -> tuple[str, ...]:
+    normalized = str(text or "").lower()
+    return tuple(
+        label
+        for label, markers in _CORRECTION_MARKERS
+        if any(marker in normalized for marker in markers)
+    )
+
+
+def _element_path_hint(el: ET._Element, *, limit: int = 8) -> str:
+    names: list[str] = []
+    current = el
+    while current is not None and len(names) < limit:
+        if isinstance(current.tag, str):
+            names.append(_local_name(current))
+        current = current.getparent()
+    return ">".join(reversed(names))
 
 
 def _bounded_child_texts(el: ET._Element, local_name: str, *, limit: int = 12) -> tuple[str, ...]:

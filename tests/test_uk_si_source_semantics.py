@@ -197,6 +197,35 @@ def test_si_source_semantics_records_nested_body_p1_and_correction_slip_marker()
         "lapse",
     )
     assert "correction slip" in by_family["si_correction_slip_surface"]["text_preview"]
+    assert by_family["si_correction_slip_surface"]["correction_marker_kinds"] == (
+        "correction_slip",
+    )
+    assert by_family["si_correction_slip_surface"]["correction_match_count"] == 1
+    assert by_family["si_correction_slip_surface"]["correction_contexts"][0][
+        "source_field"
+    ] == "text"
+
+
+def test_si_source_semantics_classifies_reprint_marker_separately() -> None:
+    rows = _records(
+        """
+        <Legislation>
+          <Secondary>
+            <Footnotes>
+              <Footnote>
+                <FootnoteText>
+                  <Para><Text>Schedule 1 was reprinted with amendments.</Text></Para>
+                </FootnoteText>
+              </Footnote>
+            </Footnotes>
+          </Secondary>
+        </Legislation>
+        """
+    )
+
+    row = next(row.to_dict() for row in rows if row.family == "si_correction_slip_surface")
+    assert row["correction_marker_kinds"] == ("reprint",)
+    assert row["correction_contexts"][0]["source_path_hint"].endswith("Para>Text")
 
 
 def test_si_source_semantics_marks_lapse_clause_kind() -> None:

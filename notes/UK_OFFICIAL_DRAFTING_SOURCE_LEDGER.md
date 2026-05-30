@@ -136,11 +136,11 @@ use when a concrete failing case or architecture task needs the rule boundary.
   inventories SI source semantics without replay mutation. Current all-cached-SI
   command:
   `uv run python scripts/uk_si_semantics_scan.py --all --pretty --limit 0`.
-  Result: 4,869 SI-like current XML documents scanned, 36,331 diagnostic rows:
+  Result: 4,869 SI-like current XML documents scanned, 36,563 diagnostic rows:
   4,869 structure-vocabulary rows, 4,863 vires-recital rows, 4,578
   commencement-metadata rows, 7,677 body-commencement clause rows, 3,215 extent
-  rows, 8,374 application rows, 2,750 revocation/lapse rows, and 5
-  correction-slip marker rows. Body-clause rows now include `source_role`, and
+  rows, 8,374 application rows, 2,750 revocation/lapse rows, and 237
+  correction/reprint context rows. Body-clause rows now include `source_role`, and
   the all-cached scan classifies 2,056 rows as `payload_carried` because they sit
   inside amendment payload XML rather than the SI's own body provision. Body-clause
   records also expose `geographic_terms` and `extent_application_relation`; current
@@ -150,7 +150,10 @@ use when a concrete failing case or architecture task needs the rule boundary.
   `cessation`, and 276 `lapse`. Vires-recital rows expose `vires_markers` and
   bounded `citation_texts`; current marker counts are 3,049
   `exercise_of_powers`, 3,125 `powers_conferred`, 365 `designation`, 178
-  `consultation`, and 1,365 `approval`. These are evidence rows only;
+  `consultation`, and 1,365 `approval`. Correction rows now record direct
+  element/attribute contexts rather than whole-document text, expose
+  `correction_marker_kinds`, and currently count 233 `correction_slip` markers
+  and 5 `reprint` markers. These are evidence rows only;
   replay-changing SI rules still require source-level adjudication of a concrete
   family.
   **Commencement fallback adjudication added 2026-05-31:** applied UK SI effects
