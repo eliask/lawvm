@@ -6595,6 +6595,42 @@ def test_uk_semantic_claims_validate_main_reports_workqueue_input_errors(
     assert payload["rows"][1]["rule_id"] == "uk_semantic_claim_jsonl_decode_error"
 
 
+def test_uk_semantic_claims_validate_main_reports_wrong_workqueue_schema(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    input_path = tmp_path / "claims.jsonl"
+    workqueue_path = tmp_path / "workqueue.jsonl"
+    workqueue = _workqueue_row()
+    workqueue["schema"] = "lawvm.some_other_surface.v1"
+    input_path.write_text(json.dumps(_claim_row()) + "\n", encoding="utf-8")
+    workqueue_path.write_text(json.dumps(workqueue) + "\n", encoding="utf-8")
+
+    uk_semantic_claims.main(
+        Namespace(
+            input=str(input_path),
+            workqueue_jsonl=str(workqueue_path),
+            live_targets_jsonl="",
+            json=True,
+            summary_only=False,
+            validation_jsonl="",
+            fail_on_rejected=False,
+            fail_on_input_error=False,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["input_error_count"] == 1
+    assert payload["rows"][-1]["validator_status"] == "input_error"
+    assert (
+        payload["rows"][-1]["rule_id"]
+        == "uk_semantic_claim_workqueue_schema_input_error"
+    )
+    assert payload["rows"][-1]["validation_issues"] == [
+        "schema must be lawvm.uk_manual_compile_frontier.v1"
+    ]
+
+
 def test_uk_semantic_claims_validate_main_fails_on_auxiliary_input_error(
     tmp_path: Path,
     capsys,
@@ -6623,6 +6659,40 @@ def test_uk_semantic_claims_validate_main_fails_on_auxiliary_input_error(
     assert payload["summary"]["input_error_count"] == 1
     assert payload["rows"][-1]["validator_status"] == "input_error"
     assert payload["rows"][-1]["rule_id"] == "uk_semantic_claim_jsonl_row_not_object"
+
+
+def test_uk_semantic_claims_validate_main_reports_wrong_live_target_schema(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    input_path = tmp_path / "claims.jsonl"
+    live_targets_path = tmp_path / "live-targets.jsonl"
+    live_target = _live_target_row()
+    live_target["schema"] = "lawvm.some_other_surface.v1"
+    input_path.write_text(json.dumps(_claim_row()) + "\n", encoding="utf-8")
+    live_targets_path.write_text(json.dumps(live_target) + "\n", encoding="utf-8")
+
+    uk_semantic_claims.main(
+        Namespace(
+            input=str(input_path),
+            workqueue_jsonl="",
+            live_targets_jsonl=str(live_targets_path),
+            json=True,
+            summary_only=False,
+            validation_jsonl="",
+            fail_on_rejected=False,
+            fail_on_input_error=False,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["input_error_count"] == 1
+    assert payload["rows"][-1]["validator_status"] == "input_error"
+    assert (
+        payload["rows"][-1]["rule_id"]
+        == "uk_semantic_claim_live_target_schema_input_error"
+    )
+    assert payload["rows"][-1]["live_state_checked"] is True
 
 
 def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(

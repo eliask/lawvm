@@ -1619,6 +1619,9 @@ Current bench replay-regime invariant:
   blocking `input_error` validation rows. Auxiliary input errors must stay
   visible even when a separate claim row also fails workqueue or live-target
   matching, and `--fail-on-input-error` exits nonzero for those auxiliary errors.
+  Auxiliary rows that explicitly declare another LawVM schema are also blocking
+  input errors rather than silently ignored rows; schema-less legacy auxiliary
+  rows keep the compatibility behavior of the relevant indexer.
 - The workqueue match rejects conflicting duplicate `work_item_id` rows instead
   of depending on first-row input order. Identical repeated workqueue rows are
   tolerated so concatenated duplicate exports do not fail validation; JSONL

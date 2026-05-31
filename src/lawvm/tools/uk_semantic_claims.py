@@ -5419,6 +5419,48 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         )
 
 
+def _auxiliary_input_error_rows(
+    rows: tuple[Mapping[str, Any], ...],
+    *,
+    expected_schema: str,
+    wrong_schema_rule_id: str,
+    wrong_schema_reason: str,
+    fallback_input_error_rule_id: str,
+    fallback_input_error_reason: str,
+    live_state_checked: bool = False,
+) -> tuple[dict[str, Any], ...]:
+    validation_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if str(row.get("validator_status") or "") == "input_error":
+            validation_rows.append(
+                _validation_row(
+                    row,
+                    validator_status="input_error",
+                    rule_id=str(
+                        row.get("validator_rule_id")
+                        or fallback_input_error_rule_id
+                    ),
+                    issues=(str(row.get("reason") or fallback_input_error_reason),),
+                    reason=fallback_input_error_reason,
+                    live_state_checked=live_state_checked,
+                )
+            )
+            continue
+        schema = _optional_string(row, "schema")
+        if schema and schema != expected_schema:
+            validation_rows.append(
+                _validation_row(
+                    row,
+                    validator_status="input_error",
+                    rule_id=wrong_schema_rule_id,
+                    issues=(f"schema must be {expected_schema}",),
+                    reason=wrong_schema_reason,
+                    live_state_checked=live_state_checked,
+                )
+            )
+    return tuple(validation_rows)
+
+
 def main(args: "argparse.Namespace") -> None:
     input_arg = str(getattr(args, "input", "") or "")
     if not input_arg:
@@ -5451,41 +5493,23 @@ def main(args: "argparse.Namespace") -> None:
         workqueue_rows=workqueue_rows,
         live_target_rows=live_target_rows,
     )
-    workqueue_input_errors = tuple(
-        row for row in workqueue_rows if str(row.get("validator_status") or "") == "input_error"
+    rows = rows + _auxiliary_input_error_rows(
+        workqueue_rows,
+        expected_schema=_WORKQUEUE_SCHEMA,
+        wrong_schema_rule_id="uk_semantic_claim_workqueue_schema_input_error",
+        wrong_schema_reason="Workqueue JSONL row declares the wrong schema.",
+        fallback_input_error_rule_id="uk_semantic_claim_workqueue_input_error",
+        fallback_input_error_reason="Workqueue JSONL input error.",
     )
-    if workqueue_input_errors:
-        rows = rows + tuple(
-            _validation_row(
-                row,
-                validator_status="input_error",
-                rule_id=str(
-                    row.get("validator_rule_id")
-                    or "uk_semantic_claim_workqueue_input_error"
-                ),
-                issues=(str(row.get("reason") or "workqueue input error"),),
-                reason="Workqueue JSONL input error.",
-            )
-            for row in workqueue_input_errors
-        )
-    live_target_input_errors = tuple(
-        row for row in live_target_rows if str(row.get("validator_status") or "") == "input_error"
+    rows = rows + _auxiliary_input_error_rows(
+        live_target_rows,
+        expected_schema=_LIVE_TARGET_INDEX_SCHEMA,
+        wrong_schema_rule_id="uk_semantic_claim_live_target_schema_input_error",
+        wrong_schema_reason="Live target index JSONL row declares the wrong schema.",
+        fallback_input_error_rule_id="uk_semantic_claim_live_target_input_error",
+        fallback_input_error_reason="Live target index JSONL input error.",
+        live_state_checked=True,
     )
-    if live_target_input_errors:
-        rows = rows + tuple(
-            _validation_row(
-                row,
-                validator_status="input_error",
-                rule_id=str(
-                    row.get("validator_rule_id")
-                    or "uk_semantic_claim_live_target_input_error"
-                ),
-                issues=(str(row.get("reason") or "live target index input error"),),
-                reason="Live target index JSONL input error.",
-                live_state_checked=True,
-            )
-            for row in live_target_input_errors
-        )
     validation_jsonl_report = None
     if validation_jsonl_path is not None:
         validation_jsonl_report = {
