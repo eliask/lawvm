@@ -274,7 +274,8 @@ canonical-operation claims are additionally checked against a non-executable
 live target index: replace/repeal/text/heading/renumber targets must exist and
 insert targets must have an existing parent carrier. The same index carries
 target fingerprints; if a claim declares `live_target_preconditions` with
-`text_sha256` or `subtree_sha256`, the validator rejects mismatch and uses
+`text_sha256` or `subtree_sha256`, the validator rejects duplicate live
+precondition ids or fingerprint mismatch and uses
 `validated_provenance_live_targets_and_preconditions_only` for matching rows. If
 a claim declares `operation_family_proofs`, the validator checks that each proof
 row matches the claim action family, references existing operation ids, declared
@@ -283,7 +284,8 @@ a proof-plan reference check only; statuses such as `proved` or `validated` are
 rejected. Family-specific proof semantics resolve `live_target_precondition_ids`
 only to the paths on those referenced live precondition rows; unrelated live
 preconditions declared elsewhere in the claim do not widen the proof's target
-carrier set. The first opt-in family semantic,
+carrier set. Live precondition ids must be unique so an id cannot merge
+multiple carrier paths. The first opt-in family semantic,
 `table_surface_insert_anchor_and_live_carrier`, requires a table-surface insert
 proof to reference source text evidence, a live carrier precondition, and insert
 operations whose target parent is inside that live carrier.

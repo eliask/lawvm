@@ -182,8 +182,8 @@ The current validator checks only:
   parent carrier
 - optional consistency of declared `live_target_preconditions` against supplied
   target fingerprints: a claim may require a `subtree_sha256` or `text_sha256`
-  for any live target path, and the validator rejects the claim if the supplied
-  live index does not match
+  for any live target path, and the validator rejects the claim if live
+  precondition ids are duplicated or the supplied live index does not match
 - optional consistency of declared `operation_family_proofs`: each proof row
   must name a proof id, match the claim action family, reference existing
   operation ids, reference declared validator-check ids, reference at least one
@@ -247,7 +247,8 @@ which proof plans were checked without reparsing the input claim ledger.
 Within family-specific proof semantics, a referenced live precondition id
 authorizes only that precondition row's `path`; adding another live precondition
 to the claim does not expand a proof unless the proof explicitly references it
-by id or path.
+by id or path. Live precondition ids must be unique so an id cannot merge
+multiple carrier paths.
 The first opt-in family semantic,
 `table_surface_insert_anchor_and_live_carrier`, additionally checks that a
 `table_surface_mutation` proof references source text evidence, a live carrier

@@ -494,7 +494,7 @@ def _validate_operation_family_proof_refs(
     live_precondition_ids, live_precondition_paths, live_precondition_paths_by_id = (
         _claim_live_target_precondition_ids_and_paths(claim)
     )
-    issues: list[str] = []
+    issues: list[str] = list(_live_target_precondition_identity_issues(claim))
     seen_proof_ids: set[str] = set()
     for index, proof in enumerate(proofs, start=1):
         prefix = f"operation_family_proofs[{index}]"
@@ -3608,6 +3608,30 @@ def _claim_live_target_precondition_rows(
     return tuple(rows)
 
 
+def _live_target_precondition_identity_issues(
+    claim: Mapping[str, Any],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    seen: dict[str, int] = {}
+    for index, precondition in enumerate(
+        _claim_live_target_precondition_rows(claim),
+        start=1,
+    ):
+        precondition_id = _optional_string(precondition, "precondition_id")
+        if not precondition_id:
+            continue
+        previous_index = seen.get(precondition_id)
+        if previous_index is not None:
+            issues.append(
+                f"live_target_preconditions[{index}].precondition_id duplicates "
+                f"live_target_preconditions[{previous_index}].precondition_id "
+                f"{precondition_id!r}"
+            )
+            continue
+        seen[precondition_id] = index
+    return tuple(issues)
+
+
 def _validate_live_target_preconditions(
     claim: Mapping[str, Any],
     live_fingerprints: Mapping[str, Mapping[str, Any]],
@@ -3615,7 +3639,7 @@ def _validate_live_target_preconditions(
     preconditions = _claim_live_target_precondition_rows(claim)
     if not preconditions:
         return (), False
-    issues: list[str] = []
+    issues: list[str] = list(_live_target_precondition_identity_issues(claim))
     checked = False
     for index, precondition in enumerate(preconditions, start=1):
         prefix = f"live_target_preconditions[{index}]"
