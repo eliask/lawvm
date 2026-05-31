@@ -1645,6 +1645,9 @@ Current bench replay-regime invariant:
   obligation lists. Duplicate `required_validator_checks`,
   `required_ownership`, or `required_operation_family_proof_semantics` entries
   reject the workqueue match before those obligations are interpreted as sets.
+  Validation rows echo the matched template action family and required
+  validator-check, ownership, and proof-semantic obligation lists/counts so an
+  accepted claim row remains auditable without reopening the workqueue JSONL.
 - Operation-family proof reference fields are duplicate-sensitive. The validator
   rejects duplicate operation ids, validator-check ids, source/live precondition
   ids, live path references, and recognized family-specific reference/ownership

@@ -5002,6 +5002,32 @@ def _validator_check_rows_from_value(
     return tuple(rows)
 
 
+def _matched_template_obligation_summary(
+    workqueue_row: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    template = _mapping_value(workqueue_row or {}, "suggested_claim_template")
+    required_validator_checks = _string_tuple_from_value(
+        template.get("required_validator_checks")
+    )
+    required_ownership = _string_tuple_from_value(template.get("required_ownership"))
+    required_proof_semantics = _string_tuple_from_value(
+        template.get("required_operation_family_proof_semantics")
+    )
+    return {
+        "matched_template_action_family": _optional_string(template, "action_family"),
+        "matched_template_required_validator_checks": list(required_validator_checks),
+        "matched_template_required_validator_check_count": len(required_validator_checks),
+        "matched_template_required_ownership": list(required_ownership),
+        "matched_template_required_ownership_count": len(required_ownership),
+        "matched_template_required_operation_family_proof_semantics": list(
+            required_proof_semantics
+        ),
+        "matched_template_required_operation_family_proof_semantic_count": len(
+            required_proof_semantics
+        ),
+    }
+
+
 def _validation_row(
     row: Mapping[str, Any],
     *,
@@ -5063,6 +5089,7 @@ def _validation_row(
         "action_family": _optional_string(row, "action_family"),
         "work_item_id": _optional_string(row, "work_item_id"),
         "matched_work_item_id": matched_work_item_id,
+        **_matched_template_obligation_summary(workqueue_row),
         "source_preview_sha256": _claim_source_preview_sha256(row),
         "proposed_outcome_kind": _optional_string(proposed_outcome, "outcome_kind"),
         "validation_issues": list(issues),
