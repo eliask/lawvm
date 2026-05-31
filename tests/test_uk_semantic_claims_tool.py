@@ -6233,6 +6233,37 @@ def test_validate_semantic_claim_rejects_duplicate_operation_ids() -> None:
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_operation_reference_lists() -> None:
+    claim = _claim_row()
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["destination"] = ["section:2", "section:2"]
+    operation["occurrence_ids"] = ["occurrence-1", "occurrence-1"]
+    operation["removed_child_ids"] = ["item:a", "item:a"]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "canonical_operations[1].destination[2] duplicates "
+        "destination[1] 'section:2'"
+    ) in row["validation_issues"]
+    assert (
+        "canonical_operations[1].occurrence_ids[2] duplicates "
+        "occurrence_ids[1] 'occurrence-1'"
+    ) in row["validation_issues"]
+    assert (
+        "canonical_operations[1].removed_child_ids[2] duplicates "
+        "removed_child_ids[1] 'item:a'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_changed_path_outside_target_region() -> None:
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]

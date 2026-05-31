@@ -125,6 +125,11 @@ _MUTATION_BOUNDARY_DUPLICATE_SENSITIVE_FIELDS = (
     "declared_recovery_paths",
     "declared_editorial_projection_paths",
 )
+_OPERATION_DUPLICATE_SENSITIVE_PATH_FIELDS = ("destination",)
+_OPERATION_DUPLICATE_SENSITIVE_STRING_FIELDS = (
+    "occurrence_ids",
+    "removed_child_ids",
+)
 _TEMPLATE_DUPLICATE_SENSITIVE_FIELDS = (
     "required_validator_checks",
     "required_ownership",
@@ -469,6 +474,22 @@ def _validate_canonical_operation_shapes(
             issues.append(f"{prefix}.action is not a canonical StructuralAction")
         if not _has_target_value(operation.get("target")):
             issues.append(f"{prefix}.target is required")
+        for field in _OPERATION_DUPLICATE_SENSITIVE_PATH_FIELDS:
+            issues.extend(
+                _duplicate_string_reference_issues(
+                    prefix=prefix,
+                    field=field,
+                    values=_path_strings_from_value(operation.get(field)),
+                )
+            )
+        for field in _OPERATION_DUPLICATE_SENSITIVE_STRING_FIELDS:
+            issues.extend(
+                _duplicate_string_reference_issues(
+                    prefix=prefix,
+                    field=field,
+                    values=_string_tuple_from_value(operation.get(field)),
+                )
+            )
         mutation_boundary = _mapping_value(operation, "mutation_boundary")
         if not mutation_boundary:
             issues.append(f"{prefix}.mutation_boundary is required")
