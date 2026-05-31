@@ -392,6 +392,12 @@ def _validate_claim_schema(row: Mapping[str, Any]) -> tuple[str, ...]:
         issues.append("claim_kind must be semantic_compile")
     if _optional_string(row, "jurisdiction") != "uk":
         issues.append("jurisdiction must be uk")
+    claim_status = _optional_string(row, "claim_status")
+    if claim_status and _is_forbidden_weak_validator_status(claim_status):
+        issues.append(
+            f"claim_status {claim_status!r} cannot be claimed by this "
+            "non-executable validator"
+        )
     if _asserts_authorization(row.get("executable")):
         issues.append("claim.executable cannot be true in the non-executable validator")
     if _asserts_authorization(row.get("replay_authorized")):
