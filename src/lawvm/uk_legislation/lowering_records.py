@@ -15,6 +15,10 @@ from lawvm.uk_legislation.effects import (
     uk_nonstructural_replay_candidate_family,
 )
 from lawvm.uk_legislation.manual_claim_templates import uk_manual_claim_template_status
+from lawvm.uk_legislation.effect_temporal_cessation import (
+    UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
+    temporal_ceases_to_have_effect_exclusion_rule_for_ops,
+)
 from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
@@ -628,12 +632,27 @@ def append_replay_applicability_filter_diagnostic(
     """Record that a compiled UK effect is excluded from replay by applicability."""
     if diagnostics_out is None:
         return
+    replay_exclusion_rule = temporal_ceases_to_have_effect_exclusion_rule_for_ops(
+        effect_type=effect.effect_type,
+        compiled_ops=compiled_ops,
+    )
+    replay_exclusion_reason = (
+        UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON
+        if replay_exclusion_rule
+        else ""
+    )
+    detail: dict[str, Any] = {}
+    if replay_exclusion_rule:
+        detail["replay_exclusion_rule"] = replay_exclusion_rule
     diagnostics_out.append(
         _effect_diagnostic(
-            rule_id="uk_effect_replay_applicability_filter_rejected",
+            rule_id=replay_exclusion_rule or "uk_effect_replay_applicability_filter_rejected",
             family="applicability_filter",
             effect=effect,
-            reason="UK effect compiled to operations but replay applicability excludes the effect",
+            reason=(
+                replay_exclusion_reason
+                or "UK effect compiled to operations but replay applicability excludes the effect"
+            ),
             blocking=False,
             compiled_op_count=len(compiled_ops),
             compiled_op_ids=[str(op.op_id or "") for op in compiled_ops],
@@ -644,6 +663,7 @@ def append_replay_applicability_filter_diagnostic(
                 effect,
                 applicability_mode=applicability_mode,
             ),
+            **detail,
         )
     )
 
