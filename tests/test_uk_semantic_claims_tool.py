@@ -957,6 +957,48 @@ def test_validate_semantic_claim_rejects_duplicate_operation_family_proof_refs()
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_family_specific_proof_refs() -> None:
+    claim = _claim_row(source_preview="after the entry relating to X insert the row")
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": hashlib.sha256(b"table one").hexdigest(),
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-names-anchor"],
+            "live_target_precondition_ids": ["live-table-carrier"],
+            "entry_ownership_ids": ["entry-carrier", "entry-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "operation_family_proofs[1].entry_ownership_ids[2] duplicates "
+        "entry_ownership_ids[1] 'entry-carrier'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_duplicate_validator_check_ids() -> None:
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
     proposed_outcome = claim["proposed_outcome"]
