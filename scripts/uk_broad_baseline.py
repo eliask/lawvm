@@ -53,6 +53,7 @@ _LEG_BASE = "https://www.legislation.gov.uk"
 _REGRESSION_TOL = 0.1
 _HIGH_FIDELITY_AFTER_GROUNDING_THRESHOLD = 95.0
 _GROUNDING_DOMINATED_DELTA_THRESHOLD = 20.0
+_STRUCTURAL_MATCH_THRESHOLD = 99.5
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -222,10 +223,15 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
     n_replay = int(row.get("n_replay") or 0)
     if n_oracle == 0 and n_replay > 0:
         return "zero_oracle_retention"
+    if row.get("base_source_status") == "metadata_only":
+        return "base_metadata_only_frontier"
     aligned = float(row.get("aligned") or 0.0)
     aligned_no_gc = float(row.get("aligned_excluding_grounding_collateral", aligned) or 0.0)
+    unaligned = float(row.get("unaligned") or 0.0)
     if aligned_no_gc >= _HIGH_FIDELITY_AFTER_GROUNDING_THRESHOLD:
         return "high_fidelity_after_grounding"
+    if unaligned >= _STRUCTURAL_MATCH_THRESHOLD:
+        return "structural_match_eid_scheme_residual"
     if (
         int(row.get("n_grounding_collateral") or 0) > 0
         and aligned_no_gc - aligned >= _GROUNDING_DOMINATED_DELTA_THRESHOLD
@@ -295,6 +301,7 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             row = {"statute_id": sid, "error": f"subprocess_exit_{proc.returncode}"}
             if proc.stderr.strip():
                 row["stderr_tail"] = proc.stderr.strip().splitlines()[-1][:200]
+        row["triage_bucket"] = _triage_bucket_for_row(row)
         results.append(row)
         if "error" in row:
             print(f"[{i}/{len(ids)}] {sid:24s} ERROR {row['error']}", flush=True)
@@ -396,7 +403,7 @@ def run_compare(before_path: Path, after_path: Path) -> int:
     return 1 if regressions else 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--one", metavar="ID", help="Score a single statute (subprocess unit; prints one JSON line)")
     ap.add_argument("--ids", nargs="+", help="Explicit statute IDs to score")
@@ -405,10 +412,12 @@ def main() -> int:
     ap.add_argument("--classes", nargs="+", help="Restrict sample to these act-type classes (e.g. ukpga uksi)")
     ap.add_argument("--out", type=Path, help="Write JSON snapshot here")
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="Compare two snapshots")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.one:
-        print(json.dumps(score_one(args.one)))
+        row = score_one(args.one)
+        row["triage_bucket"] = _triage_bucket_for_row(row)
+        print(json.dumps(row))
         return 0
     if args.compare:
         return run_compare(Path(args.compare[0]), Path(args.compare[1]))
