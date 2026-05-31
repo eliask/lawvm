@@ -363,6 +363,41 @@ def test_summarize_results_counts_nonreplay_effect_frontier() -> None:
     }
 
 
+def test_summarize_results_splits_non_admitted_replay_lens_rows() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "uksi/2009/3023",
+                "score_status": "scored",
+                "aligned": 60.0,
+                "aligned_excluding_grounding_collateral": 60.0,
+                "unaligned": 80.0,
+                "n_grounding_collateral": 0,
+                "n_replay": 3,
+                "n_oracle": 5,
+                "n_effects": 1,
+                "n_ops": 0,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_missing_structural_payload_rejected": 1,
+                },
+                "manual_frontier_status_counts": {
+                    "non_textual_or_out_of_scope": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"nonreplay_effect_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_rows_not_admitted_by_replay_lens": 1
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_rows_not_admitted_by_replay_lens": ["uksi/2009/3023"],
+    }
+
+
 def test_summarize_results_counts_compile_rejection_dominated_residuals() -> None:
     summary = uk_broad_baseline.summarize_results(
         [

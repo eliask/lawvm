@@ -538,7 +538,9 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
         else:
             reasons.append("effect_rows_absent_or_unpublished")
     elif bucket == "nonreplay_effect_frontier":
-        if _has_missing_structural_payload_record(row):
+        if _has_only_non_textual_or_out_of_scope_manual_frontier(row):
+            reasons.append("effect_rows_not_admitted_by_replay_lens")
+        elif _has_missing_structural_payload_record(row):
             reasons.append("effect_rows_missing_structural_payload")
         else:
             reasons.append("effect_rows_nonreplayable")
@@ -583,6 +585,18 @@ def _has_manual_frontier_source_insufficient_record(row: dict[str, Any]) -> bool
     if not isinstance(counts, dict):
         return False
     return int(counts.get("source_insufficient") or 0) > 0
+
+
+def _has_only_non_textual_or_out_of_scope_manual_frontier(
+    row: dict[str, Any],
+) -> bool:
+    counts = row.get("manual_frontier_status_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    total = sum(int(value or 0) for value in counts.values())
+    if total == 0:
+        return False
+    return int(counts.get("non_textual_or_out_of_scope") or 0) == total
 
 
 def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
