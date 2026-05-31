@@ -450,3 +450,62 @@ def test_triage_bucket_for_row_is_added_to_one_row_output(monkeypatch, capsys) -
     row = json.loads(capsys.readouterr().out)
 
     assert row["triage_bucket"] == "base_metadata_only_frontier"
+
+
+def test_run_driver_can_fail_on_active_unclassified_residuals(monkeypatch, capsys) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1986/61",
+            "score_status": "scored",
+            "aligned": 50.9,
+            "aligned_excluding_grounding_collateral": 50.9,
+            "unaligned": 50.5,
+            "n_replay": 289,
+            "n_oracle": 568,
+            "n_only_in_oracle": 279,
+            "n_only_in_replayed": 0,
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1986/61"],
+            None,
+            fail_on_active_unclassified_residuals=True,
+        )
+        == 1
+    )
+    assert "active_unclassified_residuals=1: ukpga/1986/61" in capsys.readouterr().out
+
+
+def test_run_driver_fail_flag_accepts_manual_frontier_residuals(monkeypatch, capsys) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1990/8",
+            "score_status": "scored",
+            "aligned": 83.81,
+            "aligned_excluding_grounding_collateral": 83.81,
+            "unaligned": 74.4,
+            "n_replay": 6906,
+            "n_oracle": 8240,
+            "n_only_in_oracle": 1334,
+            "n_only_in_replayed": 0,
+            "manual_frontier_status_counts": {
+                "manual_compile_candidate": 46,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1990/8"],
+            None,
+            fail_on_active_unclassified_residuals=True,
+        )
+        == 0
+    )
+    assert "active_unclassified_residuals=0" in capsys.readouterr().out

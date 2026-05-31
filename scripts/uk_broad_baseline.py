@@ -565,7 +565,12 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
     return both[:n]
 
 
-def run_driver(ids: list[str], out: Optional[Path]) -> int:
+def run_driver(
+    ids: list[str],
+    out: Optional[Path],
+    *,
+    fail_on_active_unclassified_residuals: bool = False,
+) -> int:
     results: list[dict[str, Any]] = []
     for i, sid in enumerate(ids, 1):
         proc = subprocess.run(
@@ -674,6 +679,11 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         )
     else:
         print("  active_unclassified_residuals=0")
+    if (
+        fail_on_active_unclassified_residuals
+        and summary["active_unclassified_residual_count"]
+    ):
+        return 1
     return 0
 
 
@@ -710,6 +720,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--classes", nargs="+", help="Restrict sample to these act-type classes (e.g. ukpga uksi)")
     ap.add_argument("--out", type=Path, help="Write JSON snapshot here")
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="Compare two snapshots")
+    ap.add_argument(
+        "--fail-on-active-unclassified-residuals",
+        action="store_true",
+        help="Exit nonzero when scored rows still sit in active unclassified residual buckets",
+    )
     args = ap.parse_args(argv)
 
     if args.one:
@@ -727,7 +742,11 @@ def main(argv: list[str] | None = None) -> int:
         ids.extend(sample_statutes(args.sample, args.seed, args.classes))
     if not ids:
         ap.error("nothing to do: pass --one, --ids, --sample, or --compare")
-    return run_driver(ids, args.out)
+    return run_driver(
+        ids,
+        args.out,
+        fail_on_active_unclassified_residuals=args.fail_on_active_unclassified_residuals,
+    )
 
 
 if __name__ == "__main__":
