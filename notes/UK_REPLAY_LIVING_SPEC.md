@@ -1543,6 +1543,10 @@ Current bench replay-regime invariant:
   `input_error` records. Schema-less legacy rows are still accepted for stale
   queue compatibility, but a row that announces another LawVM surface must not
   be silently reinterpreted as a manual-frontier work item.
+- JSONL `line_number` is bookkeeping owned by the reader: `_read_jsonl_rows`
+  records the physical input line rather than trusting a row-supplied value, and
+  malformed direct-call line-number values degrade to `0` instead of crashing
+  validation.
 - Manual-frontier validation rejects conflicting duplicate `work_item_id` rows as
   blocking `input_error` records, while treating JSONL `line_number` as
   bookkeeping rather than evidence when deciding whether duplicate rows are
