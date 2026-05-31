@@ -513,9 +513,18 @@ patches using `TEXT_EXCEPT_PHRASE`. This removes the matching
 `uk_effect_overlap_substitution_unlowered` blocker without mutating the excluded
 phrase. The refreshed 77-statute gate remains score-stable (`0 improved,
 0 regressed`), while `ukpga/1984/12` blocking compile diagnostics drop
-`42 -> 41`; the remaining overlap blocker is the distinct child-scope exclusion
-shape `except in subsection (9)`, which needs a separate provision-scope
-selector rather than a phrase selector.
+`42 -> 41`.
+
+Child-scope exclusions are distinct from phrase exclusions. Source clauses such
+as `for the words "X", wherever occurring, except in subsection (9), there shall
+be substituted "Y"` now emit `uk_effect_except_child_substitution_text_patch`
+with a `TEXT_EXCEPT_CHILD` selector. Replay requires the excluded child to exist
+and skips that child subtree; it does not treat the missing child as permission
+to rewrite every occurrence. Current witness: `ukpga/1984/12`, affected by
+`ukpga/2003/21` Sch. 17 para. 67(2). This removes the remaining
+`uk_effect_overlap_substitution_unlowered` blocker for `ukpga/1984/12`; blocking
+compile diagnostics drop `41 -> 40`, and the 77-statute gate remains
+score-stable (`0 improved, 0 regressed`).
 
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds

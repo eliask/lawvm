@@ -24582,6 +24582,101 @@ def test_replay_except_phrase_substitution_does_not_mutate_excluded_phrase() -> 
     )
 
 
+def test_compile_wherever_except_subsection_substitution_preserves_excluded_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-17-paragraph-67-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 For the words “Secretary of State”, wherever occurring, except in subsection (9), there shall be substituted “relevant authority”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-d493748d31a880cfc6885adbab4d582d",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-12-29",
+        affected_uri="/id/ukpga/1984/12/section/84",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1984",
+        affected_number="12",
+        affected_provisions="s. 84",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 17 para. 67(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2003-12-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == f"TEXT_EXCEPT_CHILD{US}Secretary of State{US}subsection{US}9"
+    assert ops[0].text_patch.replacement == "relevant authority"
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_except_child_substitution_text_patch"
+    ] == ["uk_effect_except_child_substitution_text_patch"]
+
+
+def test_replay_except_child_substitution_does_not_mutate_excluded_child() -> None:
+    selector = f"TEXT_EXCEPT_CHILD{US}Secretary of State{US}subsection{US}9"
+    op = LegalOperation(
+        op_id="uk_test_except_child_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "84"),)),
+        text_patch=_replace_patch(selector, "relevant authority"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1984/12",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="84",
+                    attrs={"eId": "section-84"},
+                    text="The Secretary of State may act.",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            attrs={"eId": "section-84-subsection-1"},
+                            text="The Secretary of State must consult.",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="9",
+                            attrs={"eId": "section-84-subsection-9"},
+                            text="The Secretary of State remains named here.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    section = replayed.body.children[0]
+
+    assert section.text == "The relevant authority may act."
+    assert section.children[0].text == "The relevant authority must consult."
+    assert section.children[1].text == "The Secretary of State remains named here."
+
+
 def test_compile_passive_quoted_substitution_text_patch() -> None:
     extracted_el = ET.fromstring(
         f"""

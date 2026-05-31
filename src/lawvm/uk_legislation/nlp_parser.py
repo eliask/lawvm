@@ -67,6 +67,7 @@ from lawvm.uk_legislation.text_selectors import (
     AfterChildSelector,
     BeforeChildSelector,
     DefinitionAnchorSelector,
+    ExceptChildSelector,
     ExceptPhraseSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
@@ -131,6 +132,15 @@ _WHEREVER_OTHERWISE_THAN_EXPRESSION_SUBSTITUTED_RE = re.compile(
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+_WHEREVER_EXCEPT_CHILD_SUBSTITUTED_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    r"wherever\s+occurring,?\s+except\s+in\s+"
+    r"(?P<child_kind>subsection|paragraph|sub-paragraph|subparagraph)\s+"
+    r"\((?P<child_label>[0-9A-Za-z]+)\)"
+    r",?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _PASSIVE_QUOTED_SUBSTITUTED_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
     r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
@@ -163,6 +173,7 @@ UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
 UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_text_patch"
+UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_except_child_substitution_text_patch"
 UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
 UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_both_subsequent_occurrences_substitution_text_patch"
@@ -591,6 +602,23 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     ),
                     replacement=m.group("replacement").strip(),
                     rule_id=UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
+                    occurrence="0",
+                )
+            )
+        )
+
+    for m in _WHEREVER_EXCEPT_CHILD_SUBSTITUTED_RE.finditer(text):
+        child_kind = m.group("child_kind").strip().lower().replace("-", "")
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=ExceptChildSelector(
+                        m.group("original").strip(),
+                        child_kind,
+                        m.group("child_label").strip(),
+                    ),
+                    replacement=m.group("replacement").strip(),
+                    rule_id=UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID,
                     occurrence="0",
                 )
             )
