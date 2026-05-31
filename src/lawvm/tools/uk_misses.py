@@ -2,9 +2,9 @@
 
 Prints every EID the oracle has that replay is MISSING ("only in oracle") and
 every EID replay has that the oracle LACKS ("only in replayed"), bucketed by
-structural container so the largest miss clusters surface first.  Includes the
-compile-rejection tally so the human reader immediately sees which rule_ids
-explain the gaps.
+structural container so the largest miss clusters surface first. Includes both
+the full compile diagnostic tally and the blocking-rejection tally so the human
+reader can distinguish observations from barriers.
 
 Usage:
     lawvm uk-misses ukpga/1998/42
@@ -109,6 +109,12 @@ def _rejection_rule_histogram(
         pairs = sorted(details.get(rule_id, set()))
         result.append((rule_id, count, pairs))
     return result
+
+
+def _blocking_compile_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from lawvm.core.compile_records import is_blocking_compile_record
+
+    return [row for row in rows if is_blocking_compile_record(row)]
 
 
 def main(args: "argparse.Namespace") -> None:
@@ -226,13 +232,17 @@ def main(args: "argparse.Namespace") -> None:
     oracle_buckets = _bucket_eids(only_in_oracle)
     replayed_buckets = _bucket_eids(only_in_replayed)
 
-    # 8. Rejection histogram (lowering rejections are the blocking compile misses)
+    # 8. Diagnostic histograms. Keep all observations visible, but split the
+    # blocking subset so successful recoveries do not masquerade as barriers.
     all_compile_rejections = [
         *effect_feed_parse_rejections,
         *lowering_rejections,
         *authority_rejections,
     ]
     rejection_histogram = _rejection_rule_histogram(all_compile_rejections)
+    blocking_rejection_histogram = _rejection_rule_histogram(
+        _blocking_compile_records(all_compile_rejections)
+    )
 
     if json_output:
         print(
@@ -252,6 +262,10 @@ def main(args: "argparse.Namespace") -> None:
                     },
                     "only_in_replayed_buckets": {
                         bucket: members for bucket, members in replayed_buckets.items()
+                    },
+                    "blocking_rejection_rule_counts": {
+                        rule_id: count
+                        for rule_id, count, _ in blocking_rejection_histogram
                     },
                     "rejection_rule_counts": {
                         rule_id: count
@@ -296,9 +310,24 @@ def main(args: "argparse.Namespace") -> None:
         print("  (none)")
     print()
 
-    print("COMPILE REJECTIONS")
+    print("COMPILE DIAGNOSTICS")
     if rejection_histogram:
         for rule_id, count, pairs in rejection_histogram:
+            print(f"  {count:4d}  {rule_id}")
+            seen: set[tuple[str, str]] = set()
+            for ap, et in pairs:
+                if (ap, et) not in seen:
+                    seen.add((ap, et))
+                    ap_label = ap or "(none)"
+                    et_label = et or "(none)"
+                    print(f"         affected_provisions={ap_label}  effect_type={et_label}")
+    else:
+        print("  (none)")
+    print()
+
+    print("BLOCKING COMPILE REJECTIONS")
+    if blocking_rejection_histogram:
+        for rule_id, count, pairs in blocking_rejection_histogram:
             print(f"  {count:4d}  {rule_id}")
             seen: set[tuple[str, str]] = set()
             for ap, et in pairs:
