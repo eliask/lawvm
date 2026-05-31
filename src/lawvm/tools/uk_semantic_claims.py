@@ -280,6 +280,10 @@ def _asserts_authorization(value: Any) -> bool:
     return False
 
 
+def _is_forbidden_weak_validator_status(status: str) -> bool:
+    return status.strip().lower() in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES
+
+
 def _workqueue_source_preview_sha256(row: Mapping[str, Any]) -> str:
     source = _mapping_value(row, "source")
     return _optional_string(source, "text_preview_sha256")
@@ -643,7 +647,7 @@ def _validate_operation_family_proof_refs(
         status = _non_empty_string(proof, "status")
         if not status:
             issues.append(f"{prefix}.status is required")
-        elif status in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES:
+        elif _is_forbidden_weak_validator_status(status):
             issues.append(
                 f"{prefix}.status {status!r} cannot be claimed by this "
                 "non-executable validator"
@@ -4807,7 +4811,7 @@ def _ownership_status_issues(
             if not status:
                 issues.append(f"ownership_claim {ownership_id} status is required")
                 continue
-            if status in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES:
+            if _is_forbidden_weak_validator_status(status):
                 issues.append(
                     f"ownership_claim {ownership_id} status {status!r} cannot be "
                     "claimed by this non-executable validator"
@@ -4886,7 +4890,7 @@ def _validator_check_status_issues(
             if not status:
                 issues.append(f"validator_check {check_id} status is required")
                 continue
-            if status in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES:
+            if _is_forbidden_weak_validator_status(status):
                 issues.append(
                     f"validator_check {check_id} status {status!r} cannot be "
                     "claimed by this non-executable validator"
