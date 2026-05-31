@@ -1547,6 +1547,10 @@ Current bench replay-regime invariant:
   records the physical input line rather than trusting a row-supplied value, and
   malformed direct-call line-number values degrade to `0` instead of crashing
   validation.
+- Rows with malformed `replay_regime` declarations, or unsupported
+  `replay_regime.applicability_mode` values, are rejected as blocking
+  `input_error` records. A typo in the replay regime must not fall through to
+  lower-layer default current-replay applicability.
 - Manual-frontier validation rejects conflicting duplicate `work_item_id` rows as
   blocking `input_error` records, while treating JSONL `line_number` as
   bookkeeping rather than evidence when deciding whether duplicate rows are
