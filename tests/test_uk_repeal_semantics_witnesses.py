@@ -22,6 +22,7 @@ from lawvm.uk_legislation.repeal_semantics_witnesses import (
     source_text_repeal_semantics_family,
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
+from scripts.uk_repeal_semantics_scan import _selected_source_audit_summary
 
 
 _DB_PATH = Path(__file__).resolve().parents[1] / "data" / "uk_legislation.farchive"
@@ -244,6 +245,36 @@ def test_affecting_act_phrase_candidate_audits_selected_source_without_proving_p
     assert any(row["selected_source_matches_phrase"] is False for row in no_revive_rows)
     assert any(row["selected_source_tag"] == "Schedule" for row in no_revive_rows)
     assert diagnostics
+
+
+def test_selected_source_audit_summary_preserves_zero_match_closure() -> None:
+    summary = _selected_source_audit_summary(
+        [
+            {
+                "source_phrase_family": "repeal_of_repeal_no_revive_phrase",
+                "selected_source_matches_phrase": False,
+                "selected_source_status": "current",
+                "selected_source_tag": "Schedule",
+                "selected_source_phrase_family": "",
+            },
+            {
+                "source_phrase_family": "repeal_revival_phrase",
+                "selected_source_matches_phrase": False,
+                "selected_source_status": "missing_source",
+                "selected_source_tag": "",
+                "selected_source_phrase_family": "",
+            },
+        ]
+    )
+
+    assert summary["n_selected_source_audited_candidates"] == 2
+    assert summary["n_selected_source_phrase_matches"] == 0
+    assert summary["n_selected_source_unproved_candidates"] == 2
+    assert summary["n_no_revive_selected_source_phrase_matches"] == 0
+    assert summary["selected_source_match_statuses"] == {"False": 2}
+    assert summary["selected_source_statuses"] == {"current": 1, "missing_source": 1}
+    assert summary["selected_source_tags"] == {"Schedule": 1, "": 1}
+    assert summary["selected_source_phrase_families"] == {"": 2}
 
 
 def test_no_double_entry_filter_rejects_only_exact_duplicate_repeal_ops() -> None:

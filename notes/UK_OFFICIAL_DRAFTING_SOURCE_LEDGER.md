@@ -335,7 +335,13 @@ allowed to lag the executable implementation.
   uses a phrase-bearing affecting Act, but not that the phrase is in the selected
   source provision or that the target is itself a repeal. The candidate lane now
   has `--audit-selected-source` to resolve the selected source provision for each
-  candidate and report `selected_source_matches_phrase`. Focused witness:
+  candidate and report `selected_source_matches_phrase`; its JSON summary now keeps
+  `n_selected_source_audited_candidates`, `n_selected_source_phrase_matches`,
+  `n_selected_source_unproved_candidates`, and selected-source status/tag/family
+  counters even when witness rows are suppressed with `--limit 0`. Current
+  77-statute selected-source audit summary: 20 audited phrase-act candidates,
+  0 selected-source phrase matches, 20 unproved candidates, 0 no-revive selected
+  source phrase matches. Focused witness:
   `ukpga/1992/41` affected by `ukpga/2006/50` has 9 no-revive candidates, but the
   selected sources are absent or `Sch. 9` repeal-table surfaces with
   `selected_source_matches_phrase=false`, so they remain unproved candidates. Do
