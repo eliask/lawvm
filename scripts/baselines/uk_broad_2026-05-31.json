@@ -928,33 +928,31 @@
     "unaligned": 17.1
   },
   "ukpga/1976/38": {
-    "aligned": 91.92,
-    "aligned_excluding_grounding_collateral": 91.92,
+    "aligned": 92.93,
+    "aligned_excluding_grounding_collateral": 92.93,
     "base_source_has_body": true,
     "base_source_has_schedules": true,
     "base_source_number_of_provisions": "10",
     "base_source_size": 53616,
     "base_source_status": "available",
-    "blocking_compile_rejection_rule_counts": {
-      "uk_effect_missing_structural_payload_rejected": 1
-    },
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 3,
-      "uk_effect_missing_structural_payload_rejected": 2,
+      "uk_effect_missing_structural_payload_rejected": 1,
       "uk_effect_substituted_range_extra_payload_sibling_insert_lowered": 2,
       "uk_effect_undated_applied_si_commencement_date": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 2,
       "uk_payload_descendant_eid_synthesis": 1
     },
-    "n_blocking_compile_rejections": 1,
-    "n_common": 91,
-    "n_compile_rejections": 11,
+    "n_blocking_compile_rejections": 0,
+    "n_common": 92,
+    "n_compile_rejections": 10,
     "n_grounding_collateral": 0,
-    "n_only_in_oracle": 8,
+    "n_only_in_oracle": 7,
     "n_only_in_replayed": 0,
-    "n_ops": 17,
+    "n_ops": 18,
     "n_oracle": 99,
-    "n_replay": 91,
+    "n_replay": 92,
     "n_zero_oracle_retention_eids": 0,
     "oracle_source_has_body": true,
     "oracle_source_has_schedules": true,
@@ -964,7 +962,7 @@
     "score_status": "scored",
     "statute_id": "ukpga/1976/38",
     "triage_bucket": "bounded_low_volume_residual",
-    "unaligned": 91.92
+    "unaligned": 92.93
   },
   "ukpga/1976/83": {
     "aligned": 32.89,

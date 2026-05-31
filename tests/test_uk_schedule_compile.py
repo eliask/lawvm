@@ -51682,6 +51682,145 @@ def test_regulation_schedule_compound_source_ref_selects_schedule_child_instruct
     assert observations[0]["extracted_element_id"] == "schedule-paragraph-10-b"
 
 
+def test_single_unnumbered_schedule_source_ref_uses_source_paragraph_context() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_single_unnumbered_schedule_context",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-11-03",
+        affected_uri="/id/ukpga/1976/38/section/6/3A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1976",
+        affected_number="38",
+        affected_provisions="s. 6(3A)",
+        affecting_uri="/id/ssi/2006/536",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="536",
+        affecting_provisions="Sch. 1 para. 8",
+        affecting_title="Animal Health and Welfare (Scotland) Act 2006 (Consequential Provisions) Order 2006",
+    )
+    xml_bytes = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule">
+          <ScheduleBody>
+            <Pblock id="schedule-crossheading-dangerous-wild-animals-act-1976">
+              <Title>The Dangerous Wild Animals Act 1976 (c. 38)</Title>
+              <P1 id="schedule-paragraph-8">
+                <Pnumber>8</Pnumber>
+                <P1para>
+                  <Text>After section 6(3) of the Dangerous Wild Animals Act 1976 (penalties), insert–</Text>
+                  <BlockAmendment>
+                    <P2>
+                      <Pnumber>3A</Pnumber>
+                      <P2para><Text>Inserted subsection text.</Text></P2para>
+                    </P2>
+                  </BlockAmendment>
+                  <AppendText>.</AppendText>
+                </P1para>
+              </P1>
+            </Pblock>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    context, parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=xml_bytes,
+        locator="https://www.legislation.gov.uk/ssi/2006/536/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+    )
+    assert parse_error is None
+
+    extracted, observations = uk_replay_mod._extract_from_affecting_source_context_with_observations(
+        context,
+        effect,
+    )
+
+    assert extracted is not None
+    assert uk_replay_mod._tag(extracted) == "BlockAmendment"
+    assert "Inserted subsection text" in uk_replay_mod._text_content(extracted)
+    assert observations == (
+        {
+            "rule_id": "uk_affecting_act_single_unnumbered_schedule_context_ignored",
+            "family": "target_resolution_recovery",
+            "phase": "extraction",
+            "effect_id": "uk_test_single_unnumbered_schedule_context",
+            "affecting_act_id": "ssi/2006/536",
+            "affecting_provisions": "Sch. 1 para. 8",
+            "locator": "https://www.legislation.gov.uk/ssi/2006/536/data.xml",
+            "authority_layer": "AFFECTING_ACT_TEXT",
+            "requested_schedule_label": "1",
+            "normalized_affecting_provisions": "Sch. para. 8",
+            "schedule_element_id": "schedule",
+            "source_instruction_id": "schedule-paragraph-8",
+            "extracted_element_id": "",
+            "reason": (
+                "UK effects metadata named Schedule 1, but the affecting XML exposes a "
+                "single unnumbered Schedule; LawVM accepted the paragraph reference only "
+                "after proving there is exactly one unnumbered first-Schedule context."
+            ),
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        },
+    )
+
+
+def test_single_unnumbered_schedule_source_ref_does_not_rebind_schedule_two() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_single_unnumbered_schedule_no_rebind",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-11-03",
+        affected_uri="/id/ukpga/1976/38/section/6/3A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1976",
+        affected_number="38",
+        affected_provisions="s. 6(3A)",
+        affecting_uri="/id/ssi/2006/536",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="536",
+        affecting_provisions="Sch. 2 para. 8",
+        affecting_title="Synthetic unsafe schedule context",
+    )
+    xml_bytes = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule">
+          <ScheduleBody>
+            <P1 id="schedule-paragraph-8">
+              <Pnumber>8</Pnumber>
+              <P1para>
+                <Text>After section 6(3) insert–</Text>
+                <BlockAmendment><P2><Pnumber>3A</Pnumber><P2para><Text>Inserted text.</Text></P2para></P2></BlockAmendment>
+              </P1para>
+            </P1>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    context, parse_error = uk_replay_mod._build_affecting_source_context(
+        xml_bytes=xml_bytes,
+        locator="memory://unsafe-single-schedule",
+        authority_layer="AFFECTING_ACT_TEXT",
+    )
+    assert parse_error is None
+
+    extracted, observations = uk_replay_mod._extract_from_affecting_source_context_with_observations(
+        context,
+        effect,
+    )
+
+    assert extracted is None
+    assert observations == ()
+
+
 def test_compound_source_ref_prefers_concrete_table_omission_over_repeal_part() -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_compound_table_omission_source_first",
