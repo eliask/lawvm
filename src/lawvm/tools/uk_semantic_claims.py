@@ -3920,6 +3920,14 @@ def _available_source_texts(
     return tuple(texts)
 
 
+def _source_text_precondition_snippet(precondition: Mapping[str, Any]) -> str:
+    return (
+        _optional_string(precondition, "contains")
+        or _optional_string(precondition, "text_contains")
+        or _optional_string(precondition, "snippet")
+    )
+
+
 def _validate_source_text_preconditions(
     claim: Mapping[str, Any],
     workqueue_row: Mapping[str, Any] | None,
@@ -3930,13 +3938,10 @@ def _validate_source_text_preconditions(
     source_texts = _available_source_texts(claim, workqueue_row)
     issues: list[str] = []
     checked = False
+    issues.extend(_source_text_precondition_identity_issues(preconditions))
     for index, precondition in enumerate(preconditions, start=1):
         prefix = f"source_text_preconditions[{index}]"
-        snippet = (
-            _optional_string(precondition, "contains")
-            or _optional_string(precondition, "text_contains")
-            or _optional_string(precondition, "snippet")
-        )
+        snippet = _source_text_precondition_snippet(precondition)
         if not snippet:
             issues.append(f"{prefix}.contains is required")
             continue
@@ -3971,7 +3976,35 @@ def _validate_source_text_preconditions(
             issues.extend(count_issues)
             continue
         checked = True
+    order_issues = _source_text_precondition_order_issues(
+        preconditions=preconditions,
+        source_texts=source_texts,
+    )
+    if order_issues:
+        issues.extend(order_issues)
+        checked = False
     return tuple(issues), checked
+
+
+def _source_text_precondition_identity_issues(
+    preconditions: tuple[Mapping[str, Any], ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    seen: dict[str, int] = {}
+    for index, precondition in enumerate(preconditions, start=1):
+        precondition_id = _optional_string(precondition, "precondition_id")
+        if not precondition_id:
+            continue
+        previous_index = seen.get(precondition_id)
+        if previous_index is not None:
+            issues.append(
+                f"source_text_preconditions[{index}].precondition_id duplicates "
+                f"source_text_preconditions[{previous_index}].precondition_id "
+                f"{precondition_id!r}"
+            )
+            continue
+        seen[precondition_id] = index
+    return tuple(issues)
 
 
 def _source_text_precondition_count_issues(
@@ -4023,6 +4056,137 @@ def _source_text_precondition_count_issues(
             f"counts {list(counts)} for {snippet!r}"
         )
     return tuple(issues)
+
+
+def _source_text_precondition_order_issues(
+    *,
+    preconditions: tuple[Mapping[str, Any], ...],
+    source_texts: tuple[str, ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    by_id: dict[str, tuple[int, Mapping[str, Any]]] = {}
+    for index, precondition in enumerate(preconditions, start=1):
+        precondition_id = _optional_string(precondition, "precondition_id")
+        if precondition_id and precondition_id not in by_id:
+            by_id[precondition_id] = (index, precondition)
+    for index, precondition in enumerate(preconditions, start=1):
+        prefix = f"source_text_preconditions[{index}]"
+        snippet = _source_text_precondition_snippet(precondition)
+        if not snippet:
+            continue
+        issues.extend(
+            _source_text_precondition_relative_order_issues(
+                prefix=prefix,
+                relation="after",
+                relation_keys=("after_precondition_ids", "must_follow_precondition_ids"),
+                current_snippet=snippet,
+                reference_should_precede=True,
+                precondition=precondition,
+                by_id=by_id,
+                source_texts=source_texts,
+            )
+        )
+        issues.extend(
+            _source_text_precondition_relative_order_issues(
+                prefix=prefix,
+                relation="before",
+                relation_keys=("before_precondition_ids", "must_precede_precondition_ids"),
+                current_snippet=snippet,
+                reference_should_precede=False,
+                precondition=precondition,
+                by_id=by_id,
+                source_texts=source_texts,
+            )
+        )
+    return tuple(issues)
+
+
+def _source_text_precondition_relative_order_issues(
+    *,
+    prefix: str,
+    relation: str,
+    relation_keys: tuple[str, ...],
+    current_snippet: str,
+    reference_should_precede: bool,
+    precondition: Mapping[str, Any],
+    by_id: Mapping[str, tuple[int, Mapping[str, Any]]],
+    source_texts: tuple[str, ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    reference_ids = _string_tuple_from_first_value(precondition, relation_keys)
+    if not reference_ids:
+        return ()
+    if not _optional_string(precondition, "precondition_id"):
+        issues.append(f"{prefix}.{relation_keys[0]} requires precondition_id")
+    for reference_id in reference_ids:
+        reference = by_id.get(reference_id)
+        if reference is None:
+            issues.append(
+                f"{prefix}.{relation_keys[0]} references unknown source text "
+                f"precondition {reference_id!r}"
+            )
+            continue
+        reference_index, reference_precondition = reference
+        reference_snippet = _source_text_precondition_snippet(reference_precondition)
+        if not reference_snippet:
+            issues.append(
+                f"{prefix}.{relation_keys[0]} references "
+                f"source_text_preconditions[{reference_index}] without contains"
+            )
+            continue
+        common_texts = tuple(
+            text
+            for text in source_texts
+            if current_snippet in text and reference_snippet in text
+        )
+        if not common_texts:
+            issues.append(
+                f"{prefix}.{relation_keys[0]} cannot be checked because "
+                f"{current_snippet!r} and {reference_snippet!r} do not occur in "
+                "the same supplied source text"
+            )
+            continue
+        reversed_texts = [
+            text_index
+            for text_index, text in enumerate(common_texts, start=1)
+            if _source_text_precondition_order_is_reversed(
+                current_snippet=current_snippet,
+                reference_snippet=reference_snippet,
+                reference_should_precede=reference_should_precede,
+                source_text=text,
+            )
+        ]
+        if reversed_texts:
+            issues.append(
+                f"{prefix}.{relation_keys[0]} {relation} "
+                f"{reference_id!r} is not satisfied by supplied source text "
+                f"indexes {reversed_texts}"
+            )
+    return tuple(issues)
+
+
+def _source_text_precondition_order_is_reversed(
+    *,
+    current_snippet: str,
+    reference_snippet: str,
+    reference_should_precede: bool,
+    source_text: str,
+) -> bool:
+    current_index = source_text.find(current_snippet)
+    reference_index = source_text.find(reference_snippet)
+    if reference_should_precede:
+        return reference_index >= current_index
+    return current_index >= reference_index
+
+
+def _string_tuple_from_first_value(
+    row: Mapping[str, Any],
+    keys: tuple[str, ...],
+) -> tuple[str, ...]:
+    for key in keys:
+        if key in row:
+            return _string_tuple_from_value(row.get(key))
+    return ()
 
 
 def _optional_nonnegative_int(
