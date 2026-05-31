@@ -30,6 +30,7 @@ from lawvm.uk_legislation.source_amendment_program_fragments import (
     _fragment_substitution_source_carried_multi_subunit_repeal,
 )
 from lawvm.uk_legislation.source_child_tail_rewrites import (
+    _fragment_substitution_source_carried_between_paragraphs_substitution,
     _fragment_substitution_source_carried_child_list_tail_repeal,
     _fragment_substitution_source_carried_child_tail_repeal,
     _fragment_substitution_source_carried_child_tail_substitution,
@@ -876,6 +877,17 @@ def _extract_text_fragment_substitutions(
         if source_carried_child_tail_substitution is not None:
             subs = [source_carried_child_tail_substitution]
     if not subs:
+        source_carried_between_paragraphs_substitution = (
+            _fragment_substitution_source_carried_between_paragraphs_substitution(
+                extracted_text=extracted_text,
+                target=target,
+                extracted_el=extracted_el,
+                source_root=source_root,
+            )
+        )
+        if source_carried_between_paragraphs_substitution is not None:
+            subs = [source_carried_between_paragraphs_substitution]
+    if not subs:
         source_carried_multi_subunit_repeal = (
             _fragment_substitution_source_carried_multi_subunit_repeal(
                 extracted_text=extracted_text,
@@ -949,6 +961,15 @@ def _promote_text_fragment_substitutions(
         ]
 
     primary = subs[0]
+    target = _refine_source_carried_child_text_target(
+        effect=effect,
+        target=target,
+        fragment=primary,
+        target_ref=target_ref,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
     target = refine_source_definition_child_target(
         effect=effect,
         target=target,
@@ -1089,6 +1110,58 @@ def _promote_text_fragment_substitutions(
         op_text_occurrence=op_text_occurrence,
         op_text_end_occurrence=op_text_end_occurrence,
     )
+
+
+def _refine_source_carried_child_text_target(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    fragment: dict[str, Any],
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> LegalAddress:
+    if str(fragment.get("target_refinement") or "") != "source_carried_child_text":
+        return target
+    if target.special is not None:
+        return target
+    child_kind = str(fragment.get("target_refinement_kind") or "").strip().lower().replace("-", "")
+    child_label = _clean_num(str(fragment.get("target_refinement_label") or ""))
+    if not child_kind or not child_label:
+        return target
+    leaf_kind = target.leaf_kind().strip().lower().replace("-", "")
+    if leaf_kind == child_kind and target.leaf_label().strip().lower() == child_label:
+        return target
+    if (leaf_kind, child_kind) not in {
+        ("subsection", "paragraph"),
+        ("paragraph", "subparagraph"),
+    }:
+        return target
+    refined = LegalAddress(path=target.path + ((child_kind, child_label),), special=None)
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_source_carried_child_text_target_refined",
+        family="target_resolution_recovery",
+        reason_code="source_carried_child_text_target_refined",
+        reason=(
+            "UK source text identifies a child-local text rewrite inside the "
+            "effect-feed parent target; lowering refines to the source-named "
+            "child instead of applying a broad parent text patch."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "original_target": str(target),
+            "refined_target": str(refined),
+            "source_child_kind": child_kind,
+            "source_child_label": child_label,
+            "source_rule_id": str(fragment.get("rule_id") or ""),
+        },
+    )
+    return refined
 
 
 def _simple_quoted_omission_fragment(extracted_text: str) -> Optional[dict[str, str]]:

@@ -83,6 +83,19 @@ _SOURCE_TABLE_ENTRY_PARAGRAPH_SUBSTITUTION_RE = re.compile(
     r"substitute\s*[—-]\s*(?P<replacement>.+?)\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_TABLE_ENTRY_PARENT_FINAL_COLUMN_RE = re.compile(
+    r"\bin\s+the\s+final\s+column\s+of\s+the\s+entry\s+relating\s+to\s+"
+    r"(?P<entry>[^—-]+?)(?:\s+of\s+Part\s+[0-9A-Za-z]+\s+of\s+the\s+Act)?\s*(?:[—-]|$)",
+    flags=re.I | re.S,
+)
+_SOURCE_TABLE_ENTRY_LABELED_PARAGRAPH_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"for\s+paragraph\s+\((?P<paragraph>[0-9A-Za-z]+)\)\s+"
+    r"\((?P<preimage>[^)]{1,300})\)\s+"
+    r"substitute\s*[—-]?\s*(?P<replacement>.+?)\s*;?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_CHAPTER_ENTRY_RE = re.compile(r"^chapter\s+(?P<label>[0-9A-Za-z]+)$", flags=re.I)
 
 
 def _strip_instruction_terminal_dot(text: str) -> str:
@@ -100,6 +113,14 @@ def _strip_source_payload_label(text: str, label: str) -> str:
         return _strip_instruction_terminal_dot(text)
     stripped = _strip_instruction_terminal_dot(text)
     return re.sub(rf"^\s*{re.escape(label_norm)}\s+", "", stripped, flags=re.I).strip()
+
+
+def _source_table_entry_label(text: str) -> str:
+    normalized = " ".join((text or "").split()).strip()
+    match = _CHAPTER_ENTRY_RE.match(normalized)
+    if match is not None:
+        return _clean_num(match.group("label"))
+    return normalized
 
 
 def _parenthesize_flat_source_subparagraph_labels(text: str) -> str:
@@ -125,14 +146,15 @@ def _source_carried_table_entry_paragraph_substitution(
     cell.  Lowering keeps that as a table-cell selector plus a symbolic
     paragraph selector; replay resolves the live flat cell shape.
     """
-    if _addr_leaf_kind(target) != "schedule":
+    if _addr_leaf_kind(target) not in {"schedule", "subsection"}:
         return None
     text = " ".join((extracted_text or "").split()).strip()
     if not text:
         return None
     sub_match = _SOURCE_TABLE_ENTRY_PARAGRAPH_SUBPARA_SUBSTITUTION_RE.match(text)
     para_match = _SOURCE_TABLE_ENTRY_PARAGRAPH_SUBSTITUTION_RE.match(text)
-    if sub_match is None and para_match is None:
+    labeled_para_match = _SOURCE_TABLE_ENTRY_LABELED_PARAGRAPH_SUBSTITUTION_RE.match(text)
+    if sub_match is None and para_match is None and labeled_para_match is None:
         return None
 
     ancestors = _source_ancestor_chain(source_root, extracted_el)
@@ -143,9 +165,15 @@ def _source_carried_table_entry_paragraph_substitution(
         if not parent_text:
             parent_text = _source_lead_text_before_subordinate_rows(ancestor)
         parent_match = _SOURCE_TABLE_ENTRY_PARENT_RE.search(" ".join(parent_text.split()))
-        if parent_match is None:
+        parent_final_column_match = _SOURCE_TABLE_ENTRY_PARENT_FINAL_COLUMN_RE.search(
+            " ".join(parent_text.split())
+        )
+        if parent_match is None and parent_final_column_match is None:
             continue
-        entry_label = " ".join(parent_match.group("entry").split()).strip()
+        if parent_final_column_match is not None:
+            entry_label = _source_table_entry_label(parent_final_column_match.group("entry"))
+        elif parent_match is not None:
+            entry_label = " ".join(parent_match.group("entry").split()).strip()
         source_parent_id = str(ancestor.get("id") or "")
         if not source_parent_id:
             source_parent_id = next(
@@ -165,20 +193,33 @@ def _source_carried_table_entry_paragraph_substitution(
         replacement = f"({subparagraph_label}) {replacement_body}"
         original = f"TEXT_TABLE_CELL_PARAGRAPH_{paragraph_label}_SUBPARAGRAPH_{subparagraph_label}"
     else:
-        assert para_match is not None
-        paragraph_label = _clean_num(para_match.group("paragraph"))
-        replacement_body = _strip_source_payload_label(para_match.group("replacement"), paragraph_label)
-        if not paragraph_label or not replacement_body:
-            return None
-        replacement = f"{paragraph_label}. {_parenthesize_flat_source_subparagraph_labels(replacement_body)}"
-        subparagraph_label = ""
-        original = f"TEXT_TABLE_CELL_PARAGRAPH_{paragraph_label}"
+        assert para_match is not None or labeled_para_match is not None
+        if labeled_para_match is not None:
+            paragraph_label = _clean_num(labeled_para_match.group("paragraph"))
+            replacement_body = _strip_source_payload_label(
+                labeled_para_match.group("replacement"),
+                paragraph_label,
+            )
+            preimage = " ".join(labeled_para_match.group("preimage").split()).strip()
+            if not paragraph_label or not replacement_body or not preimage:
+                return None
+            replacement = replacement_body
+            subparagraph_label = ""
+            original = preimage
+        else:
+            paragraph_label = _clean_num(para_match.group("paragraph"))
+            replacement_body = _strip_source_payload_label(para_match.group("replacement"), paragraph_label)
+            if not paragraph_label or not replacement_body:
+                return None
+            replacement = f"{paragraph_label}. {_parenthesize_flat_source_subparagraph_labels(replacement_body)}"
+            subparagraph_label = ""
+            original = f"TEXT_TABLE_CELL_PARAGRAPH_{paragraph_label}"
 
     selector = {
         "rule_id": UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
         "selector_mode": "unique_entry_cell",
         "entry_label": entry_label,
-        "column_index": 2,
+        "column_index": 4 if labeled_para_match is not None else 2,
         "target_ref": target_ref,
         "original_target": str(target),
         "source_parent_id": source_parent_id,
