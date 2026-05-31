@@ -526,6 +526,16 @@ to rewrite every occurrence. Current witness: `ukpga/1984/12`, affected by
 compile diagnostics drop `41 -> 40`, and the 77-statute gate remains
 score-stable (`0 improved, 0 regressed`).
 
+Quoted-anchor insertions tolerate publisher whitespace before the separator
+comma under `uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch`.
+This covers ordinary source text such as `after "X" , insert "Y"` without
+treating the space as legal payload. Current witness: `ukpga/1990/8` affected
+`s. 264(4)(a)` by `uksi/2012/1659` Sch. 3 para. 9. The row now lowers to the
+same target-local text patch as `after "X", insert "Y"` with a separate
+observation for the punctuation recovery; `ukpga/1990/8` blocking compile
+diagnostics drop `135 -> 134`, and the 77-statute gate remains score-stable
+(`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints

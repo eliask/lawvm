@@ -2348,6 +2348,58 @@ def test_source_text_sibling_expansion_accepts_like_kind_sibling_refs() -> None:
     assert expanded == ["s. 7(1)", "s. 7(2)"]
 
 
+def test_compile_after_quoted_anchor_insert_accepts_space_before_comma() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-9">
+          <Pnumber>9</Pnumber>
+          <Text>9 In section 264(4)(a) (operational land), after “the Water Industry Act 1991” , insert “or, in the case of land held by Canal &amp; River Trust, the Public Bodies Act 2011”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-45b3c6bfbda3ffc5100c73fc81ace013",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-07-02",
+        affected_uri="/id/ukpga/1990/8/section/264/subsection/4/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 264(4)(a)",
+        affecting_uri="/id/uksi/2012/1659",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2012",
+        affecting_number="1659",
+        affecting_provisions="Sch. 3 para. 9",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2012-07-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "the Water Industry Act 1991"
+    assert ops[0].text_patch.replacement == (
+        "the Water Industry Act 1991 or, in the case of land held by Canal & River Trust, "
+        "the Public Bodies Act 2011"
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"
+    ] == ["uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"]
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_space_separated_chapter_targets_do_not_fall_back_to_body_root() -> None:
     extracted_el = ET.fromstring(
         f"""
