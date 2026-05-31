@@ -983,6 +983,17 @@ def _validate_text_rewrite_family_proof_semantic(
         "HEADING_REPLACE",
         "heading_replace",
     }
+    required_surface_roles_by_family = {
+        "facet_text_rewrite": {
+            "heading_facet",
+            "title_facet",
+            "sidenote_facet",
+        },
+        "crossheading_text_rewrite": {"crossheading"},
+        "table_crossheading_text_rewrite": {"table_crossheading"},
+        "schedule_note_text_rewrite": {"schedule_note"},
+    }
+    required_surface_roles = required_surface_roles_by_family.get(proof_family)
     operations = _operations_by_id(claim)
     for op_id in sorted(proof_operation_ids):
         operation = operations.get(op_id)
@@ -994,6 +1005,14 @@ def _validate_text_rewrite_family_proof_semantic(
                 f"{prefix}.{proof_semantic} operation {op_id!r} must be a text "
                 "or heading rewrite action"
             )
+        if required_surface_roles is not None:
+            surface_role = _optional_string(operation, "surface_role")
+            if surface_role not in required_surface_roles:
+                issues.append(
+                    f"{prefix}.{proof_semantic} operation {op_id!r} must declare "
+                    "surface_role "
+                    + " or ".join(repr(role) for role in sorted(required_surface_roles))
+                )
         for target in _path_strings_from_value(operation.get("target")):
             if live_carrier_paths and target not in live_carrier_paths:
                 issues.append(

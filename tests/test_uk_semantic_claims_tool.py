@@ -688,6 +688,7 @@ def test_validate_semantic_claim_accepts_text_rewrite_family_proof_semantic() ->
     assert isinstance(operation, dict)
     operation["action"] = "TEXT_REPLACE"
     operation["target"] = "section:1"
+    operation["surface_role"] = "heading_facet"
     operation["mutation_boundary"] = {
         "changed_paths": ["section:1"],
         "target_region": ["section:1"],
@@ -790,6 +791,11 @@ def test_validate_semantic_claim_rejects_text_rewrite_family_proof_semantic_gap(
     assert (
         "operation_family_proofs[1].text_rewrite_source_preimage_and_live_target "
         "operation 'manual-op-1' must be a text or heading rewrite action"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].text_rewrite_source_preimage_and_live_target "
+        "operation 'manual-op-1' must declare surface_role 'heading_facet' or "
+        "'sidenote_facet' or 'title_facet'"
     ) in row["validation_issues"]
     assert (
         "operation_family_proofs[1].text_rewrite_source_preimage_and_live_target "
