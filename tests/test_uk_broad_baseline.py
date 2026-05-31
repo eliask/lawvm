@@ -368,6 +368,38 @@ def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None
     assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
 
 
+def test_summarize_results_routes_large_manual_frontier_residuals() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1990/8",
+                "score_status": "scored",
+                "aligned": 83.81,
+                "aligned_excluding_grounding_collateral": 83.81,
+                "unaligned": 74.4,
+                "n_grounding_collateral": 0,
+                "n_replay": 6906,
+                "n_oracle": 8240,
+                "n_only_in_oracle": 1334,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 3655,
+                "n_blocking_compile_rejections": 130,
+                "manual_frontier_status_counts": {
+                    "manual_compile_candidate": 46,
+                    "source_insufficient": 72,
+                    "deterministic_frontend_supported": 1548,
+                },
+                "blocking_compile_rejection_rule_counts": {
+                    "uk_effect_schedule_note_target_rejected": 16,
+                    "uk_effect_table_entry_instruction_rejected": 8,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
+
+
 def test_compile_rejection_bucket_ignores_nonblocking_observations() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
