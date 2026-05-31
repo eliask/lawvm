@@ -231,6 +231,12 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert payload["summary"]["remaining_row_count"] == 1
     assert payload["summary"]["stale_row_count"] == 0
     assert payload["summary"]["validation_error_count"] == 0
+    assert payload["summary"]["current_manual_status_counts"] == {
+        "manual_compile_candidate": 1
+    }
+    assert payload["summary"]["remaining_manual_status_counts"] == {
+        "manual_compile_candidate": 1
+    }
     assert payload["summary"]["remaining_manual_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1
     }
@@ -419,6 +425,8 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
                 "remaining_manual_rule_counts": {
                     "uk_manual_frontier_table_appropriate_place_candidate": 1
                 },
+                "current_manual_status_counts": {"manual_compile_candidate": 1},
+                "remaining_manual_status_counts": {"manual_compile_candidate": 1},
                 "current_suggested_claim_template_status_counts": {"available": 1},
                 "remaining_suggested_claim_template_status_counts": {"available": 1},
                 "current_source_pathology_counts": {
@@ -449,6 +457,8 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
         "Remaining manual rules: "
         "uk_manual_frontier_table_appropriate_place_candidate=1"
     ) in out
+    assert "Current manual statuses: manual_compile_candidate=1" in out
+    assert "Remaining manual statuses: manual_compile_candidate=1" in out
     assert "Current claim templates: available=1" in out
     assert "Remaining claim templates: available=1" in out
     assert "Current source pathologies: table_entry_target_unsupported=1" in out
@@ -638,6 +648,8 @@ def test_print_text_report_summary_only_omits_row_lines(capsys) -> None:
                     "uk_manual_frontier_validator_currently_deterministic_supported": 1
                 },
                 "remaining_manual_rule_counts": {},
+                "current_manual_status_counts": {},
+                "remaining_manual_status_counts": {},
                 "current_suggested_claim_template_status_counts": {},
                 "remaining_suggested_claim_template_status_counts": {},
                 "current_source_pathology_counts": {},
@@ -661,6 +673,8 @@ def test_print_text_report_summary_only_omits_row_lines(capsys) -> None:
     out = capsys.readouterr().out
     assert "Triage: remaining=0 stale=1 validation_errors=0" in out
     assert "Remaining manual rules: {}" in out
+    assert "Current manual statuses: {}" in out
+    assert "Remaining manual statuses: {}" in out
     assert (
         "Stale original manual rules: "
         "uk_manual_frontier_definition_list_end_insert_candidate=1"
