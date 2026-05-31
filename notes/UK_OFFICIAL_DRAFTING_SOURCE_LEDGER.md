@@ -423,8 +423,12 @@ still retains 420 eIds. The broad-baseline summary now prints
 `source_frontier_reason` counts and zero-oracle retention totals explicitly;
 the `ukpga/1938/22` / `ukpga/1945/9` witness run reports
 `zero_oracle_retention=1 rows / 420 replay eIds` and
-`source_frontier_reasons: base_too_small=1`. The curated 77-statute gate remains
-unchanged (`0 improved, 0 regressed`), with 77/77 scored and
+`source_frontier_reasons: base_too_small=1`. The broad-baseline summary also
+prints non-scoring work-selection buckets so raw score rank does not confuse
+grounding/style/frontier classes with deterministic replay bugs. On the curated
+77-statute gate the current split is `high_fidelity_after_grounding=49`,
+`grounding_dominated_residual=12`, and `residual_after_grounding=16`; the gate
+remains unchanged (`0 improved, 0 regressed`), with 77/77 scored and
 `source_frontier=0`.
 
 ---
