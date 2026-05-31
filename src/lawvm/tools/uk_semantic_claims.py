@@ -63,6 +63,32 @@ _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES = frozenset(
     }
 )
 _AUTHORIZATION_ASSERTION_VALUES = frozenset({"1", "true", "yes", "authorized"})
+UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
+    {
+        "amendment_program_target_source_payload_and_boundary",
+        "appropriate_place_anchor_or_ordering_claim",
+        "cross_container_renumber_source_destination_and_lineage",
+        "definition_child_structural_insert_boundary_claim",
+        "definition_child_structural_payload_boundary_claim",
+        "definition_child_text_tail_boundary_claim",
+        "definition_entry_insert_term_boundary_claim",
+        "mixed_body_heading_split_boundary_claim",
+        "range_to_container_source_range_payload_and_lineage",
+        "referent_qualified_occurrence_scope_claim",
+        "savings_qualified_omission_applicability_scope",
+        "schedule_list_entry_anchor_boundary_claim",
+        "source_carried_child_tail_boundary_claim",
+        "source_carried_multi_subunit_boundary_claim",
+        "source_carried_structured_payload_boundary_claim",
+        "source_carried_structured_tail_boundary_claim",
+        "structural_child_range_source_payload_boundary_claim",
+        "structural_insert_source_payload_and_live_parent",
+        "table_repeal_or_omission_boundary_preservation",
+        "table_surface_insert_anchor_and_live_carrier",
+        "text_rewrite_source_preimage_and_live_target",
+        "whole_act_listed_enactments_scope_and_exclusions",
+    }
+)
 
 
 class _WorkqueueIndex(NamedTuple):
@@ -582,6 +608,8 @@ def _validate_operation_family_proof_semantic(
     )
     if not proof_semantic:
         return ()
+    if proof_semantic not in UK_OPERATION_FAMILY_PROOF_SEMANTICS:
+        return (f"{prefix}.proof_semantic {proof_semantic!r} is not supported",)
     if proof_semantic == "table_surface_insert_anchor_and_live_carrier":
         return _validate_table_insert_family_proof_semantic(
             claim=claim,
