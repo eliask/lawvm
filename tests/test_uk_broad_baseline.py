@@ -302,6 +302,35 @@ def test_summarize_results_counts_no_effect_rows_frontier() -> None:
     }
 
 
+def test_summarize_results_counts_empty_effect_feed_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "uksi/2012/1206",
+                "score_status": "scored",
+                "aligned": 88.6,
+                "aligned_excluding_grounding_collateral": 88.6,
+                "unaligned": 88.6,
+                "n_grounding_collateral": 0,
+                "n_replay": 31,
+                "n_oracle": 35,
+                "n_effects": 0,
+                "n_ops": 0,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_feed_empty_recorded": 1,
+                },
+                "n_blocking_compile_rejections": 0,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"no_effect_rows_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {"effect_feed_empty": 1}
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_feed_empty": ["uksi/2012/1206"],
+    }
+
+
 def test_summarize_results_counts_nonreplay_effect_frontier() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
@@ -546,6 +575,38 @@ def test_source_chain_frontier_reason_is_added_to_one_row_output(
     assert row["source_chain_frontier_reasons"] == [
         "effect_rows_absent_or_unpublished"
     ]
+
+
+def test_source_chain_frontier_reason_reports_empty_effect_feed(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        uk_broad_baseline,
+        "score_one",
+        lambda _statute_id: {
+            "statute_id": "uksi/2012/1206",
+            "score_status": "scored",
+            "aligned": 88.6,
+            "aligned_excluding_grounding_collateral": 88.6,
+            "unaligned": 88.6,
+            "n_replay": 31,
+            "n_oracle": 35,
+            "n_effects": 0,
+            "n_ops": 0,
+            "compile_rejection_rule_counts": {
+                "uk_effect_feed_empty_recorded": 1,
+            },
+        },
+    )
+
+    assert uk_broad_baseline.main(["--one", "uksi/2012/1206"]) == 0
+    row = json.loads(capsys.readouterr().out)
+
+    assert row["triage_bucket"] == "no_effect_rows_frontier"
+    assert row["source_chain_frontier"] is True
+    assert row["source_chain_frontier_reason"] == "effect_feed_empty"
+    assert row["source_chain_frontier_reasons"] == ["effect_feed_empty"]
 
 
 def test_source_chain_frontier_marks_source_insufficient_manual_rows() -> None:

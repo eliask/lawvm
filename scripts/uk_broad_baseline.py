@@ -533,7 +533,10 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
     elif bucket == "effect_feed_absent_frontier":
         reasons.append("effect_feed_pages_absent")
     elif bucket == "no_effect_rows_frontier":
-        reasons.append("effect_rows_absent_or_unpublished")
+        if _has_empty_effect_feed_record(row):
+            reasons.append("effect_feed_empty")
+        else:
+            reasons.append("effect_rows_absent_or_unpublished")
     elif bucket == "nonreplay_effect_frontier":
         if _has_missing_structural_payload_record(row):
             reasons.append("effect_rows_missing_structural_payload")
@@ -559,6 +562,13 @@ def _has_effect_feed_absent_record(row: dict[str, Any]) -> bool:
     if not isinstance(counts, dict):
         return False
     return int(counts.get("uk_effect_feed_pages_absent_recorded") or 0) > 0
+
+
+def _has_empty_effect_feed_record(row: dict[str, Any]) -> bool:
+    counts = row.get("compile_rejection_rule_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    return int(counts.get("uk_effect_feed_empty_recorded") or 0) > 0
 
 
 def _has_missing_structural_payload_record(row: dict[str, Any]) -> bool:
