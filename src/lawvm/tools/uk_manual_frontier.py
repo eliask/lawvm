@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _DEFAULT_APPLICABILITY_MODE = "effective_date_plus_feed_applied"
+_WORKQUEUE_SCHEMA = "lawvm.uk_manual_compile_frontier.v1"
 _STALE_VALIDATOR_STATUSES = frozenset(
     {
         "changed_without_manual_frontier_or_ops",
@@ -191,6 +192,27 @@ def _validation_status(
     )
 
 
+def _wrong_schema_validation_row(row: Mapping[str, Any]) -> dict[str, Any] | None:
+    schema = str(row.get("schema") or "")
+    if not schema or schema == _WORKQUEUE_SCHEMA:
+        return None
+    return _manual_frontier_validation_row(
+        rule_id="uk_manual_frontier_validator_schema_rejected",
+        validator_status="input_error",
+        line_number=int(row.get("line_number") or 0),
+        statute_id=str(row.get("statute_id") or ""),
+        effect_id=str(row.get("effect_id") or ""),
+        reason=f"Manual-frontier JSONL row schema must be {_WORKQUEUE_SCHEMA}.",
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="block",
+        extra={
+            "input_schema": schema,
+            "expected_schema": _WORKQUEUE_SCHEMA,
+        },
+    )
+
+
 def _validation_row_jsonable(
     row: Mapping[str, Any],
     *,
@@ -202,6 +224,9 @@ def _validation_row_jsonable(
     effect_id = str(row.get("effect_id") or "")
     original_manual_status = str(row.get("manual_compile_status") or "")
     original_manual_rule_id = str(row.get("manual_compile_rule_id") or "")
+    wrong_schema_row = _wrong_schema_validation_row(row)
+    if wrong_schema_row is not None:
+        return wrong_schema_row
     if not statute_id or not effect_id:
         return _manual_frontier_validation_row(
             rule_id="uk_manual_frontier_validator_input_missing_key",
@@ -317,6 +342,10 @@ def validate_manual_frontier_rows(
                         quirks_disposition="block",
                     )
                 )
+                continue
+            wrong_schema_row = _wrong_schema_validation_row(row)
+            if wrong_schema_row is not None:
+                output.append(wrong_schema_row)
                 continue
             statute_id = str(row.get("statute_id") or "")
             effect_id = str(row.get("effect_id") or "")
