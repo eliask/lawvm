@@ -710,6 +710,7 @@ def uk_effects_summary_counts(
     source_acquisition_rejection_rule_counts: dict[str, int] = {}
     manual_compile_status_counts: dict[str, int] = {}
     manual_compile_rule_counts: dict[str, int] = {}
+    manual_compile_candidate_rule_counts: dict[str, int] = {}
     suggested_claim_template_status_counts: dict[str, int] = {}
     rows_with_resolver_eids = 0
     for row in rows:
@@ -727,6 +728,10 @@ def uk_effects_summary_counts(
         manual_compile_rule_counts[manual_rule_key] = (
             manual_compile_rule_counts.get(manual_rule_key, 0) + 1
         )
+        if manual_status_key == "manual_compile_candidate":
+            manual_compile_candidate_rule_counts[manual_rule_key] = (
+                manual_compile_candidate_rule_counts.get(manual_rule_key, 0) + 1
+            )
         template_status = _actionable_claim_template_status(
             statute_id=statute_id,
             row=row,
@@ -819,6 +824,9 @@ def uk_effects_summary_counts(
         "compare_shape_counts": dict(sorted(compare_shape_counts.items())),
         "manual_compile_status_counts": dict(sorted(manual_compile_status_counts.items())),
         "manual_compile_rule_counts": dict(sorted(manual_compile_rule_counts.items())),
+        "manual_compile_candidate_rule_counts": dict(
+            sorted(manual_compile_candidate_rule_counts.items())
+        ),
         "suggested_claim_template_status_counts": dict(
             sorted(suggested_claim_template_status_counts.items())
         ),
@@ -1434,6 +1442,14 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
     if manual_compile_rule_counts:
         print("Manual compile frontier rules:")
         for rule_id, count in manual_compile_rule_counts.items():
+            print(f"  {rule_id}: {count}")
+    manual_compile_candidate_rule_counts = summary_counts.get(
+        "manual_compile_candidate_rule_counts",
+        {},
+    )
+    if manual_compile_candidate_rule_counts:
+        print("Manual compile candidate rules:")
+        for rule_id, count in manual_compile_candidate_rule_counts.items():
             print(f"  {rule_id}: {count}")
     source_acquisition_rejection_rule_counts = summary_counts.get(
         "source_acquisition_rejection_rule_counts",
