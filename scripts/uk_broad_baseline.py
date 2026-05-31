@@ -82,6 +82,7 @@ def _similarity(replay_eids: set[str], oracle_eids: set[str]) -> float:
 def score_one(statute_id: str) -> dict[str, Any]:
     """Score one statute from the farchive. Returns a result dict (never raises)."""
     from farchive import Farchive
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
     from lawvm.uk_legislation.source_state import classify_uk_statute_xml_content
     from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
     from lawvm.uk_legislation.uk_grafter import extract_eid_map_bytes, parse_uk_statute_ir_bytes
@@ -134,6 +135,8 @@ def score_one(statute_id: str) -> dict[str, Any]:
         text_map = oracle_data.get("text_map", {})
 
         pipeline = UKReplayPipeline(REPO_ROOT)
+        effect_rows = load_effects_for_statute_from_archive(statute_id, archive)
+        result["n_effects"] = len(effect_rows)
         ops = pipeline.compile_ops_for_statute(statute_id, archive=archive)
         result["n_ops"] = len(ops)
 
@@ -225,6 +228,24 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     source_frontier_reasons = Counter(
         str(r.get("source_frontier_reason") or "unknown") for r in source_frontier
     )
+    source_chain_frontier_reasons = Counter(
+        reason
+        for r in results
+        if (reason := _source_chain_frontier_reason_for_row(r))
+    )
+    source_chain_frontier_statutes: dict[str, list[str]] = {}
+    for row in results:
+        reason = _source_chain_frontier_reason_for_row(row)
+        if not reason:
+            continue
+        statute_id = str(row.get("statute_id") or "")
+        if not statute_id:
+            continue
+        source_chain_frontier_statutes.setdefault(reason, []).append(statute_id)
+    source_chain_frontier_statutes = {
+        reason: sorted(statute_ids)
+        for reason, statute_ids in sorted(source_chain_frontier_statutes.items())
+    }
     zero_oracle_retention = [
         r
         for r in scored
@@ -236,6 +257,10 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "errored": errored,
         "source_frontier": source_frontier,
         "source_frontier_reasons": dict(sorted(source_frontier_reasons.items())),
+        "source_chain_frontier_reasons": dict(
+            sorted(source_chain_frontier_reasons.items())
+        ),
+        "source_chain_frontier_statutes": source_chain_frontier_statutes,
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "zero_oracle_retention_count": len(zero_oracle_retention),
         "zero_oracle_retention_eids": sum(
@@ -266,6 +291,12 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
     if unaligned >= _STRUCTURAL_MATCH_THRESHOLD:
         return "structural_match_eid_scheme_residual"
     if row.get("n_ops") is not None and int(row.get("n_ops") or 0) == 0:
+        if _has_effect_feed_absent_record(row):
+            return "effect_feed_absent_frontier"
+        if int(row.get("n_effects") or 0) == 0:
+            return "no_effect_rows_frontier"
+        if int(row.get("n_compile_rejections") or 0) > 0:
+            return "nonreplay_effect_frontier"
         return "no_compiled_ops_frontier"
     if (
         int(row.get("n_grounding_collateral") or 0) > 0
@@ -281,6 +312,22 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
     return "residual_after_grounding"
 
 
+def _source_chain_frontier_reason_for_row(row: dict[str, Any]) -> str:
+    """Classify acquisition/source-chain rows without changing score buckets."""
+    bucket = _triage_bucket_for_row(row)
+    if bucket.startswith("source_frontier:"):
+        return bucket.removeprefix("source_frontier:")
+    if bucket == "effect_feed_absent_frontier":
+        return "effect_feed_pages_absent"
+    if bucket == "no_effect_rows_frontier":
+        return "effect_rows_absent_or_unpublished"
+    if bucket != "nonreplay_effect_frontier":
+        return ""
+    if _has_missing_structural_payload_record(row):
+        return "effect_rows_missing_structural_payload"
+    return "effect_rows_nonreplayable"
+
+
 def _is_compile_rejection_dominated_residual(row: dict[str, Any]) -> bool:
     """Classify rows where explicit compile rejections dominate missing oracle state."""
     n_blocking_compile_rejections = int(row.get("n_blocking_compile_rejections") or 0)
@@ -289,6 +336,20 @@ def _is_compile_rejection_dominated_residual(row: dict[str, Any]) -> bool:
     n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
     n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
     return n_only_in_oracle >= max(1, n_only_in_replayed)
+
+
+def _has_effect_feed_absent_record(row: dict[str, Any]) -> bool:
+    counts = row.get("compile_rejection_rule_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    return int(counts.get("uk_effect_feed_pages_absent_recorded") or 0) > 0
+
+
+def _has_missing_structural_payload_record(row: dict[str, Any]) -> bool:
+    counts = row.get("compile_rejection_rule_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    return int(counts.get("uk_effect_missing_structural_payload_rejected") or 0) > 0
 
 
 def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
@@ -457,6 +518,15 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             for reason, count in summary["source_frontier_reasons"].items()
         )
         print(f"  source_frontier_reasons: {reasons}")
+    if summary["source_chain_frontier_reasons"]:
+        reasons = ", ".join(
+            f"{reason}={count}"
+            for reason, count in summary["source_chain_frontier_reasons"].items()
+        )
+        print(f"  source_chain_frontier_reasons: {reasons}")
+    if summary["source_chain_frontier_statutes"]:
+        for reason, statute_ids in summary["source_chain_frontier_statutes"].items():
+            print(f"  source_chain_frontier[{reason}]: {', '.join(statute_ids)}")
     if summary["triage_buckets"]:
         buckets = ", ".join(
             f"{bucket}={count}"
