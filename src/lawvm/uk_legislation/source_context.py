@@ -37,6 +37,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_outdented_child_source_selected,
     uk_affecting_act_parenthesized_range_source_extracted,
+    uk_affecting_act_single_unnumbered_schedule_context_ignored,
     uk_affecting_act_schedule_part_standalone_split_rejection,
     uk_affecting_act_class_unmapped_rejection,
     uk_affecting_act_single_amendment_child_source_selected,
@@ -51,6 +52,11 @@ from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text
 _COMPOUND_REFERENCE_KEYWORD_RE = re.compile(r"\b(?:Sch(?:edule)?|Part|Pt)\b", re.I)
 _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
     r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
+    re.I,
+)
+_SINGLE_UNNUMBERED_SCHEDULE_REF_RE = re.compile(
+    r"^sch(?:edule)?\.?\s+(?P<schedule>[0-9A-Za-z]+)\s+"
+    r"(?P<suffix>para(?:graph)?\.?\s+[0-9A-Za-z]+(?:\s*\([0-9A-Za-z]+\))*)$",
     re.I,
 )
 
@@ -874,6 +880,84 @@ def _implicit_first_subparagraph_context_normalized_ref(provision_ref: str) -> s
     return f"{match.group('prefix').strip()}({match.group('label').strip()})"
 
 
+def _single_unnumbered_schedule_context_normalized_ref(
+    provision_ref: str,
+) -> tuple[str, str] | None:
+    normalized = " ".join((provision_ref or "").split()).strip()
+    match = _SINGLE_UNNUMBERED_SCHEDULE_REF_RE.match(normalized)
+    if match is None:
+        return None
+    requested_schedule_label = _clean_num(match.group("schedule"))
+    if requested_schedule_label != "1":
+        return None
+    return requested_schedule_label, f"Sch. {match.group('suffix').strip()}"
+
+
+def _unique_unnumbered_root_schedule(context: UKAffectingSourceContext) -> Optional[ET._Element]:
+    if context.root is None:
+        return None
+    unnumbered_schedules: list[ET._Element] = []
+    for schedule in context.root.iter():
+        if _tag(schedule) != "Schedule":
+            continue
+        schedule_id = str(schedule.get("id") or schedule.get("Id") or "")
+        direct_label = _clean_num(_direct_structural_num(schedule))
+        if _get_id_sequence(schedule_id) in {(), ("schedule",)} and direct_label in {
+            "",
+            "schedule",
+        }:
+            unnumbered_schedules.append(schedule)
+    if len(unnumbered_schedules) != 1:
+        return None
+    return unnumbered_schedules[0]
+
+
+def _source_instruction_id_for_extracted(
+    context: UKAffectingSourceContext,
+    el: ET._Element,
+) -> str:
+    if context.parent_map is None:
+        return ""
+    source_instruction_tags = {"P1", "P2", "P3", "P4", "P5", "P6", "Paragraph"}
+    parent = el
+    while parent is not None:
+        if _tag(parent) in source_instruction_tags:
+            return str(parent.get("id") or parent.get("Id") or "")
+        parent = context.parent_map.get(parent)
+    return ""
+
+
+def _extract_single_unnumbered_schedule_context_source(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+) -> UKSourceExtractionResult:
+    normalized = _single_unnumbered_schedule_context_normalized_ref(
+        str(effect.affecting_provisions or "")
+    )
+    if normalized is None:
+        return _NO_SOURCE_EXTRACTION
+    requested_schedule_label, normalized_ref = normalized
+    schedule_el = _unique_unnumbered_root_schedule(context)
+    if schedule_el is None:
+        return _NO_SOURCE_EXTRACTION
+    normalized_el = _extract_from_affecting_source_context(context, normalized_ref)
+    if normalized_el is None:
+        return _NO_SOURCE_EXTRACTION
+    observation = uk_affecting_act_single_unnumbered_schedule_context_ignored(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        requested_schedule_label=requested_schedule_label,
+        normalized_affecting_provisions=normalized_ref,
+        schedule_element_id=str(schedule_el.get("id") or schedule_el.get("Id") or ""),
+        source_instruction_id=_source_instruction_id_for_extracted(context, normalized_el),
+        extracted_element_id=str(normalized_el.get("id") or normalized_el.get("Id") or ""),
+    )
+    return UKSourceExtractionResult(normalized_el, (observation,))
+
+
 def _article_schedule_payload_ref(provision_ref: str) -> str | None:
     normalized = " ".join((provision_ref or "").split()).strip()
     match = re.fullmatch(
@@ -1366,6 +1450,12 @@ def _extract_from_affecting_source_context_with_observations(
     range_el, range_observations = _extract_parenthesized_range_source(context, effect)
     if range_el is not None:
         return UKSourceExtractionResult(range_el, range_observations)
+
+    single_schedule_el, single_schedule_observations = (
+        _extract_single_unnumbered_schedule_context_source(context, effect)
+    )
+    if single_schedule_el is not None:
+        return UKSourceExtractionResult(single_schedule_el, single_schedule_observations)
 
     article_schedule_el, article_schedule_observations = _extract_article_schedule_payload_source(context, effect)
     if article_schedule_el is not None:

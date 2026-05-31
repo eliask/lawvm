@@ -15,6 +15,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_enacted_schedule_table_row_source_extracted,
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_single_amendment_child_source_selected,
+    uk_affecting_act_single_unnumbered_schedule_context_ignored,
     uk_affecting_act_xml_too_small_rejection,
     uk_source_state_wire_tuple,
 )
@@ -198,6 +199,32 @@ def test_article_schedule_payload_source_observation_is_typed_source_diagnostic(
             "schedule_element_id": "schedule",
         },
     )
+    assert is_uk_affecting_act_xml_source_observation(observation) is True
+    assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
+
+
+def test_single_unnumbered_schedule_context_observation_is_typed_source_diagnostic() -> None:
+    observation = uk_affecting_act_single_unnumbered_schedule_context_ignored(
+        effect_id="eff-1",
+        affecting_act_id="ssi/2006/536",
+        affecting_provisions="Sch. 1 para. 8",
+        locator="https://www.legislation.gov.uk/ssi/2006/536/data.xml",
+        authority_layer="AFFECTING_ACT_TEXT",
+        requested_schedule_label="1",
+        normalized_affecting_provisions="Sch. para. 8",
+        schedule_element_id="schedule",
+        source_instruction_id="schedule-paragraph-8",
+        extracted_element_id="",
+    )
+
+    assert observation["rule_id"] == "uk_affecting_act_single_unnumbered_schedule_context_ignored"
+    assert observation["family"] == "target_resolution_recovery"
+    assert observation["phase"] == "extraction"
+    assert observation["blocking"] is False
+    assert observation["strict_disposition"] == "record"
+    assert observation["requested_schedule_label"] == "1"
+    assert observation["normalized_affecting_provisions"] == "Sch. para. 8"
+    assert observation["source_instruction_id"] == "schedule-paragraph-8"
     assert is_uk_affecting_act_xml_source_observation(observation) is True
     assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
 

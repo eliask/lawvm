@@ -454,7 +454,7 @@ mutation into:
 
 Current 77-statute baseline snapshot:
 `scripts/baselines/uk_broad_2026-05-31.json`. It scores 77/77, mean aligned
-`80.99%`, mean aligned_no_gc `90.86%`, grounding-collateral `6169`,
+`81.01%`, mean aligned_no_gc `90.88%`, grounding-collateral `6169`,
 metadata-only base `1`, errors `0`, source-frontier `0`, and compare against
 itself is `0 improved, 0 regressed`. Current bucket split:
 `high_fidelity_after_grounding=49`, `grounding_dominated_residual=6`,
@@ -464,6 +464,17 @@ itself is `0 improved, 0 regressed`. Current bucket split:
 2026-05-30 snapshot is retained as historical context; after the wider-corpus
 fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
 local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
+
+**Single unnumbered Schedule extraction recovery (2026-05-31):**
+`ssi/2006/536` exposes its first source Schedule as unnumbered `schedule` while
+also exposing numbered `schedule-2` and `schedule-3`; the effect feed cites the
+first source row as `Sch. 1 para. 8`. LawVM now accepts `Sch. 1 para. X` as
+`Sch. para. X` only when there is exactly one visibly unnumbered Schedule and
+the requested schedule label is `1`, emitting
+`uk_affecting_act_single_unnumbered_schedule_context_ignored`. This recovered
+the source-owned payload for `ukpga/1976/38` s. 6(3A) without admitting a broad
+Schedule payload or rebinding any `Sch. 2+` reference. Broad gate result:
+`ukpga/1976/38` improved `91.92 -> 92.93`, 0 regressions.
 
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds

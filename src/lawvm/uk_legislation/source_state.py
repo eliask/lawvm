@@ -21,6 +21,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_missing_current_enacted_source_selected",
         "uk_affecting_act_single_amendment_child_source_selected",
         "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
+        "uk_affecting_act_single_unnumbered_schedule_context_ignored",
         "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
@@ -488,6 +489,42 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
         locator=locator,
         authority_layer=authority_layer,
         requested_part_label=requested_part_label,
+        extracted_element_id=extracted_element_id,
+    )
+
+
+def uk_affecting_act_single_unnumbered_schedule_context_ignored(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    requested_schedule_label: str,
+    normalized_affecting_provisions: str,
+    schedule_element_id: str,
+    source_instruction_id: str,
+    extracted_element_id: str,
+) -> dict[str, Any]:
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_single_unnumbered_schedule_context_ignored",
+        family="target_resolution_recovery",
+        phase="extraction",
+        reason=(
+            "UK effects metadata named Schedule 1, but the affecting XML exposes a "
+            "single unnumbered Schedule; LawVM accepted the paragraph reference only "
+            "after proving there is exactly one unnumbered first-Schedule context."
+        ),
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        requested_schedule_label=requested_schedule_label,
+        normalized_affecting_provisions=normalized_affecting_provisions,
+        schedule_element_id=schedule_element_id,
+        source_instruction_id=source_instruction_id,
         extracted_element_id=extracted_element_id,
     )
 
