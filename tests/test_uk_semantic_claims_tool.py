@@ -6766,8 +6766,11 @@ def test_uk_semantic_claims_validate_main_reports_wrong_live_target_schema(
 def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
     tmp_path: Path,
 ) -> None:
-    claim = _claim_row(source_preview="after the entry relating to X insert the row")
-    proposed_outcome = claim["proposed_outcome"]
+    target_text_hash = hashlib.sha256(b"table text").hexdigest()
+    accepted_claim = _claim_row(
+        source_preview="after the entry relating to X insert the row",
+    )
+    proposed_outcome = accepted_claim["proposed_outcome"]
     assert isinstance(proposed_outcome, dict)
     proposed_outcome["source_text_preconditions"] = [
         {
@@ -6775,7 +6778,37 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
             "contains": "entry relating to X",
         },
     ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": target_text_hash,
+        },
+    ]
     proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-names-anchor"],
+            "live_target_precondition_ids": ["live-table-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+    rejected_claim = _claim_row(
+        source_preview="after the entry relating to X insert the row",
+    )
+    rejected_outcome = rejected_claim["proposed_outcome"]
+    assert isinstance(rejected_outcome, dict)
+    rejected_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    rejected_outcome["operation_family_proofs"] = [
         {
             "proof_id": "proof-table-insert-anchor",
             "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
@@ -6787,7 +6820,19 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
         },
     ]
 
-    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (accepted_claim, rejected_claim),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1/table:1": {
+                        "text_sha256": target_text_hash,
+                        "subtree_sha256": "a" * 64,
+                    },
+                },
+            ),
+        ),
+    )
     report = uk_semantic_claims._validation_report_jsonable(
         input_path=tmp_path / "claims.jsonl",
         rows=rows,
@@ -6797,8 +6842,20 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
     assert "rows" not in report
     summary = report["summary"]
     assert summary["operation_family_proof_semantic_counts"] == {
+        "table_surface_insert_anchor_and_live_carrier": 2,
+    }
+    assert summary["accepted_operation_family_proof_semantic_counts"] == {
+        "table_surface_insert_anchor_and_live_carrier": 1,
+    }
+    assert summary["rejected_operation_family_proof_semantic_counts"] == {
         "table_surface_insert_anchor_and_live_carrier": 1,
     }
     assert summary["operation_family_proof_family_counts"] == {
+        "table_surface_mutation": 2,
+    }
+    assert summary["accepted_operation_family_proof_family_counts"] == {
+        "table_surface_mutation": 1,
+    }
+    assert summary["rejected_operation_family_proof_family_counts"] == {
         "table_surface_mutation": 1,
     }
