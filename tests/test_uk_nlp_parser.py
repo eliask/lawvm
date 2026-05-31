@@ -1126,6 +1126,22 @@ def test_parse_fragment_substitution_scopes_after_anchor_all_occurrence_insert_t
     ]
 
 
+def test_parse_fragment_substitution_scopes_before_anchor_insert_to_definition_child() -> None:
+    subs = parse_fragment_substitution(
+        "3 In section 336(1) (interpretation), in the definition of \u201cwaste\u201d "
+        "at the end of paragraph (a), before the \u201cand\u201d insert "
+        "\u201cas last amended by Council Regulation (EU) 2017/997,\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_waste{US}a{US}and",
+            "replacement": "as last amended by Council Regulation (EU) 2017/997, and",
+            "rule_id": "uk_effect_in_definition_child_before_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_with_parenthetical_aside() -> None:
     subs = parse_fragment_substitution(
         "7 In paragraph 21, after \u201c FA 2021 \u201d "

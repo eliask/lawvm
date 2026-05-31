@@ -26,6 +26,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID,
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
+    UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
     UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID,
@@ -583,6 +584,29 @@ def append_basic_text_rewrite_observations(
                 "UK source text inserts words after a quoted anchor inside a "
                 "named definition; lowering preserves the definition-scoped "
                 "selector instead of rewriting every matching anchor in the host target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_definition_child_before_anchor_insert_text_patch",
+            reason=(
+                "UK source text inserts words before a quoted anchor inside a "
+                "named definition child; lowering preserves the definition term "
+                "and child label instead of rewriting every matching anchor in "
+                "the host target."
             ),
             effect=effect,
             extracted_el=extracted_el,

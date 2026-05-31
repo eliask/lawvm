@@ -184,6 +184,9 @@ UK_AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RULE_ID = (
 UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID = (
     "uk_effect_after_words_in_brackets_insert_text_patch"
 )
+UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID = (
+    "uk_effect_in_definition_child_before_anchor_insert_text_patch"
+)
 UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
@@ -2663,6 +2666,30 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 }
             )
 
+    matches_in_definition_child_before_insert = re.finditer(
+        r"in the definition of [“\"'‘](?P<term>.*?)[”\"'’],?\s+"
+        r"(?:at the end of\s+)?paragraph\s+\((?P<label>[0-9A-Za-z]+)\),?\s+"
+        r"before\s+(?:the\s+)?[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+        r"(?:there is inserted|there are inserted|there shall be inserted|insert)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_in_definition_child_before_insert:
+        term = m.group("term").strip()
+        label = m.group("label").strip()
+        anchor = m.group("anchor").strip()
+        inserted = m.group("inserted").strip()
+        if term and label and anchor and inserted:
+            joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "
+            subs.append(
+                {
+                    "original": f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_{term}{US}{label}{US}{anchor}",
+                    "replacement": f"{inserted}{joiner}{anchor}",
+                    "rule_id": UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID,
+                }
+            )
+
     matches_after_insert = re.finditer(
         r"after [“\"'‘](.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
@@ -2727,6 +2754,14 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         re.I,
     )
     for m in matches_before_insert:
+        if re.search(
+            r"\bin\s+the\s+definition\s+of\s+[“\"'‘].*?[”\"'’]"
+            r"(?:(?!\bin\s+the\s+definition\b).){0,260}?"
+            r"\bparagraph\s+\([0-9A-Za-z]+\)",
+            text[: m.start()],
+            re.I | re.S,
+        ):
+            continue
         original = m.group(1)
         inserted = m.group(3)
         joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "

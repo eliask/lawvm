@@ -614,6 +614,18 @@ rows `122 -> 120`, and blocking compile diagnostics `123 -> 121`; the broad
 gate additionally lowers one `eur/2019/1021` row from the same family and
 remains score-stable (`0 improved, 0 regressed`).
 
+Definition-child before-anchor insertions are source-owned when the row names
+the definition term, the child label, and the quoted anchor inside that child.
+The parser lowers `in the definition of "D" at the end of paragraph (a), before
+the "and" insert "X"` to a bounded `TEXT_IN_DEFINITION_CHILD_PARAGRAPH_D/a/and`
+text replacement under `uk_effect_in_definition_child_before_anchor_insert_text_patch`.
+Replay may replace only the matching definition child text; it must not rewrite
+the host subsection or every `and` in the target. Current witness:
+`ukpga/1990/8` affected `s. 336(1)` by `uksi/2018/1232` reg. 2(3). This cuts
+`ukpga/1990/8` overlap blockers `3 -> 2` and blocking compile diagnostics
+`121 -> 120`; the 77-statute gate remains score-stable (`0 improved,
+0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints

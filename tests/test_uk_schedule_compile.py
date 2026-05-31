@@ -28876,6 +28876,120 @@ def test_compile_source_carried_definition_child_at_end_block_insert() -> None:
     )
 
 
+def test_compile_definition_child_before_anchor_insert_replays_inside_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="regulation-2-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 336(1) (interpretation), in the definition of “waste” at the end of paragraph (a), before the “and” insert “as last amended by Council Regulation (EU) 2017/997,”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-de3f148884e1194d05b26e5b439b4bd3",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-12-31",
+        affected_uri="/id/ukpga/1990/8/section/336/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 336(1)",
+        affecting_uri="/id/uksi/2018/1232",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2018",
+        affecting_number="1232",
+        affecting_provisions="reg. 2(3)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2018-12-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "336"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_waste{US}a{US}and"
+    )
+    assert (
+        ops[0].text_patch.replacement
+        == "as last amended by Council Regulation (EU) 2017/997, and"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_in_definition_child_before_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_in_definition_child_before_anchor_insert_text_patch"
+        and record["reason_code"] == "explicit_definition_child_before_anchor_insert_text_patch"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1990/8",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="336",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="In this Act, “waste” means—",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text=(
+                                        "anything which is waste for the purposes of "
+                                        "Directive 2008/98/EC, and"
+                                    ),
+                                    attrs={
+                                        "definition_term": "waste",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    child = replayed.body.children[0].children[0].children[0]
+    assert child.text == (
+        "anything which is waste for the purposes of Directive 2008/98/EC, "
+        "as last amended by Council Regulation (EU) 2017/997, and"
+    )
+    assert any(
+        row.kind == "uk_replay_in_definition_child_structured_text_rewrite_applied"
+        and row.detail["blocking"] is False
+        for row in adjudications
+    )
+
+
 def test_compile_definition_child_substitution_scopes_to_source_parent_definition() -> None:
     source_root = ET.fromstring(
         f"""
