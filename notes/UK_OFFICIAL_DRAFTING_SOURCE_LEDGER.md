@@ -465,6 +465,12 @@ itself is `0 improved, 0 regressed`. Current bucket split:
 fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
 local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
 
+`lawvm uk-misses` now mirrors this distinction: JSON output retains
+`rejection_rule_counts` for all compile diagnostics and adds
+`blocking_rejection_rule_counts` for strict replay barriers; human output prints
+separate "COMPILE DIAGNOSTICS" and "BLOCKING COMPILE REJECTIONS" sections. This
+keeps statute-level miss triage aligned with broad-baseline workqueue semantics.
+
 ---
 
 ## Remaining source-ledger-derived candidates
