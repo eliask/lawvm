@@ -262,9 +262,10 @@ validator has not checked source/live state. Non-operation outcomes are also
 shape-checked: non-replayable findings, source pathologies, oracle adjudications,
 and source-evidence requests must carry typed payloads. If a claim declares
 `source_text_preconditions`, the validator checks exact snippets, and optional
-snippet SHA-256 hashes, against supplied claim/workqueue source previews. Passing
-source-text preconditions produce `validated_provenance_and_source_text_only`
-when no live-target index is supplied. If `--live-targets-jsonl` is supplied,
+snippet SHA-256 hashes and exact/min/max snippet occurrence counts, against
+supplied claim/workqueue source previews. Passing source-text preconditions
+produce `validated_provenance_and_source_text_only` when no live-target index is
+supplied. If `--live-targets-jsonl` is supplied,
 canonical-operation claims are additionally checked against a non-executable
 live target index: replace/repeal/text/heading/renumber targets must exist and
 insert targets must have an existing parent carrier. The same index carries

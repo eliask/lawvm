@@ -161,8 +161,10 @@ The current validator checks only:
   are present in the matched workqueue row
 - optional consistency of declared `source_text_preconditions` against supplied
   claim/workqueue source previews: a claim may require exact source snippets,
-  optionally with snippet SHA-256, and the validator rejects the claim if the
-  supplied source witness does not carry them
+  optionally with snippet SHA-256 and source-preview occurrence counts, and the
+  validator rejects the claim if the supplied source witness does not carry them
+  or if its non-overlapping snippet count violates a declared exact/min/max
+  occurrence bound
 - consistency of declared claim target context with matched non-executable
   template carriers: when a template publishes `source_target_address` or
   `destination_address`, the claim must echo the same address in top-level
@@ -217,7 +219,8 @@ If the claim declares matching `source_text_preconditions`, accepted rows use
 index is supplied. If both source-text preconditions and live-target gates pass,
 the accepted status combines those surfaces. These rows remain non-executable
 and keep `replay_authorized=false`; exact source snippets in a bounded preview
-are evidence, not proof that the whole operation family is replay-safe.
+and optional source-preview occurrence counts are evidence, not proof that the
+whole operation family is replay-safe.
 
 If the claim also declares matching `live_target_preconditions`, accepted rows
 use `validator_status=validated_provenance_live_targets_and_preconditions_only`.

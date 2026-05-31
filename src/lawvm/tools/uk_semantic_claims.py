@@ -3955,11 +3955,96 @@ def _validate_source_text_preconditions(
         if not source_texts:
             issues.append(f"{prefix} cannot be checked because no source text preview is supplied")
             continue
-        if not any(snippet in source_text for source_text in source_texts):
+        matching_texts = tuple(
+            source_text for source_text in source_texts if snippet in source_text
+        )
+        if not matching_texts:
             issues.append(f"{prefix}.contains {snippet!r} is absent from supplied source text")
+            continue
+        count_issues = _source_text_precondition_count_issues(
+            prefix=prefix,
+            precondition=precondition,
+            snippet=snippet,
+            matching_texts=matching_texts,
+        )
+        if count_issues:
+            issues.extend(count_issues)
             continue
         checked = True
     return tuple(issues), checked
+
+
+def _source_text_precondition_count_issues(
+    *,
+    prefix: str,
+    precondition: Mapping[str, Any],
+    snippet: str,
+    matching_texts: tuple[str, ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    counts = tuple(source_text.count(snippet) for source_text in matching_texts)
+    exact_count = _optional_nonnegative_int(
+        precondition,
+        ("occurrence_count", "count"),
+    )
+    if exact_count is None and _has_any_key(precondition, ("occurrence_count", "count")):
+        issues.append(f"{prefix}.occurrence_count must be a non-negative integer")
+    elif exact_count is not None and exact_count not in counts:
+        issues.append(
+            f"{prefix}.occurrence_count {exact_count} does not match supplied "
+            f"source text counts {list(counts)} for {snippet!r}"
+        )
+    min_count = _optional_nonnegative_int(
+        precondition,
+        ("min_occurrences", "minimum_occurrence_count"),
+    )
+    if min_count is None and _has_any_key(
+        precondition,
+        ("min_occurrences", "minimum_occurrence_count"),
+    ):
+        issues.append(f"{prefix}.min_occurrences must be a non-negative integer")
+    elif min_count is not None and not any(count >= min_count for count in counts):
+        issues.append(
+            f"{prefix}.min_occurrences {min_count} exceeds supplied source text "
+            f"counts {list(counts)} for {snippet!r}"
+        )
+    max_count = _optional_nonnegative_int(
+        precondition,
+        ("max_occurrences", "maximum_occurrence_count"),
+    )
+    if max_count is None and _has_any_key(
+        precondition,
+        ("max_occurrences", "maximum_occurrence_count"),
+    ):
+        issues.append(f"{prefix}.max_occurrences must be a non-negative integer")
+    elif max_count is not None and not any(count <= max_count for count in counts):
+        issues.append(
+            f"{prefix}.max_occurrences {max_count} is below supplied source text "
+            f"counts {list(counts)} for {snippet!r}"
+        )
+    return tuple(issues)
+
+
+def _optional_nonnegative_int(
+    row: Mapping[str, Any],
+    keys: tuple[str, ...],
+) -> int | None:
+    for key in keys:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int) and value >= 0:
+            return value
+        if isinstance(value, str) and value.isdecimal():
+            return int(value)
+        return None
+    return None
+
+
+def _has_any_key(row: Mapping[str, Any], keys: tuple[str, ...]) -> bool:
+    return any(key in row for key in keys)
 
 
 def _template_target_context_issues(
