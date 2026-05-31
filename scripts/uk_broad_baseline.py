@@ -321,17 +321,15 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     source_chain_frontier_reasons = Counter(
         reason
         for r in results
-        if (reason := _source_chain_frontier_reason_for_row(r))
+        for reason in _source_chain_frontier_reasons_for_row(r)
     )
     source_chain_frontier_statutes: dict[str, list[str]] = {}
     for row in results:
-        reason = _source_chain_frontier_reason_for_row(row)
-        if not reason:
-            continue
-        statute_id = str(row.get("statute_id") or "")
-        if not statute_id:
-            continue
-        source_chain_frontier_statutes.setdefault(reason, []).append(statute_id)
+        for reason in _source_chain_frontier_reasons_for_row(row):
+            statute_id = str(row.get("statute_id") or "")
+            if not statute_id:
+                continue
+            source_chain_frontier_statutes.setdefault(reason, []).append(statute_id)
     source_chain_frontier_statutes = {
         reason: sorted(statute_ids)
         for reason, statute_ids in sorted(source_chain_frontier_statutes.items())
@@ -445,9 +443,12 @@ def _triage_bucket_statutes(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
 def _annotate_row_work_selection(row: dict[str, Any]) -> dict[str, Any]:
     """Add machine-readable work-selection fields to one baseline row."""
     row["triage_bucket"] = _triage_bucket_for_row(row)
-    source_chain_reason = _source_chain_frontier_reason_for_row(row)
-    row["source_chain_frontier"] = bool(source_chain_reason)
-    row["source_chain_frontier_reason"] = source_chain_reason
+    source_chain_reasons = _source_chain_frontier_reasons_for_row(row)
+    row["source_chain_frontier"] = bool(source_chain_reasons)
+    row["source_chain_frontier_reason"] = (
+        source_chain_reasons[0] if source_chain_reasons else ""
+    )
+    row["source_chain_frontier_reasons"] = list(source_chain_reasons)
     return row
 
 
@@ -497,18 +498,28 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
 
 def _source_chain_frontier_reason_for_row(row: dict[str, Any]) -> str:
     """Classify acquisition/source-chain rows without changing score buckets."""
+    reasons = _source_chain_frontier_reasons_for_row(row)
+    return reasons[0] if reasons else ""
+
+
+def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ...]:
+    """Classify acquisition/source-chain reasons without changing score buckets."""
+    reasons: list[str] = []
     bucket = _triage_bucket_for_row(row)
     if bucket.startswith("source_frontier:"):
-        return bucket.removeprefix("source_frontier:")
-    if bucket == "effect_feed_absent_frontier":
-        return "effect_feed_pages_absent"
-    if bucket == "no_effect_rows_frontier":
-        return "effect_rows_absent_or_unpublished"
-    if bucket != "nonreplay_effect_frontier":
-        return ""
-    if _has_missing_structural_payload_record(row):
-        return "effect_rows_missing_structural_payload"
-    return "effect_rows_nonreplayable"
+        reasons.append(bucket.removeprefix("source_frontier:"))
+    elif bucket == "effect_feed_absent_frontier":
+        reasons.append("effect_feed_pages_absent")
+    elif bucket == "no_effect_rows_frontier":
+        reasons.append("effect_rows_absent_or_unpublished")
+    elif bucket == "nonreplay_effect_frontier":
+        if _has_missing_structural_payload_record(row):
+            reasons.append("effect_rows_missing_structural_payload")
+        else:
+            reasons.append("effect_rows_nonreplayable")
+    if _has_manual_frontier_source_insufficient_record(row):
+        reasons.append("manual_frontier_source_insufficient")
+    return tuple(dict.fromkeys(reasons))
 
 
 def _is_compile_rejection_dominated_residual(row: dict[str, Any]) -> bool:
@@ -533,6 +544,13 @@ def _has_missing_structural_payload_record(row: dict[str, Any]) -> bool:
     if not isinstance(counts, dict):
         return False
     return int(counts.get("uk_effect_missing_structural_payload_rejected") or 0) > 0
+
+
+def _has_manual_frontier_source_insufficient_record(row: dict[str, Any]) -> bool:
+    counts = row.get("manual_frontier_status_counts") or {}
+    if not isinstance(counts, dict):
+        return False
+    return int(counts.get("source_insufficient") or 0) > 0
 
 
 def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
