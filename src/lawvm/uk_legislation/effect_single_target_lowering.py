@@ -74,6 +74,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
 from lawvm.uk_legislation.source_payload_helpers import infer_source_payload_from_target
 from lawvm.uk_legislation.source_structural_sibling import lower_source_structural_sibling_insert
 from lawvm.uk_legislation.source_text_reclassifications import (
+    reclassify_word_level_structural_child_substitution,
     reclassify_word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.substitution_metadata import UKSourceLabelChangingSubstitution
@@ -729,6 +730,20 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
     )
     curr_action = structural_omission_reclassification.curr_action
     content_ir = structural_omission_reclassification.content_ir
+    structural_child_substitution_reclassification = (
+        reclassify_word_level_structural_child_substitution(
+            effect=effect,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            target=target,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+    )
+    curr_action = structural_child_substitution_reclassification.curr_action
+    content_ir = structural_child_substitution_reclassification.content_ir
 
     definition_child_text_omission_lowering = lower_source_carried_definition_child_text_omission(
         effect=effect,
