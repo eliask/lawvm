@@ -578,7 +578,9 @@ claim-template coverage. The broad summary also
 prints `active_unclassified_residuals`; this must stay at `0` for the curated
 77-statute gate if the UK frontend is to remain at the "done modulo
 manual/source frontiers" line. Any nonzero row is a regression in workqueue
-classification or a new deterministic family to investigate.
+classification or a new deterministic family to investigate. Use
+`scripts/uk_broad_baseline.py --fail-on-active-unclassified-residuals` when this
+condition should be machine-enforced rather than inspected from summary text.
 
 **Replay adjudication JSON surface correction (2026-05-31):**
 `uk-replay --json` now includes `replay_adjudication_bucket_counts` alongside
