@@ -286,9 +286,10 @@ a proof-plan reference check only; statuses such as `proved` or `validated` are
 rejected. Family-specific proof semantics resolve `live_target_precondition_ids`
 only to the paths on those referenced live precondition rows; unrelated live
 preconditions declared elsewhere in the claim do not widen the proof's target
-carrier set. Family-specific live path fields, such as cross-container renumber
-source/destination live carriers, must also be inside the proof's referenced
-live carrier set rather than merely existing somewhere else in the claim. Live
+carrier set. Family-specific live path fields, such as appropriate-place anchor
+paths and cross-container renumber source/destination live carriers, must also
+be inside the proof's referenced live carrier set rather than merely existing
+somewhere else in the claim. Live
 precondition ids, validator-check ids, and ownership ids must
 be unique schema declarations, even before live-target or proof matching, so an
 id cannot merge multiple carrier paths or proof-obligation rows. The first
