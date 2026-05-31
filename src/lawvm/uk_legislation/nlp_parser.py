@@ -169,6 +169,9 @@ _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
 )
+UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"
+)
 UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
@@ -1793,7 +1796,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"in (?:(?:each|both) places?|each place|each of the two places)"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|occurring|appear)s?(?:\s+in\s+[^,;]+)?)?))?"
-        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
+        r"(?P<insert_separator>\s*,?\s+)(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
@@ -1802,7 +1805,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         if re.search(r"in the definition of [“\"'‘].*?[”\"'’],?\s*$", text[: m.start()], re.I):
             continue
         original = m.group(1)
-        inserted = m.group(3)
+        inserted = m.group(4)
         joiner = (
             ""
             if original.endswith((" ", "\t", "\n", "\r"))
@@ -1813,8 +1816,11 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
             "original": original,
             "replacement": f"{original}{joiner}{inserted}",
         }
+        insert_separator = m.group("insert_separator")
         if m.group("all_occurrences"):
             patch["rule_id"] = "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
+        elif insert_separator.startswith((" ", "\t", "\n", "\r")) and "," in insert_separator:
+            patch["rule_id"] = UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID
         else:
             patch["rule_id"] = "uk_effect_after_quoted_anchor_insert_text_patch"
         subs.append(patch)
@@ -2514,7 +2520,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"(?P<all_occurrences>,?\s+in (?:(?:each|both) places?|each of the two places)"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
-        r",?\s+(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
+        r"(?P<insert_separator>\s*,?\s+)(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
@@ -2523,7 +2529,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         if re.search(r"in the definition of [“\"'‘].*?[”\"'’],?\s*$", text[: m.start()], re.I):
             continue
         original = m.group(1)
-        inserted = m.group(3)
+        inserted = m.group(4)
         joiner = (
             ""
             if original.endswith((" ", "\t", "\n", "\r"))
@@ -2534,8 +2540,11 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
             "original": original,
             "replacement": f"{original}{joiner}{inserted}",
         }
+        insert_separator = m.group("insert_separator")
         if m.group("all_occurrences"):
             patch["rule_id"] = "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
+        elif insert_separator.startswith((" ", "\t", "\n", "\r")) and "," in insert_separator:
+            patch["rule_id"] = UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID
         else:
             patch["rule_id"] = "uk_effect_after_quoted_anchor_insert_text_patch"
         subs.append(patch)
