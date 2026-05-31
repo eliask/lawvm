@@ -150,6 +150,7 @@ Manual frontier claim templates:
 - these templates are non-executable review scaffolds; they do not authorize replay and must remain marked `template_only_not_validated` / `executable=false`
 - a claim template should state the action family, placement family, source witness, required ownership, required validator checks, and mutation-boundary checks before any future manual/LLM/human compiled claim can become executable
 - current template-covered UK hard families include heading/crossheading/note facets, appropriate-place structural inserts, table surface mutations, definition-child plus tail substitutions, source-carried child/tail text rewrites, source-carried structured payloads, range-to-container substitutions, amendment-program targets, and cross-container renumber / migration rows
+- semantic-claim source-text ordering references are declaration surfaces: duplicate `after_precondition_ids` / `before_precondition_ids` entries are rejected instead of being collapsed as sets
 - cross-container renumber rows are lineage work, not same-parent relabels: a future executable claim must own source identity, destination identity, descendant wrapping or relabel semantics, lineage/migration events, and both source/destination mutation boundaries
 - source-carried structured-tail substitutions are not ordinary text patches: the source substitutes a tail range with visibly structured child material, so a future executable claim must materialize child payload units rather than flattening replacement text into the parent host
 

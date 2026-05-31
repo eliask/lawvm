@@ -175,10 +175,11 @@ The current validator checks only:
   source precondition ids; the validator rejects the claim if the supplied
   source witness does not carry them, if its non-overlapping snippet count
   violates a declared exact/min/max occurrence bound, if referenced source
-  precondition ids are missing or duplicated, or if the ordered snippets do not
-  appear uniquely in the same supplied source preview in the declared order;
-  multi-occurrence ordering requires a future explicit ordinal/span claim rather
-  than first-occurrence matching
+  precondition ids are missing or duplicated, if ordering reference lists repeat
+  the same precondition id, or if the ordered snippets do not appear uniquely in
+  the same supplied source preview in the declared order; multi-occurrence
+  ordering requires a future explicit ordinal/span claim rather than
+  first-occurrence matching
 - consistency of declared claim target context with matched non-executable
   template carriers: when a template publishes `source_target_address` or
   `destination_address`, the claim must echo the same address in top-level
@@ -263,7 +264,10 @@ optional source-preview occurrence counts, and optional source-snippet order
 relationships are evidence, not proof that the whole operation family is
 replay-safe. Ordered snippets must be unique in the checked source preview; if
 they are repeated, the validator rejects the order claim until an explicit
-ordinal/span claim form exists.
+ordinal/span claim form exists. Ordered-snippet reference lists are also
+duplicate-sensitive, so repeating the same `after_precondition_ids` or
+`before_precondition_ids` reference is rejected before interpreting the
+relationship.
 
 If the claim also declares matching `live_target_preconditions`, accepted rows
 use `validator_status=validated_provenance_live_targets_and_preconditions_only`.

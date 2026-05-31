@@ -4423,16 +4423,26 @@ def _source_text_precondition_relative_order_issues(
     source_texts: tuple[str, ...],
 ) -> tuple[str, ...]:
     issues: list[str] = []
-    reference_ids = _string_tuple_from_first_value(precondition, relation_keys)
+    relation_key, reference_ids = _string_tuple_and_key_from_first_value(
+        precondition,
+        relation_keys,
+    )
     if not reference_ids:
         return ()
+    issues.extend(
+        _duplicate_string_reference_issues(
+            prefix=prefix,
+            field=relation_key,
+            values=reference_ids,
+        )
+    )
     if not _optional_string(precondition, "precondition_id"):
-        issues.append(f"{prefix}.{relation_keys[0]} requires precondition_id")
+        issues.append(f"{prefix}.{relation_key} requires precondition_id")
     for reference_id in reference_ids:
         reference = by_id.get(reference_id)
         if reference is None:
             issues.append(
-                f"{prefix}.{relation_keys[0]} references unknown source text "
+                f"{prefix}.{relation_key} references unknown source text "
                 f"precondition {reference_id!r}"
             )
             continue
@@ -4440,7 +4450,7 @@ def _source_text_precondition_relative_order_issues(
         reference_snippet = _source_text_precondition_snippet(reference_precondition)
         if not reference_snippet:
             issues.append(
-                f"{prefix}.{relation_keys[0]} references "
+                f"{prefix}.{relation_key} references "
                 f"source_text_preconditions[{reference_index}] without contains"
             )
             continue
@@ -4451,7 +4461,7 @@ def _source_text_precondition_relative_order_issues(
         )
         if not common_texts:
             issues.append(
-                f"{prefix}.{relation_keys[0]} cannot be checked because "
+                f"{prefix}.{relation_key} cannot be checked because "
                 f"{current_snippet!r} and {reference_snippet!r} do not occur in "
                 "the same supplied source text"
             )
@@ -4459,7 +4469,7 @@ def _source_text_precondition_relative_order_issues(
         uniqueness_issues = _source_text_precondition_order_uniqueness_issues(
             prefix=prefix,
             relation=relation,
-            relation_key=relation_keys[0],
+            relation_key=relation_key,
             current_snippet=current_snippet,
             reference_id=reference_id,
             reference_snippet=reference_snippet,
@@ -4480,7 +4490,7 @@ def _source_text_precondition_relative_order_issues(
         ]
         if reversed_texts:
             issues.append(
-                f"{prefix}.{relation_keys[0]} {relation} "
+                f"{prefix}.{relation_key} {relation} "
                 f"{reference_id!r} is not satisfied by supplied source text "
                 f"indexes {reversed_texts}"
             )
@@ -4527,14 +4537,14 @@ def _source_text_precondition_order_is_reversed(
     return current_index >= reference_index
 
 
-def _string_tuple_from_first_value(
+def _string_tuple_and_key_from_first_value(
     row: Mapping[str, Any],
     keys: tuple[str, ...],
-) -> tuple[str, ...]:
+) -> tuple[str, tuple[str, ...]]:
     for key in keys:
         if key in row:
-            return _string_tuple_from_value(row.get(key))
-    return ()
+            return key, _string_tuple_from_value(row.get(key))
+    return keys[0], ()
 
 
 def _optional_nonnegative_int(
