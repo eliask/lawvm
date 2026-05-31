@@ -44,6 +44,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_RANGE_REPEAL_RULE_ID,
     UK_RANGE_SUBSTITUTION_RULE_ID,
     UK_RANGE_UNQUOTED_SUBSTITUTION_RULE_ID,
+    UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID,
     UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
     UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID,
     US,
@@ -74,6 +75,15 @@ UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
 )
 UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_after_substitute_insert_text_patch"
+)
+UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID = (
+    "uk_effect_metadata_carried_at_end_substitute_insert_text_patch"
+)
+UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID = (
+    "uk_effect_target_scoped_each_child_after_word_insert_text_patch"
+)
+UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID = (
+    "uk_effect_source_parent_carried_after_word_ordinal_insert_text_patch"
 )
 UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
 UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
@@ -468,6 +478,94 @@ def append_basic_text_rewrite_observations(
                     "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
                 },
             )
+    if UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="effect_metadata_insert_at_end_substitute_source",
+                reason=(
+                    "UK effect metadata classifies the row as inserted words while "
+                    "the source phrase says at the end of the target substitute "
+                    "quoted words; lowering preserves this as an owned TEXT_END "
+                    "insert rather than silently changing the action family."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": "TEXT_END",
+                    "canonical_text_match": "TEXT_END",
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": 0,
+                },
+            )
+    if UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_each_child_after_word_insert_scoped_by_feed_target",
+                reason=(
+                    "UK source text inserts after a quoted word in each listed "
+                    "child provision, while the effect feed provides one row per "
+                    "child target; lowering applies only to the explicit feed "
+                    "target child and does not mutate sibling children."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": 0,
+                },
+            )
+    if UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="source_parent_carried_after_word_ordinal_insert",
+                reason=(
+                    "UK source child row carries only the ordinal occurrence and "
+                    "inserted words; its source parent supplies the quoted anchor. "
+                    "Lowering records that parent-carried anchor instead of "
+                    "guessing from the target text."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
     if UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID in rule_ids:
         for fragment in fragment_subs or []:
             if str(fragment.get("rule_id") or "") != UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID:
@@ -796,6 +894,28 @@ def append_basic_text_rewrite_observations(
             reason_code="explicit_range_to_end_there_is_substituted_text_patch",
             reason=(
                 "UK source text uses the drafting form 'there is substituted' "
+                "for a word-level range ending at the end of the target; lowering "
+                "preserves that as a bounded TEXT_FROM_*_TO_END text patch."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_to_end_quoted_dash_substitution",
+            reason=(
+                "UK source text substitutes a quoted replacement after a dash "
                 "for a word-level range ending at the end of the target; lowering "
                 "preserves that as a bounded TEXT_FROM_*_TO_END text patch."
             ),

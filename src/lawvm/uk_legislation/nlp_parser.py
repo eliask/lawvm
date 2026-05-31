@@ -213,6 +213,9 @@ UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID = (
 UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID = (
     "uk_effect_range_to_end_ordinal_block_substitution_text_patch"
 )
+UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID = (
+    "uk_effect_range_to_end_quoted_dash_substitution_text_patch"
+)
 UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_labeled_end_range_substitution_text_patch"
 )
@@ -962,7 +965,9 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"where\s+(?:(?:it|they|those words?)\s+)"
         r"(?:occurs?|appear)s?\s+"
+        r"(?:for\s+the\s+)?"
         r"(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th),?\s+"
+        r"(?:time,?\s+)?"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
         r"\s+[“”\"'‘](.*?)[”\"'’]",
         text,
@@ -1352,7 +1357,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
         r" (?:to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
-        r"(?P<verb>substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+        r"(?P<verb>substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+        r"\s*(?P<dash>[—-])?\s+"
         r"(?:(?:the\s+)?words?\s+)?"
         r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
@@ -1365,6 +1371,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         }
         if m.group("verb").lower().startswith("there"):
             patch["rule_id"] = "uk_effect_range_to_end_there_is_substituted_text_patch"
+        elif m.group("dash"):
+            patch["rule_id"] = UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID
         if m.group("ordinal"):
             patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
         subs.append(patch)

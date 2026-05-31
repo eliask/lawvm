@@ -92,7 +92,10 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
+    UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
+    UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID,
+    UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.uk_grafter import _clean_num
@@ -101,11 +104,9 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 _UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
     "uk_effect_word_substitution_escalated_to_structural_replace"
 )
-_AFTER_ANCHOR_SUBSTITUTE_METADATA_INSERT_RE = re.compile(
-    r"\bafter\s+(?:the\s+words?\s+|the\s+word\s+)?"
-    r"[“\"'‘](?P<anchor>[^”\"'’]{1,500})[”\"'’]"
-    r"(?P<scope>[^“\"'‘]{0,300}?)"
-    r"\bsubstitute\s+[“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
+_SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
+    rf"\bwhere it (?P<ordinal>{'|'.join(re.escape(key) for key in _ORDINAL_OCCURRENCES)}) "
+    r"occurs?,? insert [“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
     flags=re.I,
 )
 
@@ -670,6 +671,37 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_after_substitute_insert is not None:
             subs = [metadata_carried_after_substitute_insert]
+    if not subs:
+        metadata_carried_at_end_substitute_insert = (
+            _effect_metadata_carried_at_end_substitute_insert_fragment(
+                effect=effect,
+                target=target,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_at_end_substitute_insert is not None:
+            subs = [metadata_carried_at_end_substitute_insert]
+    if not subs:
+        target_scoped_each_child_after_word_insert = (
+            _effect_target_scoped_each_child_after_word_insert_fragment(
+                effect=effect,
+                target=target,
+                extracted_text=extracted_text,
+            )
+        )
+        if target_scoped_each_child_after_word_insert is not None:
+            subs = [target_scoped_each_child_after_word_insert]
+    if not subs:
+        source_parent_carried_after_word_ordinal_insert = (
+            _effect_source_parent_carried_after_word_ordinal_insert_fragment(
+                effect=effect,
+                target=target,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+            )
+        )
+        if source_parent_carried_after_word_ordinal_insert is not None:
+            subs = [source_parent_carried_after_word_ordinal_insert]
     if not subs:
         metadata_carried_definition_entry_repeals = (
             _effect_metadata_carried_definition_entry_repeal_fragments(
@@ -1466,11 +1498,10 @@ def _effect_metadata_carried_after_substitute_insert_fragment(
     text = " ".join(str(extracted_text or "").split()).strip()
     if not text:
         return None
-    match = _AFTER_ANCHOR_SUBSTITUTE_METADATA_INSERT_RE.search(text)
-    if match is None:
+    parsed = _parse_after_anchor_substitute_insert(text)
+    if parsed is None:
         return None
-    anchor = match.group("anchor").strip()
-    inserted = match.group("inserted").strip()
+    anchor, scope, inserted = parsed
     if not anchor or not inserted:
         return None
     joiner = (
@@ -1484,7 +1515,7 @@ def _effect_metadata_carried_after_substitute_insert_fragment(
         "replacement": f"{anchor}{joiner}{inserted}".strip(),
         "rule_id": UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
     }
-    occurrence = _occurrence_from_after_substitute_scope(match.group("scope"))
+    occurrence = _occurrence_from_after_substitute_scope(scope)
     if occurrence:
         fragment["occurrence"] = occurrence
     return fragment
@@ -1504,6 +1535,274 @@ def _occurrence_from_after_substitute_scope(scope: str) -> str:
     if re.search(r"\blast(?:ly)?\s+(?:occurring|occurs?|appears?)\b", normalized):
         return "-1"
     return ""
+
+
+_QUOTE_PAIRS = {
+    "“": "”",
+    '"': '"',
+    "'": "'",
+    "‘": "’",
+}
+
+
+def _read_quoted(text: str, start: int) -> Optional[tuple[str, int]]:
+    if start < 0 or start >= len(text):
+        return None
+    close_quote = _QUOTE_PAIRS.get(text[start])
+    if close_quote is None:
+        return None
+    end = text.find(close_quote, start + 1)
+    if end < 0:
+        return None
+    return text[start + 1 : end], end + 1
+
+
+def _skip_any_prefix(text: str, start: int, prefixes: tuple[str, ...]) -> int:
+    lower = text.lower()
+    for prefix in prefixes:
+        if lower.startswith(prefix, start):
+            return start + len(prefix)
+    return start
+
+
+def _parse_after_anchor_substitute_insert(text: str) -> Optional[tuple[str, str, str]]:
+    lower = text.lower()
+    after_idx = lower.find("after ")
+    if after_idx < 0:
+        return None
+    anchor_start = _skip_any_prefix(
+        text,
+        after_idx + len("after "),
+        ("the words ", "the word ", "words ", "word "),
+    )
+    anchor = _read_quoted(text, anchor_start)
+    if anchor is None:
+        return None
+    substitute_idx = lower.find("substitute ", anchor[1])
+    if substitute_idx < 0:
+        return None
+    inserted_start = substitute_idx + len("substitute ")
+    inserted = _read_quoted(text, inserted_start)
+    if inserted is None:
+        return None
+    return anchor[0].strip(), text[anchor[1] : substitute_idx], inserted[0].strip()
+
+
+def _effect_metadata_carried_at_end_substitute_insert_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    parsed = _parse_at_end_substitute_insert(text)
+    if parsed is None:
+        return None
+    parent_label, source_kind, source_label, inserted = parsed
+    source_kind = source_kind.replace("-", "").lower()
+    source_kind = "subparagraph" if source_kind == "subparagraph" else source_kind
+    source_label = _clean_num(source_label)
+    if _addr_leaf_kind(target) != source_kind or _clean_num(_addr_leaf_label(target) or "") != source_label:
+        return None
+    parent_label = _clean_num(parent_label)
+    if parent_label:
+        target_parent_labels = {
+            _clean_num(label)
+            for kind, label in target.path
+            if kind in {"paragraph", "subparagraph", "subsection"}
+        }
+        if parent_label not in target_parent_labels:
+            return None
+    if not inserted:
+        return None
+    return {
+        "original": "TEXT_END",
+        "replacement": inserted,
+        "rule_id": UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
+    }
+
+
+def _parse_at_end_substitute_insert(text: str) -> Optional[tuple[str, str, str, str]]:
+    lower = text.lower()
+    at_end_idx = lower.find("at the end of ")
+    if at_end_idx < 0:
+        return None
+    parent_label = ""
+    prefix = lower[:at_end_idx].strip(" ,")
+    if prefix.startswith("in paragraph (") and prefix.endswith(")"):
+        parent_label = prefix.removeprefix("in paragraph (").removesuffix(")")
+    cursor = at_end_idx + len("at the end of ")
+    kind = ""
+    for candidate in ("sub-paragraph", "paragraph", "subsection"):
+        label_prefix = f"{candidate} ("
+        if lower.startswith(label_prefix, cursor):
+            kind = candidate
+            cursor += len(label_prefix)
+            break
+    if not kind:
+        return None
+    label_end = text.find(")", cursor)
+    if label_end < 0:
+        return None
+    label = text[cursor:label_end]
+    after_label = label_end + 1
+    if not lower.startswith(" substitute ", after_label):
+        return None
+    inserted = _read_quoted(text, after_label + len(" substitute "))
+    if inserted is None:
+        return None
+    return parent_label, kind, label, inserted[0].strip()
+
+
+def _text_patch_join(anchor: str, inserted: str) -> str:
+    joiner = (
+        ""
+        if anchor.endswith((" ", "\t", "\n", "\r"))
+        or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    return f"{anchor}{joiner}{inserted}".strip()
+
+
+def _effect_target_scoped_each_child_after_word_insert_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    parsed = _parse_each_child_after_word_insert(text)
+    if parsed is None:
+        return None
+    parent_kind, parent_label, anchor, child_kind, child_labels, inserted = parsed
+    parent_kind = parent_kind.replace("-", "").lower()
+    parent_label = _clean_num(parent_label)
+    if parent_kind and parent_label:
+        if (parent_kind, parent_label) not in {
+            (kind, _clean_num(label)) for kind, label in target.path
+        }:
+            return None
+    child_kind = child_kind.replace("-", "").lower()
+    child_kind = child_kind.removesuffix("s")
+    if child_kind != _addr_leaf_kind(target):
+        return None
+    child_labels = {_clean_num(label) for label in child_labels}
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if not target_label or target_label not in child_labels:
+        return None
+    if not anchor or not inserted:
+        return None
+    return {
+        "original": anchor,
+        "replacement": _text_patch_join(anchor, inserted),
+        "rule_id": UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
+    }
+
+
+def _parse_each_child_after_word_insert(
+    text: str,
+) -> Optional[tuple[str, str, str, str, tuple[str, ...], str]]:
+    lower = text.lower()
+    after_idx = lower.find("after ")
+    if after_idx < 0:
+        return None
+    parent_kind = ""
+    parent_label = ""
+    prefix = lower[:after_idx].strip(" ,")
+    if prefix.startswith("in "):
+        for candidate in ("subsection", "paragraph", "sub-paragraph"):
+            prefix_start = f"in {candidate} ("
+            if prefix.startswith(prefix_start) and prefix.endswith(")"):
+                parent_kind = candidate
+                parent_label = prefix.removeprefix(prefix_start).removesuffix(")")
+                break
+    anchor_start = _skip_any_prefix(
+        text,
+        after_idx + len("after "),
+        ("the word ", "word "),
+    )
+    anchor = _read_quoted(text, anchor_start)
+    if anchor is None:
+        return None
+    marker = "where it occurs in each of "
+    marker_idx = lower.find(marker, anchor[1])
+    if marker_idx < 0:
+        return None
+    child_start = marker_idx + len(marker)
+    child_kind = ""
+    for candidate in ("subsections", "paragraphs", "sub-paragraphs"):
+        if lower.startswith(f"{candidate} ", child_start):
+            child_kind = candidate
+            child_start += len(candidate) + 1
+            break
+    if not child_kind:
+        return None
+    insert_idx = lower.find(" insert ", child_start)
+    if insert_idx < 0:
+        return None
+    labels_text = text[child_start:insert_idx].strip(" ,")
+    child_labels = tuple(re.findall(r"\(([0-9A-Za-z]+)\)", labels_text))
+    inserted = _read_quoted(text, insert_idx + len(" insert "))
+    if inserted is None:
+        return None
+    return parent_kind, parent_label, anchor[0].strip(), child_kind, child_labels, inserted[0].strip()
+
+
+def _effect_source_parent_carried_after_word_ordinal_insert_fragment(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    extracted_el: ET._Element,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect.effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    child_match = _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE.search(text)
+    if child_match is None:
+        return None
+    parent_el = extracted_el.getparent()
+    if parent_el is None:
+        return None
+    parent_text = " ".join(" ".join(parent_el.itertext()).split()).strip()
+    anchor = _parse_parent_after_word_anchor(parent_text)
+    if anchor is None:
+        return None
+    inserted = child_match.group("inserted").strip()
+    occurrence = _ORDINAL_OCCURRENCES.get(child_match.group("ordinal").lower(), "")
+    if not anchor or not inserted or not occurrence:
+        return None
+    return {
+        "original": anchor,
+        "replacement": _text_patch_join(anchor, inserted),
+        "occurrence": occurrence,
+        "rule_id": UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID,
+    }
+
+
+def _parse_parent_after_word_anchor(text: str) -> Optional[str]:
+    lower = text.lower()
+    after_idx = lower.find("after ")
+    if after_idx < 0:
+        return None
+    anchor_start = _skip_any_prefix(text, after_idx + len("after "), ("the word ", "word "))
+    anchor = _read_quoted(text, anchor_start)
+    if anchor is None:
+        return None
+    if anchor[1] >= len(text) or text[anchor[1]] not in {"—", "-"}:
+        return None
+    return anchor[0].strip()
 
 
 def _effect_interpretation_entries_relating_repeal_fragments(

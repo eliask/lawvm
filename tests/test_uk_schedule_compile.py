@@ -8314,6 +8314,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
         ),
         (
+            "b in subsection (3), after the word “parent”, where it occurs in each "
+            "of paragraphs (a) and (b), insert “ , child ” .",
+            "word inserted",
+            "s. 16(3)(a)",
+            "parent",
+            "parent, child",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_target_scoped_each_child_after_word_insert_text_patch",
+        ),
+        (
             "5 In section 5(1)(a), after “board”, "
             "where secondly occurring, there is inserted “ , a Transport Partnership ” .",
             "words inserted",
@@ -8357,6 +8368,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         ),
         (
+            "i in paragraph (b), at the end of sub-paragraph (i) "
+            "substitute “ by such time as the Tribunal may require” ,",
+            "words inserted",
+            "s. 19(5)(b)(i)",
+            "TEXT_END",
+            "by such time as the Tribunal may require",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
+        ),
+        (
             "c repeal the words “or to the Scottish Crime and Drug Enforcement Agency”.",
             "words repealed",
             "s. 24(2)(b)",
@@ -8393,6 +8415,16 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "sch. 7 para. 24(3)",
             "a poinding",
             "an attaching",
+            2,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+        ),
+        (
+            "iii for “the”, where it occurs for the second time, substitute “ a ” ,",
+            "word substituted",
+            "s. 18(3)(e)",
+            "the",
+            "a",
             2,
             StructuralAction.TEXT_REPLACE,
             "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
@@ -8583,6 +8615,18 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             StructuralAction.TEXT_REPLACE,
             "uk_effect_range_to_end_open_quote_block_substitution_text_patch",
         ),
+        (
+            "iii in sub-paragraph (8), for the words from “there” to the end "
+            "of the sub-paragraph substitute— “ the things mentioned in any "
+            "of paragraphs (a), (b), (ba) and (c) of section 18(4) occur. ” ,",
+            "words substituted",
+            "sch. 2 para. 7(8)",
+            "TEXT_FROM_there_TO_END",
+            "the things mentioned in any of paragraphs (a), (b), (ba) and (c) of section 18(4) occur.",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_range_to_end_quoted_dash_substitution_text_patch",
+        ),
     ],
 )
 def test_compile_additional_frontier_text_patch_idioms(
@@ -8634,9 +8678,12 @@ def test_compile_additional_frontier_text_patch_idioms(
     if expected_rule_id in {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_anchor_to_end_block_substitution_text_patch",
+        "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
+        "uk_effect_range_to_end_quoted_dash_substitution_text_patch",
         "uk_effect_range_unquoted_substitution_text_patch",
+        "uk_effect_target_scoped_each_child_after_word_insert_text_patch",
     }:
         assert lowering_rejections
         assert all(row.get("blocking") is False for row in lowering_rejections)
@@ -8653,6 +8700,62 @@ def test_compile_additional_frontier_text_patch_idioms(
     else:
         assert ops[0].text_patch.replacement == expected_replacement
     assert f"{_NOTE_TEXT_REWRITE_RULE}{expected_rule_id}" in ops[0].provenance_tags
+
+
+def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-paragraph-22">
+          <Pnumber>22</Pnumber>
+          <P1para>
+            <Text>In section 31, after the word “parent”—</Text>
+            <P3 id="schedule-paragraph-22-a">
+              <Pnumber>a</Pnumber>
+              <Text>a where it first occurs, insert “, child who has attained the age of 12 years”, and</Text>
+            </P3>
+          </P1para>
+        </P1>
+        """
+    ).xpath(".//*[local-name()='P3']")[0]
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_carried_after_word_ordinal_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-10-04",
+        affected_uri="/id/asp/2004/4/section/31",
+        affected_class="ScottishAct",
+        affected_year="2004",
+        affected_number="4",
+        affected_provisions="s. 31",
+        affecting_uri="/id/asp/2016/8",
+        affecting_class="ScottishAct",
+        affecting_year="2016",
+        affecting_number="8",
+        affecting_provisions="sch. para. 22(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "parent"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "parent, child who has attained the age of 12 years"
+    rule_id = "uk_effect_source_parent_carried_after_word_ordinal_insert_text_patch"
+    assert f"{_NOTE_TEXT_REWRITE_RULE}{rule_id}" in ops[0].provenance_tags
+    assert [row["rule_id"] for row in lowering_records] == [rule_id]
+    assert lowering_records[0]["reason_code"] == "source_parent_carried_after_word_ordinal_insert"
+    assert lowering_records[0]["blocking"] is False
 
 
 def test_compile_beginning_insert_each_child_expands_parent_target() -> None:

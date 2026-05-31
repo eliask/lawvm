@@ -548,6 +548,21 @@ def test_parse_fragment_substitution_handles_where_ordinal_occurs_substitution()
     ]
 
 
+def test_parse_fragment_substitution_handles_occurs_for_ordinal_time_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "iii for \u201cthe\u201d, where it occurs for the second time, substitute \u201c a \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "the",
+            "replacement": "a",
+            "occurrence": "2",
+            "rule_id": "uk_effect_post_quoted_where_ordinal_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_where_multiple_ordinal_occurs_substitution() -> None:
     subs = parse_fragment_substitution(
         "a for the word \u201cinterim\u201d, where it first and third occurs, "
@@ -1795,6 +1810,21 @@ def test_parse_fragment_substitution_handles_words_from_anchor_onwards_passive_s
             "original": "TEXT_FROM_payable_TO_END",
             "replacement": "the cash bid",
             "rule_id": "uk_effect_range_to_end_there_is_substituted_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_range_to_end_quoted_dash_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "iii in sub-paragraph (8), for the words from \u201cthere\u201d to the end "
+        "of the sub-paragraph substitute\u2014 \u201c the things mentioned occur. \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_there_TO_END",
+            "replacement": "the things mentioned occur.",
+            "rule_id": "uk_effect_range_to_end_quoted_dash_substitution_text_patch",
         }
     ]
 
