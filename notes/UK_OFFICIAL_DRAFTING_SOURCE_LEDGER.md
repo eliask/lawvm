@@ -355,7 +355,30 @@ allowed to lag the executable implementation.
 - **6.2.1 `for x substitute y`**; **6.2.6/6.2.7 substitute vs repeal+insert** — reuse
   the number only when the new text is a *direct* replacement; otherwise repeal +
   insert *without* reusing the number (form follows function). → structural
-  `replace` vs `repeal+insert` + identity/lineage. **HAVE (verify) / partial.**
+  `replace` vs `repeal+insert` + identity/lineage.
+  **HAVE (verified partial)** for source-owned substituted-for sibling series:
+  when the feed/source says a new labelled sibling is `substituted for` an old
+  sibling, lowering may rebind the executable `replace` to the source-named old
+  sibling under `uk_effect_substituted_for_label_changing_target_rebound`, and
+  replay records `uk_replay_source_label_changing_substitution_resolved` while
+  preserving the new payload label/eId. If the same source-owned series contains
+  additional labelled siblings before or after the replaced anchor, those
+  siblings lower as `insert` operations under
+  `uk_effect_substituted_series_pre_anchor_sibling_insert_lowered` or
+  `uk_effect_substituted_series_new_sibling_insert_lowered`. Compressed source
+  forms such as `for paragraphs (a) and (b) substitute ...` may expand from
+  direct payload children under `uk_effect_source_payload_sibling_range_expanded`;
+  extra labelled payload siblings become inserts under
+  `uk_effect_substituted_range_extra_payload_sibling_insert_lowered`. This is not
+  a generic action-family mutation: the source must name the old target/series,
+  inserted siblings must share the same parent and leaf kind, and payload labels
+  must match their targets. Wider cross-container lineage and unproved
+  repeal+insert identity remain manual/frontier work. Witnesses:
+  `test_compile_substituted_for_label_change_targets_source_old_sibling`,
+  `test_replay_source_label_changing_substitution_preserves_new_identity`,
+  `test_compile_substituted_for_single_schedule_item_with_new_sibling_lowers_insert`,
+  `test_compile_substituted_for_old_new_sibling_series_rebinds_each_target`, and
+  `test_compile_substituted_for_parenthesized_sibling_range_uses_extracted_children`.
 - **6.5.5–6.5.8 occurrence scope** — `in the first/second/third place it occurs`,
   `in both places`, `in each place`. → `OccurrenceScope` parser.
   **HAVE (verified)** for target-scoped quoted text-patch lanes: all-occurrence
