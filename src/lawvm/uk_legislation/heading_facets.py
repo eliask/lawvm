@@ -22,6 +22,14 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
+_SCHEDULE_NOTE_REF_RE = re.compile(
+    r"\bsch(?:edule)?\.?\s+[0-9a-z]+"
+    r"(?:\s+pt\.?\s+[0-9a-z]+)?"
+    r"(?:\s+para\.?\s+[0-9a-z]+(?:\([0-9a-z]+\))*)?"
+    r"\s+note(?:\s+\d+)?\b"
+)
+
+
 def _is_heading_only_ref(ref: str) -> bool:
     ref_clean = ref.strip().lower()
     if "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean:
@@ -382,7 +390,7 @@ def _is_crossheading_ref(ref: str) -> bool:
 
 def _is_schedule_note_ref(ref: str) -> bool:
     ref_clean = " ".join(str(ref or "").strip().lower().split())
-    return bool(re.search(r"\bsch(?:edule)?\.?\s+[0-9a-z]+(?:\s+|\s+pt\.\s+[0-9a-z]+\s+)note(?:\s+\d+)?\b", ref_clean))
+    return bool(_SCHEDULE_NOTE_REF_RE.search(ref_clean))
 
 
 _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"

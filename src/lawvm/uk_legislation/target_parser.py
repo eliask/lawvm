@@ -24,6 +24,7 @@ from lawvm.uk_legislation.heading_facets import (
     _expand_heading_facet_section_range_ref,
     _is_direct_section_paragraph_ref,
     _is_heading_only_ref,
+    _is_schedule_note_ref,
 )
 from lawvm.uk_legislation.provision_extractor import _parse_ref
 
@@ -347,6 +348,9 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         heading_facet_range_refs = _expand_heading_facet_section_range_ref(p)
         if heading_facet_range_refs:
             expanded_parts.extend(heading_facet_range_refs)
+            continue
+        if _is_schedule_note_ref(p):
+            expanded_parts.append(p)
             continue
         if _is_heading_only_ref(p):
             expanded_parts.append(p)

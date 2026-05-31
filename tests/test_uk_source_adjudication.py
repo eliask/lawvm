@@ -956,6 +956,25 @@ def test_classify_uk_effect_source_pathology_marks_definition_child_structural_i
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_definition_child_insert_rejection() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "6 In section 70(4), in the definition of “relevant authority”, "
+            "after paragraph (e) insert— ea a development corporation."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_definition_child_structural_insert_rejected"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "definition_child_structural_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_marks_structured_tail_substitution() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",
@@ -2638,6 +2657,30 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_i
             {
                 "rule_id": "uk_effect_overlap_substitution_unlowered",
                 "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_insert_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_definition_child_insert_rejection() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="definition_child_structural_insert_unsupported",
+        extracted_tag="P2",
+        extracted_text=(
+            "6 In section 70(4), in the definition of “relevant authority”, "
+            "after paragraph (e) insert— ea a development corporation."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_definition_child_structural_insert_rejected",
+                "blocking": True,
             },
         ),
         compiled_op_count=0,
