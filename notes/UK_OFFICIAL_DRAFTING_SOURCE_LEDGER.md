@@ -347,7 +347,13 @@ allowed to lag the executable implementation.
 - **6.5.2/6.5.3 opening/closing words** — "the words before paragraph (a)" / "after
   paragraph (c)". → text-selector grammar for intro/outro words. **HAVE/partial.**
 - **6.5.10 `(including the heading)`** — an amendment may reach the heading too. →
-  heading-facet selector. **GAP (verify).**
+  heading-facet selector. **HAVE (verified)** for the narrow source form
+  `for "X" (including in the heading) substitute "Y"` via
+  `uk_effect_mixed_body_heading_substitution_split_text_patch`; lowering emits
+  separate body and heading-facet text patches rather than widening either
+  target. Witness:
+  `test_compile_mixed_body_heading_text_substitution_splits_heading_facet`
+  (`ukpga/1998/17` `s. 9B`, amended by `ukpga/2016/20` `Sch. 1 para. 8(a)`).
 
 ### §6.3 / §6.4 Insertions & the inserted-provision numbering algorithm
 This is the **authority for direction (b)** — assign the *correct structural eId* to
