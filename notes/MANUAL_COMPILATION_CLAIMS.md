@@ -192,6 +192,9 @@ The current validator checks only:
   to the paths on those referenced live precondition rows; unrelated live
   preconditions declared elsewhere in the claim do not widen the proof's target
   carrier set
+- validator-check ids and ownership ids are unique declaration ids within a
+  claim; duplicate ids are rejected before proof or template matching, so a
+  proof obligation cannot be satisfied by a collapsed set of inconsistent rows
 - presence of every `required_ownership` id listed by a matched non-executable
   claim template, so a claim must declare the source/target/mutation-boundary
   surfaces it claims to own
