@@ -336,6 +336,7 @@ def _surface_text_rewrite_claim_template(
     action_family: str,
     facet_family: str,
     placement_family: str,
+    required_ownership: list[str],
     required_validator_checks: list[str],
 ) -> dict[str, Any]:
     summary = row.summary
@@ -360,6 +361,7 @@ def _surface_text_rewrite_claim_template(
         "candidate_source_preview": source_preview[:500],
         "text_match": quoted_substitution.text_match,
         "replacement": quoted_substitution.replacement,
+        "required_ownership": required_ownership,
         "required_validator_checks": required_validator_checks,
         "executable": False,
     }
@@ -376,6 +378,13 @@ def _table_crossheading_claim_template(
         action_family="table_crossheading_text_rewrite",
         facet_family="table_crossheading",
         placement_family="explicit_table_heading_cell_or_prefix_required",
+        required_ownership=[
+            "source_named_table_crossheading_surface",
+            "exact_table_carrier",
+            "heading_cell_or_text_prefix_boundary",
+            "unclaimed_table_surface_preservation",
+            "mutation_boundary",
+        ],
         required_validator_checks=[
             "source_witness_targets_table_crossheading_surface",
             "claim_identifies_exact_table_carrier",
@@ -466,6 +475,12 @@ def manual_compile_suggested_claim_template(
             action_family="facet_text_rewrite",
             facet_family="heading_or_title",
             placement_family="explicit_facet_target_required",
+            required_ownership=[
+                "source_named_heading_or_title_surface",
+                "exact_facet_carrier",
+                "host_body_text_and_children_preservation",
+                "mutation_boundary",
+            ],
             required_validator_checks=[
                 "source_witness_targets_heading_title_or_sidenote_facet",
                 "claim_identifies_exact_target_facet_not_host_body",
@@ -481,6 +496,12 @@ def manual_compile_suggested_claim_template(
             action_family="crossheading_text_rewrite",
             facet_family="crossheading",
             placement_family="explicit_crossheading_carrier_required",
+            required_ownership=[
+                "source_named_crossheading_surface",
+                "exact_crossheading_carrier",
+                "neighbouring_sections_and_body_text_preservation",
+                "mutation_boundary",
+            ],
             required_validator_checks=[
                 "source_witness_targets_crossheading_surface",
                 "claim_identifies_exact_crossheading_carrier",
@@ -499,6 +520,13 @@ def manual_compile_suggested_claim_template(
             action_family="mixed_body_heading_text_substitution_split",
             facet_family="body_text_and_heading_or_title",
             placement_family="split_body_and_heading_facet_required",
+            required_ownership=[
+                "source_named_body_target",
+                "body_text_boundary",
+                "heading_facet_boundary",
+                "split_surface_mutation_boundary",
+                "mutation_boundary",
+            ],
             required_validator_checks=[
                 "source_witness_names_body_target_and_heading_facet",
                 "claim_splits_body_text_operation_from_heading_facet_operation",
@@ -643,6 +671,12 @@ def manual_compile_suggested_claim_template(
             action_family="schedule_note_text_rewrite",
             facet_family="schedule_note",
             placement_family="explicit_schedule_note_carrier_required",
+            required_ownership=[
+                "source_named_schedule_note_surface",
+                "exact_schedule_note_carrier",
+                "schedule_paragraph_body_structure_preservation",
+                "mutation_boundary",
+            ],
             required_validator_checks=[
                 "source_witness_targets_schedule_note_surface",
                 "claim_identifies_exact_schedule_note_carrier",
