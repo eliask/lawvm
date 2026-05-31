@@ -188,6 +188,10 @@ The current validator checks only:
   must name a proof id, match the claim action family, reference existing
   operation ids, reference declared validator-check ids, reference at least one
   declared source/live precondition, and carry a non-proving status
+- operation-family proof semantics resolve `live_target_precondition_ids` only
+  to the paths on those referenced live precondition rows; unrelated live
+  preconditions declared elsewhere in the claim do not widen the proof's target
+  carrier set
 - presence of every `required_ownership` id listed by a matched non-executable
   claim template, so a claim must declare the source/target/mutation-boundary
   surfaces it claims to own
@@ -240,6 +244,10 @@ Validation rows also carry `operation_family_proof_count`,
 `operation_family_proof_semantics`, and `operation_family_proof_families`, and
 the validation report summarizes semantic/family counts, so batch review can see
 which proof plans were checked without reparsing the input claim ledger.
+Within family-specific proof semantics, a referenced live precondition id
+authorizes only that precondition row's `path`; adding another live precondition
+to the claim does not expand a proof unless the proof explicitly references it
+by id or path.
 The first opt-in family semantic,
 `table_surface_insert_anchor_and_live_carrier`, additionally checks that a
 `table_surface_mutation` proof references source text evidence, a live carrier

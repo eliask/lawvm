@@ -280,7 +280,10 @@ a claim declares `operation_family_proofs`, the validator checks that each proof
 row matches the claim action family, references existing operation ids, declared
 validator-check ids, and at least one declared source/live precondition. This is
 a proof-plan reference check only; statuses such as `proved` or `validated` are
-rejected. The first opt-in family semantic,
+rejected. Family-specific proof semantics resolve `live_target_precondition_ids`
+only to the paths on those referenced live precondition rows; unrelated live
+preconditions declared elsewhere in the claim do not widen the proof's target
+carrier set. The first opt-in family semantic,
 `table_surface_insert_anchor_and_live_carrier`, requires a table-surface insert
 proof to reference source text evidence, a live carrier precondition, and insert
 operations whose target parent is inside that live carrier.
