@@ -4401,6 +4401,97 @@ def _build_parser() -> argparse.ArgumentParser:
         help="exit 1 when any input row is still live manual-frontier work",
     )
 
+    uk_semantic_claims_validate_p = sub.add_parser(
+        "uk-semantic-claims-validate",
+        help="validate proposed UK semantic-compile claims as non-executable evidence",
+        description=(
+            "Validate lawvm.uk_semantic_compile_claim.v1 rows for required "
+            "schema fields, non-executable operation shape, declared template "
+            "proof obligations, and, when supplied, exported manual-frontier "
+            "workqueue provenance. Accepted rows do not authorize replay."
+        ),
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "input",
+        metavar="INPUT",
+        help="semantic-compile claim JSONL path",
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--workqueue-jsonl",
+        metavar="PATH",
+        help="optional manual-frontier JSONL path exported by uk-effects or uk-candidates",
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--live-targets-jsonl",
+        metavar="PATH",
+        help=(
+            "optional non-executable live target index JSONL with "
+            "lawvm.uk_live_target_index.v1 rows"
+        ),
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable validation report",
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="omit per-row validation details from stdout while preserving summary counts and JSONL exports",
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--validation-jsonl",
+        metavar="PATH",
+        help="write all semantic-claim validation findings as JSONL",
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--fail-on-rejected",
+        action="store_true",
+        help="exit 1 after reporting if any claim row is rejected",
+    )
+    uk_semantic_claims_validate_p.add_argument(
+        "--fail-on-input-error",
+        action="store_true",
+        help="exit 1 after reporting if any input JSONL row is malformed",
+    )
+
+    uk_live_target_index_p = sub.add_parser(
+        "uk-live-target-index",
+        help="export non-executable UK target paths for semantic-claim validation",
+        description=(
+            "Export lawvm.uk_live_target_index.v1 rows from archived UK current or "
+            "enacted XML. The output is validation evidence only and does not "
+            "authorize replay."
+        ),
+    )
+    uk_live_target_index_p.add_argument(
+        "statute_ids",
+        nargs="+",
+        metavar="ID",
+        help="UK statute id such as ukpga/2000/1",
+    )
+    uk_live_target_index_p.add_argument(
+        "--source",
+        choices=("current", "enacted"),
+        default="current",
+        help="archived XML lane to index (default: current)",
+    )
+    uk_live_target_index_p.add_argument(
+        "--db",
+        metavar="PATH",
+        help="UK farchive path (default: data/uk_legislation.farchive)",
+    )
+    uk_live_target_index_p.add_argument(
+        "--out",
+        metavar="PATH",
+        help="write target-index JSONL to PATH",
+    )
+    uk_live_target_index_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit a machine-readable JSON report",
+    )
+
     # --- disagreement ---
     disagree_p = sub.add_parser(
         "disagreement",
@@ -7385,6 +7476,16 @@ def main() -> None:
         from lawvm.tools.uk_manual_frontier import main as uk_manual_frontier_main
 
         uk_manual_frontier_main(args)
+
+    elif args.command == "uk-semantic-claims-validate":
+        from lawvm.tools.uk_semantic_claims import main as uk_semantic_claims_main
+
+        uk_semantic_claims_main(args)
+
+    elif args.command == "uk-live-target-index":
+        from lawvm.tools.uk_live_targets import main as uk_live_target_index_main
+
+        uk_live_target_index_main(args)
 
     elif args.command == "eu-reul":
         from lawvm.tools.eu_reul import main as eu_reul_main

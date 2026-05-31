@@ -971,6 +971,63 @@ def test_uk_manual_frontier_validate_parser_defaults() -> None:
     assert args.fail_on_remaining is True
 
 
+def test_uk_semantic_claims_validate_parser_defaults() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-semantic-claims-validate",
+            ".tmp/uk-semantic-claims.jsonl",
+            "--workqueue-jsonl",
+            ".tmp/uk-manual-frontier.jsonl",
+            "--live-targets-jsonl",
+            ".tmp/uk-live-targets.jsonl",
+            "--json",
+            "--summary-only",
+            "--validation-jsonl",
+            ".tmp/uk-semantic-claim-validation.jsonl",
+            "--fail-on-rejected",
+            "--fail-on-input-error",
+        ]
+    )
+
+    assert args.command == "uk-semantic-claims-validate"
+    assert args.input == ".tmp/uk-semantic-claims.jsonl"
+    assert args.workqueue_jsonl == ".tmp/uk-manual-frontier.jsonl"
+    assert args.live_targets_jsonl == ".tmp/uk-live-targets.jsonl"
+    assert args.json is True
+    assert args.summary_only is True
+    assert args.validation_jsonl == ".tmp/uk-semantic-claim-validation.jsonl"
+    assert args.fail_on_rejected is True
+    assert args.fail_on_input_error is True
+
+
+def test_uk_live_target_index_parser_defaults() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-live-target-index",
+            "ukpga/2000/1",
+            "ukpga/2000/2",
+            "--source",
+            "enacted",
+            "--db",
+            ".tmp/uk.farchive",
+            "--out",
+            ".tmp/uk-live-targets.jsonl",
+            "--json",
+        ]
+    )
+
+    assert args.command == "uk-live-target-index"
+    assert args.statute_ids == ["ukpga/2000/1", "ukpga/2000/2"]
+    assert args.source == "enacted"
+    assert args.db == ".tmp/uk.farchive"
+    assert args.out == ".tmp/uk-live-targets.jsonl"
+    assert args.json is True
+
+
 def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
     payload = build_uk_replay_payload(
         statute_id="ukpga/2000/1",

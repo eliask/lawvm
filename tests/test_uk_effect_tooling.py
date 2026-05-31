@@ -88,6 +88,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_savings_qualified_text_omission_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
@@ -100,6 +101,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_table_crossheading_candidate",
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
+        "uk_manual_frontier_table_entry_placement_insert",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
     }
     assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
@@ -2799,6 +2801,176 @@ def test_uk_manual_compile_evidence_jsonl_marks_missing_claim_template() -> None
 
     assert payload["suggested_claim_template_status"] == "not_available"
     assert payload["suggested_claim_template"] == {}
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_table_entry_placement_insert() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-placement",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-01",
+        affected_uri="/id/eur/2019/1021/annex/4/table",
+        affected_class="EuropeanUnionRegulation",
+        affected_year="2019",
+        affected_number="1021",
+        affected_provisions="Annex 4 table",
+        affecting_uri="/id/uksi/2025/296",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="296",
+        affecting_provisions="reg. 4(3)",
+        affecting_title="Test Regulations 2025",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_table_entry_placement_insert_rejected",
+                    "blocking": True,
+                    "target_ref": "Annex 4 table",
+                    "target": "annex:4/table",
+                    "reason_code": "table_entry_insert_requires_row_or_cell_placement_model",
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P2",
+            source_extracted_text_preview="At the end, insert- New table entry.",
+            affecting_source_status="absent",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_table_entry_placement_insert",
+            manual_compile_reason="Table entry insertion needs a row/cell placement claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_table_entry_placement_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_table_entry_placement_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="eur/2019/1021",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="eur/2019/1021",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert payload["suggested_claim_template_status"] == "available"
+    assert template["action_family"] == "table_surface_mutation"
+    assert template["placement_family"] == "table_entry_placement_requires_row_or_cell_claim"
+    assert template["source_target_address"] == "annex:4/table"
+    assert "claim_identifies_exact_insert_position_within_table_or_list" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_savings_qualified_omission() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-savings-omission",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-04-01",
+        affected_uri="/id/ukpga/1981/20/schedule/1/paragraph/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1981",
+        affected_number="20",
+        affected_provisions="Sch. 1 para. 1",
+        affecting_uri="/id/ukpga/2005/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2005",
+        affecting_number="9",
+        affecting_provisions="Sch. 6 para. 27",
+        affecting_title="Test Act 2005",
+    )
+    source_preview = (
+        "omit the reference to the Magistrates' Courts Act 1980 except in the "
+        "case of proceedings begun immediately before commencement"
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="savings_qualified_text_omission_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_overlap_substitution_unlowered",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=source_preview,
+            affecting_source_status="available",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_savings_qualified_text_omission_candidate"
+            ),
+            manual_compile_reason="Savings-qualified omission needs an applicability-aware claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1981/20",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1981/20",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert payload["suggested_claim_template_status"] == "available"
+    assert template["action_family"] == "savings_qualified_text_omission"
+    assert template["placement_family"] == (
+        "applicability_qualified_omission_requires_savings_claim"
+    )
+    assert template["omitted_reference"] == "the Magistrates' Courts Act 1980"
+    assert "except in the case of proceedings" in template["savings_condition_preview"]
+    assert "claim_represents_savings_condition_as_applicability_not_unconditional_deletion" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition_entry() -> None:
