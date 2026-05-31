@@ -216,6 +216,11 @@ def _row_line_number(row: Mapping[str, Any]) -> int:
     return 0
 
 
+def _row_line_witness(row: Mapping[str, Any]) -> str:
+    line_number = _row_line_number(row)
+    return f"line {line_number}" if line_number else "unknown line"
+
+
 def _non_empty_string(row: Mapping[str, Any], key: str) -> str:
     value = row.get(key)
     if isinstance(value, str) and value:
@@ -324,7 +329,8 @@ def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueInd
                 by_work_item_id[work_item_id] = row
             elif not _same_jsonl_payload_ignoring_line_number(existing, row):
                 issue_lists_by_work_item_id.setdefault(work_item_id, []).append(
-                    f"workqueue work_item_id {work_item_id!r} has conflicting rows"
+                    f"workqueue work_item_id {work_item_id!r} has conflicting "
+                    f"rows at {_row_line_witness(existing)} and {_row_line_witness(row)}"
                 )
         identity = _claim_identity(row)
         if all(identity):
@@ -345,6 +351,7 @@ def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueInd
 def _build_live_target_index(rows: tuple[Mapping[str, Any], ...]) -> _LiveTargetIndex:
     paths_by_statute: dict[str, set[str]] = {}
     fingerprints_by_statute: dict[str, dict[str, Mapping[str, Any]]] = {}
+    fingerprint_lines_by_statute: dict[str, dict[str, str]] = {}
     issue_lists_by_statute: dict[str, list[str]] = {}
     for row in rows:
         if str(row.get("validator_status") or "") == "input_error":
@@ -361,16 +368,26 @@ def _build_live_target_index(rows: tuple[Mapping[str, Any], ...]) -> _LiveTarget
         fingerprints = row.get("target_fingerprints")
         if isinstance(fingerprints, Mapping):
             statute_fingerprints = fingerprints_by_statute.setdefault(statute_id, {})
+            statute_fingerprint_lines = fingerprint_lines_by_statute.setdefault(
+                statute_id,
+                {},
+            )
             for path, fingerprint in fingerprints.items():
                 if isinstance(path, str) and path and isinstance(fingerprint, Mapping):
                     existing = statute_fingerprints.get(path)
                     if existing is not None and dict(existing) != dict(fingerprint):
+                        existing_line = statute_fingerprint_lines.get(
+                            path,
+                            "unknown line",
+                        )
                         issue_lists_by_statute.setdefault(statute_id, []).append(
                             f"live target index statute_id {statute_id!r} has "
-                            f"conflicting target_fingerprints for path {path!r}"
+                            f"conflicting target_fingerprints for path {path!r} "
+                            f"at {existing_line} and {_row_line_witness(row)}"
                         )
                         continue
                     statute_fingerprints[path] = fingerprint
+                    statute_fingerprint_lines[path] = _row_line_witness(row)
     return _LiveTargetIndex(
         by_statute_id={
             statute_id: frozenset(paths)
@@ -4028,10 +4045,16 @@ def _match_workqueue(
         )
     matches = _deduplicated_workqueue_matches(matches)
     if len(matches) > 1:
+        candidates = ", ".join(
+            f"{_optional_string(match, 'work_item_id') or '<missing work_item_id>'} "
+            f"at {_row_line_witness(match)}"
+            for match in matches
+        )
         return _WorkqueueMatch(
             row=None,
             issues=(
-                "workqueue identity match is ambiguous; claim must include work_item_id",
+                "workqueue identity match is ambiguous; claim must include "
+                f"work_item_id; candidates: {candidates}",
             ),
             status="rejected_workqueue_missing",
         )
