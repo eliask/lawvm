@@ -85,14 +85,37 @@ def score_one(statute_id: str) -> dict[str, Any]:
         enacted = archive.get(f"{_LEG_BASE}/{statute_id}/enacted/data.xml")
         current = archive.get(f"{_LEG_BASE}/{statute_id}/data.xml")
         if not enacted:
-            return {**result, "error": "enacted_missing"}
+            return {
+                **result,
+                "base_source_status": "absent",
+                "oracle_source_status": "unknown",
+                "score_status": "source_frontier",
+                "source_frontier_reason": "base_absent",
+            }
         if not current:
-            return {**result, "error": "current_missing"}
+            return {
+                **result,
+                "base_source_status": "unknown",
+                "oracle_source_status": "absent",
+                "score_status": "source_frontier",
+                "source_frontier_reason": "oracle_absent",
+            }
         base_source = classify_uk_statute_xml_content(enacted)
-        result["base_source_status"] = base_source.status.value
-        result["base_source_number_of_provisions"] = base_source.number_of_provisions
-        result["base_source_has_body"] = base_source.has_body
-        result["base_source_has_schedules"] = base_source.has_schedules
+        current_source = classify_uk_statute_xml_content(current)
+        result.update(_source_state_fields("base", base_source))
+        result.update(_source_state_fields("oracle", current_source))
+        if base_source.status.value in {"too_small", "parse_error"}:
+            return {
+                **result,
+                "score_status": "source_frontier",
+                "source_frontier_reason": f"base_{base_source.status.value}",
+            }
+        if current_source.status.value in {"too_small", "parse_error", "metadata_only"}:
+            return {
+                **result,
+                "score_status": "source_frontier",
+                "source_frontier_reason": f"oracle_{current_source.status.value}",
+            }
 
         oracle_ir = parse_uk_statute_ir_bytes(current, statute_id=statute_id)
         oracle_eids = _eids([oracle_ir.body]) | {
@@ -140,6 +163,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
                     2,
                 )
         result["n_oracle"] = len(oracle_eids)
+        result["score_status"] = "scored"
         result["aligned"] = lanes["aligned"]
         result["unaligned"] = lanes["unaligned"]
         return result
@@ -147,6 +171,19 @@ def score_one(statute_id: str) -> dict[str, Any]:
         return {**result, "error": f"{type(exc).__name__}: {exc}"}
     finally:
         archive.close()
+
+
+def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        f"{prefix}_source_status": state.status.value,
+        f"{prefix}_source_number_of_provisions": state.number_of_provisions,
+        f"{prefix}_source_has_body": state.has_body,
+        f"{prefix}_source_has_schedules": state.has_schedules,
+        f"{prefix}_source_size": state.size,
+    }
+    if state.parse_error:
+        fields[f"{prefix}_source_parse_error"] = state.parse_error
+    return fields
 
 
 def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str]:
@@ -200,6 +237,9 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         results.append(row)
         if "error" in row:
             print(f"[{i}/{len(ids)}] {sid:24s} ERROR {row['error']}", flush=True)
+        elif row.get("score_status") == "source_frontier":
+            reason = str(row.get("source_frontier_reason") or "unknown")
+            print(f"[{i}/{len(ids)}] {sid:24s} SOURCE-FRONTIER {reason}", flush=True)
         else:
             base_status = str(row.get("base_source_status") or "unknown")
             base_suffix = "" if base_status == "available" else f" base={base_status}"
@@ -219,8 +259,11 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         out.write_text(json.dumps(snapshot, indent=2, sort_keys=True))
         print(f"\nWrote {len(snapshot)} rows -> {out}")
 
-    scored = [r for r in results if "error" not in r]
+    scored = [r for r in results if "error" not in r and r.get("score_status") != "source_frontier"]
     errored = [r for r in results if "error" in r]
+    source_frontier = [
+        r for r in results if "error" not in r and r.get("score_status") == "source_frontier"
+    ]
     if scored:
         avg = sum(r["aligned"] for r in scored) / len(scored)
         avg_no_gc = sum(
@@ -236,6 +279,12 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             f"mean aligned={avg:.2f}%  mean aligned_no_gc={avg_no_gc:.2f}%  "
             f"grounding_collateral={gc_total}  "
             f"metadata_only_base={metadata_only_base_total}  errors={len(errored)}"
+            f"  source_frontier={len(source_frontier)}"
+        )
+    else:
+        print(
+            f"\nScored 0 / {len(results)}  source_frontier={len(source_frontier)}  "
+            f"errors={len(errored)}"
         )
     return 0
 
