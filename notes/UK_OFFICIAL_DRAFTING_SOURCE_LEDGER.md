@@ -419,8 +419,13 @@ scores. Witness: `ukpga/1945/9`, whose enacted and current cached blobs are both
 grounding-collateral eIds. Empty oracle-eId rows remain scored because they can
 represent real over-retention/missing-repeal evidence: `ukpga/1938/22` currently
 has `NumberOfProvisions=104`, all current provisions ended/repealed, and replay
-still retains 420 eIds. The curated 77-statute gate remains unchanged
-(`0 improved, 0 regressed`), with 77/77 scored and `source_frontier=0`.
+still retains 420 eIds. The broad-baseline summary now prints
+`source_frontier_reason` counts and zero-oracle retention totals explicitly;
+the `ukpga/1938/22` / `ukpga/1945/9` witness run reports
+`zero_oracle_retention=1 rows / 420 replay eIds` and
+`source_frontier_reasons: base_too_small=1`. The curated 77-statute gate remains
+unchanged (`0 improved, 0 regressed`), with 77/77 scored and
+`source_frontier=0`.
 
 ---
 
