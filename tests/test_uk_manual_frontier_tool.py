@@ -297,6 +297,18 @@ def test_read_jsonl_rows_preserves_decode_errors_as_input_rows(tmp_path: Path) -
     assert rows[1]["validator_rule_id"] == "uk_manual_frontier_jsonl_decode_error"
 
 
+def test_read_jsonl_rows_uses_physical_line_number(tmp_path: Path) -> None:
+    path = tmp_path / "frontier.jsonl"
+    path.write_text(
+        json.dumps({"line_number": 99, "statute_id": "ukpga/2020/1"}) + "\n",
+        encoding="utf-8",
+    )
+
+    rows = uk_manual_frontier._read_jsonl_rows(path)
+
+    assert rows[0]["line_number"] == 1
+
+
 def test_manual_frontier_duplicate_work_item_id_ignores_line_numbers() -> None:
     row = {
         "line_number": 1,
@@ -381,6 +393,34 @@ def test_validate_manual_frontier_rows_rejects_wrong_schema(
     assert row["blocking"] is True
     assert row["input_schema"] == "lawvm.uk_semantic_compile_claim.v1"
     assert row["expected_schema"] == "lawvm.uk_manual_compile_frontier.v1"
+
+
+def test_validate_manual_frontier_rows_tolerates_bad_line_number(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
+
+    rows = uk_manual_frontier.validate_manual_frontier_rows(
+        (
+            {
+                "line_number": "not-a-number",
+                "schema": "lawvm.uk_semantic_compile_claim.v1",
+                "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-1",
+            },
+        ),
+        db_path=db_path,
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "input_error"
+    assert row["line_number"] == 0
+    assert row["rule_id"] == "uk_manual_frontier_validator_schema_rejected"
 
 
 def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:

@@ -92,7 +92,7 @@ def _read_jsonl_rows(path: Path) -> tuple[dict[str, Any], ...]:
                     }
                 )
                 continue
-            parsed.setdefault("line_number", line_number)
+            parsed["line_number"] = line_number
             rows.append(parsed)
     return tuple(rows)
 
@@ -104,6 +104,17 @@ def _write_jsonl_rows(path: Path, rows: tuple[Mapping[str, Any], ...]) -> int:
             handle.write(json.dumps(dict(row), ensure_ascii=False, sort_keys=True))
             handle.write("\n")
     return len(rows)
+
+
+def _row_line_number(row: Mapping[str, Any]) -> int:
+    value = row.get("line_number")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdecimal():
+            return int(stripped)
+    return 0
 
 
 def _same_jsonl_payload_ignoring_line_number(
@@ -199,7 +210,7 @@ def _wrong_schema_validation_row(row: Mapping[str, Any]) -> dict[str, Any] | Non
     return _manual_frontier_validation_row(
         rule_id="uk_manual_frontier_validator_schema_rejected",
         validator_status="input_error",
-        line_number=int(row.get("line_number") or 0),
+        line_number=_row_line_number(row),
         statute_id=str(row.get("statute_id") or ""),
         effect_id=str(row.get("effect_id") or ""),
         reason=f"Manual-frontier JSONL row schema must be {_WORKQUEUE_SCHEMA}.",
@@ -231,7 +242,7 @@ def _validation_row_jsonable(
         return _manual_frontier_validation_row(
             rule_id="uk_manual_frontier_validator_input_missing_key",
             validator_status="input_error",
-            line_number=int(row.get("line_number") or 0),
+            line_number=_row_line_number(row),
             statute_id=statute_id,
             effect_id=effect_id,
             reason="Manual-frontier JSONL row must include statute_id and effect_id.",
@@ -243,7 +254,7 @@ def _validation_row_jsonable(
         return _manual_frontier_validation_row(
             rule_id="uk_manual_frontier_validator_effect_not_found",
             validator_status="effect_not_found",
-            line_number=int(row.get("line_number") or 0),
+            line_number=_row_line_number(row),
             statute_id=statute_id,
             effect_id=effect_id,
             reason="The exported workqueue effect_id is no longer present in the current effect feed for this statute.",
@@ -267,7 +278,7 @@ def _validation_row_jsonable(
     return _manual_frontier_validation_row(
         rule_id=validation_status.rule_id,
         validator_status=validation_status.status,
-        line_number=int(row.get("line_number") or 0),
+        line_number=_row_line_number(row),
         statute_id=statute_id,
         effect_id=effect_id,
         extra={
@@ -317,7 +328,7 @@ def validate_manual_frontier_rows(
                             or "uk_manual_frontier_validator_input_error"
                         ),
                         validator_status="input_error",
-                        line_number=int(row.get("line_number") or 0),
+                        line_number=_row_line_number(row),
                         statute_id="",
                         effect_id="",
                         reason=str(row.get("reason") or ""),
@@ -333,7 +344,7 @@ def validate_manual_frontier_rows(
                     _manual_frontier_validation_row(
                         rule_id="uk_manual_frontier_validator_work_item_id_conflict",
                         validator_status="input_error",
-                        line_number=int(row.get("line_number") or 0),
+                        line_number=_row_line_number(row),
                         statute_id=str(row.get("statute_id") or ""),
                         effect_id=str(row.get("effect_id") or ""),
                         reason="; ".join(conflict_issues),
