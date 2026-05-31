@@ -29,6 +29,10 @@ from typing import Any, Iterable, NamedTuple
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.replay_adjudication import SourceAdjudication
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family_for_effect_type
+from lawvm.uk_legislation.effect_temporal_cessation import (
+    UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
+    temporal_ceases_to_have_effect_exclusion_rule,
+)
 
 
 UK_CORE_COMPARISON_CLASSES = frozenset({"commensurable", "unapplied_oracle_expansion"})
@@ -2122,6 +2126,17 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "deterministic_frontend_candidate",
             "rule_id": "uk_manual_frontier_definition_list_end_insert_candidate",
             "reason": "The source range includes an at-end definition-entry insertion; a deterministic definition-list-end compiler must prove the list carrier and append point before replaying that row.",
+        }
+
+    temporal_cessation_exclusion_rule = temporal_ceases_to_have_effect_exclusion_rule(
+        effect_type=effect_type_norm,
+        source_text=extracted_text_norm,
+    )
+    if temporal_cessation_exclusion_rule:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": temporal_cessation_exclusion_rule,
+            "reason": UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
         }
 
     nonstructural_replay_family = uk_nonstructural_replay_candidate_family_for_effect_type(

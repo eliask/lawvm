@@ -10,7 +10,23 @@ from lawvm.uk_legislation.effects import UKEffectRecord, uk_nonstructural_replay
 from lawvm.uk_legislation.effect_substitution_normalization import (
     UK_SUBSTITUTED_SOURCE_OWNED_INSERT_RULE_IDS,
 )
+from lawvm.uk_legislation.effect_temporal_cessation import (
+    temporal_ceases_to_have_effect_exclusion_rule_for_ops,
+)
 
+
+def nonstructural_replay_exclusion_rule(
+    effect: UKEffectRecord,
+    compiled_ops: Sequence[LegalOperation],
+) -> str:
+    """Return the named rule that excludes a nonstructural row from replay."""
+    effect_type = (effect.effect_type or "").strip().lower()
+    if not effect_type.startswith("ceases to have effect"):
+        return ""
+    return temporal_ceases_to_have_effect_exclusion_rule_for_ops(
+        effect_type=effect.effect_type,
+        compiled_ops=compiled_ops,
+    )
 
 def should_replay_nonstructural_ops(
     effect: UKEffectRecord,
@@ -51,6 +67,8 @@ def should_replay_nonstructural_ops(
     if effect_type.startswith("revoked"):
         return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
     if effect_type.startswith("ceases to have effect"):
+        if nonstructural_replay_exclusion_rule(effect, compiled_ops):
+            return False
         return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
     if effect_type == "added":
         return bool(compiled_ops) and all(

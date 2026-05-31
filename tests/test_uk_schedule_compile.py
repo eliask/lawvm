@@ -34,6 +34,10 @@ from lawvm.uk_legislation.effect_temporal import (
 from lawvm.uk_legislation.effect_substitution_normalization import (
     UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID,
 )
+from lawvm.uk_legislation.effect_temporal_cessation import (
+    UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_RULE_ID,
+)
+from lawvm.uk_legislation.lowering_records import append_replay_applicability_filter_diagnostic
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
@@ -41992,6 +41996,68 @@ def test_pipeline_replays_nonstructural_ceases_to_have_effect_repeal_ops() -> No
 
     assert [op.action.value for op in ops] == ["repeal"]
     assert should_replay_nonstructural_ops(effect, ops)
+
+
+def test_pipeline_excludes_temporally_qualified_ceases_to_have_effect_repeal_ops() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="article-2-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>Accordingly, subject to article 3, section 7 of the 1997 Act
+            (and the 1997 Order) cease to have effect at the end of that day.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_temporal_ceases_to_have_effect",
+        effect_type="ceases to have effect",
+        applied=True,
+        requires_applied=True,
+        modified="2016-02-16",
+        affected_uri="/id/ukpga/1997/7/section/7",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1997",
+        affected_number="7",
+        affected_provisions="s. 7",
+        affecting_uri="/id/uksi/2011/977/article/2/2",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2011",
+        affecting_number="977",
+        affecting_provisions="art. 2(2)",
+        affecting_title="Northern Ireland Arms Decommissioning Act 1997 (Cessation of Section 7) Order 2011",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert [op.action.value for op in ops] == ["repeal"]
+    assert not should_replay_nonstructural_ops(effect, ops)
+    diagnostics: list[dict[str, Any]] = []
+    append_replay_applicability_filter_diagnostic(
+        diagnostics,
+        effect=effect,
+        compiled_ops=ops,
+        structural_for_replay=False,
+        replay_applicable=True,
+        applicability_mode="effective_date_plus_feed_applied",
+    )
+    assert diagnostics[0]["rule_id"] == UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_RULE_ID
+    assert diagnostics[0]["blocking"] is False
+
+    frontier = classify_uk_manual_compile_frontier(
+        effect_type=effect.effect_type,
+        source_pathology="",
+        extracted_tag="P2",
+        extracted_text=" ".join(extracted_el.itertext()),
+        lowering_rejections=(),
+        compiled_op_count=len(ops),
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+    assert frontier["status"] == "non_textual_or_out_of_scope"
+    assert frontier["rule_id"] == UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_RULE_ID
 
 
 def test_compile_plain_text_body_sibling_omit_expands_targets() -> None:
