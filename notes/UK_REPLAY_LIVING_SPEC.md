@@ -1614,8 +1614,9 @@ Current bench replay-regime invariant:
 - Manual-frontier validation rejects conflicting duplicate `work_item_id` rows as
   blocking `input_error` records, while treating JSONL `line_number` as
   bookkeeping rather than evidence when deciding whether duplicate rows are
-  identical. A remaining queue must not collapse two different work items under
-  the same stable id.
+  identical. Conflict diagnostics include the relevant JSONL line witnesses. A
+  remaining queue must not collapse two different work items under the same
+  stable id.
 - `lawvm uk-semantic-claims-validate INPUT.jsonl` validates proposed `lawvm.uk_semantic_compile_claim.v1` rows as a separate provenance-only claim surface. With `--workqueue-jsonl PATH`, it matches each claim against exported `lawvm.uk_manual_compile_frontier.v1` work items by `work_item_id` or `(statute_id, effect_id, manual_compile_rule_id)` and checks stable provenance fields such as action family and source-preview hash when available. It emits `lawvm.uk_semantic_compile_claim_validation.v1` rows. `validated_provenance_only` rows must still carry `replay_authorized=false` and `executable=false`; this validator does not prove canonical operations or feed claims into replay.
 - Malformed primary, workqueue, or live-target JSONL rows are emitted as
   blocking `input_error` validation rows. Auxiliary input errors must stay

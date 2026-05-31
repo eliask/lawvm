@@ -118,6 +118,11 @@ def _row_line_number(row: Mapping[str, Any]) -> int:
     return 0
 
 
+def _row_line_witness(row: Mapping[str, Any]) -> str:
+    line_number = _row_line_number(row)
+    return f"line {line_number}" if line_number else "unknown line"
+
+
 def _same_jsonl_payload_ignoring_line_number(
     left: Mapping[str, Any],
     right: Mapping[str, Any],
@@ -145,7 +150,10 @@ def _conflicting_work_item_id_issues_by_index(
         existing_index, existing_row = existing
         if _same_jsonl_payload_ignoring_line_number(existing_row, row):
             continue
-        issue = f"work_item_id {work_item_id!r} has conflicting rows"
+        issue = (
+            f"work_item_id {work_item_id!r} has conflicting rows at "
+            f"{_row_line_witness(existing_row)} and {_row_line_witness(row)}"
+        )
         issue_lists_by_index.setdefault(existing_index, []).append(issue)
         issue_lists_by_index.setdefault(index, []).append(issue)
     return {
