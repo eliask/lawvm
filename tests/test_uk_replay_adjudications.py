@@ -5724,6 +5724,12 @@ def test_executor_resolves_unlabeled_schedule_p1group_single_paragraph_child() -
     assert adjudications[0].detail["strict_disposition"] == "record"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
     assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    target_resolution = adjudications[0].detail["target_resolution"]
+    assert target_resolution["target_resolution_status"] == "recovered"
+    assert target_resolution["source_target"] == "schedule:1/paragraph:4/subparagraph:2B"
+    assert target_resolution["selected_target"] == "schedule:1/paragraph:4/subparagraph:2B"
+    assert target_resolution["scope_confidence"] == "explicit_source_with_context"
+    assert target_resolution["target_candidates"][0]["wrapper_kind"] == "p1group"
 
 
 def test_executor_keeps_ambiguous_unlabeled_schedule_p1group_blocked() -> None:
