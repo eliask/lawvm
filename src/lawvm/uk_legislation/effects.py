@@ -444,6 +444,7 @@ def parse_effects_from_bytes(
     ns = {
         "atom": "http://www.w3.org/2005/Atom",
         "ukm": "http://www.legislation.gov.uk/namespaces/metadata",
+        "openSearch": "http://a9.com/-/spec/opensearch/1.1/",
     }
     records = []
     for feed_index, raw in enumerate(feed_bytes_list):
@@ -463,7 +464,24 @@ def parse_effects_from_bytes(
                     rejection["feed_locator"] = feed_locators[feed_index]
                 parse_rejections_out.append(rejection)
             continue
-        for entry_index, entry in enumerate(root.findall("atom:entry", ns)):
+        entries = root.findall("atom:entry", ns)
+        if not entries and parse_rejections_out is not None:
+            observation = _uk_effect_feed_diagnostic(
+                rule_id="uk_effect_feed_empty_recorded",
+                phase="parse",
+                reason="UK effect feed page contained no Atom entries.",
+                blocking=False,
+                feed_index=feed_index,
+                total_results=root.findtext(
+                    "openSearch:totalResults",
+                    default="",
+                    namespaces=ns,
+                ),
+            )
+            if feed_locators is not None and feed_index < len(feed_locators):
+                observation["feed_locator"] = feed_locators[feed_index]
+            parse_rejections_out.append(observation)
+        for entry_index, entry in enumerate(entries):
             effect = entry.find(".//ukm:Effect", ns)
             if effect is None:
                 if parse_rejections_out is not None:

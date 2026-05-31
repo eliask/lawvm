@@ -583,6 +583,38 @@ def test_parse_effects_from_bytes_records_entry_missing_effect() -> None:
     ]
 
 
+def test_parse_effects_from_bytes_records_empty_feed_page() -> None:
+    parse_rejections: list[dict[str, Any]] = []
+    feed = b"""
+    <feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:openSearch="http://a9.com/-/spec/opensearch/1.1/">
+      <openSearch:totalResults>0</openSearch:totalResults>
+    </feed>
+    """
+
+    records = parse_effects_from_bytes(
+        [feed],
+        parse_rejections_out=parse_rejections,
+        feed_locators=["https://example.test/changes/affected/uksi/2012/1206/data.feed"],
+    )
+
+    assert records == []
+    assert parse_rejections == [
+        {
+            "rule_id": "uk_effect_feed_empty_recorded",
+            "family": "source_pathology",
+            "phase": "parse",
+            "feed_index": 0,
+            "total_results": "0",
+            "feed_locator": "https://example.test/changes/affected/uksi/2012/1206/data.feed",
+            "reason": "UK effect feed page contained no Atom entries.",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_parse_effects_from_bytes_keeps_existing_api_without_rejection_sink() -> None:
     assert parse_effects_from_bytes([b"<feed><entry></feed>"]) == []
 

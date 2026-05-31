@@ -1187,6 +1187,11 @@ Current bench replay-regime invariant:
   `--fail-on-non-manual-source-chain-frontier` exits nonzero for those rows so a
   "done modulo manual compilation" gate can still fail on missing feed rows or
   missing structural payload evidence.
+- Empty official effect-feed pages emit nonblocking
+  `uk_effect_feed_empty_recorded` observations with feed locator and
+  `openSearch:totalResults` evidence. A no-effect-row frontier should therefore
+  distinguish "feed page present and empty" from absent feed pages or parser
+  failures.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.
