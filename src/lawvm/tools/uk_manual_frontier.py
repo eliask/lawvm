@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 
 if TYPE_CHECKING:
     import argparse
@@ -224,6 +225,48 @@ def _wrong_schema_validation_row(row: Mapping[str, Any]) -> dict[str, Any] | Non
     )
 
 
+def _invalid_replay_regime_validation_row(
+    row: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    value = row.get("replay_regime")
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        return _manual_frontier_validation_row(
+            rule_id="uk_manual_frontier_validator_replay_regime_rejected",
+            validator_status="input_error",
+            line_number=_row_line_number(row),
+            statute_id=str(row.get("statute_id") or ""),
+            effect_id=str(row.get("effect_id") or ""),
+            reason="Manual-frontier replay_regime must be an object when supplied.",
+            blocking=True,
+            strict_disposition="block",
+            quirks_disposition="block",
+            extra={
+                "input_replay_regime": value,
+                "expected_applicability_modes": list(UK_APPLICABILITY_MODE_CHOICES),
+            },
+        )
+    applicability_mode = str(value.get("applicability_mode") or "")
+    if not applicability_mode or applicability_mode in UK_APPLICABILITY_MODE_CHOICES:
+        return None
+    return _manual_frontier_validation_row(
+        rule_id="uk_manual_frontier_validator_replay_regime_rejected",
+        validator_status="input_error",
+        line_number=_row_line_number(row),
+        statute_id=str(row.get("statute_id") or ""),
+        effect_id=str(row.get("effect_id") or ""),
+        reason="Manual-frontier replay_regime.applicability_mode is not supported.",
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="block",
+        extra={
+            "input_applicability_mode": applicability_mode,
+            "expected_applicability_modes": list(UK_APPLICABILITY_MODE_CHOICES),
+        },
+    )
+
+
 def _validation_row_jsonable(
     row: Mapping[str, Any],
     *,
@@ -238,6 +281,9 @@ def _validation_row_jsonable(
     wrong_schema_row = _wrong_schema_validation_row(row)
     if wrong_schema_row is not None:
         return wrong_schema_row
+    replay_regime_error_row = _invalid_replay_regime_validation_row(row)
+    if replay_regime_error_row is not None:
+        return replay_regime_error_row
     if not statute_id or not effect_id:
         return _manual_frontier_validation_row(
             rule_id="uk_manual_frontier_validator_input_missing_key",
@@ -357,6 +403,10 @@ def validate_manual_frontier_rows(
             wrong_schema_row = _wrong_schema_validation_row(row)
             if wrong_schema_row is not None:
                 output.append(wrong_schema_row)
+                continue
+            replay_regime_error_row = _invalid_replay_regime_validation_row(row)
+            if replay_regime_error_row is not None:
+                output.append(replay_regime_error_row)
                 continue
             statute_id = str(row.get("statute_id") or "")
             effect_id = str(row.get("effect_id") or "")

@@ -423,6 +423,66 @@ def test_validate_manual_frontier_rows_tolerates_bad_line_number(
     assert row["rule_id"] == "uk_manual_frontier_validator_schema_rejected"
 
 
+def test_validate_manual_frontier_rows_rejects_malformed_replay_regime(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
+
+    rows = uk_manual_frontier.validate_manual_frontier_rows(
+        (
+            {
+                "line_number": 1,
+                "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-1",
+                "replay_regime": "effective_date_only",
+            },
+        ),
+        db_path=db_path,
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "input_error"
+    assert row["rule_id"] == "uk_manual_frontier_validator_replay_regime_rejected"
+    assert row["blocking"] is True
+    assert row["input_replay_regime"] == "effective_date_only"
+    assert "effective_date_only" in row["expected_applicability_modes"]
+
+
+def test_validate_manual_frontier_rows_rejects_unknown_applicability_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
+
+    rows = uk_manual_frontier.validate_manual_frontier_rows(
+        (
+            {
+                "line_number": 1,
+                "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-1",
+                "replay_regime": {"applicability_mode": "typo_mode"},
+            },
+        ),
+        db_path=db_path,
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "input_error"
+    assert row["rule_id"] == "uk_manual_frontier_validator_replay_regime_rejected"
+    assert row["blocking"] is True
+    assert row["input_applicability_mode"] == "typo_mode"
+    assert "effective_date_plus_feed_applied" in row["expected_applicability_modes"]
+
+
 def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     original_rows = (
         {
