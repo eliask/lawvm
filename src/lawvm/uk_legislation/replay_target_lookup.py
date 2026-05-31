@@ -6,6 +6,13 @@ import re
 from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_FALLBACK,
+    TARGET_AMBIGUOUS,
+    TARGET_RECOVERED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+)
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import (
@@ -59,6 +66,36 @@ class _ScheduleItemTargetCandidate(NamedTuple):
     node: UKMutableNode
     parent: UKMutableNode
     index: int
+
+
+def _target_resolution_address_for_node(
+    statute: UKMutableStatute,
+    target_node: IRNode,
+) -> str:
+    """Return a diagnostic legal-address string for a mutable replay node."""
+
+    def _walk(node: IRNode, path: tuple[tuple[str, str], ...]) -> str:
+        if node is target_node:
+            return str(LegalAddress(path=path))
+        for child in node.children:
+            child_path = path
+            child_kind = _uk_kind_value(child.kind)
+            if child_kind.lower() != "body":
+                child_path = (*path, (child_kind, str(child.label or "")))
+            found = _walk(child, child_path)
+            if found:
+                return found
+        return ""
+
+    for root in (statute.body, *statute.supplements):
+        root_kind = _uk_kind_value(root.kind)
+        root_path = ()
+        if root_kind.lower() != "body":
+            root_path = ((root_kind, str(root.label or "")),)
+        found = _walk(root, root_path)
+        if found:
+            return found
+    return ""
 
 
 class _TargetLookupSelf(Protocol):
@@ -340,6 +377,10 @@ class UKReplayTargetLookupMixin:
                             if len(all_recursive) == 1:
                                 res_node, res_p, res_i = all_recursive[0]
                                 if target_resolution_op is not None:
+                                    recovered_target = _target_resolution_address_for_node(
+                                        self.statute,
+                                        cast(IRNode, res_node),
+                                    ) or str(target)
                                     _append_uk_replay_adjudication(
                                         self.adjudications_out,
                                         kind=UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID,
@@ -359,6 +400,41 @@ class UKReplayTargetLookupMixin:
                                             original_target_path=str(target),
                                             recovered_path_step_kind=str(p_kind),
                                             recovered_path_step_label=str(p_label),
+                                            recovered_target=recovered_target,
+                                            target_resolution=TargetResolutionCertificate(
+                                                rule_id=UK_REPLAY_TARGET_RESOLVED_BY_RECURSIVE_DESCENT_RULE_ID,
+                                                phase="replay",
+                                                reason="unique_recursive_descendant_matched_failed_target_step",
+                                                status=TARGET_RECOVERED,
+                                                source_target=str(target),
+                                                candidate_count=1,
+                                                candidates=(
+                                                    TargetResolutionCandidate(
+                                                        target=recovered_target,
+                                                        reason="recursive_descendant_kind_label_match",
+                                                        detail={
+                                                            "recovered_kind": (
+                                                                str(res_node.kind) if res_node is not None else ""
+                                                            ),
+                                                            "recovered_label": (
+                                                                str(res_node.label or "")
+                                                                if res_node is not None
+                                                                else ""
+                                                            ),
+                                                        },
+                                                    ),
+                                                ),
+                                                selected_target=recovered_target,
+                                                scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
+                                                blocking=False,
+                                                strict_disposition="block",
+                                                quirks_disposition="apply",
+                                                detail={
+                                                    "action": _action_name(target_resolution_op.action),
+                                                    "op_id": target_resolution_op.op_id,
+                                                    "recovery_family": "target_resolution_recovery",
+                                                },
+                                            ).to_diagnostic_detail(),
                                         ),
                                     )
                                 next_cands.append(
@@ -372,6 +448,35 @@ class UKReplayTargetLookupMixin:
                                 candidate_paths = tuple(
                                     f"{str(m[0].kind)}:{str(m[0].label or '')}" if m[0] is not None else "?"
                                     for m in all_recursive
+                                )
+                                target_resolution_candidates = tuple(
+                                    TargetResolutionCandidate(
+                                        target=(
+                                            _target_resolution_address_for_node(
+                                                self.statute,
+                                                cast(IRNode, match[0]),
+                                            )
+                                            or (
+                                                f"{str(match[0].kind)}:{str(match[0].label or '')}"
+                                                if match[0] is not None
+                                                else "?"
+                                            )
+                                            if match[0] is not None
+                                            else "?"
+                                        ),
+                                        reason="recursive_descendant_kind_label_match",
+                                        detail={
+                                            "recovered_kind": (
+                                                str(match[0].kind) if match[0] is not None else ""
+                                            ),
+                                            "recovered_label": (
+                                                str(match[0].label or "")
+                                                if match[0] is not None
+                                                else ""
+                                            ),
+                                        },
+                                    )
+                                    for match in all_recursive
                                 )
                                 if target_resolution_op is not None:
                                     _append_uk_replay_adjudication(
@@ -393,6 +498,24 @@ class UKReplayTargetLookupMixin:
                                             recovered_path_step_label=str(p_label),
                                             candidate_count=len(all_recursive),
                                             candidate_paths=candidate_paths,
+                                            target_resolution=TargetResolutionCertificate(
+                                                rule_id=UK_REPLAY_TARGET_AMBIGUOUS_RECURSIVE_DESCENT_RULE_ID,
+                                                phase="replay",
+                                                reason="multiple_recursive_descendants_matched_failed_target_step",
+                                                status=TARGET_AMBIGUOUS,
+                                                source_target=str(target),
+                                                candidate_count=len(all_recursive),
+                                                candidates=target_resolution_candidates,
+                                                scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
+                                                blocking=True,
+                                                strict_disposition="block",
+                                                quirks_disposition="record",
+                                                detail={
+                                                    "action": _action_name(target_resolution_op.action),
+                                                    "op_id": target_resolution_op.op_id,
+                                                    "recovery_family": "target_resolution_recovery",
+                                                },
+                                            ).to_diagnostic_detail(),
                                         ),
                                     )
                                 # Do not populate next_cands — ambiguity means no resolution
