@@ -10,7 +10,7 @@ from lawvm.uk_legislation.source_definition_context import (
     _source_definition_term_from_local_ancestor_context,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
-from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
 
 
 UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID = (
@@ -124,6 +124,25 @@ def _definition_child_insert_payloads(
         if not expected_label:
             expected_label = ""
     return tuple(rows)
+
+
+def _definition_child_block_amendment_insert_payloads(
+    extracted_el: ET._Element,
+    *,
+    anchor_label: str,
+    allow_intercalated_after_anchor: bool = False,
+) -> tuple[dict[str, str], ...]:
+    for node in extracted_el.iter():
+        if _tag(node) != "BlockAmendment":
+            continue
+        payloads = _definition_child_insert_payloads(
+            _text_content(node),
+            anchor_label=anchor_label,
+            allow_intercalated_after_anchor=allow_intercalated_after_anchor,
+        )
+        if payloads:
+            return payloads
+    return ()
 
 
 def _section_or_subsection_target_path(affected_provisions: str) -> tuple[tuple[str, str], ...]:
@@ -274,7 +293,7 @@ def source_definition_child_structural_sibling_insert(
             has_block_amendment = any(
                 _tag(node) == "BlockAmendment" for node in extracted_el.iter()
             )
-            if unsupported_match is None or has_block_amendment:
+            if unsupported_match is None:
                 return None
             target_path = _section_or_subsection_target_path(affected_provisions)
             if not target_path:
@@ -290,9 +309,16 @@ def source_definition_child_structural_sibling_insert(
             ):
                 return None
             anchor_label = _clean_num(unsupported_match.group("anchor"))
-            payloads = _definition_child_insert_payloads(
-                unsupported_match.group("payload"),
-                anchor_label=anchor_label,
+            payloads = (
+                _definition_child_block_amendment_insert_payloads(
+                    extracted_el,
+                    anchor_label=anchor_label,
+                )
+                if has_block_amendment
+                else _definition_child_insert_payloads(
+                    unsupported_match.group("payload"),
+                    anchor_label=anchor_label,
+                )
             )
             if payloads:
                 return {
@@ -323,6 +349,8 @@ def source_definition_child_structural_sibling_insert(
                         for payload in payloads
                     ),
                 }
+            if has_block_amendment:
+                return None
             return {
                 "rule_id": "uk_effect_definition_child_structural_insert_rejected",
                 "blocking": True,
