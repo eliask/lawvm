@@ -853,6 +853,53 @@ def test_validate_semantic_claim_rejects_malformed_operation_family_proof_refs()
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_validator_check_ids() -> None:
+    claim = _claim_row(source_preview="after the entry relating to X insert the row")
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["validator_checks"] = [
+        {
+            "check_id": "claim_identifies_exact_table_carrier",
+            "status": "claimed_not_proved",
+        },
+        {
+            "check_id": "claim_identifies_exact_table_carrier",
+            "status": "claimed_not_proved",
+        },
+        {
+            "check_id": "changed_paths_are_within_claimed_table_surface",
+            "status": "claimed_not_proved",
+        },
+    ]
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-names-anchor"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "proposed_outcome.validator_checks[2].check_id duplicates "
+        "proposed_outcome.validator_checks[1].check_id "
+        "'claim_identifies_exact_table_carrier'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_table_insert_family_proof_semantic() -> None:
     target_text_hash = hashlib.sha256(b"table text").hexdigest()
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
@@ -5060,6 +5107,37 @@ def test_validate_semantic_claim_rejects_ownership_claim_without_status() -> Non
         "ownership_claim source_named_table_surface status is required"
         in row["validation_issues"]
     )
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_duplicate_ownership_claim_ids() -> None:
+    claim = _claim_row()
+    claim["ownership_claims"] = [
+        {
+            "ownership_id": "source_named_table_surface",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "source_named_table_surface",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "mutation_boundary",
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        workqueue_rows=(_workqueue_row(),),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "ownership_claims[2].ownership_id duplicates "
+        "ownership_claims[1].ownership_id 'source_named_table_surface'"
+    ) in row["validation_issues"]
     assert row["replay_authorized"] is False
 
 

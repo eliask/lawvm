@@ -107,6 +107,13 @@ class _LiveTargetIndex(NamedTuple):
     fingerprints_by_statute_id: dict[str, Mapping[str, Mapping[str, Any]]]
 
 
+class _ClaimIdDeclaration(NamedTuple):
+    container: str
+    index: int
+    id_field: str
+    value: str
+
+
 def _read_jsonl_rows(path: Path) -> tuple[dict[str, Any], ...]:
     rows: list[dict[str, Any]] = []
     with open(path, encoding="utf-8") as handle:
@@ -315,6 +322,8 @@ def _validate_claim_schema(row: Mapping[str, Any]) -> tuple[str, ...]:
         issues.append(
             "proposed_outcome.replay_authorized cannot be true in the non-executable validator"
         )
+    issues.extend(_validator_check_identity_issues(row))
+    issues.extend(_ownership_claim_identity_issues(row))
     outcome_kind = _optional_string(proposed_outcome, "outcome_kind")
     if outcome_kind not in _ALLOWED_OUTCOME_KINDS:
         issues.append(
@@ -4377,6 +4386,104 @@ def _claim_ownership_ids(claim: Mapping[str, Any]) -> set[str]:
         | _ownership_ids_from_value(claim.get("required_ownership"))
         | _ownership_ids_from_value(proposed_outcome.get("required_ownership"))
     )
+
+
+def _claim_id_declarations_from_value(
+    *,
+    container: str,
+    id_field: str,
+    rows: tuple[tuple[str, Mapping[str, Any]], ...],
+) -> tuple[_ClaimIdDeclaration, ...]:
+    return tuple(
+        _ClaimIdDeclaration(
+            container=container,
+            index=index,
+            id_field=id_field,
+            value=declaration_id,
+        )
+        for index, (declaration_id, _row) in enumerate(rows, start=1)
+    )
+
+
+def _claim_id_location(declaration: _ClaimIdDeclaration) -> str:
+    return (
+        f"{declaration.container}[{declaration.index}]."
+        f"{declaration.id_field}"
+    )
+
+
+def _duplicate_claim_id_issues(
+    declarations: tuple[_ClaimIdDeclaration, ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    seen: dict[str, _ClaimIdDeclaration] = {}
+    for declaration in declarations:
+        previous = seen.get(declaration.value)
+        if previous is not None:
+            issues.append(
+                f"{_claim_id_location(declaration)} duplicates "
+                f"{_claim_id_location(previous)} {declaration.value!r}"
+            )
+            continue
+        seen[declaration.value] = declaration
+    return tuple(issues)
+
+
+def _claim_validator_check_declarations(
+    claim: Mapping[str, Any],
+) -> tuple[_ClaimIdDeclaration, ...]:
+    proposed_outcome = _mapping_value(claim, "proposed_outcome")
+    declarations: list[_ClaimIdDeclaration] = []
+    for container, value in (
+        ("validator_checks", claim.get("validator_checks")),
+        (
+            "proposed_outcome.validator_checks",
+            proposed_outcome.get("validator_checks"),
+        ),
+    ):
+        declarations += list(
+            _claim_id_declarations_from_value(
+                container=container,
+                id_field="check_id",
+                rows=_validator_check_rows_from_value(value),
+            )
+        )
+    return tuple(declarations)
+
+
+def _validator_check_identity_issues(claim: Mapping[str, Any]) -> tuple[str, ...]:
+    return _duplicate_claim_id_issues(_claim_validator_check_declarations(claim))
+
+
+def _claim_ownership_declarations(
+    claim: Mapping[str, Any],
+) -> tuple[_ClaimIdDeclaration, ...]:
+    proposed_outcome = _mapping_value(claim, "proposed_outcome")
+    declarations: list[_ClaimIdDeclaration] = []
+    for container, value in (
+        ("ownership_claims", claim.get("ownership_claims")),
+        (
+            "proposed_outcome.ownership_claims",
+            proposed_outcome.get("ownership_claims"),
+        ),
+        ("required_ownership", claim.get("required_ownership")),
+        (
+            "proposed_outcome.required_ownership",
+            proposed_outcome.get("required_ownership"),
+        ),
+    ):
+        declarations += list(
+            _claim_id_declarations_from_value(
+                container=container,
+                id_field="ownership_id",
+                rows=_ownership_rows_from_value(value),
+            )
+        )
+    return tuple(declarations)
+
+
+def _ownership_claim_identity_issues(claim: Mapping[str, Any]) -> tuple[str, ...]:
+    return _duplicate_claim_id_issues(_claim_ownership_declarations(claim))
 
 
 def _ownership_ids_from_value(value: Any) -> set[str]:
