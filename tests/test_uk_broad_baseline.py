@@ -508,6 +508,7 @@ def test_triage_bucket_for_row_is_added_to_one_row_output(monkeypatch, capsys) -
     assert row["triage_bucket"] == "base_metadata_only_frontier"
     assert row["source_chain_frontier"] is False
     assert row["source_chain_frontier_reason"] == ""
+    assert row["source_chain_frontier_reasons"] == []
 
 
 def test_source_chain_frontier_reason_is_added_to_one_row_output(
@@ -536,6 +537,78 @@ def test_source_chain_frontier_reason_is_added_to_one_row_output(
     assert row["triage_bucket"] == "no_effect_rows_frontier"
     assert row["source_chain_frontier"] is True
     assert row["source_chain_frontier_reason"] == "effect_rows_absent_or_unpublished"
+    assert row["source_chain_frontier_reasons"] == [
+        "effect_rows_absent_or_unpublished"
+    ]
+
+
+def test_source_chain_frontier_marks_source_insufficient_manual_rows() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "uksi/2000/1043",
+                "score_status": "scored",
+                "aligned": 88.53,
+                "aligned_excluding_grounding_collateral": 88.53,
+                "unaligned": 88.53,
+                "n_grounding_collateral": 0,
+                "n_replay": 168,
+                "n_oracle": 215,
+                "n_only_in_oracle": 47,
+                "n_only_in_replayed": 0,
+                "n_effects": 54,
+                "n_ops": 37,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_supported": 32,
+                    "source_insufficient": 19,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
+    assert summary["source_chain_frontier_reasons"] == {
+        "manual_frontier_source_insufficient": 1
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "manual_frontier_source_insufficient": ["uksi/2000/1043"],
+    }
+
+
+def test_source_chain_frontier_row_preserves_multiple_reasons(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        uk_broad_baseline,
+        "score_one",
+        lambda _statute_id: {
+            "statute_id": "ukpga/1901/7",
+            "score_status": "scored",
+            "aligned": 91.7,
+            "aligned_excluding_grounding_collateral": 91.7,
+            "unaligned": 32.8,
+            "n_replay": 22,
+            "n_oracle": 24,
+            "n_effects": 1,
+            "n_ops": 0,
+            "n_compile_rejections": 1,
+            "compile_rejection_rule_counts": {
+                "uk_effect_missing_structural_payload_rejected": 1,
+            },
+            "manual_frontier_status_counts": {"source_insufficient": 1},
+        },
+    )
+
+    assert uk_broad_baseline.main(["--one", "ukpga/1901/7"]) == 0
+    row = json.loads(capsys.readouterr().out)
+
+    assert row["source_chain_frontier"] is True
+    assert (
+        row["source_chain_frontier_reason"]
+        == "effect_rows_missing_structural_payload"
+    )
+    assert row["source_chain_frontier_reasons"] == [
+        "effect_rows_missing_structural_payload",
+        "manual_frontier_source_insufficient",
+    ]
 
 
 def test_run_driver_can_fail_on_active_unclassified_residuals(monkeypatch, capsys) -> None:

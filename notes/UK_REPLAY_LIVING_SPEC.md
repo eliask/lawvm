@@ -1170,6 +1170,12 @@ Current bench replay-regime invariant:
   acquisition evidence; the statute lists let a saved broad run directly name
   which source-chain cases need feed-page acquisition, unpublished/no-effect-row
   review, or missing structural payload evidence.
+- UK broad-baseline row JSON also carries `source_chain_frontier_reasons` as a
+  list while retaining the legacy singular `source_chain_frontier_reason` field.
+  Manual-frontier rows with `manual_frontier_status_counts.source_insufficient`
+  are source-chain rows even when they have partial compiled operations, because
+  the remaining blocker is missing or unproved source witness rather than parser
+  broadening work.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.
