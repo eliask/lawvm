@@ -489,6 +489,21 @@ rejections while preserving its miss rows. Broad gate scores are unchanged
 (`0 improved, 0 regressed`), and the active bucket split moves one row from
 `compile_rejection_dominated_residual` to `residual_after_grounding`.
 
+**Passive quoted substitution lowering (2026-05-31):**
+Source clauses of the form `for "X", there shall be substituted "Y"` now emit
+the named text-patch observation
+`uk_effect_passive_quoted_substitution_text_patch` instead of relying on an
+unnamed fragment parse or blocking as overlap substitution. The related
+exception-bearing form `for "X" (except in the phrase "Y"), there shall be
+substituted "Z"` emits `uk_effect_except_phrase_substitution_text_patch`; replay
+preserves the excluded phrase in the selector rather than applying an unsafe
+all-occurrences rewrite. Current witness: `ukpga/1984/12`, affected by
+`uksi/2003/2155` Sch. 1 para. 1(2)(a)-(e), where five previously blocked
+source-owned text substitutions now lower to typed text patches. The refreshed
+77-statute gate remains score-stable (`0 improved, 0 regressed`), while
+`ukpga/1984/12` blocking compile diagnostics drop `47 -> 42` and
+`ukpga/1998/17` drops `19 -> 18`.
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
