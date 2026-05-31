@@ -745,6 +745,35 @@ def test_validate_semantic_claim_rejects_source_text_precondition_mismatch() -> 
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_source_precondition_missing_from_workqueue_preview() -> None:
+    claim = _claim_row(source_preview="after the entry relating to X insert the row")
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "contains": "entry relating to X",
+        },
+    ]
+    workqueue = _workqueue_row(source_preview="insert the row")
+    source = workqueue["source"]
+    assert isinstance(source, dict)
+    source.pop("text_preview_sha256")
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        workqueue_rows=(workqueue,),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_source_text_mismatch"
+    assert row["rule_id"] == "uk_semantic_claim_source_text_precondition_mismatch"
+    assert (
+        "source_text_preconditions[1].contains 'entry relating to X' is absent "
+        "from supplied source text indexes [2]"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_source_text_occurrence_count() -> None:
     claim = _claim_row(source_preview='for "old" substitute "new"; for "old" omit')
     proposed_outcome = claim["proposed_outcome"]

@@ -4326,17 +4326,25 @@ def _validate_source_text_preconditions(
         if not source_texts:
             issues.append(f"{prefix} cannot be checked because no source text preview is supplied")
             continue
-        matching_texts = tuple(
-            source_text for source_text in source_texts if snippet in source_text
+        missing_text_indexes = tuple(
+            index
+            for index, source_text in enumerate(source_texts, start=1)
+            if snippet not in source_text
         )
-        if not matching_texts:
+        if len(missing_text_indexes) == len(source_texts):
             issues.append(f"{prefix}.contains {snippet!r} is absent from supplied source text")
+            continue
+        if missing_text_indexes:
+            issues.append(
+                f"{prefix}.contains {snippet!r} is absent from supplied source "
+                f"text indexes {list(missing_text_indexes)}"
+            )
             continue
         count_issues = _source_text_precondition_count_issues(
             prefix=prefix,
             precondition=precondition,
             snippet=snippet,
-            matching_texts=matching_texts,
+            matching_texts=source_texts,
         )
         if count_issues:
             issues.extend(count_issues)
