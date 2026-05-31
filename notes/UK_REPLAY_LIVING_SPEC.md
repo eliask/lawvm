@@ -1640,8 +1640,8 @@ Current bench replay-regime invariant:
   obligations through Python set collapse.
 - Weak-validator status checks are case-insensitive after trimming whitespace:
   `passed`, `proved`, `validated`, and `verified` cannot be smuggled through as
-  capitalization variants on validator checks, ownership claims, or operation-
-  family proofs.
+  capitalization variants on top-level semantic claim status, validator checks,
+  ownership claims, or operation-family proofs.
 - JSONL `line_number` is input bookkeeping, not provenance. When
   `uk-semantic-claims-validate` reads a file, the physical JSONL line number
   replaces any user-supplied `line_number`; direct API validation degrades

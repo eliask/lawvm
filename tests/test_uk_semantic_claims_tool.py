@@ -157,6 +157,20 @@ def test_validate_semantic_claim_degrades_malformed_direct_line_number() -> None
     assert rows[0]["line_number"] == 0
 
 
+def test_validate_semantic_claim_rejects_proving_claim_status() -> None:
+    claim = _claim_row()
+    claim["claim_status"] = " Validated "
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "claim_status ' Validated ' cannot be claimed by this non-executable validator"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_uk_semantic_claims_validate_main_uses_physical_line_number(
     tmp_path: Path,
     capsys,
