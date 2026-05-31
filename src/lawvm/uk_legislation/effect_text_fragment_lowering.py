@@ -91,6 +91,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_DEFINITION_ENTRY_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
+    UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
@@ -99,6 +100,13 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 _UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
     "uk_effect_word_substitution_escalated_to_structural_replace"
+)
+_AFTER_ANCHOR_SUBSTITUTE_METADATA_INSERT_RE = re.compile(
+    r"\bafter\s+(?:the\s+words?\s+|the\s+word\s+)?"
+    r"[“\"'‘](?P<anchor>[^”\"'’]{1,500})[”\"'’]"
+    r"(?P<scope>[^“\"'‘]{0,300}?)"
+    r"\bsubstitute\s+[“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
+    flags=re.I,
 )
 
 
@@ -653,6 +661,15 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_after_ordinal_insert is not None:
             subs = [metadata_carried_after_ordinal_insert]
+    if not subs:
+        metadata_carried_after_substitute_insert = (
+            _effect_metadata_carried_after_substitute_insert_fragment(
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_after_substitute_insert is not None:
+            subs = [metadata_carried_after_substitute_insert]
     if not subs:
         metadata_carried_definition_entry_repeals = (
             _effect_metadata_carried_definition_entry_repeal_fragments(
@@ -1436,6 +1453,57 @@ def _effect_metadata_carried_after_ordinal_insert_fragment(
         "occurrence": _ORDINAL_OCCURRENCES[match.group("ordinal").lower()],
         "rule_id": UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     }
+
+
+def _effect_metadata_carried_after_substitute_insert_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word inserted", "words inserted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _AFTER_ANCHOR_SUBSTITUTE_METADATA_INSERT_RE.search(text)
+    if match is None:
+        return None
+    anchor = match.group("anchor").strip()
+    inserted = match.group("inserted").strip()
+    if not anchor or not inserted:
+        return None
+    joiner = (
+        ""
+        if anchor.endswith((" ", "\t", "\n", "\r"))
+        or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    fragment = {
+        "original": anchor,
+        "replacement": f"{anchor}{joiner}{inserted}".strip(),
+        "rule_id": UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
+    }
+    occurrence = _occurrence_from_after_substitute_scope(match.group("scope"))
+    if occurrence:
+        fragment["occurrence"] = occurrence
+    return fragment
+
+
+def _occurrence_from_after_substitute_scope(scope: str) -> str:
+    normalized = " ".join(str(scope or "").lower().split())
+    if not normalized:
+        return ""
+    for ordinal, occurrence in sorted(
+        _ORDINAL_OCCURRENCES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if re.search(rf"\b{re.escape(ordinal)}\b", normalized):
+            return occurrence
+    if re.search(r"\blast(?:ly)?\s+(?:occurring|occurs?|appears?)\b", normalized):
+        return "-1"
+    return ""
 
 
 def _effect_interpretation_entries_relating_repeal_fragments(

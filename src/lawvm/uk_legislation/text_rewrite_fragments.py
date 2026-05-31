@@ -72,6 +72,9 @@ UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID = (
 UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_after_ordinal_insert_text_patch"
 )
+UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID = (
+    "uk_effect_metadata_carried_after_substitute_insert_text_patch"
+)
 UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
 UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 UK_AFTER_ANCHOR_TO_END_OMISSION_RULE_ID = "uk_effect_after_anchor_to_end_omission_text_patch"
@@ -433,6 +436,35 @@ def append_basic_text_rewrite_observations(
                     "replacement": str(fragment.get("replacement") or ""),
                     "excluded_child_kind": child_kind,
                     "excluded_child_label": child_label,
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="effect_metadata_insert_after_anchor_substitute_source",
+                reason=(
+                    "UK effect metadata classifies the row as inserted words while "
+                    "the source phrase says after a quoted anchor substitute quoted "
+                    "words; lowering preserves this as an owned after-anchor insert "
+                    "rather than silently changing the action family."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
                     "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
                 },
             )

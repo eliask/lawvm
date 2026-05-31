@@ -8336,6 +8336,27 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         ),
         (
+            "2 In section 1(3)(a), after “authority” substitute “ responsible for the school education ” .",
+            "words inserted",
+            "s. 1(3)(a)",
+            "authority",
+            "authority responsible for the school education",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_after_substitute_insert_text_patch",
+        ),
+        (
+            "a in paragraph (a), after “provision”, where it occurs for the first time, "
+            "substitute “ (whether or not educational provision) ” ,",
+            "words inserted",
+            "s. 1(3)(a)",
+            "provision",
+            "provision (whether or not educational provision)",
+            1,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_after_substitute_insert_text_patch",
+        ),
+        (
             "c repeal the words “or to the Scottish Crime and Drug Enforcement Agency”.",
             "words repealed",
             "s. 24(2)(b)",
@@ -8613,6 +8634,7 @@ def test_compile_additional_frontier_text_patch_idioms(
     if expected_rule_id in {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_anchor_to_end_block_substitution_text_patch",
+        "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
         "uk_effect_range_unquoted_substitution_text_patch",
     }:
