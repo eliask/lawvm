@@ -568,6 +568,16 @@ affected by `ukpga/2015/7` Sch. 4 paras. 6, 7, 9(2), and 10(a)-(b). This cuts
 and blocking compile diagnostics `131 -> 126`; the 77-statute gate remains
 score-stable (`0 improved, 0 regressed`).
 
+Closing-quote inserted payloads are treated as a source quotation pathology only
+under `uk_effect_after_quoted_anchor_closing_quote_insert_text_patch`, e.g. when
+source says `after "X" insert ", Y,"` but encodes the inserted payload's opening
+quote as `”`. The repair records the pathology and emits the ordinary
+target-local quoted-anchor insertion; it does not broaden the quoted anchor
+grammar. Current witness: `ukpga/1990/8` affected by `anaw/2015/4`
+s. 43(4)(b). This cuts `ukpga/1990/8` overlap blockers `8 -> 7`, blocking
+effect rows `125 -> 124`, and blocking compile diagnostics `126 -> 125`; the
+77-statute gate remains score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
