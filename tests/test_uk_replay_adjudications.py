@@ -2167,6 +2167,46 @@ def test_uk_passive_quoted_word_omission_lowers_to_text_repeal() -> None:
     assert lowering_records == []
 
 
+def test_uk_post_child_quoted_word_repeal_lowers_to_text_repeal() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-1f06821a3fdd3a2ff80e11ba6a4879d1",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2015-02-27",
+        affected_uri="/id/ukpga/1997/9/section/9/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1997",
+        affected_number="9",
+        affected_provisions="s. 9(3)",
+        affecting_uri="/id/asp/2014/19",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="19",
+        affecting_provisions="sch. 3 para. 9(a)(i)",
+        affecting_title="Historic Environment Scotland Act 2014",
+    )
+    extracted = ET.fromstring(
+        "<P4>i the \u201cand\u201d after paragraph (b) is repealed,</P4>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target == LegalAddress(path=(("section", "9"), ("subsection", "3")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "and"
+    assert op.text_patch.replacement is None
+    assert lowering_records == []
+
+
 def test_uk_from_beginning_passive_substitution_lowers_to_text_replace() -> None:
     lowering_records: list[dict[str, object]] = []
     effect = UKEffectRecord(
@@ -2206,6 +2246,47 @@ def test_uk_from_beginning_passive_substitution_lowers_to_text_replace() -> None
     assert op.text_patch is not None
     assert op.text_patch.selector.match_text == "TEXT_FROM__TO_a person"
     assert op.text_patch.replacement == "For the purposes of the Enterprise Act 2002, a person"
+    assert lowering_records == []
+
+
+def test_uk_from_beginning_active_comma_substitution_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-544f70aa6a2a641b1cb131902613964e",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-12-01",
+        affected_uri="/id/ukpga/1997/9/section/34/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1997",
+        affected_number="9",
+        affected_provisions="s. 34(2)",
+        affecting_uri="/id/asp/2011/3",
+        affecting_class="ScottishAct",
+        affecting_year="2011",
+        affecting_number="3",
+        affecting_provisions="s. 22(2)(b)",
+        affecting_title="Historic Environment (Amendment) (Scotland) Act 2011",
+    )
+    extracted = ET.fromstring(
+        "<P3>b in subsection (2), for the words from the beginning to "
+        "\u201ctaken\u201d, substitute \u201c Those steps are \u201d ,</P3>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "34"), ("subsection", "2")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM__TO_taken"
+    assert op.text_patch.replacement == "Those steps are"
     assert lowering_records == []
 
 

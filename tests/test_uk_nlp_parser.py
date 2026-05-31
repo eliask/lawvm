@@ -388,6 +388,18 @@ def test_parse_fragment_substitution_handles_quoted_word_shall_be_omitted() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_post_child_quoted_word_repealed() -> None:
+    subs = parse_fragment_substitution('i the “and” after paragraph (b) is repealed,')
+
+    assert subs == [
+        {
+            "original": "and",
+            "replacement": "",
+            "rule_id": "uk_effect_quoted_word_passive_omit_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_respectively_there_is_substituted() -> None:
     subs = parse_fragment_substitution(
         "1 In each of the following provisions of the 2002 Act, for the words "
@@ -2939,6 +2951,21 @@ def test_parse_fragment_substitution_handles_from_beginning_passive_substitution
         {
             "original": "TEXT_FROM__TO_a person",
             "replacement": "For the purposes of the Enterprise Act 2002, a person",
+            "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_from_beginning_active_comma_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "b in subsection (2), for the words from the beginning to \u201ctaken\u201d, "
+        "substitute \u201c Those steps are \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_taken",
+            "replacement": "Those steps are",
             "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
         }
     ]
