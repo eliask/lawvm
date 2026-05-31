@@ -261,9 +261,13 @@ as `passed`, `proved`, `validated`, or `verified` are rejected because this
 validator has not checked source/live state. Non-operation outcomes are also
 shape-checked: non-replayable findings, source pathologies, oracle adjudications,
 and source-evidence requests must carry typed payloads. If a claim declares
-`source_text_preconditions`, the validator checks exact snippets, and optional
-snippet SHA-256 hashes and exact/min/max snippet occurrence counts, against
-supplied claim/workqueue source previews. Passing source-text preconditions
+`source_text_preconditions`, the validator checks exact snippets, optional
+snippet SHA-256 hashes, exact/min/max snippet occurrence counts, and optional
+`after_precondition_ids`/`before_precondition_ids` relationships against
+supplied claim/workqueue source previews. Source precondition ids used for
+ordering must be unique, referenced ids must exist, and ordered snippets must
+occur in the same supplied source preview in the declared order. Passing
+source-text preconditions
 produce `validated_provenance_and_source_text_only` when no live-target index is
 supplied. If `--live-targets-jsonl` is supplied,
 canonical-operation claims are additionally checked against a non-executable
