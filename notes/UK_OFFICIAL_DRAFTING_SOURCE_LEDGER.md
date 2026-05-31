@@ -429,8 +429,11 @@ raw score rank does not confuse grounding/style/frontier classes with
 deterministic replay bugs. On the curated 77-statute gate the current split is
 `high_fidelity_after_grounding=49`, `grounding_dominated_residual=10`,
 `structural_match_eid_scheme_residual=4`, `base_metadata_only_frontier=1`, and
-`residual_after_grounding=13`; the gate remains unchanged (`0 improved,
-0 regressed`), with 77/77 scored and `source_frontier=0`.
+`residual_after_grounding=13`. A later refinement splits rows with no compiled
+operation stream into `no_compiled_ops_frontier=7`, leaving
+`residual_after_grounding=10` active replay/source-family selectors. The gate
+remains unchanged (`0 improved, 0 regressed`), with 77/77 scored and
+`source_frontier=0`.
 
 ---
 
