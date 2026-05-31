@@ -89,6 +89,35 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "whole_act_listed_enactments_scope_and_exclusions",
     }
 )
+_FAMILY_PROOF_DUPLICATE_SENSITIVE_FIELDS = (
+    "anchor_live_target_precondition_ids",
+    "anchor_live_target_precondition_paths",
+    "anchor_or_ordering_ownership_ids",
+    "applicability_scope_precondition_ids",
+    "boundary_ownership_ids",
+    "container_payload_precondition_ids",
+    "definition_ownership_ids",
+    "destination_live_target_precondition_paths",
+    "destination_target_precondition_ids",
+    "entry_ownership_ids",
+    "excluded_surface_families",
+    "exclusion_ownership_ids",
+    "inserted_payload_precondition_ids",
+    "list_membership_precondition_ids",
+    "migration_ownership_ids",
+    "omitted_reference_precondition_ids",
+    "payload_precondition_ids",
+    "quoted_preimage_precondition_ids",
+    "referent_ownership_ids",
+    "repealed_boundary_ownership_ids",
+    "savings_condition_precondition_ids",
+    "source_live_target_precondition_paths",
+    "source_range_precondition_ids",
+    "source_target_precondition_ids",
+    "split_ownership_ids",
+    "table_surface_precondition_ids",
+    "tail_connector_precondition_ids",
+)
 
 
 class _WorkqueueIndex(NamedTuple):
@@ -628,6 +657,14 @@ def _validate_operation_family_proof_refs(
             issues.append(
                 f"{prefix}.live_target_precondition_paths references unknown "
                 f"path {path!r}"
+            )
+        for field in _FAMILY_PROOF_DUPLICATE_SENSITIVE_FIELDS:
+            issues.extend(
+                _duplicate_string_reference_issues(
+                    prefix=prefix,
+                    field=field,
+                    values=_string_tuple_from_value(proof.get(field)),
+                )
             )
         if not proof_source_ids and not proof_live_ids and not proof_live_paths:
             issues.append(

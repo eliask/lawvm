@@ -194,7 +194,8 @@ The current validator checks only:
   duplicate `operation_ids`, `validator_check_ids`,
   `source_text_precondition_ids`, `live_target_precondition_ids`, or
   `live_target_precondition_paths` reject the claim before proof semantics are
-  considered
+  considered. Recognized family-specific proof reference, ownership, source,
+  and live-path fields are duplicate-sensitive for the same reason
 - operation-family proof semantics resolve `live_target_precondition_ids` only
   to the paths on those referenced live precondition rows; unrelated live
   preconditions declared elsewhere in the claim do not widen the proof's target
