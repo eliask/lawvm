@@ -3989,7 +3989,7 @@ def _source_text_precondition_count_issues(
     )
     if exact_count is None and _has_any_key(precondition, ("occurrence_count", "count")):
         issues.append(f"{prefix}.occurrence_count must be a non-negative integer")
-    elif exact_count is not None and exact_count not in counts:
+    elif exact_count is not None and any(count != exact_count for count in counts):
         issues.append(
             f"{prefix}.occurrence_count {exact_count} does not match supplied "
             f"source text counts {list(counts)} for {snippet!r}"
@@ -4003,7 +4003,7 @@ def _source_text_precondition_count_issues(
         ("min_occurrences", "minimum_occurrence_count"),
     ):
         issues.append(f"{prefix}.min_occurrences must be a non-negative integer")
-    elif min_count is not None and not any(count >= min_count for count in counts):
+    elif min_count is not None and any(count < min_count for count in counts):
         issues.append(
             f"{prefix}.min_occurrences {min_count} exceeds supplied source text "
             f"counts {list(counts)} for {snippet!r}"
@@ -4017,7 +4017,7 @@ def _source_text_precondition_count_issues(
         ("max_occurrences", "maximum_occurrence_count"),
     ):
         issues.append(f"{prefix}.max_occurrences must be a non-negative integer")
-    elif max_count is not None and not any(count <= max_count for count in counts):
+    elif max_count is not None and any(count > max_count for count in counts):
         issues.append(
             f"{prefix}.max_occurrences {max_count} is below supplied source text "
             f"counts {list(counts)} for {snippet!r}"

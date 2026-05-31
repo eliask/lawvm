@@ -546,6 +546,35 @@ def test_validate_semantic_claim_rejects_source_text_occurrence_count_mismatch()
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_occurrence_count_if_any_source_preview_mismatches() -> None:
+    claim = _claim_row(source_preview='for "old" substitute "new"')
+    claim["source_preview"] = 'for "old" substitute "new"; for "old" omit'
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "contains": '"old"',
+            "occurrence_count": 1,
+            "min_occurrences": 1,
+            "max_occurrences": 1,
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_source_text_mismatch"
+    assert (
+        'source_text_preconditions[1].occurrence_count 1 does not match supplied '
+        'source text counts [1, 2] for \'"old"\''
+    ) in row["validation_issues"]
+    assert (
+        'source_text_preconditions[1].max_occurrences 1 is below supplied source '
+        'text counts [1, 2] for \'"old"\''
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_invalid_source_text_occurrence_count() -> None:
     claim = _claim_row(source_preview='for "old" substitute "new"')
     proposed_outcome = claim["proposed_outcome"]
