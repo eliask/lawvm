@@ -78,6 +78,59 @@ claiming the UK source stack is complete.
 
 ---
 
+## Downloaded-source audit (2026-05-31)
+
+This audit reviewed the downloaded OPC, Cabinet Office/PBL, SI, and devolved
+source bundle under `.tmp/uk_drafting_sources/` against the executable UK replay
+surface. It is source-ledger evidence, not a replay mutation.
+
+- **OPC Drafting Guidance 2024 remains the strongest executable source for
+  explicit Act-amendment grammar.** Parts 6.1-6.7 and 6.9 support existing
+  explicit repeal/omit, substitution, insertion, occurrence-scope, heading,
+  schedule-scope, inserted-numbering, and non-textual-modification rule
+  boundaries. They do not license fallback target broadening, action-family
+  mutation, or heading/body substitution unless the source form says so.
+- **OPC uncommenced/commencement/expiry material is temporal and conditional.**
+  Parts 6.8, 10.6, and 10.7 support typed PIT/prospective/expiry lanes and
+  manual-frontier classification. They do not support a blanket current-text
+  prospective gate, and expiry must not be silently lowered as repeal.
+- **Bill-amendment and process sources belong to proposed-law branches.**
+  `OPC_AMENDING_BILLS_STYLE_MANUAL_2024` uses page/line amendment forms,
+  printing/reprint conventions, motions, provisional numbering, and bill-stage
+  "leave out and insert" forms. These are evidence for bill/proposed-law branch
+  ingestion and editorial projection, not direct enacted-Act amendment lowering.
+- **The Guide to Making Legislation is process authority, not an enacted-source
+  oracle.** The electronic GOV.UK version is the live process source; PDF copies
+  are captured renderings. Draft-bill publication, explanatory notes, legislative
+  consent, amendment handling, Henry VIII powers, early commencement, and
+  retrospective operation support source lanes, branch/version metadata, and
+  diagnostics. They do not authorize replay mutation by themselves.
+- **Explanatory notes and supporting papers are supporting witnesses.** They may
+  be updated during passage and published alongside Acts, but they are not
+  legislation and do not form part of the bill. Future acquisition may capture
+  EN snapshots, but replay must not treat them as amendment authority.
+- **SI Practice supports explicit SI temporal/address metadata, not broad
+  fallback dates.** Table A supports type-conditioned SI address vocabulary, and
+  explicit commencement date/time clauses can feed temporal lowering. Made-date
+  defaults, approval/consent conditions, lapse from parent repeal, correction
+  slips, and reprints remain diagnostic/manual-frontier unless a concrete source
+  witness owns the recovery.
+- **Extent and application remain distinct metadata dimensions.** OPC and Guide
+  sources reinforce that extent is the jurisdiction whose law is changed while
+  application is the persons/matters/place affected. This is a no-widening
+  invariant, not a tree mutation.
+- **Downloaded devolved/toolbox material is incomplete.** The SI/toolbox HTML
+  captures are mostly stubs or login/index pages. The Scotland `Drafting
+  Matters` capture exposes useful metadata and a promising table of contents, but
+  not enough operative text for compiler rules. Treat this as an acquisition
+  follow-up, not a semantic rule source.
+
+Result: no new replay-changing rule is justified solely by this downloaded-source
+pass. The useful immediate outputs are stronger source citations, acquisition
+frontier classification, and rule-boundary documentation.
+
+---
+
 ## Official-source deltas not yet fully folded into code
 
 These are not replay changes by themselves. They are source-backed semantics to
@@ -465,6 +518,81 @@ itself is `0 improved, 0 regressed`. Current bucket split:
 fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
 local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
 
+**Oracle-alignment fallback suppression (2026-05-31):**
+Current UK oracle alignment no longer writes unmatched local fallback eIds into
+the replay tree. When a replay node cannot be matched to an oracle id by hash,
+text, flat/path, or ordinal evidence, the adapter leaves the node unlabeled and
+emits `local_fallback_suppressed` with the would-be fallback id in `match_key`.
+This is an identity-adapter rule, not a legal-state mutation: source-owned replay
+and payload-normalization eIds remain valid, but the oracle adapter may not
+invent ids for nodes the oracle does not identify. Historical saved runs that
+contain `local_fallback` remain interpretable through the collateral-excluded
+score lane. Broad gate
+`.tmp/uk_broad_after_fallback_suppression_20260531.json` scored 77/77 with mean
+aligned `92.45%`, mean aligned_no_gc `92.45%`, grounding-collateral `0`,
+metadata-only base `1`, errors `0`, source-frontier `0`; compare against
+`scripts/baselines/uk_broad_2026-05-31.json` = `30 improved, 0 regressed`.
+
+**Retained-EU annex identity idempotence (2026-05-31):**
+The remaining zero-op structural eId-scheme witnesses `eur/2019/2018` and
+`eur/2019/1746` showed that enacted/current parsing already agreed exactly, but
+oracle alignment made them worse by clearing canonical annex schedule-entry ids,
+generating local child ids below schedule-entry containers, and allowing
+editorial footnote ids (`f000xx`) into hash grounding candidates. The adapter now
+preserves schedule-entry ids already present in the current-source oracle map,
+recurses through their descendants to suppress unproved child ids, keeps
+non-oracle UK-generated schedule entries non-public, and excludes `Footnote`
+from eId extraction. Spot checks after the fix:
+
+- `eur/2019/2018`: aligned `100.0%`, unaligned `100.0%`, replay/oracle eIds
+  `62/62`, replay-only `0`, oracle-only `0`.
+- `eur/2019/1746`: aligned `100.0%`, unaligned `100.0%`, replay/oracle eIds
+  `61/61`, replay-only `0`, oracle-only `0`.
+
+Broad gate `.tmp/uk_broad_after_retained_eu_identity_20260531.json` scored
+77/77 with mean aligned `93.87%`, mean aligned_no_gc `93.87%`,
+grounding-collateral `0`, metadata-only base `1`, errors `0`, source-frontier
+`0`. Compare against the fallback-suppression run:
+`3 improved, 0 regressed` (`eur/2019/2018`, `eur/2019/2013`,
+`eur/2019/1746`). Compare against `scripts/baselines/uk_broad_2026-05-31.json`:
+`30 improved, 0 regressed`. Current bucket split:
+`high_fidelity_after_grounding=57`, `residual_after_grounding=6`,
+`bounded_low_volume_residual=5`, `compile_rejection_dominated_residual=3`,
+`no_compiled_ops_frontier=5`, and `base_metadata_only_frontier=1`.
+
+**Effect-feed absent frontier split (2026-05-31):**
+The broad-baseline triage now separates rows with `n_ops=0` because the archive
+has no effect-feed pages (`uk_effect_feed_pages_absent_recorded`) from generic
+no-compiled-op rows. This is a source/effect-feed frontier, not a lowering miss.
+The replay scores are unchanged (`0 improved, 0 regressed` against
+`.tmp/uk_broad_after_retained_eu_identity_20260531.json`). Current gate
+`.tmp/uk_broad_after_effect_feed_frontier_20260531.json` still scores 77/77 with
+mean aligned `93.87%`, mean aligned_no_gc `93.87%`, grounding-collateral `0`,
+metadata-only base `1`, errors `0`, source-frontier `0`; bucket split:
+`high_fidelity_after_grounding=57`, `residual_after_grounding=6`,
+`bounded_low_volume_residual=5`, `compile_rejection_dominated_residual=3`,
+`no_compiled_ops_frontier=3`, `effect_feed_absent_frontier=2`, and
+`base_metadata_only_frontier=1`. Current witnesses:
+`uksi/2000/1043`, `uksi/2010/1504`.
+
+**No-op frontier split (2026-05-31):**
+The broad-baseline triage now records `n_effects` and splits the remaining
+generic zero-op bucket. Rows with no archived effect rows become
+`no_effect_rows_frontier`; rows with effect rows that compile only to
+non-replay/nonstructural observations become `nonreplay_effect_frontier`. This
+again changes work selection only; compare against
+`.tmp/uk_broad_after_effect_feed_frontier_20260531.json` is
+`0 improved, 0 regressed`. Current gate
+`.tmp/uk_broad_after_noop_frontier_split_20260531.json` scores 77/77 with mean
+aligned `93.87%`, mean aligned_no_gc `93.87%`, grounding-collateral `0`,
+metadata-only base `1`, errors `0`, source-frontier `0`; bucket split:
+`high_fidelity_after_grounding=57`, `residual_after_grounding=6`,
+`bounded_low_volume_residual=5`, `compile_rejection_dominated_residual=3`,
+`effect_feed_absent_frontier=2`, `no_effect_rows_frontier=2`,
+`nonreplay_effect_frontier=1`, and `base_metadata_only_frontier=1`. Current
+witnesses: `no_effect_rows_frontier` = `ukpga/1976/83`, `ukpga/2011/2`;
+`nonreplay_effect_frontier` = `ukpga/1901/7`.
+
 **Single unnumbered Schedule extraction recovery (2026-05-31):**
 `ssi/2006/536` exposes its first source Schedule as unnumbered `schedule` while
 also exposing numbered `schedule-2` and `schedule-3`; the effect feed cites the
@@ -697,13 +825,16 @@ priority than a current functional failure with source/corpus witnesses.
   ukpga/1998/17, 21 on ukpga/1978/30), so the population is visible and countable.
   Replay-neutral. The resolver phase (item 2 below) is what remains.
 
-Remaining (each needs a verified failing case before building — do not add guards
-for hypothetical bugs):
+Remaining source-ledger candidates (each needs a verified failing case before
+building — do not add guards for hypothetical bugs). These are not current
+all-10 replay tasks; the 2026-05-31 all-10 pass moved the hard-set leftovers
+into explicit manual/source/grounding frontiers unless noted otherwise:
 
 1. `UK_RULE_UNCOMMENCED_EFFECT_RESOLVER` (§6.8) — the PIT-aware *resolver* on top of
-   the sensor: decide application per the oracle version / `authority_mode` instead of
-   silently applying. Verified mixed-sign as a blanket gate, so it needs the version
-   semantics modelled. Biggest remaining correctness lever; largest temporal change.
+   the sensor: decide application per the oracle version / `authority_mode` instead
+   of silently applying. Verified mixed-sign as a blanket current-text gate, so it
+   must be built only with a specific as-of/date witness and authority-mode
+   contract.
 2. `UK_RULE_REPEAL_OF_REPEAL_NO_REVIVE` (§6.1.13) — now has direct source-phrase
    witnesses in the all-archive scan and a bounded phrase-bearing-affecting-Act
    effect-candidate lane, but still needs a selected source/target corpus witness
@@ -728,6 +859,16 @@ for hypothetical bugs):
    **crossheading-representation** mismatch (`schedule-1-crossheading-…` +
    `_paragraph-wrapperNnM`), i.e. oracle editorial structure vs replay — saturated
    frontier, not a lowering gap.
+6. The current largest broad-gate signal is **grounding/eId harmonization**, not a
+   per-statute parser/replay family: the post-all-10 77-statute gate still carries
+   `n_grounding_collateral=6170`, with `grounding_dominated_residual` rows such as
+   `ukpga/1980/65`, `ukpga/1966/42`, and EU annex eId asymmetry. Fixes must make
+   owned eId synthesis surfaces agree or keep collateral out of work selection; they
+   must not delete replay state to match an oracle editorial projection.
+7. Manual-frontier rows in the current hard-set have claim-template coverage after
+   adding templates for `uk_manual_frontier_table_entry_placement_insert` and
+   `uk_manual_frontier_savings_qualified_text_omission_candidate`. Those templates
+   are still non-executable; they define validator obligations for future claims.
 
 Each needs the standard ownership package (`AGENTS.md §7/§15`): stable rule id,
 finding/observation, strict-mode behaviour, synthetic + corpus + negative tests.

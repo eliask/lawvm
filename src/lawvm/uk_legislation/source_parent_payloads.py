@@ -225,6 +225,8 @@ _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
 # Changes from original:
 # - {0,2} repeat of (LABEL\s+) → explicit (|A |A A ) alternation — no nesting
 # - optional “of section X” context: (|...) BRANCH form — no nesting
+# - optional leading “in section X ..., in subsection (Y)” context is bounded to
+#   the first comma so subsection source scope remains explicit
 # - optional parenthetical qualifier: (|...) BRANCH form — no nesting
 # - “, ?” separator replaced with “,? “ (literal space; normalised text)
 # - anchor: .*? → [^“”‘’”’]{0,300} (non-quote, bounded)
@@ -233,6 +235,7 @@ _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
 # - payload end: [“\"'‘]?...[”\"'’]?\s*\.?\s*$ → .{0,1000}$ (caller strips/normalises)
 _UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:|(?:[0-9A-Za-z]+|[ivxlcdm]+) |(?:[0-9A-Za-z]+|[ivxlcdm]+) (?:[0-9A-Za-z]+|[ivxlcdm]+) )"
+    r"(?:in\s+section\s+[0-9A-Za-z]+[^,]{0,200}, |)"
     r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\)"
     r"( of [^,]{1,120}|)"
     r"( \(.*?\)|),? "

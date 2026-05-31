@@ -22,14 +22,6 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
-_SCHEDULE_NOTE_REF_RE = re.compile(
-    r"\bsch(?:edule)?\.?\s+[0-9a-z]+"
-    r"(?:\s+pt\.?\s+[0-9a-z]+)?"
-    r"(?:\s+para\.?\s+[0-9a-z]+(?:\([0-9a-z]+\))*)?"
-    r"\s+note(?:\s+\d+)?\b"
-)
-
-
 def _is_heading_only_ref(ref: str) -> bool:
     ref_clean = ref.strip().lower()
     if "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean:
@@ -389,8 +381,18 @@ def _is_crossheading_ref(ref: str) -> bool:
 
 
 def _is_schedule_note_ref(ref: str) -> bool:
-    ref_clean = " ".join(str(ref or "").strip().lower().split())
-    return bool(_SCHEDULE_NOTE_REF_RE.search(ref_clean))
+    tokens = (
+        str(ref or "")
+        .strip()
+        .lower()
+        .replace(".", "")
+        .replace("(", " ")
+        .replace(")", " ")
+        .split()
+    )
+    if len(tokens) < 4 or tokens[0] not in {"sch", "schedule"}:
+        return False
+    return "note" in tokens[2:]
 
 
 _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
@@ -415,6 +417,24 @@ _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID = (
 _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID = (
     "uk_replay_crossheading_and_structural_repeal_unresolved"
 )
+
+
+def _single_normalized_text_patch_fragment(
+    fragments: list[dict[str, str]],
+) -> Optional[dict[str, str]]:
+    normalized: dict[tuple[str, str], dict[str, str]] = {}
+    for fragment in fragments:
+        original = str(fragment.get("original") or "").strip()
+        replacement = str(fragment.get("replacement") or "").strip()
+        if not original or replacement == "":
+            continue
+        normalized[(original, replacement)] = {
+            "original": original,
+            "replacement": replacement,
+        }
+    if len(normalized) != 1:
+        return None
+    return next(iter(normalized.values()))
 
 
 def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
@@ -469,17 +489,12 @@ def _crossheading_before_anchor_text_patch_fragment(extracted_text: Optional[str
         flags=re.I,
     ):
         return None
-    fragments = parse_fragment_substitution(text)
-    if len(fragments) != 1:
-        return None
-    fragment = dict(fragments[0])
-    original = str(fragment.get("original") or "").strip()
-    replacement = str(fragment.get("replacement") or "").strip()
-    if not original or replacement == "":
+    fragment = _single_normalized_text_patch_fragment(parse_fragment_substitution(text))
+    if fragment is None:
         return None
     return {
-        "original": original,
-        "replacement": replacement,
+        "original": fragment["original"],
+        "replacement": fragment["replacement"],
         "rule_id": _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
     }
 
@@ -506,17 +521,12 @@ def _crossheading_metadata_target_deictic_text_patch_fragment(
     )
     if match is None:
         return None
-    fragments = parse_fragment_substitution(match.group("tail"))
-    if len(fragments) != 1:
-        return None
-    fragment = dict(fragments[0])
-    original = str(fragment.get("original") or "").strip()
-    replacement = str(fragment.get("replacement") or "").strip()
-    if not original or replacement == "":
+    fragment = _single_normalized_text_patch_fragment(parse_fragment_substitution(match.group("tail")))
+    if fragment is None:
         return None
     return {
-        "original": original,
-        "replacement": replacement,
+        "original": fragment["original"],
+        "replacement": fragment["replacement"],
         "rule_id": _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
         "source_context": "metadata_target_deictic_anchor",
     }

@@ -125,6 +125,8 @@ class UKReplayExecutor(
                 self._note_structure_mutation()
                 self._record_whole_act_repeal_mutation_event(op)
                 self._record_invariant_violations(op)
+            elif _action_name(op.action) == "text_replace":
+                self._apply_whole_act_text_patch_op(op, target)
             else:
                 self._log(
                     f"  EXECUTOR: WARN whole_act target with unhandled action {op.action!r} — skipping {op.op_id}"

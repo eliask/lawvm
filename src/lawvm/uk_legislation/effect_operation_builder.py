@@ -39,6 +39,9 @@ from lawvm.uk_legislation.witnesses import (
 )
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.text_patch_lowering import UKTextPatchItem
+from lawvm.uk_legislation.whole_act_text_patch import (
+    UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+)
 
 
 class UKLoweredOperationProvenance(NamedTuple):
@@ -105,6 +108,18 @@ def build_lowered_operation_provenance(
         op_witness_rule_id = _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
     if source_parent_at_end_added_payload is not None and curr_action == "insert":
         op_witness_rule_id = _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID
+    text_rewrite_witness = lowered_witness.text_rewrite_witness
+    if (
+        str(target.special or "") == "whole_act"
+        and curr_action == "text_replace"
+        and text_rewrite_witness is not None
+        and text_rewrite_witness.rewrite_source
+        in {
+            "uk_effect_all_occurrences_substitution_text_patch",
+            "uk_effect_wherever_they_occur_substitution_text_patch",
+        }
+    ):
+        op_witness_rule_id = UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID
     return UKLoweredOperationProvenance(
         provenance_tags=provenance_tags,
         witness_rule_id=op_witness_rule_id,

@@ -55,6 +55,10 @@ from lawvm.uk_legislation.substitution_metadata import (
 )
 from lawvm.uk_legislation.target_anchors import _fallback_target_eid
 from lawvm.uk_legislation.target_parser import _parse_affected_target, _schedule_part_context_removed_target
+from lawvm.uk_legislation.whole_act_text_patch import (
+    UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+    simple_whole_act_all_occurrences_substitution,
+)
 from lawvm.uk_legislation.xml_helpers import _tag
 
 
@@ -447,6 +451,30 @@ def reject_external_or_partial_whole_act_scope(
         return True
 
     if str(target.special or "") == "whole_act" and effect_type_norm.startswith("word"):
+        if simple_whole_act_all_occurrences_substitution(extracted_text):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+                family="whole_act_text_patch_elaboration",
+                reason_code="simple_whole_act_all_occurrences_substitution",
+                reason=(
+                    "UK source text explicitly names the affected Act and claims "
+                    "an all-occurrences word substitution with no listed-enactment "
+                    "scope or exclusions; lowering admits a typed whole-Act text patch."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "effect_type": effect_type,
+                    "action": action,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "apply",
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_whole_act_word_level_text_patch_rejected",

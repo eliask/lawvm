@@ -20,6 +20,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_savings_qualified_text_omission_candidate",
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
@@ -32,6 +33,7 @@ UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS = frozenset(
         "uk_manual_frontier_table_crossheading_candidate",
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
+        "uk_manual_frontier_table_entry_placement_insert",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
     }
 )

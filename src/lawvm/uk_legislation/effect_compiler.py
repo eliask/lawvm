@@ -17,6 +17,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     append_unlowered_overlap_substitution_rejection,
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
+    source_shape_blocks_before_text_patch_lowering,
 )
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
 from lawvm.uk_legislation.effect_single_target_lowering import (
@@ -743,6 +744,29 @@ def _compile_effect_to_ir_ops_impl(
     replacement_leaf_override = target_prelude.replacement_leaf_override
     replacement_leaf_kind = target_prelude.replacement_leaf_kind
     label_changing_substitutions = target_prelude.label_changing_substitutions
+
+    if (
+        action in {"replace", "text_replace"}
+        and is_word_level
+        and source_shape_blocks_before_text_patch_lowering(
+            extracted_text,
+            original_targets_str,
+        )
+    ):
+        append_unlowered_overlap_substitution_rejection(
+            lowering_rejections_out,
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            effect_type=effect_type,
+            original_targets_str=original_targets_str,
+            target_candidate_count=len(targets_str),
+            unlowered_overlap_substitution_targets=original_targets_str,
+            unlowered_overlap_substitution_reason="source_shape_pre_target_block",
+            source_root=source_root,
+        )
+        _mark_lower_phase("compile_lower_target_setup")
+        return []
 
     ops = []
     unlowered_overlap_substitution_targets: list[str] = []

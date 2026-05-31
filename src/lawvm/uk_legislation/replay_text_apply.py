@@ -783,6 +783,75 @@ def _delete_ordinal_sentence_beginning(
     return " ".join(new_text.split()).strip(), True
 
 
+def _delete_ordinal_paragraph(text: str, ordinal: int) -> tuple[str, bool]:
+    if ordinal < 1:
+        return text, False
+    blocks = _legal_paragraph_blocks(text)
+    if len(blocks) < ordinal:
+        return text, False
+    span = blocks[ordinal - 1].span()
+    new_text = f"{text[: span[0]]}{text[span[1] :]}"
+    return " ".join(new_text.split()).strip(), True
+
+
+def _insert_after_ordinal_paragraph(
+    text: str,
+    *,
+    ordinal: int,
+    replacement: str,
+) -> tuple[str, bool]:
+    if ordinal < 1:
+        return text, False
+    blocks = _legal_paragraph_blocks(text)
+    if len(blocks) < ordinal:
+        return text, False
+    insert_at = blocks[ordinal - 1].end()
+    joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+    new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+    return " ".join(new_text.split()).strip(), True
+
+
+def _replace_ordinal_paragraph_range(
+    text: str,
+    *,
+    start_ordinal: int,
+    end_ordinal: int,
+    replacement: str,
+) -> tuple[str, bool]:
+    if start_ordinal < 1 or end_ordinal < start_ordinal:
+        return text, False
+    blocks = _legal_paragraph_blocks(text)
+    if len(blocks) < end_ordinal:
+        return text, False
+    start = blocks[start_ordinal - 1].start()
+    end = blocks[end_ordinal - 1].end()
+    prefix = text[:start].rstrip()
+    suffix = text[end:].lstrip()
+    left_joiner = "" if not prefix or replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+    right_joiner = "" if not suffix or replacement.endswith((" ", "\n", "\t")) else " "
+    new_text = f"{prefix}{left_joiner}{replacement}{right_joiner}{suffix}"
+    return " ".join(new_text.split()).strip(), True
+
+
+def _legal_paragraph_blocks(text: str) -> list[re.Match[str]]:
+    blocks = list(re.finditer(r"\S(?:.*?\S)?(?=(?:\n\s*\n)|$)", text, flags=re.S))
+    if blocks and _is_ordinal_paragraph_heading_block(blocks[0].group(0)):
+        return blocks[1:]
+    return blocks
+
+
+def _is_ordinal_paragraph_heading_block(text: str) -> bool:
+    normalized = " ".join(text.split())
+    return bool(
+        re.fullmatch(
+            r"(?:Article|Section|Regulation|Rule|Paragraph|Schedule)\s+[0-9A-Za-z]+",
+            normalized,
+            flags=re.I,
+        )
+        or re.fullmatch(r"\(?[0-9]+[A-Za-z]?\)?", normalized)
+    )
+
+
 def _delete_source_carried_child_text(
     text: str,
     *,
@@ -3161,6 +3230,67 @@ class UKReplayTextApplyMixin:
                 return node, False
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_ordinal_sentence_text_rewrite_applied")
+            return rebuilt, True
+
+        if match.startswith("TEXT_PARAGRAPHS_"):
+            paragraph_range_match = re.fullmatch(
+                r"TEXT_PARAGRAPHS_([0-9]+)_TO_([0-9]+)",
+                match,
+            )
+            if paragraph_range_match is None:
+                return node, False
+            start_ordinal = int(paragraph_range_match.group(1))
+            end_ordinal = int(paragraph_range_match.group(2))
+            rebuilt, applied = self._apply_unique_text_node_rewrite(
+                node,
+                text_nodes,
+                lambda text: _replace_ordinal_paragraph_range(
+                    text,
+                    start_ordinal=start_ordinal,
+                    end_ordinal=end_ordinal,
+                    replacement=replacement,
+                ),
+            )
+            if not applied:
+                return node, False
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_ordinal_paragraph_range_text_rewrite_applied")
+            return rebuilt, True
+
+        if match.startswith("TEXT_PARAGRAPH_"):
+            paragraph_ordinal_text = match[len("TEXT_PARAGRAPH_") :].strip()
+            if not paragraph_ordinal_text.isdigit():
+                return node, False
+            paragraph_ordinal = int(paragraph_ordinal_text)
+            rebuilt, applied = self._apply_unique_text_node_rewrite(
+                node,
+                text_nodes,
+                lambda text: _delete_ordinal_paragraph(text, paragraph_ordinal),
+            )
+            if not applied:
+                return node, False
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_ordinal_paragraph_text_rewrite_applied")
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_PARAGRAPH_"):
+            paragraph_ordinal_text = match[len("TEXT_AFTER_PARAGRAPH_") :].strip()
+            if not paragraph_ordinal_text.isdigit():
+                return node, False
+            paragraph_ordinal = int(paragraph_ordinal_text)
+            rebuilt, applied = self._apply_unique_text_node_rewrite(
+                node,
+                text_nodes,
+                lambda text: _insert_after_ordinal_paragraph(
+                    text,
+                    ordinal=paragraph_ordinal,
+                    replacement=replacement,
+                ),
+            )
+            if not applied:
+                return node, False
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_after_ordinal_paragraph_insert_applied")
             return rebuilt, True
 
         if match.startswith("TEXT_WORD_"):

@@ -110,6 +110,33 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="ordinal_sentence_beginning_selector",
     ),
+    "uk_replay_ordinal_paragraph_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an ordinal paragraph text delete after proving "
+            "a unique target text node under the source-named provision."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="ordinal_paragraph_selector",
+    ),
+    "uk_replay_after_ordinal_paragraph_insert_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an ordinal paragraph text insertion after proving "
+            "a unique target text node under the source-named provision."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="after_ordinal_paragraph_selector",
+    ),
+    "uk_replay_ordinal_paragraph_range_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an ordinal paragraph-range text rewrite after "
+            "proving a unique target text node under the source-named provision."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="ordinal_paragraph_range_selector",
+    ),
     "uk_replay_after_anchor_to_end_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied an after-anchor tail text rewrite "

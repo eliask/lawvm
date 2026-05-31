@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Optional
 
-from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
+from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction, TextPatchSpec
+from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind
+from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind
 from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
@@ -45,10 +47,14 @@ from lawvm.uk_legislation.source_table_entry_paragraph import (
 from lawvm.uk_legislation.text_matching import (
     _node_text_patch_preimage_present,
     _rotated_trailing_comma_omission_match,
+    _text_patch_pattern,
     _text_match_has_word_punctuation_elision_candidate,
 )
 from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_substitution,
+)
+from lawvm.uk_legislation.whole_act_text_patch import (
+    UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
 )
 
 
@@ -81,6 +87,8 @@ def _text_patch_detail(
 
 class UKReplayTextActionApplyMixin:
     adjudications_out: list[CompileAdjudication]
+    lo_ops_out: list[LegalOperation] | None
+    mutation_events_out: list[MutationEvent] | None
     _applied_text_patch_targets: dict[str, list[str]]
 
     if TYPE_CHECKING:
@@ -224,6 +232,198 @@ class UKReplayTextActionApplyMixin:
         def _missing_schedule_root_gap(self, target: LegalAddress) -> bool: ...
 
         def _prior_same_target_gap_kind(self, target: LegalAddress) -> str | None: ...
+
+    def _whole_act_text_patch_nodes(self) -> list[tuple[tuple[tuple[str, str], ...], UKMutableNode]]:
+        def _kind_label(node: UKMutableNode) -> tuple[str, str]:
+            kind = node.kind.value if hasattr(node.kind, "value") else str(node.kind)
+            return kind, node.label or ""
+
+        def _walk(
+            node: UKMutableNode,
+            path: tuple[tuple[str, str], ...],
+        ) -> list[tuple[tuple[tuple[str, str], ...], UKMutableNode]]:
+            nodes = [(path, node)]
+            for child in node.children:
+                child_path = path + (_kind_label(child),)
+                nodes.extend(_walk(child, child_path))
+            return nodes
+
+        text_nodes: list[tuple[tuple[tuple[str, str], ...], UKMutableNode]] = []
+        for child in self.statute.body.children:
+            text_nodes.extend(_walk(child, (_kind_label(child),)))
+        for supplement in self.statute.supplements:
+            text_nodes.extend(_walk(supplement, (_kind_label(supplement),)))
+        return text_nodes
+
+    def _record_whole_act_text_patch_mutation_event(
+        self,
+        op: LegalOperation,
+        replaced_paths: tuple[tuple[tuple[str, str], ...], ...],
+    ) -> None:
+        if self.mutation_events_out is None or not replaced_paths:
+            return
+        source = op.source
+        self.mutation_events_out.append(
+            MutationEvent(
+                op_id=op.op_id,
+                source_statute=source.statute_id if source is not None else "",
+                action=_action_name(op.action),
+                helper="_apply_whole_act_text_patch_op",
+                outcome="whole_act_text_patch_applied",
+                resolved_target_path=(),
+                parent_path=(),
+                replaced_paths=replaced_paths,
+                reason_code=UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+            )
+        )
+
+    def _top_node_for_whole_act_snapshot(
+        self,
+        top_path: tuple[str, str],
+    ) -> UKMutableNode | None:
+        top_kind, top_label = top_path
+        for child in self.statute.body.children:
+            child_kind = child.kind.value if hasattr(child.kind, "value") else str(child.kind)
+            if child_kind == top_kind and (child.label or "") == top_label:
+                return child
+        for supplement in self.statute.supplements:
+            supplement_kind = (
+                supplement.kind.value if hasattr(supplement.kind, "value") else str(supplement.kind)
+            )
+            if supplement_kind == top_kind and (supplement.label or "") == top_label:
+                return supplement
+        return None
+
+    def _emit_whole_act_text_patch_snapshots(
+        self,
+        op: LegalOperation,
+        replaced_paths: tuple[tuple[tuple[str, str], ...], ...],
+    ) -> None:
+        if self.lo_ops_out is None:
+            return
+        top_paths = sorted({path[0] for path in replaced_paths if path})
+        for top_kind, top_label in top_paths:
+            top_node = self._top_node_for_whole_act_snapshot((top_kind, top_label))
+            if top_node is None:
+                continue
+            self.lo_ops_out.append(
+                LegalOperation(
+                    op_id=f"uk_snapshot_{top_kind}_{top_label}_{op.op_id}",
+                    sequence=op.sequence,
+                    action=StructuralAction.REPLACE,
+                    target=LegalAddress(path=((top_kind, top_label),)),
+                    payload=top_node.to_irnode(),
+                    source=op.source,
+                    group_id=op.group_id,
+                )
+            )
+
+    def _apply_whole_act_text_patch_op(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+    ) -> None:
+        text_patch = op.text_patch
+        if (
+            op.witness_rule_id != UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID
+            or text_patch is None
+            or text_patch.kind is not TextPatchKindEnum.REPLACE
+            or text_patch.replacement is None
+            or text_patch.selector.occurrence != 0
+            or text_patch.selector.end_occurrence != 0
+        ):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_unsupported_action",
+                message="UK replay skipped unsupported whole-act text patch.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    family="unsupported_target_scope",
+                    reason_code="whole_act_text_patch_not_source_owned",
+                ),
+            )
+            return
+
+        match_text = text_patch.selector.match_text
+        replacement = text_patch.replacement
+        if not match_text:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_whole_act_text_patch_preimage_gap",
+                message="UK replay skipped whole-Act text patch: empty source preimage.",
+                op=op,
+                detail=_text_patch_detail(
+                    op,
+                    target,
+                    text_patch,
+                    replacement,
+                    blocking=True,
+                    family="whole_act_text_patch_elaboration",
+                    reason_code="empty_whole_act_text_patch_preimage",
+                ),
+            )
+            return
+
+        pattern = re.compile(_text_patch_pattern(match_text), flags=re.I)
+        prefilter = match_text.lower()
+        replaced_paths: list[tuple[tuple[str, str], ...]] = []
+        replacement_count = 0
+        for path, node in self._whole_act_text_patch_nodes():
+            text = node.text or ""
+            if not text or prefilter not in text.lower():
+                continue
+            new_text, count = pattern.subn(lambda _match: replacement, text)
+            if count == 0:
+                continue
+            node.text = new_text
+            replacement_count += count
+            replaced_paths.append(path)
+
+        if not replaced_paths:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind="uk_replay_whole_act_text_patch_preimage_gap",
+                message="UK replay skipped whole-Act text patch: no descendant text node contained the source preimage.",
+                op=op,
+                detail=_text_patch_detail(
+                    op,
+                    target,
+                    text_patch,
+                    replacement,
+                    blocking=True,
+                    family="whole_act_text_patch_elaboration",
+                    reason_code="whole_act_text_patch_preimage_absent",
+                ),
+            )
+            return
+
+        replaced_paths_tuple = tuple(replaced_paths)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_whole_act_text_patch_applied",
+            message="UK replay applied a source-owned all-occurrences text patch across the Act body.",
+            op=op,
+            detail=_text_patch_detail(
+                op,
+                target,
+                text_patch,
+                replacement,
+                blocking=False,
+                strict_disposition="block",
+                quirks_disposition="apply",
+                family="whole_act_text_patch_elaboration",
+                replacement_count=replacement_count,
+                changed_paths=replaced_paths_tuple,
+            ),
+        )
+        self._record_whole_act_text_patch_mutation_event(op, replaced_paths_tuple)
+        self._emit_whole_act_text_patch_snapshots(op, replaced_paths_tuple)
+        target_key = str(target)
+        if target_key:
+            self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
+        self._record_invariant_violations(op)
 
     def _apply_text_action_op(
         self,
