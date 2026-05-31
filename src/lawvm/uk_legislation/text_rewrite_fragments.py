@@ -24,6 +24,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
+    UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID,
     UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
     UK_BEFORE_CHILD_BLOCK_SUBSTITUTION_RULE_ID,
     UK_BEFORE_CHILD_SUBSTITUTION_RULE_ID,
@@ -1327,6 +1328,30 @@ def append_basic_text_rewrite_observations(
                 "append and treats parenthetical new-line wording or carried "
                 "sibling source rows as presentation/source-boundary context, "
                 "not inserted legal text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "canonical_text_match": "TEXT_END",
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_at_end_quoted_dash_text_insertion_patch",
+            reason=(
+                "UK source text inserts a quoted payload at the end of the "
+                "affected target using a dash separator; lowering treats the "
+                "dash as instruction punctuation and preserves the quoted "
+                "payload as a bounded at-end append."
             ),
             effect=effect,
             extracted_el=extracted_el,
