@@ -159,6 +159,9 @@ The current validator checks only:
   carry typed payloads rather than empty `outcome_kind` placeholders
 - optional match against exported `lawvm.uk_manual_compile_frontier.v1`
   workqueue provenance via `--workqueue-jsonl`
+- duplicate identical workqueue rows are tolerated, but conflicting rows with
+  the same `work_item_id` reject validation; claim/workqueue matching must not
+  depend on first-row or last-row input order
 - consistency of work-item identity, manual-frontier rule, action family,
   source-preview hash, and affecting/affected provision fields when those fields
   are present in the matched workqueue row
