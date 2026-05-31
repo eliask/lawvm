@@ -194,6 +194,11 @@ def test_unique_recursive_descent_emits_adjudication_and_applies() -> None:
     assert recovery_adj.detail["quirks_disposition"] == "apply"
     assert recovery_adj.detail["family"] == "target_resolution_recovery"
     assert recovery_adj.detail["phase"] == "replay"
+    target_resolution = recovery_adj.detail["target_resolution"]
+    assert target_resolution["target_resolution_status"] == "recovered"
+    assert target_resolution["source_target"] == "section:1/subsection:2A"
+    assert target_resolution["selected_target"] == "section:1/part:A/subsection:2A"
+    assert target_resolution["scope_confidence"] == "fallback"
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +268,14 @@ def test_ambiguous_recursive_descent_refuses_and_emits_adjudication() -> None:
     assert ambig_adj.detail["family"] == "target_resolution_recovery"
     assert ambig_adj.detail["candidate_count"] == 2
     assert ambig_adj.detail["phase"] == "replay"
+    target_resolution = ambig_adj.detail["target_resolution"]
+    assert target_resolution["target_resolution_status"] == "ambiguous"
+    assert target_resolution["source_target"] == "section:1/subsection:2A"
+    assert target_resolution["candidate_count"] == 2
+    assert {row["target"] for row in target_resolution["target_candidates"]} == {
+        "section:1/part:A/subsection:2A",
+        "section:1/part:B/subsection:2A",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +365,7 @@ def test_recursive_descent_adjudication_includes_witness_fields() -> None:
     assert "recovered_path_step_label" in detail, "Must record recovered step label"
     assert detail["recovered_path_step_kind"] == "subsection"
     assert detail["recovered_path_step_label"] == "2A"
+    assert detail["recovered_target"] == "section:1/part:A/subsection:2A"
 
 
 # ---------------------------------------------------------------------------
