@@ -356,6 +356,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         for r in results
         if _triage_bucket_for_row(r) in _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS
     ]
+    deterministic_frontend_candidate_rows = [
+        r
+        for r in results
+        if int(
+            (r.get("manual_frontier_status_counts") or {}).get(
+                "deterministic_frontend_candidate",
+                0,
+            )
+            or 0
+        )
+        > 0
+    ]
     return {
         "scored": scored,
         "errored": errored,
@@ -378,6 +390,20 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "active_unclassified_residual_count": len(active_unclassified_residuals),
         "active_unclassified_residual_statutes": sorted(
             str(r.get("statute_id") or "") for r in active_unclassified_residuals
+        ),
+        "deterministic_frontend_candidate_count": sum(
+            int(
+                (r.get("manual_frontier_status_counts") or {}).get(
+                    "deterministic_frontend_candidate",
+                    0,
+                )
+                or 0
+            )
+            for r in deterministic_frontend_candidate_rows
+        ),
+        "deterministic_frontend_candidate_statutes": sorted(
+            str(r.get("statute_id") or "")
+            for r in deterministic_frontend_candidate_rows
         ),
         "zero_oracle_retention_count": len(zero_oracle_retention),
         "zero_oracle_retention_eids": sum(
@@ -642,6 +668,7 @@ def run_driver(
     *,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
+    fail_on_deterministic_frontend_candidates: bool = False,
 ) -> int:
     results: list[dict[str, Any]] = []
     for i, sid in enumerate(ids, 1):
@@ -775,6 +802,14 @@ def run_driver(
         )
     else:
         print("  active_unclassified_residuals=0")
+    if summary["deterministic_frontend_candidate_count"]:
+        print(
+            "  deterministic_frontend_candidates="
+            f"{summary['deterministic_frontend_candidate_count']}: "
+            f"{', '.join(summary['deterministic_frontend_candidate_statutes'])}"
+        )
+    else:
+        print("  deterministic_frontend_candidates=0")
     if (
         fail_on_active_unclassified_residuals
         and summary["active_unclassified_residual_count"]
@@ -783,6 +818,11 @@ def run_driver(
     if (
         fail_on_manual_frontier_template_gaps
         and summary["manual_frontier_template_gap_rule_counts"]
+    ):
+        return 1
+    if (
+        fail_on_deterministic_frontend_candidates
+        and summary["deterministic_frontend_candidate_count"]
     ):
         return 1
     return 0
@@ -834,6 +874,14 @@ def main(argv: list[str] | None = None) -> int:
             "lack a suggested claim template"
         ),
     )
+    ap.add_argument(
+        "--fail-on-deterministic-frontend-candidates",
+        action="store_true",
+        help=(
+            "Exit nonzero when manual-frontier diagnostics still include "
+            "deterministic frontend candidates"
+        ),
+    )
     args = ap.parse_args(argv)
 
     if args.one:
@@ -857,6 +905,9 @@ def main(argv: list[str] | None = None) -> int:
         fail_on_active_unclassified_residuals=args.fail_on_active_unclassified_residuals,
         fail_on_manual_frontier_template_gaps=(
             args.fail_on_manual_frontier_template_gaps
+        ),
+        fail_on_deterministic_frontend_candidates=(
+            args.fail_on_deterministic_frontend_candidates
         ),
     )
 
