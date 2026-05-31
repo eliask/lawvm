@@ -518,6 +518,26 @@ itself is `0 improved, 0 regressed`. Current bucket split:
 fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
 local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
 
+**Broad comparison surface correction (2026-05-31):**
+`scripts/uk_broad_baseline.py` now compares replay against the same normalized
+legal-identity lens as `lawvm uk-misses`: oracle ids come from
+`extract_eid_map_bytes(...).eid_map`, and both replay/oracle sets pass through
+`normalize_uk_replay_compare_eids` with physical-id and visible-number aliases.
+The old broad scorer used raw parsed current-tree eIds, so it could disagree
+with direct miss inspection by counting transport/text-fragment or extractor-only
+identity noise. Witness: `ukpga/1966/42` was a false broad residual (`91.49%`,
+`bounded_low_volume_residual`) while `uk-misses` was already perfect; after this
+correction the broad row is `100.00%` and `high_fidelity_after_grounding`. The
+77-statute corrected snapshot
+`.tmp/uk_broad_after_broad_compare_normalization_20260531.json` scores 77/77,
+mean aligned `93.38%`, mean aligned_no_gc `93.38%`, grounding-collateral `0`,
+metadata-only base `1`, errors `0`, source-frontier `0`. The mean moves from the
+previous local post-fix `94.21%` to `93.38%` because this is a scoring-surface
+correction, not a replay mutation; rows such as `ssi/2025/74`,
+`uksi/2009/3023`, and `uksi/2012/1206` now expose extra oracle legal ids and
+correctly sit in `effect_feed_absent_frontier` instead of being hidden by the old
+raw parsed surface.
+
 **Oracle-alignment fallback suppression (2026-05-31):**
 Current UK oracle alignment no longer writes unmatched local fallback eIds into
 the replay tree. When a replay node cannot be matched to an oracle id by hash,
