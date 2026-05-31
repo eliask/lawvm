@@ -170,6 +170,7 @@ def test_summarize_results_counts_compile_rejection_dominated_residuals() -> Non
                 "n_only_in_oracle": 279,
                 "n_only_in_replayed": 11,
                 "n_compile_rejections": 168,
+                "n_blocking_compile_rejections": 90,
                 "compile_rejection_rule_counts": {
                     "uk_effect_lowering_no_supported_action_rejected": 28,
                     "uk_effect_repeal_table_structural_repeal": 62,
@@ -196,6 +197,7 @@ def test_summarize_results_counts_retained_eu_mixed_representation_residuals() -
                 "n_only_in_oracle": 95,
                 "n_only_in_replayed": 103,
                 "n_compile_rejections": 171,
+                "n_blocking_compile_rejections": 127,
             },
         ]
     )
@@ -220,11 +222,35 @@ def test_summarize_results_counts_bounded_low_volume_residuals() -> None:
                 "n_only_in_oracle": 8,
                 "n_only_in_replayed": 0,
                 "n_compile_rejections": 11,
+                "n_blocking_compile_rejections": 5,
             },
         ]
     )
 
     assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
+
+
+def test_compile_rejection_bucket_ignores_nonblocking_observations() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1998/17",
+                "score_status": "scored",
+                "aligned": 88.8,
+                "aligned_excluding_grounding_collateral": 88.8,
+                "unaligned": 82.1,
+                "n_grounding_collateral": 42,
+                "n_replay": 1314,
+                "n_oracle": 1424,
+                "n_only_in_oracle": 159,
+                "n_only_in_replayed": 49,
+                "n_compile_rejections": 314,
+                "n_blocking_compile_rejections": 7,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"residual_after_grounding": 1}
 
 
 def test_triage_bucket_for_row_is_added_to_one_row_output(monkeypatch, capsys) -> None:

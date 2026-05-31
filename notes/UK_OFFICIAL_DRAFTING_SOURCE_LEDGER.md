@@ -436,28 +436,34 @@ remains unchanged (`0 improved, 0 regressed`), with 77/77 scored and
 `source_frontier=0`.
 
 **Residual work-selection refinement (2026-05-31):**
-The broad baseline now records row-level compile rejection counts, rejection
-rule histograms, and aligned miss-side counts (`n_only_in_oracle` /
-`n_only_in_replayed`). Evidence collection is deliberately isolated in a second
-diagnostic compile because some UK compiler diagnostic paths are list-present
-sensitive; replay scoring remains on the historical no-output compile path. The
-10 previously active `residual_after_grounding` rows are now all categorized
-without replay mutation:
+The broad baseline now records row-level compile diagnostics, blocking compile
+barriers, rule histograms for both, and aligned miss-side counts
+(`n_only_in_oracle` / `n_only_in_replayed`). Evidence collection is deliberately
+isolated in a second diagnostic compile because some UK compiler diagnostic paths
+are list-present sensitive; replay scoring remains on the historical no-output
+compile path. Triage uses **blocking** compile barriers, not successful
+observations such as text patches, date recoveries, or eId synthesis. The 10
+previously active `residual_after_grounding` rows now split without replay
+mutation into:
 
-- `compile_rejection_dominated_residual=7`: `ukpga/1984/12`, `ukpga/1986/61`,
-  `ukpga/1981/20`, `ukpga/1968/20`, `ukpga/1990/8`, `ukpga/1998/17`,
-  `ukpga/1990/9`.
-- `retained_eu_mixed_representation_residual=1`: `eur/2019/1021`.
+- `compile_rejection_dominated_residual=3`: `ukpga/1984/12`, `ukpga/1968/20`,
+  `ukpga/1990/8`.
 - `bounded_low_volume_residual=2`: `ukpga/1997/7`, `ukpga/1976/38`.
+- `residual_after_grounding=5`: `ukpga/1986/61`, `eur/2019/1021`,
+  `ukpga/1981/20`, `ukpga/1998/17`, `ukpga/1990/9`.
 
 Current 77-statute baseline snapshot:
 `scripts/baselines/uk_broad_2026-05-31.json`. It scores 77/77, mean aligned
 `80.99%`, mean aligned_no_gc `90.86%`, grounding-collateral `6169`,
 metadata-only base `1`, errors `0`, source-frontier `0`, and compare against
-itself is `0 improved, 0 regressed`. The older 2026-05-30 snapshot is retained
-as historical context; after the wider-corpus fetch it differs on `ukpga/1990/8`
-because the current oracle eId surface in the local farchive changed
-(`oracle=8180` in the old snapshot, `oracle=8218` now).
+itself is `0 improved, 0 regressed`. Current bucket split:
+`high_fidelity_after_grounding=49`, `grounding_dominated_residual=6`,
+`structural_match_eid_scheme_residual=4`, `no_compiled_ops_frontier=7`,
+`compile_rejection_dominated_residual=3`, `bounded_low_volume_residual=2`,
+`base_metadata_only_frontier=1`, and `residual_after_grounding=5`. The older
+2026-05-30 snapshot is retained as historical context; after the wider-corpus
+fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
+local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
 
 ---
 

@@ -7,6 +7,7 @@
     "base_source_number_of_provisions": "141",
     "base_source_size": 492532,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_direct_section_paragraph_target_normalized": 1,
       "uk_effect_lowering_no_supported_action_rejected": 2,
@@ -14,6 +15,7 @@
       "uk_effect_missing_structural_payload_rejected": 29,
       "uk_effect_source_provision_order_normalized": 4
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 632,
     "n_compile_rejections": 39,
     "n_grounding_collateral": 329,
@@ -41,6 +43,10 @@
     "base_source_number_of_provisions": "10",
     "base_source_size": 44566,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_instruction_text_payload_rejected": 2,
+      "uk_effect_overlap_substitution_unlowered": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_direct_section_paragraph_target_normalized": 4,
       "uk_effect_instruction_text_payload_rejected": 2,
@@ -51,6 +57,7 @@
       "uk_effect_schedule_list_entry_repeal": 2,
       "uk_effect_table_column_text_patch": 2
     },
+    "n_blocking_compile_rejections": 3,
     "n_common": 51,
     "n_compile_rejections": 30,
     "n_grounding_collateral": 0,
@@ -78,9 +85,11 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 16935,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_source_provision_order_normalized": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 27,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -108,11 +117,13 @@
     "base_source_number_of_provisions": "11",
     "base_source_size": 50139,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 59,
       "uk_effect_range_substitution_text_patch": 1,
       "uk_effect_table_column_text_patch": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 53,
     "n_compile_rejections": 61,
     "n_grounding_collateral": 0,
@@ -140,9 +151,11 @@
     "base_source_number_of_provisions": "5",
     "base_source_size": 21270,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_source_provision_order_normalized": 2
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 51,
     "n_compile_rejections": 2,
     "n_grounding_collateral": 0,
@@ -170,6 +183,12 @@
     "base_source_number_of_provisions": "22",
     "base_source_size": 594957,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_overlap_substitution_unlowered": 13,
+      "uk_effect_source_payload_without_instruction_context_rejected": 6,
+      "uk_effect_table_entry_instruction_rejected": 3,
+      "uk_effect_table_entry_placement_insert_rejected": 2
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 5,
       "uk_effect_missing_structural_payload_rejected": 101,
@@ -184,6 +203,7 @@
       "uk_effect_table_entry_row_insert": 2,
       "uk_payload_descendant_eid_synthesis": 18
     },
+    "n_blocking_compile_rejections": 24,
     "n_common": 108,
     "n_compile_rejections": 171,
     "n_grounding_collateral": 49,
@@ -200,7 +220,7 @@
     "oracle_source_status": "available",
     "score_status": "scored",
     "statute_id": "eur/2019/1021",
-    "triage_bucket": "retained_eu_mixed_representation_residual",
+    "triage_bucket": "residual_after_grounding",
     "unaligned": 23.65
   },
   "eur/2019/1746": {
@@ -211,7 +231,9 @@
     "base_source_number_of_provisions": "7",
     "base_source_size": 216224,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 59,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 89,
@@ -239,7 +261,9 @@
     "base_source_number_of_provisions": "3",
     "base_source_size": 96932,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 21,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 0,
@@ -267,10 +291,12 @@
     "base_source_number_of_provisions": "11",
     "base_source_size": 278459,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 19,
       "uk_effect_source_provision_order_normalized": 3
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 64,
     "n_compile_rejections": 22,
     "n_grounding_collateral": 98,
@@ -298,7 +324,9 @@
     "base_source_number_of_provisions": "9",
     "base_source_size": 262059,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 50,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 165,
@@ -326,7 +354,9 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 85268,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 24,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 2,
@@ -354,9 +384,11 @@
     "base_source_number_of_provisions": "5",
     "base_source_size": 32392,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 32,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -384,9 +416,11 @@
     "base_source_number_of_provisions": "59",
     "base_source_size": 135387,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 65,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 20,
@@ -414,9 +448,11 @@
     "base_source_number_of_provisions": "24",
     "base_source_size": 85093,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 71,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -444,9 +480,11 @@
     "base_source_number_of_provisions": "50",
     "base_source_size": 155572,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 244,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -474,12 +512,14 @@
     "base_source_number_of_provisions": "32",
     "base_source_size": 37782,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_inserted_section_p1group_heading_carrier_lowered": 1,
       "uk_effect_repeal_table_structural_repeal": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 2,
       "uk_payload_descendant_eid_synthesis": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 38,
     "n_compile_rejections": 5,
     "n_grounding_collateral": 0,
@@ -507,6 +547,14 @@
     "base_source_number_of_provisions": "40",
     "base_source_size": 148749,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_lowering_no_supported_action_rejected": 5,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 3,
+      "uk_effect_source_payload_without_instruction_context_rejected": 2,
+      "uk_effect_structural_pseudo_definition_target_rejected": 1,
+      "uk_effect_table_entry_instruction_rejected": 10,
+      "uk_effect_whole_act_word_level_text_patch_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 2,
       "uk_effect_anchor_to_end_block_substitution_text_patch": 3,
@@ -523,6 +571,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 8,
       "uk_effect_whole_act_word_level_text_patch_rejected": 1
     },
+    "n_blocking_compile_rejections": 22,
     "n_common": 91,
     "n_compile_rejections": 53,
     "n_grounding_collateral": 66,
@@ -550,9 +599,11 @@
     "base_source_number_of_provisions": "25",
     "base_source_size": 73542,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_missing_structural_payload_rejected": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 22,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 32,
@@ -580,10 +631,14 @@
     "base_source_number_of_provisions": "57",
     "base_source_size": 175220,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_lowering_no_supported_action_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 3,
       "uk_effect_undated_applied_si_commencement_date": 4
     },
+    "n_blocking_compile_rejections": 1,
     "n_common": 33,
     "n_compile_rejections": 7,
     "n_grounding_collateral": 226,
@@ -611,6 +666,7 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 21019,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 1,
       "uk_effect_lowering_no_supported_action_rejected": 5,
@@ -618,6 +674,7 @@
       "uk_effect_undated_applied_si_commencement_date": 2,
       "uk_payload_descendant_eid_synthesis": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 28,
     "n_compile_rejections": 10,
     "n_grounding_collateral": 1,
@@ -645,6 +702,9 @@
     "base_source_number_of_provisions": "0",
     "base_source_size": 2778,
     "base_source_status": "metadata_only",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 2
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_inserted_section_p1group_heading_carrier_lowered": 2,
       "uk_effect_lowering_no_supported_action_rejected": 1,
@@ -654,6 +714,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 1,
       "uk_payload_descendant_eid_synthesis": 2
     },
+    "n_blocking_compile_rejections": 2,
     "n_common": 5,
     "n_compile_rejections": 12,
     "n_grounding_collateral": 0,
@@ -681,6 +742,11 @@
     "base_source_number_of_provisions": "131",
     "base_source_size": 366044,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_source_payload_without_instruction_context_rejected": 1,
+      "uk_effect_structural_pseudo_definition_target_rejected": 1,
+      "uk_effect_table_entry_instruction_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 2,
       "uk_effect_range_substitution_text_patch": 1,
@@ -691,6 +757,7 @@
       "uk_effect_undated_applied_si_commencement_date": 2,
       "uk_effect_undated_applied_si_commencement_unresolved": 6
     },
+    "n_blocking_compile_rejections": 3,
     "n_common": 43,
     "n_compile_rejections": 17,
     "n_grounding_collateral": 462,
@@ -718,6 +785,18 @@
     "base_source_number_of_provisions": "85",
     "base_source_size": 206974,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_heading_only_ref_rejected": 5,
+      "uk_effect_instruction_text_payload_rejected": 1,
+      "uk_effect_lowering_no_supported_action_rejected": 2,
+      "uk_effect_missing_structural_payload_rejected": 2,
+      "uk_effect_overlap_substitution_unlowered": 2,
+      "uk_effect_repeal_table_replacement_payload_rejected": 5,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 3,
+      "uk_effect_source_payload_without_instruction_context_rejected": 1,
+      "uk_effect_structural_pseudo_definition_target_rejected": 7,
+      "uk_effect_whole_act_word_level_text_patch_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 12,
       "uk_effect_after_anchor_insert_promoted": 4,
@@ -755,6 +834,7 @@
       "uk_payload_descendant_eid_synthesis": 53,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 1
     },
+    "n_blocking_compile_rejections": 29,
     "n_common": 440,
     "n_compile_rejections": 358,
     "n_grounding_collateral": 50,
@@ -782,6 +862,9 @@
     "base_source_number_of_provisions": "64",
     "base_source_size": 206747,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_repeal_table_replacement_payload_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 1,
       "uk_effect_direct_section_paragraph_target_normalized": 5,
@@ -794,6 +877,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 4,
       "uk_payload_descendant_eid_synthesis": 1
     },
+    "n_blocking_compile_rejections": 1,
     "n_common": 232,
     "n_compile_rejections": 32,
     "n_grounding_collateral": 104,
@@ -821,7 +905,9 @@
     "base_source_number_of_provisions": "42",
     "base_source_size": 157794,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 49,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 192,
@@ -849,6 +935,9 @@
     "base_source_number_of_provisions": "10",
     "base_source_size": 53616,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_missing_structural_payload_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 3,
       "uk_effect_missing_structural_payload_rejected": 2,
@@ -857,6 +946,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 2,
       "uk_payload_descendant_eid_synthesis": 1
     },
+    "n_blocking_compile_rejections": 1,
     "n_common": 91,
     "n_compile_rejections": 11,
     "n_grounding_collateral": 0,
@@ -884,7 +974,9 @@
     "base_source_number_of_provisions": "61",
     "base_source_size": 230123,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 124,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 251,
@@ -912,6 +1004,11 @@
     "base_source_number_of_provisions": "46",
     "base_source_size": 116948,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
+      "uk_effect_lowering_no_supported_action_rejected": 4,
+      "uk_effect_source_payload_without_instruction_context_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
       "uk_effect_lowering_no_supported_action_rejected": 8,
@@ -921,6 +1018,7 @@
       "uk_effect_undated_applied_si_commencement_date": 6,
       "uk_effect_undated_applied_si_commencement_unresolved": 2
     },
+    "n_blocking_compile_rejections": 6,
     "n_common": 147,
     "n_compile_rejections": 27,
     "n_grounding_collateral": 42,
@@ -948,6 +1046,16 @@
     "base_source_number_of_provisions": "736",
     "base_source_size": 2136935,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_lowering_no_supported_action_rejected": 16,
+      "uk_effect_missing_structural_payload_rejected": 1,
+      "uk_effect_overlap_substitution_unlowered": 7,
+      "uk_effect_repeal_table_replacement_payload_rejected": 9,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 21,
+      "uk_effect_source_payload_without_instruction_context_rejected": 2,
+      "uk_effect_structural_pseudo_definition_target_rejected": 15,
+      "uk_effect_table_entry_instruction_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 12,
       "uk_effect_after_anchor_insert_promoted": 3,
@@ -986,6 +1094,7 @@
       "uk_effect_wherever_occurring_substitution_text_patch": 17,
       "uk_payload_descendant_eid_synthesis": 21
     },
+    "n_blocking_compile_rejections": 72,
     "n_common": 2120,
     "n_compile_rejections": 532,
     "n_grounding_collateral": 1028,
@@ -1013,6 +1122,14 @@
     "base_source_number_of_provisions": "93",
     "base_source_size": 266735,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_instruction_text_payload_rejected": 1,
+      "uk_effect_lowering_no_supported_action_rejected": 4,
+      "uk_effect_overlap_substitution_unlowered": 3,
+      "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 1,
+      "uk_effect_structural_pseudo_definition_target_rejected": 1,
+      "uk_effect_table_entry_instruction_rejected": 3
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch": 1,
       "uk_effect_all_occurrences_substitution_text_patch": 2,
@@ -1040,6 +1157,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 22,
       "uk_payload_descendant_eid_synthesis": 10
     },
+    "n_blocking_compile_rejections": 13,
     "n_common": 498,
     "n_compile_rejections": 90,
     "n_grounding_collateral": 31,
@@ -1056,7 +1174,7 @@
     "oracle_source_status": "available",
     "score_status": "scored",
     "statute_id": "ukpga/1981/20",
-    "triage_bucket": "compile_rejection_dominated_residual",
+    "triage_bucket": "residual_after_grounding",
     "unaligned": 74.16
   },
   "ukpga/1984/12": {
@@ -1067,6 +1185,18 @@
     "base_source_number_of_provisions": "341",
     "base_source_size": 1302663,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_commencement_source_rejected": 2,
+      "uk_effect_instruction_text_payload_rejected": 1,
+      "uk_effect_lowering_no_supported_action_rejected": 23,
+      "uk_effect_missing_structural_payload_rejected": 14,
+      "uk_effect_non_substantive_payload_rejected": 8,
+      "uk_effect_overlap_substitution_unlowered": 7,
+      "uk_effect_repeal_table_replacement_payload_rejected": 1,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 6,
+      "uk_effect_source_payload_without_instruction_context_rejected": 2,
+      "uk_effect_structural_pseudo_definition_target_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 14,
       "uk_effect_after_anchor_insert_promoted": 2,
@@ -1104,6 +1234,7 @@
       "uk_effect_wherever_occurring_substitution_text_patch": 90,
       "uk_payload_descendant_eid_synthesis": 16
     },
+    "n_blocking_compile_rejections": 65,
     "n_common": 622,
     "n_compile_rejections": 495,
     "n_grounding_collateral": 151,
@@ -1131,6 +1262,7 @@
     "base_source_number_of_provisions": "34",
     "base_source_size": 101639,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_all_occurrences_substitution_text_patch": 2,
       "uk_effect_lowering_no_supported_action_rejected": 1,
@@ -1139,6 +1271,7 @@
       "uk_effect_source_carried_definition_entry_substitution_text_patch": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 202,
     "n_compile_rejections": 8,
     "n_grounding_collateral": 19,
@@ -1166,6 +1299,14 @@
     "base_source_number_of_provisions": "129",
     "base_source_size": 506606,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_lowering_no_supported_action_rejected": 8,
+      "uk_effect_missing_structural_payload_rejected": 2,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 2,
+      "uk_effect_source_payload_without_instruction_context_rejected": 2,
+      "uk_effect_structural_pseudo_definition_target_rejected": 1,
+      "uk_effect_whole_act_word_level_text_patch_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 6,
       "uk_effect_direct_section_paragraph_target_normalized": 8,
@@ -1183,6 +1324,7 @@
       "uk_effect_whole_act_word_level_text_patch_rejected": 1,
       "uk_payload_descendant_eid_synthesis": 5
     },
+    "n_blocking_compile_rejections": 16,
     "n_common": 289,
     "n_compile_rejections": 173,
     "n_grounding_collateral": 100,
@@ -1199,7 +1341,7 @@
     "oracle_source_status": "available",
     "score_status": "scored",
     "statute_id": "ukpga/1986/61",
-    "triage_bucket": "compile_rejection_dominated_residual",
+    "triage_bucket": "residual_after_grounding",
     "unaligned": 50.53
   },
   "ukpga/1990/8": {
@@ -1210,6 +1352,23 @@
     "base_source_number_of_provisions": "551",
     "base_source_size": 3176327,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_amendment_table_payload_without_row_context_rejected": 1,
+      "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
+      "uk_effect_appropriate_place_insert_rejected": 1,
+      "uk_effect_child_qualified_word_omission_target_mismatch_rejected": 1,
+      "uk_effect_heading_only_ref_rejected": 4,
+      "uk_effect_instruction_text_payload_rejected": 4,
+      "uk_effect_lowering_no_supported_action_rejected": 64,
+      "uk_effect_missing_structural_payload_rejected": 51,
+      "uk_effect_overlap_substitution_unlowered": 17,
+      "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 4,
+      "uk_effect_repeal_table_replacement_payload_rejected": 5,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 6,
+      "uk_effect_source_payload_without_instruction_context_rejected": 3,
+      "uk_effect_structural_sibling_insert_rejected": 2,
+      "uk_effect_table_entry_instruction_rejected": 8
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 33,
       "uk_effect_after_anchor_insert_promoted": 13,
@@ -1281,6 +1440,7 @@
       "uk_payload_descendant_eid_synthesis": 360,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 6
     },
+    "n_blocking_compile_rejections": 172,
     "n_common": 6836,
     "n_compile_rejections": 3602,
     "n_grounding_collateral": 1343,
@@ -1308,6 +1468,16 @@
     "base_source_number_of_provisions": "119",
     "base_source_size": 820595,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
+      "uk_effect_heading_only_ref_rejected": 1,
+      "uk_effect_instruction_text_payload_rejected": 1,
+      "uk_effect_lowering_no_supported_action_rejected": 6,
+      "uk_effect_overlap_substitution_unlowered": 4,
+      "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 2,
+      "uk_effect_source_payload_without_instruction_context_rejected": 3,
+      "uk_effect_table_entry_instruction_rejected": 4
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 5,
       "uk_effect_after_anchor_insert_promoted": 2,
@@ -1349,6 +1519,7 @@
       "uk_payload_descendant_eid_synthesis": 62,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 2
     },
+    "n_blocking_compile_rejections": 22,
     "n_common": 1444,
     "n_compile_rejections": 631,
     "n_grounding_collateral": 41,
@@ -1365,7 +1536,7 @@
     "oracle_source_status": "available",
     "score_status": "scored",
     "statute_id": "ukpga/1990/9",
-    "triage_bucket": "compile_rejection_dominated_residual",
+    "triage_bucket": "residual_after_grounding",
     "unaligned": 86.37
   },
   "ukpga/1992/41": {
@@ -1376,6 +1547,12 @@
     "base_source_number_of_provisions": "157",
     "base_source_size": 612341,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_lowering_no_supported_action_rejected": 2,
+      "uk_effect_missing_structural_payload_rejected": 2,
+      "uk_effect_repeal_table_replacement_payload_rejected": 1,
+      "uk_effect_structural_pseudo_definition_target_rejected": 2
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 1,
       "uk_effect_all_occurrences_substitution_text_patch": 5,
@@ -1394,6 +1571,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 14,
       "uk_payload_descendant_eid_synthesis": 9
     },
+    "n_blocking_compile_rejections": 7,
     "n_common": 300,
     "n_compile_rejections": 112,
     "n_grounding_collateral": 169,
@@ -1421,11 +1599,15 @@
     "base_source_number_of_provisions": "27",
     "base_source_size": 69869,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_repeal_table_replacement_payload_rejected": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 1,
       "uk_effect_repeal_table_replacement_payload_rejected": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 2
     },
+    "n_blocking_compile_rejections": 1,
     "n_common": 102,
     "n_compile_rejections": 4,
     "n_grounding_collateral": 0,
@@ -1453,6 +1635,11 @@
     "base_source_number_of_provisions": "46",
     "base_source_size": 104385,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_external_act_target_rejected": 1,
+      "uk_effect_lowering_no_supported_action_rejected": 6,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 7
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 1,
       "uk_effect_all_occurrences_substitution_text_patch": 1,
@@ -1464,6 +1651,7 @@
       "uk_effect_undated_applied_si_commencement_date": 8,
       "uk_effect_undated_applied_si_commencement_unresolved": 8
     },
+    "n_blocking_compile_rejections": 14,
     "n_common": 49,
     "n_compile_rejections": 63,
     "n_grounding_collateral": 158,
@@ -1491,11 +1679,15 @@
     "base_source_number_of_provisions": "23",
     "base_source_size": 55652,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_lowering_no_supported_action_rejected": 3
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 4,
       "uk_effect_source_provision_order_normalized": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 2
     },
+    "n_blocking_compile_rejections": 3,
     "n_common": 102,
     "n_compile_rejections": 7,
     "n_grounding_collateral": 3,
@@ -1523,6 +1715,19 @@
     "base_source_number_of_provisions": "154",
     "base_source_size": 455022,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_amendment_table_payload_without_row_context_rejected": 1,
+      "uk_effect_corresponding_table_entry_word_substitution_unresolved": 1,
+      "uk_effect_instruction_text_payload_rejected": 5,
+      "uk_effect_lowering_no_supported_action_rejected": 2,
+      "uk_effect_missing_structural_payload_rejected": 1,
+      "uk_effect_mixed_body_heading_text_substitution_rejected": 1,
+      "uk_effect_overlap_substitution_unlowered": 2,
+      "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 1,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 1,
+      "uk_effect_structural_sibling_insert_rejected": 1,
+      "uk_effect_table_entry_instruction_rejected": 3
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 1,
       "uk_effect_after_anchor_insert_promoted": 3,
@@ -1562,6 +1767,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 10,
       "uk_payload_descendant_eid_synthesis": 77
     },
+    "n_blocking_compile_rejections": 19,
     "n_common": 1265,
     "n_compile_rejections": 314,
     "n_grounding_collateral": 42,
@@ -1578,7 +1784,7 @@
     "oracle_source_status": "available",
     "score_status": "scored",
     "statute_id": "ukpga/1998/17",
-    "triage_bucket": "compile_rejection_dominated_residual",
+    "triage_bucket": "residual_after_grounding",
     "unaligned": 82.09
   },
   "ukpga/2002/15": {
@@ -1589,6 +1795,12 @@
     "base_source_number_of_provisions": "381",
     "base_source_size": 1068553,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_child_qualified_word_omission_target_mismatch_rejected": 1,
+      "uk_effect_crossheading_replace_rejected": 2,
+      "uk_effect_instruction_text_payload_rejected": 1,
+      "uk_effect_source_payload_without_instruction_context_rejected": 2
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_after_paragraph_insert_block_amendment_lowered": 2,
       "uk_effect_all_occurrences_substitution_text_patch": 9,
@@ -1616,6 +1828,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 15,
       "uk_payload_descendant_eid_synthesis": 11
     },
+    "n_blocking_compile_rejections": 6,
     "n_common": 2135,
     "n_compile_rejections": 120,
     "n_grounding_collateral": 304,
@@ -1643,11 +1856,13 @@
     "base_source_number_of_provisions": "15",
     "base_source_size": 57332,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_repeal_table_structural_repeal": 3,
       "uk_effect_source_provision_order_normalized": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 30,
     "n_compile_rejections": 5,
     "n_grounding_collateral": 0,
@@ -1675,6 +1890,18 @@
     "base_source_number_of_provisions": "720",
     "base_source_size": 1911212,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_amendment_table_payload_without_row_context_rejected": 1,
+      "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
+      "uk_effect_crossheading_replace_rejected": 2,
+      "uk_effect_heading_only_ref_rejected": 1,
+      "uk_effect_missing_structural_payload_rejected": 8,
+      "uk_effect_overlap_substitution_unlowered": 11,
+      "uk_effect_repeal_table_structural_repeal_unresolved": 2,
+      "uk_effect_source_payload_without_instruction_context_rejected": 6,
+      "uk_effect_table_entry_instruction_rejected": 5,
+      "uk_effect_whole_act_word_level_text_patch_rejected": 2
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_after_anchor_insert_promoted": 1,
       "uk_effect_after_paragraph_insert_block_amendment_lowered": 15,
@@ -1723,6 +1950,7 @@
       "uk_effect_whole_act_word_level_text_patch_rejected": 2,
       "uk_payload_descendant_eid_synthesis": 152
     },
+    "n_blocking_compile_rejections": 39,
     "n_common": 4912,
     "n_compile_rejections": 997,
     "n_grounding_collateral": 262,
@@ -1750,6 +1978,9 @@
     "base_source_number_of_provisions": "278",
     "base_source_size": 902220,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_overlap_substitution_unlowered": 1
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_after_anchor_insert_promoted": 1,
       "uk_effect_after_paragraph_insert_block_amendment_lowered": 4,
@@ -1777,6 +2008,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 1,
       "uk_payload_descendant_eid_synthesis": 52
     },
+    "n_blocking_compile_rejections": 1,
     "n_common": 1929,
     "n_compile_rejections": 155,
     "n_grounding_collateral": 7,
@@ -1804,7 +2036,9 @@
     "base_source_number_of_provisions": "6",
     "base_source_size": 151464,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 29,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 2,
@@ -1832,12 +2066,14 @@
     "base_source_number_of_provisions": "173",
     "base_source_size": 396486,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_after_paragraph_insert_block_amendment_lowered": 1,
       "uk_effect_chained_insertion_anchor_lowered": 4,
       "uk_effect_lowering_no_supported_action_rejected": 38,
       "uk_effect_source_provision_order_normalized": 9
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 680,
     "n_compile_rejections": 52,
     "n_grounding_collateral": 5,
@@ -1865,6 +2101,7 @@
     "base_source_number_of_provisions": "694",
     "base_source_size": 1672252,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_after_anchor_insert_promoted": 1,
       "uk_effect_anchor_to_end_block_substitution_text_patch": 1,
@@ -1882,6 +2119,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 1,
       "uk_payload_descendant_eid_synthesis": 10
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 2818,
     "n_compile_rejections": 68,
     "n_grounding_collateral": 38,
@@ -1909,12 +2147,14 @@
     "base_source_number_of_provisions": "44",
     "base_source_size": 116537,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_inserted_section_p1group_heading_carrier_lowered": 1,
       "uk_effect_lowering_no_supported_action_rejected": 1,
       "uk_effect_source_provision_order_normalized": 1,
       "uk_payload_descendant_eid_synthesis": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 282,
     "n_compile_rejections": 4,
     "n_grounding_collateral": 19,
@@ -1942,6 +2182,14 @@
     "base_source_number_of_provisions": "1104",
     "base_source_size": 2695979,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_child_qualified_word_omission_target_mismatch_rejected": 1,
+      "uk_effect_instruction_text_payload_rejected": 2,
+      "uk_effect_missing_structural_payload_rejected": 1,
+      "uk_effect_overlap_substitution_unlowered": 12,
+      "uk_effect_source_payload_without_instruction_context_rejected": 1,
+      "uk_effect_table_entry_instruction_rejected": 3
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_after_anchor_insert_promoted": 7,
       "uk_effect_after_paragraph_insert_block_amendment_lowered": 9,
@@ -1988,6 +2236,7 @@
       "uk_payload_descendant_eid_synthesis": 77,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 2
     },
+    "n_blocking_compile_rejections": 20,
     "n_common": 6901,
     "n_compile_rejections": 867,
     "n_grounding_collateral": 169,
@@ -2015,7 +2264,9 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 36783,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {},
+    "n_blocking_compile_rejections": 0,
     "n_common": 50,
     "n_compile_rejections": 0,
     "n_grounding_collateral": 0,
@@ -2043,11 +2294,15 @@
     "base_source_number_of_provisions": "773",
     "base_source_size": 2064779,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {
+      "uk_effect_structural_sibling_insert_rejected": 2
+    },
     "compile_rejection_rule_counts": {
       "uk_effect_missing_structural_payload_rejected": 2,
       "uk_effect_source_provision_order_normalized": 15,
       "uk_effect_structural_sibling_insert_rejected": 2
     },
+    "n_blocking_compile_rejections": 2,
     "n_common": 2143,
     "n_compile_rejections": 19,
     "n_grounding_collateral": 0,
@@ -2075,9 +2330,11 @@
     "base_source_number_of_provisions": "6",
     "base_source_size": 20038,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_source_provision_order_normalized": 2
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 32,
     "n_compile_rejections": 2,
     "n_grounding_collateral": 0,
@@ -2105,9 +2362,11 @@
     "base_source_number_of_provisions": "19",
     "base_source_size": 88736,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 167,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 1,
@@ -2135,9 +2394,11 @@
     "base_source_number_of_provisions": "15",
     "base_source_size": 44292,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 76,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2165,9 +2426,11 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 48609,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 90,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2195,9 +2458,11 @@
     "base_source_number_of_provisions": "11",
     "base_source_size": 34934,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 31,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2225,9 +2490,11 @@
     "base_source_number_of_provisions": "59",
     "base_source_size": 162953,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 284,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2255,9 +2522,11 @@
     "base_source_number_of_provisions": "47",
     "base_source_size": 118917,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 159,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2285,9 +2554,11 @@
     "base_source_number_of_provisions": "252",
     "base_source_size": 973935,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 1923,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2315,9 +2586,11 @@
     "base_source_number_of_provisions": "71",
     "base_source_size": 124831,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 127,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2345,9 +2618,11 @@
     "base_source_number_of_provisions": "29",
     "base_source_size": 82217,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 99,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2375,9 +2650,11 @@
     "base_source_number_of_provisions": "17",
     "base_source_size": 63992,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 83,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2405,9 +2682,11 @@
     "base_source_number_of_provisions": "143",
     "base_source_size": 200448,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 147,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 96,
@@ -2435,9 +2714,11 @@
     "base_source_number_of_provisions": "19",
     "base_source_size": 218986,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 234,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2465,9 +2746,11 @@
     "base_source_number_of_provisions": "6",
     "base_source_size": 98656,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 121,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2495,9 +2778,11 @@
     "base_source_number_of_provisions": "20",
     "base_source_size": 95209,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 104,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 1,
@@ -2525,9 +2810,11 @@
     "base_source_number_of_provisions": "24",
     "base_source_size": 34975,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 31,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2555,9 +2842,11 @@
     "base_source_number_of_provisions": "17",
     "base_source_size": 74415,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 84,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 1,
@@ -2585,9 +2874,11 @@
     "base_source_number_of_provisions": "5",
     "base_source_size": 30776,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 25,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2615,9 +2906,11 @@
     "base_source_number_of_provisions": "3",
     "base_source_size": 26690,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 20,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2645,9 +2938,11 @@
     "base_source_number_of_provisions": "20",
     "base_source_size": 85025,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 118,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2675,9 +2970,11 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 40571,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 64,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2705,9 +3002,11 @@
     "base_source_number_of_provisions": "10",
     "base_source_size": 29911,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 35,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 1,
@@ -2735,9 +3034,11 @@
     "base_source_number_of_provisions": "16",
     "base_source_size": 103135,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 144,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2765,9 +3066,11 @@
     "base_source_number_of_provisions": "8",
     "base_source_size": 25103,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 29,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2795,9 +3098,11 @@
     "base_source_number_of_provisions": "11",
     "base_source_size": 36411,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 57,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
@@ -2825,9 +3130,11 @@
     "base_source_number_of_provisions": "36",
     "base_source_size": 64505,
     "base_source_status": "available",
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_feed_pages_absent_recorded": 1
     },
+    "n_blocking_compile_rejections": 0,
     "n_common": 92,
     "n_compile_rejections": 1,
     "n_grounding_collateral": 0,
