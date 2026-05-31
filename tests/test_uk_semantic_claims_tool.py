@@ -6877,3 +6877,106 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
     assert summary["rejected_operation_family_proof_family_counts"] == {
         "table_surface_mutation": 1,
     }
+
+
+def test_uk_semantic_claims_validation_report_summarizes_template_obligations(
+    tmp_path: Path,
+) -> None:
+    source_preview = "after the entry relating to X insert the row"
+    target_text_hash = hashlib.sha256(b"table text").hexdigest()
+    workqueue = _workqueue_row(source_preview=source_preview)
+    template = workqueue["suggested_claim_template"]
+    assert isinstance(template, dict)
+    template["required_operation_family_proof_semantics"] = [
+        "table_surface_insert_anchor_and_live_carrier",
+    ]
+    accepted_claim = _claim_row(source_preview=source_preview)
+    accepted_outcome = accepted_claim["proposed_outcome"]
+    assert isinstance(accepted_outcome, dict)
+    accepted_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    accepted_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": target_text_hash,
+        },
+    ]
+    accepted_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-names-anchor"],
+            "live_target_precondition_ids": ["live-table-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+    rejected_claim = _claim_row(source_preview=source_preview)
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (accepted_claim, rejected_claim),
+        workqueue_rows=(workqueue,),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1/table:1": {
+                        "text_sha256": target_text_hash,
+                        "subtree_sha256": "a" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+    report = uk_semantic_claims._validation_report_jsonable(
+        input_path=tmp_path / "claims.jsonl",
+        rows=rows,
+        summary_only=True,
+    )
+
+    summary = report["summary"]
+    assert summary["matched_template_required_validator_check_counts"] == {
+        "changed_paths_are_within_claimed_table_surface": 2,
+        "claim_identifies_exact_table_carrier": 2,
+    }
+    assert summary["accepted_matched_template_required_validator_check_counts"] == {
+        "changed_paths_are_within_claimed_table_surface": 1,
+        "claim_identifies_exact_table_carrier": 1,
+    }
+    assert summary["rejected_matched_template_required_validator_check_counts"] == {
+        "changed_paths_are_within_claimed_table_surface": 1,
+        "claim_identifies_exact_table_carrier": 1,
+    }
+    assert summary["matched_template_required_ownership_counts"] == {
+        "mutation_boundary": 2,
+        "source_named_table_surface": 2,
+    }
+    assert summary["accepted_matched_template_required_ownership_counts"] == {
+        "mutation_boundary": 1,
+        "source_named_table_surface": 1,
+    }
+    assert summary["rejected_matched_template_required_ownership_counts"] == {
+        "mutation_boundary": 1,
+        "source_named_table_surface": 1,
+    }
+    assert summary[
+        "matched_template_required_operation_family_proof_semantic_counts"
+    ] == {
+        "table_surface_insert_anchor_and_live_carrier": 2,
+    }
+    assert summary[
+        "accepted_matched_template_required_operation_family_proof_semantic_counts"
+    ] == {
+        "table_surface_insert_anchor_and_live_carrier": 1,
+    }
+    assert summary[
+        "rejected_matched_template_required_operation_family_proof_semantic_counts"
+    ] == {
+        "table_surface_insert_anchor_and_live_carrier": 1,
+    }

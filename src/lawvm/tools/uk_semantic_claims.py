@@ -5439,6 +5439,48 @@ def _validation_report_jsonable(
             row.get("operation_family_proof_families")
         )
     )
+    matched_template_validator_check_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_validator_checks",
+    )
+    accepted_matched_template_validator_check_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_validator_checks",
+        statuses=_ACCEPTED_STATUSES,
+    )
+    rejected_matched_template_validator_check_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_validator_checks",
+        statuses=_REJECTED_STATUSES,
+    )
+    matched_template_ownership_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_ownership",
+    )
+    accepted_matched_template_ownership_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_ownership",
+        statuses=_ACCEPTED_STATUSES,
+    )
+    rejected_matched_template_ownership_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_ownership",
+        statuses=_REJECTED_STATUSES,
+    )
+    matched_template_proof_semantic_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_operation_family_proof_semantics",
+    )
+    accepted_matched_template_proof_semantic_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_operation_family_proof_semantics",
+        statuses=_ACCEPTED_STATUSES,
+    )
+    rejected_matched_template_proof_semantic_counts = _matched_template_counter(
+        rows,
+        "matched_template_required_operation_family_proof_semantics",
+        statuses=_REJECTED_STATUSES,
+    )
     accepted_count = sum(int(status_counts.get(status, 0)) for status in _ACCEPTED_STATUSES)
     input_error_count = int(status_counts.get("input_error", 0))
     rejected_count = sum(
@@ -5479,6 +5521,33 @@ def _validation_report_jsonable(
             "rejected_operation_family_proof_family_counts": dict(
                 sorted(rejected_proof_family_counts.items())
             ),
+            "matched_template_required_validator_check_counts": dict(
+                sorted(matched_template_validator_check_counts.items())
+            ),
+            "accepted_matched_template_required_validator_check_counts": dict(
+                sorted(accepted_matched_template_validator_check_counts.items())
+            ),
+            "rejected_matched_template_required_validator_check_counts": dict(
+                sorted(rejected_matched_template_validator_check_counts.items())
+            ),
+            "matched_template_required_ownership_counts": dict(
+                sorted(matched_template_ownership_counts.items())
+            ),
+            "accepted_matched_template_required_ownership_counts": dict(
+                sorted(accepted_matched_template_ownership_counts.items())
+            ),
+            "rejected_matched_template_required_ownership_counts": dict(
+                sorted(rejected_matched_template_ownership_counts.items())
+            ),
+            "matched_template_required_operation_family_proof_semantic_counts": dict(
+                sorted(matched_template_proof_semantic_counts.items())
+            ),
+            "accepted_matched_template_required_operation_family_proof_semantic_counts": dict(
+                sorted(accepted_matched_template_proof_semantic_counts.items())
+            ),
+            "rejected_matched_template_required_operation_family_proof_semantic_counts": dict(
+                sorted(rejected_matched_template_proof_semantic_counts.items())
+            ),
         },
     }
     if not summary_only:
@@ -5486,6 +5555,20 @@ def _validation_report_jsonable(
     if validation_jsonl is not None:
         report["validation_jsonl"] = dict(validation_jsonl)
     return report
+
+
+def _matched_template_counter(
+    rows: tuple[Mapping[str, Any], ...],
+    field: str,
+    *,
+    statuses: frozenset[str] | None = None,
+) -> Counter[str]:
+    return Counter(
+        item
+        for row in rows
+        if statuses is None or str(row.get("validator_status") or "") in statuses
+        for item in _string_tuple_from_value(row.get(field))
+    )
 
 
 def _format_count_map(value: object) -> str:
@@ -5545,6 +5628,64 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         "Rejected proof families: "
         + _format_count_map(
             summary.get("rejected_operation_family_proof_family_counts")
+        )
+    )
+    print(
+        "Matched template validator checks: "
+        + _format_count_map(
+            summary.get("matched_template_required_validator_check_counts")
+        )
+    )
+    print(
+        "Accepted matched template validator checks: "
+        + _format_count_map(
+            summary.get("accepted_matched_template_required_validator_check_counts")
+        )
+    )
+    print(
+        "Rejected matched template validator checks: "
+        + _format_count_map(
+            summary.get("rejected_matched_template_required_validator_check_counts")
+        )
+    )
+    print(
+        "Matched template ownership: "
+        + _format_count_map(summary.get("matched_template_required_ownership_counts"))
+    )
+    print(
+        "Accepted matched template ownership: "
+        + _format_count_map(
+            summary.get("accepted_matched_template_required_ownership_counts")
+        )
+    )
+    print(
+        "Rejected matched template ownership: "
+        + _format_count_map(
+            summary.get("rejected_matched_template_required_ownership_counts")
+        )
+    )
+    print(
+        "Matched template proof semantics: "
+        + _format_count_map(
+            summary.get(
+                "matched_template_required_operation_family_proof_semantic_counts"
+            )
+        )
+    )
+    print(
+        "Accepted matched template proof semantics: "
+        + _format_count_map(
+            summary.get(
+                "accepted_matched_template_required_operation_family_proof_semantic_counts"
+            )
+        )
+    )
+    print(
+        "Rejected matched template proof semantics: "
+        + _format_count_map(
+            summary.get(
+                "rejected_matched_template_required_operation_family_proof_semantic_counts"
+            )
         )
     )
     validation_jsonl = report.get("validation_jsonl")

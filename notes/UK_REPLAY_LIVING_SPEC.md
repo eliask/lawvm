@@ -1663,6 +1663,11 @@ Current bench replay-regime invariant:
   malformed line-number values to `0` rather than crashing or treating them as
   claim identity.
 - Semantic-claim validation rows carry `operation_family_proof_count`, `operation_family_proof_semantics`, and `operation_family_proof_families`; text/JSON reports aggregate proof semantic/family counts and accepted/rejected splits. A proof semantic present only on rejected rows is not evidence that the proof plan validated. This is evidence-routing only, not a trust upgrade.
+- Semantic-claim reports also aggregate matched non-executable template obligations
+  (`required_validator_checks`, `required_ownership`, and
+  `required_operation_family_proof_semantics`) with accepted/rejected splits. This
+  lets batch review see which template obligations are present only on rejected
+  rows without reopening the workqueue JSONL.
 - The manual-frontier validator is a stale-workqueue detector, not a replay shortcut. It must not mutate replay state, alter benchmark scoring, or reinterpret a blocked row as supported unless the current compiler already emits deterministic operations without blocking lowering.
 - Current manual-frontier status takes precedence over compiled-op count. A row that emits partial operations while still carrying a manual-frontier source-pathology classification remains `still_manual_frontier`; partial lowering is not proof that the source issue has been discharged.
 - Validator statuses distinguish at least: `resolved_deterministic_supported`, `resolved_compiles_without_blocking_lowering`, `still_manual_frontier`, `still_blocked_without_manual_frontier_classification`, `effect_not_found`, and `input_error`.
