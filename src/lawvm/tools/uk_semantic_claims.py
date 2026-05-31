@@ -1672,6 +1672,21 @@ def _validate_appropriate_place_family_proof_semantic(
             f"{prefix}.{proof_semantic}.anchor_live_target_precondition_paths "
             f"references undeclared live path {path!r}"
         )
+    proof_live_carrier_paths = _live_carrier_paths_for_proof(
+        proof_live_ids=proof_live_ids,
+        proof_live_paths=proof_live_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
+    )
+    issues.extend(
+        _proof_live_path_subset_issues(
+            prefix=(
+                f"{prefix}.{proof_semantic}."
+                "anchor_live_target_precondition_paths"
+            ),
+            paths=anchor_live_paths,
+            proof_live_carrier_paths=proof_live_carrier_paths,
+        )
+    )
     ordering_rule = _optional_string(proof, "ordering_rule_id")
     proof_check_ids = set(_string_tuple_from_value(proof.get("validator_check_ids")))
     if ordering_rule and ordering_rule not in proof_check_ids:
