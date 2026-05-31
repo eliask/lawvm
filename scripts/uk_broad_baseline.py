@@ -94,6 +94,14 @@ _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS = frozenset(
         "manual_frontier_source_insufficient",
     }
 )
+_REPLAY_LENS_FRONTIER_REASONS = frozenset(
+    {
+        "effect_rows_not_admitted_by_replay_lens",
+    }
+)
+_SOURCE_CHAIN_COMPLETENESS_EXCLUDED_REASONS = (
+    _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS | _REPLAY_LENS_FRONTIER_REASONS
+)
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -345,7 +353,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             for row in results
             if str(row.get("statute_id") or "")
             and any(
-                reason not in _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS
+                reason not in _SOURCE_CHAIN_COMPLETENESS_EXCLUDED_REASONS
+                for reason in _source_chain_frontier_reasons_for_row(row)
+            )
+        }
+    )
+    replay_lens_frontier_statutes = sorted(
+        {
+            str(row.get("statute_id") or "")
+            for row in results
+            if str(row.get("statute_id") or "")
+            and any(
+                reason in _REPLAY_LENS_FRONTIER_REASONS
                 for reason in _source_chain_frontier_reasons_for_row(row)
             )
         }
@@ -408,6 +427,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "non_manual_source_chain_frontier_statutes": (
             non_manual_source_chain_frontier_statutes
         ),
+        "replay_lens_frontier_count": len(replay_lens_frontier_statutes),
+        "replay_lens_frontier_statutes": replay_lens_frontier_statutes,
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "triage_bucket_statutes": triage_bucket_statutes,
         "manual_frontier_status_counts": manual_frontier_status_counts,
@@ -887,6 +908,12 @@ def run_driver(
         )
     else:
         print("  non_manual_source_chain_frontier=0")
+    if summary["replay_lens_frontier_count"]:
+        print(
+            "  replay_lens_frontier="
+            f"{summary['replay_lens_frontier_count']}: "
+            f"{', '.join(summary['replay_lens_frontier_statutes'])}"
+        )
     if summary["triage_buckets"]:
         buckets = ", ".join(
             f"{bucket}={count}"

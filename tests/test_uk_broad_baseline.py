@@ -396,6 +396,10 @@ def test_summarize_results_splits_non_admitted_replay_lens_rows() -> None:
     assert summary["source_chain_frontier_statutes"] == {
         "effect_rows_not_admitted_by_replay_lens": ["uksi/2009/3023"],
     }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
+    assert summary["replay_lens_frontier_count"] == 1
+    assert summary["replay_lens_frontier_statutes"] == ["uksi/2009/3023"]
 
 
 def test_summarize_results_counts_compile_rejection_dominated_residuals() -> None:
