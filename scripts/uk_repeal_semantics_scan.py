@@ -47,6 +47,40 @@ def ids_from_file(path: Path) -> list[str]:
     ]
 
 
+def _selected_source_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    audited_rows = [row for row in rows if "selected_source_matches_phrase" in row]
+    if not audited_rows:
+        return {}
+    matches = [
+        row
+        for row in audited_rows
+        if row.get("selected_source_matches_phrase") is True
+    ]
+    no_revive_matches = [
+        row
+        for row in matches
+        if row.get("source_phrase_family") == "repeal_of_repeal_no_revive_phrase"
+    ]
+    return {
+        "n_selected_source_audited_candidates": len(audited_rows),
+        "n_selected_source_phrase_matches": len(matches),
+        "n_selected_source_unproved_candidates": len(audited_rows) - len(matches),
+        "n_no_revive_selected_source_phrase_matches": len(no_revive_matches),
+        "selected_source_match_statuses": dict(
+            Counter(str(row.get("selected_source_matches_phrase")) for row in audited_rows)
+        ),
+        "selected_source_statuses": dict(
+            Counter(str(row.get("selected_source_status") or "") for row in audited_rows)
+        ),
+        "selected_source_tags": dict(
+            Counter(str(row.get("selected_source_tag") or "") for row in audited_rows)
+        ),
+        "selected_source_phrase_families": dict(
+            Counter(str(row.get("selected_source_phrase_family") or "") for row in audited_rows)
+        ),
+    }
+
+
 def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.repeal_semantics_witnesses import (
@@ -127,7 +161,9 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
                 )
             )
 
-    rows = [witness.to_dict() for witness in witnesses]
+    all_rows = [witness.to_dict() for witness in witnesses]
+    audit_summary = _selected_source_audit_summary(all_rows)
+    rows = all_rows
     if args.limit is not None:
         rows = rows[: args.limit]
     summary = {
@@ -140,6 +176,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     if args.source_phrase_effect_candidates:
         summary["n_phrase_statutes_scanned"] = phrase_ids_scanned
         summary["n_phrase_witness_acts"] = phrase_witness_act_count
+        summary.update(audit_summary)
     if args.include_diagnostics:
         summary["source_diagnostics"] = diagnostics
     return summary
