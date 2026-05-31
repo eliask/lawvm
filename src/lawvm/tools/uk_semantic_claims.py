@@ -5373,9 +5373,41 @@ def _validation_report_jsonable(
             row.get("operation_family_proof_semantics")
         )
     )
+    accepted_proof_semantic_counts = Counter(
+        proof_semantic
+        for row in rows
+        if str(row.get("validator_status") or "") in _ACCEPTED_STATUSES
+        for proof_semantic in _string_tuple_from_value(
+            row.get("operation_family_proof_semantics")
+        )
+    )
+    rejected_proof_semantic_counts = Counter(
+        proof_semantic
+        for row in rows
+        if str(row.get("validator_status") or "") in _REJECTED_STATUSES
+        for proof_semantic in _string_tuple_from_value(
+            row.get("operation_family_proof_semantics")
+        )
+    )
     proof_family_counts = Counter(
         proof_family
         for row in rows
+        for proof_family in _string_tuple_from_value(
+            row.get("operation_family_proof_families")
+        )
+    )
+    accepted_proof_family_counts = Counter(
+        proof_family
+        for row in rows
+        if str(row.get("validator_status") or "") in _ACCEPTED_STATUSES
+        for proof_family in _string_tuple_from_value(
+            row.get("operation_family_proof_families")
+        )
+    )
+    rejected_proof_family_counts = Counter(
+        proof_family
+        for row in rows
+        if str(row.get("validator_status") or "") in _REJECTED_STATUSES
         for proof_family in _string_tuple_from_value(
             row.get("operation_family_proof_families")
         )
@@ -5405,8 +5437,20 @@ def _validation_report_jsonable(
             "operation_family_proof_semantic_counts": dict(
                 sorted(proof_semantic_counts.items())
             ),
+            "accepted_operation_family_proof_semantic_counts": dict(
+                sorted(accepted_proof_semantic_counts.items())
+            ),
+            "rejected_operation_family_proof_semantic_counts": dict(
+                sorted(rejected_proof_semantic_counts.items())
+            ),
             "operation_family_proof_family_counts": dict(
                 sorted(proof_family_counts.items())
+            ),
+            "accepted_operation_family_proof_family_counts": dict(
+                sorted(accepted_proof_family_counts.items())
+            ),
+            "rejected_operation_family_proof_family_counts": dict(
+                sorted(rejected_proof_family_counts.items())
             ),
         },
     }
@@ -5449,8 +5493,32 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         + _format_count_map(summary.get("operation_family_proof_semantic_counts"))
     )
     print(
+        "Accepted proof semantics: "
+        + _format_count_map(
+            summary.get("accepted_operation_family_proof_semantic_counts")
+        )
+    )
+    print(
+        "Rejected proof semantics: "
+        + _format_count_map(
+            summary.get("rejected_operation_family_proof_semantic_counts")
+        )
+    )
+    print(
         "Proof families: "
         + _format_count_map(summary.get("operation_family_proof_family_counts"))
+    )
+    print(
+        "Accepted proof families: "
+        + _format_count_map(
+            summary.get("accepted_operation_family_proof_family_counts")
+        )
+    )
+    print(
+        "Rejected proof families: "
+        + _format_count_map(
+            summary.get("rejected_operation_family_proof_family_counts")
+        )
     )
     validation_jsonl = report.get("validation_jsonl")
     if isinstance(validation_jsonl, Mapping):
