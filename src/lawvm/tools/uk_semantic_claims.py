@@ -465,9 +465,10 @@ def _claim_source_text_precondition_ids(claim: Mapping[str, Any]) -> set[str]:
 
 def _claim_live_target_precondition_ids_and_paths(
     claim: Mapping[str, Any],
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], set[str], dict[str, set[str]]]:
     ids: set[str] = set()
     paths: set[str] = set()
+    paths_by_id: dict[str, set[str]] = {}
     for row in _claim_live_target_precondition_rows(claim):
         precondition_id = _optional_string(row, "precondition_id")
         if precondition_id:
@@ -475,7 +476,9 @@ def _claim_live_target_precondition_ids_and_paths(
         path = _optional_string(row, "path")
         if path:
             paths.add(path)
-    return ids, paths
+        if precondition_id and path:
+            paths_by_id.setdefault(precondition_id, set()).add(path)
+    return ids, paths, paths_by_id
 
 
 def _validate_operation_family_proof_refs(
@@ -488,7 +491,7 @@ def _validate_operation_family_proof_refs(
     operation_ids = _claim_canonical_operation_ids(claim)
     validator_check_ids = _claim_validator_check_ids(claim)
     source_precondition_ids = _claim_source_text_precondition_ids(claim)
-    live_precondition_ids, live_precondition_paths = (
+    live_precondition_ids, live_precondition_paths, live_precondition_paths_by_id = (
         _claim_live_target_precondition_ids_and_paths(claim)
     )
     issues: list[str] = []
@@ -573,6 +576,7 @@ def _validate_operation_family_proof_refs(
                 proof_live_ids=proof_live_ids,
                 proof_live_paths=proof_live_paths,
                 live_precondition_paths=live_precondition_paths,
+                live_precondition_paths_by_id=live_precondition_paths_by_id,
             )
         )
     return tuple(issues)
@@ -601,6 +605,7 @@ def _validate_operation_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     proof_semantic = (
         _optional_string(proof, "proof_semantic")
@@ -621,6 +626,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "text_rewrite_source_preimage_and_live_target":
         return _validate_text_rewrite_family_proof_semantic(
@@ -633,6 +639,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "structural_insert_source_payload_and_live_parent":
         return _validate_structural_insert_family_proof_semantic(
@@ -645,6 +652,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "schedule_list_entry_anchor_boundary_claim":
         return _validate_schedule_list_entry_family_proof_semantic(
@@ -658,6 +666,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "definition_entry_insert_term_boundary_claim":
         return _validate_definition_entry_insert_family_proof_semantic(
@@ -671,6 +680,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "savings_qualified_omission_applicability_scope":
         return _validate_savings_qualified_omission_family_proof_semantic(
@@ -684,6 +694,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "whole_act_listed_enactments_scope_and_exclusions":
         return _validate_whole_act_listed_enactments_family_proof_semantic(
@@ -697,6 +708,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "appropriate_place_anchor_or_ordering_claim":
         return _validate_appropriate_place_family_proof_semantic(
@@ -710,6 +722,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "range_to_container_source_range_payload_and_lineage":
         return _validate_range_to_container_family_proof_semantic(
@@ -723,6 +736,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "table_repeal_or_omission_boundary_preservation":
         return _validate_table_repeal_or_omission_family_proof_semantic(
@@ -736,6 +750,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "cross_container_renumber_source_destination_and_lineage":
         return _validate_cross_container_renumber_family_proof_semantic(
@@ -760,6 +775,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "definition_child_text_tail_boundary_claim":
         return _validate_definition_child_text_tail_family_proof_semantic(
@@ -773,6 +789,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "definition_child_structural_payload_boundary_claim":
         return _validate_definition_child_structural_family_proof_semantic(
@@ -786,6 +803,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "definition_child_structural_insert_boundary_claim":
         return _validate_definition_child_structural_insert_family_proof_semantic(
@@ -799,6 +817,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "referent_qualified_occurrence_scope_claim":
         return _validate_referent_qualified_family_proof_semantic(
@@ -812,6 +831,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "mixed_body_heading_split_boundary_claim":
         return _validate_mixed_body_heading_split_family_proof_semantic(
@@ -825,6 +845,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "structural_child_range_source_payload_boundary_claim":
         return _validate_structural_child_range_family_proof_semantic(
@@ -838,6 +859,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "source_carried_multi_subunit_boundary_claim":
         return _validate_source_carried_multi_subunit_family_proof_semantic(
@@ -851,6 +873,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "source_carried_child_tail_boundary_claim":
         return _validate_source_carried_child_tail_family_proof_semantic(
@@ -864,6 +887,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "source_carried_structured_payload_boundary_claim":
         return _validate_source_carried_structured_family_proof_semantic(
@@ -877,6 +901,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "source_carried_structured_tail_boundary_claim":
         return _validate_source_carried_structured_tail_family_proof_semantic(
@@ -890,6 +915,7 @@ def _validate_operation_family_proof_semantic(
             proof_live_ids=proof_live_ids,
             proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     return (f"{prefix}.proof_semantic {proof_semantic!r} is not supported",)
 
@@ -898,11 +924,13 @@ def _live_carrier_paths_for_proof(
     *,
     proof_live_ids: set[str],
     proof_live_paths: set[str],
-    live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> set[str]:
     live_carrier_paths = set(proof_live_paths)
-    if proof_live_ids:
-        live_carrier_paths.update(live_precondition_paths)
+    for precondition_id in sorted(proof_live_ids):
+        live_carrier_paths.update(
+            live_precondition_paths_by_id.get(precondition_id, set())
+        )
     return live_carrier_paths
 
 
@@ -917,6 +945,7 @@ def _validate_table_insert_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "table_surface_mutation":
@@ -929,7 +958,7 @@ def _validate_table_insert_family_proof_semantic(
     live_carrier_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_carrier_paths:
         issues.append(
@@ -973,6 +1002,7 @@ def _validate_text_rewrite_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family not in {
@@ -996,7 +1026,7 @@ def _validate_text_rewrite_family_proof_semantic(
     live_carrier_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_carrier_paths:
         issues.append(
@@ -1061,6 +1091,7 @@ def _validate_structural_insert_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family not in {
@@ -1078,7 +1109,7 @@ def _validate_structural_insert_family_proof_semantic(
     live_parent_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_parent_paths:
         issues.append(
@@ -1120,6 +1151,7 @@ def _validate_schedule_list_entry_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "schedule_list_entry_mutation":
@@ -1160,7 +1192,7 @@ def _validate_schedule_list_entry_family_proof_semantic(
     live_entry_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_entry_paths:
         issues.append(
@@ -1219,6 +1251,7 @@ def _validate_definition_entry_insert_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "definition_entry_insert":
@@ -1260,7 +1293,7 @@ def _validate_definition_entry_insert_family_proof_semantic(
     live_definition_list_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_definition_list_paths:
         issues.append(
@@ -1326,6 +1359,7 @@ def _validate_savings_qualified_omission_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "savings_qualified_text_omission":
@@ -1368,7 +1402,7 @@ def _validate_savings_qualified_omission_family_proof_semantic(
     live_carrier_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_carrier_paths:
         issues.append(
@@ -1433,6 +1467,7 @@ def _validate_whole_act_listed_enactments_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "whole_act_listed_enactments_text_patch":
@@ -1495,7 +1530,7 @@ def _validate_whole_act_listed_enactments_family_proof_semantic(
     live_carrier_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_carrier_paths:
         issues.append(
@@ -1568,6 +1603,7 @@ def _validate_appropriate_place_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family not in {
@@ -1638,7 +1674,7 @@ def _validate_appropriate_place_family_proof_semantic(
     live_parent_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_parent_paths:
         issues.append(
@@ -1680,6 +1716,7 @@ def _validate_range_to_container_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "range_to_container_substitution":
@@ -1735,7 +1772,7 @@ def _validate_range_to_container_family_proof_semantic(
     live_container_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_container_paths:
         issues.append(
@@ -1802,6 +1839,7 @@ def _validate_table_repeal_or_omission_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "table_repeal_or_omission":
@@ -1854,7 +1892,7 @@ def _validate_table_repeal_or_omission_family_proof_semantic(
     live_table_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_table_paths:
         issues.append(
@@ -2070,6 +2108,7 @@ def _validate_amendment_program_target_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "amendment_program_target_mutation":
@@ -2129,7 +2168,7 @@ def _validate_amendment_program_target_family_proof_semantic(
     live_program_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_program_paths:
         issues.append(
@@ -2192,6 +2231,7 @@ def _validate_definition_child_text_tail_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "definition_child_and_tail_substitution":
@@ -2243,7 +2283,7 @@ def _validate_definition_child_text_tail_family_proof_semantic(
     live_definition_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_definition_paths:
         issues.append(
@@ -2285,6 +2325,7 @@ def _validate_definition_child_structural_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "definition_child_structural_substitution":
@@ -2329,7 +2370,7 @@ def _validate_definition_child_structural_family_proof_semantic(
     live_definition_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_definition_paths:
         issues.append(
@@ -2371,6 +2412,7 @@ def _validate_definition_child_structural_insert_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "definition_child_structural_insert":
@@ -2415,7 +2457,7 @@ def _validate_definition_child_structural_insert_family_proof_semantic(
     live_definition_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_definition_paths:
         issues.append(
@@ -2544,6 +2586,7 @@ def _validate_mixed_body_heading_split_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "mixed_body_heading_text_substitution_split":
@@ -2587,7 +2630,7 @@ def _validate_mixed_body_heading_split_family_proof_semantic(
     live_surface_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_surface_paths:
         issues.append(
@@ -2652,6 +2695,7 @@ def _validate_structural_child_range_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "structural_child_range_substitution":
@@ -2694,7 +2738,7 @@ def _validate_structural_child_range_family_proof_semantic(
     live_range_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_range_paths:
         issues.append(
@@ -2818,6 +2862,7 @@ def _validate_referent_qualified_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "referent_qualified_text_substitution":
@@ -2862,7 +2907,7 @@ def _validate_referent_qualified_family_proof_semantic(
     live_text_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_text_paths:
         issues.append(
@@ -2914,6 +2959,7 @@ def _validate_source_carried_multi_subunit_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "source_carried_multi_subunit_text_rewrite":
@@ -2959,7 +3005,7 @@ def _validate_source_carried_multi_subunit_family_proof_semantic(
     live_child_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_child_paths:
         issues.append(
@@ -3011,6 +3057,7 @@ def _validate_source_carried_child_tail_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "source_carried_child_tail_text_rewrite":
@@ -3052,7 +3099,7 @@ def _validate_source_carried_child_tail_family_proof_semantic(
     live_tail_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_tail_paths:
         issues.append(
@@ -3112,6 +3159,7 @@ def _validate_source_carried_structured_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "source_carried_structured_text_patch":
@@ -3152,7 +3200,7 @@ def _validate_source_carried_structured_family_proof_semantic(
     live_child_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_child_paths:
         issues.append(
@@ -3210,6 +3258,7 @@ def _validate_source_carried_structured_tail_family_proof_semantic(
     proof_live_ids: set[str],
     proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "source_carried_structured_tail_substitution":
@@ -3251,7 +3300,7 @@ def _validate_source_carried_structured_tail_family_proof_semantic(
     live_tail_paths = _live_carrier_paths_for_proof(
         proof_live_ids=proof_live_ids,
         proof_live_paths=proof_live_paths,
-        live_precondition_paths=live_precondition_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
     )
     if not live_tail_paths:
         issues.append(

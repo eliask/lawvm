@@ -868,6 +868,62 @@ def test_validate_semantic_claim_accepts_table_insert_family_proof_semantic() ->
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_scopes_live_paths_to_referenced_precondition_ids() -> None:
+    claim = _claim_row(source_preview="after the entry relating to X insert the row")
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["target"] = "section:1/table:2/row:1"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:1/table:2/row:1"],
+        "target_region": ["section:1/table:2/row:1"],
+    }
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "referenced-live-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": hashlib.sha256(b"table one").hexdigest(),
+        },
+        {
+            "precondition_id": "unreferenced-live-carrier",
+            "path": "section:1/table:2",
+            "text_sha256": hashlib.sha256(b"table two").hexdigest(),
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-names-anchor"],
+            "live_target_precondition_ids": ["referenced-live-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "operation_family_proofs[1].table_surface_insert_anchor_and_live_carrier "
+        "operation 'manual-op-1' target parent 'section:1/table:2' is outside "
+        "declared live carrier preconditions"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_table_insert_family_proof_semantic_gap() -> None:
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
     proposed_outcome = claim["proposed_outcome"]
