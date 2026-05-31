@@ -341,6 +341,33 @@ def test_summarize_results_counts_bounded_low_volume_residuals() -> None:
     assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
 
 
+def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1887/55",
+                "score_status": "scored",
+                "aligned": 86.67,
+                "aligned_excluding_grounding_collateral": 86.67,
+                "unaligned": 86.67,
+                "n_grounding_collateral": 0,
+                "n_replay": 91,
+                "n_oracle": 105,
+                "n_only_in_oracle": 14,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 16,
+                "n_blocking_compile_rejections": 16,
+                "blocking_compile_rejection_rule_counts": {
+                    "uk_effect_table_entry_instruction_rejected": 10,
+                    "uk_effect_repeal_table_structural_repeal_unresolved": 3,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
+
+
 def test_compile_rejection_bucket_ignores_nonblocking_observations() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
