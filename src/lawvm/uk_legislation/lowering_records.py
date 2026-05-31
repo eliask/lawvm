@@ -386,9 +386,11 @@ def mark_nonreplay_lowering_rejections_nonblocking(
 
 _SOURCE_PATHOLOGY_NONREPLAY_OUT_OF_SCOPE = frozenset(
     {
+        "application_by_reference_effect_out_of_scope",
         "as_if_application_modification_unsupported",
         "commencement_effect_out_of_scope",
         "application_modification_payload_out_of_scope",
+        "nonstructural_root_gap",
         "temporary_as_if_word_omission_unsupported",
     }
 )

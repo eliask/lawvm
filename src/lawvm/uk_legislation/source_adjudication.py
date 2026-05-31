@@ -126,6 +126,11 @@ class UKReplayResidualClassification(NamedTuple):
     kind: str
 
 
+_HAS_EFFECT_FOR_PURPOSE_RE = re.compile(
+    r"\bhas\s+effect\b.{0,220}\bfor\s+the\s+purpose\s+of\b"
+)
+
+
 _UK_MANUAL_FRONTIER_RANGE_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
     "range_to_container_target_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
@@ -1425,6 +1430,8 @@ def _looks_like_application_by_reference_effect_source(text: str) -> bool:
         return False
     referenced_act = r"(?:act\s+\d{4}|\d{4}\s+act)"
     if re.search(r"\bshall\b.{0,220}\bhave\s+effect\b.{0,220}\bfor\s+the\s+purpose\s+of\b", norm):
+        return True
+    if _HAS_EFFECT_FOR_PURPOSE_RE.search(norm):
         return True
     if re.search(rf"\b{referenced_act}\b.{{0,220}}\bshall\s+have\s+effect\b", norm):
         return True
