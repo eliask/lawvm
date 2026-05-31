@@ -38,6 +38,7 @@ TextNodeRegexMatchesByPath: TypeAlias = dict[
 ]
 
 _EXCEPT_PHRASE_SELECTOR_PREFIX = f"TEXT_EXCEPT_PHRASE{US}"
+_EXCEPT_CHILD_SELECTOR_PREFIX = f"TEXT_EXCEPT_CHILD{US}"
 
 
 class DefinitionTextRewriteResult(NamedTuple):
@@ -102,6 +103,37 @@ def _rewrite_except_phrase_substitution(
         for match in re.finditer(original_pattern, text, flags=re.I)
         if not any(start <= match.start() and match.end() <= end for start, end in excluded_spans)
     )
+    if not matches:
+        return ExceptPhraseTextRewrite(text, False)
+    if occurrence > 0:
+        if occurrence > len(matches):
+            return ExceptPhraseTextRewrite(text, False)
+        matches = (matches[occurrence - 1],)
+    elif occurrence == -1:
+        matches = (matches[-1],)
+    new_text = text
+    for match in reversed(matches):
+        new_text = new_text[: match.start()] + replacement + new_text[match.end() :]
+    return ExceptPhraseTextRewrite(new_text, new_text != text)
+
+
+def _rewrite_literal_substitution(
+    text: str,
+    *,
+    original: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> ExceptPhraseTextRewrite:
+    if not original:
+        return ExceptPhraseTextRewrite(text, False)
+    pattern = _text_patch_pattern(
+        original,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    matches = tuple(re.finditer(pattern, text, flags=re.I))
     if not matches:
         return ExceptPhraseTextRewrite(text, False)
     if occurrence > 0:
@@ -1843,6 +1875,43 @@ class UKReplayTextApplyMixin:
                     text_node.text or "",
                     original=original,
                     excluded_phrase=excluded_phrase,
+                    replacement=replacement,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                if not result.applied:
+                    continue
+                rebuilt = self._replace_descendant_at_path(
+                    rebuilt,
+                    path,
+                    dc_replace(text_node, text=result.text),
+                )
+                made_any = True
+            if made_any:
+                self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, made_any
+
+        if match.startswith(_EXCEPT_CHILD_SELECTOR_PREFIX):
+            parts = match.split(US, 3)
+            if len(parts) != 4:
+                return node, False
+            original, child_kind, child_label = parts[1], parts[2], parts[3]
+            excluded_path = _find_descendant_path_by_kind_label(
+                node,
+                kind=child_kind,
+                label=child_label,
+            )
+            if excluded_path is None:
+                return node, False
+            made_any = False
+            rebuilt = node
+            for path, text_node in text_nodes:
+                if path[: len(excluded_path)] == excluded_path:
+                    continue
+                result = _rewrite_literal_substitution(
+                    text_node.text or "",
+                    original=original,
                     replacement=replacement,
                     occurrence=occurrence,
                     allow_punctuation_spacing=allow_punctuation_spacing,

@@ -142,6 +142,15 @@ class ExceptPhraseSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class ExceptChildSelector:
+    """All occurrences of ``original`` except inside a named child provision."""
+
+    original: str
+    child_kind: str
+    child_label: str
+
+
+@dataclass(frozen=True, slots=True)
 class RawSelector:
     """A not-yet-migrated ``TEXT_*`` sentinel string carried verbatim.
 
@@ -170,6 +179,7 @@ UKTextSelector = (
     | DefinitionAnchorSelector
     | FromChildEndSelector
     | ExceptPhraseSelector
+    | ExceptChildSelector
     | RawSelector
 )
 
@@ -236,6 +246,8 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
         return f"TEXT_FROM_CHILD_END{US}{selector.child_kind}{US}{selector.child_label}{US}{selector.start}"
     if isinstance(selector, ExceptPhraseSelector):
         return f"TEXT_EXCEPT_PHRASE{US}{selector.original}{US}{selector.excluded_phrase}"
+    if isinstance(selector, ExceptChildSelector):
+        return f"TEXT_EXCEPT_CHILD{US}{selector.original}{US}{selector.child_kind}{US}{selector.child_label}"
     if isinstance(selector, RawSelector):
         return selector.original
     raise TypeError(f"unknown selector: {selector!r}")
@@ -278,6 +290,11 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
         parts = original.split(US, 2)
         if len(parts) == 3:
             return ExceptPhraseSelector(parts[1], parts[2])
+        return RawSelector(original)
+    if original.startswith(f"TEXT_EXCEPT_CHILD{US}"):
+        parts = original.split(US, 3)
+        if len(parts) == 4:
+            return ExceptChildSelector(parts[1], parts[2], parts[3])
         return RawSelector(original)
     if original.startswith("TEXT_AFTER_") and original.endswith("_TO_END"):
         return AfterAnchorToEndSelector(original[len("TEXT_AFTER_") : -len("_TO_END")])
