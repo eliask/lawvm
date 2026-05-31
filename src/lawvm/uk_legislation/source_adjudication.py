@@ -289,7 +289,7 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
     ),
     "whole_act_word_level_text_patch_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        "deterministic_frontend_candidate",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
         "The source/effect row claims a non-simple word-level text rewrite across the whole Act; a claim or future compiler must own document-wide scope, exclusions, and title/short-title boundaries instead of sending it to ordinary replay.",
     ),
@@ -404,6 +404,7 @@ UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS = frozenset(
         "uk_replay_text_monetary_amount_preimage_gap",
         "uk_replay_text_parenthetical_omission_preimage_gap",
         "uk_replay_text_patch_preimage_drift",
+        "uk_replay_whole_act_text_patch_preimage_gap",
     }
 )
 
@@ -414,6 +415,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_after_definition_child_structured_insert_applied",
         "uk_replay_after_definition_text_insert_applied",
         "uk_replay_after_anchor_to_end_text_rewrite_applied",
+        "uk_replay_after_words_in_brackets_text_rewrite_applied",
         "uk_replay_amendment_program_inserted_parent_child_insert_applied",
         "uk_replay_contextual_word_anchor_kind_normalized",
         "uk_replay_contextual_word_text_rewrite_applied",
@@ -506,6 +508,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_words_in_brackets_text_rewrite_applied",
         "uk_replay_each_other_place_after_anchor_insert_applied",
         "uk_replay_each_other_place_substitution_applied",
+        "uk_replay_whole_act_text_patch_applied",
         "uk_replay_subtree_range_text_rewrite_flattened",
         "uk_replay_subtree_range_to_end_text_rewrite_flattened",
         "uk_replay_children_range_replaced_with_text_applied",
@@ -734,6 +737,10 @@ _UK_REPLAY_TEXT_SURFACE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
     (
         "uk_replay_text_parenthetical_omission_preimage_gap",
         "uk_text_parenthetical_omission_preimage_gap",
+    ),
+    (
+        "uk_replay_whole_act_text_patch_preimage_gap",
+        "uk_whole_act_text_patch_preimage_gap",
     ),
     (
         "uk_replay_text_match_citation_connector_surface_gap",

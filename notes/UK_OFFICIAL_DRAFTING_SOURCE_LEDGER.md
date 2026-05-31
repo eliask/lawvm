@@ -570,13 +570,29 @@ manual-frontier residual rows are `eur/2019/1021`, `ukpga/1887/55`,
 `ukpga/1968/20`, `ukpga/1968/70`, `ukpga/1980/65`, `ukpga/1981/20`,
 `ukpga/1984/12`, `ukpga/1986/61`, `ukpga/1990/8`, `ukpga/1990/9`, and
 `ukpga/1998/17`. Across those rows the compiler reports
-`manual_compile_candidate=130`, `source_insufficient=167`,
-`deterministic_frontend_supported=3386`, and `non_textual_or_out_of_scope=3041`;
-all 130 manual candidates have claim-template coverage. The broad summary also
+`manual_compile_candidate=128`, `deterministic_frontend_candidate=2`,
+`source_insufficient=167`, `deterministic_frontend_supported=3386`, and
+`non_textual_or_out_of_scope=3041` after the whole-Act word-level text-patch
+classifier correction below; all manual/deterministic candidate work items have
+claim-template coverage. The broad summary also
 prints `active_unclassified_residuals`; this must stay at `0` for the curated
 77-statute gate if the UK frontend is to remain at the "done modulo
 manual/source frontiers" line. Any nonzero row is a regression in workqueue
 classification or a new deterministic family to investigate.
+
+**Replay adjudication JSON surface correction (2026-05-31):**
+`uk-replay --json` now includes `replay_adjudication_bucket_counts` alongside
+`adjudication_kind_counts`, including an explicit empty `{}` when no replay
+adjudications are present. This aligns the replay JSON contract with the
+existing `uk-replay` text output, `uk-bench`, `uk-candidates`, and evidence
+bundle/review surfaces, so operator triage can distinguish replay-bug,
+source-shape, text-surface, and nonblocking observation lanes without
+recomputing classifier buckets downstream.
+Focused verification: `uv run python scripts/uk_broad_baseline.py --ids
+ukpga/1990/8 ukpga/1986/61 ukpga/1887/55 --out
+.tmp/uk_broad_after_replay_adjudication_payload_surface_20260531.json` keeps
+all three sampled residual rows in `manual_compile_frontier_residual` and prints
+`active_unclassified_residuals=0`.
 
 **Oracle-alignment fallback suppression (2026-05-31):**
 Current UK oracle alignment no longer writes unmatched local fallback eIds into
