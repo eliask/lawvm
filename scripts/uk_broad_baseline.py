@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import random
 import subprocess
@@ -158,6 +159,9 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 )
                 result["n_replay"] = len(replay_eids)
                 result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
+                result["n_zero_oracle_retention_eids"] = (
+                    len(replay_eids) if not oracle_eids else 0
+                )
                 result["aligned_excluding_grounding_collateral"] = round(
                     100.0 * collateral_score.collateral_excluded_similarity,
                     2,
@@ -171,6 +175,36 @@ def score_one(statute_id: str) -> dict[str, Any]:
         return {**result, "error": f"{type(exc).__name__}: {exc}"}
     finally:
         archive.close()
+
+
+def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize broad-baseline row diagnostics without reclassifying rows."""
+    scored = [
+        r for r in results if "error" not in r and r.get("score_status") != "source_frontier"
+    ]
+    errored = [r for r in results if "error" in r]
+    source_frontier = [
+        r for r in results if "error" not in r and r.get("score_status") == "source_frontier"
+    ]
+    source_frontier_reasons = Counter(
+        str(r.get("source_frontier_reason") or "unknown") for r in source_frontier
+    )
+    zero_oracle_retention = [
+        r
+        for r in scored
+        if int(r.get("n_oracle") or 0) == 0 and int(r.get("n_replay") or 0) > 0
+    ]
+    return {
+        "scored": scored,
+        "errored": errored,
+        "source_frontier": source_frontier,
+        "source_frontier_reasons": dict(sorted(source_frontier_reasons.items())),
+        "zero_oracle_retention_count": len(zero_oracle_retention),
+        "zero_oracle_retention_eids": sum(
+            int(r.get("n_zero_oracle_retention_eids") or r.get("n_replay") or 0)
+            for r in zero_oracle_retention
+        ),
+    }
 
 
 def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
@@ -243,13 +277,18 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         else:
             base_status = str(row.get("base_source_status") or "unknown")
             base_suffix = "" if base_status == "available" else f" base={base_status}"
+            zero_oracle_suffix = (
+                " zero_oracle_retention"
+                if int(row.get("n_oracle") or 0) == 0 and int(row.get("n_replay") or 0) > 0
+                else ""
+            )
             print(
                 f"[{i}/{len(ids)}] {sid:24s} aligned={row['aligned']:5.1f}% "
                 f"aligned_no_gc={row.get('aligned_excluding_grounding_collateral', row['aligned']):5.1f}% "
                 f"unaligned={row['unaligned']:5.1f}% "
                 f"gc={row.get('n_grounding_collateral', 0)} "
                 f"(replay={row.get('n_replay')} oracle={row.get('n_oracle')})"
-                f"{base_suffix}",
+                f"{base_suffix}{zero_oracle_suffix}",
                 flush=True,
             )
 
@@ -259,11 +298,10 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
         out.write_text(json.dumps(snapshot, indent=2, sort_keys=True))
         print(f"\nWrote {len(snapshot)} rows -> {out}")
 
-    scored = [r for r in results if "error" not in r and r.get("score_status") != "source_frontier"]
-    errored = [r for r in results if "error" in r]
-    source_frontier = [
-        r for r in results if "error" not in r and r.get("score_status") == "source_frontier"
-    ]
+    summary = summarize_results(results)
+    scored = summary["scored"]
+    errored = summary["errored"]
+    source_frontier = summary["source_frontier"]
     if scored:
         avg = sum(r["aligned"] for r in scored) / len(scored)
         avg_no_gc = sum(
@@ -281,11 +319,23 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             f"metadata_only_base={metadata_only_base_total}  errors={len(errored)}"
             f"  source_frontier={len(source_frontier)}"
         )
+        if summary["zero_oracle_retention_count"]:
+            print(
+                "  zero_oracle_retention="
+                f"{summary['zero_oracle_retention_count']} rows / "
+                f"{summary['zero_oracle_retention_eids']} replay eIds"
+            )
     else:
         print(
             f"\nScored 0 / {len(results)}  source_frontier={len(source_frontier)}  "
             f"errors={len(errored)}"
         )
+    if summary["source_frontier_reasons"]:
+        reasons = ", ".join(
+            f"{reason}={count}"
+            for reason, count in summary["source_frontier_reasons"].items()
+        )
+        print(f"  source_frontier_reasons: {reasons}")
     return 0
 
 
