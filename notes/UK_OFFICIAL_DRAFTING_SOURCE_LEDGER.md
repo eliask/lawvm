@@ -667,23 +667,36 @@ against the previous local snapshot: 77/77 scored, mean aligned `93.38%`, errors
 manual-frontier residual rows are `eur/2019/1021`, `ukpga/1887/55`,
 `ukpga/1968/20`, `ukpga/1968/70`, `ukpga/1980/65`, `ukpga/1981/20`,
 `ukpga/1984/12`, `ukpga/1986/61`, `ukpga/1990/8`, `ukpga/1990/9`, and
-`ukpga/1998/17`. Current full-gate compiler totals are
-`manual_compile_candidate=161`, `deterministic_frontend_candidate=8`,
-`source_insufficient=213`, `deterministic_frontend_supported=5678`,
-`non_textual_or_out_of_scope=8407`, and `source_or_feed_target_conflict=2`.
+`ukpga/1998/17`. Current full-gate compiler totals, after the 2026-06-01
+whole-Act and source-carried structured-tail classification passes, are
+`manual_compile_candidate=165`, `deterministic_frontend_candidate=0`,
+`source_insufficient=240`, `deterministic_frontend_supported=5716`,
+`non_textual_or_out_of_scope=8412`, and `source_or_feed_target_conflict=2`.
 The broad summary now aggregates those counts directly and also aggregates
-`manual_frontier_template_status_counts`. A parser/extraction gap template was
-added for `uk_manual_frontier_parser_or_extraction_candidate`, so all actionable
-manual/deterministic candidate work items now have claim-template coverage:
-`available=169`, `none=14300`, `manual_frontier_template_gaps=0`. The broad
-driver supports `--fail-on-manual-frontier-template-gaps` to make that coverage a
-machine-enforced gate. The broad summary also
+`manual_frontier_template_status_counts`. All actionable manual work items have
+claim-template coverage: `available=165`, `none=14370`,
+`manual_frontier_template_gaps=0`; there are no deterministic frontend workqueue
+items left in the curated 77-statute gate. The broad driver supports
+`--fail-on-manual-frontier-template-gaps` and
+`--fail-on-deterministic-frontend-candidates` to make both coverage and
+deterministic-family exhaustion machine-enforced gates. The broad summary also
 prints `active_unclassified_residuals`; this must stay at `0` for the curated
 77-statute gate if the UK frontend is to remain at the "done modulo
 manual/source frontiers" line. Any nonzero row is a regression in workqueue
 classification or a new deterministic family to investigate. Use
 `scripts/uk_broad_baseline.py --fail-on-active-unclassified-residuals` when this
 condition should be machine-enforced rather than inspected from summary text.
+The stricter 2026-06-01 witness is:
+`uv run python scripts/uk_broad_baseline.py --ids $(cat
+scripts/baselines/uk_grounding_corpus.txt) --out
+.tmp/uk_broad_after_roman_structured_tail_claim_20260601.json
+--fail-on-deterministic-frontend-candidates
+--fail-on-manual-frontier-template-gaps`, which exited `0` with
+`deterministic_frontend_candidates=0`, `manual_frontier_template_gaps=0`,
+`active_unclassified_residuals=0`, and `non_manual_source_chain_frontier=0`.
+The remaining non-manual broad buckets are explicit source/replay-lens frontiers:
+`effect_feed_empty=4`, `effect_rows_not_admitted_by_replay_lens=2`, and
+`manual_frontier_source_insufficient=22`.
 Full-gate enforcement witness:
 `uv run python scripts/uk_broad_baseline.py --ids $(cat
 scripts/baselines/uk_grounding_corpus.txt)
@@ -1069,10 +1082,12 @@ into explicit manual/source/grounding frontiers unless noted otherwise:
    `ukpga/1980/65`, `ukpga/1966/42`, and EU annex eId asymmetry. Fixes must make
    owned eId synthesis surfaces agree or keep collateral out of work selection; they
    must not delete replay state to match an oracle editorial projection.
-7. Manual-frontier rows in the current hard-set have claim-template coverage after
-   adding templates for `uk_manual_frontier_table_entry_placement_insert` and
-   `uk_manual_frontier_savings_qualified_text_omission_candidate`. Those templates
-   are still non-executable; they define validator obligations for future claims.
+7. Manual-frontier rows in the current hard-set and curated broad gate have
+   claim-template coverage after adding templates for the table-placement,
+   savings-qualified omission, whole-Act word-patch, and source-carried structured
+   text-patch families. Those templates are still non-executable; they define
+   validator obligations for future claims. The current deterministic frontend
+   workqueue is empty under `--fail-on-deterministic-frontend-candidates`.
 
 Each needs the standard ownership package (`AGENTS.md §7/§15`): stable rule id,
 finding/observation, strict-mode behaviour, synthetic + corpus + negative tests.
