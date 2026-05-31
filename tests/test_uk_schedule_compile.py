@@ -2471,6 +2471,78 @@ def test_parenthesized_occurrence_substitution_keeps_all_occurrences_rule() -> N
     ]
 
 
+def test_quoted_ordinal_insert_keeps_quoted_payload_rule() -> None:
+    fragments = parse_fragment_substitution(
+        'after "references to", in the second place insert "applications"'
+    )
+
+    assert fragments == [
+        {
+            "original": "references to",
+            "replacement": "references to applications",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_insert_text_patch",
+        }
+    ]
+
+
+def test_compile_after_quoted_anchor_ordinal_block_insert_lowers_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-4-paragraph-6">
+          <Pnumber>6</Pnumber>
+          <Text>6 In section 62(2A) (applications for planning permission: references in subsections (1) and (2) to applications for planning permission to include applications under section 61L(2)) after  “references to” in the second place insert — a applications for consent, agreement or approval as mentioned in section 61DB(2), and b .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-9c8a8af3f742a93b0f4376b7c4394ab7",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-04-12",
+        affected_uri="/id/ukpga/1990/8/section/62/subsection/2A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 62(2A)",
+        affecting_uri="/id/ukpga/2015/7",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="7",
+        affecting_provisions="Sch. 4 para. 6",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2015-04-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "references to"
+    assert ops[0].text_patch.selector.occurrence == 2
+    assert ops[0].text_patch.replacement == (
+        "references to a applications for consent, agreement or approval as "
+        "mentioned in section 61DB(2), and b"
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_ordinal_block_insert_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "explicit_ordinal_block_after_anchor_insert"
+    assert records[0]["occurrences"] == [2]
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_space_separated_chapter_targets_do_not_fall_back_to_body_root() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -557,6 +557,17 @@ This cuts `ukpga/1990/8` overlap blockers `15 -> 13`, blocking effect rows
 `132 -> 130`, and blocking compile diagnostics `133 -> 131`; the 77-statute
 gate remains score-stable (`0 improved, 0 regressed`).
 
+Ordinal block inserts after a quoted anchor are owned under
+`uk_effect_after_quoted_anchor_ordinal_block_insert_text_patch` for source rows
+shaped `after "X" in the Nth place insert - Y`. The rule preserves the ordinal
+occurrence and treats the dash payload as inserted text, matching the existing
+quoted ordinal-insert and unquoted block-insert families without converting
+quoted payloads away from their older rule. Current witnesses: `ukpga/1990/8`
+affected by `ukpga/2015/7` Sch. 4 paras. 6, 7, 9(2), and 10(a)-(b). This cuts
+`ukpga/1990/8` overlap blockers `13 -> 8`, blocking effect rows `130 -> 125`,
+and blocking compile diagnostics `131 -> 126`; the 77-statute gate remains
+score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
