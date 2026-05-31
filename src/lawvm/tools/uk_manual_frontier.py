@@ -520,6 +520,42 @@ def _validation_report_jsonable(
     stale_original_manual_rule_counts: Counter[str] = Counter()
     current_blocking_lowering_rule_counts: Counter[str] = Counter()
     remaining_blocking_lowering_rule_counts: Counter[str] = Counter()
+    current_template_action_family_counts = _template_field_counter(
+        rows,
+        "action_family",
+    )
+    remaining_template_action_family_counts = _template_field_counter(
+        rows,
+        "action_family",
+        remaining_only=True,
+    )
+    current_template_validator_check_counts = _template_field_counter(
+        rows,
+        "required_validator_checks",
+    )
+    remaining_template_validator_check_counts = _template_field_counter(
+        rows,
+        "required_validator_checks",
+        remaining_only=True,
+    )
+    current_template_ownership_counts = _template_field_counter(
+        rows,
+        "required_ownership",
+    )
+    remaining_template_ownership_counts = _template_field_counter(
+        rows,
+        "required_ownership",
+        remaining_only=True,
+    )
+    current_template_proof_semantic_counts = _template_field_counter(
+        rows,
+        "required_operation_family_proof_semantics",
+    )
+    remaining_template_proof_semantic_counts = _template_field_counter(
+        rows,
+        "required_operation_family_proof_semantics",
+        remaining_only=True,
+    )
     for row in rows:
         blocking_rules = tuple(
             str(rule_id)
@@ -595,6 +631,30 @@ def _validation_report_jsonable(
             "remaining_blocking_lowering_rule_counts": dict(
                 sorted(remaining_blocking_lowering_rule_counts.items())
             ),
+            "current_template_action_family_counts": dict(
+                sorted(current_template_action_family_counts.items())
+            ),
+            "remaining_template_action_family_counts": dict(
+                sorted(remaining_template_action_family_counts.items())
+            ),
+            "current_template_required_validator_check_counts": dict(
+                sorted(current_template_validator_check_counts.items())
+            ),
+            "remaining_template_required_validator_check_counts": dict(
+                sorted(remaining_template_validator_check_counts.items())
+            ),
+            "current_template_required_ownership_counts": dict(
+                sorted(current_template_ownership_counts.items())
+            ),
+            "remaining_template_required_ownership_counts": dict(
+                sorted(remaining_template_ownership_counts.items())
+            ),
+            "current_template_required_operation_family_proof_semantic_counts": dict(
+                sorted(current_template_proof_semantic_counts.items())
+            ),
+            "remaining_template_required_operation_family_proof_semantic_counts": dict(
+                sorted(remaining_template_proof_semantic_counts.items())
+            ),
         },
     }
     if not summary_only:
@@ -604,6 +664,33 @@ def _validation_report_jsonable(
     if remaining_jsonl is not None:
         report["remaining_jsonl"] = dict(remaining_jsonl)
     return report
+
+
+def _string_tuple_from_value(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value,) if value else ()
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value if str(item))
+    return ()
+
+
+def _template_mapping(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = row.get("current_suggested_claim_template")
+    return value if isinstance(value, Mapping) else {}
+
+
+def _template_field_counter(
+    rows: tuple[Mapping[str, Any], ...],
+    field: str,
+    *,
+    remaining_only: bool = False,
+) -> Counter[str]:
+    return Counter(
+        item
+        for row in rows
+        if not remaining_only or _is_remaining_manual_frontier_validation(row)
+        for item in _string_tuple_from_value(_template_mapping(row).get(field))
+    )
 
 
 def _is_remaining_manual_frontier_validation(row: Mapping[str, Any]) -> bool:
@@ -759,6 +846,52 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
     print(
         "Remaining blocking lowering: "
         + _format_count_map(summary.get("remaining_blocking_lowering_rule_counts"))
+    )
+    print(
+        "Current template action families: "
+        + _format_count_map(summary.get("current_template_action_family_counts"))
+    )
+    print(
+        "Remaining template action families: "
+        + _format_count_map(summary.get("remaining_template_action_family_counts"))
+    )
+    print(
+        "Current template validator checks: "
+        + _format_count_map(
+            summary.get("current_template_required_validator_check_counts")
+        )
+    )
+    print(
+        "Remaining template validator checks: "
+        + _format_count_map(
+            summary.get("remaining_template_required_validator_check_counts")
+        )
+    )
+    print(
+        "Current template ownership: "
+        + _format_count_map(summary.get("current_template_required_ownership_counts"))
+    )
+    print(
+        "Remaining template ownership: "
+        + _format_count_map(
+            summary.get("remaining_template_required_ownership_counts")
+        )
+    )
+    print(
+        "Current template proof semantics: "
+        + _format_count_map(
+            summary.get(
+                "current_template_required_operation_family_proof_semantic_counts"
+            )
+        )
+    )
+    print(
+        "Remaining template proof semantics: "
+        + _format_count_map(
+            summary.get(
+                "remaining_template_required_operation_family_proof_semantic_counts"
+            )
+        )
     )
     if summary.get("stale_original_manual_rule_counts"):
         print(

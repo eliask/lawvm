@@ -206,7 +206,12 @@ def test_uk_manual_frontier_validate_main_emits_json(
                 "current_source_pathology": "heading_only_ref_unsupported",
                 "current_suggested_claim_template_status": "available",
                 "current_suggested_claim_template": {
-                    "required_ownership": ["fresh_current_claim"]
+                    "action_family": "facet_text_rewrite",
+                    "required_ownership": ["fresh_current_claim"],
+                    "required_validator_checks": ["claim_identifies_heading_facet"],
+                    "required_operation_family_proof_semantics": [
+                        "text_rewrite_source_preimage_and_live_target"
+                    ],
                 },
             },
         ),
@@ -255,6 +260,34 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert payload["summary"]["remaining_blocking_lowering_rule_counts"] == {
         "uk_effect_heading_only_ref_rejected": 1
     }
+    assert payload["summary"]["current_template_action_family_counts"] == {
+        "facet_text_rewrite": 1
+    }
+    assert payload["summary"]["remaining_template_action_family_counts"] == {
+        "facet_text_rewrite": 1
+    }
+    assert payload["summary"]["current_template_required_validator_check_counts"] == {
+        "claim_identifies_heading_facet": 1
+    }
+    assert payload["summary"]["remaining_template_required_validator_check_counts"] == {
+        "claim_identifies_heading_facet": 1
+    }
+    assert payload["summary"]["current_template_required_ownership_counts"] == {
+        "fresh_current_claim": 1
+    }
+    assert payload["summary"]["remaining_template_required_ownership_counts"] == {
+        "fresh_current_claim": 1
+    }
+    assert payload["summary"][
+        "current_template_required_operation_family_proof_semantic_counts"
+    ] == {
+        "text_rewrite_source_preimage_and_live_target": 1
+    }
+    assert payload["summary"][
+        "remaining_template_required_operation_family_proof_semantic_counts"
+    ] == {
+        "text_rewrite_source_preimage_and_live_target": 1
+    }
     assert payload["validation_jsonl"] == {
         "path": str(validation_path),
         "rows": 1,
@@ -281,7 +314,12 @@ def test_uk_manual_frontier_validate_main_emits_json(
     )
     assert remaining_row["current_source_pathology"] == "heading_only_ref_unsupported"
     assert remaining_row["suggested_claim_template"] == {
-        "required_ownership": ["fresh_current_claim"]
+        "action_family": "facet_text_rewrite",
+        "required_ownership": ["fresh_current_claim"],
+        "required_validator_checks": ["claim_identifies_heading_facet"],
+        "required_operation_family_proof_semantics": [
+            "text_rewrite_source_preimage_and_live_target"
+        ],
     }
 
 
@@ -625,6 +663,30 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
                 "remaining_blocking_lowering_rule_counts": {
                     "uk_effect_table_entry_instruction_rejected": 1
                 },
+                "current_template_action_family_counts": {
+                    "table_surface_mutation": 1
+                },
+                "remaining_template_action_family_counts": {
+                    "table_surface_mutation": 1
+                },
+                "current_template_required_validator_check_counts": {
+                    "claim_identifies_table_ordering_rule_or_anchor": 1
+                },
+                "remaining_template_required_validator_check_counts": {
+                    "claim_identifies_table_ordering_rule_or_anchor": 1
+                },
+                "current_template_required_ownership_counts": {
+                    "table_ordering_rule_or_anchor_claim": 1
+                },
+                "remaining_template_required_ownership_counts": {
+                    "table_ordering_rule_or_anchor_claim": 1
+                },
+                "current_template_required_operation_family_proof_semantic_counts": {
+                    "table_surface_insert_anchor_and_live_carrier": 1
+                },
+                "remaining_template_required_operation_family_proof_semantic_counts": {
+                    "table_surface_insert_anchor_and_live_carrier": 1
+                },
             },
             "validation_jsonl": {"path": ".tmp/validation.jsonl", "rows": 1},
             "remaining_jsonl": {
@@ -653,6 +715,30 @@ def test_print_text_report_includes_export_paths(capsys) -> None:
     assert (
         "Remaining blocking lowering: "
         "uk_effect_table_entry_instruction_rejected=1"
+    ) in out
+    assert "Current template action families: table_surface_mutation=1" in out
+    assert "Remaining template action families: table_surface_mutation=1" in out
+    assert (
+        "Current template validator checks: "
+        "claim_identifies_table_ordering_rule_or_anchor=1"
+    ) in out
+    assert (
+        "Remaining template validator checks: "
+        "claim_identifies_table_ordering_rule_or_anchor=1"
+    ) in out
+    assert (
+        "Current template ownership: table_ordering_rule_or_anchor_claim=1"
+    ) in out
+    assert (
+        "Remaining template ownership: table_ordering_rule_or_anchor_claim=1"
+    ) in out
+    assert (
+        "Current template proof semantics: "
+        "table_surface_insert_anchor_and_live_carrier=1"
+    ) in out
+    assert (
+        "Remaining template proof semantics: "
+        "table_surface_insert_anchor_and_live_carrier=1"
     ) in out
     assert "Validation JSONL: .tmp/validation.jsonl rows=1" in out
     assert (
