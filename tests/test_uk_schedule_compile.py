@@ -31,6 +31,9 @@ from lawvm.uk_legislation.effect_temporal import (
     UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
     resolve_uk_effective_date_overrides_for_replay,
 )
+from lawvm.uk_legislation.effect_substitution_normalization import (
+    UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID,
+)
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
@@ -41676,6 +41679,7 @@ def test_compile_substitution_range_expands_from_source_payload_children_and_ins
         StructuralAction.REPLACE,
         StructuralAction.INSERT,
     ]
+    assert ops[2].witness_rule_id == UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID
     assert [op.target.path for op in ops] == [
         (("schedule", "4"), ("paragraph", "11"), ("item", "a")),
         (("schedule", "4"), ("paragraph", "11"), ("item", "b")),
@@ -41698,6 +41702,7 @@ def test_compile_substitution_range_expands_from_source_payload_children_and_ins
         and record["replaced_sibling_count"] == 2
         for record in lowering_records
     )
+    assert should_replay_nonstructural_ops(effect, ops)
 
 
 def test_pipeline_replays_nonstructural_multi_sibling_substituted_for_ops() -> None:
@@ -41768,6 +41773,48 @@ def test_pipeline_does_not_replay_word_level_substituted_for_as_structural_repla
 
     assert [op.action.value for op in ops] == ["replace", "replace"]
     assert uk_nonstructural_replay_candidate_family(effect) == ""
+    assert should_replay_nonstructural_ops(effect, ops) is False
+
+
+def test_pipeline_does_not_replay_unowned_nonstructural_substituted_insert_tail() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_pipeline_unowned_substituted_insert_tail",
+        effect_type="substituted for. s. 68(7)(g)(h)",
+        applied=True,
+        requires_applied=False,
+        modified="2018-03-12",
+        affected_uri="/id/ukpga/2000/23",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="23",
+        affected_provisions="s. 68(7)(g)-(ha)",
+        affecting_uri="/id/ukpga/2016/25",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="25",
+        affecting_provisions="s. 243(5)(c)",
+        affecting_title="Investigatory Powers Act 2016",
+        in_force_dates=[{"date": "2018-03-12", "prospective": "false"}],
+    )
+    ops = [
+        LegalOperation(
+            op_id="uk_test_pipeline_unowned_substituted_insert_tail_0",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "68"), ("subsection", "7"), ("paragraph", "g"))),
+            payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="g", text="Replacement g."),
+            source=OperationSource(statute_id="ukpga/2016/25"),
+        ),
+        LegalOperation(
+            op_id="uk_test_pipeline_unowned_substituted_insert_tail_1",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "68"), ("subsection", "7"), ("paragraph", "ha"))),
+            payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="ha", text="Inserted ha."),
+            source=OperationSource(statute_id="ukpga/2016/25"),
+        ),
+    ]
+
     assert should_replay_nonstructural_ops(effect, ops) is False
 
 

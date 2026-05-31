@@ -31,6 +31,28 @@ UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID = (
     "uk_effect_block_substitution_tail_promoted_to_insert_after"
 )
 
+UK_EFFECT_SUBSTITUTED_SERIES_NEW_SIBLING_INSERT_RULE_ID = (
+    "uk_effect_substituted_series_new_sibling_insert_lowered"
+)
+
+UK_EFFECT_SUBSTITUTED_SERIES_PRE_ANCHOR_SIBLING_INSERT_RULE_ID = (
+    "uk_effect_substituted_series_pre_anchor_sibling_insert_lowered"
+)
+
+UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID = (
+    "uk_effect_substituted_range_extra_payload_sibling_insert_lowered"
+)
+
+UK_SUBSTITUTED_SOURCE_OWNED_INSERT_RULE_IDS = frozenset(
+    {
+        UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID,
+        UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID,
+        UK_EFFECT_SUBSTITUTED_SERIES_NEW_SIBLING_INSERT_RULE_ID,
+        UK_EFFECT_SUBSTITUTED_SERIES_PRE_ANCHOR_SIBLING_INSERT_RULE_ID,
+        UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID,
+    }
+)
+
 # Alphanumeric-suffix label: numeric stem followed by one or more letters.
 # Examples: 3A, 1B, 6ZA, 1ZA, 11ZF.
 _LETTER_SUFFIX_LABEL_RE = re.compile(r"^(\d+)([A-Za-z]+)$")
@@ -150,6 +172,7 @@ class UKSubstitutedPayloadInsertNormalization:
     curr_action: str
     anchor_preceding_eid: Optional[str] = None
     anchor_preceding_eid_source: str = "effect_comments_after_clause"
+    witness_rule_id: Optional[str] = None
 
 
 def lower_substituted_payload_insert_normalization(
@@ -178,7 +201,7 @@ def lower_substituted_payload_insert_normalization(
     if substituted_series_insert_detail is not None:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
-            rule_id="uk_effect_substituted_series_new_sibling_insert_lowered",
+            rule_id=UK_EFFECT_SUBSTITUTED_SERIES_NEW_SIBLING_INSERT_RULE_ID,
             family="lowering_normalization",
             reason_code="substituted_for_single_old_target_with_new_sibling_payload",
             reason=(
@@ -192,7 +215,10 @@ def lower_substituted_payload_insert_normalization(
             extracted_text=extracted_text,
             detail=substituted_series_insert_detail,
         )
-        return UKSubstitutedPayloadInsertNormalization(curr_action="insert")
+        return UKSubstitutedPayloadInsertNormalization(
+            curr_action="insert",
+            witness_rule_id=UK_EFFECT_SUBSTITUTED_SERIES_NEW_SIBLING_INSERT_RULE_ID,
+        )
 
     substituted_series_pre_anchor_insert_detail = _substituted_series_pre_anchor_sibling_insert_detail(
         effect_type=effect.effect_type,
@@ -205,7 +231,7 @@ def lower_substituted_payload_insert_normalization(
     if substituted_series_pre_anchor_insert_detail is not None:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
-            rule_id="uk_effect_substituted_series_pre_anchor_sibling_insert_lowered",
+            rule_id=UK_EFFECT_SUBSTITUTED_SERIES_PRE_ANCHOR_SIBLING_INSERT_RULE_ID,
             family="lowering_normalization",
             reason_code="substituted_for_single_old_target_with_pre_anchor_sibling_payload",
             reason=(
@@ -220,7 +246,10 @@ def lower_substituted_payload_insert_normalization(
             extracted_text=extracted_text,
             detail=substituted_series_pre_anchor_insert_detail,
         )
-        return UKSubstitutedPayloadInsertNormalization(curr_action="insert")
+        return UKSubstitutedPayloadInsertNormalization(
+            curr_action="insert",
+            witness_rule_id=UK_EFFECT_SUBSTITUTED_SERIES_PRE_ANCHOR_SIBLING_INSERT_RULE_ID,
+        )
 
     if (
         source_replaced_sibling_count is not None
@@ -229,7 +258,7 @@ def lower_substituted_payload_insert_normalization(
     ):
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
-            rule_id="uk_effect_substituted_range_extra_payload_sibling_insert_lowered",
+            rule_id=UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID,
             family="lowering_normalization",
             reason_code="source_substitution_payload_contains_extra_sibling",
             reason=(
@@ -250,7 +279,10 @@ def lower_substituted_payload_insert_normalization(
                 "source_payload_label": str(content_ir.get("label") or "") if content_ir else "",
             },
         )
-        return UKSubstitutedPayloadInsertNormalization(curr_action="insert")
+        return UKSubstitutedPayloadInsertNormalization(
+            curr_action="insert",
+            witness_rule_id=UK_EFFECT_SUBSTITUTED_RANGE_EXTRA_PAYLOAD_SIBLING_INSERT_RULE_ID,
+        )
 
     # --- Pattern B: block-substitution group letter-suffix tail promotion ---
     # When an effect decomposes into a multi-target group (e.g. s.25(4)-(4B) →
@@ -292,6 +324,7 @@ def lower_substituted_payload_insert_normalization(
                 curr_action="insert",
                 anchor_preceding_eid=anchor_eid,
                 anchor_preceding_eid_source=UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID,
+                witness_rule_id=UK_EFFECT_BLOCK_SUBSTITUTION_TAIL_PROMOTED_RULE_ID,
             )
 
     # --- Letter-suffix new-leaf insert promotion (A13 widened for Pattern C) ---
@@ -364,6 +397,7 @@ def lower_substituted_payload_insert_normalization(
                 curr_action="insert",
                 anchor_preceding_eid=anchor_eid,
                 anchor_preceding_eid_source=UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID,
+                witness_rule_id=UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID,
             )
 
     return UKSubstitutedPayloadInsertNormalization(curr_action=curr_action)

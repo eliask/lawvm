@@ -884,6 +884,9 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
             source_parent_substitution_range_payload=ctx.source_parent_substitution_range_payload,
             source_parent_at_end_added_payload=ctx.source_parent_at_end_added_payload,
+            substituted_payload_insert_rule_id=(
+                substitution_insert_normalization.witness_rule_id
+            ),
             target_index=ctx.target_index,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -962,6 +965,9 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
                     ctx.source_parent_substitution_range_payload
                 ),
                 source_parent_at_end_added_payload=ctx.source_parent_at_end_added_payload,
+                substituted_payload_insert_rule_id=(
+                    substitution_insert_normalization.witness_rule_id
+                ),
                 target_index=ctx.target_index,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
