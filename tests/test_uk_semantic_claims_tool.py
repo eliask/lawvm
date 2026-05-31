@@ -103,11 +103,12 @@ def _claim_row(*, source_preview: str = "insert the row") -> dict[str, object]:
 
 def _live_target_row(
     *,
+    line_number: int | None = None,
     statute_id: str = "ukpga/2000/1",
     target_paths: list[str] | None = None,
     target_fingerprints: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    row: dict[str, object] = {
         "schema": "lawvm.uk_live_target_index.v1",
         "statute_id": statute_id,
         "target_paths": target_paths
@@ -117,6 +118,9 @@ def _live_target_row(
         ],
         "target_fingerprints": target_fingerprints or {},
     }
+    if line_number is not None:
+        row["line_number"] = line_number
+    return row
 
 
 def test_validate_semantic_claim_accepts_schema_and_workqueue_provenance_only() -> None:
@@ -430,6 +434,7 @@ def test_validate_semantic_claim_rejects_conflicting_live_fingerprint_index() ->
         (claim,),
         live_target_rows=(
             _live_target_row(
+                line_number=17,
                 target_fingerprints={
                     "section:1/table:1": {
                         "text_sha256": target_text_hash,
@@ -438,6 +443,7 @@ def test_validate_semantic_claim_rejects_conflicting_live_fingerprint_index() ->
                 },
             ),
             _live_target_row(
+                line_number=29,
                 target_fingerprints={
                     "section:1/table:1": {
                         "text_sha256": "conflicting",
@@ -453,7 +459,7 @@ def test_validate_semantic_claim_rejects_conflicting_live_fingerprint_index() ->
     assert row["rule_id"] == "uk_semantic_claim_live_target_index_inconsistent"
     assert (
         "live target index statute_id 'ukpga/2000/1' has conflicting "
-        "target_fingerprints for path 'section:1/table:1'"
+        "target_fingerprints for path 'section:1/table:1' at line 17 and line 29"
     ) in row["validation_issues"]
     assert row["replay_authorized"] is False
 
@@ -563,8 +569,10 @@ def test_validate_semantic_claim_rejects_workqueue_mismatch() -> None:
 
 def test_validate_semantic_claim_rejects_conflicting_workqueue_id_rows() -> None:
     workqueue = _workqueue_row()
+    workqueue["line_number"] = 7
     conflicting_workqueue = _workqueue_row(source_preview="different source")
     conflicting_workqueue["effect_id"] = "eff-2"
+    conflicting_workqueue["line_number"] = 11
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (_claim_row(),),
@@ -575,7 +583,8 @@ def test_validate_semantic_claim_rejects_conflicting_workqueue_id_rows() -> None
     assert row["validator_status"] == "rejected_workqueue_mismatch"
     assert row["rule_id"] == "uk_semantic_claim_workqueue_mismatch"
     assert (
-        "workqueue work_item_id 'uk-manual-frontier-demo' has conflicting rows"
+        "workqueue work_item_id 'uk-manual-frontier-demo' has conflicting rows "
+        "at line 7 and line 11"
         in row["validation_issues"]
     )
     assert row["replay_authorized"] is False
@@ -584,18 +593,23 @@ def test_validate_semantic_claim_rejects_conflicting_workqueue_id_rows() -> None
 def test_validate_semantic_claim_rejects_conflicting_workqueue_identity_rows() -> None:
     claim = _claim_row()
     claim.pop("work_item_id")
+    workqueue = _workqueue_row()
+    workqueue["line_number"] = 13
     conflicting_workqueue = _workqueue_row(source_preview="different source")
     conflicting_workqueue["work_item_id"] = "uk-manual-frontier-other"
+    conflicting_workqueue["line_number"] = 17
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
-        workqueue_rows=(_workqueue_row(), conflicting_workqueue),
+        workqueue_rows=(workqueue, conflicting_workqueue),
     )
 
     row = rows[0]
     assert row["validator_status"] == "rejected_workqueue_missing"
     assert (
-        "workqueue identity match is ambiguous; claim must include work_item_id"
+        "workqueue identity match is ambiguous; claim must include work_item_id; "
+        "candidates: uk-manual-frontier-demo at line 13, "
+        "uk-manual-frontier-other at line 17"
         in row["validation_issues"]
     )
     assert row["replay_authorized"] is False
