@@ -73,6 +73,12 @@ _MANUAL_FRONTIER_ACTIONABLE_STATUSES = frozenset(
         "source_insufficient",
     }
 )
+_MANUAL_FRONTIER_TEMPLATE_ACTIONABLE_STATUSES = frozenset(
+    {
+        "manual_compile_candidate",
+        "deterministic_frontend_candidate",
+    }
+)
 _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
     {
         "bounded_low_volume_residual",
@@ -228,6 +234,12 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["manual_frontier_template_status_counts"] = (
             _manual_frontier_template_status_counts(manual_frontier_records)
         )
+        result["manual_frontier_template_gap_status_counts"] = (
+            _manual_frontier_template_gap_status_counts(manual_frontier_records)
+        )
+        result["manual_frontier_template_gap_rule_counts"] = (
+            _manual_frontier_template_gap_rule_counts(manual_frontier_records)
+        )
 
         lanes: dict[str, float] = {}
         for lane, aligned in (("aligned", True), ("unaligned", False)):
@@ -324,6 +336,21 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         if int(r.get("n_oracle") or 0) == 0 and int(r.get("n_replay") or 0) > 0
     ]
     triage_buckets = Counter(_triage_bucket_for_row(r) for r in results)
+    manual_frontier_status_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_status_counts"
+    )
+    manual_frontier_rule_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_rule_counts"
+    )
+    manual_frontier_template_status_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_template_status_counts"
+    )
+    manual_frontier_template_gap_status_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_template_gap_status_counts"
+    )
+    manual_frontier_template_gap_rule_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_template_gap_rule_counts"
+    )
     active_unclassified_residuals = [
         r
         for r in results
@@ -339,6 +366,15 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "source_chain_frontier_statutes": source_chain_frontier_statutes,
         "triage_buckets": dict(sorted(triage_buckets.items())),
+        "manual_frontier_status_counts": manual_frontier_status_counts,
+        "manual_frontier_rule_counts": manual_frontier_rule_counts,
+        "manual_frontier_template_status_counts": manual_frontier_template_status_counts,
+        "manual_frontier_template_gap_status_counts": (
+            manual_frontier_template_gap_status_counts
+        ),
+        "manual_frontier_template_gap_rule_counts": (
+            manual_frontier_template_gap_rule_counts
+        ),
         "active_unclassified_residual_count": len(active_unclassified_residuals),
         "active_unclassified_residual_statutes": sorted(
             str(r.get("statute_id") or "") for r in active_unclassified_residuals
@@ -510,6 +546,41 @@ def _manual_frontier_template_status_counts(rows: list[dict[str, Any]]) -> dict[
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_template_gap_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        str(row.get("manual_compile_status") or "unknown")
+        for row in rows
+        if str(row.get("manual_compile_status") or "")
+        in _MANUAL_FRONTIER_TEMPLATE_ACTIONABLE_STATUSES
+        and str(row.get("suggested_claim_template_status") or "") == "not_available"
+    )
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_template_gap_rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        str(row.get("manual_compile_rule_id") or "unknown")
+        for row in rows
+        if str(row.get("manual_compile_status") or "")
+        in _MANUAL_FRONTIER_TEMPLATE_ACTIONABLE_STATUSES
+        and str(row.get("suggested_claim_template_status") or "") == "not_available"
+    )
+    return dict(sorted(counts.items()))
+
+
+def _aggregate_row_count_maps(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        row_counts = row.get(field) or {}
+        if not isinstance(row_counts, dict):
+            continue
+        counts.update({str(key): int(value or 0) for key, value in row_counts.items()})
+    return dict(sorted(counts.items()))
+
+
 def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from lawvm.core.compile_records import is_blocking_compile_record
 
@@ -570,6 +641,7 @@ def run_driver(
     out: Optional[Path],
     *,
     fail_on_active_unclassified_residuals: bool = False,
+    fail_on_manual_frontier_template_gaps: bool = False,
 ) -> int:
     results: list[dict[str, Any]] = []
     for i, sid in enumerate(ids, 1):
@@ -671,6 +743,30 @@ def run_driver(
             for bucket, count in summary["triage_buckets"].items()
         )
         print(f"  triage_buckets: {buckets}")
+    if summary["manual_frontier_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary["manual_frontier_status_counts"].items()
+        )
+        print(f"  manual_frontier_status_counts: {counts}")
+    if summary["manual_frontier_template_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_template_status_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_template_status_counts: {counts}")
+    if summary["manual_frontier_template_gap_rule_counts"]:
+        counts = ", ".join(
+            f"{rule_id}={count}"
+            for rule_id, count in summary[
+                "manual_frontier_template_gap_rule_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_template_gaps: {counts}")
+    else:
+        print("  manual_frontier_template_gaps=0")
     if summary["active_unclassified_residual_count"]:
         print(
             "  active_unclassified_residuals="
@@ -682,6 +778,11 @@ def run_driver(
     if (
         fail_on_active_unclassified_residuals
         and summary["active_unclassified_residual_count"]
+    ):
+        return 1
+    if (
+        fail_on_manual_frontier_template_gaps
+        and summary["manual_frontier_template_gap_rule_counts"]
     ):
         return 1
     return 0
@@ -725,6 +826,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Exit nonzero when scored rows still sit in active unclassified residual buckets",
     )
+    ap.add_argument(
+        "--fail-on-manual-frontier-template-gaps",
+        action="store_true",
+        help=(
+            "Exit nonzero when actionable manual/deterministic frontier rows "
+            "lack a suggested claim template"
+        ),
+    )
     args = ap.parse_args(argv)
 
     if args.one:
@@ -746,6 +855,9 @@ def main(argv: list[str] | None = None) -> int:
         ids,
         args.out,
         fail_on_active_unclassified_residuals=args.fail_on_active_unclassified_residuals,
+        fail_on_manual_frontier_template_gaps=(
+            args.fail_on_manual_frontier_template_gaps
+        ),
     )
 
 
