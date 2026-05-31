@@ -275,9 +275,11 @@ and source-evidence requests must carry typed payloads. If a claim declares
 `source_text_preconditions`, the validator checks exact snippets, optional
 snippet SHA-256 hashes, exact/min/max snippet occurrence counts, and optional
 `after_precondition_ids`/`before_precondition_ids` relationships against
-supplied claim/workqueue source previews. Source precondition ids used for
-ordering must be unique, referenced ids must exist, and ordered snippets must
-occur uniquely in the same supplied source preview in the declared order; if a
+supplied claim/workqueue source previews. A source-text snippet must appear in
+every supplied claim/workqueue preview; previews are corroborating witnesses, not
+alternatives. Source precondition ids used for ordering must be unique,
+referenced ids must exist, and ordered snippets must occur uniquely in the same
+supplied source preview in the declared order; if a
 snippet appears multiple times, the order claim is ambiguous and must use a
 future ordinal/span claim rather than first-occurrence matching. Passing
 source-text preconditions
