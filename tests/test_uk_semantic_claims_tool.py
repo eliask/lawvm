@@ -745,6 +745,40 @@ def test_validate_semantic_claim_rejects_source_text_precondition_order_without_
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_ambiguous_source_text_precondition_order() -> None:
+    claim = _claim_row(
+        source_preview=(
+            "entry relating to X; after the entry relating to X insert the row"
+        ),
+    )
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-anchor",
+            "contains": "entry relating to X",
+        },
+        {
+            "precondition_id": "source-payload",
+            "contains": "insert the row",
+            "after_precondition_ids": ["source-anchor"],
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_source_text_mismatch"
+    assert (
+        "source_text_preconditions[2].after_precondition_ids after "
+        "'source-anchor' cannot be checked because ordered source snippets must "
+        "be unique in supplied source text index 1: current snippet 'insert the "
+        "row' occurs 1 times and reference snippet 'entry relating to X' occurs "
+        "2 times"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_duplicate_source_text_precondition_id() -> None:
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
     proposed_outcome = claim["proposed_outcome"]
