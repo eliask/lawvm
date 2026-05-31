@@ -24,6 +24,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_single_unnumbered_schedule_context_ignored",
         "uk_affecting_act_implicit_first_subparagraph_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
+        "uk_affecting_act_same_level_parenthetical_source_component_selected",
         "uk_affecting_act_enacted_schedule_table_row_source_extracted",
         "uk_affecting_act_article_schedule_payload_source_extracted",
         "uk_affecting_act_compound_payload_only_block_amendment_selected",
@@ -875,6 +876,49 @@ def uk_affecting_act_compound_reference_split_fallback(
         split_second_part=split_second_part,
         split_selected_part=split_selected_part,
         extracted_element_id=extracted_element_id,
+    )
+
+
+def uk_affecting_act_same_level_parenthetical_source_component_selected(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    selected_ref: str,
+    companion_ref: str,
+    greedy_extracted_element_id: str,
+    selected_element_id: str,
+    companion_element_id: str,
+    selected_text_preview: str,
+    companion_text_preview: str,
+) -> dict[str, Any]:
+    return _uk_source_diagnostic(
+        rule_id="uk_affecting_act_same_level_parenthetical_source_component_selected",
+        family="source_context_recovery",
+        phase="extraction",
+        reason=(
+            "UK effects metadata used a compact same-level source citation such as "
+            "s. N(a)(b). Greedy extraction resolved that surface as a nested path, "
+            "but the source XML exposes the parenthesized numbers as sibling "
+            "provisions. LawVM selected the operative first sibling and recorded "
+            "the companion sibling instead of passing an unrelated nested child to "
+            "lowering."
+        ),
+        blocking=False,
+        effect_id=effect_id,
+        affecting_act_id=affecting_act_id,
+        affecting_provisions=affecting_provisions,
+        locator=locator,
+        authority_layer=authority_layer,
+        selected_ref=selected_ref,
+        companion_ref=companion_ref,
+        greedy_extracted_element_id=greedy_extracted_element_id,
+        selected_element_id=selected_element_id,
+        companion_element_id=companion_element_id,
+        selected_text_preview=selected_text_preview,
+        companion_text_preview=companion_text_preview,
     )
 
 

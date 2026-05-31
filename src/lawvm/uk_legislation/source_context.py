@@ -37,6 +37,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_outdented_child_source_selected,
     uk_affecting_act_parenthesized_range_source_extracted,
+    uk_affecting_act_same_level_parenthetical_source_component_selected,
     uk_affecting_act_single_unnumbered_schedule_context_ignored,
     uk_affecting_act_schedule_part_standalone_split_rejection,
     uk_affecting_act_class_unmapped_rejection,
@@ -53,6 +54,12 @@ _COMPOUND_REFERENCE_KEYWORD_RE = re.compile(r"\b(?:Sch(?:edule)?|Part|Pt)\b", re
 _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
     r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
     re.I,
+)
+_SAME_LEVEL_SECTION_PARENTHESES_RE = re.compile(
+    r"^\s*(?:s|section)\.?\s*(?P<section>[0-9]+[A-Za-z]?)"
+    r"\s*\(\s*(?P<first>[0-9]+[A-Za-z]?)\s*\)"
+    r"\s*\(\s*(?P<second>[0-9]+[A-Za-z]?)\s*\)\s*$",
+    flags=re.I,
 )
 @dataclass(frozen=True)
 class UKAffectingSourceContext:
@@ -485,6 +492,76 @@ def _extract_from_affecting_source_context(
     )
     context.provision_element_cache[provision_ref] = extracted
     return extracted
+
+
+def _looks_like_source_effective_date_companion(text: str) -> bool:
+    normalized = " ".join((text or "").split()).lower()
+    return (
+        "the amendments made by" in normalized
+        and re.search(r"\bhave\s+effect\b|\bcome\s+into\s+force\b", normalized) is not None
+    )
+
+
+def _looks_like_operative_source_component(text: str) -> bool:
+    return (
+        re.search(
+            r"\b(?:substitute|insert|omit|repeal|replace|amend)\b",
+            " ".join((text or "").split()),
+            flags=re.I,
+        )
+        is not None
+    )
+
+
+def _same_level_parenthetical_source_component(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+    *,
+    provision_ref: str,
+    greedy_el: ET._Element,
+) -> UKSourceExtractionResult:
+    match = _SAME_LEVEL_SECTION_PARENTHESES_RE.fullmatch(provision_ref)
+    if match is None or context.parent_map is None:
+        return _NO_SOURCE_EXTRACTION
+    section = _clean_num(match.group("section"))
+    first = _clean_num(match.group("first"))
+    second = _clean_num(match.group("second"))
+    if not section or not first or not second or first == second:
+        return _NO_SOURCE_EXTRACTION
+
+    selected_ref = f"s. {section}({first})"
+    companion_ref = f"s. {section}({second})"
+    selected_el = _extract_from_affecting_source_context(context, selected_ref)
+    companion_el = _extract_from_affecting_source_context(context, companion_ref)
+    if selected_el is None or companion_el is None:
+        return _NO_SOURCE_EXTRACTION
+    if greedy_el is selected_el:
+        return _NO_SOURCE_EXTRACTION
+    if context.parent_map.get(selected_el) is not context.parent_map.get(companion_el):
+        return _NO_SOURCE_EXTRACTION
+
+    selected_text = _text_content(selected_el)
+    companion_text = _text_content(companion_el)
+    if not _looks_like_operative_source_component(selected_text):
+        return _NO_SOURCE_EXTRACTION
+    if not _looks_like_source_effective_date_companion(companion_text):
+        return _NO_SOURCE_EXTRACTION
+
+    observation = uk_affecting_act_same_level_parenthetical_source_component_selected(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        selected_ref=selected_ref,
+        companion_ref=companion_ref,
+        greedy_extracted_element_id=str(greedy_el.get("id") or greedy_el.get("Id") or ""),
+        selected_element_id=str(selected_el.get("id") or selected_el.get("Id") or ""),
+        companion_element_id=str(companion_el.get("id") or companion_el.get("Id") or ""),
+        selected_text_preview=_source_preview(selected_text),
+        companion_text_preview=_source_preview(companion_text),
+    )
+    return UKSourceExtractionResult(selected_el, (observation,))
 
 
 def _compound_reference_parts(provision_ref: str) -> tuple[str, str] | None:
@@ -1363,6 +1440,14 @@ def _extract_from_affecting_source_context_with_observations(
     provision_ref = str(effect.affecting_provisions or "")
     el = _extract_from_affecting_source_context(context, provision_ref)
     if el is not None:
+        same_level_component = _same_level_parenthetical_source_component(
+            context,
+            effect,
+            provision_ref=provision_ref,
+            greedy_el=el,
+        )
+        if same_level_component.extracted_element is not None:
+            return same_level_component
         compound_parts = _compound_reference_parts(provision_ref)
         if compound_parts is not None:
             first_part, second_part = compound_parts

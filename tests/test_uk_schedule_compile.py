@@ -54463,6 +54463,130 @@ def test_pipeline_compile_ops_extracts_implicit_first_subparagraph_source_contex
     )
 
 
+def test_pipeline_compile_ops_selects_same_level_parenthetical_source_component(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_same_level_parenthetical_source_component",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-15",
+        affected_uri="/id/ukpga/2023/56/section/189/subsection/3/paragraph/b/subparagraph/ii",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2023",
+        affected_number="56",
+        affected_provisions="s. 189(3)(b)(ii)",
+        affecting_uri="/id/ukpga/2026/11/section/113/subsection/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="s. 113(3)(4)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2026-03-18", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="section-113">
+          <Pnumber>113</Pnumber>
+          <P1para>
+            <P2 id="section-113-1">
+              <Pnumber>1</Pnumber>
+              <P2para>
+                <P3 id="section-113-1-b">
+                  <Pnumber>b</Pnumber>
+                  <P3para>
+                    <P4 id="section-113-1-b-iii">
+                      <Pnumber>iii</Pnumber>
+                      <P4para>
+                        <Text>after paragraph (b) insert-</Text>
+                        <BlockAmendment>
+                          <P3><Pnumber>ba</Pnumber><P3para><Text>wrong nested child;</Text></P3para></P3>
+                        </BlockAmendment>
+                      </P4para>
+                    </P4>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+            <P2 id="section-113-3">
+              <Pnumber>3</Pnumber>
+              <P2para>
+                <Text>In section 189 of the 2023 Act, in subsection (3)(b)(ii), for "large or very large" substitute "in any of bands B to D".</Text>
+              </P2para>
+            </P2>
+            <P2 id="section-113-4">
+              <Pnumber>4</Pnumber>
+              <P2para>
+                <Text>The amendments made by this section have effect for financial years after April 2026.</Text>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(_effect, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "id": extracted_el.get("id") if extracted_el is not None else "",
+                "text": " ".join(" ".join(extracted_el.itertext()).split())
+                if extracted_el is not None
+                else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2023/56",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert compile_calls == [
+        {
+            "id": "section-113-3",
+            "text": (
+                '3 In section 189 of the 2023 Act, in subsection (3)(b)(ii), '
+                'for "large or very large" substitute "in any of bands B to D".'
+            ),
+            "authority": "AFFECTING_ACT_TEXT",
+        }
+    ]
+    source_rows = [
+        row
+        for row in diagnostics
+        if row.get("rule_id")
+        == "uk_affecting_act_same_level_parenthetical_source_component_selected"
+    ]
+    assert len(source_rows) == 1
+    assert source_rows[0]["affecting_provisions"] == "s. 113(3)(4)"
+    assert source_rows[0]["selected_ref"] == "s. 113(3)"
+    assert source_rows[0]["companion_ref"] == "s. 113(4)"
+    assert source_rows[0]["greedy_extracted_element_id"] == "section-113-1-b-iii"
+    assert source_rows[0]["selected_element_id"] == "section-113-3"
+    assert source_rows[0]["companion_element_id"] == "section-113-4"
+    assert source_rows[0]["blocking"] is False
+    assert source_rows[0]["strict_disposition"] == "record"
+
+
 def test_pipeline_compile_ops_rejects_anonymous_block_amendment_payload_descendant_source_ref(
     monkeypatch,
 ) -> None:
