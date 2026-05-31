@@ -92,6 +92,17 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                 "n_oracle": 21,
             },
             {
+                "statute_id": "uksi/2000/1043",
+                "score_status": "scored",
+                "aligned": 77.7,
+                "aligned_excluding_grounding_collateral": 77.7,
+                "unaligned": 75.3,
+                "n_grounding_collateral": 1,
+                "n_replay": 168,
+                "n_oracle": 215,
+                "n_ops": 0,
+            },
+            {
                 "statute_id": "ukpga/1945/9",
                 "score_status": "source_frontier",
                 "source_frontier_reason": "base_too_small",
@@ -108,7 +119,7 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         ]
     )
 
-    assert len(summary["scored"]) == 5
+    assert len(summary["scored"]) == 6
     assert len(summary["errored"]) == 1
     assert len(summary["source_frontier"]) == 2
     assert summary["source_frontier_reasons"] == {"base_too_small": 2}
@@ -118,6 +129,7 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "base_metadata_only_frontier": 1,
         "error": 1,
         "high_fidelity_after_grounding": 1,
+        "no_compiled_ops_frontier": 1,
         "residual_after_grounding": 1,
         "source_frontier:base_too_small": 2,
         "structural_match_eid_scheme_residual": 1,

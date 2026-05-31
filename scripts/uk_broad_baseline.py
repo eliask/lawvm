@@ -232,6 +232,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "high_fidelity_after_grounding"
     if unaligned >= _STRUCTURAL_MATCH_THRESHOLD:
         return "structural_match_eid_scheme_residual"
+    if row.get("n_ops") is not None and int(row.get("n_ops") or 0) == 0:
+        return "no_compiled_ops_frontier"
     if (
         int(row.get("n_grounding_collateral") or 0) > 0
         and aligned_no_gc - aligned >= _GROUNDING_DOMINATED_DELTA_THRESHOLD
