@@ -5078,6 +5078,60 @@ def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -
     )
 
 
+def test_compile_at_end_quoted_dash_insert_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-31-1">
+          <Pnumber>1</Pnumber>
+          <Text>1 In section 1 of TCPA 1990 (local planning authorities: general) in subsection (2) (which provides that the council of a London borough is the local planning authority for the borough) at the end insert— “ But, in the case of a London borough, see also sections 2A to 2E (Mayor of London). ” .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-76170d358d311c0e8e13ca233dc9abe1",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-10-30",
+        affected_uri="/id/ukpga/1990/8/section/1/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 1(2)",
+        affecting_uri="/id/ukpga/2007/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="24",
+        affecting_provisions="s. 31(1)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2007-10-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_at_end_quoted_dash_text_insertion_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_at_end_quoted_dash_text_insertion_patch"
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == (
+        "But, in the case of a London borough, see also sections 2A to 2E (Mayor of London)."
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_sentence_bounded_at_end_insert_ignores_following_source_row() -> None:
     extracted_el = ET.fromstring(
         f"""

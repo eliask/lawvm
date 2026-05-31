@@ -536,6 +536,14 @@ observation for the punctuation recovery; `ukpga/1990/8` blocking compile
 diagnostics drop `135 -> 134`, and the 77-statute gate remains score-stable
 (`0 improved, 0 regressed`).
 
+At-end insertions also accept a quoted payload after a dash separator under
+`uk_effect_at_end_quoted_dash_text_insertion_patch`, e.g. `at the end insert-
+"Y"`. The dash is instruction punctuation; the quoted payload is appended to
+the explicit affected target. Current witness: `ukpga/1990/8` affected
+`s. 1(2)` by `ukpga/2007/24` s. 31(1). This cuts `ukpga/1990/8` overlap
+blockers `16 -> 15` and total blocking compile diagnostics `134 -> 133`; the
+77-statute gate remains score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
