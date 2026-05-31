@@ -21,6 +21,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID,
     UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
     UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
+    UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID,
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
@@ -134,6 +135,14 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_source_parent_each_provision_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
+)
+
+_SCOPE_NOTE_QUOTED_SUBSTITUTION_RE = re.compile(
+    r"for\s+(?:(?:the\s+)?words?\s+)?"
+    r"[“\"'‘](?P<original>[^\"'\u201c\u201d\u2018\u2019]{1,500})[”\"'’]\s*"
+    r"\((?P<scope_note>[^()]{1,500})\),?\s+substitute\s+"
+    r"[“\"'‘](?P<replacement>[^\"'\u201c\u201d\u2018\u2019]{1,500})[”\"'’]",
+    re.I,
 )
 
 
@@ -254,6 +263,22 @@ def _fragment_rule_ids(fragment_subs: Optional[list]) -> tuple[str, ...]:
         if rule_id and rule_id not in rule_ids:
             rule_ids.append(rule_id)
     return tuple(rule_ids)
+
+
+def _scope_note_for_quoted_substitution(
+    *,
+    extracted_text: Optional[str],
+    fragment: Mapping[str, Any],
+) -> str:
+    text_match = " ".join(str(fragment.get("original") or "").split()).strip()
+    replacement = " ".join(str(fragment.get("replacement") or "").split()).strip()
+    for match in _SCOPE_NOTE_QUOTED_SUBSTITUTION_RE.finditer(extracted_text or ""):
+        if (
+            " ".join(match.group("original").split()).strip() == text_match
+            and " ".join(match.group("replacement").split()).strip() == replacement
+        ):
+            return " ".join(match.group("scope_note").split()).strip()
+    return ""
 
 
 def append_all_occurrences_text_rewrite_observations(
@@ -432,6 +457,36 @@ def append_basic_text_rewrite_observations(
                     "target": str(target),
                     "text_match": str(fragment.get("original") or ""),
                     "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if str(fragment.get("rule_id") or "") != UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID:
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_quoted_substitution_scope_note_text_patch",
+                reason=(
+                    "UK effect source explicitly substitutes quoted words while "
+                    "carrying a parenthetical scope note; lowering records the "
+                    "note and preserves the quoted preimage as a target-local "
+                    "text patch."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "scope_note": _scope_note_for_quoted_substitution(
+                        extracted_text=extracted_text,
+                        fragment=fragment,
+                    ),
                     "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
                 },
             )

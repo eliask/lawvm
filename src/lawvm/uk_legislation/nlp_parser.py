@@ -178,6 +178,9 @@ UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
 UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_text_patch"
 UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_except_child_substitution_text_patch"
 UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
+UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID = (
+    "uk_effect_quoted_substitution_scope_note_text_patch"
+)
 UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_both_subsequent_occurrences_substitution_text_patch"
 )
@@ -276,6 +279,18 @@ _UK_MULTI_OCCURRENCE_SUBSTITUTION_RE = re.compile(
     re.I,
 )
 
+_QUOTED_SUBSTITUTION_SCOPE_NOTE_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?"
+    rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
+    r"\((?P<scope_note>[^()]{1,500})\),?\s+substitute\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+_OCCURRENCE_SCOPE_NOTE_RE = re.compile(
+    r"\b(?:each|both|first|second|third|fourth|fifth|wherever|occurr|appear|heading|body)\b",
+    re.I,
+)
+
 
 def _normalize_quotes(text: str) -> str:
     return (text.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")).strip()
@@ -335,6 +350,11 @@ def _has_respectively_all_occurrences_signal(text: str) -> bool:
             re.I,
         )
     )
+
+
+def _is_non_occurrence_scope_note(text: str) -> bool:
+    """Return True when a parenthetical is evidence, not occurrence scope."""
+    return not bool(_OCCURRENCE_SCOPE_NOTE_RE.search(text))
 
 
 def _looks_like_definition_entry_payload(text: str) -> bool:
@@ -1705,6 +1725,17 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
                     "rule_id": "uk_effect_quoted_anchor_block_substitution_text_patch",
                 }
             )
+
+    for m in _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE.finditer(text):
+        if not _is_non_occurrence_scope_note(m.group("scope_note")):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID,
+            }
+        )
 
     matches_child_qualified_quoted_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"

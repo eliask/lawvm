@@ -25,7 +25,7 @@ from lawvm.uk_legislation.source_adjudication import (
     classify_uk_effect_source_pathology,
     classify_uk_manual_compile_frontier,
 )
-from lawvm.uk_legislation.nlp_parser import US
+from lawvm.uk_legislation.nlp_parser import US, parse_fragment_substitution
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
 from lawvm.uk_legislation.effect_temporal import (
     UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
@@ -2398,6 +2398,77 @@ def test_compile_after_quoted_anchor_insert_accepts_space_before_comma() -> None
         if record["rule_id"] == "uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"
     ] == ["uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"]
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_quoted_substitution_records_parenthetical_scope_note() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-11-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In subsections (2) and (3) for “The regulations may” (in so far as those words continue to form part of those subsections ) substitute “Regulations under this section may”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-5e71ec472d5b285095b88fb5034c0f6f",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-12-01",
+        affected_uri="/id/ukpga/1990/8/section/323/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 323(3)",
+        affecting_uri="/id/wsi/2014/2773",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2014",
+        affecting_number="2773",
+        affecting_provisions="Sch. 1 para. 11(3)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2014-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "The regulations may"
+    assert ops[0].text_patch.replacement == "Regulations under this section may"
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_quoted_substitution_scope_note_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "explicit_quoted_substitution_scope_note_text_patch"
+    assert records[0]["text_match"] == "The regulations may"
+    assert records[0]["replacement"] == "Regulations under this section may"
+    assert records[0]["scope_note"] == (
+        "in so far as those words continue to form part of those subsections"
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_parenthesized_occurrence_substitution_keeps_all_occurrences_rule() -> None:
+    fragments = parse_fragment_substitution(
+        'for "permit" (in each place it appears) substitute "licence"'
+    )
+
+    assert fragments == [
+        {
+            "original": "permit",
+            "replacement": "licence",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
 
 
 def test_compile_space_separated_chapter_targets_do_not_fall_back_to_body_root() -> None:
