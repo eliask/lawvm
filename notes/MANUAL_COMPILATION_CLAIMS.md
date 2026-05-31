@@ -197,6 +197,10 @@ The current validator checks only:
   must name a proof id, match the claim action family, reference existing
   operation ids, reference declared validator-check ids, reference at least one
   declared source/live precondition, and carry a non-proving status
+- matched claim-template obligation lists are declaration surfaces too:
+  duplicate `required_validator_checks`, `required_ownership`, or
+  `required_operation_family_proof_semantics` entries reject the claim/workqueue
+  match before required obligations are interpreted as sets
 - proof reference lists are declaration surfaces, not mathematical sets:
   duplicate `operation_ids`, `validator_check_ids`,
   `source_text_precondition_ids`, `live_target_precondition_ids`, or

@@ -5795,6 +5795,46 @@ def test_validate_semantic_claim_rejects_missing_template_validator_checks() -> 
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_template_obligations() -> None:
+    workqueue = _workqueue_row()
+    template = workqueue["suggested_claim_template"]
+    assert isinstance(template, dict)
+    template["required_validator_checks"] = [
+        "claim_identifies_exact_table_carrier",
+        "claim_identifies_exact_table_carrier",
+    ]
+    template["required_ownership"] = [
+        "source_named_table_surface",
+        "source_named_table_surface",
+    ]
+    template["required_operation_family_proof_semantics"] = [
+        "table_surface_insert_anchor_and_live_carrier",
+        "table_surface_insert_anchor_and_live_carrier",
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (_claim_row(),),
+        workqueue_rows=(workqueue,),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_workqueue_mismatch"
+    assert (
+        "suggested_claim_template.required_validator_checks[2] duplicates "
+        "required_validator_checks[1] 'claim_identifies_exact_table_carrier'"
+    ) in row["validation_issues"]
+    assert (
+        "suggested_claim_template.required_ownership[2] duplicates "
+        "required_ownership[1] 'source_named_table_surface'"
+    ) in row["validation_issues"]
+    assert (
+        "suggested_claim_template.required_operation_family_proof_semantics[2] "
+        "duplicates required_operation_family_proof_semantics[1] "
+        "'table_surface_insert_anchor_and_live_carrier'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_missing_template_required_proof_semantic() -> None:
     workqueue = _workqueue_row()
     template = workqueue["suggested_claim_template"]

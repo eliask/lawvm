@@ -1544,6 +1544,10 @@ Current bench replay-regime invariant:
   declare different fingerprints for the same statute/path. Identical duplicate
   declarations are tolerated, but conflicting fingerprints cannot be resolved by
   input order or dictionary overwrite.
+- Matched non-executable claim templates are duplicate-sensitive for required
+  obligation lists. Duplicate `required_validator_checks`,
+  `required_ownership`, or `required_operation_family_proof_semantics` entries
+  reject the workqueue match before those obligations are interpreted as sets.
 - Operation-family proof reference fields are duplicate-sensitive. The validator
   rejects duplicate operation ids, validator-check ids, source/live precondition
   ids, live path references, and recognized family-specific reference/ownership

@@ -125,6 +125,11 @@ _MUTATION_BOUNDARY_DUPLICATE_SENSITIVE_FIELDS = (
     "declared_recovery_paths",
     "declared_editorial_projection_paths",
 )
+_TEMPLATE_DUPLICATE_SENSITIVE_FIELDS = (
+    "required_validator_checks",
+    "required_ownership",
+    "required_operation_family_proof_semantics",
+)
 
 
 class _WorkqueueIndex(NamedTuple):
@@ -4022,6 +4027,14 @@ def _workqueue_mismatch_issues(
     issues.extend(_workqueue_source_preview_hash_issues(workqueue))
     issues.extend(_template_target_context_issues(claim, template))
     issues.extend(_template_operation_target_issues(claim, template))
+    for field in _TEMPLATE_DUPLICATE_SENSITIVE_FIELDS:
+        issues.extend(
+            _duplicate_string_reference_issues(
+                prefix="suggested_claim_template",
+                field=field,
+                values=_string_tuple_from_value(template.get(field)),
+            )
+        )
     required_validator_checks = _string_set(
         _sequence_value(template, "required_validator_checks")
     )
