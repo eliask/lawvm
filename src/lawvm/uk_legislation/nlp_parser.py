@@ -347,6 +347,20 @@ _AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RE = re.compile(
     rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,700}})\s*$",
     re.I,
 )
+_FROM_BEGINNING_ACTIVE_COMMA_SUBSTITUTED_RE = re.compile(
+    r"(?:for|from)\s+(?:the\s+)?words?\s+from\s+the\s+beginning"
+    r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+    rf"\s+to\s+[“\"'‘](?P<end>{_NON_QUOTE}{{1,500}})[”\"'’]\s*,\s+"
+    r"substitute\s+(?:(?:the\s+)?words?\s+)?"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,700}})[”\"'’]",
+    re.I,
+)
+_POST_CHILD_QUOTED_WORD_PASSIVE_OMIT_RE = re.compile(
+    rf"(?:the\s+)?[“\"'‘](?P<word>{_NON_QUOTE}{{1,200}})[”\"'’]\s+"
+    r"after\s+(?:paragraph|sub-paragraph|subsection)\s+\([0-9A-Za-z]+\)\s+"
+    r"(?:is|are|shall\s+be)\s+(?:omitted|repealed)",
+    re.I,
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -1651,6 +1665,17 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                 "original": f"TEXT_FROM__TO_{m.group(1).strip()}",
                 "replacement": m.group(2).strip(),
             }
+        )
+
+    for m in _FROM_BEGINNING_ACTIVE_COMMA_SUBSTITUTED_RE.finditer(text):
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", m.group("end").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_from_beginning_passive_substitution_text_patch",
+                )
+            )
         )
 
     matches_from_beginning_passive_substituted = re.finditer(
@@ -3692,6 +3717,15 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
         subs.append(
             {
                 "original": m.group(1).strip(),
+                "replacement": "",
+                "rule_id": "uk_effect_quoted_word_passive_omit_text_patch",
+            }
+        )
+
+    for m in _POST_CHILD_QUOTED_WORD_PASSIVE_OMIT_RE.finditer(text):
+        subs.append(
+            {
+                "original": m.group("word").strip(),
                 "replacement": "",
                 "rule_id": "uk_effect_quoted_word_passive_omit_text_patch",
             }

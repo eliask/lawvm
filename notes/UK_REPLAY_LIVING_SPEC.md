@@ -1210,6 +1210,14 @@ Current bench replay-regime invariant:
   `empty_effect_feed_frontier_statutes` for `effect_feed_empty`. The same
   source-chain completeness gate excludes this reason, because a present official
   feed with zero entries is a source witness, not an absent acquisition lane.
+- The UK text-rewrite parser recognizes active comma-separated from-beginning
+  substitutions of the form `for the words from the beginning to "X", substitute
+  "Y"` and lowers them through the same bounded `TEXT_FROM__TO_X` selector used
+  by the existing passive form. It also recognizes the reversed child-context
+  quoted-word repeal form `the "X" after paragraph (n) is repealed`, preserving
+  the quoted word as the text-repeal payload. Current regression witness:
+  `ukpga/1997/9` effects from `asp/2011/3 s. 22(2)(b)` and
+  `asp/2014/19 Sch. 3 para. 9(a)(i)`.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.
