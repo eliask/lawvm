@@ -47821,6 +47821,67 @@ def test_compile_schedule_list_entry_replace_lowers_to_selector() -> None:
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_replace_splits_source_owned_multi_entry_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Text>2 For the entry relating to sections 61 and 62 substitute—
+          Section 61. Sections 61Z to 61Z2. Section 62. Sections 62D to 62S.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-c13fab9c569d19d0285c5c468e22ca56",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-03-21",
+        affected_uri="/id/ukpga/1990/8/schedule/16/part/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="Sch. 16 Pt. 1",
+        affecting_uri="/id/anaw/2015/4",
+        affecting_class="WelshNationalAssemblyAct",
+        affecting_year="2015",
+        affecting_number="4",
+        affecting_provisions="Sch. 4 para. 23(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2016-03-21", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target == LegalAddress(path=(("schedule", "16"), ("part", "1")))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "Section 61."
+    assert op.payload.attrs["replacement_texts"] == (
+        "Section 61.",
+        "Sections 61Z to 61Z2.",
+        "Section 62.",
+        "Sections 62D to 62S.",
+    )
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_replace"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_replace_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_replace_selector:"))
+    assert selector["anchor"] == "sections 61 and 62"
+    assert selector["replacement_texts"] == [
+        "Section 61.",
+        "Sections 61Z to 61Z2.",
+        "Section 62.",
+        "Sections 62D to 62S.",
+    ]
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_replace"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_replace_handles_bare_quoted_entry() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -48323,6 +48384,75 @@ def test_replay_schedule_list_entry_replace_replaces_only_matched_entry() -> Non
     ]
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_schedule_list_entry_replace_resolved"
+    assert adjudications[0].detail["matched_index"] == 0
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_schedule_list_entry_replace_expands_source_owned_multi_entry_payload() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_multi_replace",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("schedule", "16"), ("part", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            label=None,
+            text="Section 61.",
+        ),
+        provenance_tags=(
+            'schedule_list_entry_replace_selector:{"rule_id":"uk_effect_schedule_list_entry_replace",'
+            '"anchor":"sections 61 and 62","replacement_text":"Section 61.",'
+            '"replacement_texts":["Section 61.","Sections 61Z to 61Z2.",'
+            '"Section 62.","Sections 62D to 62S."]}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1990/8",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="16",
+                text="Repeals",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="1",
+                        text="The Children Act 1989",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SCHEDULE_ENTRY,
+                                label=None,
+                                text="Sections 61 and 62.",
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.SCHEDULE_ENTRY,
+                                label=None,
+                                text="Section 63.",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    part = replayed.supplements[0].children[0]
+    assert [child.text for child in part.children] == [
+        "Section 61.",
+        "Sections 61Z to 61Z2.",
+        "Section 62.",
+        "Sections 62D to 62S.",
+        "Section 63.",
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_replace_resolved"
+    assert adjudications[0].detail["reason_code"] == "explicit_entry_anchor_unique_multi_replacement"
+    assert adjudications[0].detail["replacement_count"] == 4
     assert adjudications[0].detail["matched_index"] == 0
     assert adjudications[0].detail["strict_disposition"] == "record"
 

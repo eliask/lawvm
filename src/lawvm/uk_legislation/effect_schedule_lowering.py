@@ -508,6 +508,10 @@ def try_lower_schedule_list_entry_mutation(
         attrs={
             "source_rule_id": "uk_schedule_list_entry_replace_payload",
             "anchor_text": str(schedule_list_entry_replace_selector["anchor"]),
+            "replacement_texts": tuple(
+                str(text)
+                for text in schedule_list_entry_replace_selector.get("replacement_texts", ())
+            ),
         },
     )
     return UKScheduleBatchLoweringResult(
