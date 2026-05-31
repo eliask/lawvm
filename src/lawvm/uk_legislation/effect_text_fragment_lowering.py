@@ -839,6 +839,8 @@ def _extract_text_fragment_substitutions(
             _fragment_substitution_source_carried_child_tail_repeal(
                 extracted_text=extracted_text,
                 target=target,
+                extracted_el=extracted_el,
+                source_root=source_root,
             )
         )
         if source_carried_child_tail_repeal is not None:

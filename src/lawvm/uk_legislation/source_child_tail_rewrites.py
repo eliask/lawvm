@@ -3,9 +3,18 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from lxml import etree as ET
+
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_field, _addr_leaf_kind
+from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.uk_legislation.xml_helpers import _tag, _text_content
+
+
+UK_SOURCE_CARRIED_DEICTIC_CHILD_TAIL_REPEAL_RULE_ID = (
+    "uk_effect_source_carried_deictic_child_tail_repeal_text_patch"
+)
 
 
 _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
@@ -26,6 +35,17 @@ _SOURCE_CARRIED_TARGET_CHILD_TAIL_OMIT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:omit|repeal)\s+the\s+words\s+(?:following|after)\s+"
     r"paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_SOURCE_CARRIED_DEICTIC_CHILD_TAIL_OMIT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?:omit|repeal)\s+the\s+words\s+(?:following|after)\s+"
+    r"that\s+paragraph\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_PREVIOUS_SOURCE_SIBLING_PARAGRAPH_TARGET_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?:in\s+)?paragraph\s+\((?P<label>[0-9A-Za-z]+)\)(?=\W|$)",
     flags=re.I | re.S,
 )
 _SOURCE_CARRIED_CHILD_LIST_TAIL_OMIT_RE = re.compile(
@@ -58,10 +78,50 @@ _SOURCE_CARRIED_TARGET_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
 )
 
 
+def _previous_structural_source_sibling(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+) -> Optional[ET._Element]:
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors or extracted_el is None:
+        return None
+    extracted_id = extracted_el.get("id")
+    previous: Optional[ET._Element] = None
+    for child in ancestors[0]:
+        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
+            return previous
+        if _tag(child) in {"P1", "P2", "P3", "P4", "P5", "P6", "P7", "Para"}:
+            previous = child
+    return None
+
+
+def _previous_source_sibling_paragraph_target(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+) -> tuple[str, str]:
+    previous = _previous_structural_source_sibling(
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+    if previous is None:
+        return ("", "")
+    text = " ".join(_text_content(previous).split()).strip()
+    if not text:
+        return ("", "")
+    match = _PREVIOUS_SOURCE_SIBLING_PARAGRAPH_TARGET_RE.match(text)
+    if match is None:
+        return ("", "")
+    return (_clean_num(match.group("label")), text)
+
+
 def _fragment_substitution_source_carried_child_tail_repeal(
     *,
     extracted_text: Optional[str],
     target: LegalAddress,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
 ) -> Optional[dict[str, str]]:
     """Resolve explicit "words following paragraph (x)" tail repeals.
 
@@ -76,6 +136,29 @@ def _fragment_substitution_source_carried_child_tail_repeal(
     if match is None:
         match = _SOURCE_CARRIED_CHILD_TAIL_OMIT_RE.match(text)
     if match is None:
+        deictic_match = _SOURCE_CARRIED_DEICTIC_CHILD_TAIL_OMIT_RE.match(text)
+        if deictic_match is not None:
+            if _addr_leaf_kind(target) != "subsection":
+                return None
+            target_subsection = _clean_num(_addr_field(target, "subsection") or "")
+            if not target_subsection:
+                return None
+            anchor_label, antecedent_text = _previous_source_sibling_paragraph_target(
+                extracted_el=extracted_el,
+                source_root=source_root,
+            )
+            if not anchor_label:
+                return None
+            return {
+                "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",
+                "replacement": "",
+                "source_subsection_label": "",
+                "target_supplied_subsection_context": "true",
+                "source_anchor_child_label": anchor_label,
+                "source_deictic_antecedent": "previous_source_sibling",
+                "source_deictic_antecedent_text": antecedent_text,
+                "rule_id": UK_SOURCE_CARRIED_DEICTIC_CHILD_TAIL_REPEAL_RULE_ID,
+            }
         target_match = _SOURCE_CARRIED_TARGET_CHILD_TAIL_OMIT_RE.match(text)
         if target_match is not None:
             if _addr_leaf_kind(target) != "subsection":
