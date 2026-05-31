@@ -771,7 +771,10 @@ def _validate_operation_family_proof_semantic(
             proof_family=proof_family,
             proof_operation_ids=proof_operation_ids,
             proof_source_ids=proof_source_ids,
+            proof_live_ids=proof_live_ids,
+            proof_live_paths=proof_live_paths,
             live_precondition_paths=live_precondition_paths,
+            live_precondition_paths_by_id=live_precondition_paths_by_id,
         )
     if proof_semantic == "amendment_program_target_source_payload_and_boundary":
         return _validate_amendment_program_target_family_proof_semantic(
@@ -1947,7 +1950,10 @@ def _validate_cross_container_renumber_family_proof_semantic(
     proof_family: str,
     proof_operation_ids: set[str],
     proof_source_ids: set[str],
+    proof_live_ids: set[str],
+    proof_live_paths: set[str],
     live_precondition_paths: set[str],
+    live_precondition_paths_by_id: Mapping[str, set[str]],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     if proof_family != "cross_container_renumber_migration":
@@ -2032,6 +2038,31 @@ def _validate_cross_container_renumber_family_proof_semantic(
             live_precondition_paths=live_precondition_paths,
         )
     )
+    proof_live_carrier_paths = _live_carrier_paths_for_proof(
+        proof_live_ids=proof_live_ids,
+        proof_live_paths=proof_live_paths,
+        live_precondition_paths_by_id=live_precondition_paths_by_id,
+    )
+    issues.extend(
+        _proof_live_path_subset_issues(
+            prefix=(
+                f"{prefix}.{proof_semantic}."
+                "source_live_target_precondition_paths"
+            ),
+            paths=source_live_paths,
+            proof_live_carrier_paths=proof_live_carrier_paths,
+        )
+    )
+    issues.extend(
+        _proof_live_path_subset_issues(
+            prefix=(
+                f"{prefix}.{proof_semantic}."
+                "destination_live_target_precondition_paths"
+            ),
+            paths=destination_live_paths,
+            proof_live_carrier_paths=proof_live_carrier_paths,
+        )
+    )
     if not source_live_paths:
         issues.append(
             f"{prefix}.{proof_semantic} requires "
@@ -2103,6 +2134,19 @@ def _live_path_subset_issues(
     return tuple(
         f"{prefix} references unknown live precondition path {path!r}"
         for path in sorted(paths - live_precondition_paths)
+    )
+
+
+def _proof_live_path_subset_issues(
+    *,
+    prefix: str,
+    paths: set[str],
+    proof_live_carrier_paths: set[str],
+) -> tuple[str, ...]:
+    return tuple(
+        f"{prefix} references live path {path!r} outside proof "
+        "live_target_precondition_ids or live_target_precondition_paths"
+        for path in sorted(paths - proof_live_carrier_paths)
     )
 
 

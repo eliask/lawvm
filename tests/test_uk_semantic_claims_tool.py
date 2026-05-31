@@ -2921,6 +2921,131 @@ def test_validate_semantic_claim_accepts_cross_container_renumber_family_proof_s
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_cross_container_renumber_unreferenced_destination_live_path() -> None:
+    source_hash = hashlib.sha256(b"source schedule").hexdigest()
+    destination_hash = hashlib.sha256(b"destination schedule").hexdigest()
+    claim = _claim_row(
+        source_preview="Schedule 22 paragraph 88 is renumbered as Schedule 2 paragraph 88(1).",
+    )
+    claim["action_family"] = "cross_container_renumber_migration"
+    claim["ownership_claims"] = [
+        {
+            "ownership_id": "lineage_or_migration_events",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "cross_container_destination_boundary",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "mutation_boundary",
+            "status": "claimed_not_proved",
+        },
+    ]
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "RENUMBER"
+    operation["target"] = "schedule:22/paragraph:88"
+    operation["destination"] = "schedule:2/paragraph:88/subparagraph:1"
+    operation["mutation_boundary"] = {
+        "changed_paths": [
+            "schedule:22/paragraph:88",
+            "schedule:2/paragraph:88/subparagraph:1",
+        ],
+        "target_region": ["schedule:22/paragraph:88"],
+        "declared_migration_paths": [
+            "schedule:22/paragraph:88",
+            "schedule:2/paragraph:88/subparagraph:1",
+        ],
+        "migration_event_id": "migration-cross-container-1",
+    }
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-target",
+            "contains": "Schedule 22 paragraph 88",
+        },
+        {
+            "precondition_id": "destination-target",
+            "contains": "Schedule 2 paragraph 88(1)",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-source-schedule",
+            "path": "schedule:22",
+            "text_sha256": source_hash,
+        },
+        {
+            "precondition_id": "live-destination-schedule",
+            "path": "schedule:2",
+            "text_sha256": destination_hash,
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-cross-container-renumber",
+            "proof_semantic": (
+                "cross_container_renumber_source_destination_and_lineage"
+            ),
+            "operation_family": "cross_container_renumber_migration",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": [
+                "source-target",
+                "destination-target",
+            ],
+            "source_target_precondition_ids": ["source-target"],
+            "destination_target_precondition_ids": ["destination-target"],
+            "migration_ownership_ids": [
+                "lineage_or_migration_events",
+                "cross_container_destination_boundary",
+            ],
+            "live_target_precondition_ids": ["live-source-schedule"],
+            "source_live_target_precondition_paths": ["schedule:22"],
+            "destination_live_target_precondition_paths": ["schedule:2"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_paths=[
+                    "schedule:22",
+                    "schedule:22/paragraph:88",
+                    "schedule:2",
+                    "schedule:2/paragraph:88",
+                ],
+                target_fingerprints={
+                    "schedule:22": {
+                        "text_sha256": source_hash,
+                        "subtree_sha256": "d" * 64,
+                    },
+                    "schedule:2": {
+                        "text_sha256": destination_hash,
+                        "subtree_sha256": "e" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "operation_family_proofs[1].cross_container_renumber_source_destination_and_lineage."
+        "destination_live_target_precondition_paths references live path "
+        "'schedule:2' outside proof live_target_precondition_ids or "
+        "live_target_precondition_paths"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_cross_container_renumber_family_proof_semantic_gap() -> None:
     claim = _claim_row(
         source_preview="Schedule 22 paragraph 88 is renumbered as Schedule 2 paragraph 88(1).",
