@@ -1,8 +1,11 @@
 """UK oracle-grounding collateral measurement.
 
-Grounding ``local_fallback`` can mint eIds for replay nodes that have no oracle
-eId. Those eIds are useful diagnostics, but they should not be mistaken for
-source-produced replay over-application when measuring replay-vs-oracle fidelity.
+Historical grounding ``local_fallback`` events minted eIds for replay nodes that
+had no oracle eId. Those eIds are useful diagnostics, but they should not be
+mistaken for source-produced replay over-application when measuring
+replay-vs-oracle fidelity. Current grounding suppresses new unmatched fallback
+eIds; this module remains the compatibility scorer for saved runs and older
+event streams.
 """
 from __future__ import annotations
 

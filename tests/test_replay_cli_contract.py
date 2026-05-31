@@ -1057,7 +1057,8 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
     assert "Replay adjudication kinds: uk_replay_target_not_found=1" in out
     assert (
         "Oracle alignment: enabled=false changed=None cleared=None oracle_assigned=None "
-        "local_fallback=None transparent_wrapper_cleared=None samples=0 "
+        "local_fallback=None local_fallback_suppressed=None "
+        "transparent_wrapper_cleared=None samples=0 "
         "reason=oracle_xml_unavailable"
     ) in out
 
@@ -1182,6 +1183,7 @@ def test_uk_replay_text_alignment_formatter_exposes_event_lanes() -> None:
             "cleared_count": 1,
             "oracle_assigned_count": 1,
             "local_fallback_count": 1,
+            "local_fallback_suppressed_count": 0,
             "transparent_wrapper_cleared_count": 1,
             "event_sample_count": 3,
             "unavailable_reason": "",
@@ -1195,7 +1197,8 @@ def test_uk_replay_text_alignment_formatter_exposes_event_lanes() -> None:
 
     assert lines == [
         "Oracle alignment: enabled=true changed=3 cleared=1 oracle_assigned=1 "
-        "local_fallback=1 transparent_wrapper_cleared=1 samples=3 reason=none",
+        "local_fallback=1 local_fallback_suppressed=0 "
+        "transparent_wrapper_cleared=1 samples=3 reason=none",
         "Oracle alignment methods: flat=1, local_fallback=1, transparent_wrapper_cleared=1",
     ]
 
@@ -1666,6 +1669,7 @@ def test_uk_replay_source_first_threads_replay_regime(monkeypatch, tmp_path, cap
         "cleared_count": None,
         "oracle_assigned_count": None,
         "local_fallback_count": None,
+        "local_fallback_suppressed_count": None,
         "transparent_wrapper_cleared_count": None,
         "match_method_counts": {},
         "event_sample_limit": 20,
@@ -1885,6 +1889,7 @@ def test_uk_replay_main_json_records_oracle_compare_residuals(monkeypatch, tmp_p
         "cleared_count": 1,
         "oracle_assigned_count": 1,
         "local_fallback_count": 1,
+        "local_fallback_suppressed_count": 0,
         "transparent_wrapper_cleared_count": 1,
         "match_method_counts": {
             "flat": 1,

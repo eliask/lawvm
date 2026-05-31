@@ -48,7 +48,7 @@ def test_align_uk_replay_to_oracle_reports_eid_grounding() -> None:
     aligned_section = result.statute.body.children[0]
     assert aligned_section.attrs["eId"] == "section-1"
     aligned_subsection = aligned_section.children[0]
-    assert aligned_subsection.attrs["eId"] == "section-1-1"
+    assert "eId" not in aligned_subsection.attrs
     aligned_wrapper = result.statute.body.children[1]
     assert "eId" not in aligned_wrapper.attrs
     assert result.report.rule_id == UK_ORACLE_ALIGNMENT_RULE_ID
@@ -58,14 +58,15 @@ def test_align_uk_replay_to_oracle_reports_eid_grounding() -> None:
     assert result.report.after_node_count == 4
     assert result.report.node_count_mismatch is False
     assert result.report.changed_count == 3
-    assert result.report.cleared_count == 1
+    assert result.report.cleared_count == 2
     assert result.report.oracle_assigned_count == 1
-    assert result.report.local_fallback_count == 1
+    assert result.report.local_fallback_count == 0
+    assert result.report.local_fallback_suppressed_count == 1
     assert all(isinstance(change.after_eid, str) for change in result.report.changes if change.after_eid is not None)
     assert result.report.transparent_wrapper_cleared_count == 1
     assert result.report.match_method_counts == {
         "flat": 1,
-        "local_fallback": 1,
+        "local_fallback_suppressed": 1,
         "transparent_wrapper_cleared": 1,
     }
     assert result.report.strict_disposition == "block"
@@ -173,11 +174,10 @@ def test_align_uk_replay_to_oracle_local_schedule_fallback_uses_string_eids() ->
 
     schedule = result.statute.supplements[0]
     paragraph = schedule.children[0]
-    assert schedule.attrs["eId"] == "schedule"
-    assert paragraph.attrs["eId"] == "schedule-paragraph-1"
-    assert isinstance(schedule.attrs["eId"], str)
-    assert isinstance(paragraph.attrs["eId"], str)
-    assert result.report.local_fallback_count == 2
+    assert "eId" not in schedule.attrs
+    assert "eId" not in paragraph.attrs
+    assert result.report.local_fallback_count == 0
+    assert result.report.local_fallback_suppressed_count == 2
     assert all(isinstance(change.after_eid, str) for change in result.report.changes if change.after_eid is not None)
 
 

@@ -24,8 +24,9 @@ _LEG_BASE = "http://www.legislation.gov.uk"
 #                 top-level section, but may also appear inline via CommentaryRef)
 #   Citation    — inline bibliographic references to other legislation
 #   CitationSubRef — sub-references within Citations (nested inside Commentaries)
+#   Footnote    — editorial explanatory source notes, often carrying f000xx ids
 #   Term        — markup for defined terms; carries eId="term-<name>" inline
-_EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Term"})
+_EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Footnote", "Term"})
 _VISIBLE_INLINE_TEXT_TAGS: frozenset[str] = frozenset({"Citation", "CitationSubRef", "Term"})
 _NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
 

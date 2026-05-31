@@ -214,6 +214,11 @@ def _uk_replay_executor_oracle_alignment_summary(
     local_fallback_count = sum(
         1 for event in event_rows if str(event.get("match_method") or "") == "local_fallback"
     )
+    local_fallback_suppressed_count = sum(
+        1
+        for event in event_rows
+        if str(event.get("match_method") or "") == "local_fallback_suppressed"
+    )
     transparent_wrapper_cleared_count = sum(
         1
         for event in event_rows
@@ -230,6 +235,9 @@ def _uk_replay_executor_oracle_alignment_summary(
         "cleared_count": cleared_count if enabled else None,
         "oracle_assigned_count": oracle_assigned_count if enabled else None,
         "local_fallback_count": local_fallback_count if enabled else None,
+        "local_fallback_suppressed_count": (
+            local_fallback_suppressed_count if enabled else None
+        ),
         "transparent_wrapper_cleared_count": transparent_wrapper_cleared_count if enabled else None,
         "match_method_counts": dict(sorted(match_method_counts.items())) if enabled else {},
         "event_sample_limit": max(0, sample_limit),
@@ -251,6 +259,7 @@ def _uk_oracle_alignment_text_lines(summary: dict[str, object]) -> list[str]:
         f"cleared={summary['cleared_count']} "
         f"oracle_assigned={summary['oracle_assigned_count']} "
         f"local_fallback={summary['local_fallback_count']} "
+        f"local_fallback_suppressed={summary['local_fallback_suppressed_count']} "
         f"transparent_wrapper_cleared={summary['transparent_wrapper_cleared_count']} "
         f"samples={summary['event_sample_count']} "
         f"reason={summary['unavailable_reason'] or 'none'}"

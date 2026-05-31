@@ -222,13 +222,14 @@ class UKReplayGroundingMixin:
                 kind_value = "article"
             if kind_value == "schedule_entry":
                 before_eid = _grounding_eid(node)
-                for key in ("eId", "id"):
-                    node.attrs.pop(key, None)
-                _queue_cleared_alignment_event(
-                    node,
-                    before_eid=before_eid,
-                    match_method="schedule_entry_public_eid_cleared",
-                )
+                if before_eid not in oracle_id_values:
+                    for key in ("eId", "id"):
+                        node.attrs.pop(key, None)
+                    _queue_cleared_alignment_event(
+                        node,
+                        before_eid=before_eid,
+                        match_method="schedule_entry_public_eid_cleared",
+                    )
             elif "eId" not in node.attrs and "id" not in node.attrs and kind_value != "body":
                 clean_label = _grounding_clean_label(kind_value, node.label)
                 if clean_label:
@@ -253,21 +254,37 @@ class UKReplayGroundingMixin:
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
             nonlocal seen_oracle_ids
             parent_eid = _uk_eid_value(parent_eid)
+            existing_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
             if _uk_kind_value(node.kind) == "schedule_entry":
-                before_eid = _grounding_eid(node)
-                for key in ("eId", "id"):
-                    node.attrs.pop(key, None)
-                _queue_cleared_alignment_event(
-                    node,
-                    before_eid=before_eid,
-                    match_method="schedule_entry_public_eid_cleared",
-                )
+                if existing_eid and existing_eid in oracle_id_values:
+                    seen_oracle_ids.add(existing_eid)
+                    child_parent_eid = existing_eid
+                else:
+                    child_parent_eid = parent_eid
+                    before_eid = existing_eid
+                    for key in ("eId", "id"):
+                        node.attrs.pop(key, None)
+                    _queue_cleared_alignment_event(
+                        node,
+                        before_eid=before_eid,
+                        match_method="schedule_entry_public_eid_cleared",
+                    )
+                kind_counts: dict = {}
+                for child in node.children:
+                    child_kind = _uk_kind_value(child.kind)
+                    kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
+                    _ground_node(
+                        child,
+                        parent_path_key,
+                        child_parent_eid,
+                        ordinal=kind_counts[child_kind],
+                        context=context,
+                    )
                 return
             # Fast path: if this node already has a correct oracle EID (preserved
             # from the pre-seed pass), skip the multi-pass matching for this node
             # and recurse into children with updated context.  The EID is already
             # registered in seen_oracle_ids from the pre-seed pass.
-            existing_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
             if existing_eid and existing_eid in oracle_id_values and existing_eid in seen_oracle_ids:
                 kind = node.kind
                 kind_name = _uk_kind_value(kind).lower()
@@ -642,13 +659,26 @@ class UKReplayGroundingMixin:
                             match_key=None,
                         )
                     else:
-                        node.attrs["eId"] = fallback_eid
+                        for key in ("eId", "id"):
+                            node.attrs.pop(key, None)
                         _append_alignment_event(
                             node,
                             before_eid=before_eid,
-                            after_eid=fallback_eid,
-                            match_method="local_fallback",
-                            match_key=None,
+                            after_eid=None,
+                            match_method="local_fallback_suppressed",
+                            match_key=fallback_eid,
+                        )
+                else:
+                    before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
+                    if before_eid:
+                        for key in ("eId", "id"):
+                            node.attrs.pop(key, None)
+                        _append_alignment_event(
+                            node,
+                            before_eid=before_eid,
+                            after_eid=None,
+                            match_method="local_fallback_suppressed",
+                            match_key=before_eid,
                         )
 
             kind_counts = {}
