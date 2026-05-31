@@ -506,6 +506,36 @@ def test_triage_bucket_for_row_is_added_to_one_row_output(monkeypatch, capsys) -
     row = json.loads(capsys.readouterr().out)
 
     assert row["triage_bucket"] == "base_metadata_only_frontier"
+    assert row["source_chain_frontier"] is False
+    assert row["source_chain_frontier_reason"] == ""
+
+
+def test_source_chain_frontier_reason_is_added_to_one_row_output(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        uk_broad_baseline,
+        "score_one",
+        lambda _statute_id: {
+            "statute_id": "ukpga/1976/83",
+            "score_status": "scored",
+            "aligned": 83.7,
+            "aligned_excluding_grounding_collateral": 83.7,
+            "unaligned": 30.2,
+            "n_replay": 123,
+            "n_oracle": 147,
+            "n_effects": 0,
+            "n_ops": 0,
+        },
+    )
+
+    assert uk_broad_baseline.main(["--one", "ukpga/1976/83"]) == 0
+    row = json.loads(capsys.readouterr().out)
+
+    assert row["triage_bucket"] == "no_effect_rows_frontier"
+    assert row["source_chain_frontier"] is True
+    assert row["source_chain_frontier_reason"] == "effect_rows_absent_or_unpublished"
 
 
 def test_run_driver_can_fail_on_active_unclassified_residuals(monkeypatch, capsys) -> None:

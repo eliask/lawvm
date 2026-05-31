@@ -442,6 +442,15 @@ def _triage_bucket_statutes(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     }
 
 
+def _annotate_row_work_selection(row: dict[str, Any]) -> dict[str, Any]:
+    """Add machine-readable work-selection fields to one baseline row."""
+    row["triage_bucket"] = _triage_bucket_for_row(row)
+    source_chain_reason = _source_chain_frontier_reason_for_row(row)
+    row["source_chain_frontier"] = bool(source_chain_reason)
+    row["source_chain_frontier_reason"] = source_chain_reason
+    return row
+
+
 def _triage_bucket_for_row(row: dict[str, Any]) -> str:
     """Classify a broad-baseline row for work selection, not scoring."""
     if "error" in row:
@@ -727,7 +736,7 @@ def run_driver(
             row = {"statute_id": sid, "error": f"subprocess_exit_{proc.returncode}"}
             if proc.stderr.strip():
                 row["stderr_tail"] = proc.stderr.strip().splitlines()[-1][:200]
-        row["triage_bucket"] = _triage_bucket_for_row(row)
+        _annotate_row_work_selection(row)
         results.append(row)
         if "error" in row:
             print(f"[{i}/{len(ids)}] {sid:24s} ERROR {row['error']}", flush=True)
@@ -940,7 +949,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.one:
         row = score_one(args.one)
-        row["triage_bucket"] = _triage_bucket_for_row(row)
+        _annotate_row_work_selection(row)
         print(json.dumps(row))
         return 0
     if args.compare:
