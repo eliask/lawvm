@@ -48,6 +48,7 @@ from lawvm.uk_legislation.nlp_parser import (
     US,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+    UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID,
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
     UK_ORDINAL_WORD_REPEAL_RULE_ID,
@@ -107,6 +108,18 @@ UK_DEFINITION_CHILD_AND_TAIL_SUBSTITUTION_RULE_ID = (
 UK_IN_DEFINITION_AFTER_ANCHOR_INSERT_RULE_ID = (
     "uk_effect_in_definition_after_anchor_insert_text_patch"
 )
+UK_IN_DEFINITION_AFTER_ANCHOR_ADD_RULE_ID = (
+    "uk_effect_in_definition_after_anchor_add_text_patch"
+)
+UK_IN_DEFINITION_AFTER_PARAGRAPHS_INSERT_RULE_ID = (
+    "uk_effect_in_definition_after_paragraphs_insert_text_patch"
+)
+UK_WHEREVER_THEY_OCCUR_SUBSTITUTION_RULE_ID = (
+    "uk_effect_wherever_they_occur_substitution_text_patch"
+)
+UK_MIXED_BODY_HEADING_SUBSTITUTION_RULE_ID = (
+    "uk_effect_mixed_body_heading_substitution_split_text_patch"
+)
 UK_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RULE_ID = (
     "uk_effect_amendment_inserted_text_substitution_text_patch"
 )
@@ -142,11 +155,12 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_source_parent_grouped_after_anchor_all_occurrences_insert_text_patch",
         "uk_effect_source_parent_each_provision_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
+        UK_WHEREVER_THEY_OCCUR_SUBSTITUTION_RULE_ID,
     }
 )
 
-_SCOPE_NOTE_QUOTED_SUBSTITUTION_RE = re.compile(
-    r"for\s+(?:(?:the\s+)?words?\s+)?"
+_SCOPE_NOTE_QUOTED_SUBSTITUTION_RX = re.compile(
+    r"for\s+(?:the\s+word\s+|the\s+words\s+|word\s+|words\s+)?"
     r"[“\"'‘](?P<original>[^\"'\u201c\u201d\u2018\u2019]{1,500})[”\"'’]\s*"
     r"\((?P<scope_note>[^()]{1,500})\),?\s+substitute\s+"
     r"[“\"'‘](?P<replacement>[^\"'\u201c\u201d\u2018\u2019]{1,500})[”\"'’]",
@@ -280,7 +294,7 @@ def _scope_note_for_quoted_substitution(
 ) -> str:
     text_match = " ".join(str(fragment.get("original") or "").split()).strip()
     replacement = " ".join(str(fragment.get("replacement") or "").split()).strip()
-    for match in _SCOPE_NOTE_QUOTED_SUBSTITUTION_RE.finditer(extracted_text or ""):
+    for match in _SCOPE_NOTE_QUOTED_SUBSTITUTION_RX.finditer(extracted_text or ""):
         if (
             " ".join(match.group("original").split()).strip() == text_match
             and " ".join(match.group("replacement").split()).strip() == replacement
@@ -599,6 +613,52 @@ def append_basic_text_rewrite_observations(
                 "occurrence": op_text_occurrence,
             },
         )
+    if UK_IN_DEFINITION_AFTER_ANCHOR_ADD_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_IN_DEFINITION_AFTER_ANCHOR_ADD_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_definition_scoped_after_anchor_add_text_patch",
+            reason=(
+                "UK source text uses add as an explicit word-insertion verb after "
+                "a quoted anchor inside a named definition; lowering preserves the "
+                "definition-scoped selector rather than treating the row as an "
+                "unsupported payload fragment."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_IN_DEFINITION_AFTER_PARAGRAPHS_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_IN_DEFINITION_AFTER_PARAGRAPHS_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_definition_scoped_after_paragraphs_insert_text_patch",
+            reason=(
+                "UK source text inserts a definition-local tail after the "
+                "definition's child paragraphs; lowering preserves the named "
+                "definition selector instead of treating the row as a generic "
+                "target-level text insertion."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+                "occurrence": op_text_occurrence,
+            },
+        )
     if UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID in rule_ids:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
@@ -610,6 +670,28 @@ def append_basic_text_rewrite_observations(
                 "named definition child; lowering preserves the definition term "
                 "and child label instead of rewriting every matching anchor in "
                 "the host target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_MIXED_BODY_HEADING_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_MIXED_BODY_HEADING_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_mixed_body_heading_substitution_split",
+            reason=(
+                "UK source applies one quoted substitution to the target body "
+                "and its heading facet; lowering records the source-owned split "
+                "rather than applying the heading claim as body text."
             ),
             effect=effect,
             extracted_el=extracted_el,
@@ -1165,6 +1247,37 @@ def append_basic_text_rewrite_observations(
                 "UK source text explicitly substitutes quoted words at one or "
                 "more named ordinal occurrences; lowering preserves each "
                 "ordinal as a bounded text patch scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrences": [
+                    int(str(fragment.get("occurrence") or "0") or "0")
+                    for fragment in fragments
+                ],
+            },
+        )
+    if UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID in rule_ids:
+        fragments = [
+            fragment
+            for fragment in fragment_subs or []
+            if str(fragment.get("rule_id") or "")
+            == UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID
+        ]
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_ordinal_places_quoted_substitution",
+            reason=(
+                "UK source text explicitly substitutes quoted words in one or "
+                "more named ordinal places; lowering preserves each ordinal as "
+                "a bounded text patch scoped to the affected target."
             ),
             effect=effect,
             extracted_el=extracted_el,
@@ -1969,6 +2082,37 @@ def lower_labeled_child_end_range_selector(
             curr_action=curr_action,
             skip_effect=False,
         )
+    target_leaf_kind = target.leaf_kind().strip().lower().replace("-", "")
+    target_leaf_label = target.leaf_label().strip().strip("()").lower()
+    suffix_label = target_suffix[1].strip().strip("()").lower()
+    if target_leaf_kind == target_suffix[0] and target_leaf_label == suffix_label:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_labeled_child_end_range_leaf_text_patch",
+            family="text_rewrite_lowering",
+            reason_code="source_bounded_text_range_endpoint_matches_target_leaf",
+            reason=(
+                "UK source text bounds a range to the end of a labelled child "
+                "and the affected provision is exactly that child; lowering "
+                "keeps the ordinary node-local range-to-end selector instead "
+                "of widening to the parent-scoped child-end selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": str(primary.get("original") or ""),
+                "target_suffix_kind": target_suffix[0],
+                "target_suffix_label": target_suffix[1],
+            },
+        )
+        return UKLabeledChildEndRangeLowering(
+            primary=primary,
+            curr_action=curr_action,
+            skip_effect=False,
+        )
 
     labeled_child_end_selector = _labeled_child_end_range_selector(
         target,
@@ -2075,6 +2219,7 @@ def _separate_occurrence_text_replace_fragments(
             UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID,
             UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID,
             UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID,
+            UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID,
             UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
         } or not original or not occurrence.isdigit():
             return ()

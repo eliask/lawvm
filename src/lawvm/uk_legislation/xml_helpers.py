@@ -15,7 +15,10 @@ def _local_tag_name(tag: str) -> str:
 
 
 def _tag(el: ET._Element) -> str:
-    return _local_tag_name(el.tag)
+    tag = el.tag
+    if not isinstance(tag, str):
+        return ""
+    return _local_tag_name(tag)
 
 
 def _text_content(el: ET._Element) -> str:

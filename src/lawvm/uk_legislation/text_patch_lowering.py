@@ -54,6 +54,9 @@ def build_uk_text_patch_items(
     separate_listed_word_and_range_to_end_repeals = (
         _separate_listed_word_and_range_to_end_repeal_fragments(fragment_subs)
     )
+    separate_ordinal_sentence_repeals = _separate_ordinal_sentence_repeal_fragments(
+        fragment_subs
+    )
     if curr_action == "text_repeal" and separate_definition_repeals:
         for fragment in separate_definition_repeals:
             text_patch_items.append(
@@ -98,6 +101,20 @@ def build_uk_text_patch_items(
             )
     elif curr_action == "text_repeal" and separate_listed_word_and_range_to_end_repeals:
         for fragment in separate_listed_word_and_range_to_end_repeals:
+            text_patch_items.append(
+                UKTextPatchItem(
+                    TextPatchSpec(
+                        kind=TextPatchKindEnum.DELETE,
+                        selector=TextSelector(
+                            match_text=fragment["original"],
+                            occurrence=0,
+                        ),
+                    ),
+                    [fragment],
+                )
+            )
+    elif curr_action == "text_repeal" and separate_ordinal_sentence_repeals:
+        for fragment in separate_ordinal_sentence_repeals:
             text_patch_items.append(
                 UKTextPatchItem(
                     TextPatchSpec(
@@ -267,4 +284,30 @@ def _separate_compound_target_local_text_insertions(
         )
     if not saw_append:
         return ()
+    return tuple(fragments)
+
+
+def _separate_ordinal_sentence_repeal_fragments(
+    fragment_subs: Optional[list[dict[str, Any]]],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != "uk_effect_ordinal_sentence_repeal_text_patch"
+            or replacement
+            or not original.startswith("TEXT_SENTENCE_")
+        ):
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": "",
+                "rule_id": rule_id,
+            }
+        )
     return tuple(fragments)

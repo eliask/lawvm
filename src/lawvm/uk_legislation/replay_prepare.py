@@ -21,6 +21,9 @@ from lawvm.uk_legislation.replay_records import (
     append_schedule_entry_repeal_granularity_blocked_adjudication,
     append_unsupported_whole_act_prepare_filter_adjudication,
 )
+from lawvm.uk_legislation.whole_act_text_patch import (
+    UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
+)
 
 
 _UK_ADDRESS_ALIAS_PROVENANCE_TAG = "uk_address_alias:point_to_item"
@@ -113,6 +116,13 @@ def prepare_replay_uk_ops(
             continue
         if str(op.target.special or "") == "whole_act":
             if _action_name(op.action) == "repeal":
+                filtered_ops.append(op)
+                continue
+            if (
+                _action_name(op.action) == "text_replace"
+                and op.witness_rule_id
+                == UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID
+            ):
                 filtered_ops.append(op)
                 continue
             if verbose:

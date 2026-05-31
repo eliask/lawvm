@@ -71,6 +71,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "non_substantive_shell_payload",
         "range_to_container_target_unsupported",
         "temporary_as_if_word_omission_unsupported",
+        "savings_qualified_text_omission_unsupported",
         "whole_act_word_level_text_patch_unsupported",
     }
 )
@@ -108,6 +109,7 @@ UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_mixed_body_heading_all_occurrences_substitution_text_patch",
         "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
+        "uk_effect_wherever_they_occur_substitution_text_patch",
     }
 )
 class _ManualFrontierClassification(NamedTuple):
@@ -283,9 +285,14 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
     ),
     "whole_act_word_level_text_patch_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
-        "The source/effect row claims a word-level text rewrite across the whole Act; a future compiler must own document-wide text-patch semantics instead of sending it to ordinary replay.",
+        "The source/effect row claims a non-simple word-level text rewrite across the whole Act; a claim or future compiler must own document-wide scope, exclusions, and title/short-title boundaries instead of sending it to ordinary replay.",
+    ),
+    "savings_qualified_text_omission_unsupported": _ManualFrontierClassification(
+        "manual_compile_candidate",
+        "uk_manual_frontier_savings_qualified_text_omission_candidate",
+        "The source omits text only subject to an exception or savings class; replay must not compile it as an unconditional text omission without an applicability-aware claim or compiler.",
     ),
 }
 _UK_SOURCE_CONTAINER_EID_CHILD_STARTS = {
@@ -426,6 +433,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_direct_section_paragraph_child_text_recovered",
         "uk_replay_empty_descendant_parent_text_recovered",
         "uk_replay_existing_target_already_materialized",
+        "uk_replay_after_ordinal_paragraph_insert_applied",
+        "uk_replay_ordinal_paragraph_range_text_rewrite_applied",
         "uk_replay_in_definition_child_flat_ordinal_text_rewrite_applied",
         "uk_replay_in_definition_child_structured_text_rewrite_applied",
         "uk_replay_in_definition_after_anchor_text_rewrite_applied",
@@ -435,6 +444,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_in_definition_range_text_rewrite_applied",
         "uk_replay_in_definition_range_to_end_text_rewrite_applied",
         "uk_replay_implicit_first_subparagraph_parent_text_recovered",
+        "uk_replay_ordinal_paragraph_text_rewrite_applied",
         "uk_replay_ordinal_sentence_beginning_text_rewrite_applied",
         "uk_replay_ordinal_sentence_text_rewrite_applied",
         "uk_replay_schedule_list_entry_alphabetical_position_resolved",
@@ -1191,6 +1201,22 @@ def _looks_like_table_entry_instruction(text: str, *, target_paths: Iterable[str
     )
 
 
+def _looks_like_table_surface_instruction(text: str, *, target_paths: Iterable[str] = ()) -> bool:
+    norm = _normalize_effect_text(text)
+    targets_norm = " ".join(str(path or "").lower() for path in target_paths)
+    if re.search(r"(?:^|[:/ -])table\b", targets_norm) is None:
+        return False
+    return bool(
+        re.search(r"\bcorresponding\s+entry\b", norm)
+        or re.search(r"\bomit\s+point\s+[0-9A-Za-z]+\b", norm)
+        or re.search(r"\bomit\s+(?:the\s+)?entries?\s+(?:for|relating\s+to)\b", norm)
+        or re.search(
+            r"\bafter\s+[“\"'‘][^\"'\u201c\u201d\u2018\u2019]{1,500}[”\"'’],?\s+insert(?:\b|\s*[—-])",
+            norm,
+        )
+    )
+
+
 def _looks_like_table_crossheading_target(text: str, *, target_paths: Iterable[str] = ()) -> bool:
     norm = _normalize_effect_text(text)
     targets_norm = " ".join(str(path or "").lower() for path in target_paths)
@@ -1342,6 +1368,19 @@ def _looks_like_deictic_text_substitution_instruction(text: str) -> bool:
             r"(?:occur|appear)\s+substitute\b",
             norm,
         )
+    )
+
+
+def _looks_like_savings_qualified_text_omission(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if "omit" not in norm or "except" not in norm:
+        return False
+    if not re.search(r"\bomit(?:ted)?\b.{0,360}?\bexcept\s+in\s+the\s+case\s+of\b", norm):
+        return False
+    return bool(
+        re.search(r"\bcommencement\s+of\s+this\s+(?:paragraph|section|subsection)\b", norm)
+        or re.search(r"\bimmediately\s+before\s+commencement\b", norm)
+        or re.search(r"\bpreviously\s+(?:retired|died|held)\b", norm)
     )
 
 
@@ -1678,6 +1717,8 @@ def classify_uk_effect_source_pathology(
             return "relative_other_place_occurrence_unsupported"
         if _looks_like_referent_qualified_text_substitution(norm_text):
             return "referent_qualified_text_substitution_unsupported"
+        if _looks_like_savings_qualified_text_omission(norm_text):
+            return "savings_qualified_text_omission_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:
             return "application_modification_payload_out_of_scope"
         if "uk_effect_application_modification_table_rejected" in lowering_rules:
@@ -1693,6 +1734,10 @@ def classify_uk_effect_source_pathology(
             return "heading_facet_target_unsupported"
         if re.search(r"\bfor (?:the )?inserted text\b", norm_text):
             return "amendment_text_target_unsupported"
+        if "uk_effect_corresponding_table_entry_word_substitution_unresolved" in lowering_rules:
+            return "table_entry_target_unsupported"
+        if _looks_like_table_surface_instruction(norm_text, target_paths=targets):
+            return "table_entry_target_unsupported"
         if _looks_like_table_entry_instruction(norm_text, target_paths=targets):
             return "table_entry_target_unsupported"
         if _looks_like_schedule_list_entry_instruction(norm_text):
@@ -2270,6 +2315,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source explicitly scopes a quoted word omission to a child provision that differs from the effect-feed target; replay needs a source-feed target adjudication before lowering.",
         }
 
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_savings_qualified_text_omission(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_savings_qualified_text_omission_candidate",
+            "reason": "The source omits text only subject to an exception or savings class; replay must not compile it as an unconditional text omission without an applicability-aware claim or compiler.",
+        }
+
     if "uk_effect_mixed_structural_text_rewrite_rejected" in blocking_rules:
         return {
             "status": "deterministic_frontend_candidate",
@@ -2296,6 +2351,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_table_entry_placement_insert",
             "reason": "The source inserts material into a table entry/list position; a claim or future table compiler must prove the row/cell placement and preserve unclaimed table structure.",
+        }
+
+    if "uk_effect_corresponding_table_entry_word_substitution_unresolved" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_entry_candidate",
+            "reason": "The source substitutes words by reference to a corresponding table entry; a claim or future table compiler must prove the source table row/cell correspondence before replay.",
         }
 
     if "uk_effect_multi_enactment_specified_provisions_text_patch_rejected" in blocking_rules:
@@ -2331,6 +2393,22 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source targets a table entry/column surface; a claim or future table compiler must identify the row and cell rather than mutating host body text.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_table_surface_instruction(
+            extracted_text_norm,
+            target_paths=(
+                str(rejection.get("original_affected_provisions") or rejection.get("affected_provisions") or "")
+                for rejection in lowering_rows
+            ),
+        )
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_entry_candidate",
+            "reason": "The source targets a table point, entry, or row-anchor surface; a claim or future table compiler must identify the row and cell rather than treating the instruction as a generic text patch.",
         }
 
     if (

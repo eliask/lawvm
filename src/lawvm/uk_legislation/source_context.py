@@ -54,13 +54,6 @@ _COMPOUND_REFERENCE_LEADING_BODY_RE = re.compile(
     r"\b(?:s|section|art|article|rule|reg|regulation)\.?\s*[0-9A-Za-z]+",
     re.I,
 )
-_SINGLE_UNNUMBERED_SCHEDULE_REF_RE = re.compile(
-    r"^sch(?:edule)?\.?\s+(?P<schedule>[0-9A-Za-z]+)\s+"
-    r"(?P<suffix>para(?:graph)?\.?\s+[0-9A-Za-z]+(?:\s*\([0-9A-Za-z]+\))*)$",
-    re.I,
-)
-
-
 @dataclass(frozen=True)
 class UKAffectingSourceContext:
     xml_bytes: Optional[bytes]
@@ -884,13 +877,19 @@ def _single_unnumbered_schedule_context_normalized_ref(
     provision_ref: str,
 ) -> tuple[str, str] | None:
     normalized = " ".join((provision_ref or "").split()).strip()
-    match = _SINGLE_UNNUMBERED_SCHEDULE_REF_RE.match(normalized)
-    if match is None:
+    parts = normalized.split(maxsplit=2)
+    if len(parts) != 3:
         return None
-    requested_schedule_label = _clean_num(match.group("schedule"))
+    schedule_token, schedule_label, suffix = parts
+    if schedule_token.lower().rstrip(".") not in {"sch", "schedule"}:
+        return None
+    suffix_head = suffix.lower().split(maxsplit=1)[0].rstrip(".")
+    if suffix_head not in {"para", "paragraph"}:
+        return None
+    requested_schedule_label = _clean_num(schedule_label)
     if requested_schedule_label != "1":
         return None
-    return requested_schedule_label, f"Sch. {match.group('suffix').strip()}"
+    return requested_schedule_label, f"Sch. {suffix.strip()}"
 
 
 def _unique_unnumbered_root_schedule(context: UKAffectingSourceContext) -> Optional[ET._Element]:

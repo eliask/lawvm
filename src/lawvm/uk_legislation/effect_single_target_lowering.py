@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Protocol, Sequence
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.semantic_types import FacetKind
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     append_crossheading_group_repeal_observation,
@@ -78,6 +79,10 @@ from lawvm.uk_legislation.source_text_reclassifications import (
 from lawvm.uk_legislation.substitution_metadata import UKSourceLabelChangingSubstitution
 from lawvm.uk_legislation.target_anchors import _fallback_target_eid
 from lawvm.uk_legislation.witnesses import UKEffectWitness, UKProvisionExtractionWitness
+
+_MIXED_BODY_HEADING_SPLIT_RULE_ID = (
+    "uk_effect_mixed_body_heading_substitution_split_text_patch"
+)
 
 
 class _SingleLoweringResult(Protocol):
@@ -813,6 +818,19 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             unlowered_overlap_target=t_str if unlowered_overlap_reason else "",
             unlowered_overlap_reason=unlowered_overlap_reason,
         )
+    split_mixed_body_heading = (
+        target.special is None
+        and fragment_subs is not None
+        and any(
+            str(fragment.get("rule_id") or "") == _MIXED_BODY_HEADING_SPLIT_RULE_ID
+            for fragment in fragment_subs
+        )
+    )
+    finalization_targets_str = (
+        [*ctx.targets_str, f"{t_str} heading"]
+        if split_mixed_body_heading and f"{t_str} heading" not in ctx.targets_str
+        else ctx.targets_str
+    )
     finalization = finalize_uk_target_operation(
         UKFinalizeTargetOperationInput(
             effect=effect,
@@ -827,7 +845,7 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             actual_el=actual_el,
             target_ref=t_str,
             original_targets_str=ctx.original_targets_str,
-            targets_str=ctx.targets_str,
+            targets_str=finalization_targets_str,
             fragment_subs=fragment_subs,
             op_text_match=op_text_match,
             op_text_replacement=op_text_replacement,
@@ -866,6 +884,78 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             unlowered_overlap_reason=unlowered_overlap_reason,
         )
     target_ops.extend(finalization.ops)
+    if split_mixed_body_heading:
+        heading_target = LegalAddress(path=target.path, special=FacetKind.HEADING)
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_MIXED_BODY_HEADING_SPLIT_RULE_ID,
+            family="target_facet_lowering",
+            reason_code="mixed_body_heading_substitution_heading_facet_split",
+            reason=(
+                "UK source explicitly includes the heading in a quoted "
+                "substitution; lowering emits a separate heading-facet text "
+                "operation instead of smuggling the heading claim into the body op."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "body_target": str(target),
+                "heading_target": str(heading_target),
+                "text_match": op_text_match or "",
+                "replacement": op_text_replacement or "",
+            },
+        )
+        heading_finalization = finalize_uk_target_operation(
+            UKFinalizeTargetOperationInput(
+                effect=effect,
+                existing_ops_count=ctx.existing_ops_count + len(target_ops),
+                sequence=ctx.sequence,
+                curr_action=curr_action,
+                content_ir=content_ir,
+                target=heading_target,
+                payload_match_target=heading_target,
+                target_replacement_leaf_override=target_replacement_leaf_override,
+                target_replacement_leaf_kind=target_replacement_leaf_kind,
+                actual_el=actual_el,
+                target_ref=f"{t_str} heading",
+                original_targets_str=ctx.original_targets_str,
+                targets_str=finalization_targets_str,
+                fragment_subs=fragment_subs,
+                op_text_match=op_text_match,
+                op_text_replacement=op_text_replacement,
+                op_text_occurrence=op_text_occurrence,
+                op_text_end_occurrence=op_text_end_occurrence,
+                chained_insert_preceding_eid=(
+                    chained_insert_anchor_override.preceding_eid
+                    if chained_insert_anchor_override is not None
+                    else ctx.chained_insert_anchor.preceding_eid
+                ),
+                chained_insert_preceding_eid_source=(
+                    chained_insert_anchor_override.preceding_eid_source
+                    if chained_insert_anchor_override is not None
+                    else ctx.chained_insert_anchor.preceding_eid_source
+                ),
+                effect_witness=ctx.effect_witness,
+                extraction_witness=ctx.extraction_witness,
+                table_cell_selector=table_cell_selector,
+                crossheading_group_repeal_selector=crossheading_group_repeal_selector,
+                label_changing_substitution=label_changing_substitution,
+                flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
+                source_parent_substitution_range_payload=(
+                    ctx.source_parent_substitution_range_payload
+                ),
+                source_parent_at_end_added_payload=ctx.source_parent_at_end_added_payload,
+                target_index=ctx.target_index,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                allow_payload_identity_synthesis=ctx.allow_payload_identity_synthesis,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+        )
+        if not heading_finalization.skip_effect:
+            target_ops.extend(heading_finalization.ops)
     chained_insert_anchor = _ChainedInsertAnchorState(
         preceding_eid=finalization.chained_insert_preceding_eid,
         preceding_eid_source=finalization.chained_insert_preceding_eid_source,

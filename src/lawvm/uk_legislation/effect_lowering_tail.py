@@ -68,6 +68,25 @@ class UnloweredOverlapSourceShapeClassification:
     reason: str
 
 
+_PRE_TARGET_OVERLAP_REJECTION_RULE_IDS = frozenset(
+    {
+        "uk_effect_multi_enactment_specified_provisions_text_patch_rejected",
+    }
+)
+
+
+def source_shape_blocks_before_text_patch_lowering(
+    extracted_text: Optional[str],
+    original_targets_str: list[str],
+) -> bool:
+    """Return True when source shape is ambiguous even if a text parser succeeds."""
+    source_shape_classification = _unlowered_overlap_source_shape_classification(
+        extracted_text,
+        original_targets_str,
+    )
+    return source_shape_classification.rule_id in _PRE_TARGET_OVERLAP_REJECTION_RULE_IDS
+
+
 def _looks_like_appropriate_place_insert_text(text: str) -> bool:
     normalized = " ".join((text or "").split())
     if not normalized:
@@ -152,7 +171,7 @@ def resolve_uk_insertion_anchor_context(
 _UK_OVERLAP_ACTION_WORD_RE = compile_classifier_regex(
     r"\b(?:insert|inserted|inserting|omit|omitted|omitting|repeal|repealed|"
     r"substitute|substituted|substituting|replace|replaced|replacing|"
-    r"amend|amended|amending|change|changed|changing)\b",
+    r"amend|amended|amending|change|changed|changing|add|added|adding)\b",
     flags=re.I,
     classifier_id="uk_overlap_action_word",
 )
