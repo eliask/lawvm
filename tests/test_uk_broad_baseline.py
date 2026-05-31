@@ -123,13 +123,21 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert len(summary["errored"]) == 1
     assert len(summary["source_frontier"]) == 2
     assert summary["source_frontier_reasons"] == {"base_too_small": 2}
+    assert summary["source_chain_frontier_reasons"] == {
+        "base_too_small": 2,
+        "effect_rows_absent_or_unpublished": 1,
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "base_too_small": ["ukpga/1945/10", "ukpga/1945/9"],
+        "effect_rows_absent_or_unpublished": ["uksi/2000/1043"],
+    }
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_eids"] == 420
     assert summary["triage_buckets"] == {
         "base_metadata_only_frontier": 1,
         "error": 1,
         "high_fidelity_after_grounding": 1,
-        "no_compiled_ops_frontier": 1,
+        "no_effect_rows_frontier": 1,
         "residual_after_grounding": 1,
         "source_frontier:base_too_small": 2,
         "structural_match_eid_scheme_residual": 1,
@@ -153,6 +161,97 @@ def test_summarize_results_counts_grounding_dominated_residuals() -> None:
     )
 
     assert summary["triage_buckets"] == {"grounding_dominated_residual": 1}
+
+
+def test_summarize_results_counts_effect_feed_absent_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "uksi/2000/1043",
+                "score_status": "scored",
+                "aligned": 77.7,
+                "aligned_excluding_grounding_collateral": 77.7,
+                "unaligned": 75.4,
+                "n_grounding_collateral": 0,
+                "n_replay": 167,
+                "n_oracle": 215,
+                "n_ops": 0,
+                "n_only_in_oracle": 48,
+                "n_only_in_replayed": 0,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_feed_pages_absent_recorded": 1,
+                },
+                "n_blocking_compile_rejections": 0,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"effect_feed_absent_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {"effect_feed_pages_absent": 1}
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_feed_pages_absent": ["uksi/2000/1043"],
+    }
+
+
+def test_summarize_results_counts_no_effect_rows_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1976/83",
+                "score_status": "scored",
+                "aligned": 83.7,
+                "aligned_excluding_grounding_collateral": 83.7,
+                "unaligned": 30.2,
+                "n_grounding_collateral": 0,
+                "n_replay": 123,
+                "n_oracle": 147,
+                "n_effects": 0,
+                "n_ops": 0,
+                "n_compile_rejections": 0,
+                "n_blocking_compile_rejections": 0,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"no_effect_rows_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_rows_absent_or_unpublished": 1
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_rows_absent_or_unpublished": ["ukpga/1976/83"],
+    }
+
+
+def test_summarize_results_counts_nonreplay_effect_frontier() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1901/7",
+                "score_status": "scored",
+                "aligned": 91.7,
+                "aligned_excluding_grounding_collateral": 91.7,
+                "unaligned": 32.8,
+                "n_grounding_collateral": 0,
+                "n_replay": 22,
+                "n_oracle": 24,
+                "n_effects": 1,
+                "n_ops": 0,
+                "n_compile_rejections": 1,
+                "n_blocking_compile_rejections": 0,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_missing_structural_payload_rejected": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"nonreplay_effect_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_rows_missing_structural_payload": 1
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_rows_missing_structural_payload": ["ukpga/1901/7"],
+    }
 
 
 def test_summarize_results_counts_compile_rejection_dominated_residuals() -> None:
