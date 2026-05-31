@@ -23587,6 +23587,114 @@ def test_compile_range_with_independent_end_occurrence_to_text_replace() -> None
     )
 
 
+def test_compile_range_start_plural_where_occurrence_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-17-paragraph-2-7-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in sub-paragraph (2), for the words from \u201cis to be\u201d, where they first occur, to \u201c2011,\u201d substitute \u201cdoes not include a development corporation planning authority;\u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6f608a5c949f56645d5051c7bb0a8598",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-12-26",
+        affected_uri="/id/ukpga/1990/8/schedule/1/paragraph/5/subparagraph/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="Sch. 1 para. 5(2)",
+        affecting_uri="/id/ukpga/2023/55",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="55",
+        affecting_provisions="Sch. 17 para. 2(7)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2023-12-26", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "1"), ("paragraph", "5"), ("subparagraph", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_is to be_TO_2011,"
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.replacement == "does not include a development corporation planning authority;"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_occurrence_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_range_end_place_occurrence_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-17-paragraph-2-7-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in sub-paragraph (3), for the words from \u201can\u201d to \u201clocal planning authority\u201d, in the second place it occurs, substitute \u201ca development corporation planning authority\u201d ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-c2ff5ba4c0b5cffff2de788e1ac8adc4",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-12-26",
+        affected_uri="/id/ukpga/1990/8/schedule/1/paragraph/5/subparagraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="Sch. 1 para. 5(3)",
+        affecting_uri="/id/ukpga/2023/55",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="55",
+        affecting_provisions="Sch. 17 para. 2(7)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2023-12-26", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "1"), ("paragraph", "5"), ("subparagraph", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_an_TO_local planning authority"
+    assert ops[0].text_patch.selector.end_occurrence == 2
+    assert ops[0].text_patch.replacement == "a development corporation planning authority"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_independent_end_occurrence_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record.get("rule_id") == "uk_effect_range_independent_end_occurrence_text_patch"
+        and record.get("end_occurrence") == 2
+        and not record.get("blocking")
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_insert_after_words_inserted_by_source_sibling() -> None:
     source_root = ET.fromstring(
         f"""
