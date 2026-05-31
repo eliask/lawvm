@@ -178,6 +178,10 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "eur/2019/1841",
         "ukpga/1986/61",
     ]
+    assert summary["deterministic_frontend_candidate_count"] == 2
+    assert summary["deterministic_frontend_candidate_statutes"] == [
+        "ukpga/1986/61",
+    ]
     assert summary["manual_frontier_status_counts"] == {
         "deterministic_frontend_candidate": 2,
         "manual_compile_candidate": 3,
@@ -545,6 +549,42 @@ def test_run_driver_fail_flag_accepts_manual_frontier_residuals(monkeypatch, cap
         == 0
     )
     assert "active_unclassified_residuals=0" in capsys.readouterr().out
+
+
+def test_run_driver_can_fail_on_deterministic_frontend_candidates(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2008/17",
+            "score_status": "scored",
+            "aligned": 99.5,
+            "aligned_excluding_grounding_collateral": 99.5,
+            "unaligned": 88.8,
+            "n_replay": 4930,
+            "n_oracle": 4955,
+            "manual_frontier_status_counts": {
+                "deterministic_frontend_candidate": 1,
+                "manual_compile_candidate": 16,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2008/17"],
+            None,
+            fail_on_deterministic_frontend_candidates=True,
+        )
+        == 1
+    )
+    assert (
+        "deterministic_frontend_candidates=1: ukpga/2008/17"
+        in capsys.readouterr().out
+    )
 
 
 def test_run_driver_can_fail_on_manual_frontier_template_gaps(monkeypatch, capsys) -> None:
