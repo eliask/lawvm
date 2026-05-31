@@ -639,6 +639,19 @@ s. 149(2)(b) names paragraph `(c)`. This cuts `ukpga/1990/8` overlap blockers
 `2 -> 1` and blocking compile diagnostics `120 -> 119`; the 77-statute gate
 remains score-stable (`0 improved, 0 regressed`).
 
+Schedule-list-entry replacements can replace one source-proven entry with
+multiple source-visible sibling entries when the instruction says `for the entry
+relating to X substitute` and the payload is a visible run of section-entry
+sentences. Rule `uk_effect_schedule_list_entry_replace` now preserves
+`replacement_texts`, permits explicit schedule partition carriers, and replay
+slice-replaces only the uniquely matched direct `schedule_entry` child. Missing
+or duplicate anchors still block; the rule is not a carrier-wide replacement.
+Current witness: `ukpga/1990/8` affected `Sch. 16 Pt. 1` by `anaw/2015/4`
+Sch. 4 para. 23(2), source text `For the entry relating to sections 61 and 62
+substitute ...`. This cuts `ukpga/1990/8` blocking compile diagnostics
+`119 -> 118`; the 77-statute broad gate remains score-stable (`0 improved,
+0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints

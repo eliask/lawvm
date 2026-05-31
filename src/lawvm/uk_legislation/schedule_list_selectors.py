@@ -74,6 +74,41 @@ def split_schedule_entry_insert_payload(raw: str) -> tuple[str, ...]:
     return (payload,) if payload else ()
 
 
+def split_schedule_entry_replace_payload(raw: str) -> tuple[str, ...]:
+    """Split a source-owned replacement payload into schedule-list entries.
+
+    Replacement splitting is intentionally narrower than insertion splitting:
+    it only admits a visible run of section-entry sentences.  Otherwise the
+    replacement remains a single schedule entry so ordinary prose is not
+    fragmented by punctuation.
+    """
+    payload = _strip_schedule_entry_payload(raw)
+    if not payload:
+        return ()
+    text = " ".join(str(raw or "").split()).strip(" ,;")
+    text = text.strip("“”\"'‘’")
+    text = re.sub(
+        r"^(?:the\s+following\s+entries?\s*)[—–-]?\s*",
+        "",
+        text,
+        flags=re.I,
+    ).strip()
+    if not re.search(r"\.\s+Sections?\s+[0-9A-Za-z]", text):
+        return (payload,)
+    parts = tuple(
+        part.strip(" ,;")
+        for part in re.findall(
+            r"\bSections?\s+.*?(?:\.|$)(?=\s+Sections?\s+[0-9A-Za-z]|$)",
+            text,
+            flags=re.I,
+        )
+    )
+    parts = tuple(part for part in parts if part)
+    if len(parts) < 2:
+        return (payload,)
+    return parts
+
+
 def _schedule_list_entry_selector_from_parts(
     *,
     direction: str,
@@ -387,13 +422,25 @@ def _uk_schedule_list_entry_replace_selector(
     if not text:
         return None
     target_surface = f"{target_ref} {target}".lower()
-    if "table" in target_surface or _addr_leaf_kind(target) not in {
+    target_container = _addr_container(target)
+    target_leaf_kind = _addr_leaf_kind(target)
+    schedule_carrier_target = target_container == "schedule" and target_leaf_kind in {
         "schedule",
+        "part",
+        "chapter",
+        "division",
+        "paragraph",
+        "subparagraph",
+    }
+    local_list_carrier_target = target_container != "schedule" and target_leaf_kind in {
         "section",
         "subsection",
         "paragraph",
         "subparagraph",
-    }:
+    }
+    if "table" in target_surface or (
+        not schedule_carrier_target and not local_list_carrier_target
+    ):
         return None
     match = re.search(
         r"\bfor\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
@@ -413,19 +460,23 @@ def _uk_schedule_list_entry_replace_selector(
         return None
     anchor = _strip_schedule_entry_phrase(match.group("anchor"))
     raw_payload = str(match.group("payload") or "")
-    replacement = _strip_schedule_entry_payload(raw_payload)
+    replacement_texts = split_schedule_entry_replace_payload(raw_payload)
+    replacement = replacement_texts[0] if replacement_texts else ""
     if (
-        replacement
+        len(replacement_texts) == 1
+        and replacement
         and not replacement.endswith(",")
         and re.search(r"[“\"]\s*[^”\"]+,\s*[”\"]", raw_payload)
     ):
         replacement = f"{replacement},"
+        replacement_texts = (replacement,)
     if not anchor or not replacement:
         return None
     return {
         "rule_id": UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
         "anchor": anchor,
         "replacement_text": replacement,
+        "replacement_texts": replacement_texts,
         "target_ref": target_ref,
         "target": str(target),
     }

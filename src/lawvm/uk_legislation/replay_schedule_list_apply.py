@@ -1231,6 +1231,9 @@ class UKReplayScheduleListApplyMixin:
         carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
         if carrier_node is None or carrier_kind not in {
             "schedule",
+            "part",
+            "chapter",
+            "division",
             "section",
             "subsection",
             "paragraph",
@@ -1362,17 +1365,44 @@ class UKReplayScheduleListApplyMixin:
                     entry_count=len(entry_rows),
                 ),
             )
-        for key in ("eId", "id"):
-            new_node.attrs.pop(key, None)
+        source_replacement_texts = selector.get("replacement_texts")
+        replacement_texts = (
+            tuple(str(text) for text in source_replacement_texts)
+            if isinstance(source_replacement_texts, (list, tuple))
+            else ()
+        )
+        replacement_nodes = (
+            tuple(
+                UKMutableNode(
+                    kind=new_node.kind,
+                    label=new_node.label,
+                    text=text,
+                    attrs=dict(new_node.attrs),
+                    children=[],
+                )
+                for text in replacement_texts
+                if text
+            )
+            if len(replacement_texts) > 1
+            else (new_node,)
+        )
+        for replacement_node in replacement_nodes:
+            for key in ("eId", "id"):
+                replacement_node.attrs.pop(key, None)
         children = list(carrier_node.children)
-        children[replace_idx] = new_node
+        children[replace_idx : replace_idx + 1] = list(replacement_nodes)
+        reason_code = (
+            "explicit_entry_anchor_unique_multi_replacement"
+            if len(replacement_nodes) > 1
+            else "explicit_entry_anchor_unique"
+        )
         _replace_schedule_list_children_with_event(
             self,
             container=carrier_node,
             children=children,
             helper="_replace_schedule_list_entry",
             outcome="schedule_list_entry_replaced",
-            reason_code="explicit_entry_anchor_unique",
+            reason_code=reason_code,
         )
         _append_uk_replay_adjudication(
             self.adjudications_out,
@@ -1387,10 +1417,11 @@ class UKReplayScheduleListApplyMixin:
                 target,
                 selector,
                 blocking=False,
-                reason_code="explicit_entry_anchor_unique",
+                reason_code=reason_code,
                 matched_index=replace_idx,
                 match_mode=match_mode,
                 entry_count=len(entry_rows),
+                replacement_count=len(replacement_nodes),
                 carrier_kind=carrier_kind,
             ),
         )
