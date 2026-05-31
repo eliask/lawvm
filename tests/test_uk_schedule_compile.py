@@ -12874,6 +12874,149 @@ def test_compile_child_tail_omit_uses_exact_feed_subsection_context() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_deictic_child_tail_omit_uses_previous_source_sibling_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-149">
+              <Pnumber>149</Pnumber>
+              <P1para>
+                <P2 id="section-149-2">
+                  <Pnumber>2</Pnumber>
+                  <P2para>
+                    <P3 id="section-149-2-b">
+                      <Pnumber>b</Pnumber>
+                      <Text>b in paragraph (c), for "such a direction;" substitute "a direction given by virtue of paragraph (a)(ii)." ;</Text>
+                    </P3>
+                    <P3 id="section-149-2-c">
+                      <Pnumber>c</Pnumber>
+                      <Text>c omit the words after that paragraph.</Text>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-149-2-c']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-6486a93c7b62097d3ef8d6eb4777b9a1",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-12",
+        affected_uri="/id/ukpga/1990/8/section/74/1B",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 74(1B)",
+        affecting_uri="/id/ukpga/2016/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="22",
+        affecting_provisions="s. 149(2)(c)",
+        affecting_title="Housing and Planning Act 2016",
+        in_force_dates=[{"date": "2016-05-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "74"), ("subsection", "1b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_c"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_deictic_child_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_deictic_child_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["source_anchor_child_label"] == "c"
+    assert lowering_records[0]["source_deictic_antecedent"] == "previous_source_sibling"
+    assert "paragraph (c)" in lowering_records[0]["source_deictic_antecedent_text"]
+    assert lowering_records[0]["target_supplied_subsection_context"] == "true"
+
+
+def test_compile_deictic_child_tail_omit_requires_previous_sibling_paragraph_target() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-149">
+              <Pnumber>149</Pnumber>
+              <P1para>
+                <P2 id="section-149-2">
+                  <Pnumber>2</Pnumber>
+                  <P2para>
+                    <P3 id="section-149-2-b">
+                      <Pnumber>b</Pnumber>
+                      <Text>b substitute "a direction" for "such a direction".</Text>
+                    </P3>
+                    <P3 id="section-149-2-c">
+                      <Pnumber>c</Pnumber>
+                      <Text>c omit the words after that paragraph.</Text>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-149-2-c']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-deictic-child-tail-no-antecedent",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-12",
+        affected_uri="/id/ukpga/1990/8/section/74/1B",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 74(1B)",
+        affecting_uri="/id/ukpga/2016/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="22",
+        affecting_provisions="s. 149(2)(c)",
+        affecting_title="Housing and Planning Act 2016",
+        in_force_dates=[{"date": "2016-05-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_child_tail_omit_rejects_broad_feed_context() -> None:
     extracted_el = ET.fromstring(
         f"""

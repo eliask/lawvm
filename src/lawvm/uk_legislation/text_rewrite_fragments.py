@@ -83,6 +83,9 @@ UK_RANGE_INDEPENDENT_END_OCCURRENCE_REPEAL_RULE_ID = (
     "uk_effect_range_independent_end_occurrence_repeal_text_patch"
 )
 UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID = "uk_effect_source_carried_child_tail_repeal_text_patch"
+UK_SOURCE_CARRIED_DEICTIC_CHILD_TAIL_REPEAL_RULE_ID = (
+    "uk_effect_source_carried_deictic_child_tail_repeal_text_patch"
+)
 UK_SOURCE_CARRIED_CHILD_LIST_TAIL_REPEAL_RULE_ID = (
     "uk_effect_source_carried_child_list_tail_repeal_text_patch"
 )
@@ -1662,6 +1665,37 @@ def append_source_carried_tail_rewrite_observations(
                 "text_match": op_text_match,
                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+                "target_supplied_subsection_context": str(
+                    primary.get("target_supplied_subsection_context") or ""
+                ),
+            },
+        )
+    if UK_SOURCE_CARRIED_DEICTIC_CHILD_TAIL_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_DEICTIC_CHILD_TAIL_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_deictic_child_tail_repeal_lowered",
+            reason=(
+                "UK source text repeals the words after 'that paragraph'; "
+                "lowering resolves the deictic anchor only from the immediate "
+                "previous source sibling's explicit paragraph target and then "
+                "emits a bounded child-tail selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
+                "source_deictic_antecedent": str(
+                    primary.get("source_deictic_antecedent") or ""
+                ),
+                "source_deictic_antecedent_text": str(
+                    primary.get("source_deictic_antecedent_text") or ""
+                ),
                 "target_supplied_subsection_context": str(
                     primary.get("target_supplied_subsection_context") or ""
                 ),

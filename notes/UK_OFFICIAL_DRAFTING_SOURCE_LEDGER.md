@@ -626,6 +626,19 @@ the host subsection or every `and` in the target. Current witness:
 `121 -> 120`; the 77-statute gate remains score-stable (`0 improved,
 0 regressed`).
 
+Deictic child-tail omissions are source-owned when the current source row says
+`omit the words after that paragraph` and the immediate previous source sibling
+under the same source parent explicitly identifies the paragraph target. The
+lowering rule `uk_effect_source_carried_deictic_child_tail_repeal_text_patch`
+records `source_deictic_antecedent=previous_source_sibling` and emits the same
+bounded `TEXT_AFTER_CHILD_TAIL_paragraph_<label>` selector family. It may not
+infer the paragraph from live text, skip unrelated siblings, or broaden the feed
+target beyond an exact subsection. Current witness: `ukpga/1990/8` affected
+`s. 74(1B)` by `ukpga/2016/22` s. 149(2)(c), whose previous sibling
+s. 149(2)(b) names paragraph `(c)`. This cuts `ukpga/1990/8` overlap blockers
+`2 -> 1` and blocking compile diagnostics `120 -> 119`; the 77-statute gate
+remains score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
