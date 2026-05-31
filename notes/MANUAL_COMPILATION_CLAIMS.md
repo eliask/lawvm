@@ -162,6 +162,9 @@ The current validator checks only:
 - duplicate identical workqueue rows are tolerated, but conflicting rows with
   the same `work_item_id` reject validation; claim/workqueue matching must not
   depend on first-row or last-row input order
+- identity-only workqueue matching also tolerates exact repeated rows but keeps
+  conflicting rows for the same `(statute_id, effect_id,
+  manual_compile_rule_id)` ambiguous until the claim supplies `work_item_id`
 - consistency of work-item identity, manual-frontier rule, action family,
   source-preview hash, and affecting/affected provision fields when those fields
   are present in the matched workqueue row

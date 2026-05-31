@@ -3980,6 +3980,7 @@ def _match_workqueue(
             ),
             status="rejected_workqueue_missing",
         )
+    matches = _deduplicated_workqueue_matches(matches)
     if len(matches) > 1:
         return _WorkqueueMatch(
             row=None,
@@ -3994,6 +3995,17 @@ def _match_workqueue(
         issues=_workqueue_mismatch_issues(row, match),
         status="rejected_workqueue_mismatch",
     )
+
+
+def _deduplicated_workqueue_matches(
+    matches: tuple[Mapping[str, Any], ...],
+) -> tuple[Mapping[str, Any], ...]:
+    unique_matches: list[Mapping[str, Any]] = []
+    for match in matches:
+        if any(dict(existing) == dict(match) for existing in unique_matches):
+            continue
+        unique_matches.append(match)
+    return tuple(unique_matches)
 
 
 def _workqueue_mismatch_issues(
