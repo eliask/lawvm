@@ -2400,6 +2400,72 @@ def test_compile_after_quoted_anchor_insert_accepts_space_before_comma() -> None
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_ordinary_quoted_anchor_insert_keeps_normal_quote_rule() -> None:
+    fragments = parse_fragment_substitution(
+        'after "enforcement notice" insert ", enforcement warning notice,"'
+    )
+
+    assert fragments == [
+        {
+            "original": "enforcement notice",
+            "replacement": "enforcement notice, enforcement warning notice,",
+            "rule_id": "uk_effect_after_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
+def test_compile_after_quoted_anchor_insert_recovers_closing_open_quote() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-43-4-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in subsection (2), in paragraph (a), after “enforcement notice” insert ”, enforcement warning notice,”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6fd68737ce7bcf881bdce4e391d2fe92",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-07-06",
+        affected_uri="/id/ukpga/1990/8/section/188/subsection/2/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 188(2)(a)",
+        affecting_uri="/id/anaw/2015/4",
+        affecting_class="WelshAssemblyAct",
+        affecting_year="2015",
+        affecting_number="4",
+        affecting_provisions="s. 43(4)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2015-07-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "enforcement notice"
+    assert ops[0].text_patch.replacement == "enforcement notice, enforcement warning notice,"
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_closing_quote_insert_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "after_quoted_anchor_closing_quote_insert"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_quoted_substitution_records_parenthetical_scope_note() -> None:
     extracted_el = ET.fromstring(
         f"""

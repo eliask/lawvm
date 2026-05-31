@@ -175,6 +175,9 @@ UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"
 )
+UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_closing_quote_insert_text_patch"
+)
 UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
@@ -301,6 +304,12 @@ _AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RE = re.compile(
     r"(?:occurs?|occurring|appear)s?)?,?\s+"
     r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\s*[—-]\s+"
     r"(?P<inserted>.{1,1200}?)(?:\s+\.)?$",
+    re.I,
+)
+_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RE = re.compile(
+    rf"after\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
+    r"(?P<insert_separator>\s*,?\s+)(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+    rf"(?:\s+(?:the\s+)?words?)?\s+[”’](?P<inserted>{_NON_QUOTE}{{1,500}})[”’]",
     re.I,
 )
 
@@ -1871,6 +1880,23 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         else:
             patch["rule_id"] = "uk_effect_after_quoted_anchor_insert_text_patch"
         subs.append(patch)
+
+    for m in _AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RE.finditer(text):
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "rule_id": UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID,
+            }
+        )
 
     matches_bare_quoted_anchor_insert = re.finditer(
         r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
