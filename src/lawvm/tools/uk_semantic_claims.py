@@ -193,6 +193,25 @@ def _string_tuple_from_value(value: Any) -> tuple[str, ...]:
     return tuple(item for item in value if isinstance(item, str) and item)
 
 
+def _duplicate_string_reference_issues(
+    *,
+    prefix: str,
+    field: str,
+    values: tuple[str, ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    seen: dict[str, int] = {}
+    for index, value in enumerate(values, start=1):
+        if value in seen:
+            issues.append(
+                f"{prefix}.{field}[{index}] duplicates {field}[{seen[value]}] "
+                f"{value!r}"
+            )
+        else:
+            seen[value] = index
+    return tuple(issues)
+
+
 def _claim_source_preview_sha256(row: Mapping[str, Any]) -> str:
     direct = _optional_string(row, "source_preview_sha256")
     if direct:
@@ -534,37 +553,77 @@ def _validate_operation_family_proof_refs(
                 f"{prefix}.status {status!r} cannot be claimed by this "
                 "non-executable validator"
             )
-        proof_operation_ids = set(_string_tuple_from_value(proof.get("operation_ids")))
+        proof_operation_id_values = _string_tuple_from_value(proof.get("operation_ids"))
+        issues.extend(
+            _duplicate_string_reference_issues(
+                prefix=prefix,
+                field="operation_ids",
+                values=proof_operation_id_values,
+            )
+        )
+        proof_operation_ids = set(proof_operation_id_values)
         if not proof_operation_ids:
             issues.append(f"{prefix}.operation_ids is required")
         for op_id in sorted(proof_operation_ids - operation_ids):
             issues.append(f"{prefix}.operation_ids references unknown operation {op_id!r}")
-        proof_check_ids = set(_string_tuple_from_value(proof.get("validator_check_ids")))
+        proof_check_id_values = _string_tuple_from_value(proof.get("validator_check_ids"))
+        issues.extend(
+            _duplicate_string_reference_issues(
+                prefix=prefix,
+                field="validator_check_ids",
+                values=proof_check_id_values,
+            )
+        )
+        proof_check_ids = set(proof_check_id_values)
         if not proof_check_ids:
             issues.append(f"{prefix}.validator_check_ids is required")
         for check_id in sorted(proof_check_ids - validator_check_ids):
             issues.append(
                 f"{prefix}.validator_check_ids references undeclared check {check_id!r}"
             )
-        proof_source_ids = set(
-            _string_tuple_from_value(proof.get("source_text_precondition_ids"))
+        proof_source_id_values = _string_tuple_from_value(
+            proof.get("source_text_precondition_ids")
         )
+        issues.extend(
+            _duplicate_string_reference_issues(
+                prefix=prefix,
+                field="source_text_precondition_ids",
+                values=proof_source_id_values,
+            )
+        )
+        proof_source_ids = set(proof_source_id_values)
         for precondition_id in sorted(proof_source_ids - source_precondition_ids):
             issues.append(
                 f"{prefix}.source_text_precondition_ids references unknown "
                 f"precondition {precondition_id!r}"
             )
-        proof_live_ids = set(
-            _string_tuple_from_value(proof.get("live_target_precondition_ids"))
+        proof_live_id_values = _string_tuple_from_value(
+            proof.get("live_target_precondition_ids")
         )
+        issues.extend(
+            _duplicate_string_reference_issues(
+                prefix=prefix,
+                field="live_target_precondition_ids",
+                values=proof_live_id_values,
+            )
+        )
+        proof_live_ids = set(proof_live_id_values)
         for precondition_id in sorted(proof_live_ids - live_precondition_ids):
             issues.append(
                 f"{prefix}.live_target_precondition_ids references unknown "
                 f"precondition {precondition_id!r}"
             )
-        proof_live_paths = set(
-            _string_tuple_from_value(proof.get("live_target_precondition_paths"))
+        proof_live_path_values = _string_tuple_from_value(
+            proof.get("live_target_precondition_paths")
         )
+        issues.extend(
+            _duplicate_string_reference_issues(
+                prefix=prefix,
+                field="live_target_precondition_paths",
+                values=proof_live_path_values,
+            )
+        )
+        proof_live_paths = set(proof_live_path_values)
         for path in sorted(proof_live_paths - live_precondition_paths):
             issues.append(
                 f"{prefix}.live_target_precondition_paths references unknown "

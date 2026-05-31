@@ -190,6 +190,11 @@ The current validator checks only:
   must name a proof id, match the claim action family, reference existing
   operation ids, reference declared validator-check ids, reference at least one
   declared source/live precondition, and carry a non-proving status
+- proof reference lists are declaration surfaces, not mathematical sets:
+  duplicate `operation_ids`, `validator_check_ids`,
+  `source_text_precondition_ids`, `live_target_precondition_ids`, or
+  `live_target_precondition_paths` reject the claim before proof semantics are
+  considered
 - operation-family proof semantics resolve `live_target_precondition_ids` only
   to the paths on those referenced live precondition rows; unrelated live
   preconditions declared elsewhere in the claim do not widen the proof's target

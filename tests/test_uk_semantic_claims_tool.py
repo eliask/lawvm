@@ -887,6 +887,76 @@ def test_validate_semantic_claim_rejects_malformed_operation_family_proof_refs()
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_operation_family_proof_refs() -> None:
+    claim = _claim_row(source_preview="after the entry relating to X insert the row")
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": hashlib.sha256(b"table one").hexdigest(),
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1", "manual-op-1"],
+            "validator_check_ids": [
+                "claim_identifies_exact_table_carrier",
+                "claim_identifies_exact_table_carrier",
+            ],
+            "source_text_precondition_ids": [
+                "source-names-anchor",
+                "source-names-anchor",
+            ],
+            "live_target_precondition_ids": [
+                "live-table-carrier",
+                "live-table-carrier",
+            ],
+            "live_target_precondition_paths": [
+                "section:1/table:1",
+                "section:1/table:1",
+            ],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "operation_family_proofs[1].operation_ids[2] duplicates "
+        "operation_ids[1] 'manual-op-1'"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].validator_check_ids[2] duplicates "
+        "validator_check_ids[1] 'claim_identifies_exact_table_carrier'"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].source_text_precondition_ids[2] duplicates "
+        "source_text_precondition_ids[1] 'source-names-anchor'"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].live_target_precondition_ids[2] duplicates "
+        "live_target_precondition_ids[1] 'live-table-carrier'"
+    ) in row["validation_issues"]
+    assert (
+        "operation_family_proofs[1].live_target_precondition_paths[2] duplicates "
+        "live_target_precondition_paths[1] 'section:1/table:1'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_duplicate_validator_check_ids() -> None:
     claim = _claim_row(source_preview="after the entry relating to X insert the row")
     proposed_outcome = claim["proposed_outcome"]
