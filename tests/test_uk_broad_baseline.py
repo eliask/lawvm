@@ -164,6 +164,12 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "base_too_small": ["ukpga/1945/10", "ukpga/1945/9"],
         "effect_rows_absent_or_unpublished": ["uksi/2000/1043"],
     }
+    assert summary["non_manual_source_chain_frontier_count"] == 3
+    assert summary["non_manual_source_chain_frontier_statutes"] == [
+        "ukpga/1945/10",
+        "ukpga/1945/9",
+        "uksi/2000/1043",
+    ]
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_eids"] == 420
     assert summary["triage_buckets"] == {
@@ -741,3 +747,70 @@ def test_run_driver_can_fail_on_manual_frontier_template_gaps(monkeypatch, capsy
     out = capsys.readouterr().out
     assert "manual_frontier_template_gaps: " in out
     assert "uk_manual_frontier_parser_or_extraction_candidate=2" in out
+
+
+def test_run_driver_can_fail_on_non_manual_source_chain_frontier(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "uksi/2012/1206",
+            "score_status": "scored",
+            "aligned": 88.6,
+            "aligned_excluding_grounding_collateral": 88.6,
+            "unaligned": 88.6,
+            "n_replay": 31,
+            "n_oracle": 35,
+            "n_ops": 0,
+            "n_effects": 0,
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["uksi/2012/1206"],
+            None,
+            fail_on_non_manual_source_chain_frontier=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "source_chain_frontier[effect_rows_absent_or_unpublished]: uksi/2012/1206" in out
+    assert "non_manual_source_chain_frontier=1: uksi/2012/1206" in out
+
+
+def test_run_driver_non_manual_source_chain_flag_allows_manual_source_insufficient(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1990/8",
+            "score_status": "scored",
+            "aligned": 83.8,
+            "aligned_excluding_grounding_collateral": 83.8,
+            "unaligned": 74.4,
+            "n_replay": 6906,
+            "n_oracle": 8240,
+            "manual_frontier_status_counts": {
+                "source_insufficient": 2,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1990/8"],
+            None,
+            fail_on_non_manual_source_chain_frontier=True,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "source_chain_frontier[manual_frontier_source_insufficient]: ukpga/1990/8" in out
+    assert "non_manual_source_chain_frontier=0" in out

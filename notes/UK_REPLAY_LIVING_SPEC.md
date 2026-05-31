@@ -1180,6 +1180,13 @@ Current bench replay-regime invariant:
   are source-chain rows even when they have partial compiled operations, because
   the remaining blocker is missing or unproved source witness rather than parser
   broadening work.
+- UK broad-baseline summaries also split out
+  `non_manual_source_chain_frontier_count` and
+  `non_manual_source_chain_frontier_statutes`, excluding
+  `manual_frontier_source_insufficient`. The guard flag
+  `--fail-on-non-manual-source-chain-frontier` exits nonzero for those rows so a
+  "done modulo manual compilation" gate can still fail on missing feed rows or
+  missing structural payload evidence.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.
