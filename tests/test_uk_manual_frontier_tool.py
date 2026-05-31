@@ -353,6 +353,36 @@ def test_validate_manual_frontier_rows_rejects_conflicting_work_item_id(
     )
 
 
+def test_validate_manual_frontier_rows_rejects_wrong_schema(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
+
+    rows = uk_manual_frontier.validate_manual_frontier_rows(
+        (
+            {
+                "line_number": 1,
+                "schema": "lawvm.uk_semantic_compile_claim.v1",
+                "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-1",
+            },
+        ),
+        db_path=db_path,
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "input_error"
+    assert row["rule_id"] == "uk_manual_frontier_validator_schema_rejected"
+    assert row["blocking"] is True
+    assert row["input_schema"] == "lawvm.uk_semantic_compile_claim.v1"
+    assert row["expected_schema"] == "lawvm.uk_manual_compile_frontier.v1"
+
+
 def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     original_rows = (
         {

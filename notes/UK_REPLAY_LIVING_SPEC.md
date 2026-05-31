@@ -1539,6 +1539,10 @@ Current bench replay-regime invariant:
 ## UK Manual-Frontier Validation
 
 - `lawvm uk-manual-frontier-validate INPUT.jsonl` validates exported `lawvm.uk_manual_compile_frontier.v1` rows against the current archive-backed compiler. The validator re-summarizes each `(statute_id, effect_id)` and emits `lawvm.uk_manual_frontier_validation.v1` rows with old and current manual-frontier status/rule IDs.
+- Rows that declare a different explicit schema are rejected as blocking
+  `input_error` records. Schema-less legacy rows are still accepted for stale
+  queue compatibility, but a row that announces another LawVM surface must not
+  be silently reinterpreted as a manual-frontier work item.
 - Manual-frontier validation rejects conflicting duplicate `work_item_id` rows as
   blocking `input_error` records, while treating JSONL `line_number` as
   bookkeeping rather than evidence when deciding whether duplicate rows are
