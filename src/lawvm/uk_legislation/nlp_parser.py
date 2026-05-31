@@ -169,6 +169,9 @@ _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_ordinal_places_insert_text_patch"
 )
+UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_ordinal_block_insert_text_patch"
+)
 UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"
 )
@@ -288,6 +291,16 @@ _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE = re.compile(
 )
 _OCCURRENCE_SCOPE_NOTE_RE = re.compile(
     r"\b(?:each|both|first|second|third|fourth|fifth|wherever|occurr|appear|heading|body)\b",
+    re.I,
+)
+_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RE = re.compile(
+    rf"after\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    rf"in\s+the\s+(?P<ordinals>(?:{_ORDINAL_OCCURRENCE_WORDS})"
+    rf"(?:\s*(?:,|and)\s*(?:{_ORDINAL_OCCURRENCE_WORDS}))*)\s+places?"
+    r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+    r"(?:occurs?|occurring|appear)s?)?,?\s+"
+    r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\s*[—-]\s+"
+    r"(?P<inserted>.{1,1200}?)(?:\s+\.)?$",
     re.I,
 )
 
@@ -1983,6 +1996,26 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                     "original": original,
                     "replacement": f"{original}{joiner}{inserted}",
                     "rule_id": "uk_effect_after_quoted_anchor_definition_entry_block_insert_text_patch",
+                }
+            )
+
+    for m in _AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RE.finditer(text):
+        original = m.group("original").strip()
+        inserted = re.sub(r"\s+\.$", "", m.group("inserted").strip()).strip()
+        if not inserted or inserted.startswith(("“", '"', "'", "‘")):
+            continue
+        joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        for occurrence in sorted(
+            _ordinal_occurrences_from_phrase(m.group("ordinals")),
+            key=int,
+            reverse=True,
+        ):
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": f"{original}{joiner}{inserted}",
+                    "occurrence": occurrence,
+                    "rule_id": UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID,
                 }
             )
 
