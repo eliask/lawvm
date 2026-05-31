@@ -1615,6 +1615,10 @@ Current bench replay-regime invariant:
   identical. A remaining queue must not collapse two different work items under
   the same stable id.
 - `lawvm uk-semantic-claims-validate INPUT.jsonl` validates proposed `lawvm.uk_semantic_compile_claim.v1` rows as a separate provenance-only claim surface. With `--workqueue-jsonl PATH`, it matches each claim against exported `lawvm.uk_manual_compile_frontier.v1` work items by `work_item_id` or `(statute_id, effect_id, manual_compile_rule_id)` and checks stable provenance fields such as action family and source-preview hash when available. It emits `lawvm.uk_semantic_compile_claim_validation.v1` rows. `validated_provenance_only` rows must still carry `replay_authorized=false` and `executable=false`; this validator does not prove canonical operations or feed claims into replay.
+- Malformed primary, workqueue, or live-target JSONL rows are emitted as
+  blocking `input_error` validation rows. Auxiliary input errors must stay
+  visible even when a separate claim row also fails workqueue or live-target
+  matching, and `--fail-on-input-error` exits nonzero for those auxiliary errors.
 - The workqueue match rejects conflicting duplicate `work_item_id` rows instead
   of depending on first-row input order. Identical repeated workqueue rows are
   tolerated so concatenated duplicate exports do not fail validation; JSONL

@@ -6562,6 +6562,69 @@ def test_uk_semantic_claims_validate_main_writes_jsonl_and_fails_on_rejected(
     assert validation_row["replay_authorized"] is False
 
 
+def test_uk_semantic_claims_validate_main_reports_workqueue_input_errors(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    input_path = tmp_path / "claims.jsonl"
+    workqueue_path = tmp_path / "workqueue.jsonl"
+    input_path.write_text(json.dumps(_claim_row()) + "\n", encoding="utf-8")
+    workqueue_path.write_text("{not json}\n", encoding="utf-8")
+
+    uk_semantic_claims.main(
+        Namespace(
+            input=str(input_path),
+            workqueue_jsonl=str(workqueue_path),
+            live_targets_jsonl="",
+            json=True,
+            summary_only=False,
+            validation_jsonl="",
+            fail_on_rejected=False,
+            fail_on_input_error=False,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["accepted_count"] == 0
+    assert payload["summary"]["rejected_count"] == 1
+    assert payload["summary"]["input_error_count"] == 1
+    assert [row["validator_status"] for row in payload["rows"]] == [
+        "rejected_workqueue_missing",
+        "input_error",
+    ]
+    assert payload["rows"][1]["rule_id"] == "uk_semantic_claim_jsonl_decode_error"
+
+
+def test_uk_semantic_claims_validate_main_fails_on_auxiliary_input_error(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    input_path = tmp_path / "claims.jsonl"
+    live_targets_path = tmp_path / "live-targets.jsonl"
+    input_path.write_text(json.dumps(_claim_row()) + "\n", encoding="utf-8")
+    live_targets_path.write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        uk_semantic_claims.main(
+            Namespace(
+                input=str(input_path),
+                workqueue_jsonl="",
+                live_targets_jsonl=str(live_targets_path),
+                json=True,
+                summary_only=False,
+                validation_jsonl="",
+                fail_on_rejected=False,
+                fail_on_input_error=True,
+            )
+        )
+
+    assert excinfo.value.code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["input_error_count"] == 1
+    assert payload["rows"][-1]["validator_status"] == "input_error"
+    assert payload["rows"][-1]["rule_id"] == "uk_semantic_claim_jsonl_row_not_object"
+
+
 def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
     tmp_path: Path,
 ) -> None:
