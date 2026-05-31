@@ -507,16 +507,20 @@ mutation into:
 
 Current 77-statute baseline snapshot:
 `scripts/baselines/uk_broad_2026-05-31.json`. It scores 77/77, mean aligned
-`81.01%`, mean aligned_no_gc `90.88%`, grounding-collateral `6169`,
+`93.53%`, mean aligned_no_gc `93.53%`, grounding-collateral `0`,
 metadata-only base `1`, errors `0`, source-frontier `0`, and compare against
 itself is `0 improved, 0 regressed`. Current bucket split:
-`high_fidelity_after_grounding=49`, `grounding_dominated_residual=6`,
-`structural_match_eid_scheme_residual=4`, `no_compiled_ops_frontier=7`,
-`compile_rejection_dominated_residual=2`, `bounded_low_volume_residual=2`,
-`base_metadata_only_frontier=1`, and `residual_after_grounding=6`. The older
-2026-05-30 snapshot is retained as historical context; after the wider-corpus
-fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
-local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
+`high_fidelity_after_grounding=57`, `manual_compile_frontier_residual=13`,
+`no_effect_rows_frontier=4`, `nonreplay_effect_frontier=2`, and
+`base_metadata_only_frontier=1`. The source-chain frontier split is now
+`effect_rows_absent_or_unpublished=4` (`ssi/2025/74`, `ukpga/1976/83`,
+`ukpga/2011/2`, `uksi/2012/1206`) and
+`effect_rows_missing_structural_payload=2` (`ukpga/1901/7`,
+`uksi/2009/3023`), with no remaining `effect_feed_pages_absent` rows after
+refreshing stale current/effects source surfaces. The older 2026-05-30 snapshot
+is retained as historical context; after the wider-corpus fetch it differs on
+`ukpga/1990/8` because the current oracle eId surface in the local farchive
+changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
 
 **Broad comparison surface correction (2026-05-31):**
 `scripts/uk_broad_baseline.py` now compares replay against the same normalized
