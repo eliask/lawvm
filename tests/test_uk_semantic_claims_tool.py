@@ -146,10 +146,13 @@ def test_validate_semantic_claim_accepts_schema_and_workqueue_provenance_only() 
 
 def test_validate_semantic_claim_accepts_duplicate_identical_workqueue_id() -> None:
     workqueue = _workqueue_row()
+    duplicate = dict(workqueue)
+    workqueue["line_number"] = 1
+    duplicate["line_number"] = 2
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (_claim_row(),),
-        workqueue_rows=(workqueue, dict(workqueue)),
+        workqueue_rows=(workqueue, duplicate),
     )
 
     row = rows[0]
@@ -162,10 +165,13 @@ def test_validate_semantic_claim_accepts_duplicate_identical_workqueue_identity(
     claim = _claim_row()
     claim.pop("work_item_id")
     workqueue = _workqueue_row()
+    duplicate = dict(workqueue)
+    workqueue["line_number"] = 1
+    duplicate["line_number"] = 2
 
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (claim,),
-        workqueue_rows=(workqueue, dict(workqueue)),
+        workqueue_rows=(workqueue, duplicate),
     )
 
     row = rows[0]
