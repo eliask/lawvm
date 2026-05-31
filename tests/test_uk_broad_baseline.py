@@ -176,6 +176,16 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "structural_match_eid_scheme_residual": 1,
         "zero_oracle_retention": 1,
     }
+    assert summary["triage_bucket_statutes"] == {
+        "base_metadata_only_frontier": ["ukpga/1961/60"],
+        "error": ["ukpga/1946/1"],
+        "high_fidelity_after_grounding": ["ukpga/1992/41"],
+        "no_effect_rows_frontier": ["uksi/2000/1043"],
+        "residual_after_grounding": ["ukpga/1986/61"],
+        "source_frontier:base_too_small": ["ukpga/1945/10", "ukpga/1945/9"],
+        "structural_match_eid_scheme_residual": ["eur/2019/1841"],
+        "zero_oracle_retention": ["ukpga/1938/22"],
+    }
     assert summary["active_unclassified_residual_count"] == 2
     assert summary["active_unclassified_residual_statutes"] == [
         "eur/2019/1841",

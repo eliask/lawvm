@@ -342,6 +342,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         if int(r.get("n_oracle") or 0) == 0 and int(r.get("n_replay") or 0) > 0
     ]
     triage_buckets = Counter(_triage_bucket_for_row(r) for r in results)
+    triage_bucket_statutes = _triage_bucket_statutes(results)
     manual_frontier_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_status_counts"
     )
@@ -388,6 +389,7 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "source_chain_frontier_statutes": source_chain_frontier_statutes,
         "triage_buckets": dict(sorted(triage_buckets.items())),
+        "triage_bucket_statutes": triage_bucket_statutes,
         "manual_frontier_status_counts": manual_frontier_status_counts,
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
         "manual_frontier_manual_compile_candidate_rule_counts": (
@@ -423,6 +425,20 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             int(r.get("n_zero_oracle_retention_eids") or r.get("n_replay") or 0)
             for r in zero_oracle_retention
         ),
+    }
+
+
+def _triage_bucket_statutes(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
+    statutes_by_bucket: dict[str, list[str]] = {}
+    for row in rows:
+        statute_id = str(row.get("statute_id") or "")
+        if not statute_id:
+            continue
+        bucket = _triage_bucket_for_row(row)
+        statutes_by_bucket.setdefault(bucket, []).append(statute_id)
+    return {
+        bucket: sorted(statute_ids)
+        for bucket, statute_ids in sorted(statutes_by_bucket.items())
     }
 
 
@@ -795,6 +811,11 @@ def run_driver(
             for bucket, count in summary["triage_buckets"].items()
         )
         print(f"  triage_buckets: {buckets}")
+    if summary["triage_bucket_statutes"]:
+        for bucket, statute_ids in summary["triage_bucket_statutes"].items():
+            if bucket == "high_fidelity_after_grounding":
+                continue
+            print(f"  triage_bucket[{bucket}]: {', '.join(statute_ids)}")
     if summary["manual_frontier_status_counts"]:
         counts = ", ".join(
             f"{status}={count}"
