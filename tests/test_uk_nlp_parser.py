@@ -1202,6 +1202,25 @@ def test_parse_fragment_substitution_handles_after_anchor_definition_entry_block
     ]
 
 
+def test_parse_fragment_substitution_handles_after_reference_section_insert() -> None:
+    subs = parse_fragment_substitution(
+        "1 In section 79(1) of the 1997 Act, after the reference to "
+        "section 273 (offences by corporations) insert\u2014 \u201c section 275A "
+        "(further provision as regards regulations: inquiries, etc.), \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "section 273 (offences by corporations),",
+            "replacement": (
+                "section 273 (offences by corporations), section 275A "
+                "(further provision as regards regulations: inquiries, etc.),"
+            ),
+            "rule_id": "uk_effect_after_reference_section_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_before_definition_insert() -> None:
     subs = parse_fragment_substitution(
         "a before the definition of \u201centitled to practise\u201d insert\u2014 "
