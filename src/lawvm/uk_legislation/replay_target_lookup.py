@@ -627,6 +627,10 @@ class UKReplayTargetLookupMixin:
         if len(candidates) != 1:
             return NodeLookupResult(node=None, parent=None, index=None)
         recovered_node, recovered_parent, recovered_idx = candidates[0]
+        recovered_target = _target_resolution_address_for_node(
+            self.statute,
+            recovered_node,
+        ) or str(target)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_ITEM_TARGET_FROM_PARENT_SUBSTITUTION_RULE_ID,
@@ -641,6 +645,8 @@ class UKReplayTargetLookupMixin:
                 family="target_resolution_recovery",
                 recovered_kind=_uk_kind_value(recovered_node.kind),
                 recovered_label=recovered_node.label or "",
+                recovery_target=recovered_target,
+                source_shape="source_parent_substitution_range_payload",
                 source_rule_id=_UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
             ),
         )

@@ -1936,6 +1936,20 @@ def test_executor_resolves_source_parent_range_schedule_paragraph_target_to_uniq
     assert {row.detail["action"] for row in recovery_rows} == {"replace", "repeal"}
     assert all(row.detail["strict_disposition"] == "block" for row in recovery_rows)
     assert all(row.detail["quirks_disposition"] == "apply" for row in recovery_rows)
+    assert {row.detail["target_resolution"]["selected_target"] for row in recovery_rows} == {
+        "schedule:1/paragraph:1/item:d",
+        "schedule:1/paragraph:1/item:e",
+        "schedule:1/paragraph:1/item:f",
+        "schedule:1/paragraph:1/item:g",
+    }
+    assert all(
+        row.detail["target_resolution"]["target_resolution_status"] == "recovered"
+        for row in recovery_rows
+    )
+    assert all(
+        row.detail["target_resolution"]["scope_confidence"] == "fallback"
+        for row in recovery_rows
+    )
 
 
 def test_executor_classifies_direct_section_paragraph_missing_carrier_as_source_shape() -> None:
