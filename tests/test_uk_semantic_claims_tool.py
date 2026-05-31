@@ -361,6 +361,61 @@ def test_validate_semantic_claim_rejects_claim_source_preview_hash_mismatch() ->
     assert row["replay_authorized"] is False
 
 
+@pytest.mark.parametrize(
+    ("field_owner", "field_name", "value", "expected_issue"),
+    [
+        (
+            "claim",
+            "executable",
+            True,
+            "claim.executable cannot be true in the non-executable validator",
+        ),
+        (
+            "claim",
+            "replay_authorized",
+            "true",
+            "claim.replay_authorized cannot be true in the non-executable validator",
+        ),
+        (
+            "proposed_outcome",
+            "executable",
+            "yes",
+            "proposed_outcome.executable cannot be true in the non-executable validator",
+        ),
+        (
+            "proposed_outcome",
+            "replay_authorized",
+            True,
+            "proposed_outcome.replay_authorized cannot be true in the non-executable validator",
+        ),
+    ],
+)
+def test_validate_semantic_claim_rejects_authorization_assertions(
+    field_owner: str,
+    field_name: str,
+    value: object,
+    expected_issue: str,
+) -> None:
+    claim = _claim_row()
+    if field_owner == "claim":
+        claim[field_name] = value
+    else:
+        proposed_outcome = claim["proposed_outcome"]
+        assert isinstance(proposed_outcome, dict)
+        proposed_outcome[field_name] = value
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        workqueue_rows=(_workqueue_row(),),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert expected_issue in row["validation_issues"]
+    assert row["executable"] is False
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_workqueue_source_preview_hash_mismatch() -> None:
     workqueue = _workqueue_row()
     source = workqueue["source"]

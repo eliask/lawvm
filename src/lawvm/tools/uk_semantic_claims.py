@@ -62,6 +62,7 @@ _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES = frozenset(
         "verified",
     }
 )
+_AUTHORIZATION_ASSERTION_VALUES = frozenset({"1", "true", "yes", "authorized"})
 
 
 class _WorkqueueIndex(NamedTuple):
@@ -171,6 +172,14 @@ def _claim_source_preview_sha256(row: Mapping[str, Any]) -> str:
     return _optional_string(source, "text_preview_sha256")
 
 
+def _asserts_authorization(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in _AUTHORIZATION_ASSERTION_VALUES
+    return False
+
+
 def _workqueue_source_preview_sha256(row: Mapping[str, Any]) -> str:
     source = _mapping_value(row, "source")
     return _optional_string(source, "text_preview_sha256")
@@ -245,6 +254,12 @@ def _validate_claim_schema(row: Mapping[str, Any]) -> tuple[str, ...]:
         issues.append("claim_kind must be semantic_compile")
     if _optional_string(row, "jurisdiction") != "uk":
         issues.append("jurisdiction must be uk")
+    if _asserts_authorization(row.get("executable")):
+        issues.append("claim.executable cannot be true in the non-executable validator")
+    if _asserts_authorization(row.get("replay_authorized")):
+        issues.append(
+            "claim.replay_authorized cannot be true in the non-executable validator"
+        )
     for key in (
         "claim_id",
         "claim_status",
@@ -266,6 +281,14 @@ def _validate_claim_schema(row: Mapping[str, Any]) -> tuple[str, ...]:
     if not proposed_outcome:
         issues.append("proposed_outcome is required")
         return tuple(issues)
+    if _asserts_authorization(proposed_outcome.get("executable")):
+        issues.append(
+            "proposed_outcome.executable cannot be true in the non-executable validator"
+        )
+    if _asserts_authorization(proposed_outcome.get("replay_authorized")):
+        issues.append(
+            "proposed_outcome.replay_authorized cannot be true in the non-executable validator"
+        )
     outcome_kind = _optional_string(proposed_outcome, "outcome_kind")
     if outcome_kind not in _ALLOWED_OUTCOME_KINDS:
         issues.append(
