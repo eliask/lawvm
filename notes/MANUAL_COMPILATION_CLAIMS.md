@@ -128,6 +128,264 @@ Validation may be incomplete in early implementations, but incompleteness must
 be explicit. A claim accepted under weak validation is not equivalent to a
 fully source-proved deterministic compile.
 
+### 4.1 UK Provenance-Only Claim Validation
+
+The UK tool `lawvm uk-semantic-claims-validate INPUT.jsonl` validates proposed
+`lawvm.uk_semantic_compile_claim.v1` rows without making them executable.
+
+The current validator checks only:
+
+- required semantic-claim schema fields
+- required source-witness hash presence
+- source-preview hash self-consistency when the claim or matched workqueue row
+  carries both bounded source preview text and its declared SHA-256 hash
+- proposed outcome kind shape
+- minimal canonical-operation shape for `canonical_operations` outcomes:
+  operation id, canonical `StructuralAction`, target, and explicit
+  `mutation_boundary.changed_paths` / `target_region` declarations
+- duplicate canonical-operation ids are rejected within a claim, so a weak
+  claim cannot collapse multiple proposed operation instances by accident
+- static mutation-boundary containment for canonical-operation claims:
+  `changed_paths` must sit under `target_region` unless the claim explicitly
+  declares migration, recovery, or editorial-projection exception paths
+- declared migration, recovery, or editorial-projection exception paths must
+  carry a matching rule, reason, or event/observation id; exception paths are
+  not self-justifying ownership
+- minimal non-operation outcome shape: non-replayable findings, source
+  pathologies, oracle adjudications, and requests for more source evidence must
+  carry typed payloads rather than empty `outcome_kind` placeholders
+- optional match against exported `lawvm.uk_manual_compile_frontier.v1`
+  workqueue provenance via `--workqueue-jsonl`
+- consistency of work-item identity, manual-frontier rule, action family,
+  source-preview hash, and affecting/affected provision fields when those fields
+  are present in the matched workqueue row
+- optional consistency of declared `source_text_preconditions` against supplied
+  claim/workqueue source previews: a claim may require exact source snippets,
+  optionally with snippet SHA-256, and the validator rejects the claim if the
+  supplied source witness does not carry them
+- consistency of declared claim target context with matched non-executable
+  template carriers: when a template publishes `source_target_address` or
+  `destination_address`, the claim must echo the same address in top-level
+  claim context or proposed-outcome target context
+- consistency of canonical-operation target paths with matched non-executable
+  template carriers: when a template publishes `source_target_address` or
+  `destination_address`, each operation target must sit under one of those
+  declared carriers
+- optional consistency with a supplied `lawvm.uk_live_target_index.v1` live-state
+  target index via `--live-targets-jsonl`: replace/repeal/text/heading/renumber
+  claims must target an existing path, while insert claims must have an existing
+  parent carrier
+- optional consistency of declared `live_target_preconditions` against supplied
+  target fingerprints: a claim may require a `subtree_sha256` or `text_sha256`
+  for any live target path, and the validator rejects the claim if the supplied
+  live index does not match
+- optional consistency of declared `operation_family_proofs`: each proof row
+  must name a proof id, match the claim action family, reference existing
+  operation ids, reference declared validator-check ids, reference at least one
+  declared source/live precondition, and carry a non-proving status
+- presence of every `required_ownership` id listed by a matched non-executable
+  claim template, so a claim must declare the source/target/mutation-boundary
+  surfaces it claims to own
+- presence of every `required_validator_checks` id listed by a matched
+  non-executable claim template, so a claim cannot pass while omitting a known
+  family-specific proof obligation
+- explicit non-proving status for each declared template ownership claim; this
+  weak validator rejects claims that label ownership as `passed`, `proved`,
+  `validated`, or `verified`
+- explicit non-proving status for each declared template proof obligation; this
+  weak validator rejects claims that label an obligation as `passed`, `proved`,
+  `validated`, or `verified`
+
+It emits `lawvm.uk_semantic_compile_claim_validation.v1` rows. An accepted row
+uses `validator_status=validated_provenance_only`,
+`replay_authorized=false`, and `executable=false`. This status means the claim
+is well-formed, carries operation-boundary declarations where applicable, keeps
+claimed changed paths within declared target or exception regions, declares
+boundary-exception paths with their own witness rule/reason/id, declares
+template carrier context and target containment, declares required ownership
+surfaces and validation obligations without pretending this validator proved
+them, and matches the supplied workqueue provenance; it does not mean the
+proposed canonical operations are source-proved or replayable.
+
+If `--live-targets-jsonl` is supplied and the live-state check passes, accepted
+rows use `validator_status=validated_provenance_and_live_targets_only`. This is
+still non-executable and keeps `replay_authorized=false`; it proves only that the
+claim is not disconnected from the supplied target index.
+
+If the claim declares matching `source_text_preconditions`, accepted rows use
+`validator_status=validated_provenance_and_source_text_only` when no live-target
+index is supplied. If both source-text preconditions and live-target gates pass,
+the accepted status combines those surfaces. These rows remain non-executable
+and keep `replay_authorized=false`; exact source snippets in a bounded preview
+are evidence, not proof that the whole operation family is replay-safe.
+
+If the claim also declares matching `live_target_preconditions`, accepted rows
+use `validator_status=validated_provenance_live_targets_and_preconditions_only`.
+This is still non-executable and keeps `replay_authorized=false`; it proves only
+that the claim's declared live-state hashes match the supplied target index.
+
+If the claim declares `operation_family_proofs`, the validator checks only that
+the proof rows are internally wired to the claimed operation family, operations,
+validator checks, and source/live preconditions. This is a proof-plan integrity
+check, not proof of legal sufficiency. Rows whose proof status says `passed`,
+`proved`, `validated`, or `verified` are rejected by this weak validator.
+Validation rows also carry `operation_family_proof_count`,
+`operation_family_proof_semantics`, and `operation_family_proof_families`, and
+the validation report summarizes semantic/family counts, so batch review can see
+which proof plans were checked without reparsing the input claim ledger.
+The first opt-in family semantic,
+`table_surface_insert_anchor_and_live_carrier`, additionally checks that a
+`table_surface_mutation` proof references source text evidence, a live carrier
+precondition, and only insert operations whose target parent sits under that
+declared live carrier. It still does not authorize replay.
+`text_rewrite_source_preimage_and_live_target` similarly checks text-rewrite
+families that reference source preimage evidence and a live target precondition;
+referenced operations must be text or heading rewrite actions and must target
+the declared live target itself.
+`structural_insert_source_payload_and_live_parent` checks bounded non-table
+structural insertion families (`structural_sibling_insert`,
+`definition_entry_insert`, `index_entry_insert`, and
+`schedule_part_wrapper_insertion`) that reference source payload evidence and a
+live parent precondition; referenced operations must be inserts whose target
+parent sits under the declared live parent. It still does not authorize replay.
+`schedule_list_entry_anchor_boundary_claim` checks
+`schedule_list_entry_mutation` proofs that reference source evidence for the
+entry anchor and inserted/replacement entry payload, declare the source-named
+entry anchor, list carrier, and sibling insertion/replacement boundary, require
+operation-level entry anchor/position plus entry label/text identity, and keep
+entry insert/replacement operations within declared live schedule-entry
+carriers. It still does not authorize replay.
+`definition_entry_insert_term_boundary_claim` checks `definition_entry_insert`
+proofs that reference source evidence for the inserted definition term and
+complete definition-entry payload, declare inserted-term, payload, definition
+list, and insertion-position/list-end ownership, require operation-level
+definition term, payload, and insertion position, and keep definition-entry
+inserts under declared live definition-list carriers. It still does not
+authorize replay.
+`savings_qualified_omission_applicability_scope` checks
+`savings_qualified_text_omission` proofs that reference separate source
+preconditions for the omitted reference and the savings/applicability condition,
+plus a live text-carrier precondition; referenced operations must be text
+omission actions and must declare an applicability or savings scope. It still
+does not authorize replay.
+`whole_act_listed_enactments_scope_and_exclusions` checks
+`whole_act_listed_enactments_text_patch` proofs that reference source evidence
+for listed-enactment membership and quoted preimages, declare same-schedule/
+same-act exclusion ownership, exclude title/short-title surfaces, and target
+only declared live text carriers with whole-Act text patch actions. It still
+does not authorize replay.
+`appropriate_place_anchor_or_ordering_claim` checks `appropriate_place_mutation`,
+`definition_entry_insert`, and `index_entry_insert` proofs that reference source
+payload evidence, declare a validated predecessor/successor anchor or ordering
+claim, reference a live anchor or ordering rule, and emit only insert operations
+under declared live parent carriers. It still does not authorize replay.
+`range_to_container_source_range_payload_and_lineage` checks
+`range_to_container_substitution` proofs that reference source-range evidence
+and container-payload evidence, declare lineage/migration ownership, require
+replacement operations to declare migration paths and a lineage/migration event
+id, and target only declared live container carriers. It still does not
+authorize replay.
+`table_repeal_or_omission_boundary_preservation` checks
+`table_repeal_or_omission` proofs that reference table-surface source evidence,
+declare the repealed row/column/cell boundary and unclaimed-table preservation,
+and target only declared live table carriers with table repeal or text-omission
+actions. It still does not authorize replay.
+`cross_container_renumber_source_destination_and_lineage` checks
+`cross_container_renumber_migration` proofs that reference source evidence for
+both the source target and destination target, declare lineage/migration
+ownership plus destination-boundary ownership, require renumber operations to
+declare a destination, migration paths, and a lineage/migration event id, and
+keep source and destination paths inside declared live carriers. It still does
+not authorize replay.
+`amendment_program_target_source_payload_and_boundary` checks
+`amendment_program_target_mutation` proofs that reference source target evidence
+and inserted-payload evidence, declare amendment-program target-boundary and
+payload ownership, require a declared amendment-program target id or source
+target on the operation, and keep insert/replacement operations under declared
+live amendment-program carriers. It still does not authorize replay.
+`definition_child_text_tail_boundary_claim` checks
+`definition_child_and_tail_substitution` proofs that reference source evidence
+for the definition term, child label, tail connector, and replacement payload,
+declare the child-text, post-child-tail, and replacement-payload boundaries, and
+keep bounded definition-child text replacement operations under declared live
+definition carriers. It still does not authorize replay.
+`definition_child_structural_payload_boundary_claim` checks
+`definition_child_structural_substitution` proofs that reference source evidence
+for the definition term, child label, and replacement child payload, declare the
+definition-term scope, child identity, replacement-child payload shape, and
+tail-connector boundary when claimed, and keep bounded structural replacement
+operations under declared live definition carriers. It still does not authorize
+replay.
+`definition_child_structural_insert_boundary_claim` checks
+`definition_child_structural_insert` proofs that reference source evidence for
+the definition term, anchor child, inserted payload, and existing tail connector,
+declare definition scope, anchor identity, inserted-payload shape, tail-connector
+boundary, and connector migration/preservation ownership, require operation-level
+definition term, anchor child, inserted child, and connector handling, and keep
+structural inserts under declared live definition carriers. It still does not
+authorize replay.
+`referent_qualified_occurrence_scope_claim` checks
+`referent_qualified_text_substitution` proofs that reference source evidence for
+the referent entity, quoted preimage terms, and replacement text, declare
+referent/coreference ownership, require operation-level referent scope and
+occurrence ids, and keep text replacement operations on declared live text
+carriers. It still does not authorize replay.
+`mixed_body_heading_split_boundary_claim` checks
+`mixed_body_heading_text_substitution_split` proofs that reference source
+evidence for the body target, heading facet, per-surface preimage, and
+replacement, declare body/facet split ownership plus unclaimed-surface
+preservation, require separate body-text and heading-facet operations, and keep
+both operations on declared live split-surface carriers. It still does not
+authorize replay.
+`structural_child_range_source_payload_boundary_claim` checks
+`structural_child_range_substitution` proofs that reference source evidence for
+the child range, removed children, and replacement payload, declare range,
+removed-child, payload-shape, and parent tail/text boundary ownership, require
+operation-level child-range and removed-child identity, and keep range
+substitution operations within declared live child-range carriers. It still does
+not authorize replay.
+`source_carried_multi_subunit_boundary_claim` checks
+`source_carried_multi_subunit_text_rewrite` proofs that reference source
+evidence for the child-unit set, per-child preimage, and replacement/repeal
+payload, declare child-unit boundary ownership, require operation-level child
+unit identity, and keep text rewrite operations on declared live child-unit
+carriers. It still does not authorize replay.
+`source_carried_child_tail_boundary_claim` checks
+`source_carried_child_tail_text_rewrite` proofs that reference source evidence
+for the child anchor, tail scope, and replacement/repeal payload, declare the
+child anchor, tail preimage/repeal scope, and payload boundaries, require
+operation-level child-anchor and tail-boundary identity, and keep text rewrite
+operations on declared live child-tail carriers. It still does not authorize
+replay.
+`source_carried_structured_payload_boundary_claim` checks
+`source_carried_structured_text_patch` proofs that reference source evidence for
+the parent formula anchor and structured payload units, declare parent-formula,
+payload-unit, and child-target boundary ownership, require operation-level
+payload-unit or child-target identity, and keep structured insert/replacement
+operations within declared live child-target carriers. It still does not
+authorize replay.
+`source_carried_structured_tail_boundary_claim` checks
+`source_carried_structured_tail_substitution` proofs that reference source
+evidence for the tail range and structured replacement payload units, declare
+tail-range, structured-payload, child-target, and flattened-patch replacement
+boundaries, require operation-level tail-range plus payload-unit identity, and
+keep structured tail substitution operations within declared live tail/child
+carriers. It still does not authorize replay.
+
+`lawvm uk-live-target-index STATUTE_ID... --source current|enacted --out PATH`
+exports archive-backed `lawvm.uk_live_target_index.v1` rows for this gate. The
+exporter uses canonical `kind:label/...` legal paths and collapses unlabeled
+presentation wrappers such as body/crossheading/p1group carriers, so a section
+inside those wrappers is indexed as `section:1`, not as a wrapper-dependent
+transport path. Rows also carry `target_fingerprints` keyed by path, including
+direct-text and subtree SHA-256 hashes. These hashes are live-state preconditions
+for claim validation, not replay authority.
+
+Rejected rows are blocking claim-validation findings. They do not change the
+compiler result. Replay may consume semantic claims only after a later
+deterministic validator proves the claimed operations or non-replayable finding
+against source witnesses and live target state.
+
 ## 5. Strictness And Trust
 
 Manual and LLM claims are an authority layer, not a replacement for source

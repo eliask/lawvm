@@ -93,6 +93,7 @@ def _first_table_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
     for rule_id in (
         "uk_effect_table_entry_instruction_rejected",
         "uk_effect_table_entry_target_rejected",
+        "uk_effect_table_entry_placement_insert_rejected",
         "uk_effect_table_entry_row_insert",
     ):
         detail = _first_lowering_rejection_detail(row=row, rule_id=rule_id)
@@ -300,6 +301,31 @@ def _whole_act_word_patch_parts(source_preview: str) -> dict[str, Any]:
             "words_amended_by_same_schedule_exceptions",
             "words_inserted_by_same_act_unless_otherwise_provided",
         ],
+    }
+
+
+def _savings_qualified_omission_parts(source_preview: str) -> dict[str, str]:
+    """Return source-local evidence for savings-qualified omission candidates."""
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bomit\s+the\s+reference\s+to\s+(?P<reference>.{1,240}?)\s+"
+        r"except\s+(?P<savings>.+)$",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    omitted_reference = ""
+    savings_condition = ""
+    if match is not None:
+        omitted_reference = " ".join(match.group("reference").split()).strip(" ,;.")
+        savings_condition = "except " + " ".join(match.group("savings").split())
+    return {
+        "omitted_reference": omitted_reference[:240],
+        "savings_condition_preview": savings_condition[:500],
+        "source_preview_sha256": (
+            hashlib.sha256(source_preview.encode("utf-8")).hexdigest()
+            if source_preview
+            else ""
+        ),
     }
 
 
@@ -648,12 +674,14 @@ def manual_compile_suggested_claim_template(
     if summary.manual_compile_rule_id in {
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
+        "uk_manual_frontier_table_entry_placement_insert",
         "uk_manual_frontier_table_column_insert_candidate",
         "uk_manual_frontier_table_appropriate_place_candidate",
     }:
         placement_family_by_rule = {
             "uk_manual_frontier_table_entry_candidate": "table_entry_anchor_required",
             "uk_manual_frontier_table_entry_deictic_candidate": "deictic_table_entry_anchor_required",
+            "uk_manual_frontier_table_entry_placement_insert": "table_entry_placement_requires_row_or_cell_claim",
             "uk_manual_frontier_table_column_insert_candidate": "table_column_boundary_required",
             "uk_manual_frontier_table_appropriate_place_candidate": "appropriate_place_table_entry_requires_ordering_claim",
         }
@@ -763,6 +791,16 @@ def manual_compile_suggested_claim_template(
             )
             template["required_validator_checks"].append(
                 "claim_identifies_table_ordering_rule_or_anchor"
+            )
+        if (
+            summary.manual_compile_rule_id
+            == "uk_manual_frontier_table_entry_placement_insert"
+        ):
+            template["required_ownership"].append(
+                "table_entry_insertion_position_claim"
+            )
+            template["required_validator_checks"].append(
+                "claim_identifies_exact_insert_position_within_table_or_list"
             )
         return template
     if summary.manual_compile_rule_id == "uk_manual_frontier_appropriate_place_candidate":
@@ -1036,6 +1074,36 @@ def manual_compile_suggested_claim_template(
         )
         template.update(
             _whole_act_word_patch_parts(row.summary.source_extracted_text_preview or "")
+        )
+        return template
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_savings_qualified_text_omission_candidate"
+    ):
+        template = _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="savings_qualified_text_omission",
+            placement_family="applicability_qualified_omission_requires_savings_claim",
+            required_ownership=[
+                "source_named_omitted_reference",
+                "target_text_carrier",
+                "savings_or_exception_condition",
+                "temporal_or_applicability_scope",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_savings_qualified_omission",
+                "claim_identifies_exact_reference_text_preimage",
+                "claim_represents_savings_condition_as_applicability_not_unconditional_deletion",
+                "claim_preserves_occurrences_outside_the_savings_qualified_scope",
+                "changed_paths_are_within_declared_text_carriers_and_applicability_scope",
+            ],
+        )
+        template.update(
+            _savings_qualified_omission_parts(
+                row.summary.source_extracted_text_preview or ""
+            )
         )
         return template
     if (
