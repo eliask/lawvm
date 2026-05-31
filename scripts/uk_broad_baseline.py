@@ -66,6 +66,13 @@ _MANUAL_FRONTIER_BLOCKING_RULES = frozenset(
         "uk_effect_whole_act_word_level_text_patch_rejected",
     }
 )
+_MANUAL_FRONTIER_ACTIONABLE_STATUSES = frozenset(
+    {
+        "manual_compile_candidate",
+        "deterministic_frontend_candidate",
+        "source_insufficient",
+    }
+)
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -175,12 +182,14 @@ def score_one(statute_id: str) -> dict[str, Any]:
         effect_feed_parse_rejections: list[dict[str, Any]] = []
         lowering_rejections: list[dict[str, Any]] = []
         authority_rejections: list[dict[str, Any]] = []
+        effect_diagnostics: list[dict[str, Any]] = []
         pipeline.compile_ops_for_statute(
             statute_id,
             archive=archive,
             effect_feed_parse_rejections_out=effect_feed_parse_rejections,
             lowering_rejections_out=lowering_rejections,
             authority_rejections_out=authority_rejections,
+            effect_diagnostics_out=effect_diagnostics,
         )
         compile_rejections = [
             *effect_feed_parse_rejections,
@@ -193,6 +202,21 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["n_blocking_compile_rejections"] = len(blocking_compile_rejections)
         result["blocking_compile_rejection_rule_counts"] = _rule_counts(
             blocking_compile_rejections
+        )
+        manual_frontier_records = [
+            row
+            for row in effect_diagnostics
+            if row.get("rule_id") == "uk_manual_compile_frontier_classified"
+        ]
+        result["n_manual_frontier_records"] = len(manual_frontier_records)
+        result["manual_frontier_status_counts"] = _manual_frontier_status_counts(
+            manual_frontier_records
+        )
+        result["manual_frontier_rule_counts"] = _manual_frontier_rule_counts(
+            manual_frontier_records
+        )
+        result["manual_frontier_template_status_counts"] = (
+            _manual_frontier_template_status_counts(manual_frontier_records)
         )
 
         lanes: dict[str, float] = {}
@@ -341,12 +365,12 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         and aligned_no_gc - aligned >= _GROUNDING_DOMINATED_DELTA_THRESHOLD
     ):
         return "grounding_dominated_residual"
+    if _is_manual_compile_frontier_residual(row):
+        return "manual_compile_frontier_residual"
     if _is_compile_rejection_dominated_residual(row):
         return "compile_rejection_dominated_residual"
     if _is_retained_eu_mixed_representation_residual(row):
         return "retained_eu_mixed_representation_residual"
-    if _is_manual_compile_frontier_residual(row):
-        return "manual_compile_frontier_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
@@ -418,17 +442,19 @@ def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:
 
 
 def _is_manual_compile_frontier_residual(row: dict[str, Any]) -> bool:
-    """Classify small residuals whose blocker is already an explicit manual frontier."""
+    """Classify residuals with explicit manual/source-frontier workqueue evidence."""
     aligned = float(row.get("aligned_excluding_grounding_collateral") or row.get("aligned") or 0.0)
     if aligned < _LOW_VOLUME_RESIDUAL_MIN_SCORE:
-        return False
+        status_counts = row.get("manual_frontier_status_counts") or {}
+        if not _has_actionable_manual_frontier_status(status_counts):
+            return False
     n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
     n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
     if n_only_in_oracle < max(1, n_only_in_replayed):
         return False
-    n_misses = n_only_in_oracle + n_only_in_replayed
-    if n_misses > _LOW_VOLUME_RESIDUAL_MAX_MISSES:
-        return False
+    status_counts = row.get("manual_frontier_status_counts") or {}
+    if _has_actionable_manual_frontier_status(status_counts):
+        return True
     blocking_counts = row.get("blocking_compile_rejection_rule_counts") or {}
     if not isinstance(blocking_counts, dict):
         return False
@@ -436,6 +462,33 @@ def _is_manual_compile_frontier_residual(row: dict[str, Any]) -> bool:
         int(blocking_counts.get(rule_id) or 0) > 0
         for rule_id in _MANUAL_FRONTIER_BLOCKING_RULES
     )
+
+
+def _has_actionable_manual_frontier_status(status_counts: Any) -> bool:
+    if not isinstance(status_counts, dict):
+        return False
+    return any(
+        int(status_counts.get(status) or 0) > 0
+        for status in _MANUAL_FRONTIER_ACTIONABLE_STATUSES
+    )
+
+
+def _manual_frontier_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(str(row.get("manual_compile_status") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(str(row.get("manual_compile_rule_id") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_template_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        str(row.get("suggested_claim_template_status") or "none")
+        for row in rows
+    )
+    return dict(sorted(counts.items()))
 
 
 def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

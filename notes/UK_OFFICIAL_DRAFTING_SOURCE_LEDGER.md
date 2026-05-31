@@ -550,6 +550,30 @@ split is `manual_compile_frontier_residual=2`,
 `compile_rejection_dominated_residual=3`, `residual_after_grounding=6`, and
 `high_fidelity_after_grounding=57` plus existing source/frontier buckets.
 
+**Manual-frontier diagnostic surface correction (2026-05-31):**
+`scripts/uk_broad_baseline.py` now collects the compiler's
+`uk_manual_compile_frontier_classified` diagnostics on the broad row itself:
+`manual_frontier_status_counts`, `manual_frontier_rule_counts`, and
+`manual_frontier_template_status_counts`. Triage now uses this authoritative
+manual/source-frontier stream rather than inferring only from blocking lowering
+rule names. The bucket is a workqueue selector, not a claim that every oracle-only
+eId is explained one-for-one by a manual item; it says the remaining row-level
+frontier is already routed through manual/source/out-of-scope diagnostics rather
+than unclassified replay mutation. Verification snapshot
+`.tmp/uk_broad_after_manual_frontier_diagnostics_20260531.json` is score-stable
+against the previous local snapshot: 77/77 scored, mean aligned `93.38%`, errors
+`0`, source-frontier `0`, and no replay/oracle count changes. Bucket split:
+`high_fidelity_after_grounding=57`, `manual_compile_frontier_residual=11`,
+`effect_feed_absent_frontier=5`, `no_effect_rows_frontier=2`,
+`nonreplay_effect_frontier=1`, `base_metadata_only_frontier=1`. The 11
+manual-frontier residual rows are `eur/2019/1021`, `ukpga/1887/55`,
+`ukpga/1968/20`, `ukpga/1968/70`, `ukpga/1980/65`, `ukpga/1981/20`,
+`ukpga/1984/12`, `ukpga/1986/61`, `ukpga/1990/8`, `ukpga/1990/9`, and
+`ukpga/1998/17`. Across those rows the compiler reports
+`manual_compile_candidate=130`, `source_insufficient=167`,
+`deterministic_frontend_supported=3386`, and `non_textual_or_out_of_scope=3041`;
+all 130 manual candidates have claim-template coverage.
+
 **Oracle-alignment fallback suppression (2026-05-31):**
 Current UK oracle alignment no longer writes unmatched local fallback eIds into
 the replay tree. When a replay node cannot be matched to an oracle id by hash,
