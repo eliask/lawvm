@@ -363,6 +363,7 @@ def test_validate_manual_frontier_rows_rejects_conflicting_work_item_id(
         "work_item_id 'uk-manual-demo' has conflicting rows" in row["reason"]
         for row in rows
     )
+    assert all("line 1 and line 2" in row["reason"] for row in rows)
 
 
 def test_validate_manual_frontier_rows_rejects_wrong_schema(
