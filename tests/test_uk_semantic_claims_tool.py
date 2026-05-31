@@ -4690,6 +4690,91 @@ def test_validate_semantic_claim_rejects_missing_template_validator_checks() -> 
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_missing_template_required_proof_semantic() -> None:
+    workqueue = _workqueue_row()
+    template = workqueue["suggested_claim_template"]
+    assert isinstance(template, dict)
+    template["required_operation_family_proof_semantics"] = [
+        "table_surface_insert_anchor_and_live_carrier",
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (_claim_row(),),
+        workqueue_rows=(workqueue,),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_workqueue_mismatch"
+    assert (
+        "required_operation_family_proof_semantics missing: "
+        "table_surface_insert_anchor_and_live_carrier"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_accepts_template_required_proof_semantic() -> None:
+    source_preview = "after the existing table row insert the new row"
+    carrier_hash = hashlib.sha256(b"table carrier").hexdigest()
+    workqueue = _workqueue_row(source_preview=source_preview)
+    template = workqueue["suggested_claim_template"]
+    assert isinstance(template, dict)
+    template["required_operation_family_proof_semantics"] = [
+        "table_surface_insert_anchor_and_live_carrier",
+    ]
+    claim = _claim_row(source_preview=source_preview)
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-table-anchor",
+            "contains": "existing table row",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": carrier_hash,
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-table-anchor"],
+            "live_target_precondition_ids": ["live-table-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        workqueue_rows=(workqueue,),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1/table:1": {
+                        "text_sha256": carrier_hash,
+                        "subtree_sha256": "f" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert (
+        row["validator_status"]
+        == "validated_provenance_source_text_live_targets_and_preconditions_only"
+    )
+    assert row["operation_family_proofs_checked"] is True
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_template_check_without_status() -> None:
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]

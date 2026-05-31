@@ -3746,6 +3746,17 @@ def _workqueue_mismatch_issues(
         if missing_ownership:
             issues.append("required_ownership missing: " + ", ".join(missing_ownership))
         issues.extend(_ownership_status_issues(claim, required_ownership))
+    required_proof_semantics = _string_set(
+        _sequence_value(template, "required_operation_family_proof_semantics")
+    )
+    if required_proof_semantics:
+        declared_proof_semantics = set(_claim_operation_family_proof_semantics(claim))
+        missing_semantics = sorted(required_proof_semantics - declared_proof_semantics)
+        if missing_semantics:
+            issues.append(
+                "required_operation_family_proof_semantics missing: "
+                + ", ".join(missing_semantics)
+            )
     return tuple(issues)
 
 
