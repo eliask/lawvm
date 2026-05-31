@@ -6199,6 +6199,24 @@ def test_validate_semantic_claim_accepts_template_required_proof_semantic() -> N
         row["validator_status"]
         == "validated_provenance_source_text_live_targets_and_preconditions_only"
     )
+    assert row["matched_template_action_family"] == "table_surface_mutation"
+    assert row["matched_template_required_validator_checks"] == [
+        "claim_identifies_exact_table_carrier",
+        "changed_paths_are_within_claimed_table_surface",
+    ]
+    assert row["matched_template_required_validator_check_count"] == 2
+    assert row["matched_template_required_ownership"] == [
+        "source_named_table_surface",
+        "mutation_boundary",
+    ]
+    assert row["matched_template_required_ownership_count"] == 2
+    assert row["matched_template_required_operation_family_proof_semantics"] == [
+        "table_surface_insert_anchor_and_live_carrier",
+    ]
+    assert (
+        row["matched_template_required_operation_family_proof_semantic_count"]
+        == 1
+    )
     assert row["operation_family_proofs_checked"] is True
     assert row["validation_issues"] == []
     assert row["replay_authorized"] is False
