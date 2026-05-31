@@ -1562,6 +1562,10 @@ Current bench replay-regime invariant:
   ids, live path references, and recognized family-specific reference/ownership
   fields before applying family semantics; a claim cannot satisfy proof
   obligations through Python set collapse.
+- Weak-validator status checks are case-insensitive after trimming whitespace:
+  `passed`, `proved`, `validated`, and `verified` cannot be smuggled through as
+  capitalization variants on validator checks, ownership claims, or operation-
+  family proofs.
 - Semantic-claim validation rows carry `operation_family_proof_count`, `operation_family_proof_semantics`, and `operation_family_proof_families`; text/JSON reports aggregate proof semantic/family counts. This is evidence-routing only, not a trust upgrade.
 - The manual-frontier validator is a stale-workqueue detector, not a replay shortcut. It must not mutate replay state, alter benchmark scoring, or reinterpret a blocked row as supported unless the current compiler already emits deterministic operations without blocking lowering.
 - Current manual-frontier status takes precedence over compiled-op count. A row that emits partial operations while still carrying a manual-frontier source-pathology classification remains `still_manual_frontier`; partial lowering is not proof that the source issue has been discharged.

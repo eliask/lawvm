@@ -237,10 +237,12 @@ The current validator checks only:
   family-specific proof obligation
 - explicit non-proving status for each declared template ownership claim; this
   weak validator rejects claims that label ownership as `passed`, `proved`,
-  `validated`, or `verified`
+  `validated`, or `verified`, treating case and surrounding whitespace as
+  non-semantic
 - explicit non-proving status for each declared template proof obligation; this
   weak validator rejects claims that label an obligation as `passed`, `proved`,
-  `validated`, or `verified`
+  `validated`, or `verified`, treating case and surrounding whitespace as
+  non-semantic
 
 It emits `lawvm.uk_semantic_compile_claim_validation.v1` rows. An accepted row
 uses `validator_status=validated_provenance_only`,
@@ -281,7 +283,8 @@ If the claim declares `operation_family_proofs`, the validator checks only that
 the proof rows are internally wired to the claimed operation family, operations,
 validator checks, and source/live preconditions. This is a proof-plan integrity
 check, not proof of legal sufficiency. Rows whose proof status says `passed`,
-`proved`, `validated`, or `verified` are rejected by this weak validator.
+`proved`, `validated`, or `verified` are rejected by this weak validator; the
+comparison is case-insensitive after trimming surrounding whitespace.
 Validation rows also carry `operation_family_proof_count`,
 `operation_family_proof_semantics`, and `operation_family_proof_families`, and
 the validation report summarizes semantic/family counts, so batch review can see
