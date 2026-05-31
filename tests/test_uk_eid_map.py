@@ -48,6 +48,28 @@ def test_extract_eid_map_skips_zombie_child_ordinals(tmp_path: Path) -> None:
     assert "body:part-1:group-a:section[1]" not in eid_map
 
 
+def test_extract_eid_map_skips_editorial_footnotes() -> None:
+    xml = b"""\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Body>
+    <P1 id="article-1">
+      <Pnumber>1</Pnumber>
+      <P1para><Text>Operative text.</Text></P1para>
+    </P1>
+  </Body>
+  <Footnotes>
+    <Footnote id="f00001">Editorial source note.</Footnote>
+  </Footnotes>
+</Legislation>
+"""
+
+    eid_data = extract_eid_map_bytes(xml)
+
+    assert "article-1" in set(eid_data["eid_map"].values())
+    assert "f00001" not in set(eid_data["eid_map"].values())
+    assert "f00001" not in eid_data["text_map"]
+
+
 def test_extract_eid_map_records_oracle_physical_parent_eid_drift() -> None:
     xml = b"""\
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">

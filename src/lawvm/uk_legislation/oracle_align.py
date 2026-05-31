@@ -38,6 +38,7 @@ class UKOracleAlignmentReport:
     cleared_count: int
     oracle_assigned_count: int
     local_fallback_count: int
+    local_fallback_suppressed_count: int
     transparent_wrapper_cleared_count: int
     match_method_counts: dict[str, int]
     strict_disposition: str
@@ -60,6 +61,7 @@ class UKOracleAlignmentReport:
             "cleared_count": self.cleared_count,
             "oracle_assigned_count": self.oracle_assigned_count,
             "local_fallback_count": self.local_fallback_count,
+            "local_fallback_suppressed_count": self.local_fallback_suppressed_count,
             "transparent_wrapper_cleared_count": self.transparent_wrapper_cleared_count,
             "match_method_counts": dict(sorted(self.match_method_counts.items())),
             "strict_disposition": self.strict_disposition,
@@ -91,6 +93,7 @@ def _empty_alignment_report(*, enabled: bool, eid_map: Optional[dict[str, str]])
         cleared_count=0,
         oracle_assigned_count=0,
         local_fallback_count=0,
+        local_fallback_suppressed_count=0,
         transparent_wrapper_cleared_count=0,
         match_method_counts={},
         strict_disposition="block",
@@ -136,11 +139,12 @@ def _alignment_report(
         for event in match_events
         if event.get("after_eid") is not None
     }
-    transparent_events: list[dict[str, Any]] = [
+    cleared_events: list[dict[str, Any]] = [
         event
         for event in match_events
-        if event.get("match_method") == "transparent_wrapper_cleared"
+        if event.get("after_eid") is None
     ]
+    used_cleared_event_indexes: set[int] = set()
     changes: list[UKOracleAlignmentChange] = []
     for (before_path, before_node), (after_path, after_node) in zip(before_rows, after_rows, strict=False):
         if str(after_node.kind).lower() == "body":
@@ -151,15 +155,16 @@ def _alignment_report(
             continue
         event = event_by_after.get(after_eid or "")
         if event is None and after_eid is None:
-            event = next(
-                (
-                    candidate
-                    for candidate in transparent_events
-                    if str(candidate.get("kind") or "") == str(after_node.kind)
-                    and candidate.get("label") == after_node.label
-                ),
-                None,
-            )
+            for event_index, candidate in enumerate(cleared_events):
+                if event_index in used_cleared_event_indexes:
+                    continue
+                if str(candidate.get("kind") or "") != str(after_node.kind):
+                    continue
+                if candidate.get("label") != after_node.label:
+                    continue
+                event = candidate
+                used_cleared_event_indexes.add(event_index)
+                break
         path = before_path if before_path == after_path else f"{before_path} -> {after_path}"
         changes.append(
             UKOracleAlignmentChange(
@@ -170,6 +175,26 @@ def _alignment_report(
                 after_eid=after_eid,
                 match_method=str(event.get("match_method")) if event and event.get("match_method") else None,
                 match_key=str(event.get("match_key")) if event and event.get("match_key") else None,
+            )
+        )
+    for event_index, event in enumerate(cleared_events):
+        if event_index in used_cleared_event_indexes:
+            continue
+        label_value = event.get("label")
+        label = (
+            label_value
+            if label_value is None or isinstance(label_value, str)
+            else str(label_value)
+        )
+        changes.append(
+            UKOracleAlignmentChange(
+                path="oracle_alignment/event",
+                kind=str(event.get("kind") or ""),
+                label=label,
+                before_eid=str(event.get("before_eid")) if event.get("before_eid") else None,
+                after_eid=None,
+                match_method=str(event.get("match_method")) if event.get("match_method") else None,
+                match_key=str(event.get("match_key")) if event.get("match_key") else None,
             )
         )
 
@@ -183,6 +208,9 @@ def _alignment_report(
         1
         for change in changes
         if change.after_eid is not None and change.after_eid not in oracle_values
+    )
+    local_fallback_suppressed_count = sum(
+        1 for change in changes if change.match_method == "local_fallback_suppressed"
     )
     transparent_wrapper_cleared_count = sum(
         1
@@ -208,6 +236,7 @@ def _alignment_report(
         cleared_count=cleared_count,
         oracle_assigned_count=oracle_assigned_count,
         local_fallback_count=local_fallback_count,
+        local_fallback_suppressed_count=local_fallback_suppressed_count,
         transparent_wrapper_cleared_count=transparent_wrapper_cleared_count,
         match_method_counts=match_method_counts,
         strict_disposition="block",
