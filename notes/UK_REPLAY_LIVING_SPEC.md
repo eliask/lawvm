@@ -266,7 +266,9 @@ snippet SHA-256 hashes, exact/min/max snippet occurrence counts, and optional
 `after_precondition_ids`/`before_precondition_ids` relationships against
 supplied claim/workqueue source previews. Source precondition ids used for
 ordering must be unique, referenced ids must exist, and ordered snippets must
-occur in the same supplied source preview in the declared order. Passing
+occur uniquely in the same supplied source preview in the declared order; if a
+snippet appears multiple times, the order claim is ambiguous and must use a
+future ordinal/span claim rather than first-occurrence matching. Passing
 source-text preconditions
 produce `validated_provenance_and_source_text_only` when no live-target index is
 supplied. If `--live-targets-jsonl` is supplied,

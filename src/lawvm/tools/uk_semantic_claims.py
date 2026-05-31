@@ -4235,6 +4235,18 @@ def _source_text_precondition_relative_order_issues(
                 "the same supplied source text"
             )
             continue
+        uniqueness_issues = _source_text_precondition_order_uniqueness_issues(
+            prefix=prefix,
+            relation=relation,
+            relation_key=relation_keys[0],
+            current_snippet=current_snippet,
+            reference_id=reference_id,
+            reference_snippet=reference_snippet,
+            common_texts=common_texts,
+        )
+        if uniqueness_issues:
+            issues.extend(uniqueness_issues)
+            continue
         reversed_texts = [
             text_index
             for text_index, text in enumerate(common_texts, start=1)
@@ -4251,6 +4263,32 @@ def _source_text_precondition_relative_order_issues(
                 f"{reference_id!r} is not satisfied by supplied source text "
                 f"indexes {reversed_texts}"
             )
+    return tuple(issues)
+
+
+def _source_text_precondition_order_uniqueness_issues(
+    *,
+    prefix: str,
+    relation: str,
+    relation_key: str,
+    current_snippet: str,
+    reference_id: str,
+    reference_snippet: str,
+    common_texts: tuple[str, ...],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    for text_index, source_text in enumerate(common_texts, start=1):
+        current_count = source_text.count(current_snippet)
+        reference_count = source_text.count(reference_snippet)
+        if current_count == 1 and reference_count == 1:
+            continue
+        issues.append(
+            f"{prefix}.{relation_key} {relation} {reference_id!r} cannot be "
+            "checked because ordered source snippets must be unique in supplied "
+            f"source text index {text_index}: current snippet {current_snippet!r} "
+            f"occurs {current_count} times and reference snippet "
+            f"{reference_snippet!r} occurs {reference_count} times"
+        )
     return tuple(issues)
 
 
