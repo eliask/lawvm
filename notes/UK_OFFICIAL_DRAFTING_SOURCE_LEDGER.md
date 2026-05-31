@@ -341,7 +341,15 @@ allowed to lag the executable implementation.
   `selected_source_matches_phrase=false`, so they remain unproved candidates. Do
   not add a replay guard until a selected source/target witness is proved.
 - **6.1.14 repealing a paragraph with a trailing conjunction** — make the `and`/`or`
-  explicit. → connects to existing `tail_connector` modelling. **HAVE (verify).**
+  explicit. → connects to existing `tail_connector` modelling. **HAVE (verified)**
+  for bounded text deletion/split lanes: final-word forms such as `the word "or"
+  at the end of paragraph (a) is repealed` lower with `occurrence=-1`, and mixed
+  structural+word repeal rows split the contextual conjunction deletion from the
+  structural child repeal. These lanes delete only the source-named connector
+  text and must not delete neighbouring children by coincidence. Witnesses:
+  `test_compile_additional_frontier_text_patch_idioms`,
+  `test_compile_contextual_preceding_word_repeal_uses_adjacent_anchor`, and
+  `test_compile_repeal_table_mixed_structural_and_word_repeal_splits_ops`.
 
 ### §6.2 / §6.5 Substitutions & occurrence scope
 - **6.2.1 `for x substitute y`**; **6.2.6/6.2.7 substitute vs repeal+insert** — reuse
