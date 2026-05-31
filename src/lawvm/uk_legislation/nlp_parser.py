@@ -181,6 +181,9 @@ UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RULE_ID = (
     "uk_effect_after_quoted_anchor_dangling_insert_quote_text_patch"
 )
+UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID = (
+    "uk_effect_after_words_in_brackets_insert_text_patch"
+)
 UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
@@ -705,6 +708,24 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                 "rule_id": "uk_effect_words_in_brackets_substitution_text_patch",
             }
         )
+
+    matches_after_words_in_brackets_inserted = re.finditer(
+        r"after\s+(?:the\s+)?words?\s+in\s+brackets\s+"
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\s*[—–-]?\s*"
+        r"(?P<replacement>.{1,700}?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_after_words_in_brackets_inserted:
+        replacement = re.sub(r"\s+\.$", "", m.group("replacement").strip()).strip()
+        if replacement:
+            subs.append(
+                {
+                    "original": "TEXT_AFTER_WORDS_IN_BRACKETS",
+                    "replacement": f" {replacement}",
+                    "rule_id": UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID,
+                }
+            )
 
     all_occurrences_multi_spans: list[tuple[int, int]] = []
     matches_multi_all_occurrences_substituted = _UK_MULTI_OCCURRENCE_SUBSTITUTION_RE.finditer(text)
