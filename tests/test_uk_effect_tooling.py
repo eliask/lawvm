@@ -2201,6 +2201,7 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "uk_manual_frontier_deterministic_supported": 1,
             "uk_manual_frontier_missing_payload_source_insufficient": 1,
         },
+        "manual_compile_candidate_rule_counts": {},
         "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,
@@ -5656,6 +5657,9 @@ def test_print_uk_effects_summary_prints_manual_compile_frontier(capsys) -> None
             "manual_compile_rule_counts": {
                 "uk_manual_frontier_heading_facet_candidate": 1,
             },
+            "manual_compile_candidate_rule_counts": {
+                "uk_manual_frontier_heading_facet_candidate": 1,
+            },
             "suggested_claim_template_status_counts": {"available": 1},
             "total_compiled_ops": 0,
             "rows_with_resolver_eids": 0,
@@ -5670,6 +5674,8 @@ def test_print_uk_effects_summary_prints_manual_compile_frontier(capsys) -> None
     assert "Manual compile frontier statuses: manual_compile_candidate=1" in out
     assert "Suggested claim templates: available=1" in out
     assert "Manual compile frontier rules:" in out
+    assert "  uk_manual_frontier_heading_facet_candidate: 1" in out
+    assert "Manual compile candidate rules:" in out
     assert "  uk_manual_frontier_heading_facet_candidate: 1" in out
 
 
@@ -5748,6 +5754,10 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
     assert summary["suggested_claim_template_status_counts"] == {
         "available": 1,
         "not_available": 1,
+    }
+    assert summary["manual_compile_candidate_rule_counts"] == {
+        "uk_manual_frontier_heading_facet_candidate": 1,
+        "uk_manual_frontier_unclassified": 1,
     }
 
 
