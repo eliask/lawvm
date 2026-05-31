@@ -213,6 +213,11 @@ def test_replace_as_insert_adjudication_has_metadata() -> None:
     assert detail["quirks_disposition"] == "apply"
     assert detail["family"] == "target_resolution_recovery"
     assert detail["phase"] == "replay"
+    target_resolution = detail["target_resolution"]
+    assert target_resolution["target_resolution_status"] == "recovered"
+    assert target_resolution["source_target"] == "section:5/subsection:3A"
+    assert target_resolution["selected_target"] == "section:5/subsection:3A"
+    assert target_resolution["scope_confidence"] == "fallback"
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +246,7 @@ def test_replace_as_insert_adjudication_has_witness_fields() -> None:
     assert "payload_label" in detail, "Must record payload_label"
     assert detail["leaf_kind"] == "subsection"
     assert detail["payload_label"] == "3A"
+    assert detail["target_resolution"]["target_candidates"][0]["target"] == "section:5/subsection:3A"
 
 
 # ---------------------------------------------------------------------------
