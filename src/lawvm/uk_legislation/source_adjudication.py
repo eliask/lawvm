@@ -1538,6 +1538,13 @@ _CARRIED_TAIL_FROM_TO_END_RE = re.compile(
 _CARRIED_TAIL_LABEL_LABEL_RE = re.compile(
     r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.{0,400}?\b(?:[ivxlcdm]+)\s+\w"
 )
+# Top-level roman payloads such as `substitute - i ... ii ...` need a child
+# carrier claim when the source names only the parent tail range.
+_CARRIED_TAIL_TOP_LEVEL_ROMAN_PAYLOAD_RE = re.compile(
+    r"\bsubstitute[d]?\s*(?:[“\"'‘]\s*)?(?:—|--|\s-\s)?\s*"
+    r"i\s+\w.{0,400}?\bii\s+\w",
+    flags=re.I | re.S,
+)
 
 
 def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
@@ -1554,6 +1561,17 @@ def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
     if "—" in text or "--" in text or " - " in text:
         return bool(re.search(r"(?:—|--|\s-\s)\s*(?:\(?[a-z0-9]+\)?|[ivxlcdm]+)\s+\w", norm))
     return bool(_CARRIED_TAIL_LABEL_LABEL_RE.search(norm))
+
+
+def _looks_like_top_level_roman_structured_tail_substitution(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm:
+        return False
+    if "to the end" not in norm:
+        return False
+    if "substitute" not in norm:
+        return False
+    return bool(_CARRIED_TAIL_TOP_LEVEL_ROMAN_PAYLOAD_RE.search(norm))
 
 
 def _looks_like_words_treated_as_substituted_context(text: str) -> bool:
@@ -2218,6 +2236,15 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
         source_pathology_norm,
     )
+    if (
+        source_pathology_norm == "source_carried_structured_tail_substitution_unsupported"
+        and _looks_like_top_level_roman_structured_tail_substitution(extracted_text)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
+            "reason": "The source substitutes a parent tail range with top-level roman child units but does not name the child carrier that should receive them; a claim or future live-state elaboration must own that carrier boundary before replay.",
+        }
     if main_source_pathology_result is not None:
         return main_source_pathology_result
 

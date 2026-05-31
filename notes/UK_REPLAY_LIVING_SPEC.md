@@ -154,6 +154,13 @@ Manual frontier claim templates:
 - semantic-claim operation reference lists are declaration surfaces too: duplicate `destination`, `occurrence_ids`, or `removed_child_ids` entries are rejected before family proof semantics interpret them
 - cross-container renumber rows are lineage work, not same-parent relabels: a future executable claim must own source identity, destination identity, descendant wrapping or relabel semantics, lineage/migration events, and both source/destination mutation boundaries
 - source-carried structured-tail substitutions are not ordinary text patches: the source substitutes a tail range with visibly structured child material, so a future executable claim must materialize child payload units rather than flattening replacement text into the parent host
+- source-carried structured-tail substitutions with top-level roman child units
+  and only a parent tail target are manual/claim work, not deterministic parser
+  work. Example: `for the words from "any" ... to the end of that subsection,
+  substitute - i ... ii ...` names the subsection and tail preimage but does not
+  name the paragraph carrier that should receive `i` / `ii`; replay must not
+  infer that carrier from live-text uniqueness without an owned claim or future
+  live-state elaboration proof.
 
 Replay adjudication ownership:
 
@@ -1226,6 +1233,11 @@ Current bench replay-regime invariant:
   as the insertion boundary, avoiding duplicate punctuation when the inserted
   source text itself ends with a comma. Current regression witness:
   `ukpga/1997/9` `s. 79(1)` amended by `asp/2011/3 s. 29(1)`.
+- Top-level roman structured-tail substitutions that lower only as flat
+  `TEXT_FROM_*_TO_END` patches are classified as
+  `manual_compile_candidate`, not deterministic frontend candidates, when the
+  source does not name the child carrier for the roman units. Current witness:
+  `ukpga/1997/9` `s. 34(5)` amended by `asp/2011/3 s. 22(2)(c)`.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.
