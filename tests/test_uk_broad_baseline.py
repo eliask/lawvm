@@ -89,6 +89,9 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                     "uk_manual_frontier_parser_or_extraction_candidate": 2,
                     "uk_manual_frontier_repeal_table_candidate": 3,
                 },
+                "manual_frontier_manual_compile_candidate_rule_counts": {
+                    "uk_manual_frontier_repeal_table_candidate": 3,
+                },
                 "manual_frontier_template_status_counts": {
                     "available": 3,
                     "not_available": 2,
@@ -188,6 +191,9 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     }
     assert summary["manual_frontier_rule_counts"] == {
         "uk_manual_frontier_parser_or_extraction_candidate": 2,
+        "uk_manual_frontier_repeal_table_candidate": 3,
+    }
+    assert summary["manual_frontier_manual_compile_candidate_rule_counts"] == {
         "uk_manual_frontier_repeal_table_candidate": 3,
     }
     assert summary["manual_frontier_template_status_counts"] == {
