@@ -374,7 +374,25 @@ allowed to lag the executable implementation.
   `test_compile_range_with_independent_end_occurrence_to_text_replace`, and the
   `each_other_place` compile/replay tests.
 - **6.5.2/6.5.3 opening/closing words** — "the words before paragraph (a)" / "after
-  paragraph (c)". → text-selector grammar for intro/outro words. **HAVE/partial.**
+  paragraph (c)". → text-selector grammar for intro/outro words.
+  **HAVE (verified partial)** for bounded target-local selectors:
+  `for the opening words substitute ...` lowers to `TEXT_OPENING_WORDS`;
+  `for the words before paragraph/sub-paragraph/subsection (X) substitute ...`
+  lowers to `TEXT_BEFORE_CHILD_*`, including block-substitution payloads with a
+  repeated source payload label stripped under
+  `uk_effect_before_child_block_text_substitution_patch`; and `the words
+  after/following paragraph or sub-paragraph (X)` deletion/substitution lowers to
+  `TEXT_AFTER_CHILD_TAIL_*` only when source/effect context proves the child
+  boundary. Inline `after paragraph (X) insert "Y"` is separately owned as
+  `TEXT_AFTER_CHILD_*` and must not create structural siblings. Remaining
+  broad, deictic block, table/cell, heading, or unproved child-boundary cases
+  stay frontier/blocked. Witnesses include
+  `test_compile_opening_words_substitution_preserves_children`,
+  `test_compile_before_child_block_substitution_strips_source_payload_label`,
+  `test_compile_source_carried_child_tail_substitution_from_exact_subsection_context`,
+  `test_compile_source_carried_subparagraph_tail_repeal_from_exact_paragraph_context`,
+  `test_compile_after_child_insert_appends_to_named_child`, and the broad-feed /
+  mismatched-context negative child-tail tests.
 - **6.5.10 `(including the heading)`** — an amendment may reach the heading too. →
   heading-facet selector. **HAVE (verified)** for the narrow source form
   `for "X" (including in the heading) substitute "Y"` via
