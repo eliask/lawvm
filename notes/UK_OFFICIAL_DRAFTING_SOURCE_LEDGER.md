@@ -538,6 +538,18 @@ correction, not a replay mutation; rows such as `ssi/2025/74`,
 correctly sit in `effect_feed_absent_frontier` instead of being hidden by the old
 raw parsed surface.
 
+The broad triage also separates small residuals whose missing oracle ids are
+already explained by blocking manual-frontier compile records into
+`manual_compile_frontier_residual`. Witnesses in the corrected 77-statute gate:
+`ukpga/1887/55` and `ukpga/1968/70` have only oracle-side misses and blocking
+table/source-payload records; they are not ordinary bounded residuals unless a
+new source-owned compiler family is identified. Verification snapshot
+`.tmp/uk_broad_after_manual_frontier_bucket_20260531.json` remains score-stable
+at 77/77 scored, mean aligned `93.38%`, errors `0`, source-frontier `0`; bucket
+split is `manual_compile_frontier_residual=2`,
+`compile_rejection_dominated_residual=3`, `residual_after_grounding=6`, and
+`high_fidelity_after_grounding=57` plus existing source/frontier buckets.
+
 **Oracle-alignment fallback suppression (2026-05-31):**
 Current UK oracle alignment no longer writes unmatched local fallback eIds into
 the replay tree. When a replay node cannot be matched to an oracle id by hash,

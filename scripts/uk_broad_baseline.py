@@ -57,6 +57,15 @@ _STRUCTURAL_MATCH_THRESHOLD = 99.5
 _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS = 25
 _LOW_VOLUME_RESIDUAL_MAX_MISSES = 25
 _LOW_VOLUME_RESIDUAL_MIN_SCORE = 85.0
+_MANUAL_FRONTIER_BLOCKING_RULES = frozenset(
+    {
+        "uk_effect_repeal_table_replacement_payload_rejected",
+        "uk_effect_repeal_table_structural_repeal_unresolved",
+        "uk_effect_source_payload_without_instruction_context_rejected",
+        "uk_effect_table_entry_instruction_rejected",
+        "uk_effect_whole_act_word_level_text_patch_rejected",
+    }
+)
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -336,6 +345,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "compile_rejection_dominated_residual"
     if _is_retained_eu_mixed_representation_residual(row):
         return "retained_eu_mixed_representation_residual"
+    if _is_manual_compile_frontier_residual(row):
+        return "manual_compile_frontier_residual"
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
@@ -404,6 +415,27 @@ def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:
         return False
     n_misses = int(row.get("n_only_in_oracle") or 0) + int(row.get("n_only_in_replayed") or 0)
     return n_misses <= _LOW_VOLUME_RESIDUAL_MAX_MISSES
+
+
+def _is_manual_compile_frontier_residual(row: dict[str, Any]) -> bool:
+    """Classify small residuals whose blocker is already an explicit manual frontier."""
+    aligned = float(row.get("aligned_excluding_grounding_collateral") or row.get("aligned") or 0.0)
+    if aligned < _LOW_VOLUME_RESIDUAL_MIN_SCORE:
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
+    if n_only_in_oracle < max(1, n_only_in_replayed):
+        return False
+    n_misses = n_only_in_oracle + n_only_in_replayed
+    if n_misses > _LOW_VOLUME_RESIDUAL_MAX_MISSES:
+        return False
+    blocking_counts = row.get("blocking_compile_rejection_rule_counts") or {}
+    if not isinstance(blocking_counts, dict):
+        return False
+    return any(
+        int(blocking_counts.get(rule_id) or 0) > 0
+        for rule_id in _MANUAL_FRONTIER_BLOCKING_RULES
+    )
 
 
 def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
