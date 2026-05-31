@@ -1677,7 +1677,13 @@ Current bench replay-regime invariant:
 - `--remaining-manual-rule RULE_ID` and `--remaining-source-pathology PATHOLOGY` are export-only filters for `--remaining-jsonl`. They do not change validation classification or aggregate summary counts; they only write a narrower still-live work queue for one implementation family.
 - `--fail-on-stale` exits nonzero after printing/writing the report if any exported workqueue row is already deterministic or otherwise no longer live manual-frontier work. `--fail-on-validation-error` exits nonzero for malformed rows or effect IDs that no longer exist. `--fail-on-remaining` exits nonzero when any row remains live manual-frontier work, which is useful when a curated queue is expected to have been fully discharged. These flags are script guards only; they must not change validation classification.
 - `--summary-only` suppresses per-row stdout output while preserving aggregate counts and any requested JSONL exports. It is intended for dashboards and automation over large work queues where the JSONL artifacts, not stdout, carry the detailed row evidence.
-- Validator summaries include remaining/stale manual-rule count maps, current and remaining source-pathology count maps, and current blocking-lowering count maps. This makes summary-only output a usable next-action selector: agents should pick from `remaining_manual_rule_counts` and `remaining_source_pathology_counts` rather than scanning stale rows by hand.
+- Validator summaries include remaining/stale manual-rule count maps, current and
+  remaining source-pathology count maps, current blocking-lowering count maps,
+  and current/remaining template obligation maps for action families, required
+  validator checks, required ownership, and required proof semantics. This makes
+  summary-only output a usable next-action selector: agents should pick from
+  `remaining_manual_rule_counts`, `remaining_source_pathology_counts`, and
+  remaining template obligation counts rather than scanning stale rows by hand.
 
 ## UK Effect Compare Facet Surfaces
 
