@@ -3928,6 +3928,10 @@ def _validate_live_target_preconditions(
     return tuple(issues), checked
 
 
+def _claim_declares_live_target_preconditions(claim: Mapping[str, Any]) -> bool:
+    return bool(_claim_live_target_precondition_rows(claim))
+
+
 def _validate_non_replayable_finding_shape(
     proposed_outcome: Mapping[str, Any],
 ) -> tuple[str, ...]:
@@ -5272,6 +5276,24 @@ def validate_semantic_claim_rows(
                 )
                 continue
         else:
+            if _claim_declares_live_target_preconditions(row):
+                output.append(
+                    _validation_row(
+                        row,
+                        validator_status="rejected_live_state_missing",
+                        rule_id="uk_semantic_claim_live_target_index_missing",
+                        issues=(
+                            "live_target_preconditions cannot be checked because "
+                            "no live target index is supplied",
+                        ),
+                        workqueue_row=workqueue_match.row if workqueue_match else None,
+                        reason=(
+                            "Semantic claim declares live target preconditions "
+                            "without a supplied live target index."
+                        ),
+                    )
+                )
+                continue
             live_state_preconditions_checked = False
         accepted_status, accepted_rule_id = _accepted_status_and_rule(
             source_text_preconditions_checked=source_text_preconditions_checked,
