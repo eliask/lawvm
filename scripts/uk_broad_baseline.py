@@ -231,6 +231,12 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["manual_frontier_rule_counts"] = _manual_frontier_rule_counts(
             manual_frontier_records
         )
+        result["manual_frontier_manual_compile_candidate_rule_counts"] = (
+            _manual_frontier_rule_counts_for_status(
+                manual_frontier_records,
+                "manual_compile_candidate",
+            )
+        )
         result["manual_frontier_template_status_counts"] = (
             _manual_frontier_template_status_counts(manual_frontier_records)
         )
@@ -342,6 +348,10 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_rule_counts = _aggregate_row_count_maps(
         results, "manual_frontier_rule_counts"
     )
+    manual_frontier_manual_compile_candidate_rule_counts = _aggregate_row_count_maps(
+        results,
+        "manual_frontier_manual_compile_candidate_rule_counts",
+    )
     manual_frontier_template_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_template_status_counts"
     )
@@ -380,6 +390,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "manual_frontier_status_counts": manual_frontier_status_counts,
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
+        "manual_frontier_manual_compile_candidate_rule_counts": (
+            manual_frontier_manual_compile_candidate_rule_counts
+        ),
         "manual_frontier_template_status_counts": manual_frontier_template_status_counts,
         "manual_frontier_template_gap_status_counts": (
             manual_frontier_template_gap_status_counts
@@ -561,6 +574,18 @@ def _manual_frontier_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]
 
 def _manual_frontier_rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts = Counter(str(row.get("manual_compile_rule_id") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_rule_counts_for_status(
+    rows: list[dict[str, Any]],
+    status: str,
+) -> dict[str, int]:
+    counts = Counter(
+        str(row.get("manual_compile_rule_id") or "unknown")
+        for row in rows
+        if str(row.get("manual_compile_status") or "") == status
+    )
     return dict(sorted(counts.items()))
 
 
@@ -776,6 +801,14 @@ def run_driver(
             for status, count in summary["manual_frontier_status_counts"].items()
         )
         print(f"  manual_frontier_status_counts: {counts}")
+    if summary["manual_frontier_manual_compile_candidate_rule_counts"]:
+        counts = ", ".join(
+            f"{rule_id}={count}"
+            for rule_id, count in summary[
+                "manual_frontier_manual_compile_candidate_rule_counts"
+            ].items()
+        )
+        print(f"  manual_compile_candidate_rule_counts: {counts}")
     if summary["manual_frontier_template_status_counts"]:
         counts = ", ".join(
             f"{status}={count}"
