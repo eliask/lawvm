@@ -105,6 +105,42 @@ def _write_jsonl_rows(path: Path, rows: tuple[Mapping[str, Any], ...]) -> int:
     return len(rows)
 
 
+def _same_jsonl_payload_ignoring_line_number(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+) -> bool:
+    left_payload = dict(left)
+    right_payload = dict(right)
+    left_payload.pop("line_number", None)
+    right_payload.pop("line_number", None)
+    return left_payload == right_payload
+
+
+def _conflicting_work_item_id_issues_by_index(
+    rows: tuple[Mapping[str, Any], ...],
+) -> dict[int, tuple[str, ...]]:
+    first_row_by_work_item_id: dict[str, tuple[int, Mapping[str, Any]]] = {}
+    issue_lists_by_index: dict[int, list[str]] = {}
+    for index, row in enumerate(rows):
+        work_item_id = str(row.get("work_item_id") or "")
+        if not work_item_id:
+            continue
+        existing = first_row_by_work_item_id.get(work_item_id)
+        if existing is None:
+            first_row_by_work_item_id[work_item_id] = (index, row)
+            continue
+        existing_index, existing_row = existing
+        if _same_jsonl_payload_ignoring_line_number(existing_row, row):
+            continue
+        issue = f"work_item_id {work_item_id!r} has conflicting rows"
+        issue_lists_by_index.setdefault(existing_index, []).append(issue)
+        issue_lists_by_index.setdefault(index, []).append(issue)
+    return {
+        index: tuple(issues)
+        for index, issues in issue_lists_by_index.items()
+    }
+
+
 def _row_replay_regime(row: Mapping[str, Any]) -> dict[str, Any]:
     value = row.get("replay_regime")
     if not isinstance(value, Mapping):
@@ -245,8 +281,9 @@ def validate_manual_frontier_rows(
     output: list[dict[str, Any]] = []
     effects_cache: dict[str, tuple[Any, ...]] = {}
     context_cache: dict[str, Any] = {}
+    work_item_id_conflicts = _conflicting_work_item_id_issues_by_index(rows)
     with farchive.Farchive(db_path) as archive:
-        for row in rows:
+        for index, row in enumerate(rows):
             if str(row.get("validator_status") or "") == "input_error":
                 output.append(
                     _manual_frontier_validation_row(
@@ -259,6 +296,22 @@ def validate_manual_frontier_rows(
                         statute_id="",
                         effect_id="",
                         reason=str(row.get("reason") or ""),
+                        blocking=True,
+                        strict_disposition="block",
+                        quirks_disposition="block",
+                    )
+                )
+                continue
+            conflict_issues = work_item_id_conflicts.get(index, ())
+            if conflict_issues:
+                output.append(
+                    _manual_frontier_validation_row(
+                        rule_id="uk_manual_frontier_validator_work_item_id_conflict",
+                        validator_status="input_error",
+                        line_number=int(row.get("line_number") or 0),
+                        statute_id=str(row.get("statute_id") or ""),
+                        effect_id=str(row.get("effect_id") or ""),
+                        reason="; ".join(conflict_issues),
                         blocking=True,
                         strict_disposition="block",
                         quirks_disposition="block",

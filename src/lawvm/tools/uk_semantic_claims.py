@@ -311,7 +311,7 @@ def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueInd
             existing = by_work_item_id.get(work_item_id)
             if existing is None:
                 by_work_item_id[work_item_id] = row
-            elif dict(existing) != dict(row):
+            elif not _same_jsonl_payload_ignoring_line_number(existing, row):
                 issue_lists_by_work_item_id.setdefault(work_item_id, []).append(
                     f"workqueue work_item_id {work_item_id!r} has conflicting rows"
                 )
@@ -4027,10 +4027,24 @@ def _deduplicated_workqueue_matches(
 ) -> tuple[Mapping[str, Any], ...]:
     unique_matches: list[Mapping[str, Any]] = []
     for match in matches:
-        if any(dict(existing) == dict(match) for existing in unique_matches):
+        if any(
+            _same_jsonl_payload_ignoring_line_number(existing, match)
+            for existing in unique_matches
+        ):
             continue
         unique_matches.append(match)
     return tuple(unique_matches)
+
+
+def _same_jsonl_payload_ignoring_line_number(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+) -> bool:
+    left_payload = dict(left)
+    right_payload = dict(right)
+    left_payload.pop("line_number", None)
+    right_payload.pop("line_number", None)
+    return left_payload == right_payload
 
 
 def _workqueue_mismatch_issues(

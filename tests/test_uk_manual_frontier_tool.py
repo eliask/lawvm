@@ -297,6 +297,62 @@ def test_read_jsonl_rows_preserves_decode_errors_as_input_rows(tmp_path: Path) -
     assert rows[1]["validator_rule_id"] == "uk_manual_frontier_jsonl_decode_error"
 
 
+def test_manual_frontier_duplicate_work_item_id_ignores_line_numbers() -> None:
+    row = {
+        "line_number": 1,
+        "work_item_id": "uk-manual-demo",
+        "statute_id": "ukpga/2020/1",
+        "effect_id": "eff-1",
+    }
+    duplicate = dict(row)
+    duplicate["line_number"] = 2
+
+    issues = uk_manual_frontier._conflicting_work_item_id_issues_by_index(
+        (row, duplicate),
+    )
+
+    assert issues == {}
+
+
+def test_validate_manual_frontier_rows_rejects_conflicting_work_item_id(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
+
+    rows = uk_manual_frontier.validate_manual_frontier_rows(
+        (
+            {
+                "line_number": 1,
+                "work_item_id": "uk-manual-demo",
+                "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-1",
+            },
+            {
+                "line_number": 2,
+                "work_item_id": "uk-manual-demo",
+                "statute_id": "ukpga/2020/1",
+                "effect_id": "eff-2",
+            },
+        ),
+        db_path=db_path,
+    )
+
+    assert [row["validator_status"] for row in rows] == ["input_error", "input_error"]
+    assert {row["rule_id"] for row in rows} == {
+        "uk_manual_frontier_validator_work_item_id_conflict"
+    }
+    assert all(row["blocking"] is True for row in rows)
+    assert all(
+        "work_item_id 'uk-manual-demo' has conflicting rows" in row["reason"]
+        for row in rows
+    )
+
+
 def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     original_rows = (
         {

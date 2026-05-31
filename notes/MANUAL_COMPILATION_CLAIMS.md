@@ -164,7 +164,8 @@ The current validator checks only:
   workqueue provenance via `--workqueue-jsonl`
 - duplicate identical workqueue rows are tolerated, but conflicting rows with
   the same `work_item_id` reject validation; claim/workqueue matching must not
-  depend on first-row or last-row input order
+  depend on first-row or last-row input order; JSONL `line_number` bookkeeping
+  is ignored when deciding whether two workqueue rows are otherwise identical
 - identity-only workqueue matching also tolerates exact repeated rows but keeps
   conflicting rows for the same `(statute_id, effect_id,
   manual_compile_rule_id)` ambiguous until the claim supplies `work_item_id`
