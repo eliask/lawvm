@@ -81,6 +81,24 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                 "n_grounding_collateral": 100,
                 "n_replay": 389,
                 "n_oracle": 568,
+                "manual_frontier_status_counts": {
+                    "deterministic_frontend_candidate": 2,
+                    "manual_compile_candidate": 3,
+                },
+                "manual_frontier_rule_counts": {
+                    "uk_manual_frontier_parser_or_extraction_candidate": 2,
+                    "uk_manual_frontier_repeal_table_candidate": 3,
+                },
+                "manual_frontier_template_status_counts": {
+                    "available": 3,
+                    "not_available": 2,
+                },
+                "manual_frontier_template_gap_status_counts": {
+                    "deterministic_frontend_candidate": 2,
+                },
+                "manual_frontier_template_gap_rule_counts": {
+                    "uk_manual_frontier_parser_or_extraction_candidate": 2,
+                },
             },
             {
                 "statute_id": "ukpga/1961/60",
@@ -160,6 +178,24 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "eur/2019/1841",
         "ukpga/1986/61",
     ]
+    assert summary["manual_frontier_status_counts"] == {
+        "deterministic_frontend_candidate": 2,
+        "manual_compile_candidate": 3,
+    }
+    assert summary["manual_frontier_rule_counts"] == {
+        "uk_manual_frontier_parser_or_extraction_candidate": 2,
+        "uk_manual_frontier_repeal_table_candidate": 3,
+    }
+    assert summary["manual_frontier_template_status_counts"] == {
+        "available": 3,
+        "not_available": 2,
+    }
+    assert summary["manual_frontier_template_gap_status_counts"] == {
+        "deterministic_frontend_candidate": 2,
+    }
+    assert summary["manual_frontier_template_gap_rule_counts"] == {
+        "uk_manual_frontier_parser_or_extraction_candidate": 2,
+    }
 
 
 def test_summarize_results_counts_grounding_dominated_residuals() -> None:
@@ -509,3 +545,40 @@ def test_run_driver_fail_flag_accepts_manual_frontier_residuals(monkeypatch, cap
         == 0
     )
     assert "active_unclassified_residuals=0" in capsys.readouterr().out
+
+
+def test_run_driver_can_fail_on_manual_frontier_template_gaps(monkeypatch, capsys) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/2008/17",
+            "score_status": "scored",
+            "aligned": 86.0,
+            "aligned_excluding_grounding_collateral": 86.0,
+            "unaligned": 86.0,
+            "n_replay": 100,
+            "n_oracle": 110,
+            "manual_frontier_status_counts": {
+                "deterministic_frontend_candidate": 2,
+            },
+            "manual_frontier_template_status_counts": {
+                "not_available": 2,
+            },
+            "manual_frontier_template_gap_rule_counts": {
+                "uk_manual_frontier_parser_or_extraction_candidate": 2,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/2008/17"],
+            None,
+            fail_on_manual_frontier_template_gaps=True,
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "manual_frontier_template_gaps: " in out
+    assert "uk_manual_frontier_parser_or_extraction_candidate=2" in out

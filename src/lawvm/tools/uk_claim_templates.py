@@ -1299,6 +1299,33 @@ def manual_compile_suggested_claim_template(
         }
     if (
         summary.manual_compile_rule_id
+        == "uk_manual_frontier_parser_or_extraction_candidate"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="parser_or_extraction_gap",
+            placement_family=str(
+                detail.get("reason_code") or "source_instruction_parser_required"
+            ),
+            required_ownership=[
+                "source_instruction_grammar_production",
+                "explicit_effect_target_surface",
+                "source_text_preimage_or_payload_boundary",
+                "replacement_or_inserted_payload_boundary",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_complete_operative_instruction",
+                "compiler_or_claim_identifies_exact_text_or_structural_preimage",
+                "compiler_or_claim_identifies_exact_replacement_or_inserted_payload",
+                "target_scope_is_the_effect_target_or_source_named_descendant_only",
+                "changed_paths_are_within_declared_target_and_payload_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
         != "uk_manual_frontier_appropriate_place_definition_entry_candidate"
     ):
         if (

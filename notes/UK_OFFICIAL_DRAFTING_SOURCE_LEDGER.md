@@ -569,12 +569,17 @@ against the previous local snapshot: 77/77 scored, mean aligned `93.38%`, errors
 manual-frontier residual rows are `eur/2019/1021`, `ukpga/1887/55`,
 `ukpga/1968/20`, `ukpga/1968/70`, `ukpga/1980/65`, `ukpga/1981/20`,
 `ukpga/1984/12`, `ukpga/1986/61`, `ukpga/1990/8`, `ukpga/1990/9`, and
-`ukpga/1998/17`. Across those rows the compiler reports
-`manual_compile_candidate=128`, `deterministic_frontend_candidate=2`,
-`source_insufficient=167`, `deterministic_frontend_supported=3386`, and
-`non_textual_or_out_of_scope=3041` after the whole-Act word-level text-patch
-classifier correction below; all manual/deterministic candidate work items have
-claim-template coverage. The broad summary also
+`ukpga/1998/17`. Current full-gate compiler totals are
+`manual_compile_candidate=161`, `deterministic_frontend_candidate=8`,
+`source_insufficient=213`, `deterministic_frontend_supported=5678`,
+`non_textual_or_out_of_scope=8407`, and `source_or_feed_target_conflict=2`.
+The broad summary now aggregates those counts directly and also aggregates
+`manual_frontier_template_status_counts`. A parser/extraction gap template was
+added for `uk_manual_frontier_parser_or_extraction_candidate`, so all actionable
+manual/deterministic candidate work items now have claim-template coverage:
+`available=169`, `none=14300`, `manual_frontier_template_gaps=0`. The broad
+driver supports `--fail-on-manual-frontier-template-gaps` to make that coverage a
+machine-enforced gate. The broad summary also
 prints `active_unclassified_residuals`; this must stay at `0` for the curated
 77-statute gate if the UK frontend is to remain at the "done modulo
 manual/source frontiers" line. Any nonzero row is a regression in workqueue
@@ -594,6 +599,16 @@ mean aligned `93.38%`, errors `0`, grounding-collateral `0`, and
 frontiers were `effect_feed_pages_absent=5`,
 `effect_rows_absent_or_unpublished=2`, and
 `effect_rows_missing_structural_payload=1`.
+Template-coverage guard witness:
+`uv run python scripts/uk_broad_baseline.py --ids $(cat
+scripts/baselines/uk_grounding_corpus.txt)
+--fail-on-active-unclassified-residuals
+--fail-on-manual-frontier-template-gaps --out
+.tmp/uk_broad_after_template_gap_guard_20260531.json` exited `0`, kept
+`active_unclassified_residuals=0`, and printed
+`manual_frontier_template_gaps=0`. Compare against the immediately prior current
+snapshot `.tmp/uk_broad_current_fail_guard_20260531.json` was `0 improved,
+0 regressed`.
 
 **Replay adjudication JSON surface correction (2026-05-31):**
 `uk-replay --json` now includes `replay_adjudication_bucket_counts` alongside
