@@ -357,7 +357,22 @@ allowed to lag the executable implementation.
   insert *without* reusing the number (form follows function). → structural
   `replace` vs `repeal+insert` + identity/lineage. **HAVE (verify) / partial.**
 - **6.5.5–6.5.8 occurrence scope** — `in the first/second/third place it occurs`,
-  `in both places`, `in each place`. → `OccurrenceScope` parser. **HAVE (verify).**
+  `in both places`, `in each place`. → `OccurrenceScope` parser.
+  **HAVE (verified)** for target-scoped quoted text-patch lanes: all-occurrence
+  substitution/insertion/deletion forms (`in each place`, `in both places`,
+  `wherever occurring`, `wherever they occur`, `on each occasion`, and `after
+  each occurrence`), bounded ordinal substitutions/insertions/deletions
+  (`first/second/third/last`, `first and third`, `first two`, and passive
+  ordinal-place variants), and range selectors with independent start/end
+  occurrences. Relative `in each other place occurring` is deliberately not an
+  all-occurrences synonym: it lowers only with sibling first-occurrence evidence
+  and otherwise remains unlowered. Witnesses include
+  `test_compile_wherever_occurring_records_all_occurrences_lowering_observation`,
+  `test_compile_each_place_occurring_records_all_occurrences_lowering_observation`,
+  `test_compile_after_anchor_each_occasion_insert_records_all_occurrences_observation`,
+  `test_compile_first_two_places_substitution_preserves_bounded_occurrences`,
+  `test_compile_range_with_independent_end_occurrence_to_text_replace`, and the
+  `each_other_place` compile/replay tests.
 - **6.5.2/6.5.3 opening/closing words** — "the words before paragraph (a)" / "after
   paragraph (c)". → text-selector grammar for intro/outro words. **HAVE/partial.**
 - **6.5.10 `(including the heading)`** — an amendment may reach the heading too. →
