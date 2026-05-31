@@ -4559,6 +4559,69 @@ def test_compile_exact_definition_child_structural_sibling_insert_in_subsection(
     ]
 
 
+def test_compile_block_amendment_definition_child_structural_sibling_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-201">
+          <Pnumber>201</Pnumber>
+          <P1para>
+            <Text>In section 336(1) of TCPA 1990 (interpretation) in the
+            definition of  \u201clocal authority\u201d after paragraph (aa) insert\u2014</Text>
+            <BlockAmendment>
+              <P4>
+                <Pnumber>ab</Pnumber>
+                <P4para>
+                  <Text>the London Fire and Emergency Planning Authority;</Text>
+                </P4para>
+              </P4>
+            </BlockAmendment>
+            <AppendText>.</AppendText>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a9ba395366462e3e60a3397cb14ee2f6",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-11-12",
+        affected_uri="http://www.legislation.gov.uk/id/ukpga/1990/8",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 336(1)",
+        affecting_uri="http://www.legislation.gov.uk/id/ukpga/2008/29",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="29",
+        affecting_provisions="s. 201",
+        affecting_title="Planning Act 2008",
+        in_force_dates=[{"date": "2009-01-26", "applied": "true", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=extracted_el,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT]
+    assert str(ops[0].target) == "section:336/subsection:1/item:ab"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "ab"
+    assert ops[0].payload.text == "the London Fire and Emergency Planning Authority;"
+    assert not any(
+        record["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_definition_child_structural_sibling_insert_with_inserted_by_qualifier() -> None:
     source_root = ET.fromstring(
         f"""
