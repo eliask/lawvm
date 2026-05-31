@@ -578,6 +578,17 @@ s. 43(4)(b). This cuts `ukpga/1990/8` overlap blockers `8 -> 7`, blocking
 effect rows `125 -> 124`, and blocking compile diagnostics `126 -> 125`; the
 77-statute gate remains score-stable (`0 improved, 0 regressed`).
 
+Dangling-quote inserted payloads are treated as a separate source quotation
+pathology only under `uk_effect_after_quoted_anchor_dangling_insert_quote_text_patch`,
+when source says `after "X" insert "Y` and the inserted payload is bounded by
+the end of the extracted instruction. The repair records `source_text_recovery`
+evidence and emits a target-local quoted-anchor insertion; it does not infer a
+closing quote from live text or escalate to a host replacement. Current witness:
+`ukpga/1990/8` affected `s. 62C(3)` by `ukpga/2017/20` s. 2(12). This cuts
+`ukpga/1990/8` overlap blockers `7 -> 6`, blocking effect rows `124 -> 123`,
+and blocking compile diagnostics `125 -> 124`; the 77-statute gate remains
+score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints

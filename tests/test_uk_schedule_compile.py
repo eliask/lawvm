@@ -2466,6 +2466,82 @@ def test_compile_after_quoted_anchor_insert_recovers_closing_open_quote() -> Non
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_after_quoted_anchor_insert_recovers_dangling_payload_quote() -> None:
+    fragments = parse_fragment_substitution(
+        "after \u201cSchedule 1\u201d insert \u201cor notifications received by the authority "
+        "under paragraph 8(3C) or (3D) of that Schedule."
+    )
+
+    assert fragments == [
+        {
+            "original": "Schedule 1",
+            "replacement": (
+                "Schedule 1 or notifications received by the authority under "
+                "paragraph 8(3C) or (3D) of that Schedule."
+            ),
+            "rule_id": "uk_effect_after_quoted_anchor_dangling_insert_quote_text_patch",
+        }
+    ]
+
+
+def test_compile_after_quoted_anchor_insert_recovers_dangling_payload_quote() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-2-12">
+          <Pnumber>12</Pnumber>
+          <Text>12 In section 62C(3), after “Schedule 1” insert “or notifications received by the authority under paragraph 8(3C) or (3D) of that Schedule.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-85438a3dcdccd59d587b348f9d0d7e87",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-01-01",
+        affected_uri="/id/ukpga/1990/8/section/62C/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 62C(3)",
+        affecting_uri="/id/ukpga/2017/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="20",
+        affecting_provisions="s. 2(12)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2018-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "62c"), ("subsection", "3"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Schedule 1"
+    assert ops[0].text_patch.replacement == (
+        "Schedule 1 or notifications received by the authority under "
+        "paragraph 8(3C) or (3D) of that Schedule."
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_quoted_anchor_dangling_insert_quote_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["family"] == "source_text_recovery"
+    assert records[0]["reason_code"] == "after_quoted_anchor_dangling_insert_quote"
+    assert records[0]["blocking"] is False
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_quoted_substitution_records_parenthetical_scope_note() -> None:
     extracted_el = ET.fromstring(
         f"""
