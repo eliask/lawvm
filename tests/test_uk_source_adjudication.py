@@ -1396,6 +1396,31 @@ def test_classify_uk_manual_compile_frontier_marks_structured_tail_substitution(
     )
 
 
+def test_classify_uk_manual_compile_frontier_marks_top_level_roman_structured_tail_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="source_carried_structured_tail_substitution_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "c in subsection (5), for the words from “any”, where it first occurs, "
+            "to the end of that subsection, substitute — i any works required to "
+            "cease must cease, ii any steps required to be taken must be taken, "
+            "and may specify different periods for different works or steps."
+        ),
+        lowering_rejections=(),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
+    )
+    assert "does not name the child carrier" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_keeps_out_of_scope_heading_non_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
