@@ -697,6 +697,22 @@ scripts/baselines/uk_grounding_corpus.txt) --out
 The remaining non-manual broad buckets are explicit source/replay-lens frontiers:
 `effect_feed_empty=4`, `effect_rows_not_admitted_by_replay_lens=2`, and
 `manual_frontier_source_insufficient=22`.
+Current-HEAD guard witness after the semantic-claim validator hardening:
+`uv run python scripts/uk_broad_baseline.py --ids $(cat
+scripts/baselines/uk_grounding_corpus.txt) --out
+.tmp/uk_broad_current_head_20260601.json
+--fail-on-deterministic-frontend-candidates
+--fail-on-manual-frontier-template-gaps
+--fail-on-active-unclassified-residuals
+--fail-on-non-manual-source-chain-frontier` exited `0`, scored 77/77, mean
+aligned `93.53%`, mean aligned-no-grounding-collateral `93.53%`,
+grounding-collateral `0`, metadata-only base `1`, errors `0`, source-frontier
+`0`, `deterministic_frontend_candidates=0`,
+`manual_frontier_template_gaps=0`, `active_unclassified_residuals=0`, and
+`non_manual_source_chain_frontier=0`. The current triage split is
+`high_fidelity_after_grounding=57`, `manual_compile_frontier_residual=13`,
+`no_effect_rows_frontier=4`, `nonreplay_effect_frontier=2`, and
+`base_metadata_only_frontier=1`.
 Full-gate enforcement witness:
 `uv run python scripts/uk_broad_baseline.py --ids $(cat
 scripts/baselines/uk_grounding_corpus.txt)
