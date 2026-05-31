@@ -407,6 +407,18 @@ Verification for any of these uses the broad baseline, not the 9-statute gate:
 spuriously-grounded match is a **correctness gain the guard mis-penalises** — confirm
 at the EID level which matches moved, never trust the aggregate delta (`§2.1`).
 
+**Wider-corpus source-frontier refinement (2026-05-31):**
+`scripts/uk_broad_baseline.py` now classifies both enacted and oracle/current XML
+before parsing. Too-small, parse-error, and oracle metadata-only blobs are emitted
+as `score_status=source_frontier` rows rather than hard errors or trivial replay
+scores. Witness: `ukpga/1945/9`, whose enacted and current cached blobs are both
+`HTTP 300 Multiple Choices` (25 bytes), now reports
+`source_frontier_reason=base_too_small`. A 160-statute post-fetch sample
+(`--sample 160 --seed 31`) now reports 108 scored rows, 52 source-frontier rows,
+0 errors, mean aligned `72.98%`, mean aligned_no_gc `77.70%`, and 4,216
+grounding-collateral eIds. The curated 77-statute gate remains unchanged
+(`0 improved, 0 regressed`), with 77/77 scored and `source_frontier=0`.
+
 ---
 
 ## Remaining source-ledger-derived candidates
