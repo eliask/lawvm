@@ -1206,6 +1206,10 @@ Current bench replay-regime invariant:
   The `--fail-on-non-manual-source-chain-frontier` source-chain completeness gate
   excludes this reason, because replay-lens non-admission is not missing source
   acquisition or missing payload evidence.
+- Broad-baseline summaries also emit `empty_effect_feed_frontier_count` and
+  `empty_effect_feed_frontier_statutes` for `effect_feed_empty`. The same
+  source-chain completeness gate excludes this reason, because a present official
+  feed with zero entries is a source witness, not an absent acquisition lane.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.
