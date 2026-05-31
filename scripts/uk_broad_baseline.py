@@ -79,6 +79,24 @@ def _similarity(replay_eids: set[str], oracle_eids: set[str]) -> float:
     return eid_set_similarity(replay_eids, oracle_eids)
 
 
+def _normalized_compare_eids(
+    replay_eids: set[str],
+    oracle_eids: set[str],
+    *,
+    oracle_physical_eid_aliases: dict[str, str],
+    oracle_visible_number_eid_aliases: dict[str, str],
+) -> tuple[set[str], set[str]]:
+    """Normalize broad-gate EID comparison through the same lens as uk-misses."""
+    from lawvm.uk_legislation.source_adjudication import normalize_uk_replay_compare_eids
+
+    return normalize_uk_replay_compare_eids(
+        replay_eids,
+        oracle_eids,
+        oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+        oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
+    )
+
+
 def score_one(statute_id: str) -> dict[str, Any]:
     """Score one statute from the farchive. Returns a result dict (never raises)."""
     from farchive import Farchive
@@ -125,14 +143,16 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 "source_frontier_reason": f"oracle_{current_source.status.value}",
             }
 
-        oracle_ir = parse_uk_statute_ir_bytes(current, statute_id=statute_id)
-        oracle_eids = _eids([oracle_ir.body]) | {
-            e for s in oracle_ir.supplements for e in _eids([s])
-        }
-
         oracle_data = extract_eid_map_bytes(current)
         eid_map = oracle_data.get("eid_map", {})
         text_map = oracle_data.get("text_map", {})
+        oracle_eids = {str(eid) for eid in eid_map.values() if eid}
+        oracle_physical_eid_aliases: dict[str, str] = oracle_data.get(
+            "physical_eid_aliases", {}
+        )
+        oracle_visible_number_eid_aliases: dict[str, str] = oracle_data.get(
+            "visible_number_eid_aliases", {}
+        )
 
         pipeline = UKReplayPipeline(REPO_ROOT)
         effect_rows = load_effects_for_statute_from_archive(statute_id, archive)
@@ -181,31 +201,40 @@ def score_one(statute_id: str) -> dict[str, Any]:
             replay_eids = _eids([replayed.body]) | {
                 e for s in replayed.supplements for e in _eids([s])
             }
-            lanes[lane] = round(100.0 * _similarity(replay_eids, oracle_eids), 2)
+            replay_compare_eids, oracle_compare_eids = _normalized_compare_eids(
+                replay_eids,
+                oracle_eids,
+                oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+                oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
+            )
+            lanes[lane] = round(
+                100.0 * _similarity(replay_compare_eids, oracle_compare_eids),
+                2,
+            )
             if lane == "aligned":
                 from lawvm.uk_legislation.grounding_collateral import (
                     score_with_grounding_collateral_excluded,
                 )
 
-                common_eids = replay_eids & oracle_eids
+                common_eids = replay_compare_eids & oracle_compare_eids
                 collateral_score = score_with_grounding_collateral_excluded(
-                    replay_eids,
-                    oracle_eids,
+                    replay_compare_eids,
+                    oracle_compare_eids,
                     alignment_events,
                 )
                 result["n_common"] = len(common_eids)
-                result["n_only_in_oracle"] = len(oracle_eids - replay_eids)
-                result["n_only_in_replayed"] = len(replay_eids - oracle_eids)
-                result["n_replay"] = len(replay_eids)
+                result["n_only_in_oracle"] = len(oracle_compare_eids - replay_compare_eids)
+                result["n_only_in_replayed"] = len(replay_compare_eids - oracle_compare_eids)
+                result["n_replay"] = len(replay_compare_eids)
+                result["n_oracle"] = len(oracle_compare_eids)
                 result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
                 result["n_zero_oracle_retention_eids"] = (
-                    len(replay_eids) if not oracle_eids else 0
+                    len(replay_compare_eids) if not oracle_compare_eids else 0
                 )
                 result["aligned_excluding_grounding_collateral"] = round(
                     100.0 * collateral_score.collateral_excluded_similarity,
                     2,
                 )
-        result["n_oracle"] = len(oracle_eids)
         result["score_status"] = "scored"
         result["aligned"] = lanes["aligned"]
         result["unaligned"] = lanes["unaligned"]

@@ -41,6 +41,18 @@ def test_score_one_reports_too_small_current_as_source_frontier(monkeypatch) -> 
     assert "error" not in row
 
 
+def test_normalized_compare_eids_uses_uk_misses_compare_lens() -> None:
+    replay, oracle = uk_broad_baseline._normalized_compare_eids(
+        {"section-1", "p00090"},
+        {"section-1"},
+        oracle_physical_eid_aliases={},
+        oracle_visible_number_eid_aliases={},
+    )
+
+    assert replay == {"section-1"}
+    assert oracle == {"section-1"}
+
+
 def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
