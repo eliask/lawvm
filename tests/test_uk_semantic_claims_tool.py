@@ -144,6 +144,20 @@ def test_validate_semantic_claim_accepts_schema_and_workqueue_provenance_only() 
     assert row["blocking"] is False
 
 
+def test_validate_semantic_claim_accepts_duplicate_identical_workqueue_id() -> None:
+    workqueue = _workqueue_row()
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (_claim_row(),),
+        workqueue_rows=(workqueue, dict(workqueue)),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "validated_provenance_only"
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_supplied_live_insert_parent() -> None:
     rows = uk_semantic_claims.validate_semantic_claim_rows(
         (_claim_row(),),
@@ -442,6 +456,26 @@ def test_validate_semantic_claim_rejects_workqueue_mismatch() -> None:
     assert any(
         "source_preview_sha256 mismatch" in issue
         for issue in row["validation_issues"]
+    )
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_conflicting_workqueue_id_rows() -> None:
+    workqueue = _workqueue_row()
+    conflicting_workqueue = _workqueue_row(source_preview="different source")
+    conflicting_workqueue["effect_id"] = "eff-2"
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (_claim_row(),),
+        workqueue_rows=(workqueue, conflicting_workqueue),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_workqueue_mismatch"
+    assert row["rule_id"] == "uk_semantic_claim_workqueue_mismatch"
+    assert (
+        "workqueue work_item_id 'uk-manual-frontier-demo' has conflicting rows"
+        in row["validation_issues"]
     )
     assert row["replay_authorized"] is False
 

@@ -135,6 +135,7 @@ _TEMPLATE_DUPLICATE_SENSITIVE_FIELDS = (
 class _WorkqueueIndex(NamedTuple):
     by_work_item_id: dict[str, Mapping[str, Any]]
     by_identity: dict[tuple[str, str, str], tuple[Mapping[str, Any], ...]]
+    issues_by_work_item_id: dict[str, tuple[str, ...]]
 
 
 class _WorkqueueMatch(NamedTuple):
@@ -289,6 +290,7 @@ def _claim_identity(row: Mapping[str, Any]) -> tuple[str, str, str]:
 
 def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueIndex:
     by_work_item_id: dict[str, Mapping[str, Any]] = {}
+    issue_lists_by_work_item_id: dict[str, list[str]] = {}
     identity_lists: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
     for row in rows:
         if str(row.get("validator_status") or "") == "input_error":
@@ -296,8 +298,14 @@ def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueInd
         if _optional_string(row, "schema") != _WORKQUEUE_SCHEMA:
             continue
         work_item_id = _optional_string(row, "work_item_id")
-        if work_item_id and work_item_id not in by_work_item_id:
-            by_work_item_id[work_item_id] = row
+        if work_item_id:
+            existing = by_work_item_id.get(work_item_id)
+            if existing is None:
+                by_work_item_id[work_item_id] = row
+            elif dict(existing) != dict(row):
+                issue_lists_by_work_item_id.setdefault(work_item_id, []).append(
+                    f"workqueue work_item_id {work_item_id!r} has conflicting rows"
+                )
         identity = _claim_identity(row)
         if all(identity):
             identity_lists.setdefault(identity, []).append(row)
@@ -306,6 +314,10 @@ def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueInd
         by_identity={
             identity: tuple(identity_rows)
             for identity, identity_rows in identity_lists.items()
+        },
+        issues_by_work_item_id={
+            work_item_id: tuple(issues)
+            for work_item_id, issues in issue_lists_by_work_item_id.items()
         },
     )
 
@@ -3946,7 +3958,8 @@ def _match_workqueue(
             )
         return _WorkqueueMatch(
             row=match,
-            issues=_workqueue_mismatch_issues(row, match),
+            issues=index.issues_by_work_item_id.get(work_item_id, ())
+            + _workqueue_mismatch_issues(row, match),
             status="rejected_workqueue_mismatch",
         )
     identity = _claim_identity(row)
