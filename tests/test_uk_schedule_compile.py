@@ -37413,6 +37413,57 @@ def test_compile_schedule_note_target_rejects_paragraph_coercion() -> None:
     assert rejection["strict_disposition"] == "block"
 
 
+def test_compile_schedule_paragraph_note_target_rejects_before_sibling_expansion() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>at the end of paragraph (b) insert “; or”</Text>
+        </P3>
+        """
+    )
+    target_ref = "Sch. 13 para. 22 Note 2"
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_paragraph_note_target",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-10",
+        affected_uri="/id/ukpga/1990/8",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions=target_ref,
+        affecting_uri="/id/ukpga/2023/55",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="55",
+        affecting_provisions="Sch. 18 para. 5(3)(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-02-18", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert _split_metadata_provisions(target_ref) == [target_ref]
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert [row["rule_id"] for row in lowering_rejections] == [
+        "uk_effect_schedule_note_target_rejected"
+    ]
+    rejection = lowering_rejections[0]
+    assert rejection["reason_code"] == "schedule_note_target_unsupported"
+    assert rejection["target_ref"] == target_ref
+    assert rejection["target_candidate_count"] == 1
+
+
 def test_compile_first_second_occurrence_substitution_preserves_bounded_occurrences() -> None:
     extracted_el = ET.fromstring(
         f"""

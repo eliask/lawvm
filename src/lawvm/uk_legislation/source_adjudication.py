@@ -1670,6 +1670,8 @@ def classify_uk_effect_source_pathology(
             return "conditional_temporal_repeal_unsupported"
         if _looks_like_definition_child_and_tail_substitution(norm_text):
             return "definition_child_and_tail_substitution_unsupported"
+        if "uk_effect_definition_child_structural_insert_rejected" in lowering_rules:
+            return "definition_child_structural_insert_unsupported"
         if _looks_like_definition_child_structural_insert_instruction(norm_text):
             return "definition_child_structural_insert_unsupported"
         if _looks_like_relative_other_place_occurrence(norm_text):
@@ -2393,8 +2395,11 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         }
 
     if (
-        "uk_effect_overlap_substitution_unlowered" in blocking_rules
-        and _looks_like_definition_child_structural_insert_instruction(extracted_text_norm)
+        "uk_effect_definition_child_structural_insert_rejected" in blocking_rules
+        or (
+            "uk_effect_overlap_substitution_unlowered" in blocking_rules
+            and _looks_like_definition_child_structural_insert_instruction(extracted_text_norm)
+        )
     ):
         return {
             "status": "manual_compile_candidate",
