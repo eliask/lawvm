@@ -1702,7 +1702,7 @@ def test_classify_uk_manual_compile_frontier_marks_whole_act_text_patch_candidat
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
 
 
