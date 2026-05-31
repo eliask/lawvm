@@ -54,6 +54,9 @@ _REGRESSION_TOL = 0.1
 _HIGH_FIDELITY_AFTER_GROUNDING_THRESHOLD = 95.0
 _GROUNDING_DOMINATED_DELTA_THRESHOLD = 20.0
 _STRUCTURAL_MATCH_THRESHOLD = 99.5
+_COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS = 25
+_LOW_VOLUME_RESIDUAL_MAX_MISSES = 25
+_LOW_VOLUME_RESIDUAL_MIN_SCORE = 85.0
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -134,6 +137,27 @@ def score_one(statute_id: str) -> dict[str, Any]:
         ops = pipeline.compile_ops_for_statute(statute_id, archive=archive)
         result["n_ops"] = len(ops)
 
+        # The UK compiler still has a few list-present-sensitive diagnostic paths.
+        # Keep scoring on the historical no-output compile, then run a separate
+        # diagnostic compile so evidence collection cannot perturb replay.
+        effect_feed_parse_rejections: list[dict[str, Any]] = []
+        lowering_rejections: list[dict[str, Any]] = []
+        authority_rejections: list[dict[str, Any]] = []
+        pipeline.compile_ops_for_statute(
+            statute_id,
+            archive=archive,
+            effect_feed_parse_rejections_out=effect_feed_parse_rejections,
+            lowering_rejections_out=lowering_rejections,
+            authority_rejections_out=authority_rejections,
+        )
+        compile_rejections = [
+            *effect_feed_parse_rejections,
+            *lowering_rejections,
+            *authority_rejections,
+        ]
+        result["n_compile_rejections"] = len(compile_rejections)
+        result["compile_rejection_rule_counts"] = _rule_counts(compile_rejections)
+
         lanes: dict[str, float] = {}
         for lane, aligned in (("aligned", True), ("unaligned", False)):
             base_ir = parse_uk_statute_ir_bytes(enacted, statute_id=statute_id)
@@ -155,11 +179,15 @@ def score_one(statute_id: str) -> dict[str, Any]:
                     score_with_grounding_collateral_excluded,
                 )
 
+                common_eids = replay_eids & oracle_eids
                 collateral_score = score_with_grounding_collateral_excluded(
                     replay_eids,
                     oracle_eids,
                     alignment_events,
                 )
+                result["n_common"] = len(common_eids)
+                result["n_only_in_oracle"] = len(oracle_eids - replay_eids)
+                result["n_only_in_replayed"] = len(replay_eids - oracle_eids)
                 result["n_replay"] = len(replay_eids)
                 result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
                 result["n_zero_oracle_retention_eids"] = (
@@ -239,7 +267,53 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         and aligned_no_gc - aligned >= _GROUNDING_DOMINATED_DELTA_THRESHOLD
     ):
         return "grounding_dominated_residual"
+    if _is_compile_rejection_dominated_residual(row):
+        return "compile_rejection_dominated_residual"
+    if _is_retained_eu_mixed_representation_residual(row):
+        return "retained_eu_mixed_representation_residual"
+    if _is_bounded_low_volume_residual(row):
+        return "bounded_low_volume_residual"
     return "residual_after_grounding"
+
+
+def _is_compile_rejection_dominated_residual(row: dict[str, Any]) -> bool:
+    """Classify rows where explicit compile rejections dominate missing oracle state."""
+    n_compile_rejections = int(row.get("n_compile_rejections") or 0)
+    if n_compile_rejections < _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
+    return n_only_in_oracle >= max(1, n_only_in_replayed)
+
+
+def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
+    """Classify retained-EU rows with unresolved source and replay-only shape noise."""
+    statute_id = str(row.get("statute_id") or "")
+    if not statute_id.startswith("eur/"):
+        return False
+    n_compile_rejections = int(row.get("n_compile_rejections") or 0)
+    if n_compile_rejections < _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
+        return False
+    n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
+    n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
+    return n_only_in_oracle > 0 and n_only_in_replayed > 0
+
+
+def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:
+    """Keep tiny residual miss sets visible without treating them as family bugs."""
+    aligned = float(row.get("aligned_excluding_grounding_collateral") or row.get("aligned") or 0.0)
+    if aligned < _LOW_VOLUME_RESIDUAL_MIN_SCORE:
+        return False
+    n_compile_rejections = int(row.get("n_compile_rejections") or 0)
+    if n_compile_rejections >= _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
+        return False
+    n_misses = int(row.get("n_only_in_oracle") or 0) + int(row.get("n_only_in_replayed") or 0)
+    return n_misses <= _LOW_VOLUME_RESIDUAL_MAX_MISSES
+
+
+def _rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(str(row.get("rule_id") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
 
 
 def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:

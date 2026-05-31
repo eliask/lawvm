@@ -155,6 +155,78 @@ def test_summarize_results_counts_grounding_dominated_residuals() -> None:
     assert summary["triage_buckets"] == {"grounding_dominated_residual": 1}
 
 
+def test_summarize_results_counts_compile_rejection_dominated_residuals() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1986/61",
+                "score_status": "scored",
+                "aligned": 50.9,
+                "aligned_excluding_grounding_collateral": 50.9,
+                "unaligned": 50.5,
+                "n_grounding_collateral": 100,
+                "n_replay": 389,
+                "n_oracle": 568,
+                "n_only_in_oracle": 279,
+                "n_only_in_replayed": 11,
+                "n_compile_rejections": 168,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_lowering_no_supported_action_rejected": 28,
+                    "uk_effect_repeal_table_structural_repeal": 62,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"compile_rejection_dominated_residual": 1}
+
+
+def test_summarize_results_counts_retained_eu_mixed_representation_residuals() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "eur/2019/1021",
+                "score_status": "scored",
+                "aligned": 51.2,
+                "aligned_excluding_grounding_collateral": 53.2,
+                "unaligned": 23.6,
+                "n_grounding_collateral": 49,
+                "n_replay": 211,
+                "n_oracle": 203,
+                "n_only_in_oracle": 95,
+                "n_only_in_replayed": 103,
+                "n_compile_rejections": 171,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {
+        "retained_eu_mixed_representation_residual": 1
+    }
+
+
+def test_summarize_results_counts_bounded_low_volume_residuals() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1976/38",
+                "score_status": "scored",
+                "aligned": 91.9,
+                "aligned_excluding_grounding_collateral": 91.9,
+                "unaligned": 91.9,
+                "n_grounding_collateral": 0,
+                "n_replay": 91,
+                "n_oracle": 99,
+                "n_only_in_oracle": 8,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 11,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
+
+
 def test_triage_bucket_for_row_is_added_to_one_row_output(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         uk_broad_baseline,
