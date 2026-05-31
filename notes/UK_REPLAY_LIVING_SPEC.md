@@ -1218,6 +1218,14 @@ Current bench replay-regime invariant:
   the quoted word as the text-repeal payload. Current regression witness:
   `ukpga/1997/9` effects from `asp/2011/3 s. 22(2)(b)` and
   `asp/2014/19 Sch. 3 para. 9(a)(i)`.
+- The UK text-rewrite parser recognizes after-reference section insertions of
+  the form `after the reference to section N (...) insert- "..."` as bounded
+  text replacements against the named section-reference text. The owned rule is
+  `uk_effect_after_reference_section_insert_text_patch`; lowering emits an
+  observation because the executable preimage consumes the live separator comma
+  as the insertion boundary, avoiding duplicate punctuation when the inserted
+  source text itself ends with a comma. Current regression witness:
+  `ukpga/1997/9` `s. 79(1)` amended by `asp/2011/3 s. 29(1)`.
 - UK bench rows must preserve authority rejection rule counts, not only total counts. Source-text authority filtering is a compile-time evidence lane; a saved replay benchmark must retain which authority rule rejected each effect family.
 - UK bench replay rows must preserve replay adjudication totals and kind counts. Unsupported actions, missing targets, and replay-time no-op/skip findings are part of the replay coverage surface; a benchmark score without those counts can hide non-applied operations.
 - UK bench rows must preserve oracle-alignment method and node-safety provenance: match-method counts, transparent wrapper clears, before/after node counts, and node-count mismatch. Count-only alignment reporting hides whether benchmark improvement came from safe identifier grounding or a structurally suspect adapter pass.

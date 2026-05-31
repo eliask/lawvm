@@ -178,6 +178,9 @@ UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_closing_quote_insert_text_patch"
 )
+UK_AFTER_REFERENCE_SECTION_INSERT_RULE_ID = (
+    "uk_effect_after_reference_section_insert_text_patch"
+)
 UK_AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RULE_ID = (
     "uk_effect_after_quoted_anchor_dangling_insert_quote_text_patch"
 )
@@ -359,6 +362,14 @@ _POST_CHILD_QUOTED_WORD_PASSIVE_OMIT_RE = re.compile(
     rf"(?:the\s+)?[“\"'‘](?P<word>{_NON_QUOTE}{{1,200}})[”\"'’]\s+"
     r"after\s+(?:paragraph|sub-paragraph|subsection)\s+\([0-9A-Za-z]+\)\s+"
     r"(?:is|are|shall\s+be)\s+(?:omitted|repealed)",
+    re.I,
+)
+_AFTER_REFERENCE_SECTION_INSERT_RE = re.compile(
+    r"after\s+(?:the\s+)?reference\s+to\s+"
+    r"(?P<anchor>section\s+[0-9]+[A-Za-z]?"
+    r"(?:\s*\([^)]{1,300}\))?)\s+"
+    r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\s*[—-]\s*"
+    rf"[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,700}})[”\"'’]",
     re.I,
 )
 
@@ -2306,6 +2317,20 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                     "rule_id": UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID,
                 }
             )
+
+    for m in _AFTER_REFERENCE_SECTION_INSERT_RE.finditer(text):
+        anchor = " ".join(m.group("anchor").split()).strip()
+        inserted = " ".join(m.group("inserted").split()).strip()
+        if not anchor or not inserted:
+            continue
+        original = f"{anchor},"
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original} {inserted}",
+                "rule_id": UK_AFTER_REFERENCE_SECTION_INSERT_RULE_ID,
+            }
+        )
 
     matches_after_ordinal_places_insert = re.finditer(
         r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s*,?\s+"

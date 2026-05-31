@@ -2207,6 +2207,55 @@ def test_uk_post_child_quoted_word_repeal_lowers_to_text_repeal() -> None:
     assert lowering_records == []
 
 
+def test_uk_after_reference_section_insert_lowers_to_text_replace() -> None:
+    lowering_records: list[dict[str, object]] = []
+    effect = UKEffectRecord(
+        effect_id="key-96f18df1604c145b2295674f533b3b38",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-06-30",
+        affected_uri="/id/ukpga/1997/9/section/79/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1997",
+        affected_number="9",
+        affected_provisions="s. 79(1)",
+        affecting_uri="/id/asp/2011/3",
+        affecting_class="ScottishAct",
+        affecting_year="2011",
+        affecting_number="3",
+        affecting_provisions="s. 29(1)",
+        affecting_title="Historic Environment (Amendment) (Scotland) Act 2011",
+    )
+    extracted = ET.fromstring(
+        "<P2>1 In section 79(1) of the 1997 Act, after the reference to "
+        "section 273 (offences by corporations) insert\u2014 \u201c section 275A "
+        "(further provision as regards regulations: inquiries, etc.), \u201d .</P2>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "79"), ("subsection", "1")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "section 273 (offences by corporations),"
+    assert op.text_patch.replacement == (
+        "section 273 (offences by corporations), section 275A "
+        "(further provision as regards regulations: inquiries, etc.),"
+    )
+    assert [
+        row["rule_id"]
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_after_reference_section_insert_text_patch"
+    ] == ["uk_effect_after_reference_section_insert_text_patch"]
+
+
 def test_uk_from_beginning_passive_substitution_lowers_to_text_replace() -> None:
     lowering_records: list[dict[str, object]] = []
     effect = UKEffectRecord(
