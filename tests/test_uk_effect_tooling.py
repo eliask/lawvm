@@ -19,6 +19,7 @@ from lawvm.core.semantic_types import (
 from lawvm.tools import uk_effects
 from lawvm.tools import uk_effect
 from lawvm.tools import uk_replay
+from lawvm.tools import uk_semantic_claims
 from lawvm.tools.uk_effect import (
     _collect_target_shape,
     _fmt_target,
@@ -269,6 +270,13 @@ def test_uk_claim_template_rule_ids_all_render_nonempty_templates(rule_id: str) 
         assert payload["suggested_claim_template"][
             "required_operation_family_proof_semantics"
         ]
+    required_semantics = set(
+        payload["suggested_claim_template"].get(
+            "required_operation_family_proof_semantics",
+            (),
+        )
+    )
+    assert required_semantics <= uk_semantic_claims.UK_OPERATION_FAMILY_PROOF_SEMANTICS
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_referent_qualified_substitution() -> None:
