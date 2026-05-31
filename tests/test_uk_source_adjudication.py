@@ -1077,6 +1077,26 @@ def test_classify_uk_effect_source_pathology_marks_application_table_out_of_scop
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_has_effect_application_clause_out_of_scope() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "Sub-paragraph (2) has effect for the purpose of the application of "
+            "section 4(1) of the Northern Ireland Arms Decommissioning Act 1997 "
+            "in relation to anything done after the old provision ceases to have effect."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_lowering_no_supported_action_rejected"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_by_reference_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_manual_compile_frontier_marks_heading_facets_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",

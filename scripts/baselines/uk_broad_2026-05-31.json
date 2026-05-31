@@ -548,10 +548,8 @@
     "base_source_size": 148749,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_lowering_no_supported_action_rejected": 5,
       "uk_effect_repeal_table_structural_repeal_unresolved": 3,
       "uk_effect_source_payload_without_instruction_context_rejected": 2,
-      "uk_effect_structural_pseudo_definition_target_rejected": 1,
       "uk_effect_table_entry_instruction_rejected": 10,
       "uk_effect_whole_act_word_level_text_patch_rejected": 1
     },
@@ -571,7 +569,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 8,
       "uk_effect_whole_act_word_level_text_patch_rejected": 1
     },
-    "n_blocking_compile_rejections": 22,
+    "n_blocking_compile_rejections": 16,
     "n_common": 91,
     "n_compile_rejections": 53,
     "n_grounding_collateral": 66,
@@ -743,9 +741,7 @@
     "base_source_size": 366044,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_source_payload_without_instruction_context_rejected": 1,
-      "uk_effect_structural_pseudo_definition_target_rejected": 1,
-      "uk_effect_table_entry_instruction_rejected": 1
+      "uk_effect_source_payload_without_instruction_context_rejected": 1
     },
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 2,
@@ -757,7 +753,7 @@
       "uk_effect_undated_applied_si_commencement_date": 2,
       "uk_effect_undated_applied_si_commencement_unresolved": 6
     },
-    "n_blocking_compile_rejections": 3,
+    "n_blocking_compile_rejections": 1,
     "n_common": 43,
     "n_compile_rejections": 17,
     "n_grounding_collateral": 462,
@@ -786,15 +782,14 @@
     "base_source_size": 206974,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_heading_only_ref_rejected": 5,
+      "uk_effect_heading_only_ref_rejected": 4,
       "uk_effect_instruction_text_payload_rejected": 1,
-      "uk_effect_lowering_no_supported_action_rejected": 2,
+      "uk_effect_lowering_no_supported_action_rejected": 1,
       "uk_effect_missing_structural_payload_rejected": 2,
       "uk_effect_overlap_substitution_unlowered": 2,
       "uk_effect_repeal_table_replacement_payload_rejected": 5,
       "uk_effect_repeal_table_structural_repeal_unresolved": 3,
       "uk_effect_source_payload_without_instruction_context_rejected": 1,
-      "uk_effect_structural_pseudo_definition_target_rejected": 7,
       "uk_effect_whole_act_word_level_text_patch_rejected": 1
     },
     "compile_rejection_rule_counts": {
@@ -834,7 +829,7 @@
       "uk_payload_descendant_eid_synthesis": 53,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 1
     },
-    "n_blocking_compile_rejections": 29,
+    "n_blocking_compile_rejections": 20,
     "n_common": 440,
     "n_compile_rejections": 358,
     "n_grounding_collateral": 50,
@@ -851,7 +846,7 @@
     "oracle_source_status": "available",
     "score_status": "scored",
     "statute_id": "ukpga/1968/20",
-    "triage_bucket": "compile_rejection_dominated_residual",
+    "triage_bucket": "residual_after_grounding",
     "unaligned": 77.43
   },
   "ukpga/1968/70": {
@@ -1004,7 +999,7 @@
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
       "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
-      "uk_effect_lowering_no_supported_action_rejected": 4,
+      "uk_effect_lowering_no_supported_action_rejected": 3,
       "uk_effect_source_payload_without_instruction_context_rejected": 1
     },
     "compile_rejection_rule_counts": {
@@ -1016,7 +1011,7 @@
       "uk_effect_undated_applied_si_commencement_date": 6,
       "uk_effect_undated_applied_si_commencement_unresolved": 2
     },
-    "n_blocking_compile_rejections": 6,
+    "n_blocking_compile_rejections": 5,
     "n_common": 147,
     "n_compile_rejections": 27,
     "n_grounding_collateral": 42,
@@ -1045,13 +1040,13 @@
     "base_source_size": 2136935,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_lowering_no_supported_action_rejected": 16,
+      "uk_effect_lowering_no_supported_action_rejected": 6,
       "uk_effect_missing_structural_payload_rejected": 1,
       "uk_effect_overlap_substitution_unlowered": 7,
       "uk_effect_repeal_table_replacement_payload_rejected": 9,
       "uk_effect_repeal_table_structural_repeal_unresolved": 21,
       "uk_effect_source_payload_without_instruction_context_rejected": 2,
-      "uk_effect_structural_pseudo_definition_target_rejected": 15,
+      "uk_effect_structural_pseudo_definition_target_rejected": 8,
       "uk_effect_table_entry_instruction_rejected": 1
     },
     "compile_rejection_rule_counts": {
@@ -1092,7 +1087,7 @@
       "uk_effect_wherever_occurring_substitution_text_patch": 17,
       "uk_payload_descendant_eid_synthesis": 21
     },
-    "n_blocking_compile_rejections": 72,
+    "n_blocking_compile_rejections": 55,
     "n_common": 2120,
     "n_compile_rejections": 532,
     "n_grounding_collateral": 1028,
@@ -1122,11 +1117,10 @@
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
       "uk_effect_instruction_text_payload_rejected": 1,
-      "uk_effect_lowering_no_supported_action_rejected": 4,
+      "uk_effect_lowering_no_supported_action_rejected": 2,
       "uk_effect_overlap_substitution_unlowered": 3,
       "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 1,
-      "uk_effect_structural_pseudo_definition_target_rejected": 1,
-      "uk_effect_table_entry_instruction_rejected": 3
+      "uk_effect_table_entry_instruction_rejected": 2
     },
     "compile_rejection_rule_counts": {
       "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch": 1,
@@ -1155,7 +1149,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 22,
       "uk_payload_descendant_eid_synthesis": 10
     },
-    "n_blocking_compile_rejections": 13,
+    "n_blocking_compile_rejections": 9,
     "n_common": 498,
     "n_compile_rejections": 90,
     "n_grounding_collateral": 31,
@@ -1184,16 +1178,14 @@
     "base_source_size": 1302663,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_commencement_source_rejected": 2,
       "uk_effect_instruction_text_payload_rejected": 1,
-      "uk_effect_lowering_no_supported_action_rejected": 23,
+      "uk_effect_lowering_no_supported_action_rejected": 8,
       "uk_effect_missing_structural_payload_rejected": 14,
       "uk_effect_non_substantive_payload_rejected": 8,
       "uk_effect_overlap_substitution_unlowered": 7,
       "uk_effect_repeal_table_replacement_payload_rejected": 1,
       "uk_effect_repeal_table_structural_repeal_unresolved": 6,
-      "uk_effect_source_payload_without_instruction_context_rejected": 2,
-      "uk_effect_structural_pseudo_definition_target_rejected": 1
+      "uk_effect_source_payload_without_instruction_context_rejected": 2
     },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 14,
@@ -1232,7 +1224,7 @@
       "uk_effect_wherever_occurring_substitution_text_patch": 90,
       "uk_payload_descendant_eid_synthesis": 16
     },
-    "n_blocking_compile_rejections": 65,
+    "n_blocking_compile_rejections": 47,
     "n_common": 622,
     "n_compile_rejections": 495,
     "n_grounding_collateral": 151,
@@ -1298,11 +1290,10 @@
     "base_source_size": 506606,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_lowering_no_supported_action_rejected": 8,
+      "uk_effect_lowering_no_supported_action_rejected": 1,
       "uk_effect_missing_structural_payload_rejected": 2,
       "uk_effect_repeal_table_structural_repeal_unresolved": 2,
       "uk_effect_source_payload_without_instruction_context_rejected": 2,
-      "uk_effect_structural_pseudo_definition_target_rejected": 1,
       "uk_effect_whole_act_word_level_text_patch_rejected": 1
     },
     "compile_rejection_rule_counts": {
@@ -1322,7 +1313,7 @@
       "uk_effect_whole_act_word_level_text_patch_rejected": 1,
       "uk_payload_descendant_eid_synthesis": 5
     },
-    "n_blocking_compile_rejections": 16,
+    "n_blocking_compile_rejections": 8,
     "n_common": 289,
     "n_compile_rejections": 173,
     "n_grounding_collateral": 100,
@@ -1357,7 +1348,7 @@
       "uk_effect_child_qualified_word_omission_target_mismatch_rejected": 1,
       "uk_effect_heading_only_ref_rejected": 4,
       "uk_effect_instruction_text_payload_rejected": 4,
-      "uk_effect_lowering_no_supported_action_rejected": 64,
+      "uk_effect_lowering_no_supported_action_rejected": 27,
       "uk_effect_missing_structural_payload_rejected": 51,
       "uk_effect_overlap_substitution_unlowered": 17,
       "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 4,
@@ -1438,7 +1429,7 @@
       "uk_payload_descendant_eid_synthesis": 360,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 6
     },
-    "n_blocking_compile_rejections": 172,
+    "n_blocking_compile_rejections": 135,
     "n_common": 6836,
     "n_compile_rejections": 3602,
     "n_grounding_collateral": 1343,
@@ -1470,7 +1461,7 @@
       "uk_effect_appropriate_place_definition_entry_insert_rejected": 1,
       "uk_effect_heading_only_ref_rejected": 1,
       "uk_effect_instruction_text_payload_rejected": 1,
-      "uk_effect_lowering_no_supported_action_rejected": 6,
+      "uk_effect_lowering_no_supported_action_rejected": 1,
       "uk_effect_overlap_substitution_unlowered": 4,
       "uk_effect_repeal_table_quoted_words_text_repeal_unresolved": 2,
       "uk_effect_source_payload_without_instruction_context_rejected": 3,
@@ -1517,7 +1508,7 @@
       "uk_payload_descendant_eid_synthesis": 62,
       "uk_whole_schedule_payload_descendant_eid_synthesis": 2
     },
-    "n_blocking_compile_rejections": 22,
+    "n_blocking_compile_rejections": 17,
     "n_common": 1444,
     "n_compile_rejections": 631,
     "n_grounding_collateral": 41,
@@ -1546,10 +1537,8 @@
     "base_source_size": 612341,
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
-      "uk_effect_lowering_no_supported_action_rejected": 2,
       "uk_effect_missing_structural_payload_rejected": 2,
-      "uk_effect_repeal_table_replacement_payload_rejected": 1,
-      "uk_effect_structural_pseudo_definition_target_rejected": 2
+      "uk_effect_repeal_table_replacement_payload_rejected": 1
     },
     "compile_rejection_rule_counts": {
       "uk_effect_added_type_source_structuralized": 1,
@@ -1569,7 +1558,7 @@
       "uk_effect_undated_applied_si_commencement_unresolved": 14,
       "uk_payload_descendant_eid_synthesis": 9
     },
-    "n_blocking_compile_rejections": 7,
+    "n_blocking_compile_rejections": 3,
     "n_common": 300,
     "n_compile_rejections": 112,
     "n_grounding_collateral": 169,
@@ -1635,7 +1624,7 @@
     "base_source_status": "available",
     "blocking_compile_rejection_rule_counts": {
       "uk_effect_external_act_target_rejected": 1,
-      "uk_effect_lowering_no_supported_action_rejected": 6,
+      "uk_effect_lowering_no_supported_action_rejected": 4,
       "uk_effect_repeal_table_structural_repeal_unresolved": 7
     },
     "compile_rejection_rule_counts": {
@@ -1649,7 +1638,7 @@
       "uk_effect_undated_applied_si_commencement_date": 8,
       "uk_effect_undated_applied_si_commencement_unresolved": 8
     },
-    "n_blocking_compile_rejections": 14,
+    "n_blocking_compile_rejections": 12,
     "n_common": 49,
     "n_compile_rejections": 63,
     "n_grounding_collateral": 158,
@@ -1677,15 +1666,13 @@
     "base_source_number_of_provisions": "23",
     "base_source_size": 55652,
     "base_source_status": "available",
-    "blocking_compile_rejection_rule_counts": {
-      "uk_effect_lowering_no_supported_action_rejected": 3
-    },
+    "blocking_compile_rejection_rule_counts": {},
     "compile_rejection_rule_counts": {
       "uk_effect_lowering_no_supported_action_rejected": 4,
       "uk_effect_source_provision_order_normalized": 1,
       "uk_effect_undated_applied_si_commencement_unresolved": 2
     },
-    "n_blocking_compile_rejections": 3,
+    "n_blocking_compile_rejections": 0,
     "n_common": 102,
     "n_compile_rejections": 7,
     "n_grounding_collateral": 3,

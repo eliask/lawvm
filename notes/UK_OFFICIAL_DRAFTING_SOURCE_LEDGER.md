@@ -459,8 +459,8 @@ metadata-only base `1`, errors `0`, source-frontier `0`, and compare against
 itself is `0 improved, 0 regressed`. Current bucket split:
 `high_fidelity_after_grounding=49`, `grounding_dominated_residual=6`,
 `structural_match_eid_scheme_residual=4`, `no_compiled_ops_frontier=7`,
-`compile_rejection_dominated_residual=3`, `bounded_low_volume_residual=2`,
-`base_metadata_only_frontier=1`, and `residual_after_grounding=5`. The older
+`compile_rejection_dominated_residual=2`, `bounded_low_volume_residual=2`,
+`base_metadata_only_frontier=1`, and `residual_after_grounding=6`. The older
 2026-05-30 snapshot is retained as historical context; after the wider-corpus
 fetch it differs on `ukpga/1990/8` because the current oracle eId surface in the
 local farchive changed (`oracle=8180` in the old snapshot, `oracle=8218` now).
@@ -475,6 +475,19 @@ the requested schedule label is `1`, emitting
 the source-owned payload for `ukpga/1976/38` s. 6(3A) without admitting a broad
 Schedule payload or rebinding any `Sch. 2+` reference. Broad gate result:
 `ukpga/1976/38` improved `91.92 -> 92.93`, 0 regressions.
+
+**Non-textual/no-op lowering demotion (2026-05-31):**
+No-supported-action diagnostics remain visible, but source-pathology classes
+that prove a row is outside direct text/tree replay now reclassify those
+diagnostics as nonblocking. This includes `nonstructural_root_gap` and
+`application_by_reference_effect_out_of_scope`; the latter now recognizes
+source clauses such as “has effect for the purpose of the application of...”.
+Current witness: `ukpga/1997/7`, whose three blocking rows are application or
+nonstructural rows from `ukpga/2000/11` Sch. 15 para. 15, not deterministic
+text/tree mutations. After the demotion `ukpga/1997/7` has zero blocking compile
+rejections while preserving its miss rows. Broad gate scores are unchanged
+(`0 improved, 0 regressed`), and the active bucket split moves one row from
+`compile_rejection_dominated_residual` to `residual_after_grounding`.
 
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
