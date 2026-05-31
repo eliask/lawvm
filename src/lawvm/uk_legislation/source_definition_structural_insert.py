@@ -427,7 +427,7 @@ def source_definition_child_structural_sibling_insert(
             flags=re.I,
         ).strip()
     explicit_row_match = _IN_DEFINITION_AFTER_PARAGRAPH_INSERT_RE.match(row_text)
-    if explicit_row_match is not None and not has_block_amendment:
+    if explicit_row_match is not None:
         target_path = _section_or_subsection_target_path(affected_provisions)
         if not target_path:
             return None
@@ -442,12 +442,22 @@ def source_definition_child_structural_sibling_insert(
         ):
             return None
         anchor_label = _clean_num(explicit_row_match.group("anchor"))
-        payloads = _definition_child_insert_payloads(
-            explicit_row_match.group("payload"),
-            anchor_label=anchor_label,
-            allow_intercalated_after_anchor=True,
+        payloads = (
+            _definition_child_block_amendment_insert_payloads(
+                extracted_el,
+                anchor_label=anchor_label,
+                allow_intercalated_after_anchor=True,
+            )
+            if has_block_amendment
+            else _definition_child_insert_payloads(
+                explicit_row_match.group("payload"),
+                anchor_label=anchor_label,
+                allow_intercalated_after_anchor=True,
+            )
         )
         if not payloads:
+            if has_block_amendment:
+                return None
             return {
                 "rule_id": "uk_effect_definition_child_structural_insert_rejected",
                 "blocking": True,

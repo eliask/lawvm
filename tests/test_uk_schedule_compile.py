@@ -4733,6 +4733,87 @@ def test_compile_definition_child_structural_sibling_insert_with_inserted_by_qua
     ]
 
 
+def test_compile_block_amendment_definition_child_inserted_by_qualifier() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="regulation-3-4">
+          <Pnumber>4</Pnumber>
+          <P2para>
+            <Text>In section 45A(10) of the 1998 Act—</Text>
+            <P3 id="regulation-3-4-a">
+              <Pnumber>a</Pnumber>
+              <P3para>
+                <Text>a in the definition of “appropriate authority”, as inserted
+                by regulation 2(6)(a), after sub-paragraph (a) insert—</Text>
+                <BlockAmendment>
+                  <P4>
+                    <Pnumber>aa</Pnumber>
+                    <P4para>
+                      <Text>in relation to a person who has drilled, or commenced
+                      drilling, a well in the Welsh onshore area in pursuance of
+                      a petroleum licence, the Welsh Ministers;</Text>
+                    </P4para>
+                  </P4>
+                </BlockAmendment>
+                <AppendText>; and</AppendText>
+              </P3para>
+            </P3>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-29a84e5c9c3b66db873e0e4269346880",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-07-24",
+        affected_uri="http://www.legislation.gov.uk/id/ukpga/1998/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1998",
+        affected_number="17",
+        affected_provisions="s. 45A(10)",
+        affecting_uri="http://www.legislation.gov.uk/id/uksi/2018/797",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2018",
+        affecting_number="797",
+        affecting_provisions="reg. 3(4)(a)",
+        affecting_title=(
+            "The Scotland Act 2016 and Wales Act 2017 (Onshore Petroleum) "
+            "(Consequential Amendments) Regulations 2018"
+        ),
+        in_force_dates=[{"date": "2018-10-01", "applied": "true", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:45a/subsection:10/item:aa"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "aa"
+    assert ops[0].payload.text == (
+        "in relation to a person who has drilled, or commenced drilling, a well "
+        "in the Welsh onshore area in pursuance of a petroleum licence, the "
+        "Welsh Ministers;"
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_structural_sibling_insert_rejected"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_definition_child_structural_sibling_insert_rejects_source_subsection_mismatch() -> None:
     extracted_el = ET.fromstring(
         f"""
