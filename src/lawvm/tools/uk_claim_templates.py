@@ -1321,6 +1321,13 @@ def manual_compile_suggested_claim_template(
             "inserted_definition_terms": list(terms),
             "inserted_definition_entry_preview": payload[:500],
             "candidate_target_surface": effect.affected_provisions,
+            "required_ownership": [
+                "inserted_definition_term_identity",
+                "complete_definition_entry_payload",
+                "definition_list_target_boundary",
+                "insertion_position_or_list_end_boundary",
+                "mutation_boundary",
+            ],
             "required_validator_checks": [
                 "source_witness_contains_exact_definition_list_end_instruction",
                 "payload_is_complete_definition_entry",
@@ -1428,6 +1435,13 @@ def manual_compile_suggested_claim_template(
         "source_parent_context_preview": str(
             detail.get("source_parent_context_preview") or ""
         ),
+        "required_ownership": [
+            "inserted_definition_term_identity",
+            "complete_definition_entry_payload",
+            "definition_list_target_boundary",
+            "insertion_position_or_list_end_boundary",
+            "mutation_boundary",
+        ],
         "required_validator_checks": [
             (
                 "effect_metadata_names_pseudo_definition_target"

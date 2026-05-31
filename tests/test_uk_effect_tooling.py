@@ -3157,6 +3157,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     assert "claim_supplies_exact_definition_entry_anchor_or_insertion_index" in (
         template["required_validator_checks"]
     )
+    assert "inserted_definition_term_identity" in template["required_ownership"]
+    assert "complete_definition_entry_payload" in template["required_ownership"]
+    assert "definition_list_target_boundary" in template["required_ownership"]
+    assert "insertion_position_or_list_end_boundary" in template["required_ownership"]
+    assert "mutation_boundary" in template["required_ownership"]
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_definition_child_and_tail_substitution() -> None:
@@ -3605,6 +3610,11 @@ def test_uk_manual_compile_evidence_jsonl_definition_template_survives_unparsed_
         template["inserted_definition_entry_preview"]
         == "Definition entry payload with unusual publisher punctuation."
     )
+    assert "inserted_definition_term_identity" in template["required_ownership"]
+    assert "complete_definition_entry_payload" in template["required_ownership"]
+    assert "definition_list_target_boundary" in template["required_ownership"]
+    assert "insertion_position_or_list_end_boundary" in template["required_ownership"]
+    assert "mutation_boundary" in template["required_ownership"]
     assert template["executable"] is False
 
 
@@ -3693,6 +3703,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_pseudo_definition_instructio
     assert template["inserted_definition_entry_preview"].startswith(
         "“satellite television service” has the meaning given by section 43(1)"
     )
+    assert "inserted_definition_term_identity" in template["required_ownership"]
+    assert "complete_definition_entry_payload" in template["required_ownership"]
+    assert "definition_list_target_boundary" in template["required_ownership"]
+    assert "insertion_position_or_list_end_boundary" in template["required_ownership"]
+    assert "mutation_boundary" in template["required_ownership"]
     assert template["executable"] is False
 
 
