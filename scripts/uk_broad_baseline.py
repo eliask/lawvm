@@ -73,6 +73,16 @@ _MANUAL_FRONTIER_ACTIONABLE_STATUSES = frozenset(
         "source_insufficient",
     }
 )
+_ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
+    {
+        "bounded_low_volume_residual",
+        "compile_rejection_dominated_residual",
+        "grounding_dominated_residual",
+        "residual_after_grounding",
+        "retained_eu_mixed_representation_residual",
+        "structural_match_eid_scheme_residual",
+    }
+)
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -314,6 +324,11 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         if int(r.get("n_oracle") or 0) == 0 and int(r.get("n_replay") or 0) > 0
     ]
     triage_buckets = Counter(_triage_bucket_for_row(r) for r in results)
+    active_unclassified_residuals = [
+        r
+        for r in results
+        if _triage_bucket_for_row(r) in _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS
+    ]
     return {
         "scored": scored,
         "errored": errored,
@@ -324,6 +339,10 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "source_chain_frontier_statutes": source_chain_frontier_statutes,
         "triage_buckets": dict(sorted(triage_buckets.items())),
+        "active_unclassified_residual_count": len(active_unclassified_residuals),
+        "active_unclassified_residual_statutes": sorted(
+            str(r.get("statute_id") or "") for r in active_unclassified_residuals
+        ),
         "zero_oracle_retention_count": len(zero_oracle_retention),
         "zero_oracle_retention_eids": sum(
             int(r.get("n_zero_oracle_retention_eids") or r.get("n_replay") or 0)
@@ -647,6 +666,14 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             for bucket, count in summary["triage_buckets"].items()
         )
         print(f"  triage_buckets: {buckets}")
+    if summary["active_unclassified_residual_count"]:
+        print(
+            "  active_unclassified_residuals="
+            f"{summary['active_unclassified_residual_count']}: "
+            f"{', '.join(summary['active_unclassified_residual_statutes'])}"
+        )
+    else:
+        print("  active_unclassified_residuals=0")
     return 0
 
 
