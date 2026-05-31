@@ -2655,6 +2655,9 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     assert template["candidate_target_surface"] == "s. 1"
     assert template["text_match"] == "old"
     assert template["replacement"] == "new"
+    assert "exact_facet_carrier" in template["required_ownership"]
+    assert "host_body_text_and_children_preservation" in template["required_ownership"]
+    assert "mutation_boundary" in template["required_ownership"]
     assert "claim_identifies_exact_target_facet_not_host_body" in (
         template["required_validator_checks"]
     )
@@ -3769,6 +3772,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_crossheading_claim() -> None
     assert template["candidate_target_surface"] == "cross-heading before s. 10"
     assert template["text_match"] == "Old public standards"
     assert template["replacement"] == "New public standards"
+    assert "exact_crossheading_carrier" in template["required_ownership"]
+    assert "neighbouring_sections_and_body_text_preservation" in (
+        template["required_ownership"]
+    )
+    assert "mutation_boundary" in template["required_ownership"]
     assert "claim_identifies_exact_crossheading_carrier" in (
         template["required_validator_checks"]
     )
@@ -3854,6 +3862,9 @@ def test_uk_manual_compile_evidence_jsonl_templates_table_crossheading_becomes_c
     assert template["source_formula"] == "becomes"
     assert template["table_crossheading_anchor"] == "entry 1"
     assert template["text_match"] == ""
+    assert "exact_table_carrier" in template["required_ownership"]
+    assert "heading_cell_or_text_prefix_boundary" in template["required_ownership"]
+    assert "mutation_boundary" in template["required_ownership"]
     assert (
         template["replacement"]
         == "Installations regulated under the Environmental Permitting "
@@ -3938,6 +3949,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
     assert template["candidate_target_surface"] == "Sch. 1 note"
     assert template["text_match"] == "old note"
     assert template["replacement"] == "new note"
+    assert "exact_schedule_note_carrier" in template["required_ownership"]
+    assert "schedule_paragraph_body_structure_preservation" in (
+        template["required_ownership"]
+    )
+    assert "mutation_boundary" in template["required_ownership"]
     assert "claim_preserves_schedule_paragraph_body_structure" in (
         template["required_validator_checks"]
     )
@@ -4841,6 +4857,10 @@ def test_uk_manual_compile_evidence_jsonl_templates_mixed_body_heading_substitut
     assert template["placement_family"] == "split_body_and_heading_facet_required"
     assert template["text_match"] == "Commissioner"
     assert template["replacement"] == "appointed person"
+    assert "body_text_boundary" in template["required_ownership"]
+    assert "heading_facet_boundary" in template["required_ownership"]
+    assert "split_surface_mutation_boundary" in template["required_ownership"]
+    assert "mutation_boundary" in template["required_ownership"]
     assert "claim_splits_body_text_operation_from_heading_facet_operation" in (
         template["required_validator_checks"]
     )
