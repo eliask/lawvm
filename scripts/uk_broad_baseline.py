@@ -121,13 +121,6 @@ def score_one(statute_id: str) -> dict[str, Any]:
         oracle_eids = _eids([oracle_ir.body]) | {
             e for s in oracle_ir.supplements for e in _eids([s])
         }
-        if not oracle_eids:
-            return {
-                **result,
-                "n_oracle": 0,
-                "score_status": "source_frontier",
-                "source_frontier_reason": "oracle_eids_empty",
-            }
 
         oracle_data = extract_eid_map_bytes(current)
         eid_map = oracle_data.get("eid_map", {})
