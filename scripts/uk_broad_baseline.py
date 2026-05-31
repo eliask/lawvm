@@ -51,6 +51,8 @@ _LEG_BASE = "https://www.legislation.gov.uk"
 # A statute is flagged a regression if its aligned score drops by more than this
 # many percentage points versus the baseline snapshot.
 _REGRESSION_TOL = 0.1
+_HIGH_FIDELITY_AFTER_GROUNDING_THRESHOLD = 95.0
+_GROUNDING_DOMINATED_DELTA_THRESHOLD = 20.0
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -194,17 +196,42 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         for r in scored
         if int(r.get("n_oracle") or 0) == 0 and int(r.get("n_replay") or 0) > 0
     ]
+    triage_buckets = Counter(_triage_bucket_for_row(r) for r in results)
     return {
         "scored": scored,
         "errored": errored,
         "source_frontier": source_frontier,
         "source_frontier_reasons": dict(sorted(source_frontier_reasons.items())),
+        "triage_buckets": dict(sorted(triage_buckets.items())),
         "zero_oracle_retention_count": len(zero_oracle_retention),
         "zero_oracle_retention_eids": sum(
             int(r.get("n_zero_oracle_retention_eids") or r.get("n_replay") or 0)
             for r in zero_oracle_retention
         ),
     }
+
+
+def _triage_bucket_for_row(row: dict[str, Any]) -> str:
+    """Classify a broad-baseline row for work selection, not scoring."""
+    if "error" in row:
+        return "error"
+    if row.get("score_status") == "source_frontier":
+        reason = str(row.get("source_frontier_reason") or "unknown")
+        return f"source_frontier:{reason}"
+    n_oracle = int(row.get("n_oracle") or 0)
+    n_replay = int(row.get("n_replay") or 0)
+    if n_oracle == 0 and n_replay > 0:
+        return "zero_oracle_retention"
+    aligned = float(row.get("aligned") or 0.0)
+    aligned_no_gc = float(row.get("aligned_excluding_grounding_collateral", aligned) or 0.0)
+    if aligned_no_gc >= _HIGH_FIDELITY_AFTER_GROUNDING_THRESHOLD:
+        return "high_fidelity_after_grounding"
+    if (
+        int(row.get("n_grounding_collateral") or 0) > 0
+        and aligned_no_gc - aligned >= _GROUNDING_DOMINATED_DELTA_THRESHOLD
+    ):
+        return "grounding_dominated_residual"
+    return "residual_after_grounding"
 
 
 def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
@@ -336,6 +363,12 @@ def run_driver(ids: list[str], out: Optional[Path]) -> int:
             for reason, count in summary["source_frontier_reasons"].items()
         )
         print(f"  source_frontier_reasons: {reasons}")
+    if summary["triage_buckets"]:
+        buckets = ", ".join(
+            f"{bucket}={count}"
+            for bucket, count in summary["triage_buckets"].items()
+        )
+        print(f"  triage_buckets: {buckets}")
     return 0
 
 

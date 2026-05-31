@@ -52,6 +52,24 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                 "n_zero_oracle_retention_eids": 420,
             },
             {
+                "statute_id": "ukpga/1992/41",
+                "score_status": "scored",
+                "aligned": 64.0,
+                "aligned_excluding_grounding_collateral": 98.7,
+                "n_grounding_collateral": 169,
+                "n_replay": 469,
+                "n_oracle": 304,
+            },
+            {
+                "statute_id": "ukpga/1986/61",
+                "score_status": "scored",
+                "aligned": 50.9,
+                "aligned_excluding_grounding_collateral": 50.9,
+                "n_grounding_collateral": 100,
+                "n_replay": 389,
+                "n_oracle": 568,
+            },
+            {
                 "statute_id": "ukpga/1945/9",
                 "score_status": "source_frontier",
                 "source_frontier_reason": "base_too_small",
@@ -68,9 +86,34 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         ]
     )
 
-    assert len(summary["scored"]) == 1
+    assert len(summary["scored"]) == 3
     assert len(summary["errored"]) == 1
     assert len(summary["source_frontier"]) == 2
     assert summary["source_frontier_reasons"] == {"base_too_small": 2}
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_eids"] == 420
+    assert summary["triage_buckets"] == {
+        "error": 1,
+        "high_fidelity_after_grounding": 1,
+        "residual_after_grounding": 1,
+        "source_frontier:base_too_small": 2,
+        "zero_oracle_retention": 1,
+    }
+
+
+def test_summarize_results_counts_grounding_dominated_residuals() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "eur/2019/2018",
+                "score_status": "scored",
+                "aligned": 17.4,
+                "aligned_excluding_grounding_collateral": 41.0,
+                "n_grounding_collateral": 165,
+                "n_replay": 287,
+                "n_oracle": 62,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"grounding_dominated_residual": 1}
