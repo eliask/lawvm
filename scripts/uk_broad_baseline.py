@@ -89,6 +89,11 @@ _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
         "structural_match_eid_scheme_residual",
     }
 )
+_MANUAL_SOURCE_CHAIN_FRONTIER_REASONS = frozenset(
+    {
+        "manual_frontier_source_insufficient",
+    }
+)
 
 
 def _eids(nodes: list[Any], pit_date: Optional[str] = None) -> set[str]:
@@ -334,6 +339,17 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         reason: sorted(statute_ids)
         for reason, statute_ids in sorted(source_chain_frontier_statutes.items())
     }
+    non_manual_source_chain_frontier_statutes = sorted(
+        {
+            str(row.get("statute_id") or "")
+            for row in results
+            if str(row.get("statute_id") or "")
+            and any(
+                reason not in _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS
+                for reason in _source_chain_frontier_reasons_for_row(row)
+            )
+        }
+    )
     zero_oracle_retention = [
         r
         for r in scored
@@ -386,6 +402,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             sorted(source_chain_frontier_reasons.items())
         ),
         "source_chain_frontier_statutes": source_chain_frontier_statutes,
+        "non_manual_source_chain_frontier_count": len(
+            non_manual_source_chain_frontier_statutes
+        ),
+        "non_manual_source_chain_frontier_statutes": (
+            non_manual_source_chain_frontier_statutes
+        ),
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "triage_bucket_statutes": triage_bucket_statutes,
         "manual_frontier_status_counts": manual_frontier_status_counts,
@@ -737,6 +759,7 @@ def run_driver(
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
     fail_on_deterministic_frontend_candidates: bool = False,
+    fail_on_non_manual_source_chain_frontier: bool = False,
 ) -> int:
     results: list[dict[str, Any]] = []
     for i, sid in enumerate(ids, 1):
@@ -832,6 +855,14 @@ def run_driver(
     if summary["source_chain_frontier_statutes"]:
         for reason, statute_ids in summary["source_chain_frontier_statutes"].items():
             print(f"  source_chain_frontier[{reason}]: {', '.join(statute_ids)}")
+    if summary["non_manual_source_chain_frontier_count"]:
+        print(
+            "  non_manual_source_chain_frontier="
+            f"{summary['non_manual_source_chain_frontier_count']}: "
+            f"{', '.join(summary['non_manual_source_chain_frontier_statutes'])}"
+        )
+    else:
+        print("  non_manual_source_chain_frontier=0")
     if summary["triage_buckets"]:
         buckets = ", ".join(
             f"{bucket}={count}"
@@ -906,6 +937,11 @@ def run_driver(
         and summary["deterministic_frontend_candidate_count"]
     ):
         return 1
+    if (
+        fail_on_non_manual_source_chain_frontier
+        and summary["non_manual_source_chain_frontier_count"]
+    ):
+        return 1
     return 0
 
 
@@ -963,6 +999,14 @@ def main(argv: list[str] | None = None) -> int:
             "deterministic frontend candidates"
         ),
     )
+    ap.add_argument(
+        "--fail-on-non-manual-source-chain-frontier",
+        action="store_true",
+        help=(
+            "Exit nonzero when source-chain frontier rows remain outside "
+            "manual-frontier source-insufficient work"
+        ),
+    )
     args = ap.parse_args(argv)
 
     if args.one:
@@ -989,6 +1033,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         fail_on_deterministic_frontend_candidates=(
             args.fail_on_deterministic_frontend_candidates
+        ),
+        fail_on_non_manual_source_chain_frontier=(
+            args.fail_on_non_manual_source_chain_frontier
         ),
     )
 
