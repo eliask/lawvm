@@ -466,10 +466,12 @@ class UKReplayReplaceApplyMixin:
                             op,
                             target,
                             family="target_resolution_recovery",
+                            recovery_target=str(op.target),
                             leaf_kind=leaf_kind,
                             parent_path=str(parent_target),
                             payload_kind=str(new_node.kind),
                             payload_label=str(new_node.label or ""),
+                            source_shape="missing_leaf_payload_matches_target",
                         ),
                     )
                     self._record_invariant_violations(op)
