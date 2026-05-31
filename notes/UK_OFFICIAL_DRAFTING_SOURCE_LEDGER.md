@@ -572,7 +572,11 @@ manual-frontier residual rows are `eur/2019/1021`, `ukpga/1887/55`,
 `ukpga/1998/17`. Across those rows the compiler reports
 `manual_compile_candidate=130`, `source_insufficient=167`,
 `deterministic_frontend_supported=3386`, and `non_textual_or_out_of_scope=3041`;
-all 130 manual candidates have claim-template coverage.
+all 130 manual candidates have claim-template coverage. The broad summary also
+prints `active_unclassified_residuals`; this must stay at `0` for the curated
+77-statute gate if the UK frontend is to remain at the "done modulo
+manual/source frontiers" line. Any nonzero row is a regression in workqueue
+classification or a new deterministic family to investigate.
 
 **Oracle-alignment fallback suppression (2026-05-31):**
 Current UK oracle alignment no longer writes unmatched local fallback eIds into

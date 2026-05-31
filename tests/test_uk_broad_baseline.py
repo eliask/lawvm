@@ -155,6 +155,11 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "structural_match_eid_scheme_residual": 1,
         "zero_oracle_retention": 1,
     }
+    assert summary["active_unclassified_residual_count"] == 2
+    assert summary["active_unclassified_residual_statutes"] == [
+        "eur/2019/1841",
+        "ukpga/1986/61",
+    ]
 
 
 def test_summarize_results_counts_grounding_dominated_residuals() -> None:
@@ -173,6 +178,7 @@ def test_summarize_results_counts_grounding_dominated_residuals() -> None:
     )
 
     assert summary["triage_buckets"] == {"grounding_dominated_residual": 1}
+    assert summary["active_unclassified_residual_count"] == 1
 
 
 def test_summarize_results_counts_effect_feed_absent_frontier() -> None:
@@ -366,6 +372,7 @@ def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None
     )
 
     assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
+    assert summary["active_unclassified_residual_count"] == 0
 
 
 def test_summarize_results_routes_large_manual_frontier_residuals() -> None:
