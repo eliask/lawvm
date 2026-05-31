@@ -599,6 +599,21 @@ by `uksi/2024/49` reg. 4. This cuts `ukpga/1990/8` overlap blockers `6 -> 5`,
 blocking effect rows `123 -> 122`, and blocking compile diagnostics `124 -> 123`;
 the 77-statute gate remains score-stable (`0 improved, 0 regressed`).
 
+Range substitutions may carry occurrence wording on either range anchor. The
+existing range selector family now accepts plural start-anchor wording such as
+`from "X", where they first occur, to "Y" substitute "Z"` and end-anchor
+wording such as `to "Y", in the second place it occurs, substitute "Z"`. These
+lower to `TEXT_FROM_X_TO_Y` with `occurrence` and/or independent
+`end_occurrence`; replay must use the named occurrence rather than broadening to
+the first matching range. Current witnesses: `ukpga/1990/8` affected `Sch. 1
+para. 5(2)` and `Sch. 1 para. 5(3)` by `ukpga/2023/55` Sch. 17 para. 2(7)(a)
+and (b), and `eur/2019/1021` affected `Annex 1 Pt. A Table` by `uksi/2022/1293`
+reg. 2(2)(b)(i), whose source uses `to "Commission", in the first place it
+occurs`. This cuts `ukpga/1990/8` overlap blockers `5 -> 3`, blocking effect
+rows `122 -> 120`, and blocking compile diagnostics `123 -> 121`; the broad
+gate additionally lowers one `eur/2019/1021` row from the same family and
+remains score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
