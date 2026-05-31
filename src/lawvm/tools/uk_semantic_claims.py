@@ -141,6 +141,7 @@ class _WorkqueueMatch(NamedTuple):
 class _LiveTargetIndex(NamedTuple):
     by_statute_id: dict[str, frozenset[str]]
     fingerprints_by_statute_id: dict[str, Mapping[str, Mapping[str, Any]]]
+    issues_by_statute_id: dict[str, tuple[str, ...]]
 
 
 class _ClaimIdDeclaration(NamedTuple):
@@ -307,6 +308,7 @@ def _build_workqueue_index(rows: tuple[Mapping[str, Any], ...]) -> _WorkqueueInd
 def _build_live_target_index(rows: tuple[Mapping[str, Any], ...]) -> _LiveTargetIndex:
     paths_by_statute: dict[str, set[str]] = {}
     fingerprints_by_statute: dict[str, dict[str, Mapping[str, Any]]] = {}
+    issue_lists_by_statute: dict[str, list[str]] = {}
     for row in rows:
         if str(row.get("validator_status") or "") == "input_error":
             continue
@@ -324,6 +326,13 @@ def _build_live_target_index(rows: tuple[Mapping[str, Any], ...]) -> _LiveTarget
             statute_fingerprints = fingerprints_by_statute.setdefault(statute_id, {})
             for path, fingerprint in fingerprints.items():
                 if isinstance(path, str) and path and isinstance(fingerprint, Mapping):
+                    existing = statute_fingerprints.get(path)
+                    if existing is not None and dict(existing) != dict(fingerprint):
+                        issue_lists_by_statute.setdefault(statute_id, []).append(
+                            f"live target index statute_id {statute_id!r} has "
+                            f"conflicting target_fingerprints for path {path!r}"
+                        )
+                        continue
                     statute_fingerprints[path] = fingerprint
     return _LiveTargetIndex(
         by_statute_id={
@@ -331,6 +340,10 @@ def _build_live_target_index(rows: tuple[Mapping[str, Any], ...]) -> _LiveTarget
             for statute_id, paths in paths_by_statute.items()
         },
         fingerprints_by_statute_id=fingerprints_by_statute,
+        issues_by_statute_id={
+            statute_id: tuple(issues)
+            for statute_id, issues in issue_lists_by_statute.items()
+        },
     )
 
 
@@ -5068,6 +5081,26 @@ def validate_semantic_claim_rows(
         live_state_checked = live_target_index is not None
         if live_target_index is not None:
             statute_id = _optional_string(row, "statute_id")
+            live_index_issues = live_target_index.issues_by_statute_id.get(
+                statute_id,
+                (),
+            )
+            if live_index_issues:
+                output.append(
+                    _validation_row(
+                        row,
+                        validator_status="rejected_live_state_mismatch",
+                        rule_id="uk_semantic_claim_live_target_index_inconsistent",
+                        issues=live_index_issues,
+                        workqueue_row=workqueue_match.row if workqueue_match else None,
+                        reason=(
+                            "Semantic claim cannot be checked against an "
+                            "internally inconsistent live target index."
+                        ),
+                        live_state_checked=True,
+                    )
+                )
+                continue
             live_paths = live_target_index.by_statute_id.get(statute_id)
             if live_paths is None:
                 output.append(
