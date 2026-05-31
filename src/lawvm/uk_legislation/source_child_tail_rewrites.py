@@ -76,6 +76,18 @@ _SOURCE_CARRIED_TARGET_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_BETWEEN_PARAGRAPHS_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"for\s+the\s+[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+    r"between\s+those\s+paragraphs\s+"
+    r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_SOURCE_PREVIOUS_SIBLING_PARAGRAPHS_RE = re.compile(
+    r"\bin\s+each\s+of\s+paragraphs\s+\((?P<first>[0-9A-Za-z]+)\)\s+"
+    r"and\s+\((?P<second>[0-9A-Za-z]+)\)",
+    flags=re.I | re.S,
+)
 
 
 def _previous_structural_source_sibling(
@@ -114,6 +126,26 @@ def _previous_source_sibling_paragraph_target(
     if match is None:
         return ("", "")
     return (_clean_num(match.group("label")), text)
+
+
+def _previous_source_sibling_paragraph_pair(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+) -> tuple[str, str, str]:
+    previous = _previous_structural_source_sibling(
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+    if previous is None:
+        return ("", "", "")
+    text = " ".join(_text_content(previous).split()).strip()
+    if not text:
+        return ("", "", "")
+    match = _SOURCE_PREVIOUS_SIBLING_PARAGRAPHS_RE.search(text)
+    if match is None:
+        return ("", "", "")
+    return (_clean_num(match.group("first")), _clean_num(match.group("second")), text)
 
 
 def _fragment_substitution_source_carried_child_tail_repeal(
@@ -278,4 +310,46 @@ def _fragment_substitution_source_carried_child_tail_substitution(
         "source_subsection_label": source_subsection or target_subsection,
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_child_tail_substitution_text_patch",
+    }
+
+
+def _fragment_substitution_source_carried_between_paragraphs_substitution(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+    extracted_el: Optional[ET._Element] = None,
+    source_root: Optional[ET._Element] = None,
+) -> Optional[dict[str, str]]:
+    """Resolve "the word between those paragraphs" from source sibling context.
+
+    The deictic phrase is only accepted when the immediately previous source
+    sibling names exactly the paragraph pair.  The connector belongs to the end
+    of the first paragraph, so lowering refines the effect-feed subsection
+    target to that source-named child instead of replacing the parent text.
+    """
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text or _addr_leaf_kind(target) != "subsection":
+        return None
+    match = _SOURCE_CARRIED_BETWEEN_PARAGRAPHS_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    first_label, second_label, antecedent_text = _previous_source_sibling_paragraph_pair(
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+    original = " ".join(match.group("original").split()).strip()
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not first_label or not second_label or not original or not replacement:
+        return None
+    return {
+        "original": original,
+        "replacement": replacement,
+        "target_refinement": "source_carried_child_text",
+        "target_refinement_kind": "paragraph",
+        "target_refinement_label": first_label,
+        "source_between_child_kind": "paragraph",
+        "source_between_child_labels": f"{first_label},{second_label}",
+        "source_deictic_antecedent": "previous_source_sibling",
+        "source_deictic_antecedent_text": antecedent_text,
+        "rule_id": "uk_effect_source_carried_between_paragraphs_substitution_text_patch",
     }

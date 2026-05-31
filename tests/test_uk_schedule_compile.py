@@ -14605,6 +14605,125 @@ def test_compile_source_carried_child_tail_substitution_uses_feed_subsection_con
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_source_carried_between_paragraphs_substitution_refines_to_first_child() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-19-paragraph-52">
+          <Pnumber>52</Pnumber>
+          <P1para>
+            <Text>In section 148(1)—</Text>
+            <P3 id="schedule-19-paragraph-52-c">
+              <Pnumber>c</Pnumber>
+              <P3para>
+                <Text>c in each of paragraphs (a) and (b) omit “may not”, and</Text>
+              </P3para>
+            </P3>
+            <P3 id="schedule-19-paragraph-52-d">
+              <Pnumber>d</Pnumber>
+              <P3para>
+                <Text>d for the “and” between those paragraphs substitute “ or ” .</Text>
+              </P3para>
+            </P3>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]
+    effect = UKEffectRecord(
+        effect_id="key-05d0458a776bede3c7452fa48382fb00",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-10-05",
+        affected_uri="/id/ukpga/2008/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="17",
+        affected_provisions="s. 148(1)",
+        affecting_uri="/id/ukpga/2011/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="20",
+        affecting_provisions="Sch. 19 para. 52(d)",
+        affecting_title="Localism Act 2011",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "148"),
+        ("subsection", "1"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "and"
+    assert ops[0].text_patch.replacement == "or"
+    assert {
+        "uk_effect_source_carried_child_text_target_refined",
+        "uk_effect_source_carried_between_paragraphs_substitution_text_patch",
+    } <= {record["rule_id"] for record in lowering_records}
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_source_carried_between_paragraphs_substitution_requires_antecedent_pair() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-19-paragraph-52">
+          <P1para>
+            <P3 id="schedule-19-paragraph-52-c">
+              <P3para><Text>c in paragraph (a), omit “may not”, and</Text></P3para>
+            </P3>
+            <P3 id="schedule-19-paragraph-52-d">
+              <P3para><Text>d for the “and” between those paragraphs substitute “ or ” .</Text></P3para>
+            </P3>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.xpath('//*[@id="schedule-19-paragraph-52-d"]')[0]
+    effect = UKEffectRecord(
+        effect_id="key-between-paragraphs-no-antecedent",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-10-05",
+        affected_uri="/id/ukpga/2008/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="17",
+        affected_provisions="s. 148(1)",
+        affecting_uri="/id/ukpga/2011/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="20",
+        affecting_provisions="Sch. 19 para. 52(d)",
+        affecting_title="Localism Act 2011",
+        in_force_dates=[{"date": "2012-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_source_carried_structured_tail_substitution_to_child_replaces() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -15664,6 +15783,79 @@ def test_compile_corresponding_table_entry_word_substitution_with_rowspan_source
         and record["blocking"] is False
         for record in lowering_records
     )
+
+
+def test_compile_source_parent_final_column_table_entry_paragraph_text_patch() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-4-paragraph-8">
+          <Pnumber>8</Pnumber>
+          <P1para>
+            <Text>In section 60 (structural overview), in subsection (4), in the final column of the entry relating to Chapter 5 of Part 2 of the Act—</Text>
+            <P3 id="schedule-4-paragraph-8-a">
+              <Pnumber>a</Pnumber>
+              <P3para>
+                <Text>for paragraph (b) (Regulator's consent) substitute—</Text>
+                <BlockAmendment>
+                  <P3>
+                    <Pnumber>b</Pnumber>
+                    <P3para><Text>Notification of regulator</Text></P3para>
+                  </P3>
+                </BlockAmendment>
+                <AppendText>;</AppendText>
+              </P3para>
+            </P3>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.xpath('//*[@id="schedule-4-paragraph-8-a"]')[0]
+    effect = UKEffectRecord(
+        effect_id="key-db35c35db5cd161469da356981ff192e",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-10-05",
+        affected_uri="/id/ukpga/2008/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="17",
+        affected_provisions="s. 60(4)",
+        affecting_uri="/id/ukpga/2016/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="22",
+        affecting_provisions="Sch. 4 para. 8(a)",
+        affecting_title="Housing and Planning Act 2016",
+        in_force_dates=[{"date": "2017-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "60"), ("subsection", "4"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Regulator's consent"
+    assert ops[0].text_patch.replacement == "Notification of regulator"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["selector_mode"] == "unique_entry_cell"
+    assert selector["entry_label"] == "5"
+    assert selector["column_index"] == 4
+    assert any(
+        record["rule_id"] == "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
 def test_compile_broad_schedule_table_column_text_patch_selector() -> None:
@@ -42998,7 +43190,7 @@ def test_manual_frontier_classifies_savings_qualified_text_omission() -> None:
     )
 
 
-def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_manual() -> None:
+def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_deterministic_candidate() -> None:
     rejection = {
         "rule_id": "uk_effect_whole_act_word_level_text_patch_rejected",
         "blocking": True,
@@ -43031,7 +43223,7 @@ def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_manual() 
     )
 
     assert source_pathology == "whole_act_word_level_text_patch_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["status"] == "deterministic_frontend_candidate"
     assert (
         manual_frontier["rule_id"]
         == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"

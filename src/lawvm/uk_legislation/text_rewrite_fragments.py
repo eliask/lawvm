@@ -99,6 +99,9 @@ UK_SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RULE_ID = (
 UK_SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_carried_child_tail_substitution_text_patch"
 )
+UK_SOURCE_CARRIED_BETWEEN_PARAGRAPHS_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_carried_between_paragraphs_substitution_text_patch"
+)
 UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID = (
     "uk_effect_source_carried_multi_subunit_repeal_text_patch"
 )
@@ -1854,6 +1857,35 @@ def append_source_carried_substitution_rewrite_observations(
                 "replacement": op_text_replacement,
                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+            },
+        )
+    if UK_SOURCE_CARRIED_BETWEEN_PARAGRAPHS_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_BETWEEN_PARAGRAPHS_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_between_paragraphs_substitution_lowered",
+            reason=(
+                "UK source text substitutes a word between deictically named "
+                "paragraphs; lowering resolves the paragraph pair only from "
+                "the immediately previous source sibling and emits a child-local "
+                "text patch."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "source_between_child_kind": str(primary.get("source_between_child_kind") or ""),
+                "source_between_child_labels": str(
+                    primary.get("source_between_child_labels") or ""
+                ),
+                "source_deictic_antecedent": str(
+                    primary.get("source_deictic_antecedent") or ""
+                ),
             },
         )
     if UK_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RULE_ID in rule_ids:
