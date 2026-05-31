@@ -408,7 +408,25 @@ an inserted provision at insert time, so oracle grounding is exact (structural) 
 never has to *guess* a deep node's identity by fuzzy text.
 - **6.3.1 `after x insert y`; 6.3.5 at the beginning; 6.3.6 at the end; 6.3.9 at the
   appropriate place** (alphabetical lists). → insertion anchor resolution +
-  `appropriate_place` (a known manual-frontier address). **HAVE/partial.**
+  `appropriate_place` (a known manual-frontier address).
+  **HAVE (verified partial)**: explicit schedule-list `at the appropriate place
+  in alphabetical order insert ...` and `at an appropriate place, in
+  alphabetical order, insert ...` lower to typed `schedule_entry` inserts with
+  an alphabetical placement selector, and replay records
+  `uk_replay_schedule_list_entry_alphabetical_position_resolved` only after
+  resolving the schedule-entry ordering. Non-alphabetical `at/in the appropriate
+  place` definition-entry, index/list-entry, and table-entry placements remain
+  non-executable without an anchor or ordering claim; lowering must emit
+  blocking records such as
+  `uk_effect_appropriate_place_definition_entry_insert_rejected`,
+  `uk_effect_appropriate_place_insert_rejected`, or table-entry placement
+  rejection evidence rather than guessing from live text. Witnesses:
+  `test_compile_schedule_list_entry_insert_handles_alphabetical_order_form`,
+  `test_compile_schedule_list_entry_insert_handles_an_appropriate_alphabetical_form`,
+  `test_replay_schedule_list_entry_insert_records_alphabetical_position`,
+  `test_compile_appropriate_place_definition_entry_insert_rejects_without_anchor_claim`,
+  `test_compile_appropriate_place_insert_records_specific_rejection`, and
+  `test_compile_direct_table_appropriate_place_instruction_rejects_row_insert`.
 - **6.4 numbering of inserted provisions** (deterministic):
   - before the first in a series: lettered `A1, B1, …`; before `A1` → `ZA1`; lettered
     paras before `(a)` → `(za), (zb)`; before `(za)` → `(zza)`.
