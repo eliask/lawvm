@@ -27186,6 +27186,143 @@ def test_compile_respectively_there_is_substituted_records_all_occurrences_obser
     assert all(record["blocking"] is False for record in lowering_records)
 
 
+def test_compile_respectively_before_replacements_lowers_all_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-17-paragraph-52-2-d">
+          <Pnumber>d</Pnumber>
+          <Text>d for “such system” and “the system”, wherever occurring,
+          there shall be substituted, respectively, “ such network ” and
+          “ the network ” .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_respectively_before_replacements",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-25",
+        affected_uri="/id/ukpga/1980/65/schedule/28/part/3/paragraph/13",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1980",
+        affected_number="65",
+        affected_provisions="Sch. 28 Pt. 3 para. 13",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 17 para. 52(2)(d)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2003-07-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("schedule", "28"), ("part", "3"), ("paragraph", "13")),
+        (("schedule", "28"), ("part", "3"), ("paragraph", "13")),
+    ]
+    assert [
+        (op.text_patch.selector.match_text, op.text_patch.replacement)
+        for op in ops
+        if op.text_patch is not None
+    ] == [
+        ("such system", "such network"),
+        ("the system", "the network"),
+    ]
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_respectively_all_occurrences_substitution_text_patch"
+    ] == [
+        "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        "uk_effect_respectively_all_occurrences_substitution_text_patch",
+    ]
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_word_substitution_structural_child_replacement_reclassified() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-9">
+          <Pnumber>9</Pnumber>
+          <P1para>
+            <Text>In subsection (1) of section 152 of the Local Government,
+            Planning and Land Act 1980 (fire precautions and home insulation),
+            for paragraph (a) substitute– a the functions under Part 3 of the
+            Fire (Scotland) Act 2005 (asp 5) of an enforcing authority
+            (as defined in section 61(9) of that Act); .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_word_substitution_structural_child_replacement",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-10-01",
+        affected_uri="/id/ukpga/1980/65/section/152/subsection/1/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1980",
+        affected_number="65",
+        affected_provisions="s. 152(1)(a)",
+        affecting_uri="/id/ssi/2006/475",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="475",
+        affecting_provisions="Sch. 1 para. 9",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2006-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "152"), ("subsection", "1"), ("paragraph", "a"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[0].payload.label == "a"
+    assert ops[0].payload.text == (
+        "the functions under Part 3 of the Fire (Scotland) Act 2005 "
+        "(asp 5) of an enforcing authority (as defined in section 61(9) of that Act);"
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_word_substitution_structural_child_replacement_reclassified"
+    ] == ["uk_effect_word_substitution_structural_child_replacement_reclassified"]
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_after_anchor_each_occasion_insert_records_all_occurrences_observation() -> None:
     extracted_el = ET.fromstring(
         f"""

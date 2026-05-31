@@ -51,6 +51,11 @@ class UKQuoteOnlyOmissionLowering:
     op_text_occurrence: Optional[int] = None
 
 
+UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID = (
+    "uk_effect_word_substitution_structural_child_replacement_reclassified"
+)
+
+
 def _word_level_structural_subsection_omission(
     *,
     effect_type: str,
@@ -129,6 +134,122 @@ def reclassify_word_level_structural_subsection_omission(
         },
     )
     return UKTextReclassificationResult(curr_action="repeal", content_ir=None, detail=detail)
+
+
+_WORD_LEVEL_STRUCTURAL_CHILD_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:the\s+)?"
+    r"(?P<source_kind>sub-?paragraph|paragraph|subsection|item)\s*"
+    r"\(\s*(?P<label>[0-9A-Za-z]+)\s*\)\s+"
+    r"substitute\s*[—–-]\s*(?P<payload>.+?)\s*$",
+    flags=re.I | re.S,
+)
+
+
+def _normalize_child_substitution_source_kind(text: str) -> str:
+    normalized = re.sub(r"[^a-z]+", "", str(text or "").lower())
+    if normalized == "subparagraph":
+        return "subparagraph"
+    return normalized
+
+
+def _word_level_structural_child_substitution(
+    *,
+    effect_type: str,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Identify word-level feed rows whose source replaces the exact child unit."""
+    effect_type_norm = (effect_type or "").strip().lower()
+    if effect_type_norm not in {"words substituted", "word substituted"}:
+        return None
+    target_kind = str(_addr_leaf_kind(target) or "").lower()
+    if target_kind not in {"subsection", "paragraph", "subparagraph", "item"}:
+        return None
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if not target_label:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _WORD_LEVEL_STRUCTURAL_CHILD_SUBSTITUTION_RE.search(text)
+    if match is None:
+        return None
+    source_kind = _normalize_child_substitution_source_kind(match.group("source_kind"))
+    if source_kind != target_kind:
+        return None
+    source_label = _clean_num(match.group("label"))
+    if source_label != target_label:
+        return None
+    payload = " ".join(match.group("payload").split()).strip()
+    payload = re.sub(rf"^\s*{re.escape(source_label)}\s+", "", payload, count=1).strip()
+    payload = re.sub(r"\s+\.$", "", payload).strip()
+    if not payload:
+        return None
+    return {
+        "source_target_kind": source_kind,
+        "source_target_label": source_label,
+        "matched_instruction": match.group(0),
+        "payload_text": payload,
+    }
+
+
+def reclassify_word_level_structural_child_substitution(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    content_ir: Optional[dict[str, Any]],
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTextReclassificationResult:
+    if curr_action != "replace":
+        return UKTextReclassificationResult(curr_action=curr_action, content_ir=content_ir, detail=None)
+    detail = _word_level_structural_child_substitution(
+        effect_type=effect.effect_type,
+        extracted_text=extracted_text,
+        target=target,
+    )
+    if detail is None:
+        return UKTextReclassificationResult(curr_action=curr_action, content_ir=content_ir, detail=None)
+    target_kind = str(_addr_leaf_kind(target) or "")
+    target_label = str(_addr_leaf_label(target) or "")
+    lowered_content_ir = {
+        "kind": target_kind,
+        "label": target_label,
+        "text": detail["payload_text"],
+        "attrs": {
+            "source_rule_id": UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID,
+            "source_target_kind": detail["source_target_kind"],
+            "source_target_label": detail["source_target_label"],
+        },
+        "children": [],
+    }
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=UK_EFFECT_WORD_SUBSTITUTION_STRUCTURAL_CHILD_REPLACEMENT_RULE_ID,
+        family="lowering_normalization",
+        reason_code="word_level_feed_row_explicitly_substitutes_target_child",
+        reason=(
+            "UK effect feed labels the row as word-level substitution, but "
+            "the affecting source explicitly substitutes the exact affected "
+            "child provision with a labelled structural payload."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            **detail,
+        },
+    )
+    return UKTextReclassificationResult(
+        curr_action="replace",
+        content_ir=lowered_content_ir,
+        detail=detail,
+    )
 
 
 def _empty_effect_type_as_if_words_omitted(text: str) -> bool:
