@@ -355,6 +355,31 @@ def test_validate_semantic_claim_accepts_declared_live_target_precondition() -> 
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_live_target_precondition_without_live_index() -> None:
+    claim = _claim_row()
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "path": "section:1/table:1",
+            "text_sha256": hashlib.sha256(b"table text").hexdigest(),
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_live_state_missing"
+    assert row["rule_id"] == "uk_semantic_claim_live_target_index_missing"
+    assert (
+        "live_target_preconditions cannot be checked because no live target "
+        "index is supplied"
+    ) in row["validation_issues"]
+    assert row["live_state_checked"] is False
+    assert row["live_state_preconditions_checked"] is False
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_duplicate_identical_live_fingerprint() -> None:
     target_text_hash = hashlib.sha256(b"table text").hexdigest()
     claim = _claim_row()
