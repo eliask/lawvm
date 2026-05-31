@@ -17,6 +17,8 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.nlp_parser import (
     UK_DANGLING_ACTIVE_SUBSTITUTION_QUOTE_RULE_ID,
+    UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
+    UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
@@ -320,6 +322,60 @@ def append_basic_text_rewrite_observations(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if str(fragment.get("rule_id") or "") != UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID:
+                continue
+            selector = str(fragment.get("original") or "")
+            parts = selector.split(US, 2)
+            excluded_phrase = parts[2] if len(parts) == 3 else ""
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_except_phrase_text_patch",
+                reason=(
+                    "UK effect source explicitly substitutes a quoted expression "
+                    "except when it occurs inside a named phrase; lowering preserves "
+                    "the exception as part of the text selector."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "excluded_phrase": excluded_phrase,
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if str(fragment.get("rule_id") or "") != UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID:
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_passive_quoted_substitution_text_patch",
+                reason=(
+                    "UK effect source explicitly substitutes a quoted expression "
+                    "using passive drafting language; lowering preserves it as a "
+                    "text patch scoped to the affected target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
     if UK_IN_DEFINITION_AFTER_ANCHOR_INSERT_RULE_ID in rule_ids:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,

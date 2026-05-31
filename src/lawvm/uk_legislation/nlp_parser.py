@@ -67,6 +67,7 @@ from lawvm.uk_legislation.text_selectors import (
     AfterChildSelector,
     BeforeChildSelector,
     DefinitionAnchorSelector,
+    ExceptPhraseSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
     RangeToEndSelector,
@@ -115,6 +116,20 @@ _NON_QUOTE = r"[^\"'\u201c\u201d\u2018\u2019]"
 # anchor. Patterns that hit this bound legitimately can be widened later.
 _MULTI_TERM_LIST_MAX = 5
 
+_EXCEPT_PHRASE_SUBSTITUTED_RE = re.compile(
+    rf"for\s+[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
+    rf"\(\s*except\s+in\s+the\s+phrase\s+[“\"'‘](?P<excluded>{_NON_QUOTE}{{1,500}})[”\"'’]\s*\)"
+    r",?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+_PASSIVE_QUOTED_SUBSTITUTED_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+
 _UK_CARRIED_PARENT_CONTEXT_RE = (
     r"\s+of\s+(?:(?:that|the)\s+)?"
     r"(?:paragraph|sub-paragraph|subsection|section)"
@@ -139,6 +154,8 @@ UK_AFTER_QUOTED_ANCHOR_ORDINAL_PLACES_INSERT_RULE_ID = (
 UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_quoted_word_where_ordinal_occurrences_substitution_text_patch"
 )
+UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_text_patch"
+UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
 UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_both_subsequent_occurrences_substitution_text_patch"
 )
@@ -540,6 +557,30 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     "rule_id": "uk_effect_wherever_occurring_substitution_text_patch",
                 }
             )
+
+    for m in _EXCEPT_PHRASE_SUBSTITUTED_RE.finditer(text):
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=ExceptPhraseSelector(
+                        m.group("original").strip(),
+                        m.group("excluded").strip(),
+                    ),
+                    replacement=m.group("replacement").strip(),
+                    rule_id=UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
+                    occurrence="0",
+                )
+            )
+        )
+
+    for m in _PASSIVE_QUOTED_SUBSTITUTED_RE.finditer(text):
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
+            }
+        )
 
     matches_words_in_brackets_substituted = re.finditer(
         r"for\s+(?:the\s+)?words?\s+in\s+brackets\s+"

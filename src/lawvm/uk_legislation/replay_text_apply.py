@@ -37,6 +37,8 @@ TextNodeRegexMatchesByPath: TypeAlias = dict[
     tuple[UKMutableNode, list[re.Match[str]]],
 ]
 
+_EXCEPT_PHRASE_SELECTOR_PREFIX = f"TEXT_EXCEPT_PHRASE{US}"
+
 
 class DefinitionTextRewriteResult(NamedTuple):
     text: str
@@ -61,9 +63,57 @@ class TextRangeStartIndex(NamedTuple):
     recovery_rule_ids: tuple[str, ...]
 
 
+class ExceptPhraseTextRewrite(NamedTuple):
+    text: str
+    applied: bool
+
+
 class DirectChildTextRewriteMatch(NamedTuple):
     index: int
     child: UKMutableNode
+
+
+def _rewrite_except_phrase_substitution(
+    text: str,
+    *,
+    original: str,
+    excluded_phrase: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> ExceptPhraseTextRewrite:
+    """Replace source-matched text unless the match is inside an excluded phrase."""
+    if not original or not excluded_phrase:
+        return ExceptPhraseTextRewrite(text, False)
+    original_pattern = _text_patch_pattern(
+        original,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    excluded_pattern = _text_patch_pattern(
+        excluded_phrase,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    excluded_spans = tuple(match.span() for match in re.finditer(excluded_pattern, text, flags=re.I))
+    matches = tuple(
+        match
+        for match in re.finditer(original_pattern, text, flags=re.I)
+        if not any(start <= match.start() and match.end() <= end for start, end in excluded_spans)
+    )
+    if not matches:
+        return ExceptPhraseTextRewrite(text, False)
+    if occurrence > 0:
+        if occurrence > len(matches):
+            return ExceptPhraseTextRewrite(text, False)
+        matches = (matches[occurrence - 1],)
+    elif occurrence == -1:
+        matches = (matches[-1],)
+    new_text = text
+    for match in reversed(matches):
+        new_text = new_text[: match.start()] + replacement + new_text[match.end() :]
+    return ExceptPhraseTextRewrite(new_text, new_text != text)
 
 
 # Definition predicate vocabulary is owned by definition_grammar (single source
@@ -1779,6 +1829,36 @@ class UKReplayTextApplyMixin:
             True if at least one substitution was made; False otherwise.
         """
         text_nodes = _text_nodes_in_document_order(node)
+
+        if match.startswith(_EXCEPT_PHRASE_SELECTOR_PREFIX):
+            parts = match.split(US, 2)
+            if len(parts) != 3:
+                return node, False
+            original = parts[1]
+            excluded_phrase = parts[2]
+            made_any = False
+            rebuilt = node
+            for path, text_node in text_nodes:
+                result = _rewrite_except_phrase_substitution(
+                    text_node.text or "",
+                    original=original,
+                    excluded_phrase=excluded_phrase,
+                    replacement=replacement,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                if not result.applied:
+                    continue
+                rebuilt = self._replace_descendant_at_path(
+                    rebuilt,
+                    path,
+                    dc_replace(text_node, text=result.text),
+                )
+                made_any = True
+            if made_any:
+                self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, made_any
 
         if match.startswith("TEXT_AMENDMENT_PROGRAM_INSERTED_PARENT_"):
             program_match = _UK_AMENDMENT_PROGRAM_INSERTED_PARENT_PATTERN.fullmatch(match)

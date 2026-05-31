@@ -24398,6 +24398,183 @@ def test_compile_wherever_occurring_records_all_occurrences_lowering_observation
     ]
 
 
+def test_compile_except_phrase_substitution_preserves_excluded_phrase_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-1-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a for “telecommunications code” (except in the phrase “telecommunications code system”), there shall be substituted “electronic communications code”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-7efb8ec0f6cd16551adf5e4621031887",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-09-17",
+        affected_uri="/id/ukpga/1984/12/schedule/4/paragraph/88",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1984",
+        affected_number="12",
+        affected_provisions="Sch. 4 para. 88",
+        affecting_uri="/id/uksi/2003/2155",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="2155",
+        affecting_provisions="Sch. 1 para. 1(2)(a)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2003-09-17", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        f"TEXT_EXCEPT_PHRASE{US}telecommunications code{US}telecommunications code system"
+    )
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "electronic communications code"
+    assert [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_except_phrase_substitution_text_patch"
+    ] == [
+        {
+            "rule_id": "uk_effect_except_phrase_substitution_text_patch",
+            "family": "text_rewrite_lowering",
+            "phase": "lowering",
+            "effect_id": "key-7efb8ec0f6cd16551adf5e4621031887",
+            "affecting_act_id": "uksi/2003/2155",
+            "affected_provisions": "Sch. 4 para. 88",
+            "affecting_provisions": "Sch. 1 para. 1(2)(a)",
+            "effect_type": "words substituted",
+            "reason": (
+                "UK effect source explicitly substitutes a quoted expression "
+                "except when it occurs inside a named phrase; lowering preserves "
+                "the exception as part of the text selector."
+            ),
+            "reason_code": "explicit_except_phrase_text_patch",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+            "extracted_tag": "P3",
+            "has_extracted_source": True,
+            "extracted_text_preview": (
+                "a a for “telecommunications code” (except in the phrase "
+                "“telecommunications code system”), there shall be substituted "
+                "“electronic communications code”;"
+            ),
+            "target_ref": "Sch. 4 para. 88",
+            "target": "schedule:4/paragraph:88",
+            "text_match": (
+                f"TEXT_EXCEPT_PHRASE{US}telecommunications code{US}telecommunications code system"
+            ),
+            "replacement": "electronic communications code",
+            "excluded_phrase": "telecommunications code system",
+            "occurrence": 0,
+        }
+    ]
+
+
+def test_replay_except_phrase_substitution_does_not_mutate_excluded_phrase() -> None:
+    selector = f"TEXT_EXCEPT_PHRASE{US}telecommunications code{US}telecommunications code system"
+    op = LegalOperation(
+        op_id="uk_test_except_phrase_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "4"), ("paragraph", "88"))),
+        text_patch=_replace_patch(selector, "electronic communications code"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1984/12",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="4",
+                attrs={"eId": "schedule-4"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="88",
+                        attrs={"eId": "schedule-4-paragraph-88"},
+                        text=(
+                            "The telecommunications code applies to a telecommunications "
+                            "code system and another telecommunications code."
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+    paragraph = replayed.supplements[0].children[0]
+
+    assert paragraph.text == (
+        "The electronic communications code applies to a telecommunications "
+        "code system and another electronic communications code."
+    )
+
+
+def test_compile_passive_quoted_substitution_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-1-2-b">
+          <Pnumber>b</Pnumber>
+          <Text>b for “telecommunications code system”, there shall be substituted “electronic communications code network”;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-3a7929fb27957faa80480d536edfe32a",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-09-17",
+        affected_uri="/id/ukpga/1984/12/schedule/4/paragraph/88",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1984",
+        affected_number="12",
+        affected_provisions="Sch. 4 para. 88",
+        affecting_uri="/id/uksi/2003/2155",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="2155",
+        affecting_provisions="Sch. 1 para. 1(2)(b)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2003-09-17", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "telecommunications code system"
+    assert ops[0].text_patch.replacement == "electronic communications code network"
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_passive_quoted_substitution_text_patch"
+    ] == ["uk_effect_passive_quoted_substitution_text_patch"]
+
+
 def test_compile_each_place_occurring_records_all_occurrences_lowering_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
