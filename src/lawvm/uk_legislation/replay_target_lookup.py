@@ -7,6 +7,7 @@ from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     SCOPE_CONFIDENCE_FALLBACK,
     TARGET_AMBIGUOUS,
     TARGET_RECOVERED,
@@ -339,6 +340,40 @@ class UKReplayTargetLookupMixin:
                                                 wrapper_kind="p1group",
                                                 family="target_resolution_recovery",
                                                 quirks_disposition="apply",
+                                                target_resolution=TargetResolutionCertificate(
+                                                    rule_id=(
+                                                        _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID
+                                                    ),
+                                                    phase="replay",
+                                                    reason=(
+                                                        "explicit_schedule_paragraph_resolved_through_unlabeled_wrapper"
+                                                    ),
+                                                    status=TARGET_RECOVERED,
+                                                    source_target=str(target),
+                                                    candidate_count=1,
+                                                    candidates=(
+                                                        TargetResolutionCandidate(
+                                                            target=str(target),
+                                                            reason="unlabeled_p1group_single_paragraph_child",
+                                                            detail={
+                                                                "paragraph_label": str(p_label),
+                                                                "wrapper_kind": "p1group",
+                                                            },
+                                                        ),
+                                                    ),
+                                                    selected_target=str(target),
+                                                    scope_confidence=(
+                                                        SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT
+                                                    ),
+                                                    blocking=False,
+                                                    strict_disposition="record",
+                                                    quirks_disposition="apply",
+                                                    detail={
+                                                        "action": _action_name(target_resolution_op.action),
+                                                        "op_id": target_resolution_op.op_id,
+                                                        "recovery_family": "target_resolution_recovery",
+                                                    },
+                                                ).to_diagnostic_detail(),
                                             ),
                                         )
                                         break
