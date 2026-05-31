@@ -118,6 +118,13 @@ _FAMILY_PROOF_DUPLICATE_SENSITIVE_FIELDS = (
     "table_surface_precondition_ids",
     "tail_connector_precondition_ids",
 )
+_MUTATION_BOUNDARY_DUPLICATE_SENSITIVE_FIELDS = (
+    "changed_paths",
+    "target_region",
+    "declared_migration_paths",
+    "declared_recovery_paths",
+    "declared_editorial_projection_paths",
+)
 
 
 class _WorkqueueIndex(NamedTuple):
@@ -444,6 +451,14 @@ def _validate_canonical_operation_shapes(
             "target_region",
         ):
             issues.append(f"{prefix}.mutation_boundary.target_region is required")
+        for field in _MUTATION_BOUNDARY_DUPLICATE_SENSITIVE_FIELDS:
+            issues.extend(
+                _duplicate_string_reference_issues(
+                    prefix=f"{prefix}.mutation_boundary",
+                    field=field,
+                    values=_path_strings_from_value(mutation_boundary.get(field)),
+                )
+            )
         issues.extend(
             _validate_mutation_boundary_containment(
                 prefix=prefix,

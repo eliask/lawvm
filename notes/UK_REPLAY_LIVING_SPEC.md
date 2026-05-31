@@ -248,8 +248,10 @@ id, canonical core `StructuralAction`, target, or explicit
 canonical-operation claims whose declared `changed_paths` escape `target_region`
 unless the claim explicitly declares migration, recovery, or
 editorial-projection exception paths, and those exception paths must carry their
-own rule, reason, or event/observation id. Duplicate canonical-operation ids are
-also rejected within a single claim. When a matched workqueue row has a
+own rule, reason, or event/observation id. Duplicate canonical-operation ids and
+duplicate mutation-boundary path entries are also rejected within a single claim;
+the latter covers `changed_paths`, `target_region`, and declared migration,
+recovery, or editorial-projection exception paths. When a matched workqueue row has a
 non-executable claim template, the validator also requires the claim to echo any
 template `source_target_address` or `destination_address` in declared claim
 context, requires each canonical operation target to sit under one of those

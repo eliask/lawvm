@@ -145,6 +145,9 @@ The current validator checks only:
   `mutation_boundary.changed_paths` / `target_region` declarations
 - duplicate canonical-operation ids are rejected within a claim, so a weak
   claim cannot collapse multiple proposed operation instances by accident
+- mutation-boundary path declarations are duplicate-sensitive:
+  `changed_paths`, `target_region`, and declared exception paths reject repeated
+  path entries before containment checks are interpreted
 - static mutation-boundary containment for canonical-operation claims:
   `changed_paths` must sit under `target_region` unless the claim explicitly
   declares migration, recovery, or editorial-projection exception paths

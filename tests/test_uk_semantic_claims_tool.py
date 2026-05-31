@@ -6042,6 +6042,43 @@ def test_validate_semantic_claim_rejects_changed_path_outside_target_region() ->
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_mutation_boundary_paths() -> None:
+    claim = _claim_row()
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["mutation_boundary"] = {
+        "changed_paths": [
+            "section:1/table:2/row:1",
+            "section:1/table:2/row:1",
+        ],
+        "target_region": ["section:1/table:1", "section:1/table:1"],
+        "declared_recovery_paths": ["section:1/table:2", "section:1/table:2"],
+        "recovery_rule_id": "uk_manual_claim_declared_recovery_surface",
+    }
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "canonical_operations[1].mutation_boundary.changed_paths[2] duplicates "
+        "changed_paths[1] 'section:1/table:2/row:1'"
+    ) in row["validation_issues"]
+    assert (
+        "canonical_operations[1].mutation_boundary.target_region[2] duplicates "
+        "target_region[1] 'section:1/table:1'"
+    ) in row["validation_issues"]
+    assert (
+        "canonical_operations[1].mutation_boundary.declared_recovery_paths[2] "
+        "duplicates declared_recovery_paths[1] 'section:1/table:2'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_accepts_declared_boundary_exception_path() -> None:
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
