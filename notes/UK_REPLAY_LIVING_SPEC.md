@@ -285,8 +285,9 @@ rejected. Family-specific proof semantics resolve `live_target_precondition_ids`
 only to the paths on those referenced live precondition rows; unrelated live
 preconditions declared elsewhere in the claim do not widen the proof's target
 carrier set. Live precondition ids, validator-check ids, and ownership ids must
-be unique so an id cannot merge multiple carrier paths or proof-obligation rows.
-The first opt-in family semantic,
+be unique schema declarations, even before live-target or proof matching, so an
+id cannot merge multiple carrier paths or proof-obligation rows. The first
+opt-in family semantic,
 `table_surface_insert_anchor_and_live_carrier`, requires a table-surface insert
 proof to reference source text evidence, a live carrier precondition, and insert
 operations whose target parent is inside that live carrier.

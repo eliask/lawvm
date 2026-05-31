@@ -195,6 +195,8 @@ The current validator checks only:
 - validator-check ids and ownership ids are unique declaration ids within a
   claim; duplicate ids are rejected before proof or template matching, so a
   proof obligation cannot be satisfied by a collapsed set of inconsistent rows
+- live-target precondition ids are also rejected as duplicate schema
+  declarations even when no live-target index is supplied yet
 - presence of every `required_ownership` id listed by a matched non-executable
   claim template, so a claim must declare the source/target/mutation-boundary
   surfaces it claims to own

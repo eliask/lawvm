@@ -324,6 +324,7 @@ def _validate_claim_schema(row: Mapping[str, Any]) -> tuple[str, ...]:
         )
     issues.extend(_validator_check_identity_issues(row))
     issues.extend(_ownership_claim_identity_issues(row))
+    issues.extend(_live_target_precondition_identity_issues(row))
     outcome_kind = _optional_string(proposed_outcome, "outcome_kind")
     if outcome_kind not in _ALLOWED_OUTCOME_KINDS:
         issues.append(
@@ -503,7 +504,7 @@ def _validate_operation_family_proof_refs(
     live_precondition_ids, live_precondition_paths, live_precondition_paths_by_id = (
         _claim_live_target_precondition_ids_and_paths(claim)
     )
-    issues: list[str] = list(_live_target_precondition_identity_issues(claim))
+    issues: list[str] = []
     seen_proof_ids: set[str] = set()
     for index, proof in enumerate(proofs, start=1):
         prefix = f"operation_family_proofs[{index}]"
@@ -3648,7 +3649,7 @@ def _validate_live_target_preconditions(
     preconditions = _claim_live_target_precondition_rows(claim)
     if not preconditions:
         return (), False
-    issues: list[str] = list(_live_target_precondition_identity_issues(claim))
+    issues: list[str] = []
     checked = False
     for index, precondition in enumerate(preconditions, start=1):
         prefix = f"live_target_preconditions[{index}]"
