@@ -191,7 +191,7 @@ def _read_jsonl_rows(path: Path) -> tuple[dict[str, Any], ...]:
                     }
                 )
                 continue
-            parsed.setdefault("line_number", line_number)
+            parsed["line_number"] = line_number
             rows.append(parsed)
     return tuple(rows)
 
@@ -203,6 +203,17 @@ def _write_jsonl_rows(path: Path, rows: tuple[Mapping[str, Any], ...]) -> int:
             handle.write(json.dumps(dict(row), ensure_ascii=False, sort_keys=True))
             handle.write("\n")
     return len(rows)
+
+
+def _row_line_number(row: Mapping[str, Any]) -> int:
+    value = row.get("line_number")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdecimal():
+            return int(stripped)
+    return 0
 
 
 def _non_empty_string(row: Mapping[str, Any], key: str) -> str:
@@ -5001,7 +5012,7 @@ def _validation_row(
         "operation_family_proof_count": len(_claim_operation_family_proof_rows(row)),
         "operation_family_proof_semantics": list(proof_semantics),
         "operation_family_proof_families": list(proof_families),
-        "line_number": int(row.get("line_number") or 0),
+        "line_number": _row_line_number(row),
         "claim_id": _optional_string(row, "claim_id"),
         "claim_status": _optional_string(row, "claim_status"),
         "claim_kind": _optional_string(row, "claim_kind"),

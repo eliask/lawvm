@@ -144,6 +144,46 @@ def test_validate_semantic_claim_accepts_schema_and_workqueue_provenance_only() 
     assert row["blocking"] is False
 
 
+def test_validate_semantic_claim_degrades_malformed_direct_line_number() -> None:
+    claim = _claim_row()
+    claim["line_number"] = "not-a-line-number"
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        workqueue_rows=(_workqueue_row(),),
+    )
+
+    assert rows[0]["validator_status"] == "validated_provenance_only"
+    assert rows[0]["line_number"] == 0
+
+
+def test_uk_semantic_claims_validate_main_uses_physical_line_number(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    input_path = tmp_path / "claims.jsonl"
+    claim = _claim_row()
+    claim["line_number"] = 999
+    input_path.write_text(json.dumps(claim) + "\n", encoding="utf-8")
+
+    uk_semantic_claims.main(
+        Namespace(
+            input=str(input_path),
+            workqueue_jsonl="",
+            live_targets_jsonl="",
+            json=True,
+            summary_only=False,
+            validation_jsonl="",
+            fail_on_rejected=False,
+            fail_on_input_error=False,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["rows"][0]["validator_status"] == "validated_provenance_only"
+    assert payload["rows"][0]["line_number"] == 1
+
+
 def test_validate_semantic_claim_accepts_duplicate_identical_workqueue_id() -> None:
     workqueue = _workqueue_row()
     duplicate = dict(workqueue)
