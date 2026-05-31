@@ -544,6 +544,19 @@ the explicit affected target. Current witness: `ukpga/1990/8` affected
 blockers `16 -> 15` and total blocking compile diagnostics `134 -> 133`; the
 77-statute gate remains score-stable (`0 improved, 0 regressed`).
 
+Quoted substitutions may carry a parenthetical scope note between the quoted
+preimage and the `substitute` verb. The lowering rule
+`uk_effect_quoted_substitution_scope_note_text_patch` records that note as
+source evidence and emits only the quoted preimage/replacement as the executable
+target-local text patch; it does not treat the parenthetical as legal payload or
+as authority to widen the target. Current witness: `ukpga/1990/8` affected
+`s. 323(2)` and `s. 323(3)` by `wsi/2014/2773` Sch. 1 para. 11(3), where the
+source says `for "The regulations may" (in so far as those words continue to
+form part of those subsections) substitute "Regulations under this section may"`.
+This cuts `ukpga/1990/8` overlap blockers `15 -> 13`, blocking effect rows
+`132 -> 130`, and blocking compile diagnostics `133 -> 131`; the 77-statute
+gate remains score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
