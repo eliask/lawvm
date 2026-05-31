@@ -99,8 +99,14 @@ _REPLAY_LENS_FRONTIER_REASONS = frozenset(
         "effect_rows_not_admitted_by_replay_lens",
     }
 )
+_OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS = frozenset(
+    {
+        "effect_feed_empty",
+    }
+)
 _SOURCE_CHAIN_COMPLETENESS_EXCLUDED_REASONS = (
     _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS | _REPLAY_LENS_FRONTIER_REASONS
+    | _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS
 )
 
 
@@ -369,6 +375,17 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             )
         }
     )
+    empty_effect_feed_frontier_statutes = sorted(
+        {
+            str(row.get("statute_id") or "")
+            for row in results
+            if str(row.get("statute_id") or "")
+            and any(
+                reason in _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS
+                for reason in _source_chain_frontier_reasons_for_row(row)
+            )
+        }
+    )
     zero_oracle_retention = [
         r
         for r in scored
@@ -429,6 +446,8 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "replay_lens_frontier_count": len(replay_lens_frontier_statutes),
         "replay_lens_frontier_statutes": replay_lens_frontier_statutes,
+        "empty_effect_feed_frontier_count": len(empty_effect_feed_frontier_statutes),
+        "empty_effect_feed_frontier_statutes": empty_effect_feed_frontier_statutes,
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "triage_bucket_statutes": triage_bucket_statutes,
         "manual_frontier_status_counts": manual_frontier_status_counts,
@@ -913,6 +932,12 @@ def run_driver(
             "  replay_lens_frontier="
             f"{summary['replay_lens_frontier_count']}: "
             f"{', '.join(summary['replay_lens_frontier_statutes'])}"
+        )
+    if summary["empty_effect_feed_frontier_count"]:
+        print(
+            "  empty_effect_feed_frontier="
+            f"{summary['empty_effect_feed_frontier_count']}: "
+            f"{', '.join(summary['empty_effect_feed_frontier_statutes'])}"
         )
     if summary["triage_buckets"]:
         buckets = ", ".join(

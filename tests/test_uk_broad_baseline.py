@@ -329,6 +329,10 @@ def test_summarize_results_counts_empty_effect_feed_frontier() -> None:
     assert summary["source_chain_frontier_statutes"] == {
         "effect_feed_empty": ["uksi/2012/1206"],
     }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
+    assert summary["empty_effect_feed_frontier_count"] == 1
+    assert summary["empty_effect_feed_frontier_statutes"] == ["uksi/2012/1206"]
 
 
 def test_summarize_results_counts_nonreplay_effect_frontier() -> None:
@@ -880,6 +884,43 @@ def test_run_driver_can_fail_on_non_manual_source_chain_frontier(
     out = capsys.readouterr().out
     assert "source_chain_frontier[effect_rows_absent_or_unpublished]: uksi/2012/1206" in out
     assert "non_manual_source_chain_frontier=1: uksi/2012/1206" in out
+
+
+def test_run_driver_non_manual_source_chain_flag_allows_empty_effect_feed(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "uksi/2012/1206",
+            "score_status": "scored",
+            "aligned": 88.6,
+            "aligned_excluding_grounding_collateral": 88.6,
+            "unaligned": 88.6,
+            "n_replay": 31,
+            "n_oracle": 35,
+            "n_ops": 0,
+            "n_effects": 0,
+            "compile_rejection_rule_counts": {
+                "uk_effect_feed_empty_recorded": 1,
+            },
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["uksi/2012/1206"],
+            None,
+            fail_on_non_manual_source_chain_frontier=True,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "source_chain_frontier[effect_feed_empty]: uksi/2012/1206" in out
+    assert "non_manual_source_chain_frontier=0" in out
+    assert "empty_effect_feed_frontier=1: uksi/2012/1206" in out
 
 
 def test_run_driver_non_manual_source_chain_flag_allows_manual_source_insufficient(
