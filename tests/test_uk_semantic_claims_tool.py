@@ -1934,6 +1934,186 @@ def test_validate_semantic_claim_accepts_appropriate_place_family_proof_semantic
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_accepts_appropriate_place_declared_ordering_rule() -> None:
+    parent_text_hash = hashlib.sha256(b"parent text").hexdigest()
+    claim = _claim_row(
+        source_preview='at the appropriate place insert "new listed entry"',
+    )
+    claim["action_family"] = "appropriate_place_mutation"
+    claim["ownership_claims"] = [
+        {
+            "ownership_id": "validated_predecessor_or_successor_anchor",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "target_container_boundary",
+            "status": "claimed_not_proved",
+        },
+        {
+            "ownership_id": "mutation_boundary",
+            "status": "claimed_not_proved",
+        },
+    ]
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:1/subsection:1A"],
+        "target_region": ["section:1/subsection:1A"],
+    }
+    validator_checks = proposed_outcome["validator_checks"]
+    assert isinstance(validator_checks, list)
+    validator_checks.append(
+        {
+            "check_id": "claim_identifies_ordering_rule",
+            "status": "claimed_not_proved",
+        }
+    )
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-uses-appropriate-place",
+            "contains": "appropriate place",
+        },
+        {
+            "precondition_id": "source-carries-payload",
+            "contains": "new listed entry",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-parent-carrier",
+            "path": "section:1",
+            "text_sha256": parent_text_hash,
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-appropriate-place-ordering",
+            "proof_semantic": "appropriate_place_anchor_or_ordering_claim",
+            "operation_family": "appropriate_place_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": [
+                "claim_identifies_exact_table_carrier",
+                "claim_identifies_ordering_rule",
+            ],
+            "source_text_precondition_ids": [
+                "source-uses-appropriate-place",
+                "source-carries-payload",
+            ],
+            "payload_precondition_ids": ["source-carries-payload"],
+            "anchor_or_ordering_ownership_ids": [
+                "validated_predecessor_or_successor_anchor",
+            ],
+            "live_target_precondition_ids": ["live-parent-carrier"],
+            "ordering_rule_id": "claim_identifies_ordering_rule",
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_paths=["section:1"],
+                target_fingerprints={
+                    "section:1": {
+                        "text_sha256": parent_text_hash,
+                        "subtree_sha256": "f" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert (
+        row["validator_status"]
+        == "validated_provenance_source_text_live_targets_and_preconditions_only"
+    )
+    assert row["operation_family_proofs_checked"] is True
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_appropriate_place_unlisted_ordering_rule() -> None:
+    parent_text_hash = hashlib.sha256(b"parent text").hexdigest()
+    claim = _claim_row(
+        source_preview='at the appropriate place insert "new listed entry"',
+    )
+    claim["action_family"] = "appropriate_place_mutation"
+    claim["ownership_claims"] = [
+        {
+            "ownership_id": "validated_predecessor_or_successor_anchor",
+            "status": "claimed_not_proved",
+        },
+    ]
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    operations = proposed_outcome["operations"]
+    assert isinstance(operations, list)
+    operation = operations[0]
+    assert isinstance(operation, dict)
+    operation["action"] = "INSERT"
+    operation["target"] = "section:1/subsection:1A"
+    operation["mutation_boundary"] = {
+        "changed_paths": ["section:1/subsection:1A"],
+        "target_region": ["section:1/subsection:1A"],
+    }
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-uses-appropriate-place",
+            "contains": "appropriate place",
+        },
+        {
+            "precondition_id": "source-carries-payload",
+            "contains": "new listed entry",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-parent-carrier",
+            "path": "section:1",
+            "text_sha256": parent_text_hash,
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-appropriate-place-ordering",
+            "proof_semantic": "appropriate_place_anchor_or_ordering_claim",
+            "operation_family": "appropriate_place_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": [
+                "source-uses-appropriate-place",
+                "source-carries-payload",
+            ],
+            "payload_precondition_ids": ["source-carries-payload"],
+            "anchor_or_ordering_ownership_ids": [
+                "validated_predecessor_or_successor_anchor",
+            ],
+            "live_target_precondition_ids": ["live-parent-carrier"],
+            "ordering_rule_id": "claim_identifies_ordering_rule",
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "operation_family_proofs[1].appropriate_place_anchor_or_ordering_claim."
+        "ordering_rule_id 'claim_identifies_ordering_rule' must be listed in "
+        "validator_check_ids"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_appropriate_place_family_proof_semantic_gap() -> None:
     claim = _claim_row(
         source_preview='at the appropriate place insert "new listed entry"',

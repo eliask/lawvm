@@ -1624,6 +1624,12 @@ def _validate_appropriate_place_family_proof_semantic(
             f"references undeclared live path {path!r}"
         )
     ordering_rule = _optional_string(proof, "ordering_rule_id")
+    proof_check_ids = set(_string_tuple_from_value(proof.get("validator_check_ids")))
+    if ordering_rule and ordering_rule not in proof_check_ids:
+        issues.append(
+            f"{prefix}.{proof_semantic}.ordering_rule_id {ordering_rule!r} "
+            "must be listed in validator_check_ids"
+        )
     if not anchor_live_ids and not anchor_live_paths and not ordering_rule:
         issues.append(
             f"{prefix}.{proof_semantic} requires anchor_live_target_precondition_ids, "

@@ -312,8 +312,9 @@ declared live text carriers with whole-Act text patch operations.
 `appropriate_place_anchor_or_ordering_claim` requires `appropriate_place_mutation`,
 `definition_entry_insert`, and `index_entry_insert` proofs to reference source
 payload evidence, declare a validated predecessor/successor anchor or ordering
-claim, reference a live anchor or ordering rule, and emit only insert operations
-under declared live parent carriers.
+claim, reference a live anchor or an ordering rule listed in the proof's
+declared validator checks, and emit only insert operations under declared live
+parent carriers.
 `range_to_container_source_range_payload_and_lineage` requires
 `range_to_container_substitution` proofs to reference source-range evidence and
 container-payload evidence, declare lineage/migration ownership, require
