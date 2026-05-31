@@ -390,7 +390,7 @@ def test_uk_manual_compile_evidence_jsonl_templates_whole_act_word_patch() -> No
                 'substitute "Senior Courts". This paragraph does not apply to '
                 'those words in the short title or title of any enactment.'
             ),
-            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_whole_act_word_level_text_patch_candidate",
             manual_compile_reason="Whole-Act text patch needs a listed-enactment compiler.",
             manual_compile_lowering_rule_ids=(

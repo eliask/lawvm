@@ -289,7 +289,7 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
     ),
     "whole_act_word_level_text_patch_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        "manual_compile_candidate",
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
         "The source/effect row claims a non-simple word-level text rewrite across the whole Act; a claim or future compiler must own document-wide scope, exclusions, and title/short-title boundaries instead of sending it to ordinary replay.",
     ),

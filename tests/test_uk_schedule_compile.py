@@ -43245,7 +43245,7 @@ def test_manual_frontier_classifies_savings_qualified_text_omission() -> None:
     )
 
 
-def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_deterministic_candidate() -> None:
+def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_manual_candidate() -> None:
     rejection = {
         "rule_id": "uk_effect_whole_act_word_level_text_patch_rejected",
         "blocking": True,
@@ -43278,7 +43278,7 @@ def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_determini
     )
 
     assert source_pathology == "whole_act_word_level_text_patch_unsupported"
-    assert manual_frontier["status"] == "deterministic_frontend_candidate"
+    assert manual_frontier["status"] == "manual_compile_candidate"
     assert (
         manual_frontier["rule_id"]
         == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
