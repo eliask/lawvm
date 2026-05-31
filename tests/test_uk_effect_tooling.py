@@ -265,6 +265,10 @@ def test_uk_claim_template_rule_ids_all_render_nonempty_templates(rule_id: str) 
         "lawvm.uk_semantic_compile_claim_template.v1"
     )
     assert payload["suggested_claim_template"]["executable"] is False
+    if payload["suggested_claim_template"]["action_family"] != "parser_or_extraction_gap":
+        assert payload["suggested_claim_template"][
+            "required_operation_family_proof_semantics"
+        ]
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_referent_qualified_substitution() -> None:

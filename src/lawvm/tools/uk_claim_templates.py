@@ -343,7 +343,7 @@ def _surface_text_rewrite_claim_template(
     effect = row.effect
     source_preview = " ".join((summary.source_extracted_text_preview or "").split())
     quoted_substitution = _quoted_for_substitute_pair(source_preview)
-    return {
+    return _with_required_operation_family_proof_semantics({
         "schema": "lawvm.uk_semantic_compile_claim_template.v1",
         "claim_kind": "semantic_compile",
         "claim_status": "template_only_not_validated",
@@ -364,7 +364,7 @@ def _surface_text_rewrite_claim_template(
         "required_ownership": required_ownership,
         "required_validator_checks": required_validator_checks,
         "executable": False,
-    }
+    })
 
 
 def _table_crossheading_claim_template(
@@ -412,7 +412,7 @@ def _bounded_mutation_claim_template(
     summary = row.summary
     effect = row.effect
     source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-    return {
+    return _with_required_operation_family_proof_semantics({
         "schema": "lawvm.uk_semantic_compile_claim_template.v1",
         "claim_kind": "semantic_compile",
         "claim_status": "template_only_not_validated",
@@ -430,7 +430,89 @@ def _bounded_mutation_claim_template(
         "required_ownership": required_ownership,
         "required_validator_checks": required_validator_checks,
         "executable": False,
-    }
+    })
+
+
+def _with_required_operation_family_proof_semantics(
+    template: dict[str, Any],
+) -> dict[str, Any]:
+    semantics = _required_operation_family_proof_semantics(
+        action_family=str(template.get("action_family") or ""),
+        placement_family=str(template.get("placement_family") or ""),
+    )
+    if semantics:
+        template["required_operation_family_proof_semantics"] = list(semantics)
+    return template
+
+
+def _required_operation_family_proof_semantics(
+    *,
+    action_family: str,
+    placement_family: str,
+) -> tuple[str, ...]:
+    if action_family in {
+        "facet_text_rewrite",
+        "crossheading_text_rewrite",
+        "table_crossheading_text_rewrite",
+        "schedule_note_text_rewrite",
+    }:
+        return ("text_rewrite_source_preimage_and_live_target",)
+    if action_family == "mixed_body_heading_text_substitution_split":
+        return ("mixed_body_heading_split_boundary_claim",)
+    if action_family == "schedule_part_wrapper_insertion":
+        return ("structural_insert_source_payload_and_live_parent",)
+    if action_family == "schedule_list_entry_mutation":
+        return ("schedule_list_entry_anchor_boundary_claim",)
+    if action_family == "table_surface_mutation":
+        return ("table_surface_insert_anchor_and_live_carrier",)
+    if action_family == "appropriate_place_mutation":
+        return ("appropriate_place_anchor_or_ordering_claim",)
+    if action_family == "index_entry_insert":
+        return (
+            "structural_insert_source_payload_and_live_parent",
+            "appropriate_place_anchor_or_ordering_claim",
+        )
+    if action_family == "structural_sibling_insert":
+        return ("structural_insert_source_payload_and_live_parent",)
+    if action_family == "structural_child_range_substitution":
+        return ("structural_child_range_source_payload_boundary_claim",)
+    if action_family == "amendment_program_target_mutation":
+        return ("amendment_program_target_source_payload_and_boundary",)
+    if action_family == "cross_container_renumber_migration":
+        return ("cross_container_renumber_source_destination_and_lineage",)
+    if action_family == "table_repeal_or_omission":
+        return ("table_repeal_or_omission_boundary_preservation",)
+    if action_family == "referent_qualified_text_substitution":
+        return ("referent_qualified_occurrence_scope_claim",)
+    if action_family == "whole_act_listed_enactments_text_patch":
+        return ("whole_act_listed_enactments_scope_and_exclusions",)
+    if action_family == "savings_qualified_text_omission":
+        return ("savings_qualified_omission_applicability_scope",)
+    if action_family == "source_carried_multi_subunit_text_rewrite":
+        return ("source_carried_multi_subunit_boundary_claim",)
+    if action_family == "source_carried_child_tail_text_rewrite":
+        return ("source_carried_child_tail_boundary_claim",)
+    if action_family == "source_carried_structured_text_patch":
+        return ("source_carried_structured_payload_boundary_claim",)
+    if action_family == "source_carried_structured_tail_substitution":
+        return ("source_carried_structured_tail_boundary_claim",)
+    if action_family == "range_to_container_substitution":
+        return ("range_to_container_source_range_payload_and_lineage",)
+    if action_family == "definition_entry_insert":
+        semantics = ["definition_entry_insert_term_boundary_claim"]
+        if placement_family in {
+            "appropriate_place_requires_anchor_claim",
+            "pseudo_definition_target_requires_anchor_claim",
+        }:
+            semantics.append("appropriate_place_anchor_or_ordering_claim")
+        return tuple(semantics)
+    if action_family == "definition_child_and_tail_substitution":
+        return ("definition_child_text_tail_boundary_claim",)
+    if action_family == "definition_child_structural_substitution":
+        return ("definition_child_structural_payload_boundary_claim",)
+    if action_family == "definition_child_structural_insert":
+        return ("definition_child_structural_insert_boundary_claim",)
+    return ()
 
 
 def manual_compile_suggested_claim_template(
@@ -544,7 +626,7 @@ def manual_compile_suggested_claim_template(
     ):
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         parts = _definition_child_and_tail_parts(source_preview)
-        return {
+        return _with_required_operation_family_proof_semantics({
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
             "claim_status": "template_only_not_validated",
@@ -578,14 +660,14 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_definition_child_and_tail_boundary",
             ],
             "executable": False,
-        }
+        })
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_definition_child_structural_substitution_candidate"
     ):
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         parts = _definition_child_structural_substitution_parts(source_preview)
-        return {
+        return _with_required_operation_family_proof_semantics({
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
             "claim_status": "template_only_not_validated",
@@ -620,14 +702,14 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_definition_child_boundary",
             ],
             "executable": False,
-        }
+        })
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_definition_child_structural_insert_candidate"
     ):
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
         parts = _definition_child_structural_insert_parts(source_preview)
-        return {
+        return _with_required_operation_family_proof_semantics({
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
             "claim_status": "template_only_not_validated",
@@ -663,7 +745,7 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_definition_child_insert_boundary",
             ],
             "executable": False,
-        }
+        })
     if summary.manual_compile_rule_id == "uk_manual_frontier_schedule_note_candidate":
         return _surface_text_rewrite_claim_template(
             statute_id=statute_id,
@@ -1243,7 +1325,7 @@ def manual_compile_suggested_claim_template(
         payload_roots = tuple(detail.get("payload_roots") or ())
         replacement_sections = _range_to_container_replacement_sections(payload_roots)
         source_range_sections = tuple(detail.get("source_range_sections") or ())
-        return {
+        return _with_required_operation_family_proof_semantics({
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
             "claim_status": "template_only_not_validated",
@@ -1283,7 +1365,7 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_source_range_or_declared_migration_paths",
             ],
             "executable": False,
-        }
+        })
     if summary.manual_compile_rule_id == "uk_manual_frontier_definition_list_end_insert_candidate":
         source_preview = summary.source_extracted_text_preview or ""
         source_norm = " ".join(source_preview.split())
@@ -1299,7 +1381,7 @@ def manual_compile_suggested_claim_template(
         )
         terms = _definition_entry_terms(payload)
         term = terms[0] if terms else ""
-        return {
+        return _with_required_operation_family_proof_semantics({
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
             "claim_status": "template_only_not_validated",
@@ -1337,7 +1419,7 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_remain_inside_claimed_interpretation_target",
             ],
             "executable": False,
-        }
+        })
     if (
         summary.manual_compile_rule_id
         == "uk_manual_frontier_parser_or_extraction_candidate"
@@ -1404,7 +1486,7 @@ def manual_compile_suggested_claim_template(
     )
     terms = _definition_entry_terms(payload)
     term = terms[0] if terms else ""
-    return {
+    return _with_required_operation_family_proof_semantics({
         "schema": "lawvm.uk_semantic_compile_claim_template.v1",
         "claim_kind": "semantic_compile",
         "claim_status": "template_only_not_validated",
@@ -1456,4 +1538,4 @@ def manual_compile_suggested_claim_template(
             "changed_paths_remain_inside_claimed_interpretation_target",
         ],
         "executable": False,
-    }
+    })
