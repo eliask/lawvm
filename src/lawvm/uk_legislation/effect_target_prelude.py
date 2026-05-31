@@ -458,9 +458,10 @@ def reject_external_or_partial_whole_act_scope(
                 family="whole_act_text_patch_elaboration",
                 reason_code="simple_whole_act_all_occurrences_substitution",
                 reason=(
-                    "UK source text explicitly names the affected Act and claims "
-                    "an all-occurrences word substitution with no listed-enactment "
-                    "scope or exclusions; lowering admits a typed whole-Act text patch."
+                    "UK source text and effect metadata claim a whole-Act "
+                    "all-occurrences word substitution with no listed-enactment "
+                    "scope or exclusions; lowering admits a typed whole-Act "
+                    "text patch."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,

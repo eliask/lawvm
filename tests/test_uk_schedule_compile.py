@@ -13278,7 +13278,7 @@ def test_compile_rejects_whole_act_word_level_text_patch() -> None:
         f"""
         <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-2-a">
           <Pnumber>a</Pnumber>
-          <Text>for “EEA state” wherever it occurs substitute “ EEA State ” ; and</Text>
+          <Text>for “EEA state” substitute “ EEA State ” ; and</Text>
         </P3>
         """
     )
@@ -13360,6 +13360,61 @@ def test_compile_admits_simple_whole_act_all_occurrences_substitution() -> None:
     assert ops[0].action is StructuralAction.TEXT_REPLACE
     assert ops[0].target == LegalAddress(path=(), special=FacetKind.WHOLE_ACT)
     assert ops[0].text_patch == _replace_patch("local education authority", "local authority")
+    assert (
+        ops[0].witness_rule_id
+        == "uk_effect_simple_whole_act_all_occurrences_substitution_text_patch"
+    )
+    assert any(
+        record["rule_id"]
+        == "uk_effect_simple_whole_act_all_occurrences_substitution_text_patch"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_admits_target_carried_whole_act_all_occurrences_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-4-paragraph-122">
+          <Pnumber>122</Pnumber>
+          <Text>For “an industrial and provident society” (in each place) substitute “ a registered society ”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_target_carried_whole_act_word_level_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-08-01",
+        affected_uri="/id/ukpga/2008/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="17",
+        affected_provisions="Act",
+        affecting_uri="/id/ukpga/2014/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="14",
+        affecting_provisions="Sch. 4 para. 122",
+        affecting_title="Co-operative and Community Benefit Societies Act 2014",
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(), special=FacetKind.WHOLE_ACT)
+    assert ops[0].text_patch == _replace_patch(
+        "an industrial and provident society",
+        " a registered society ",
+    )
     assert (
         ops[0].witness_rule_id
         == "uk_effect_simple_whole_act_all_occurrences_substitution_text_patch"

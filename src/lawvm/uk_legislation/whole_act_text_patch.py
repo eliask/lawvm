@@ -1,9 +1,9 @@
 """UK whole-Act text-patch admission rules.
 
-Whole-Act word patches are dangerous unless the source owns document-wide
-scope. This module intentionally admits only the simple all-occurrences
-substitution shape; listed enactments, exclusions, and title/short-title
-carve-outs remain unsupported.
+Whole-Act word patches are dangerous unless the source/effect pair owns
+document-wide scope. This module intentionally admits only simple
+all-occurrences substitution shapes; listed enactments, exclusions, and
+title/short-title carve-outs remain unsupported.
 """
 
 from __future__ import annotations
@@ -23,6 +23,19 @@ _SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RE = re.compile(
     \s+
     (?:
         in\s+each\s+place\s+where\s+(?:those\s+words|that\s+word)\s+occurs?
+        |
+        wherever\s+(?:it|they|those\s+words|that\s+word)\s+occurs?
+    )
+    \s+substitute\s+[“"'](?P<replacement>[^”"']{1,240})[”"']
+    """,
+    flags=re.I | re.S | re.X,
+)
+_TARGET_CARRIED_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RE = re.compile(
+    r"""
+    \bfor\s+[“"'](?P<original>[^”"']{1,240})[”"']
+    \s+
+    (?:
+        \(?\s*in\s+each\s+place\s*\)?
         |
         wherever\s+(?:it|they|those\s+words|that\s+word)\s+occurs?
     )
@@ -57,4 +70,7 @@ def simple_whole_act_all_occurrences_substitution(text: str | None) -> bool:
         return False
     if _WHOLE_ACT_EXCLUSION_MARKER_RE.search(normalized):
         return False
-    return bool(_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RE.search(normalized))
+    return bool(
+        _SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RE.search(normalized)
+        or _TARGET_CARRIED_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RE.search(normalized)
+    )
