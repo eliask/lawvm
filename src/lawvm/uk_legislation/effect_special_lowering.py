@@ -334,16 +334,17 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
         raw_text=extraction_witness.extracted_text,
     )
     custom_ops: list[LegalOperation] = []
+    parent_path: tuple[tuple[str, str], ...] = (
+        ("section", str(definition_child_insert["section"])),
+    )
+    subsection = str(definition_child_insert.get("subsection") or "").strip()
+    if subsection:
+        parent_path = (*parent_path, ("subsection", subsection))
     preceding_target = LegalAddress(
-        path=(
-            ("section", str(definition_child_insert["section"])),
-            ("item", str(definition_child_insert["anchor_label"])),
-        )
+        path=(*parent_path, ("item", str(definition_child_insert["anchor_label"])))
     )
     if tail_connector:
-        connector_target = LegalAddress(
-            path=(("section", str(definition_child_insert["section"])),)
-        )
+        connector_target = LegalAddress(path=parent_path)
         connector_selector = (
             "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_"
             f"{definition_child_insert['definition_term']}{US}"
@@ -401,10 +402,7 @@ def lower_uk_definition_child_structural_sibling_insert(  # noqa: PLR0913
         )
     for payload_index, payload in enumerate(definition_child_insert["payloads"]):
         payload_target = LegalAddress(
-            path=(
-                ("section", str(definition_child_insert["section"])),
-                ("item", str(payload["label"])),
-            )
+            path=(*parent_path, ("item", str(payload["label"])))
         )
         payload_text = str(payload["text"])
         if tail_connector and payload_index == len(definition_child_insert["payloads"]) - 1:
