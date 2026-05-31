@@ -24485,6 +24485,61 @@ def test_compile_except_phrase_substitution_preserves_excluded_phrase_selector()
     ]
 
 
+def test_compile_wherever_otherwise_than_expression_substitution_preserves_excluded_expression() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-5-d">
+          <Pnumber>d</Pnumber>
+          <Text>d for the word “system”, wherever occurring (otherwise than in the expression “telecommunication system”), there shall be substituted “network”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-81ffc680ab26f89843d2ca55289f31d1",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-07-25",
+        affected_uri="/id/ukpga/1984/12/schedule/2/paragraph/2-28",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1984",
+        affected_number="12",
+        affected_provisions="Sch. 2 para. 2-28",
+        affecting_uri="/id/ukpga/2003/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2003",
+        affecting_number="21",
+        affecting_provisions="Sch. 3 para. 5(d)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2003-07-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 27
+    assert {
+        op.text_patch.selector.match_text
+        for op in ops
+        if op.text_patch is not None
+    } == {f"TEXT_EXCEPT_PHRASE{US}system{US}telecommunication system"}
+    assert {
+        op.text_patch.replacement
+        for op in ops
+        if op.text_patch is not None
+    } == {"network"}
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_except_phrase_substitution_text_patch"
+    ] == ["uk_effect_except_phrase_substitution_text_patch"] * 27
+
+
 def test_replay_except_phrase_substitution_does_not_mutate_excluded_phrase() -> None:
     selector = f"TEXT_EXCEPT_PHRASE{US}telecommunications code{US}telecommunications code system"
     op = LegalOperation(

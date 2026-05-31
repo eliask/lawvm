@@ -123,6 +123,14 @@ _EXCEPT_PHRASE_SUBSTITUTED_RE = re.compile(
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+_WHEREVER_OTHERWISE_THAN_EXPRESSION_SUBSTITUTED_RE = re.compile(
+    rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    r"wherever\s+occurring\s*"
+    rf"\(\s*otherwise\s+than\s+in\s+the\s+expression\s+[“\"'‘](?P<excluded>{_NON_QUOTE}{{1,500}})[”\"'’]\s*\)"
+    r",?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _PASSIVE_QUOTED_SUBSTITUTED_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
     r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
@@ -559,6 +567,21 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             )
 
     for m in _EXCEPT_PHRASE_SUBSTITUTED_RE.finditer(text):
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=ExceptPhraseSelector(
+                        m.group("original").strip(),
+                        m.group("excluded").strip(),
+                    ),
+                    replacement=m.group("replacement").strip(),
+                    rule_id=UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
+                    occurrence="0",
+                )
+            )
+        )
+
+    for m in _WHEREVER_OTHERWISE_THAN_EXPRESSION_SUBSTITUTED_RE.finditer(text):
         subs.append(
             fragment_to_legacy_dict(
                 UKTextRewriteFragment(

@@ -504,6 +504,19 @@ source-owned text substitutions now lower to typed text patches. The refreshed
 `ukpga/1984/12` blocking compile diagnostics drop `47 -> 42` and
 `ukpga/1998/17` drops `19 -> 18`.
 
+The same exception-bearing selector now also covers all-occurrences clauses
+that exclude an explicit expression, e.g. `for the word "X", wherever occurring
+(otherwise than in the expression "Y"), there shall be substituted "Z"`.
+Witness: `ukpga/1984/12` affected by `ukpga/2003/21` Sch. 3 para. 5(d), where
+the effect-feed range `Sch. 2 para. 2-28` expands to 27 target-local text
+patches using `TEXT_EXCEPT_PHRASE`. This removes the matching
+`uk_effect_overlap_substitution_unlowered` blocker without mutating the excluded
+phrase. The refreshed 77-statute gate remains score-stable (`0 improved,
+0 regressed`), while `ukpga/1984/12` blocking compile diagnostics drop
+`42 -> 41`; the remaining overlap blocker is the distinct child-scope exclusion
+shape `except in subsection (9)`, which needs a separate provision-scope
+selector rather than a phrase selector.
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints
