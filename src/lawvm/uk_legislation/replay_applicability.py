@@ -7,6 +7,9 @@ from collections.abc import Sequence
 from lawvm.core.ir import LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.effects import UKEffectRecord, uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.effect_substitution_normalization import (
+    UK_SUBSTITUTED_SOURCE_OWNED_INSERT_RULE_IDS,
+)
 
 
 def should_replay_nonstructural_ops(
@@ -28,6 +31,21 @@ def should_replay_nonstructural_ops(
         if _action_name(head.action) != "replace" or head.payload is None:
             return False
         if all(_action_name(op.action) == "replace" and op.payload is not None for op in compiled_ops):
+            return True
+        if all(
+            (
+                _action_name(op.action) == "replace"
+                and op.payload is not None
+            )
+            or (
+                _action_name(op.action) == "insert"
+                and op.payload is not None
+                and str(op.witness_rule_id or "")
+                in UK_SUBSTITUTED_SOURCE_OWNED_INSERT_RULE_IDS
+            )
+            or (_action_name(op.action) == "repeal" and op.target.path)
+            for op in tail
+        ):
             return True
         return all(_action_name(op.action) == "repeal" and op.target.path for op in tail)
     if effect_type.startswith("revoked"):

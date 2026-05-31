@@ -62,6 +62,7 @@ class UKFinalizeTargetOperationInput:
     flat_p1para_schedule_insert_lowered: bool
     source_parent_substitution_range_payload: Optional[dict[str, Any]]
     source_parent_at_end_added_payload: Optional[dict[str, Any]]
+    substituted_payload_insert_rule_id: Optional[str]
     target_index: int
     extracted_el: Optional[ET._Element]
     extracted_text: Optional[str]
@@ -156,6 +157,7 @@ def finalize_uk_target_operation(
         flat_p1para_schedule_insert_lowered=ctx.flat_p1para_schedule_insert_lowered,
         source_parent_substitution_range_payload=ctx.source_parent_substitution_range_payload,
         source_parent_at_end_added_payload=ctx.source_parent_at_end_added_payload,
+        substituted_payload_insert_rule_id=ctx.substituted_payload_insert_rule_id,
         target_index=ctx.target_index,
     )
     if ctx.curr_action == "insert" and preceding_eid:

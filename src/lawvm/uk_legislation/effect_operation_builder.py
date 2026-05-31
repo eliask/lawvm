@@ -60,6 +60,7 @@ def build_lowered_operation_provenance(
     flat_p1para_schedule_insert_lowered: bool,
     source_parent_substitution_range_payload: Optional[dict[str, Any]],
     source_parent_at_end_added_payload: Optional[dict[str, Any]],
+    substituted_payload_insert_rule_id: Optional[str],
     target_index: int,
 ) -> UKLoweredOperationProvenance:
     provenance_tags = _uk_lowered_op_provenance_tags(lowered_witness)
@@ -108,6 +109,8 @@ def build_lowered_operation_provenance(
         op_witness_rule_id = _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
     if source_parent_at_end_added_payload is not None and curr_action == "insert":
         op_witness_rule_id = _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID
+    if substituted_payload_insert_rule_id is not None and curr_action == "insert":
+        op_witness_rule_id = substituted_payload_insert_rule_id
     text_rewrite_witness = lowered_witness.text_rewrite_witness
     if (
         str(target.special or "") == "whole_act"
@@ -154,6 +157,7 @@ def build_lowered_operations_for_text_patches(
     flat_p1para_schedule_insert_lowered: bool,
     source_parent_substitution_range_payload: Optional[dict[str, Any]],
     source_parent_at_end_added_payload: Optional[dict[str, Any]],
+    substituted_payload_insert_rule_id: Optional[str],
     target_index: int,
 ) -> list[LegalOperation]:
     src = OperationSource(
@@ -211,6 +215,7 @@ def build_lowered_operations_for_text_patches(
             flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
             source_parent_substitution_range_payload=source_parent_substitution_range_payload,
             source_parent_at_end_added_payload=source_parent_at_end_added_payload,
+            substituted_payload_insert_rule_id=substituted_payload_insert_rule_id,
             target_index=target_index,
         )
         lowered_ops.append(
