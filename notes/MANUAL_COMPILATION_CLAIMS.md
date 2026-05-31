@@ -167,7 +167,9 @@ The current validator checks only:
   source witness does not carry them, if its non-overlapping snippet count
   violates a declared exact/min/max occurrence bound, if referenced source
   precondition ids are missing or duplicated, or if the ordered snippets do not
-  appear in the same supplied source preview in the declared order
+  appear uniquely in the same supplied source preview in the declared order;
+  multi-occurrence ordering requires a future explicit ordinal/span claim rather
+  than first-occurrence matching
 - consistency of declared claim target context with matched non-executable
   template carriers: when a template publishes `source_target_address` or
   `destination_address`, the claim must echo the same address in top-level
@@ -192,6 +194,9 @@ The current validator checks only:
   to the paths on those referenced live precondition rows; unrelated live
   preconditions declared elsewhere in the claim do not widen the proof's target
   carrier set
+- family-specific live path fields, such as appropriate-place anchor paths and
+  cross-container source/destination carriers, must also sit inside the proof's
+  referenced live carrier set rather than merely existing elsewhere in the claim
 - validator-check ids and ownership ids are unique declaration ids within a
   claim; duplicate ids are rejected before proof or template matching, so a
   proof obligation cannot be satisfied by a collapsed set of inconsistent rows
@@ -233,7 +238,9 @@ the accepted status combines those surfaces. These rows remain non-executable
 and keep `replay_authorized=false`; exact source snippets in a bounded preview
 optional source-preview occurrence counts, and optional source-snippet order
 relationships are evidence, not proof that the whole operation family is
-replay-safe.
+replay-safe. Ordered snippets must be unique in the checked source preview; if
+they are repeated, the validator rejects the order claim until an explicit
+ordinal/span claim form exists.
 
 If the claim also declares matching `live_target_preconditions`, accepted rows
 use `validator_status=validated_provenance_live_targets_and_preconditions_only`.
@@ -253,7 +260,8 @@ Within family-specific proof semantics, a referenced live precondition id
 authorizes only that precondition row's `path`; adding another live precondition
 to the claim does not expand a proof unless the proof explicitly references it
 by id or path. Live precondition ids must be unique so an id cannot merge
-multiple carrier paths.
+multiple carrier paths. Family-specific live path fields are also scoped to the
+same referenced live carrier set.
 The first opt-in family semantic,
 `table_surface_insert_anchor_and_live_carrier`, additionally checks that a
 `table_surface_mutation` proof references source text evidence, a live carrier
@@ -299,7 +307,8 @@ does not authorize replay.
 `definition_entry_insert`, and `index_entry_insert` proofs that reference source
 payload evidence, declare a validated predecessor/successor anchor or ordering
 claim, reference a live anchor or an ordering rule listed in the proof's
-declared validator checks, and emit only insert operations under declared live
+declared validator checks, keep explicit anchor live paths inside the proof's
+referenced live carriers, and emit only insert operations under declared live
 parent carriers. It still does not authorize replay.
 `range_to_container_source_range_payload_and_lineage` checks
 `range_to_container_substitution` proofs that reference source-range evidence
@@ -317,8 +326,8 @@ actions. It still does not authorize replay.
 both the source target and destination target, declare lineage/migration
 ownership plus destination-boundary ownership, require renumber operations to
 declare a destination, migration paths, and a lineage/migration event id, and
-keep source and destination paths inside declared live carriers. It still does
-not authorize replay.
+keep source and destination paths inside the proof's referenced live carriers.
+It still does not authorize replay.
 `amendment_program_target_source_payload_and_boundary` checks
 `amendment_program_target_mutation` proofs that reference source target evidence
 and inserted-payload evidence, declare amendment-program target-boundary and
