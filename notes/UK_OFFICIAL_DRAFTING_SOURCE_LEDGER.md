@@ -581,6 +581,19 @@ manual/source frontiers" line. Any nonzero row is a regression in workqueue
 classification or a new deterministic family to investigate. Use
 `scripts/uk_broad_baseline.py --fail-on-active-unclassified-residuals` when this
 condition should be machine-enforced rather than inspected from summary text.
+Full-gate enforcement witness:
+`uv run python scripts/uk_broad_baseline.py --ids $(cat
+scripts/baselines/uk_grounding_corpus.txt)
+--fail-on-active-unclassified-residuals --out
+.tmp/uk_broad_current_fail_guard_20260531.json` exited `0`, scored 77/77,
+mean aligned `93.38%`, errors `0`, grounding-collateral `0`, and
+`active_unclassified_residuals=0`. The triage split was
+`high_fidelity_after_grounding=57`, `manual_compile_frontier_residual=11`,
+`effect_feed_absent_frontier=5`, `no_effect_rows_frontier=2`,
+`nonreplay_effect_frontier=1`, and `base_metadata_only_frontier=1`; source-chain
+frontiers were `effect_feed_pages_absent=5`,
+`effect_rows_absent_or_unpublished=2`, and
+`effect_rows_missing_structural_payload=1`.
 
 **Replay adjudication JSON surface correction (2026-05-31):**
 `uk-replay --json` now includes `replay_adjudication_bucket_counts` alongside
