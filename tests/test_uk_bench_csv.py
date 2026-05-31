@@ -82,7 +82,7 @@ def test_uk_bench_replay_heavy_rows_are_partitioned_for_isolated_lane() -> None:
         "ukpga/1988/1",
         "ukpga/2010/4",
     ]
-    assert uk_bench._uk_bench_replay_heavy_reasons(effect_heavy) == ("effects>=50",)
+    assert uk_bench._uk_bench_replay_heavy_reasons(effect_heavy) == ("effect_pages>=50",)
     assert uk_bench._uk_bench_replay_heavy_reasons(source_heavy) == ("source_mb>=12",)
 
 
@@ -104,10 +104,60 @@ def test_uk_bench_row_start_message_surfaces_straggler_inputs() -> None:
 
     assert "[start 12/21] ukpga/1970/9" in message
     assert "replay" in message
-    assert "effects=66" in message
-    assert "pages=66" in message
+    assert "effect_pages=66" in message
     assert "source_mb=13.0" in message
-    assert "heavy=effects>=50,source_mb>=12" in message
+    assert "heavy=effect_pages>=50,source_mb>=12" in message
+
+
+def test_uk_bench_progress_score_marks_noncore_rows_not_applicable() -> None:
+    result = _BenchResult(
+        statute_id="ukpga/1956/58",
+        act_type="ukpga",
+        year=1956,
+        n_effects=1,
+        n_effect_feed_pages=1,
+        n_effect_rows=0,
+        n_enacted_eids=0,
+        n_oracle_eids=0,
+        n_common=0,
+        score=0.0,
+        status="OK",
+        comparison_class="no_oracle_eids",
+        core_benchmark=False,
+    )
+
+    assert uk_bench._format_uk_bench_progress_score(result, has_commencement=False) == (
+        "score=n/a raw=0.0%"
+    )
+    assert uk_bench._format_uk_bench_progress_diagnostics(result) == (
+        "class=no_oracle_eids core=0 effect_rows=0 eids=0/0/0"
+    )
+
+
+def test_uk_bench_progress_score_preserves_core_scores() -> None:
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=3,
+        n_effect_feed_pages=1,
+        n_effect_rows=3,
+        n_enacted_eids=10,
+        n_oracle_eids=12,
+        n_common=9,
+        score=0.75,
+        status="OK",
+        replay_score=0.8,
+        comparison_class="commensurable",
+        core_benchmark=True,
+    )
+
+    assert uk_bench._format_uk_bench_progress_score(result, has_commencement=False) == (
+        "score=75.0%"
+    )
+    assert uk_bench._format_uk_bench_progress_replay(result, has_commencement=False) == (
+        " replay=80.0%"
+    )
 
 
 def test_uk_bench_residual_claim_classifies_source_backed_renumber_oracle_branch() -> None:
@@ -3701,6 +3751,8 @@ def test_uk_bench_report_prints_source_unavailable_rows(capsys) -> None:
     assert "Row statuses: {'NO_ENACTED': 1, 'NO_ORACLE': 1}" in out
     assert "Comparison classes: {'no_enacted_eids': 1, 'no_oracle_eids': 1}" in out
     assert "Core benchmark rows: 0" in out
+    assert "Non-core/evidence rows: 2" in out
+    assert "Non-core/evidence classes: no_enacted_eids=1, no_oracle_eids=1" in out
     assert "Source status: enacted={'absent': 1, 'available': 1} oracle={'available': 1, 'too_small': 1}" in out
     assert "Effect-feed observations: rows=2 total=3" in out
     assert (
@@ -3754,6 +3806,8 @@ def test_uk_bench_report_distinguishes_status_ok_from_scored_ok(capsys) -> None:
     assert "Row statuses: {'OK': 1}" in out
     assert "Comparison classes: {'no_oracle_eids': 1}" in out
     assert "Core benchmark rows: 0" in out
+    assert "Non-core/evidence rows: 1" in out
+    assert "Non-core/evidence classes: no_oracle_eids=1" in out
 
 
 def test_uk_bench_report_prints_err_rows_before_empty_ok_return(capsys) -> None:

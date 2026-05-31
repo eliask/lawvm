@@ -332,7 +332,7 @@ def _uk_bench_parallel_submission_cost(entry: dict[str, object]) -> tuple[int, i
 def _uk_bench_replay_heavy_reasons(entry: dict[str, object]) -> tuple[str, ...]:
     """Return memory-risk reasons for rows that should not replay concurrently."""
     reasons: list[str] = []
-    n_effects = max(
+    effect_pages = max(
         _uk_bench_row_int(entry, "n_effects"),
         _uk_bench_row_int(entry, "n_effect_feed_pages"),
     )
@@ -340,8 +340,8 @@ def _uk_bench_replay_heavy_reasons(entry: dict[str, object]) -> tuple[str, ...]:
         entry,
         "oracle_source_size",
     )
-    if n_effects >= _UK_REPLAY_HEAVY_EFFECT_THRESHOLD:
-        reasons.append(f"effects>={_UK_REPLAY_HEAVY_EFFECT_THRESHOLD}")
+    if effect_pages >= _UK_REPLAY_HEAVY_EFFECT_THRESHOLD:
+        reasons.append(f"effect_pages>={_UK_REPLAY_HEAVY_EFFECT_THRESHOLD}")
     if source_size >= _UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD:
         reasons.append(f"source_mb>={_UK_REPLAY_HEAVY_SOURCE_BYTES_THRESHOLD // (1024 * 1024)}")
     return tuple(reasons)
@@ -356,7 +356,6 @@ def _format_uk_bench_row_start(
 ) -> str:
     entry_dict = dict(entry)
     statute_id = str(entry.get("statute_id") or "")
-    n_effects = _uk_bench_row_int(entry_dict, "n_effects")
     n_pages = _uk_bench_row_int(entry_dict, "n_effect_feed_pages")
     source_bytes = _uk_bench_row_int(entry_dict, "enacted_source_size") + _uk_bench_row_int(
         entry_dict,
@@ -368,7 +367,7 @@ def _format_uk_bench_row_start(
     heavy_text = f" heavy={','.join(heavy_reasons)}" if heavy_reasons else ""
     return (
         f"  [start {index}/{total}] {statute_id:<30}{replay_text} "
-        f"effects={n_effects} pages={n_pages} source_mb={source_mb:.1f}{heavy_text}"
+        f"effect_pages={n_pages} source_mb={source_mb:.1f}{heavy_text}"
     )
 
 
@@ -1018,6 +1017,31 @@ def _bench_primary_replay_score(result: _BenchResult, *, has_commencement: bool)
     return result.replay_score
 
 
+def _format_uk_bench_progress_score(result: _BenchResult, *, has_commencement: bool) -> str:
+    primary_score = _bench_primary_score(result, has_commencement=has_commencement)
+    if result.status == "OK" and result.core_benchmark:
+        return f"score={primary_score:.1%}"
+    return f"score=n/a raw={primary_score:.1%}"
+
+
+def _format_uk_bench_progress_replay(result: _BenchResult, *, has_commencement: bool) -> str:
+    replay_score = _bench_primary_replay_score(result, has_commencement=has_commencement)
+    if replay_score < 0.0:
+        return ""
+    if result.status == "OK" and result.core_benchmark:
+        return f" replay={replay_score:.1%}"
+    return f" replay=n/a raw_replay={replay_score:.1%}"
+
+
+def _format_uk_bench_progress_diagnostics(result: _BenchResult) -> str:
+    comparison_class = result.comparison_class or "unknown"
+    return (
+        f"class={comparison_class} core={int(result.core_benchmark)} "
+        f"effect_rows={result.n_effect_rows} "
+        f"eids={result.n_enacted_eids}/{result.n_oracle_eids}/{result.n_common}"
+    )
+
+
 def _bench_compare_primary_score(result: _BenchResult) -> float:
     if result.replay_commencement_score >= 0.0:
         return result.replay_commencement_score
@@ -1123,6 +1147,7 @@ class _BenchRunAccumulator:
 
         self.row_status_counts: Counter[str] = Counter()
         self.comparison_class_counts: Counter[str] = Counter()
+        self.noncore_all_comparison_class_counts: Counter[str] = Counter()
         self.noncore_comparison_class_counts: Counter[str] = Counter()
         self.enacted_source_counts: Counter[str] = Counter()
         self.oracle_source_counts: Counter[str] = Counter()
@@ -1246,6 +1271,8 @@ class _BenchRunAccumulator:
         self.comparison_class_counts[r.comparison_class or "unknown"] += 1
         if r.core_benchmark:
             self.core_count += 1
+        else:
+            self.noncore_all_comparison_class_counts[r.comparison_class or "unknown"] += 1
         self.enacted_source_counts[r.enacted_source_status] += 1
         self.oracle_source_counts[r.oracle_source_status] += 1
 
@@ -3723,6 +3750,15 @@ def _print_report(
     print(f"Row statuses: {dict(sorted(acc.row_status_counts.items()))}")
     print(f"Comparison classes: {dict(sorted(acc.comparison_class_counts.items()))}")
     print(f"Core benchmark rows: {acc.core_count}")
+    noncore_count = acc.total_count - acc.core_count
+    print(f"Non-core/evidence rows: {noncore_count}")
+    if acc.noncore_all_comparison_class_counts:
+        print(
+            "Non-core/evidence classes: "
+            + ", ".join(
+                f"{k}={v}" for k, v in sorted(acc.noncore_all_comparison_class_counts.items())
+            )
+        )
     if acc.replayed_count > 0:
         print(f"Score mode: enacted baseline + replay ({acc.replayed_count} replayed rows)")
     else:
@@ -7474,17 +7510,21 @@ def main(args) -> None:  # noqa: ANN001
 
             done = acc.total_count
 
-            primary_score = _bench_primary_score(r, has_commencement=do_commencement)
-            replay_fragment = ""
-            if do_replay and r.status == "OK":
-                rep_score = _bench_primary_replay_score(r, has_commencement=do_commencement)
-                if rep_score >= 0.0:
-                    replay_fragment = f" replay={rep_score:.1%}"
+            score_fragment = _format_uk_bench_progress_score(
+                r,
+                has_commencement=do_commencement,
+            )
+            replay_fragment = (
+                _format_uk_bench_progress_replay(r, has_commencement=do_commencement)
+                if do_replay
+                else ""
+            )
+            diagnostic_fragment = _format_uk_bench_progress_diagnostics(r)
 
             print(
                 f"  [{done}/{progress_total}] {r.statute_id:<30} "
-                f"score={primary_score:.1%}{replay_fragment} "
-                f"({r.duration_s:.2f}s) status={r.status}",
+                f"{score_fragment}{replay_fragment} "
+                f"({r.duration_s:.2f}s) status={r.status} {diagnostic_fragment}",
                 file=sys.stderr,
             )
 
