@@ -189,6 +189,10 @@ The current validator checks only:
   target fingerprints: a claim may require a `subtree_sha256` or `text_sha256`
   for any live target path, and the validator rejects the claim if live
   precondition ids are duplicated or the supplied live index does not match
+- supplied live-target indexes must not contain conflicting fingerprints for the
+  same statute/path; identical repeated fingerprints are tolerated, but
+  inconsistent duplicates reject validation before any claim precondition is
+  checked
 - optional consistency of declared `operation_family_proofs`: each proof row
   must name a proof id, match the claim action family, reference existing
   operation ids, reference declared validator-check ids, reference at least one

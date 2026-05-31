@@ -265,6 +265,84 @@ def test_validate_semantic_claim_accepts_declared_live_target_precondition() -> 
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_accepts_duplicate_identical_live_fingerprint() -> None:
+    target_text_hash = hashlib.sha256(b"table text").hexdigest()
+    claim = _claim_row()
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "path": "section:1/table:1",
+            "text_sha256": target_text_hash,
+        },
+    ]
+    live_row = _live_target_row(
+        target_fingerprints={
+            "section:1/table:1": {
+                "text_sha256": target_text_hash,
+                "subtree_sha256": "a" * 64,
+            },
+        },
+    )
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(live_row, live_row),
+    )
+
+    row = rows[0]
+    assert (
+        row["validator_status"]
+        == "validated_provenance_live_targets_and_preconditions_only"
+    )
+    assert row["validation_issues"] == []
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_conflicting_live_fingerprint_index() -> None:
+    target_text_hash = hashlib.sha256(b"table text").hexdigest()
+    claim = _claim_row()
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "path": "section:1/table:1",
+            "text_sha256": target_text_hash,
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1/table:1": {
+                        "text_sha256": target_text_hash,
+                        "subtree_sha256": "a" * 64,
+                    },
+                },
+            ),
+            _live_target_row(
+                target_fingerprints={
+                    "section:1/table:1": {
+                        "text_sha256": "conflicting",
+                        "subtree_sha256": "b" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_live_state_mismatch"
+    assert row["rule_id"] == "uk_semantic_claim_live_target_index_inconsistent"
+    assert (
+        "live target index statute_id 'ukpga/2000/1' has conflicting "
+        "target_fingerprints for path 'section:1/table:1'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_live_target_precondition_mismatch() -> None:
     claim = _claim_row()
     proposed_outcome = claim["proposed_outcome"]
