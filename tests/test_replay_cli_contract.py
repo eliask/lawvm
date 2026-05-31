@@ -434,6 +434,7 @@ def test_build_uk_replay_payload_shape() -> None:
     assert payload["uk_prefetch_report"] == {}
     assert payload["adjudications_count"] == 1
     assert payload["adjudication_kind_counts"] == {"uk_replay_payload_missing": 1}
+    assert payload["replay_adjudication_bucket_counts"] == {"replay_bug": 1}
     assert payload["adjudications"] == [
         {
             "kind": "uk_replay_payload_missing",
@@ -543,6 +544,7 @@ def test_build_uk_replay_payload_keeps_recorded_manual_frontier_nonblocking() ->
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1
     }
+    assert payload["replay_adjudication_bucket_counts"] == {}
 
 
 def test_uk_replay_enacted_only_json_threads_effect_count_parse_rejections(

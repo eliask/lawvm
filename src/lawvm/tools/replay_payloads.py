@@ -59,6 +59,19 @@ def _record_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _uk_replay_adjudication_bucket_counts(adjudications: Iterable[Any]) -> dict[str, int]:
+    from lawvm.uk_legislation.source_adjudication import (
+        classify_uk_replay_adjudication_bucket,
+    )
+
+    counts: dict[str, int] = {}
+    for adjudication in adjudications:
+        kind = _text_field(getattr(adjudication, "kind", None), default="unknown")
+        bucket = classify_uk_replay_adjudication_bucket(kind)
+        counts[bucket] = counts.get(bucket, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _blocking_rejections(rejections: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [rejection for rejection in rejections if is_blocking_compile_record(rejection)]
 
@@ -341,6 +354,9 @@ def build_uk_replay_payload(
         "ops_count": int(n_ops),
         "adjudications_count": len(replay_adjudications),
         "adjudication_kind_counts": adjudication_kind_counts(replay_adjudications),
+        "replay_adjudication_bucket_counts": _uk_replay_adjudication_bucket_counts(
+            replay_adjudications
+        ),
         "adjudications": [
             _adjudication_to_dict(adjudication) for adjudication in replay_adjudications
         ],
