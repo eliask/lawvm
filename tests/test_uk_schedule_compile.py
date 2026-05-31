@@ -4370,6 +4370,170 @@ def test_compile_source_parent_definition_child_structural_sibling_insert() -> N
     assert adjudications[0].detail["strict_disposition"] == "record"
 
 
+def test_compile_exact_definition_child_structural_sibling_insert_in_subsection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-201">
+          <Pnumber>201</Pnumber>
+          <P1para>
+            <Text>201 In section 336(1) of TCPA 1990 (interpretation) in the
+            definition of \u201clocal authority\u201d after paragraph (aa) insert\u2014
+            ab the London Fire and Emergency Planning Authority; .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a9ba395366462e3e60a3397cb14ee2f6",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-02-12",
+        affected_uri="/id/ukpga/1990/8/section/336/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 336(1)",
+        affecting_uri="/id/ukpga/2008/29/section/201",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="29",
+        affecting_provisions="s. 201",
+        affecting_title="Planning Act 2008",
+        in_force_dates=[{"date": "2009-02-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT]
+    assert str(ops[0].target) == "section:336/subsection:1/item:ab"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "ab"
+    assert ops[0].payload.text == "the London Fire and Emergency Planning Authority;"
+    assert ops[0].payload.attrs["definition_term"] == "local authority"
+    assert ops[0].payload.attrs["definition_child_label"] == "ab"
+    assert ops[0].payload.attrs["source_anchor_child_label"] == "aa"
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["section"] == "336"
+    assert rows[0]["subsection"] == "1"
+    assert rows[0]["anchor_target"] == "section:336/subsection:1/item:aa"
+    assert rows[0]["blocking"] is False
+
+    base = IRStatute(
+        statute_id="ukpga/1990/8",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="336",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="aa",
+                                    text="an authority established by section 10 of the Local Government Act 1985;",
+                                    attrs={
+                                        "definition_term": "local authority",
+                                        "definition_child_label": "aa",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label="b",
+                                    text="a county council;",
+                                    attrs={
+                                        "definition_term": "local authority",
+                                        "definition_child_label": "b",
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [
+        child.attrs.get("definition_child_label")
+        for child in subsection.children
+        if child.attrs.get("definition_term") == "local authority"
+    ] == ["aa", "ab", "b"]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_child_structural_sibling_insert_applied",
+    ]
+
+
+def test_compile_definition_child_structural_sibling_insert_rejects_source_subsection_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-201">
+          <Pnumber>201</Pnumber>
+          <P1para>
+            <Text>201 In section 336(2) of TCPA 1990 (interpretation) in the
+            definition of \u201clocal authority\u201d after paragraph (aa) insert\u2014
+            ab the London Fire and Emergency Planning Authority; .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_subsection_mismatch",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-02-12",
+        affected_uri="/id/ukpga/1990/8/section/336/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 336(1)",
+        affecting_uri="/id/ukpga/2008/29/section/201",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="29",
+        affecting_provisions="s. 201",
+        affecting_title="Planning Act 2008",
+        in_force_dates=[{"date": "2009-02-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert not any(
+        row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+        for row in lowering_records
+    )
+
+
 def test_compile_child_tail_sibling_insert_rejects_non_contiguous_label() -> None:
     extracted_el = ET.fromstring(
         f"""

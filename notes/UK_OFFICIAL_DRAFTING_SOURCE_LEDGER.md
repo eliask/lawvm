@@ -652,6 +652,21 @@ substitute ...`. This cuts `ukpga/1990/8` blocking compile diagnostics
 `119 -> 118`; the 77-statute broad gate remains score-stable (`0 improved,
 0 regressed`).
 
+Definition-child structural sibling insertions can also be owned by a single
+source row, not only by a local parent/child source pair, when the row names the
+exact section/subsection target, the definition term, the anchor child label, and
+the next contiguous child label. Rule
+`uk_effect_definition_child_structural_sibling_insert_lowered` emits a typed
+`item` insert under the exact target path and records the source anchor child.
+Current witness: `ukpga/1990/8` affected `s. 336(1)` by `ukpga/2008/29` s. 201,
+source text `in the definition of "local authority" after paragraph (aa)
+insert- ab ...`. Intercalated forms such as `after paragraph (e) insert- ea ...`
+still block without an explicit tail-connector claim. The 77-statute broad gate
+remains score-stable (`0 improved, 0 regressed`); the `ukpga/1990/8` aggregate
+blocking count stays at 118 because a separate `e -> ea` intercalated row is now
+classified under the explicit definition-child blocking family instead of the
+generic structural-sibling family.
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints

@@ -4,6 +4,7 @@ import re
 from lxml import etree as ET
 from typing import Any, Optional
 
+from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.source_definition_context import (
     _source_definition_term_from_local_ancestor_context,
@@ -23,13 +24,14 @@ UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID = (
 )
 
 _AFTER_PARAGRAPH_DEFINITION_CHILD_INSERT_RE = re.compile(
-    r"^\s*after\s+paragraph\s+\((?P<anchor>[a-z])\),?\s+"
+    r"^\s*after\s+paragraph\s+\((?P<anchor>[a-z][a-z0-9]*)\),?\s+"
     r"insert\s*[—–-]\s*(?P<payload>.+?)\s*$",
     flags=re.I | re.S,
 )
 _IN_DEFINITION_AFTER_PARAGRAPH_BEFORE_CONNECTOR_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
-    r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)\b.*?)?"
+    r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)"
+    r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W).*?)?"
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
     r"after\s+paragraph\s+\((?P<anchor>[a-z])\)\s+"
     r"\(\s*but\s+before\s+the\s+[“\"'‘](?P<connector>and|or)[”\"'’]\s+"
@@ -39,9 +41,10 @@ _IN_DEFINITION_AFTER_PARAGRAPH_BEFORE_CONNECTOR_INSERT_RE = re.compile(
 )
 _IN_DEFINITION_AFTER_PARAGRAPH_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
-    r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)\b.*?)?"
+    r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)"
+    r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W).*?)?"
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
-    r"after\s+paragraph\s+\((?P<anchor>[a-z])\)\s+"
+    r"after\s+paragraph\s+\((?P<anchor>[a-z][a-z0-9]*)\)\s+"
     r"insert\s*[—–-]\s*(?P<payload>.+?)\s*$",
     flags=re.I | re.S,
 )
@@ -98,7 +101,7 @@ def _definition_child_insert_payloads(
         return ()
 
     rows: list[dict[str, str]] = []
-    expected_label = _next_single_letter_label(anchor_label)
+    expected_label = _next_definition_child_label(anchor_label)
     intercalated_label = f"{_clean_num(anchor_label)}a" if allow_intercalated_after_anchor else ""
     if not expected_label:
         return ()
@@ -118,6 +121,19 @@ def _definition_child_insert_payloads(
         if not expected_label:
             expected_label = ""
     return tuple(rows)
+
+
+def _section_or_subsection_target_path(affected_provisions: str) -> tuple[tuple[str, str], ...]:
+    section_match = _SECTION_SUBSECTION_TARGET_RE.match(affected_provisions or "")
+    if section_match is not None:
+        return (
+            ("section", _clean_num(section_match.group("section"))),
+            ("subsection", _clean_num(section_match.group("subsection"))),
+        )
+    section_only_match = _SECTION_TARGET_RE.match(affected_provisions or "")
+    if section_only_match is not None:
+        return (("section", _clean_num(section_only_match.group("section"))),)
+    return ()
 
 
 def _definition_child_structural_substitution_payload(
@@ -254,13 +270,53 @@ def source_definition_child_structural_sibling_insert(
             unsupported_match = _IN_DEFINITION_AFTER_PARAGRAPH_INSERT_RE.match(row_text)
             if unsupported_match is None:
                 return None
-            section_match = _SECTION_TARGET_RE.match(affected_provisions or "")
-            if section_match is None:
+            target_path = _section_or_subsection_target_path(affected_provisions)
+            if not target_path:
                 return None
-            section_label = _clean_num(section_match.group("section"))
+            section_label = target_path[0][1]
+            subsection_label = target_path[1][1] if len(target_path) > 1 else ""
             source_section = _clean_num(unsupported_match.group("section") or section_label)
-            if not section_label or source_section != section_label:
+            source_subsection = _clean_num(unsupported_match.group("subsection") or subsection_label)
+            if (
+                not section_label
+                or source_section != section_label
+                or source_subsection != subsection_label
+            ):
                 return None
+            anchor_label = _clean_num(unsupported_match.group("anchor"))
+            payloads = _definition_child_insert_payloads(
+                unsupported_match.group("payload"),
+                anchor_label=anchor_label,
+            )
+            if payloads:
+                return {
+                    "rule_id": UK_DEFINITION_CHILD_STRUCTURAL_SIBLING_INSERT_RULE_ID,
+                    "source_id": str(extracted_el.get("id") or ""),
+                    "source_instruction": row_text[: unsupported_match.start("payload")].strip(),
+                    "target_ref": affected_provisions,
+                    "section": section_label,
+                    "subsection": subsection_label,
+                    "definition_term": " ".join(unsupported_match.group("term").split()).strip(),
+                    "anchor_label": anchor_label,
+                    "anchor_target": str(
+                        LegalAddress(path=(*target_path, ("item", anchor_label)))
+                    ),
+                    "payloads": tuple(
+                        {
+                            "label": payload["label"],
+                            "text": payload["text"],
+                            "target_ref": (
+                                f"s. {section_label}({subsection_label})({payload['label']})"
+                                if subsection_label
+                                else f"s. {section_label}({payload['label']})"
+                            ),
+                            "target": str(
+                                LegalAddress(path=(*target_path, ("item", payload["label"])))
+                            ),
+                        }
+                        for payload in payloads
+                    ),
+                }
             return {
                 "rule_id": "uk_effect_definition_child_structural_insert_rejected",
                 "blocking": True,
@@ -275,15 +331,22 @@ def source_definition_child_structural_sibling_insert(
                 "source_instruction": row_text[: unsupported_match.start("payload")].strip(),
                 "target_ref": affected_provisions,
                 "section": section_label,
+                "subsection": subsection_label,
                 "definition_term": " ".join(unsupported_match.group("term").split()).strip(),
-                "anchor_label": _clean_num(unsupported_match.group("anchor")),
+                "anchor_label": anchor_label,
             }
-        section_match = _SECTION_TARGET_RE.match(affected_provisions or "")
-        if section_match is None:
+        target_path = _section_or_subsection_target_path(affected_provisions)
+        if not target_path:
             return None
-        section_label = _clean_num(section_match.group("section"))
+        section_label = target_path[0][1]
+        subsection_label = target_path[1][1] if len(target_path) > 1 else ""
         source_section = _clean_num(row_match.group("section") or section_label)
-        if not section_label or source_section != section_label:
+        source_subsection = _clean_num(row_match.group("subsection") or subsection_label)
+        if (
+            not section_label
+            or source_section != section_label
+            or source_subsection != subsection_label
+        ):
             return None
         anchor_label = _clean_num(row_match.group("anchor"))
         payloads = _definition_child_insert_payloads(
@@ -299,16 +362,21 @@ def source_definition_child_structural_sibling_insert(
             "source_instruction": row_text[: row_match.start("payload")].strip(),
             "target_ref": affected_provisions,
             "section": section_label,
+            "subsection": subsection_label,
             "definition_term": " ".join(row_match.group("term").split()).strip(),
             "anchor_label": anchor_label,
             "tail_connector": row_match.group("connector").strip().lower(),
-            "anchor_target": f"section:{section_label}/item:{anchor_label}",
+            "anchor_target": str(LegalAddress(path=(*target_path, ("item", anchor_label)))),
             "payloads": tuple(
                 {
                     "label": payload["label"],
                     "text": payload["text"],
-                    "target_ref": f"s. {section_label}({payload['label']})",
-                    "target": f"section:{section_label}/item:{payload['label']}",
+                    "target_ref": (
+                        f"s. {section_label}({subsection_label})({payload['label']})"
+                        if subsection_label
+                        else f"s. {section_label}({payload['label']})"
+                    ),
+                    "target": str(LegalAddress(path=(*target_path, ("item", payload["label"])))),
                 }
                 for payload in payloads
             ),
