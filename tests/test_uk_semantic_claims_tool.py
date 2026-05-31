@@ -300,6 +300,51 @@ def test_validate_semantic_claim_rejects_live_target_precondition_mismatch() -> 
     assert row["replay_authorized"] is False
 
 
+def test_validate_semantic_claim_rejects_duplicate_live_target_precondition_id() -> None:
+    target_text_hash = hashlib.sha256(b"table text").hexdigest()
+    claim = _claim_row()
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": target_text_hash,
+        },
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:2",
+            "text_sha256": target_text_hash,
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows(
+        (claim,),
+        live_target_rows=(
+            _live_target_row(
+                target_fingerprints={
+                    "section:1/table:1": {
+                        "text_sha256": target_text_hash,
+                        "subtree_sha256": "a" * 64,
+                    },
+                    "section:1/table:2": {
+                        "text_sha256": target_text_hash,
+                        "subtree_sha256": "b" * 64,
+                    },
+                },
+            ),
+        ),
+    )
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_live_state_mismatch"
+    assert (
+        "live_target_preconditions[2].precondition_id duplicates "
+        "live_target_preconditions[1].precondition_id 'live-table-carrier'"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
 def test_validate_semantic_claim_rejects_workqueue_mismatch() -> None:
     claim = _claim_row()
     claim["action_family"] = "wrong_family"
@@ -920,6 +965,52 @@ def test_validate_semantic_claim_scopes_live_paths_to_referenced_precondition_id
         "operation_family_proofs[1].table_surface_insert_anchor_and_live_carrier "
         "operation 'manual-op-1' target parent 'section:1/table:2' is outside "
         "declared live carrier preconditions"
+    ) in row["validation_issues"]
+    assert row["replay_authorized"] is False
+
+
+def test_validate_semantic_claim_rejects_duplicate_live_ids_in_operation_family_proof() -> None:
+    claim = _claim_row(source_preview="after the entry relating to X insert the row")
+    proposed_outcome = claim["proposed_outcome"]
+    assert isinstance(proposed_outcome, dict)
+    proposed_outcome["source_text_preconditions"] = [
+        {
+            "precondition_id": "source-names-anchor",
+            "contains": "entry relating to X",
+        },
+    ]
+    proposed_outcome["live_target_preconditions"] = [
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:1",
+            "text_sha256": hashlib.sha256(b"table one").hexdigest(),
+        },
+        {
+            "precondition_id": "live-table-carrier",
+            "path": "section:1/table:2",
+            "text_sha256": hashlib.sha256(b"table two").hexdigest(),
+        },
+    ]
+    proposed_outcome["operation_family_proofs"] = [
+        {
+            "proof_id": "proof-table-insert-anchor",
+            "proof_semantic": "table_surface_insert_anchor_and_live_carrier",
+            "operation_family": "table_surface_mutation",
+            "operation_ids": ["manual-op-1"],
+            "validator_check_ids": ["claim_identifies_exact_table_carrier"],
+            "source_text_precondition_ids": ["source-names-anchor"],
+            "live_target_precondition_ids": ["live-table-carrier"],
+            "status": "claimed_not_proved",
+        },
+    ]
+
+    rows = uk_semantic_claims.validate_semantic_claim_rows((claim,))
+
+    row = rows[0]
+    assert row["validator_status"] == "rejected_schema"
+    assert (
+        "live_target_preconditions[2].precondition_id duplicates "
+        "live_target_preconditions[1].precondition_id 'live-table-carrier'"
     ) in row["validation_issues"]
     assert row["replay_authorized"] is False
 
