@@ -291,7 +291,13 @@ allowed to lag the executable implementation.
 
 ### §6.1 Repeals
 - **6.1.2 operative form** `In the [Act] omit section 10 / omit Part 2`; whole-Act
-  `The [Act] is repealed`. → UK repeal lowering. **HAVE (verify).**
+  `The [Act] is repealed`. → UK repeal lowering. **HAVE (verified)** for
+  explicit whole-Act repeal text: lowering preserves the effect-feed `repealed`
+  action as one `REPEAL` operation targeting `/whole_act`. Partial whole-Act
+  repeal with exceptions is not compiled as a blanket repeal; it blocks under
+  `uk_effect_partial_whole_act_repeal_rejected`. Witnesses:
+  `test_compile_preserves_explicit_whole_act_repeal_effect_type` and
+  `test_compile_rejects_partial_whole_act_repeal_scope`.
 - **6.1.3/6.1.5 repeal Schedule, no double-entry** — a repeal appears in the body
   *or* a repeal Schedule, never both (`Commissioner of Police v Simeon`). →
   `UK_RULE_REPEAL_NO_DOUBLE_ENTRY`: when the same target is repealed by both a body
