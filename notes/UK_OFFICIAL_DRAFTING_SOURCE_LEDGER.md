@@ -589,6 +589,16 @@ closing quote from live text or escalate to a host replacement. Current witness:
 and blocking compile diagnostics `125 -> 124`; the 77-statute gate remains
 score-stable (`0 improved, 0 regressed`).
 
+Bracket-span insertions are owned as a bounded text selector under
+`uk_effect_after_words_in_brackets_insert_text_patch` when source says `after
+the words in brackets insert- Y`. Replay inserts immediately after the unique
+parenthesized span in the explicit effect target; ambiguous or missing bracket
+spans remain blocked and the rule does not infer the bracket text from the live
+target during lowering. Current witness: `ukpga/1990/8` affected `s. 1(5)(c)`
+by `uksi/2024/49` reg. 4. This cuts `ukpga/1990/8` overlap blockers `6 -> 5`,
+blocking effect rows `123 -> 122`, and blocking compile diagnostics `124 -> 123`;
+the 77-statute gate remains score-stable (`0 improved, 0 regressed`).
+
 `lawvm uk-misses` now mirrors this distinction: JSON output retains
 `rejection_rule_counts` for all compile diagnostics and adds
 `blocking_rejection_rule_counts` for strict replay barriers; human output prints

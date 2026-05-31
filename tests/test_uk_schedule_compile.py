@@ -297,6 +297,110 @@ def test_replay_words_in_brackets_blocks_ambiguous_parenthesized_spans() -> None
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_after_words_in_brackets_inserts_after_unique_parenthesized_span() -> None:
+    op = LegalOperation(
+        op_id="uk_test_after_words_in_brackets_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "5"), ("paragraph", "c"))),
+        text_patch=_replace_patch("TEXT_AFTER_WORDS_IN_BRACKETS", " and Part 1A of Schedule 7A"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1990/8",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            attrs={"eId": "section-1-5"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="c",
+                                    attrs={"eId": "section-1-5-c"},
+                                    text="county planning authorities (within the meaning of Part 1) for the area;",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == (
+        "county planning authorities (within the meaning of Part 1) "
+        "and Part 1A of Schedule 7A for the area;"
+    )
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_after_words_in_brackets_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "after_words_in_brackets_selector"
+
+
+def test_replay_after_words_in_brackets_blocks_ambiguous_parenthesized_spans() -> None:
+    op = LegalOperation(
+        op_id="uk_test_after_words_in_brackets_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "5"), ("paragraph", "c"))),
+        text_patch=_replace_patch("TEXT_AFTER_WORDS_IN_BRACKETS", " inserted words"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1990/8",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            attrs={"eId": "section-1-5"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="c",
+                                    attrs={"eId": "section-1-5-c"},
+                                    text="one (first) and two (second)",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "one (first) and two (second)"
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     candidates_by_len = {
         90: [_GroundingTextCandidate(2, "too-short", "x" * 90)],
@@ -37769,6 +37873,69 @@ def test_compile_words_in_brackets_substitution_lowers_to_bounded_selector() -> 
         in op.provenance_tags
     )
     assert lowering_rejections == []
+
+
+def test_compile_after_words_in_brackets_insert_lowers_to_bounded_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>4</Pnumber>
+          <Text>4 In section 1(5) (local planning authorities: general) in paragraph
+          (c), after the words in brackets insert\u2014 and Part 1A of Schedule 7A
+          (Biodiversity Gain in England: Local Planning Authority). .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-dd1f61b7fa860f1efa850e042fa91160",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-02-12",
+        affected_uri="/id/ukpga/1990/8/section/1/subsection/5/paragraph/c",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1990",
+        affected_number="8",
+        affected_provisions="s. 1(5)(c)",
+        affecting_uri="/id/uksi/2024/49",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="49",
+        affecting_provisions="reg. 4",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2024-02-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "1"), ("subsection", "5"), ("paragraph", "c"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_AFTER_WORDS_IN_BRACKETS"
+    assert op.text_patch.replacement == (
+        " and Part 1A of Schedule 7A "
+        "(Biodiversity Gain in England: Local Planning Authority)."
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_words_in_brackets_insert_text_patch"
+        in op.provenance_tags
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_after_words_in_brackets_insert_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "after_words_in_brackets_insert"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
 def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> None:

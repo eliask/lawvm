@@ -24,6 +24,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RULE_ID,
+    UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID,
     UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
@@ -479,6 +480,32 @@ def append_basic_text_rewrite_observations(
                     "matching closing quote; lowering uses the explicit anchor "
                     "and bounded trailing payload rather than escalating to a "
                     "host replacement."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if str(fragment.get("rule_id") or "") != UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID:
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="after_words_in_brackets_insert",
+                reason=(
+                    "UK effect source inserts words immediately after the "
+                    "target's bracketed words; lowering preserves this as a "
+                    "bounded bracket-span insertion rather than guessing a "
+                    "quoted preimage."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
