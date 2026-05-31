@@ -155,8 +155,13 @@ def score_one(statute_id: str) -> dict[str, Any]:
             *lowering_rejections,
             *authority_rejections,
         ]
+        blocking_compile_rejections = _blocking_records(compile_rejections)
         result["n_compile_rejections"] = len(compile_rejections)
         result["compile_rejection_rule_counts"] = _rule_counts(compile_rejections)
+        result["n_blocking_compile_rejections"] = len(blocking_compile_rejections)
+        result["blocking_compile_rejection_rule_counts"] = _rule_counts(
+            blocking_compile_rejections
+        )
 
         lanes: dict[str, float] = {}
         for lane, aligned in (("aligned", True), ("unaligned", False)):
@@ -278,8 +283,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
 
 def _is_compile_rejection_dominated_residual(row: dict[str, Any]) -> bool:
     """Classify rows where explicit compile rejections dominate missing oracle state."""
-    n_compile_rejections = int(row.get("n_compile_rejections") or 0)
-    if n_compile_rejections < _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
+    n_blocking_compile_rejections = int(row.get("n_blocking_compile_rejections") or 0)
+    if n_blocking_compile_rejections < _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
         return False
     n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
     n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
@@ -291,8 +296,8 @@ def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
     statute_id = str(row.get("statute_id") or "")
     if not statute_id.startswith("eur/"):
         return False
-    n_compile_rejections = int(row.get("n_compile_rejections") or 0)
-    if n_compile_rejections < _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
+    n_blocking_compile_rejections = int(row.get("n_blocking_compile_rejections") or 0)
+    if n_blocking_compile_rejections < _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
         return False
     n_only_in_oracle = int(row.get("n_only_in_oracle") or 0)
     n_only_in_replayed = int(row.get("n_only_in_replayed") or 0)
@@ -304,11 +309,17 @@ def _is_bounded_low_volume_residual(row: dict[str, Any]) -> bool:
     aligned = float(row.get("aligned_excluding_grounding_collateral") or row.get("aligned") or 0.0)
     if aligned < _LOW_VOLUME_RESIDUAL_MIN_SCORE:
         return False
-    n_compile_rejections = int(row.get("n_compile_rejections") or 0)
-    if n_compile_rejections >= _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
+    n_blocking_compile_rejections = int(row.get("n_blocking_compile_rejections") or 0)
+    if n_blocking_compile_rejections >= _COMPILE_REJECTION_DOMINATED_MIN_REJECTIONS:
         return False
     n_misses = int(row.get("n_only_in_oracle") or 0) + int(row.get("n_only_in_replayed") or 0)
     return n_misses <= _LOW_VOLUME_RESIDUAL_MAX_MISSES
+
+
+def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from lawvm.core.compile_records import is_blocking_compile_record
+
+    return [row for row in rows if is_blocking_compile_record(row)]
 
 
 def _rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
