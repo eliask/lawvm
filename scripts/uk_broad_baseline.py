@@ -256,6 +256,12 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 "manual_compile_candidate",
             )
         )
+        result["manual_frontier_deterministic_candidate_rule_counts"] = (
+            _manual_frontier_rule_counts_for_status(
+                manual_frontier_records,
+                "deterministic_frontend_candidate",
+            )
+        )
         result["manual_frontier_template_status_counts"] = (
             _manual_frontier_template_status_counts(manual_frontier_records)
         )
@@ -403,6 +409,10 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         results,
         "manual_frontier_manual_compile_candidate_rule_counts",
     )
+    manual_frontier_deterministic_candidate_rule_counts = _aggregate_row_count_maps(
+        results,
+        "manual_frontier_deterministic_candidate_rule_counts",
+    )
     manual_frontier_template_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_template_status_counts"
     )
@@ -454,6 +464,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
         "manual_frontier_manual_compile_candidate_rule_counts": (
             manual_frontier_manual_compile_candidate_rule_counts
+        ),
+        "manual_frontier_deterministic_candidate_rule_counts": (
+            manual_frontier_deterministic_candidate_rule_counts
         ),
         "manual_frontier_template_status_counts": manual_frontier_template_status_counts,
         "manual_frontier_template_gap_status_counts": (
@@ -964,6 +977,14 @@ def run_driver(
             ].items()
         )
         print(f"  manual_compile_candidate_rule_counts: {counts}")
+    if summary["manual_frontier_deterministic_candidate_rule_counts"]:
+        counts = ", ".join(
+            f"{rule_id}={count}"
+            for rule_id, count in summary[
+                "manual_frontier_deterministic_candidate_rule_counts"
+            ].items()
+        )
+        print(f"  deterministic_frontend_candidate_rule_counts: {counts}")
     if summary["manual_frontier_template_status_counts"]:
         counts = ", ".join(
             f"{status}={count}"

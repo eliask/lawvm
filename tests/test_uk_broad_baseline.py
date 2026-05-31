@@ -92,6 +92,9 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                 "manual_frontier_manual_compile_candidate_rule_counts": {
                     "uk_manual_frontier_repeal_table_candidate": 3,
                 },
+                "manual_frontier_deterministic_candidate_rule_counts": {
+                    "uk_manual_frontier_parser_or_extraction_candidate": 2,
+                },
                 "manual_frontier_template_status_counts": {
                     "available": 3,
                     "not_available": 2,
@@ -211,6 +214,9 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     }
     assert summary["manual_frontier_manual_compile_candidate_rule_counts"] == {
         "uk_manual_frontier_repeal_table_candidate": 3,
+    }
+    assert summary["manual_frontier_deterministic_candidate_rule_counts"] == {
+        "uk_manual_frontier_parser_or_extraction_candidate": 2,
     }
     assert summary["manual_frontier_template_status_counts"] == {
         "available": 3,
@@ -797,6 +803,9 @@ def test_run_driver_can_fail_on_deterministic_frontend_candidates(
                 "deterministic_frontend_candidate": 1,
                 "manual_compile_candidate": 16,
             },
+            "manual_frontier_deterministic_candidate_rule_counts": {
+                "uk_manual_frontier_table_entry_candidate": 1,
+            },
         }
         return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
 
@@ -810,10 +819,12 @@ def test_run_driver_can_fail_on_deterministic_frontend_candidates(
         )
         == 1
     )
+    out = capsys.readouterr().out
+    assert "deterministic_frontend_candidates=1: ukpga/2008/17" in out
     assert (
-        "deterministic_frontend_candidates=1: ukpga/2008/17"
-        in capsys.readouterr().out
-    )
+        "deterministic_frontend_candidate_rule_counts: "
+        "uk_manual_frontier_table_entry_candidate=1"
+    ) in out
 
 
 def test_run_driver_can_fail_on_manual_frontier_template_gaps(monkeypatch, capsys) -> None:
