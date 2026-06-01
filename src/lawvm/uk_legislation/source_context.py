@@ -167,6 +167,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
       - _unique_unnumbered_root_schedule_cache: values may be root descendants
       - source_fragment_context caches: keys are root descendant elements
       - table_sources caches: fee-table index and repeal-extent table hold root
+      - table_selectors caches: keys are root descendant elements
     Explicit removal breaks these cycles immediately, making root eligible for
     reference-count GC.
     """
@@ -188,6 +189,10 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     )
     _REPEAL_EXTENT_TABLE_CACHE.pop(root, None)
     _UK_FEE_TABLE_INDEX_CACHE.pop(root, None)
+    from lawvm.uk_legislation.table_selectors import (  # noqa: PLC0415
+        evict_table_selector_caches,
+    )
+    evict_table_selector_caches(root)
 
 
 def _source_parent_map(

@@ -47,6 +47,10 @@ from lawvm.uk_legislation.source_context import (
     _unique_unnumbered_root_schedule_cache,
     evict_source_root_caches,
 )
+from lawvm.uk_legislation.table_selectors import (
+    _NORMALIZED_ELEMENT_TEXT_CACHE,
+    _normalized_element_text,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +234,26 @@ def test_unique_unnumbered_root_schedule_negative_cache_evicts_with_source_root(
     evict_source_root_caches(root)
 
     assert root not in _unique_unnumbered_root_schedule_cache
+
+
+def test_table_selector_normalized_text_cache_evicts_with_source_root() -> None:
+    root = _make_root()
+    other_root = _make_root(_ANOTHER_XML)
+    root_child = next(iter(root))
+    other_child = next(iter(other_root))
+
+    assert _normalized_element_text(root_child)
+    assert _normalized_element_text(other_child)
+    assert root_child in _NORMALIZED_ELEMENT_TEXT_CACHE
+    assert other_child in _NORMALIZED_ELEMENT_TEXT_CACHE
+
+    evict_source_root_caches(root)
+
+    assert root_child not in _NORMALIZED_ELEMENT_TEXT_CACHE
+    assert other_child in _NORMALIZED_ELEMENT_TEXT_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_child not in _NORMALIZED_ELEMENT_TEXT_CACHE
 
 
 # ---------------------------------------------------------------------------

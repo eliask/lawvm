@@ -99,6 +99,14 @@ _UK_TABLE_CHILD_ANCHOR_INSERT_RE = re.compile(
 # Eviction is handled by explicit evict_source_root_caches() calls.
 _NORMALIZED_ELEMENT_TEXT_CACHE: dict[ET._Element, str] = {}
 
+
+def evict_table_selector_caches(root: Optional[ET._Element]) -> None:
+    if root is None:
+        return
+    for el in tuple(_NORMALIZED_ELEMENT_TEXT_CACHE):
+        if el is root or el.getroottree().getroot() is root:
+            _NORMALIZED_ELEMENT_TEXT_CACHE.pop(el, None)
+
 # Site 2 module-scope patterns per §1.11.  The alternation below previously
 # appeared as a single re.search call with two .*? lazy quantifiers sharing one
 # alternation; on non-matching inputs the trailing $ causes catastrophic
