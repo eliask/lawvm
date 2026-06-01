@@ -14516,6 +14516,65 @@ def test_compile_child_tail_omit_uses_exact_feed_paragraph_context() -> None:
     assert lowering_records[0]["target_supplied_subsection_context"] == "true"
 
 
+def test_compile_child_tail_omit_uses_exact_feed_schedule_subparagraph_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-2-paragraph-53-2-f-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii omit the words after paragraph (b);</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-134c23b22a89a71cfe6f149d6b80a68b",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-11-03",
+        affected_uri="/id/ukpga/2000/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="6",
+        affected_provisions="Sch. 8 para. 2(8)",
+        affecting_uri="/id/ukpga/2009/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="24",
+        affecting_provisions="Sch. 2 para. 53(2)(f)(ii)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2009-11-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("schedule", "8"),
+        ("paragraph", "2"),
+        ("subparagraph", "8"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_item_b"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["source_anchor_child_kind"] == "item"
+    assert lowering_records[0]["source_anchor_child_label"] == "b"
+    assert lowering_records[0]["target_supplied_subsection_context"] == "true"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_child_tail_substitution_accepts_following_to_end() -> None:
     extracted_el = ET.fromstring(
         f"""

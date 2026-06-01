@@ -6,7 +6,7 @@ from typing import Optional
 from lxml import etree as ET
 
 from lawvm.core.ir import LegalAddress
-from lawvm.uk_legislation.addressing import _addr_field, _addr_leaf_kind
+from lawvm.uk_legislation.addressing import _addr_container, _addr_field, _addr_leaf_kind
 from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _tag, _text_content
@@ -195,7 +195,7 @@ def _fragment_substitution_source_carried_child_tail_repeal(
             }
         target_match = _SOURCE_CARRIED_TARGET_CHILD_TAIL_OMIT_RE.match(text)
         if target_match is not None:
-            if _addr_leaf_kind(target) not in {"subsection", "paragraph"}:
+            if _addr_leaf_kind(target) not in {"subsection", "paragraph", "subparagraph"}:
                 return None
             target_subsection = _clean_num(_addr_field(target, "subsection") or "")
             anchor_label = _clean_num(target_match.group("label"))
@@ -203,11 +203,15 @@ def _fragment_substitution_source_carried_child_tail_repeal(
                 return None
             if not anchor_label:
                 return None
+            anchor_kind = "paragraph"
+            if _addr_container(target) == "schedule" and _addr_leaf_kind(target) == "subparagraph":
+                anchor_kind = "item"
             return {
-                "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",
+                "original": f"TEXT_AFTER_CHILD_TAIL_{anchor_kind}_{anchor_label}",
                 "replacement": "",
                 "source_subsection_label": "",
                 "target_supplied_subsection_context": "true",
+                "source_anchor_child_kind": anchor_kind,
                 "source_anchor_child_label": anchor_label,
                 "rule_id": "uk_effect_source_carried_child_tail_repeal_text_patch",
             }

@@ -3579,6 +3579,21 @@ def test_classify_uk_effect_source_carried_child_tail_text_rewrite() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_carried_child_tail_omit_instruction() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P4",
+        extracted_text="ii omit the words after paragraph (b);",
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "source_carried_child_tail_text_rewrite_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_carried_child_tail_substitution() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
