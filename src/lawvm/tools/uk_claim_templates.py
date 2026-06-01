@@ -1064,6 +1064,31 @@ def manual_compile_suggested_claim_template(
         )
     if (
         summary.manual_compile_rule_id
+        == "uk_manual_frontier_deictic_structural_sibling_insert_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="structural_sibling_insert",
+            placement_family="deictic_sibling_anchor_claim_required",
+            required_ownership=[
+                "source_deictic_anchor_phrase",
+                "claimed_anchor_resolution",
+                "inserted_sibling_payload",
+                "sibling_order_boundary",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_uses_deictic_sibling_anchor",
+                "claim_identifies_exact_parent_and_anchor_sibling",
+                "claim_proves_deictic_anchor_from_source_context",
+                "claim_identifies_each_inserted_sibling_payload",
+                "claim_preserves_anchor_and_unclaimed_siblings",
+                "changed_paths_are_within_declared_sibling_insertion_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
         == "uk_manual_frontier_structural_child_range_substitution_candidate"
     ):
         return _bounded_mutation_claim_template(

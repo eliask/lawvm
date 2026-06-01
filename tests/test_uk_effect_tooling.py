@@ -81,6 +81,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
+        "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
@@ -4834,6 +4835,90 @@ def test_uk_manual_compile_evidence_jsonl_templates_structural_sibling_claim() -
     assert "source_named_sibling_anchor" in template["required_ownership"]
     assert "sibling_order_boundary" in template["required_ownership"]
     assert "claim_identifies_exact_parent_and_anchor_sibling" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_deictic_structural_sibling_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-deictic-sibling-insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/1/schedule/2/paragraph/ground/subparagraph/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="Sch. 2 Ground 4",
+        affecting_uri="/id/ukpga/2025/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="26",
+        affecting_provisions="Sch. 1 para. 9(d)",
+        affecting_title="Test Act 2025",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="structural_sibling_insert_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_overlap_substitution_unlowered",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "after that unnumbered paragraph insert and- if the tenancy arose "
+                "by succession"
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_deictic_structural_sibling_insert_candidate"
+            ),
+            manual_compile_reason="Deictic sibling insertion requires an anchor claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert payload["suggested_claim_template_status"] == "available"
+    assert template["action_family"] == "structural_sibling_insert"
+    assert template["placement_family"] == "deictic_sibling_anchor_claim_required"
+    assert "source_deictic_anchor_phrase" in template["required_ownership"]
+    assert "claimed_anchor_resolution" in template["required_ownership"]
+    assert "claim_proves_deictic_anchor_from_source_context" in (
         template["required_validator_checks"]
     )
     assert template["executable"] is False
