@@ -36,6 +36,7 @@ from lawvm.tools.uk_oracle_check import (
     _classify_divergences,
     _grounding_collateral_eids,
     _is_manual_frontier_rule,
+    _owner_phase_counts,
     _REPEAL_NOT_WARRANTED_RULE_ID,
 )
 
@@ -162,6 +163,20 @@ def test_classify_divergences_repeal_not_warranted_keeps_in_oracle_suspect() -> 
     assert "section-10" not in result["deterministic_gap"]
 
 
+def test_owner_phase_counts_groups_oracle_check_rejection_evidence() -> None:
+    assert _owner_phase_counts(
+        [
+            {"owner_phase": "typed_elaboration"},
+            {"rule_id": "uk_effect_feed_empty_recorded"},
+            {"rule_id": "uk_replay_existing_target_conflict_gap"},
+        ]
+    ) == {
+        "effect_metadata_frontend": 1,
+        "replay_invariants": 1,
+        "typed_elaboration": 1,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Integration: oracle_check_uk_statute with real archive
 # ---------------------------------------------------------------------------
@@ -195,6 +210,7 @@ def test_oracle_check_uk_statute_has_required_headers() -> None:
     assert "oracle_suspect" in result
     assert "Similarity:" in result
     assert "Similarity excluding grounding collateral:" in result
+    assert "Rejection owner phases:" in result
     assert "Mutation boundary:" in result
     assert "Base source:" in result
 
