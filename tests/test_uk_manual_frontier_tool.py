@@ -267,6 +267,14 @@ def test_uk_manual_frontier_validate_main_emits_json(
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["report_kind"] == "uk_manual_frontier_validation_report"
+    assert payload["schema"] == "lawvm.uk_manual_frontier_validation_report.v1"
+    assert payload["truth_claim"] == "uk_manual_frontier_validation_diagnostics_only"
+    assert payload["replay_claims"] is False
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["agreement_claims"] is False
+    assert payload["manual_frontier_validation_claims"] is True
     assert payload["summary"]["validator_status_counts"] == {
         "still_manual_frontier": 1
     }
@@ -347,6 +355,10 @@ def test_uk_manual_frontier_validate_main_emits_json(
         "path": str(validation_path),
         "rows": 1,
     }
+    assert payload["evidence_jsonl"]["validation_jsonl"] == {
+        "path": str(validation_path),
+        "rows": 1,
+    }
     assert payload["remaining_jsonl"] == {
         "path": str(remaining_path),
         "rows": 1,
@@ -354,6 +366,8 @@ def test_uk_manual_frontier_validate_main_emits_json(
         "manual_rule_filters": [],
         "source_pathology_filters": [],
     }
+    assert payload["evidence_jsonl"]["remaining_jsonl"] == payload["remaining_jsonl"]
+    assert payload["written_paths"] == [str(validation_path), str(remaining_path)]
     assert payload["rows"][0]["effect_id"] == "eff-1"
     assert json.loads(validation_path.read_text(encoding="utf-8"))["effect_id"] == "eff-1"
     remaining_row = json.loads(remaining_path.read_text(encoding="utf-8"))
@@ -1028,7 +1042,11 @@ def test_validation_report_summary_only_omits_rows() -> None:
         summary_only=True,
     )
 
-    assert "rows" not in report
+    assert report["rows"] == []
+    assert report["rows_truncated"] is False
+    assert report["filtered_summary"] == report["summary"]
+    assert report["replay_claims"] is False
+    assert report["manual_frontier_validation_claims"] is True
     assert report["summary"]["stale_row_count"] == 1
     assert report["summary"]["stale_original_manual_rule_counts"] == {
         "uk_manual_frontier_definition_list_end_insert_candidate": 1
