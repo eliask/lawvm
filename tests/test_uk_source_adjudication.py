@@ -1869,6 +1869,28 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_list_entry_before_ge
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_table_row_omission_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words omitted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P4",
+        extracted_text='omit the first row after the heading "Non-Mediterranean regions", and',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "affected_provisions": "sch. 9 para. 2(b) Table",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_entry_beginning_substitution_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -4066,6 +4088,38 @@ def test_classify_uk_effect_schedule_list_entry_target() -> None:
     )
 
     assert pathology == "schedule_list_entry_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_table_row_omission_after_heading_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P4",
+        extracted_text='omit the first row after the heading "Non-Mediterranean regions", and',
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:9/paragraph:2/item:b/table"],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "table_entry_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_table_heading_and_following_rows_omission_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P4",
+        extracted_text='omit the heading "Mediterranean regions" and the two rows following it.',
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:9/paragraph:2/item:b/table"],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "table_entry_target_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
