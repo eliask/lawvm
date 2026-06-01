@@ -12,6 +12,7 @@ from lawvm.uk_legislation.affecting_act_commencement import (
     get_affecting_act_xml,
 )
 from lawvm.uk_legislation.effects import UKEffectRecord, load_effects_for_statute_from_archive
+from lawvm.uk_legislation.phase_discipline import UK_PHASE_EFFECT_METADATA_FRONTEND
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class UKProspectiveCommencementWitness:
         if self.as_of:
             row["as_of"] = self.as_of
         row.update(self.detail)
+        row.setdefault("owner_phase", UK_PHASE_EFFECT_METADATA_FRONTEND)
         return row
 
 

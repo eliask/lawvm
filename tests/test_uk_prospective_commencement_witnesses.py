@@ -5,6 +5,10 @@ from lawvm.uk_legislation.prospective_commencement_witnesses import (
     prospective_commencement_status_counts,
     prospective_commencement_witness_for_effect,
 )
+from scripts.uk_prospective_commencement_scan import (
+    _limited_rows_and_owner_phase_counts,
+    _owner_phase_counts,
+)
 
 
 _NS = "http://www.legislation.gov.uk/namespaces/legislation"
@@ -70,6 +74,7 @@ def test_prospective_commencement_witness_resolves_in_force() -> None:
     assert row["status"] == "resolved_in_force"
     assert row["rule_id"] == "uk_prospective_effect_affecting_provision_in_force"
     assert row["start_dates"] == ("2025-01-01",)
+    assert row["owner_phase"] == "effect_metadata_frontend"
 
 
 def test_prospective_commencement_witness_resolves_future() -> None:
@@ -136,3 +141,30 @@ def test_prospective_commencement_status_counts() -> None:
         "resolved_future": 1,
         "resolved_in_force": 1,
     }
+
+
+def test_prospective_commencement_owner_phase_counts_use_witness_rows() -> None:
+    witness = prospective_commencement_witness_for_effect(
+        "ukpga/2000/1",
+        _effect(effect_id="e1", affecting_provisions="s. 1"),
+        archive=_Archive(_xml()),
+        as_of="2026-05-31",
+    )
+
+    assert witness is not None
+    assert _owner_phase_counts([witness.to_dict()]) == {
+        "effect_metadata_frontend": 1,
+    }
+
+
+def test_prospective_commencement_limited_rows_keep_full_owner_phase_counts() -> None:
+    rows, counts = _limited_rows_and_owner_phase_counts(
+        [
+            {"owner_phase": "effect_metadata_frontend", "id": "1"},
+            {"owner_phase": "effect_metadata_frontend", "id": "2"},
+        ],
+        limit=1,
+    )
+
+    assert rows == [{"owner_phase": "effect_metadata_frontend", "id": "1"}]
+    assert counts == {"effect_metadata_frontend": 2}
