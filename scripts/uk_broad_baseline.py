@@ -44,6 +44,9 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_compile_record,
+)
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -294,15 +297,24 @@ def score_one(statute_id: str) -> dict[str, Any]:
             effect_diagnostics_out=effect_diagnostics,
         )
         compile_rejections = [
-            *effect_feed_parse_rejections,
-            *lowering_rejections,
-            *authority_rejections,
+            *_compile_authorization_rows(
+                effect_feed_parse_rejections,
+                lane="effect_feed_parse",
+            ),
+            *_compile_authorization_rows(lowering_rejections, lane="lowering"),
+            *_compile_authorization_rows(authority_rejections, lane="authority"),
         ]
         blocking_compile_rejections = _blocking_records(compile_rejections)
         result["n_compile_rejections"] = len(compile_rejections)
         result["compile_rejection_rule_counts"] = _rule_counts(compile_rejections)
         result["compile_rejection_owner_phase_counts"] = _owner_phase_counts(
             compile_rejections
+        )
+        result["compile_rejection_authorization_status_counts"] = (
+            _authorization_status_counts(compile_rejections)
+        )
+        result["compile_rejection_missing_proof_counts"] = (
+            _authorization_missing_proof_counts(compile_rejections)
         )
         result["compile_rejection_rule_owner_phase_counts"] = (
             _rule_owner_phase_counts(compile_rejections)
@@ -313,6 +325,12 @@ def score_one(statute_id: str) -> dict[str, Any]:
         )
         result["blocking_compile_rejection_owner_phase_counts"] = _owner_phase_counts(
             blocking_compile_rejections
+        )
+        result["blocking_compile_rejection_authorization_status_counts"] = (
+            _authorization_status_counts(blocking_compile_rejections)
+        )
+        result["blocking_compile_rejection_missing_proof_counts"] = (
+            _authorization_missing_proof_counts(blocking_compile_rejections)
         )
         result["blocking_compile_rejection_rule_owner_phase_counts"] = (
             _rule_owner_phase_counts(blocking_compile_rejections)
@@ -546,11 +564,25 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     compile_rejection_owner_phase_counts = _aggregate_row_count_maps(
         results, "compile_rejection_owner_phase_counts"
     )
+    compile_rejection_authorization_status_counts = _aggregate_row_count_maps(
+        results, "compile_rejection_authorization_status_counts"
+    )
+    compile_rejection_missing_proof_counts = _aggregate_row_count_maps(
+        results, "compile_rejection_missing_proof_counts"
+    )
     compile_rejection_rule_owner_phase_counts = _aggregate_row_count_maps(
         results, "compile_rejection_rule_owner_phase_counts"
     )
     blocking_compile_rejection_owner_phase_counts = _aggregate_row_count_maps(
         results, "blocking_compile_rejection_owner_phase_counts"
+    )
+    blocking_compile_rejection_authorization_status_counts = _aggregate_row_count_maps(
+        results,
+        "blocking_compile_rejection_authorization_status_counts",
+    )
+    blocking_compile_rejection_missing_proof_counts = _aggregate_row_count_maps(
+        results,
+        "blocking_compile_rejection_missing_proof_counts",
     )
     blocking_compile_rejection_rule_owner_phase_counts = _aggregate_row_count_maps(
         results, "blocking_compile_rejection_rule_owner_phase_counts"
@@ -648,11 +680,23 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             manual_frontier_rule_owner_phase_counts
         ),
         "compile_rejection_owner_phase_counts": compile_rejection_owner_phase_counts,
+        "compile_rejection_authorization_status_counts": (
+            compile_rejection_authorization_status_counts
+        ),
+        "compile_rejection_missing_proof_counts": (
+            compile_rejection_missing_proof_counts
+        ),
         "compile_rejection_rule_owner_phase_counts": (
             compile_rejection_rule_owner_phase_counts
         ),
         "blocking_compile_rejection_owner_phase_counts": (
             blocking_compile_rejection_owner_phase_counts
+        ),
+        "blocking_compile_rejection_authorization_status_counts": (
+            blocking_compile_rejection_authorization_status_counts
+        ),
+        "blocking_compile_rejection_missing_proof_counts": (
+            blocking_compile_rejection_missing_proof_counts
         ),
         "blocking_compile_rejection_rule_owner_phase_counts": (
             blocking_compile_rejection_rule_owner_phase_counts
@@ -960,6 +1004,55 @@ def _manual_frontier_authorization_status_owner_phase_counts(
 
 
 def _manual_frontier_missing_proof_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        required_proofs = row.get("required_proofs") or ()
+        if not isinstance(required_proofs, list | tuple):
+            counts["invalid_required_proofs_shape"] += 1
+            continue
+        counts.update(str(proof or "unknown") for proof in required_proofs)
+    return dict(sorted(counts.items()))
+
+
+def _compile_authorization_rows(
+    rows: list[dict[str, Any]],
+    *,
+    lane: str,
+) -> list[dict[str, Any]]:
+    authorized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        owner_phase = uk_phase_owner_for_diagnostic(row)
+        authorization = uk_execution_authorization_from_compile_record(
+            record=row,
+            lane=lane,
+            owner_phase=owner_phase,
+        ).to_dict()
+        authorized_row = {
+            **row,
+            "owner_phase": owner_phase,
+            "execution_authorization": authorization,
+            "executable": authorization["executable"],
+            "replay_authorized": authorization["replay_authorized"],
+            "authorization_status": authorization["authorization_status"],
+            "authorization_rule_id": authorization["authorization_rule_id"],
+            "required_proofs": authorization["required_proofs"],
+            "safe_default": authorization["safe_default"],
+            "forbidden_shortcuts": authorization["forbidden_shortcuts"],
+        }
+        authorized_rows.append(authorized_row)
+    return authorized_rows
+
+
+def _authorization_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(str(row.get("authorization_status") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _authorization_missing_proof_counts(
     rows: list[dict[str, Any]],
 ) -> dict[str, int]:
     counts: Counter[str] = Counter()
@@ -1308,6 +1401,22 @@ def run_driver(
             for phase, count in summary["compile_rejection_owner_phase_counts"].items()
         )
         print(f"  compile_rejection_owner_phase_counts: {counts}")
+    if summary["compile_rejection_authorization_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "compile_rejection_authorization_status_counts"
+            ].items()
+        )
+        print(f"  compile_rejection_authorization_status_counts: {counts}")
+    if summary["compile_rejection_missing_proof_counts"]:
+        counts = ", ".join(
+            f"{proof}={count}"
+            for proof, count in summary[
+                "compile_rejection_missing_proof_counts"
+            ].items()
+        )
+        print(f"  compile_rejection_missing_proof_counts: {counts}")
     if summary["compile_rejection_rule_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase_rule}={count}"
@@ -1324,6 +1433,22 @@ def run_driver(
             ].items()
         )
         print(f"  blocking_compile_rejection_owner_phase_counts: {counts}")
+    if summary["blocking_compile_rejection_authorization_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "blocking_compile_rejection_authorization_status_counts"
+            ].items()
+        )
+        print(f"  blocking_compile_rejection_authorization_status_counts: {counts}")
+    if summary["blocking_compile_rejection_missing_proof_counts"]:
+        counts = ", ".join(
+            f"{proof}={count}"
+            for proof, count in summary[
+                "blocking_compile_rejection_missing_proof_counts"
+            ].items()
+        )
+        print(f"  blocking_compile_rejection_missing_proof_counts: {counts}")
     if summary["blocking_compile_rejection_rule_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase_rule}={count}"

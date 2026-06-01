@@ -103,12 +103,26 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                     "affecting_source_extraction": 4,
                     "typed_elaboration": 1,
                 },
+                "compile_rejection_authorization_status_counts": {
+                    "effect_feed_parse_diagnostic_evidence_only": 4,
+                    "lowering_compile_blocked": 1,
+                },
+                "compile_rejection_missing_proof_counts": {
+                    "canonical_operation_compilation": 1,
+                    "canonical_operation_or_replay_authorization": 4,
+                },
                 "compile_rejection_rule_owner_phase_counts": {
                     "affecting_source_extraction:uk_effect_source_gap": 4,
                     "typed_elaboration:uk_effect_target_gap": 1,
                 },
                 "blocking_compile_rejection_owner_phase_counts": {
                     "typed_elaboration": 1,
+                },
+                "blocking_compile_rejection_authorization_status_counts": {
+                    "lowering_compile_blocked": 1,
+                },
+                "blocking_compile_rejection_missing_proof_counts": {
+                    "canonical_operation_compilation": 1,
                 },
                 "blocking_compile_rejection_rule_owner_phase_counts": {
                     "typed_elaboration:uk_effect_target_gap": 1,
@@ -266,12 +280,26 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "affecting_source_extraction": 4,
         "typed_elaboration": 1,
     }
+    assert summary["compile_rejection_authorization_status_counts"] == {
+        "effect_feed_parse_diagnostic_evidence_only": 4,
+        "lowering_compile_blocked": 1,
+    }
+    assert summary["compile_rejection_missing_proof_counts"] == {
+        "canonical_operation_compilation": 1,
+        "canonical_operation_or_replay_authorization": 4,
+    }
     assert summary["compile_rejection_rule_owner_phase_counts"] == {
         "affecting_source_extraction:uk_effect_source_gap": 4,
         "typed_elaboration:uk_effect_target_gap": 1,
     }
     assert summary["blocking_compile_rejection_owner_phase_counts"] == {
         "typed_elaboration": 1,
+    }
+    assert summary["blocking_compile_rejection_authorization_status_counts"] == {
+        "lowering_compile_blocked": 1,
+    }
+    assert summary["blocking_compile_rejection_missing_proof_counts"] == {
+        "canonical_operation_compilation": 1,
     }
     assert summary["blocking_compile_rejection_rule_owner_phase_counts"] == {
         "typed_elaboration:uk_effect_target_gap": 1,

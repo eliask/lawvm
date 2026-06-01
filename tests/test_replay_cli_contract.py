@@ -461,6 +461,14 @@ def test_build_uk_replay_payload_shape() -> None:
         "affecting_source_extraction": 1,
         "canonical_op_compilation": 1,
     }
+    assert payload["compile_observation_authorization_status_counts"] == {
+        "lowering_compile_blocked": 1,
+        "source_parse_diagnostic_evidence_only": 1,
+    }
+    assert payload["compile_observation_missing_proof_counts"] == {
+        "canonical_operation_compilation": 1,
+        "canonical_operation_or_replay_authorization": 1,
+    }
     assert payload["compile_observation_lane_counts"] == {
         "source_parse": 1,
         "effect_feed_parse": 0,
@@ -476,6 +484,12 @@ def test_build_uk_replay_payload_shape() -> None:
     }
     assert payload["blocking_compile_rejection_owner_phase_counts"] == {
         "canonical_op_compilation": 1,
+    }
+    assert payload["compile_rejection_authorization_status_counts"] == {
+        "lowering_compile_blocked": 1,
+    }
+    assert payload["compile_rejection_missing_proof_counts"] == {
+        "canonical_operation_compilation": 1,
     }
     assert payload["blocking_compile_rejection_lane_counts"] == {
         "source_parse": 0,
@@ -495,23 +509,25 @@ def test_build_uk_replay_payload_shape() -> None:
         "lowering": {"uk_effect_lowering_no_ops_rejected": 1},
         "authority": {},
     }
-    assert payload["compile_rejections"]["lowering"] == [
-        {
-            "rule_id": "uk_effect_lowering_no_ops_rejected",
-            "phase": "lowering",
-            "effect_id": "eff-1",
-            "blocking": True,
-        }
-    ]
-    assert payload["compile_observations"]["lowering"] == payload["compile_rejections"]["lowering"]
-    assert payload["compile_observations"]["source_parse"] == [
-        {
-            "rule_id": "uk_container_number_inferred_from_source_uri",
-            "phase": "source_parse",
-            "side": "enacted",
-            "blocking": False,
-        }
-    ]
+    lowering_rejection = payload["compile_rejections"]["lowering"][0]
+    assert lowering_rejection["rule_id"] == "uk_effect_lowering_no_ops_rejected"
+    assert lowering_rejection["effect_id"] == "eff-1"
+    assert lowering_rejection["authorization_status"] == "lowering_compile_blocked"
+    assert lowering_rejection["replay_authorized"] is False
+    assert lowering_rejection["required_proofs"] == ["canonical_operation_compilation"]
+    assert (
+        payload["compile_observations"]["lowering"]
+        == payload["compile_rejections"]["lowering"]
+    )
+    source_parse_observation = payload["compile_observations"]["source_parse"][0]
+    assert source_parse_observation["rule_id"] == (
+        "uk_container_number_inferred_from_source_uri"
+    )
+    assert source_parse_observation["side"] == "enacted"
+    assert source_parse_observation["blocking"] is False
+    assert source_parse_observation["authorization_status"] == (
+        "source_parse_diagnostic_evidence_only"
+    )
     evidence_row = payload["evidence"]["finding_rows"][0]
     assert evidence_row["frontend_id"] == "uk"
     assert evidence_row["rule_id"] == "uk_replay_payload_missing"
@@ -648,14 +664,22 @@ def test_uk_replay_enacted_only_json_threads_effect_count_parse_rejections(
     assert payload["compile_rejection_rule_counts"] == {
         "uk_effect_feed_xml_parse_rejected": 1,
     }
-    assert payload["compile_rejections"]["effect_feed_parse"] == [
-        {
-            "rule_id": "uk_effect_feed_xml_parse_rejected",
-            "phase": "parse",
-            "feed_locator": "effects.xml",
-        }
-    ]
-    assert payload["compile_observations"]["effect_feed_parse"] == payload["compile_rejections"]["effect_feed_parse"]
+    assert payload["compile_rejection_authorization_status_counts"] == {
+        "effect_feed_parse_compile_blocked": 1,
+    }
+    assert payload["compile_rejection_missing_proof_counts"] == {
+        "effect_feed_witness": 1,
+        "effect_metadata_parse": 1,
+    }
+    feed_rejection = payload["compile_rejections"]["effect_feed_parse"][0]
+    assert feed_rejection["rule_id"] == "uk_effect_feed_xml_parse_rejected"
+    assert feed_rejection["feed_locator"] == "effects.xml"
+    assert feed_rejection["authorization_status"] == "effect_feed_parse_compile_blocked"
+    assert feed_rejection["replay_authorized"] is False
+    assert (
+        payload["compile_observations"]["effect_feed_parse"]
+        == payload["compile_rejections"]["effect_feed_parse"]
+    )
 
 
 def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_path, capsys) -> None:

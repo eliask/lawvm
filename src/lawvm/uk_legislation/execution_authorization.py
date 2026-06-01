@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
+from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.execution_authorization import ExecutionAuthorization
+
+
+_COMPILE_LANE_PROOFS: dict[str, tuple[str, ...]] = {
+    "source_parse": ("source_artifact_parse", "source_identity"),
+    "effect_feed_parse": ("effect_metadata_parse", "effect_feed_witness"),
+    "effect_source_pathology": ("source_pathology_resolution", "source_payload_witness"),
+    "source_acquisition": ("official_source_witness", "source_acquisition_success"),
+    "lowering": ("canonical_operation_compilation",),
+    "authority": ("authority_surface_selection", "replay_authority_contract"),
+}
 
 
 def uk_execution_authorization_from_manual_frontier(
@@ -118,6 +132,58 @@ def uk_execution_authorization_from_manual_frontier(
     )
 
 
+def uk_execution_authorization_from_compile_record(
+    *,
+    record: Mapping[str, Any],
+    lane: str,
+    owner_phase: str,
+) -> ExecutionAuthorization:
+    """Build authorization facts for UK compile diagnostic/rejection rows."""
+    lane_id = str(lane or "unknown")
+    if lane_id == "manual_compile_frontier":
+        return uk_execution_authorization_from_manual_frontier(
+            manual_compile_status=str(record.get("manual_compile_status") or ""),
+            manual_compile_rule_id=str(record.get("manual_compile_rule_id") or ""),
+            owner_phase=owner_phase,
+            strict_disposition=str(record.get("strict_disposition") or "record"),
+            quirks_disposition=str(record.get("quirks_disposition") or "record"),
+            validator_status=str(record.get("validator_status") or ""),
+        )
+    blocking = is_blocking_compile_record(dict(record))
+    strict_disposition = str(
+        record.get("strict_disposition") or ("block" if blocking else "record")
+    )
+    quirks_disposition = str(record.get("quirks_disposition") or "record")
+    if blocking:
+        return _non_authorized_compile_record(
+            status=f"{lane_id}_compile_blocked",
+            rule_id=f"uk_execution_authorization_{lane_id}_compile_blocked",
+            lane=lane_id,
+            owner_phase=owner_phase,
+            strict_disposition=strict_disposition,
+            quirks_disposition=quirks_disposition,
+            validator_status="blocking_compile_record",
+            required_proofs=_COMPILE_LANE_PROOFS.get(
+                lane_id,
+                ("compile_record_classification",),
+            ),
+            safe_default="block_until_missing_compile_proofs_are_available",
+            record=record,
+        )
+    return _non_authorized_compile_record(
+        status=f"{lane_id}_diagnostic_evidence_only",
+        rule_id=f"uk_execution_authorization_{lane_id}_diagnostic_evidence_only",
+        lane=lane_id,
+        owner_phase=owner_phase,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+        validator_status="nonblocking_compile_observation",
+        required_proofs=("canonical_operation_or_replay_authorization",),
+        safe_default="record_diagnostic_without_promoting_to_replay_authority",
+        record=record,
+    )
+
+
 def uk_execution_authorization_from_semantic_claim_validation(
     *,
     validator_status: str,
@@ -214,6 +280,45 @@ def uk_execution_authorization_from_semantic_claim_validation(
         validator_status=status,
         required_proofs=("semantic_claim_validator_classification",),
         safe_default="block_and_classify_before_replay",
+    )
+
+
+def _non_authorized_compile_record(
+    *,
+    status: str,
+    rule_id: str,
+    lane: str,
+    owner_phase: str,
+    strict_disposition: str,
+    quirks_disposition: str,
+    validator_status: str,
+    required_proofs: tuple[str, ...],
+    safe_default: str,
+    record: Mapping[str, Any],
+) -> ExecutionAuthorization:
+    return ExecutionAuthorization(
+        executable=False,
+        replay_authorized=False,
+        authorization_status=status,
+        authorization_rule_id=rule_id,
+        owner_phase=owner_phase,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+        validator_status=validator_status,
+        required_proofs=required_proofs,
+        safe_default=safe_default,
+        forbidden_shortcuts=(
+            "diagnostic_as_replay_authority",
+            "effect_metadata_over_promotion",
+            "source_witness_over_promotion",
+            "target_guessing",
+            "oracle_backed_mutation",
+        ),
+        detail={
+            "lane": lane,
+            "record_rule_id": str(record.get("rule_id") or ""),
+            "record_phase": str(record.get("phase") or ""),
+        },
     )
 
 
