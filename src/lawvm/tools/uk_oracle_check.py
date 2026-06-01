@@ -27,6 +27,7 @@ from lawvm.uk_legislation.grounding_collateral import (
     grounding_collateral_eids as _shared_grounding_collateral_eids,
     score_with_grounding_collateral_excluded,
 )
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -68,6 +69,17 @@ def _grounding_collateral_eids(
             alignment_events,
         )
     )
+
+
+def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(uk_phase_owner_for_diagnostic(row) for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _format_owner_phase_counts(counts: dict[str, int]) -> str:
+    if not counts:
+        return "{}"
+    return ", ".join(f"{phase}={count}" for phase, count in counts.items())
 
 
 def _collect_replay_eids(replayed_ir: Any) -> set[str]:
@@ -369,19 +381,27 @@ def oracle_check_uk_statute(
         authority_rejections=authority_rejections,
     )
 
+    compile_rejection_rows = lowering_rejections + effect_feed_parse_rejections + authority_rejections
+    manual_frontier_rejection_rows = [
+        r for r in lowering_rejections if _is_manual_frontier_rule(str(r.get("rule_id") or ""))
+    ]
+    deterministic_rejection_rows = [
+        r
+        for r in compile_rejection_rows
+        if not _is_manual_frontier_rule(str(r.get("rule_id") or ""))
+        and str(r.get("rule_id") or "") != _REPEAL_NOT_WARRANTED_RULE_ID
+    ]
+    compile_rejection_owner_phase_counts = _owner_phase_counts(compile_rejection_rows)
+    manual_frontier_owner_phase_counts = _owner_phase_counts(manual_frontier_rejection_rows)
+    deterministic_rejection_owner_phase_counts = _owner_phase_counts(deterministic_rejection_rows)
+
     # Count compile rejections by category
     n_mf_rejections = sum(
         1 for r in lowering_rejections
         if _is_manual_frontier_rule(str(r.get("rule_id") or ""))
     )
     n_det_rejections = sum(
-        1 for r in (
-            lowering_rejections
-            + effect_feed_parse_rejections
-            + authority_rejections
-        )
-        if not _is_manual_frontier_rule(str(r.get("rule_id") or ""))
-        and str(r.get("rule_id") or "") != _REPEAL_NOT_WARRANTED_RULE_ID
+        1 for r in deterministic_rejection_rows
     )
     n_rnw_diagnostics = sum(
         1 for d in effect_diagnostics
@@ -416,6 +436,12 @@ def oracle_check_uk_statute(
         f"Ops compiled: {len(ops)}  "
         f"Rejections: det={n_det_rejections} mf={n_mf_rejections}  "
         f"repeal-not-warranted diagnostics={n_rnw_diagnostics}",
+        (
+            "Rejection owner phases: "
+            f"all={_format_owner_phase_counts(compile_rejection_owner_phase_counts)}  "
+            f"det={_format_owner_phase_counts(deterministic_rejection_owner_phase_counts)}  "
+            f"mf={_format_owner_phase_counts(manual_frontier_owner_phase_counts)}"
+        ),
         (
             f"Mutation boundary: events={len(mutation_events)}  "
             f"reports={len(mutation_reports)}  "
@@ -509,11 +535,7 @@ def oracle_check_uk_statute(
     if n_det_rejections > 0:
         lines.append(f"TOP DETERMINISTIC-GAP REJECTION RULES ({n_det_rejections} total):")
         rule_counter_det: Counter[str] = Counter()
-        for r in (
-            lowering_rejections
-            + effect_feed_parse_rejections
-            + authority_rejections
-        ):
+        for r in compile_rejection_rows:
             rule_id = str(r.get("rule_id") or "")
             if (
                 rule_id
