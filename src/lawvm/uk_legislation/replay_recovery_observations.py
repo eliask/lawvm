@@ -202,6 +202,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="at_end_words_in_parentheses_selector",
     ),
+    "uk_replay_unique_fee_sum_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an amount-specified text rewrite after proving "
+            "the resolved target has exactly one currency amount."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="unique_fee_sum_selector",
+    ),
     "uk_replay_each_other_place_after_anchor_insert_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a relative each-other-place insertion after "

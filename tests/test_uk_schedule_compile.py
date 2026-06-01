@@ -514,6 +514,93 @@ def test_replay_at_end_words_in_parentheses_blocks_ambiguous_parenthesized_spans
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_unique_fee_sum_replaces_single_currency_amount() -> None:
+    op = LegalOperation(
+        op_id="uk_test_unique_fee_sum_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "12"), ("subsection", "3"))),
+        text_patch=_replace_patch("TEXT_UNIQUE_FEE_SUM", "\u00a35000"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="12",
+                    attrs={"eId": "section-12"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-12-3"},
+                            text="The specified amount is \u00a32880.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The specified amount is \u00a35000."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_unique_fee_sum_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "unique_fee_sum_selector"
+
+
+def test_replay_unique_fee_sum_blocks_multiple_currency_amounts() -> None:
+    op = LegalOperation(
+        op_id="uk_test_unique_fee_sum_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "12"), ("subsection", "3"))),
+        text_patch=_replace_patch("TEXT_UNIQUE_FEE_SUM", "\u00a35000"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="12",
+                    attrs={"eId": "section-12"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-12-3"},
+                            text="The amounts are \u00a32880 and \u00a3500.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The amounts are \u00a32880 and \u00a3500."
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     candidates_by_len = {
         90: [_GroundingTextCandidate(2, "too-short", "x" * 90)],
@@ -42764,6 +42851,65 @@ def test_compile_at_end_words_in_parentheses_insert_lowers_to_inside_parentheses
     ]
     assert len(records) == 1
     assert records[0]["reason_code"] == "at_end_words_in_parentheses_insert"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_amount_specified_substitution_lowers_to_unique_fee_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>1 For the amount specified in section 12(3) of ITA 2007
+          (starting rate for savings) substitute \u201c \u00a35000 \u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-17ee47bf60610f92ad9aa8c609bd5062",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="",
+        affected_uri="/id/ukpga/2007/3/section/12/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 12(3)",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="s. 4(1)(2)",
+        affecting_title="Test Act",
+        in_force_dates=[],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "12"), ("subsection", "3"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_UNIQUE_FEE_SUM"
+    assert op.text_patch.replacement == "\u00a35000"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_amount_specified_substitution_text_patch"
+        in op.provenance_tags
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_amount_specified_substitution_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "amount_specified_unique_fee_substitution"
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 

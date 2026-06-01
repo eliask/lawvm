@@ -1444,6 +1444,20 @@ class UKReplayTextApplyMixin:
                     return rebuilt, True
                 return node, False
 
+        if match == "TEXT_UNIQUE_FEE_SUM":
+            found_matches = list(_UK_FEE_SUM_PATTERN.finditer(text))
+            if len(found_matches) != 1:
+                return node, False
+            fee_match = found_matches[0]
+            rebuilt = dc_replace(
+                node,
+                text=f"{text[: fee_match.start()]}{replacement}{text[fee_match.end() :]}",
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_unique_fee_sum_text_rewrite_applied")
+            return rebuilt, True
+
         if match == "TEXT_ALL":
             rebuilt = dc_replace(node, text=replacement)
             self._replace_node_in_statute(node, rebuilt)
@@ -2202,6 +2216,30 @@ class UKReplayTextApplyMixin:
                     self._replace_node_in_statute(node, rebuilt)
                     return rebuilt, True
                 return node, False
+
+        if match == "TEXT_UNIQUE_FEE_SUM":
+            all_matches: list[TextNodeRegexMatch] = []
+            for path, text_node in text_nodes:
+                for fee_match in _UK_FEE_SUM_PATTERN.finditer(text_node.text or ""):
+                    all_matches.append((path, text_node, fee_match))
+            if len(all_matches) != 1:
+                return node, False
+            path, text_node, fee_match = all_matches[0]
+            old_text = text_node.text or ""
+            replacement_node = dc_replace(
+                text_node,
+                text=f"{old_text[: fee_match.start()]}{replacement}{old_text[fee_match.end() :]}",
+            )
+            if not path:
+                self._replace_node_in_statute(node, replacement_node)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append("uk_replay_unique_fee_sum_text_rewrite_applied")
+                return replacement_node, True
+            rebuilt = self._replace_descendant_at_path(node, path, replacement_node)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_unique_fee_sum_text_rewrite_applied")
+            return rebuilt, True
 
         if match == "TEXT_IN_BRACKETS":
             all_matches: list[TextNodeRegexMatch] = []

@@ -979,6 +979,21 @@ def test_parse_fragment_substitution_handles_at_end_words_in_parentheses_insert(
     ]
 
 
+def test_parse_fragment_substitution_handles_amount_specified_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "1 For the amount specified in section 12(3) of ITA 2007 "
+        "(starting rate for savings) substitute \u201c \u00a35000 \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_UNIQUE_FEE_SUM",
+            "replacement": "\u00a35000",
+            "rule_id": "uk_effect_amount_specified_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_first_and_second_occurrence_substitution() -> None:
     subs = parse_fragment_substitution(
         "i for \u201c retained \u201d (in the first and second places it appears) "

@@ -140,6 +140,12 @@ _AT_END_WORDS_IN_PARENTHESES_INSERTED_RE = re.compile(
     r"(?:\s*,?\s*(?:and)?\s*[.;]?)?$",
     re.I,
 )
+_AMOUNT_SPECIFIED_SUBSTITUTED_RE = re.compile(
+    r"for\s+the\s+amount\s+specified\s+in\s+section\s+[^.;“”\"'‘]{1,180}?\s+"
+    r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
+    r"[“\"'‘](?P<replacement>[^“”\"'‘]{1,80})[”\"'’]",
+    re.I,
+)
 _WHEREVER_EXCEPT_CHILD_SUBSTITUTED_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
     r"wherever\s+occurring,?\s+except\s+in\s+"
@@ -208,6 +214,9 @@ UK_AFTER_WORDS_IN_BRACKETS_INSERT_RULE_ID = (
 )
 UK_AT_END_WORDS_IN_PARENTHESES_INSERT_RULE_ID = (
     "uk_effect_at_end_words_in_parentheses_insert_text_patch"
+)
+UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID = (
+    "uk_effect_amount_specified_substitution_text_patch"
 )
 UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID = (
     "uk_effect_in_definition_child_before_anchor_insert_text_patch"
@@ -919,6 +928,17 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     "original": "TEXT_AT_END_WORDS_IN_PARENTHESES",
                     "replacement": f" {replacement}",
                     "rule_id": UK_AT_END_WORDS_IN_PARENTHESES_INSERT_RULE_ID,
+                }
+            )
+
+    for m in _AMOUNT_SPECIFIED_SUBSTITUTED_RE.finditer(text):
+        replacement = m.group("replacement").strip()
+        if replacement:
+            subs.append(
+                {
+                    "original": "TEXT_UNIQUE_FEE_SUM",
+                    "replacement": replacement,
+                    "rule_id": UK_AMOUNT_SPECIFIED_SUBSTITUTION_RULE_ID,
                 }
             )
 
