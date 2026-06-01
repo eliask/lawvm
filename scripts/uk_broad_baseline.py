@@ -44,6 +44,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_compile_record,
 )
@@ -790,6 +791,66 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def uk_broad_baseline_report_jsonable(
+    results: list[dict[str, Any]],
+    *,
+    ids: list[str],
+    snapshot_path: Path | None = None,
+) -> dict[str, Any]:
+    """Build the typed report envelope for broad-baseline agreement output."""
+    summary_payload = _broad_baseline_summary_payload(summarize_results(results))
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_broad_baseline_agreement_report",
+        schema="lawvm.uk_broad_baseline_agreement_report.v1",
+        truth_claim="uk_replay_oracle_agreement_regression_guard_not_source_truth",
+        replay_claims=True,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary_payload,
+        filters={
+            "ids": list(ids),
+            "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
+        },
+        filtered_summary=summary_payload,
+        rows=tuple(results),
+        rows_truncated=False,
+        written_paths=(str(snapshot_path),) if snapshot_path is not None else (),
+        detail={
+            "source_footing": "farchive_enacted_xml_plus_current_xml_oracle_eid_sets",
+            "agreement_surface": "replay_eid_set_vs_current_oracle_eid_set",
+            "safe_default": "treat_disagreement_as_residual_until_phase_owned",
+            "forbidden_shortcuts": (
+                "oracle_score_as_source_truth",
+                "agreement_as_execution_authorization",
+                "candidate_effect_as_replay_authority",
+                "source_or_target_over_promotion",
+            ),
+            "next_promotion_requires": (
+                "source_identity",
+                "target_identity",
+                "payload_identity",
+                "temporal_extent_applicability",
+                "mutation_boundary_proof",
+            ),
+        },
+    ).to_dict()
+
+
+def _broad_baseline_summary_payload(summary: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        key: value
+        for key, value in summary.items()
+        if key not in {"scored", "errored", "source_frontier"}
+    }
+    payload["scored_count"] = len(summary.get("scored") or ())
+    payload["errored_count"] = len(summary.get("errored") or ())
+    payload["source_frontier_count"] = len(summary.get("source_frontier") or ())
+    return payload
+
+
 def _triage_bucket_statutes(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     statutes_by_bucket: dict[str, list[str]] = {}
     for row in rows:
@@ -1256,6 +1317,7 @@ def sample_statutes(n: int, seed: int, classes: Optional[list[str]]) -> list[str
 def run_driver(
     ids: list[str],
     out: Optional[Path],
+    out_report: Optional[Path] = None,
     *,
     fail_on_active_unclassified_residuals: bool = False,
     fail_on_manual_frontier_template_gaps: bool = False,
@@ -1308,6 +1370,15 @@ def run_driver(
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(snapshot, indent=2, sort_keys=True))
         print(f"\nWrote {len(snapshot)} rows -> {out}")
+    if out_report:
+        report = uk_broad_baseline_report_jsonable(
+            results,
+            ids=list(ids),
+            snapshot_path=out,
+        )
+        out_report.parent.mkdir(parents=True, exist_ok=True)
+        out_report.write_text(json.dumps(report, indent=2, sort_keys=True))
+        print(f"Wrote broad-baseline evidence report -> {out_report}")
 
     summary = summarize_results(results)
     scored = summary["scored"]
@@ -1654,6 +1725,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=0, help="Sample RNG seed (default 0)")
     ap.add_argument("--classes", nargs="+", help="Restrict sample to these act-type classes (e.g. ukpga uksi)")
     ap.add_argument("--out", type=Path, help="Write JSON snapshot here")
+    ap.add_argument(
+        "--out-report",
+        type=Path,
+        help=(
+            "Write a typed EvidenceSurfaceReport envelope for the broad-baseline "
+            "agreement run without changing the raw snapshot format"
+        ),
+    )
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="Compare two snapshots")
     ap.add_argument(
         "--fail-on-active-unclassified-residuals",
@@ -1704,6 +1783,7 @@ def main(argv: list[str] | None = None) -> int:
     return run_driver(
         ids,
         args.out,
+        args.out_report,
         fail_on_active_unclassified_residuals=args.fail_on_active_unclassified_residuals,
         fail_on_manual_frontier_template_gaps=(
             args.fail_on_manual_frontier_template_gaps
