@@ -23,6 +23,10 @@ from typing import Any, NamedTuple
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.http_identity import LAWVM_USER_AGENT
+from lawvm.uk_legislation.phase_discipline import (
+    uk_phase_owner_counts_for_diagnostics,
+    uk_phase_owner_for_diagnostic,
+)
 from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
 
 _LEG_BASE = "https://www.legislation.gov.uk"
@@ -101,21 +105,28 @@ class UKPrefetchReport:
         yield self.error_count
 
     def to_dict(self) -> dict[str, Any]:
-        event_rule_counts = Counter(str(event.get("rule_id") or "unknown") for event in self.events)
+        events = tuple(_prefetch_event_with_owner_phase(event) for event in self.events)
+        event_rule_counts = Counter(str(event.get("rule_id") or "unknown") for event in events)
         blocking_event_rule_counts = Counter(
             str(event.get("rule_id") or "unknown")
-            for event in self.events
+            for event in events
             if is_blocking_compile_record(event)
+        )
+        event_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(events)
+        blocking_event_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(
+            event for event in events if is_blocking_compile_record(event)
         )
         return {
             "fetched_count": self.fetched_count,
             "already_cached_count": self.already_cached_count,
             "error_count": self.error_count,
-            "event_count": len(self.events),
+            "event_count": len(events),
             "event_rule_counts": dict(sorted(event_rule_counts.items())),
+            "event_owner_phase_counts": event_owner_phase_counts,
             "blocking_event_count": sum(blocking_event_rule_counts.values()),
             "blocking_event_rule_counts": dict(sorted(blocking_event_rule_counts.items())),
-            "events": [dict(event) for event in self.events],
+            "blocking_event_owner_phase_counts": blocking_event_owner_phase_counts,
+            "events": [dict(event) for event in events],
         }
 
 
@@ -136,6 +147,12 @@ def _missing_affecting_enacted_locator(act_id: str) -> str:
     return f"leg://missing/uk/{act_id}/enacted/data.xml"
 
 
+def _prefetch_event_with_owner_phase(event: dict[str, Any]) -> dict[str, Any]:
+    row = dict(event)
+    row.setdefault("owner_phase", uk_phase_owner_for_diagnostic(row))
+    return row
+
+
 def _prefetch_event(
     *,
     statute_id: str,
@@ -146,7 +163,7 @@ def _prefetch_event(
     reason: str,
     blocking: bool,
 ) -> dict[str, Any]:
-    return diagnostic_detail(
+    return _prefetch_event_with_owner_phase(diagnostic_detail(
         rule_id=rule_id,
         family="source_pathology",
         phase="acquisition",
@@ -157,7 +174,7 @@ def _prefetch_event(
         locator=_missing_affecting_locator(affecting_act_id),
         url=url,
         status=status,
-    )
+    ))
 
 
 def _prefetch_fetched_event(
@@ -169,7 +186,7 @@ def _prefetch_fetched_event(
     final_url: str,
     http_status: int | None,
 ) -> dict[str, Any]:
-    return diagnostic_detail(
+    return _prefetch_event_with_owner_phase(diagnostic_detail(
         rule_id="uk_prefetch_affecting_act_fetched",
         family="source_witness",
         phase="acquisition",
@@ -183,7 +200,7 @@ def _prefetch_fetched_event(
         status="fetched",
         bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
-    )
+    ))
 
 
 def _prefetch_cached_event(
@@ -193,7 +210,7 @@ def _prefetch_cached_event(
     url: str,
     data: bytes,
 ) -> dict[str, Any]:
-    return diagnostic_detail(
+    return _prefetch_event_with_owner_phase(diagnostic_detail(
         rule_id="uk_prefetch_affecting_act_cached",
         family="source_witness",
         phase="acquisition",
@@ -205,7 +222,7 @@ def _prefetch_cached_event(
         status="cached",
         bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
-    )
+    ))
 
 
 def _prefetch_would_fetch_event(
@@ -214,7 +231,7 @@ def _prefetch_would_fetch_event(
     affecting_act_id: str,
     url: str,
 ) -> dict[str, Any]:
-    return diagnostic_detail(
+    return _prefetch_event_with_owner_phase(diagnostic_detail(
         rule_id="uk_prefetch_affecting_act_would_fetch",
         family="source_witness",
         phase="acquisition",
@@ -224,7 +241,7 @@ def _prefetch_would_fetch_event(
         locator=url,
         url=url,
         status="dry_run_would_fetch",
-    )
+    ))
 
 
 def fetch_missing_for_statute(
@@ -267,7 +284,7 @@ def fetch_missing_for_statute(
     for rejection in effect_feed_parse_rejections:
         event = dict(rejection)
         event.setdefault("statute_id", sid)
-        events.append(event)
+        events.append(_prefetch_event_with_owner_phase(event))
     source_error_count = sum(1 for event in events if is_blocking_compile_record(event))
     source_required = [
         e
