@@ -5964,6 +5964,77 @@ def test_compile_words_inserted_before_fragment_to_text_replace() -> None:
     assert ops[0].text_patch is not None
 
 
+def test_before_nested_quoted_anchor_block_insert_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "3 In section 67A, in subsection (1), before \u201c \u201cregulated modification\u201d\u201d "
+        "insert\u2014 \u201cprohibited modification\u201d ."
+    )
+
+    assert fragments == [
+        {
+            "original": "\u201cregulated modification\u201d",
+            "replacement": "\u201cprohibited modification\u201d \u201cregulated modification\u201d",
+            "rule_id": "uk_effect_before_nested_quoted_anchor_block_insert_text_patch",
+        }
+    ]
+
+
+def test_compile_before_nested_quoted_anchor_block_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-24-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 67A (the subsisting rights provisions:
+          interpretation), in subsection (1), before \u201c \u201cregulated
+          modification\u201d\u201d insert\u2014 \u201cprohibited modification\u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-898cfc131e355efc485810433d7338a5",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-06",
+        affected_uri="/id/ukpga/1995/26/section/67A/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1995",
+        affected_number="26",
+        affected_provisions="s. 67A(1)",
+        affecting_uri="/id/ukpga/2008/30",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="30",
+        affecting_provisions="s. 24(3)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2010-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "67a"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "\u201cregulated modification\u201d"
+    assert op.text_patch.replacement == "\u201cprohibited modification\u201d \u201cregulated modification\u201d"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_nested_quoted_anchor_block_insert_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_words_inserted_at_end_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -30759,6 +30830,80 @@ def test_compile_word_range_to_end_there_is_substituted() -> None:
         if record["rule_id"] == "uk_effect_range_to_end_there_is_substituted_text_patch"
     ] == ["uk_effect_range_to_end_there_is_substituted_text_patch"]
     assert lowering_records[0]["strict_disposition"] == "record"
+
+
+def test_parenthetical_occurrence_range_to_end_substitution_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "6 In section 126 of the Pensions Act 1995 in paragraph (a) "
+        "for the words from \u201cprogressively\u201d (where it appears first) "
+        "to the end of the paragraph substitute \u201c and then to increase it \u201d ."
+    )
+
+    assert fragments == [
+        {
+            "original": "TEXT_FROM_progressively_TO_END",
+            "replacement": "and then to increase it",
+            "occurrence": "1",
+            "rule_id": "uk_effect_range_to_end_parenthetical_occurrence_substitution_text_patch",
+        }
+    ]
+
+
+def test_compile_parenthetical_occurrence_range_to_end_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-6">
+          <Pnumber>6</Pnumber>
+          <Text>6 In section 126 of the Pensions Act 1995 in paragraph (a)
+          for the words from \u201cprogressively\u201d (where it appears first)
+          to the end of the paragraph substitute \u201c and then to increase it \u201d .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-e4d4a1e5ea322bc15cd690581f1d36c7",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-06",
+        affected_uri="/id/ukpga/1995/26/section/126/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1995",
+        affected_number="26",
+        affected_provisions="s. 126(a)",
+        affecting_uri="/id/ukpga/2007/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="22",
+        affecting_provisions="Sch. 1 para. 6",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2010-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "126"), ("paragraph", "a"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM_progressively_TO_END"
+    assert op.text_patch.selector.occurrence == 1
+    assert op.text_patch.replacement == "and then to increase it"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_to_end_parenthetical_occurrence_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
 
 
 def test_compile_word_range_to_end_uses_ordinal_start_occurrence() -> None:
