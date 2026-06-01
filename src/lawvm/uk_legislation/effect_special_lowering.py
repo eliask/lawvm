@@ -56,6 +56,19 @@ def _strip_payload_leading_label(node: IRNode) -> IRNode:
         if tail[:1].isspace():
             return replace(node, text=tail.strip())
     return node
+
+
+def _address_from_serialized_path(path_text: str) -> LegalAddress:
+    parts = []
+    for part in str(path_text or "").split("/"):
+        if ":" not in part:
+            continue
+        kind, label = part.split(":", 1)
+        if kind:
+            parts.append((kind, label))
+    return LegalAddress(path=tuple(parts))
+
+
 from lawvm.uk_legislation.witness_sidecars import (
     _payload_with_rewrite_witness,
     _uk_lowered_op_provenance_tags,
@@ -596,13 +609,7 @@ def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
         effective=effect_witness.applicability.effective_date or "",
         raw_text=extraction_witness.extracted_text,
     )
-    anchor_target = LegalAddress(
-        path=(
-            ("section", str(after_paragraph_connector["section"])),
-            ("subsection", str(after_paragraph_connector["subsection"])),
-            ("paragraph", str(after_paragraph_connector["anchor_label"])),
-        )
-    )
+    anchor_target = _address_from_serialized_path(str(after_paragraph_connector["anchor_target"]))
     anchor_patch_text = str(after_paragraph_connector["anchor_patch"])
     anchor_patch = TextPatchSpec(
         kind=TextPatchKindEnum.APPEND,
@@ -640,9 +647,9 @@ def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
         insertion_anchor_witness=None,
     )
     payload = after_paragraph_connector["payload"]
-    payload_target = _parse_affected_target(str(payload["target_ref"]))
+    payload_target = _address_from_serialized_path(str(payload["target"]))
     payload_node = IRNode(
-        kind=IRNodeKind.PARAGRAPH,
+        kind=IRNodeKind(str(payload.get("kind") or "paragraph")),
         label=str(payload["label"]),
         text=str(payload["text"]),
     )
@@ -657,7 +664,7 @@ def lower_uk_after_paragraph_insert_connector_sibling(  # noqa: PLR0913
         extraction_witness=extraction_witness,
         target_expansion_witness=_uk_target_expansion_witness(
             effect.affected_provisions,
-            [str(payload["target_ref"])],
+            [str(payload["target"])],
             original_targets_str=[effect.affected_provisions],
         ),
         text_rewrite_witness=None,

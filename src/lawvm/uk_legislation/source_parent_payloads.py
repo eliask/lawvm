@@ -17,6 +17,7 @@ from lawvm.uk_legislation.source_context import (
     _unique_source_ancestor_chain_by_tag_text,
 )
 from lawvm.uk_legislation.source_fragment_context import _source_local_instruction_text_for_carried_payload
+from lawvm.uk_legislation.source_structural_sibling import _child_kind_for_structural_sibling_insert
 from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_metadata_provisions
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
 from lawvm.uk_legislation.xml_helpers import _text_content
@@ -794,9 +795,6 @@ def _source_after_paragraph_insert_connector_sibling(
     """Lower `after paragraph (b) insert , or c ...` parent-target rows."""
     if extracted_el is None or _tag(extracted_el) not in {"P3", "P4"}:
         return None
-    ref_match = _UK_SECTION_SUBSECTION_REF_RE.match(affected_provisions or "")
-    if ref_match is None:
-        return None
     text = " ".join((extracted_text or "").split()).strip()
     text_match = _UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_TEXT_RE.match(text)
     if text_match is None:
@@ -805,35 +803,37 @@ def _source_after_paragraph_insert_connector_sibling(
     payload_label = _source_parent_range_label(text_match.group("label"))
     if not anchor_label or not payload_label or _next_alpha_label(anchor_label) != payload_label:
         return None
+    parent_target = _parse_affected_target(affected_provisions or "")
+    child_kind = _child_kind_for_structural_sibling_insert(
+        target=parent_target,
+        source_kind="paragraph",
+        inserted_label=payload_label,
+    )
+    if not child_kind:
+        return None
     payload_text = " ".join(text_match.group("text").split()).strip()
     payload_text = re.sub(r"\s*;\s*\.?\s*$", "", payload_text).strip()
     if not payload_text:
         return None
-    section = ref_match.group("section")
-    subsection = ref_match.group("subsection")
-    anchor_target = LegalAddress(
-        path=(
-            ("section", section),
-            ("subsection", subsection),
-            ("paragraph", anchor_label),
-        )
+    anchor_target = canonicalize_uk_address(
+        LegalAddress(path=(*parent_target.path, (child_kind, anchor_label)))
     )
-    target_ref = f"s. {section}({subsection})({payload_label})"
+    payload_target = canonicalize_uk_address(
+        LegalAddress(path=(*parent_target.path, (child_kind, payload_label)))
+    )
     return {
         "rule_id": UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID,
         "source_id": str(extracted_el.get("id") or ""),
         "source_instruction": text[: text_match.start("text")].strip(),
         "target_ref": affected_provisions,
-        "section": section,
-        "subsection": subsection,
         "anchor_label": anchor_label,
         "anchor_target": str(anchor_target),
         "anchor_patch": " ".join(text_match.group("connector").split()),
         "payload": {
+            "kind": child_kind,
             "label": payload_label,
             "text": payload_text,
-            "target_ref": target_ref,
-            "target": f"section:{section}/subsection:{subsection}/paragraph:{payload_label}",
+            "target": str(payload_target),
         },
     }
 
