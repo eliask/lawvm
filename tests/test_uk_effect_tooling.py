@@ -924,6 +924,31 @@ def test_collect_target_shape_uses_heading_facet_carrier_text() -> None:
     assert texts == ["Reduced rates of SDLT on residential property for a temporary period"]
 
 
+def test_manual_frontier_classifies_table_reference_instructions_as_manual() -> None:
+    from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
+
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text='after the reference to "advocate", insert a reference to "CMA";',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "affected_provisions": "sch. 9 table",
+                "original_affected_provisions": "sch. 9 table",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
+
+
 def test_summarize_uk_effect_uses_heading_facet_text_for_batch_compare(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

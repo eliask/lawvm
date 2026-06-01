@@ -3365,3 +3365,125 @@ def test_parse_fragment_substitution_handles_paragraphs_range_substitution() -> 
             "rule_id": "uk_effect_paragraphs_range_substitution_text_patch",
         }
     ]
+
+
+def test_parse_fragment_substitution_handles_wherever_appearing_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "2 For “Relevant Authority”, wherever appearing, substitute “appropriate authority”."
+    )
+
+    assert subs == [
+        {
+            "original": "Relevant Authority",
+            "replacement": "appropriate authority",
+            "rule_id": "uk_effect_wherever_appearing_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_at_each_place_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "ii for “committee”, at each place, substitute “appropriate tribunal”;"
+    )
+
+    assert subs == [
+        {
+            "original": "committee",
+            "replacement": "appropriate tribunal",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_bare_in_each_case_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "for “House of Lords” in each case substitute “ Supreme Court ” ."
+    )
+
+    assert subs == [
+        {
+            "original": "House of Lords",
+            "replacement": " Supreme Court ",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_before_anchor_ordinal_appears_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a before “228”, in the second place it appears, insert “226B or”, and"
+    )
+
+    assert subs == [
+        {
+            "original": "228",
+            "replacement": "226B or 228",
+            "occurrence": "2",
+            "rule_id": "uk_effect_before_quoted_anchor_ordinal_insert_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_unnumbered_ordinal_paragraph_omission() -> None:
+    subs = parse_fragment_substitution("c omit the third unnumbered paragraph.")
+
+    assert subs == [
+        {
+            "original": "TEXT_PARAGRAPH_3",
+            "replacement": "",
+            "rule_id": "uk_effect_ordinal_paragraph_repeal_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_opening_words_omission() -> None:
+    subs = parse_fragment_substitution("a omit the opening words;")
+
+    assert subs == [
+        {
+            "original": "TEXT_OPENING_WORDS",
+            "replacement": "",
+            "rule_id": "uk_effect_opening_words_omission_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_dash_definition_list_omission() -> None:
+    subs = parse_fragment_substitution(
+        "3 In subsection (2), omit the definitions of— "
+        "“the board” “local authority's list” “Poisons Rules”."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_DEFINITION_ENTRY_the board",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        },
+        {
+            "original": "TEXT_DEFINITION_ENTRY_local authority's list",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        },
+        {
+            "original": "TEXT_DEFINITION_ENTRY_Poisons Rules",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        },
+    ]
+
+
+def test_parse_fragment_substitution_handles_parenthetical_range_start_occurrence_omission() -> None:
+    subs = parse_fragment_substitution(
+        "b in paragraph (c), omit the words from “an authority” "
+        "(in the second place where it occurs) to “(joint waste authorities),”."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_an authority_TO_(joint waste authorities),",
+            "replacement": "",
+            "rule_id": "uk_effect_range_occurrence_repeal_text_patch",
+            "occurrence": "2",
+        }
+    ]

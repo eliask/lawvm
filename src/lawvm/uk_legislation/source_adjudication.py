@@ -1220,6 +1220,8 @@ def _looks_like_table_surface_instruction(text: str, *, target_paths: Iterable[s
     return bool(
         re.search(r"\bcorresponding\s+entry\b", norm)
         or re.search(r"\bomit\s+point\s+[0-9A-Za-z]+\b", norm)
+        or re.search(r"\b(?:after|before)\s+(?:the\s+)?reference\s+to\b", norm)
+        or re.search(r"\bomit\s+(?:the\s+)?reference\s+to\b", norm)
         or re.search(r"\bomit\s+(?:the\s+)?entries?\s+(?:for|relating\s+to)\b", norm)
         or re.search(
             r"\bafter\s+[“\"'‘][^\"'\u201c\u201d\u2018\u2019]{1,500}[”\"'’],?\s+insert(?:\b|\s*[—-])",
