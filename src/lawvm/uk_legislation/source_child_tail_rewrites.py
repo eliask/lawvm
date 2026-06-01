@@ -66,13 +66,15 @@ _SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE = re.compile(
 _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
-    r"for\s+the\s+words\s+after\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"for\s+the\s+words\s+(?:following|after)\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)"
+    r"(?:\s+to\s+the\s+end(?:\s+of\s+the\s+subsection)?)?\s+"
     r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
 _SOURCE_CARRIED_TARGET_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
-    r"for\s+the\s+words\s+after\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"for\s+the\s+words\s+(?:following|after)\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)"
+    r"(?:\s+to\s+the\s+end(?:\s+of\s+the\s+subsection)?)?\s+"
     r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
@@ -193,11 +195,13 @@ def _fragment_substitution_source_carried_child_tail_repeal(
             }
         target_match = _SOURCE_CARRIED_TARGET_CHILD_TAIL_OMIT_RE.match(text)
         if target_match is not None:
-            if _addr_leaf_kind(target) != "subsection":
+            if _addr_leaf_kind(target) not in {"subsection", "paragraph"}:
                 return None
             target_subsection = _clean_num(_addr_field(target, "subsection") or "")
             anchor_label = _clean_num(target_match.group("label"))
-            if not target_subsection or not anchor_label:
+            if _addr_leaf_kind(target) == "subsection" and not target_subsection:
+                return None
+            if not anchor_label:
                 return None
             return {
                 "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",

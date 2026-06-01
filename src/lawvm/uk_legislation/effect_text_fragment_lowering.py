@@ -104,6 +104,9 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 _UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
     "uk_effect_word_substitution_escalated_to_structural_replace"
 )
+_UK_EFFECT_FLAT_TARGET_PARAGRAPH_SUBSTITUTION_RULE_ID = (
+    "uk_effect_flat_target_paragraph_substitution_text_payload"
+)
 _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
     rf"\bwhere it (?P<ordinal>{'|'.join(re.escape(key) for key in _ORDINAL_OCCURRENCES)}) "
     r"occurs?,? insert [“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
@@ -464,6 +467,25 @@ def lower_uk_text_fragment_rewrite(
                     if quote_only_omission_lowering.op_text_occurrence is not None
                     else op_text_occurrence
                 ),
+                op_text_end_occurrence=op_text_end_occurrence,
+            )
+        flat_target_paragraph_substitution = _flat_target_paragraph_substitution_payload(
+            effect=effect,
+            target=target,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        if flat_target_paragraph_substitution is not None:
+            return UKTextFragmentLowering(
+                target=target,
+                curr_action="replace",
+                content_ir=flat_target_paragraph_substitution,
+                fragment_subs=fragment_subs,
+                op_text_match=op_text_match,
+                op_text_replacement=op_text_replacement,
+                op_text_occurrence=op_text_occurrence,
                 op_text_end_occurrence=op_text_end_occurrence,
             )
         return UKTextFragmentLowering(
@@ -976,6 +998,108 @@ def _extract_text_fragment_substitutions(
             filtered_subs.append(sub)
         subs = filtered_subs
     return list(subs or [])
+
+
+def _flat_target_paragraph_substitution_payload(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[dict[str, Any]]:
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    parsed = _parse_flat_target_paragraph_substitution(text)
+    if parsed is None:
+        return None
+    source_label, payload_label, replacement = parsed
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if _addr_leaf_kind(target) != "paragraph" or not target_label:
+        return None
+    if source_label != target_label or payload_label != target_label:
+        return None
+    if not replacement:
+        return None
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_FLAT_TARGET_PARAGRAPH_SUBSTITUTION_RULE_ID,
+        family="action_family_recovery",
+        reason_code="word_level_feed_flat_paragraph_substitution_source",
+        reason=(
+            "UK effect feed marks a word-level substitution, but the source "
+            "instruction explicitly substitutes the same affected paragraph and "
+            "carries the replacement paragraph text in a flat source row; "
+            "lowering emits a structural replace scoped to that exact paragraph."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "source_paragraph_label": source_label,
+            "payload_paragraph_label": payload_label,
+            "replacement_preview": replacement[:500],
+            "strict_disposition": "block",
+            "quirks_disposition": "apply",
+        },
+    )
+    return {
+        "kind": "paragraph",
+        "label": target_label,
+        "text": replacement,
+        "attrs": {
+            "source_rule_id": _UK_EFFECT_FLAT_TARGET_PARAGRAPH_SUBSTITUTION_RULE_ID,
+        },
+        "children": [],
+    }
+
+
+def _parse_flat_target_paragraph_substitution(text: str) -> Optional[tuple[str, str, str]]:
+    lower = text.lower()
+    marker = "for paragraph ("
+    marker_index = lower.find(marker)
+    if marker_index < 0:
+        return None
+    label_start = marker_index + len(marker)
+    label_end = text.find(")", label_start)
+    if label_end < 0:
+        return None
+    source_label = _clean_num(text[label_start:label_end])
+    if not source_label:
+        return None
+    substitute_phrase = "substitute the following paragraph"
+    substitute_index = lower.find(substitute_phrase, label_end + 1)
+    if substitute_index < 0:
+        return None
+    connector_context = lower[label_end + 1 : substitute_index]
+    if "and the following" not in connector_context:
+        return None
+    dash_index_candidates = [
+        index
+        for index in (
+            text.find("—", substitute_index + len(substitute_phrase)),
+            text.find("-", substitute_index + len(substitute_phrase)),
+        )
+        if index >= 0
+    ]
+    if not dash_index_candidates:
+        return None
+    dash_index = min(dash_index_candidates)
+    payload = text[dash_index + 1 :].strip()
+    payload = payload.rstrip(";").strip()
+    payload = re.sub(r"\s+\.$", "", payload).strip()
+    payload_parts = payload.split(maxsplit=1)
+    if len(payload_parts) != 2:
+        return None
+    payload_label = _clean_num(payload_parts[0])
+    replacement = payload_parts[1].strip()
+    if not payload_label or not replacement:
+        return None
+    return source_label, payload_label, replacement
 
 
 def _promote_text_fragment_substitutions(
