@@ -1316,6 +1316,13 @@ def _manual_compile_evidence_row_jsonable(
     context: _EffectSummaryContext,
     replay_regime: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from lawvm.uk_legislation.frontier_work_items import (
+        uk_frontier_work_item_from_manual_frontier_row,
+    )
+    from lawvm.uk_legislation.execution_authorization import (
+        uk_execution_authorization_from_manual_frontier,
+    )
+
     effect_payload = _effect_report_row_jsonable(row)
     summary = row.summary
     effect = row.effect
@@ -1328,7 +1335,22 @@ def _manual_compile_evidence_row_jsonable(
         for key, value in dict(replay_regime or {}).items()
         if value is not None
     }
-    return {
+    owner_phase = (
+        summary.manual_compile_owner_phase
+        or uk_phase_owner_for_manual_frontier(
+            manual_compile_status=summary.manual_compile_status or "",
+            manual_compile_rule_id=summary.manual_compile_rule_id or "",
+            source_pathology=summary.source_pathology or "",
+        )
+    )
+    execution_authorization = dict(effect_payload["execution_authorization"])
+    if not execution_authorization:
+        execution_authorization = uk_execution_authorization_from_manual_frontier(
+            manual_compile_status=summary.manual_compile_status or "",
+            manual_compile_rule_id=summary.manual_compile_rule_id or "",
+            owner_phase=owner_phase,
+        ).to_dict()
+    payload = {
         "schema": "lawvm.uk_manual_compile_frontier.v1",
         "rule_id": "uk_manual_compile_frontier_workqueue",
         "family": "manual_compile_frontier",
@@ -1358,8 +1380,8 @@ def _manual_compile_evidence_row_jsonable(
         "manual_compile_status": summary.manual_compile_status or "",
         "manual_compile_rule_id": summary.manual_compile_rule_id or "",
         "manual_compile_reason": summary.manual_compile_reason or "",
-        "owner_phase": summary.manual_compile_owner_phase or "",
-        "manual_compile_owner_phase": summary.manual_compile_owner_phase or "",
+        "owner_phase": owner_phase,
+        "manual_compile_owner_phase": owner_phase,
         "manual_compile_lowering_rule_ids": list(
             summary.manual_compile_lowering_rule_ids
         ),
@@ -1399,11 +1421,34 @@ def _manual_compile_evidence_row_jsonable(
         ),
         "source_acquisition_observations": effect_payload["source_acquisition_observations"],
         "source_witness": _effect_context_source_jsonable(context),
+        "execution_authorization": execution_authorization,
+        "executable": bool(execution_authorization.get("executable", False)),
+        "replay_authorized": bool(
+            execution_authorization.get("replay_authorized", False)
+        ),
+        "authorization_status": str(
+            execution_authorization.get("authorization_status") or ""
+        ),
+        "authorization_rule_id": str(
+            execution_authorization.get("authorization_rule_id") or ""
+        ),
+        "required_proofs": list(execution_authorization.get("required_proofs") or ()),
+        "safe_default": str(execution_authorization.get("safe_default") or ""),
+        "forbidden_shortcuts": list(
+            execution_authorization.get("forbidden_shortcuts") or ()
+        ),
         "replay_regime": replay_regime_payload,
         "blocking": False,
         "strict_disposition": "record",
         "quirks_disposition": "record",
     }
+    if payload["replay_authorized"] is False:
+        payload["frontier_work_item"] = (
+            uk_frontier_work_item_from_manual_frontier_row(payload).to_dict()
+        )
+    else:
+        payload["frontier_work_item"] = {}
+    return payload
 
 
 def _write_manual_compile_evidence_jsonl(

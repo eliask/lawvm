@@ -16,6 +16,10 @@ from lawvm.core.execution_authorization import (
     ExecutionAuthorization,
     validate_execution_authorization,
 )
+from lawvm.core.frontier_work_item import (
+    FrontierWorkItem,
+    validate_frontier_work_item,
+)
 from lawvm.core.frozen_values import FrozenDict
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
@@ -78,6 +82,60 @@ def test_execution_authorization_requires_missing_proofs_for_frontier_rows() -> 
             required_proofs=(),
             safe_default="block_until_claim",
         )
+
+
+def test_frontier_work_item_requires_non_executable_work() -> None:
+    item = FrontierWorkItem(
+        work_item_id="uk-manual-frontier-demo",
+        jurisdiction="uk",
+        source_artifact_id="ukpga/2020/1",
+        source_unit_id="eff-1",
+        source_witness={"source_role": "affecting_source"},
+        owner_phase="typed_elaboration",
+        frontier_family="uk_manual_frontier_heading_facet_candidate",
+        frontier_status="manual_compile_candidate",
+        candidate_operation_family="facet_text_rewrite",
+        candidate_targets=("section-1",),
+        required_claim_kind="semantic_compile",
+        required_validator_checks=("claim_identifies_heading_facet",),
+        required_proofs=("mutation_boundary_proof",),
+        safe_default="block_until_validated_claim_authorizes_replay",
+        forbidden_shortcuts=("unvalidated_manual_claim_execution",),
+        authorization_status="manual_claim_required",
+    )
+
+    data = item.to_dict()
+
+    assert data["executable"] is False
+    assert data["replay_authorized"] is False
+    assert validate_frontier_work_item(data) == ()
+
+
+def test_frontier_work_item_rejects_replay_promotion() -> None:
+    issues = validate_frontier_work_item(
+        {
+            "work_item_id": "bad",
+            "jurisdiction": "uk",
+            "source_artifact_id": "source",
+            "source_unit_id": "unit",
+            "source_witness": {},
+            "owner_phase": "typed_elaboration",
+            "frontier_family": "family",
+            "frontier_status": "status",
+            "required_claim_kind": "claim",
+            "required_validator_checks": [],
+            "required_proofs": ["proof"],
+            "safe_default": "block",
+            "forbidden_shortcuts": ["shortcut"],
+            "executable": True,
+            "replay_authorized": True,
+            "authorization_status": "bad",
+            "detail": {},
+        }
+    )
+
+    assert "frontier work items must be non-executable" in issues
+    assert "frontier work items must not be replay-authorized" in issues
 
 
 def test_processing_status_validates_degraded_blockers() -> None:

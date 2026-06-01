@@ -12,6 +12,9 @@ from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
 )
+from lawvm.uk_legislation.frontier_work_items import (
+    uk_frontier_work_item_from_manual_frontier_row,
+)
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
 
 if TYPE_CHECKING:
@@ -849,13 +852,31 @@ def _remaining_workqueue_rows(
             validation.get("current_source_pathology") or ""
         )
         row["validator_current_owner_phase"] = str(
-            validation.get("current_owner_phase") or ""
+            validation.get("current_owner_phase")
+            or uk_phase_owner_for_manual_frontier(
+                manual_compile_status=str(
+                    validation.get("current_manual_compile_status") or ""
+                ),
+                manual_compile_rule_id=str(
+                    validation.get("current_manual_compile_rule_id") or ""
+                ),
+                source_pathology=str(validation.get("current_source_pathology") or ""),
+            )
         )
         current_authorization = validation.get("current_execution_authorization")
         if isinstance(current_authorization, Mapping):
             row["execution_authorization"] = dict(current_authorization)
         else:
-            row["execution_authorization"] = {}
+            row["execution_authorization"] = uk_execution_authorization_from_manual_frontier(
+                manual_compile_status=str(
+                    validation.get("current_manual_compile_status") or ""
+                ),
+                manual_compile_rule_id=str(
+                    validation.get("current_manual_compile_rule_id") or ""
+                ),
+                owner_phase=row["validator_current_owner_phase"],
+                validator_status=str(validation.get("validator_status") or ""),
+            ).to_dict()
         # Preserve the original workqueue evidence fields, but expose the
         # current classification at top level so downstream queue tooling does
         # not accidentally group by stale exported families.
@@ -873,20 +894,40 @@ def _remaining_workqueue_rows(
         )
         row["current_source_pathology"] = row["validator_current_source_pathology"]
         row["current_owner_phase"] = row["validator_current_owner_phase"]
-        row["executable"] = bool(validation.get("current_executable") or False)
+        row["executable"] = bool(
+            validation.get("current_executable")
+            if "current_executable" in validation
+            else row["execution_authorization"].get("executable")
+        )
         row["replay_authorized"] = bool(
-            validation.get("current_replay_authorized") or False
+            validation.get("current_replay_authorized")
+            if "current_replay_authorized" in validation
+            else row["execution_authorization"].get("replay_authorized")
         )
         row["authorization_status"] = str(
-            validation.get("current_authorization_status") or ""
+            validation.get("current_authorization_status")
+            or row["execution_authorization"].get("authorization_status")
+            or ""
         )
         row["authorization_rule_id"] = str(
-            validation.get("current_authorization_rule_id") or ""
+            validation.get("current_authorization_rule_id")
+            or row["execution_authorization"].get("authorization_rule_id")
+            or ""
         )
-        row["required_proofs"] = list(validation.get("current_required_proofs") or ())
-        row["safe_default"] = str(validation.get("current_safe_default") or "")
+        row["required_proofs"] = list(
+            validation.get("current_required_proofs")
+            or row["execution_authorization"].get("required_proofs")
+            or ()
+        )
+        row["safe_default"] = str(
+            validation.get("current_safe_default")
+            or row["execution_authorization"].get("safe_default")
+            or ""
+        )
         row["forbidden_shortcuts"] = list(
-            validation.get("current_forbidden_shortcuts") or ()
+            validation.get("current_forbidden_shortcuts")
+            or row["execution_authorization"].get("forbidden_shortcuts")
+            or ()
         )
         current_template = validation.get("current_suggested_claim_template")
         if isinstance(current_template, Mapping) and current_template:
@@ -899,6 +940,15 @@ def _remaining_workqueue_rows(
             row["suggested_claim_template"] = {}
             row["suggested_claim_template_status"] = "not_available"
         row["validation"] = dict(validation)
+        row.setdefault(
+            "work_item_id",
+            "uk-manual-frontier-"
+            f"{row.get('statute_id') or ''}-{row.get('effect_id') or ''}-"
+            f"{row.get('current_manual_compile_rule_id') or ''}",
+        )
+        row["frontier_work_item"] = uk_frontier_work_item_from_manual_frontier_row(
+            row
+        ).to_dict()
         remaining.append(row)
     return tuple(remaining)
 
