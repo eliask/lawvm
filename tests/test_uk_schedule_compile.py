@@ -55402,6 +55402,11 @@ def test_pipeline_compile_ops_extracts_implicit_first_subparagraph_source_contex
         and row.get("affecting_provisions") == "Sch. 22 para. 88(1)(a)"
         and row.get("normalized_affecting_provisions") == "Sch. 22 para. 88(a)"
         and row.get("extracted_element_id") == "schedule-22-paragraph-88-a"
+        and row.get("target_resolution", {}).get("target_resolution_status") == "recovered"
+        and row.get("target_resolution", {}).get("scope_confidence")
+        == "explicit_source_with_context"
+        and row.get("target_resolution", {}).get("source_target") == "Sch. 22 para. 88(1)(a)"
+        and row.get("target_resolution", {}).get("selected_target") == "Sch. 22 para. 88(a)"
         for row in diagnostics
     )
 
@@ -56285,6 +56290,11 @@ def test_pipeline_compile_ops_records_nonaddressable_schedule_part_context(
         and row.get("affecting_provisions") == "Sch. 10 Pt. 1 para. 21(a)"
         and row.get("normalized_affecting_provisions") == "Sch. 10 para. 21(a)"
         and row.get("requested_part_label") == "1"
+        and row.get("target_resolution", {}).get("target_resolution_status") == "recovered"
+        and row.get("target_resolution", {}).get("scope_confidence")
+        == "explicit_source_with_context"
+        and row.get("target_resolution", {}).get("source_target") == "Sch. 10 Pt. 1 para. 21(a)"
+        and row.get("target_resolution", {}).get("selected_target") == "Sch. 10 para. 21(a)"
         for row in diagnostics
     )
 
@@ -56677,6 +56687,30 @@ def test_single_unnumbered_schedule_source_ref_uses_source_paragraph_context() -
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "target_resolution": {
+                "rule_id": "uk_affecting_act_single_unnumbered_schedule_context_ignored",
+                "family": "target_resolution",
+                "phase": "extraction",
+                "reason": (
+                    "UK effects metadata named Schedule 1 while the affecting-source XML "
+                    "exposes a single unnumbered Schedule context."
+                ),
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+                "target_resolution_status": "recovered",
+                "source_target": "Sch. 1 para. 8",
+                "candidate_count": 1,
+                "selected_target": "Sch. para. 8",
+                "selected_target_differs_from_source": True,
+                "scope_confidence": "explicit_source_with_context",
+                "requested_schedule_label": "1",
+                "schedule_element_id": "schedule",
+                "source_instruction_id": "schedule-paragraph-8",
+                "extracted_element_id": "",
+                "authority_layer": "AFFECTING_ACT_TEXT",
+                "jurisdiction_status": "single_unnumbered_schedule_context_ignored",
+            },
         },
     )
 

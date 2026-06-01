@@ -225,6 +225,11 @@ def test_single_unnumbered_schedule_context_observation_is_typed_source_diagnost
     assert observation["requested_schedule_label"] == "1"
     assert observation["normalized_affecting_provisions"] == "Sch. para. 8"
     assert observation["source_instruction_id"] == "schedule-paragraph-8"
+    target_resolution = observation["target_resolution"]
+    assert target_resolution["target_resolution_status"] == "recovered"
+    assert target_resolution["source_target"] == "Sch. 1 para. 8"
+    assert target_resolution["selected_target"] == "Sch. para. 8"
+    assert target_resolution["scope_confidence"] == "explicit_source_with_context"
     assert is_uk_affecting_act_xml_source_observation(observation) is True
     assert is_uk_affecting_act_xml_source_diagnostic(observation) is True
 

@@ -9,6 +9,11 @@ from lxml import etree as ET
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+    TARGET_RECOVERED,
+    TargetResolutionCertificate,
+)
 
 MIN_UK_XML_SOURCE_BYTES = 100
 UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
@@ -491,6 +496,25 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
         authority_layer=authority_layer,
         requested_part_label=requested_part_label,
         extracted_element_id=extracted_element_id,
+        target_resolution=TargetResolutionCertificate(
+            rule_id="uk_affecting_act_nonaddressable_schedule_part_context_ignored",
+            phase="extraction",
+            reason=(
+                "UK effects metadata named a schedule Part context represented as "
+                "an ancestor in the affecting-source XML."
+            ),
+            status=TARGET_RECOVERED,
+            source_target=affecting_provisions,
+            selected_target=normalized_affecting_provisions,
+            candidate_count=1,
+            scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+            detail={
+                "requested_part_label": requested_part_label,
+                "extracted_element_id": extracted_element_id,
+                "authority_layer": authority_layer,
+                "jurisdiction_status": "nonaddressable_schedule_part_context_ignored",
+            },
+        ).to_diagnostic_detail(),
     )
 
 
@@ -527,6 +551,27 @@ def uk_affecting_act_single_unnumbered_schedule_context_ignored(
         schedule_element_id=schedule_element_id,
         source_instruction_id=source_instruction_id,
         extracted_element_id=extracted_element_id,
+        target_resolution=TargetResolutionCertificate(
+            rule_id="uk_affecting_act_single_unnumbered_schedule_context_ignored",
+            phase="extraction",
+            reason=(
+                "UK effects metadata named Schedule 1 while the affecting-source XML "
+                "exposes a single unnumbered Schedule context."
+            ),
+            status=TARGET_RECOVERED,
+            source_target=affecting_provisions,
+            selected_target=normalized_affecting_provisions,
+            candidate_count=1,
+            scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+            detail={
+                "requested_schedule_label": requested_schedule_label,
+                "schedule_element_id": schedule_element_id,
+                "source_instruction_id": source_instruction_id,
+                "extracted_element_id": extracted_element_id,
+                "authority_layer": authority_layer,
+                "jurisdiction_status": "single_unnumbered_schedule_context_ignored",
+            },
+        ).to_diagnostic_detail(),
     )
 
 
@@ -610,6 +655,24 @@ def uk_affecting_act_implicit_first_subparagraph_context_ignored(
         locator=locator,
         authority_layer=authority_layer,
         extracted_element_id=extracted_element_id,
+        target_resolution=TargetResolutionCertificate(
+            rule_id="uk_affecting_act_implicit_first_subparagraph_context_ignored",
+            phase="extraction",
+            reason=(
+                "UK effects metadata included an implicit first-subparagraph source "
+                "context while the affecting-source XML exposes the child directly."
+            ),
+            status=TARGET_RECOVERED,
+            source_target=affecting_provisions,
+            selected_target=normalized_affecting_provisions,
+            candidate_count=1,
+            scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+            detail={
+                "extracted_element_id": extracted_element_id,
+                "authority_layer": authority_layer,
+                "jurisdiction_status": "implicit_first_subparagraph_context_ignored",
+            },
+        ).to_diagnostic_detail(),
     )
 
 
