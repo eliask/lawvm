@@ -9060,6 +9060,16 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_direct_quoted_word_omission_text_patch",
         ),
         (
+            "m omit the definition of “permitted third countries;”",
+            "words omitted",
+            "reg. 2(2)",
+            "TEXT_DEFINITION_ENTRY_permitted third countries",
+            "",
+            0,
+            StructuralAction.TEXT_REPEAL,
+            "uk_effect_definition_entry_repeal_text_patch",
+        ),
+        (
             "3 In section 12(2)(a), immediately before the word “Audit” "
             "insert “ Public ” .",
             "word inserted",
@@ -9136,6 +9146,23 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "a for “ ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC ” substitute— "
             "“ ISSUED IN ACCORDANCE WITH THE OECD FOREST AND PLANT SCHEME AND "
             "THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) REGULATIONS 2002 ” ;",
+            "words substituted",
+            "Sch. 7",
+            "ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC",
+            (
+                "ISSUED IN ACCORDANCE WITH THE OECD FOREST AND PLANT SCHEME "
+                "AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+                "REGULATIONS 2002"
+            ),
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
+        ),
+        (
+            "a for  “ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC ” substitute— “\n"
+            "                      ISSUED IN ACCORDANCE WITH THE OECD FOREST AND "
+            "PLANT SCHEME AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+            "REGULATIONS 2002\n                    ” ,",
             "words substituted",
             "Sch. 7",
             "ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC",
