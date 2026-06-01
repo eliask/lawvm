@@ -1441,6 +1441,10 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         r"(?:the\s+(?P<pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
         r"\s+occurrence\s+of\s+)?"
         r"[“\"'‘](?P<start>.*?)[”\"'’]"
+        r"(?:\s*\(\s*where\s+it\s+"
+        r"(?:(?P<paren_ordinal_pre>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|appears)|(?:occurs|appears)\s+"
+        r"(?P<paren_ordinal_post>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th))\s*\))?"
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
         r" (?:to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
@@ -1460,7 +1464,10 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = "uk_effect_range_to_end_there_is_substituted_text_patch"
         elif m.group("dash"):
             patch["rule_id"] = UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID
-        ordinal = m.group("ordinal") or m.group("pre_ordinal")
+        paren_ordinal = m.group("paren_ordinal_pre") or m.group("paren_ordinal_post")
+        if paren_ordinal:
+            patch["rule_id"] = "uk_effect_range_to_end_parenthetical_occurrence_substitution_text_patch"
+        ordinal = m.group("ordinal") or m.group("pre_ordinal") or paren_ordinal
         if ordinal:
             patch["occurrence"] = _ORDINAL_OCCURRENCES[ordinal.lower()]
         subs.append(patch)
@@ -3199,6 +3206,25 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 "replacement": f"{original}{joiner}{inserted}",
                 "occurrence": _ORDINAL_OCCURRENCES[m.group(1).lower()],
                 "rule_id": "uk_effect_after_prefixed_quoted_anchor_ordinal_insert_text_patch",
+            }
+        )
+
+    matches_before_nested_quoted_anchor_block_insert = re.finditer(
+        r"before\s+[“\"'‘]\s*(?P<original>[“\"'‘].+?[”\"'’])\s*[”\"'’]"
+        r",?\s+(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+        r"\s*[—-]\s*(?P<inserted>[“\"'‘].+?[”\"'’])",
+        text,
+        re.I,
+    )
+    for m in matches_before_nested_quoted_anchor_block_insert:
+        original = m.group("original").strip()
+        inserted = m.group("inserted").strip()
+        joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{inserted}{joiner}{original}",
+                "rule_id": "uk_effect_before_nested_quoted_anchor_block_insert_text_patch",
             }
         )
 
