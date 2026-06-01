@@ -274,17 +274,17 @@ def _uk_table_child_structural_insert_detail(
     return detail
 
 
-# Pattern factory compiled per §1.11.  22,696 calls with ~5,062 distinct
-# (text, label) pairs on ukpga/1970/9 (4.5x repeat ratio).
-# Dynamic rf"\bin\s+section\s+{re.escape(label)}\b" thrashes Python's 512-entry
-# re._compile cache.  Factory keyed on label (low cardinality: one per target
-# section) keeps patterns alive without process-global unbounded retention.
-# Substring guard ("in section" not in text_lower) eliminates ~99% of calls
-# before any regex walk.
+# Fast table-carrier source predicate per §1.13: this is a fixed phrase
+# recognizer, not a grammar.  Keep the regex only as a fallback for unusual
+# labels whose final character makes regex ``\b`` semantics non-obvious.
 @functools.lru_cache(maxsize=2048)
 def _section_label_pattern(label: str) -> re.Pattern[str]:
     """Return a compiled pattern for `\\bin\\s+section\\s+{label}\\b`, case-insensitive."""
     return re.compile(rf"\bin\s+section\s+{re.escape(label)}\b", re.I)
+
+
+def _is_regex_word_char(char: str) -> bool:
+    return char == "_" or char.isalnum()
 
 
 @functools.lru_cache(maxsize=8192)
@@ -292,9 +292,55 @@ def _source_text_names_section_label(text: str, label: str) -> bool:
     # The same source/ancestor instruction text is tested by several table
     # selector families for the same target. Cache the pure predicate, not the
     # downstream authorization decision.
-    if "in section" not in text.lower():
+    text_lower = text.lower()
+    phrase = "in section"
+    if phrase not in text_lower:
         return False
-    return _section_label_pattern(label).search(text) is not None
+    label_lower = label.lower()
+    if not label_lower:
+        return False
+    if not _is_regex_word_char(label_lower[-1]):
+        return _section_label_pattern(label).search(text) is not None
+    if label_lower not in text_lower:
+        return False
+    start = 0
+    while True:
+        label_start = text_lower.find(label_lower, start)
+        if label_start < 0:
+            return False
+        if label_start > 0 and _is_regex_word_char(text_lower[label_start - 1]):
+            start = label_start + 1
+            continue
+        label_end = label_start + len(label_lower)
+        if label_end < len(text_lower) and _is_regex_word_char(text_lower[label_end]):
+            start = label_start + 1
+            continue
+        cursor = label_start - 1
+        if cursor < 0 or not text_lower[cursor].isspace():
+            start = label_start + 1
+            continue
+        while cursor >= 0 and text_lower[cursor].isspace():
+            cursor -= 1
+        section_end = cursor + 1
+        section_start = section_end - len("section")
+        if section_start < 0 or text_lower[section_start:section_end] != "section":
+            start = label_start + 1
+            continue
+        cursor = section_start - 1
+        if cursor < 0 or not text_lower[cursor].isspace():
+            start = label_start + 1
+            continue
+        while cursor >= 0 and text_lower[cursor].isspace():
+            cursor -= 1
+        in_end = cursor + 1
+        in_start = in_end - len("in")
+        if (
+            in_start >= 0
+            and text_lower[in_start:in_end] == "in"
+            and (in_start == 0 or not _is_regex_word_char(text_lower[in_start - 1]))
+        ):
+            return True
+        start = label_start + 1
 
 
 def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:

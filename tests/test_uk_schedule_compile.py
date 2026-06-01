@@ -75,6 +75,7 @@ from lawvm.uk_legislation.table_sources import (
     _uk_repeal_table_column_entry_clause_mentions_target,
     _uk_table_cell_mentions_target,
 )
+from lawvm.uk_legislation.table_selectors import _source_text_names_section_label
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -18978,6 +18979,80 @@ def test_compile_source_named_section_table_entry_column_insert_uses_owned_cell_
         and record["blocking"] is False
         for record in lowering_records
     )
+
+
+def test_table_cell_source_section_name_predicate_preserves_boundaries() -> None:
+    assert _source_text_names_section_label(
+        "In section 98 of TMA 1970, in the second column of the Table.",
+        "98",
+    )
+    assert _source_text_names_section_label(
+        "In section 98A of TMA 1970, in the second column of the Table.",
+        "98A",
+    )
+    assert not _source_text_names_section_label(
+        "In section 981 of TMA 1970, in the second column of the Table.",
+        "98",
+    )
+    assert not _source_text_names_section_label(
+        "Within section 98 of TMA 1970, in the second column of the Table.",
+        "98",
+    )
+    assert not _source_text_names_section_label(
+        "In section 99 of TMA 1970, in the second column of the Table.",
+        "98",
+    )
+
+
+def test_table_column_entry_omission_skips_non_omission_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.uk_legislation.effect_table_lowering as table_lowering_mod
+
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_entry_omission_negative_gate",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-10",
+        affected_uri="/id/ukpga/1970/9/section/98",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="9",
+        affected_provisions="s. 98",
+        affecting_uri="/id/ukpga/2021/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="26",
+        affecting_provisions="Sch. 22 para. 13",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-06-10", "prospective": "false"}],
+    )
+
+    def fail_selector(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("non-omission sources should not run the table omission selector")
+
+    monkeypatch.setattr(
+        table_lowering_mod,
+        "_uk_table_column_entry_omission_text_patch_claim",
+        fail_selector,
+    )
+    result = table_lowering_mod.try_lower_table_column_entry_omission(
+        effect=effect,
+        t_str="s. 98",
+        target=LegalAddress(path=(("section", "98"),)),
+        extracted_el=None,
+        extracted_text="in the second column of the Table after the entry insert text",
+        source_root=None,
+        sequence=0,
+        effect_witness=object(),  # type: ignore[arg-type]
+        extraction_witness=object(),  # type: ignore[arg-type]
+        original_targets_str=["s. 98"],
+        lowering_rejections_out=[],
+    )
+
+    assert result.handled is False
+    assert result.ops == ()
 
 
 def test_compile_source_named_section_table_entry_column_omit_uses_owned_cell_selector() -> None:
