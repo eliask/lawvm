@@ -97,6 +97,29 @@ def test_parse_fragment_substitution_handles_quoted_substitute_dash_quoted_paylo
     ]
 
 
+def test_parse_fragment_substitution_handles_quoted_substitute_dash_payload_with_comma() -> None:
+    subs = parse_fragment_substitution(
+        "a for  \u201cISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC \u201d "
+        "substitute\u2014 \u201c\n"
+        "                      ISSUED IN ACCORDANCE WITH THE OECD FOREST AND "
+        "PLANT SCHEME AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+        "REGULATIONS 2002\n"
+        "                    \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC",
+            "replacement": (
+                "ISSUED IN ACCORDANCE WITH THE OECD FOREST AND PLANT SCHEME "
+                "AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+                "REGULATIONS 2002"
+            ),
+            "rule_id": "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_there_is_inserted() -> None:
     subs = parse_fragment_substitution(
         'c in subsection (6) after “Agency,” there is inserted '
@@ -2888,6 +2911,20 @@ def test_parse_fragment_substitution_handles_imperative_definition_entry_repeal(
     assert subs == [
         {
             "original": "TEXT_DEFINITION_ENTRY_clinical commissioning group",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_definition_entry_repeal_with_punctuation_inside_quote() -> None:
+    subs = parse_fragment_substitution(
+        "m omit the definition of \u201cpermitted third countries;\u201d"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_DEFINITION_ENTRY_permitted third countries",
             "replacement": "",
             "rule_id": "uk_effect_definition_entry_repeal_text_patch",
         }

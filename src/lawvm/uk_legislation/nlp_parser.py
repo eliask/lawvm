@@ -2112,7 +2112,7 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
     """
     matches_nested_quote_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.+)[”\"'’],?\s+"
-        r"substitute\s*[—-]?\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*;?$",
+        r"substitute\s*[—-]?\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*[,;]?$",
         text,
         re.I,
     )
@@ -2134,7 +2134,7 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
 
     matches_quoted_dash_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
-        r"substitute\s*[—-]\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?$",
+        r"substitute\s*[—-]\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*[,;]?$",
         text,
         re.I,
     )
@@ -3937,6 +3937,25 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
                     "rule_id": "uk_effect_definition_entry_repeal_text_patch",
                 }
             )
+
+    matches_quoted_imperative_definition_repeal = re.finditer(
+        r"\bomit\s+(?:the\s+)?definitions?\s+of\s*[—:-]?\s+"
+        r"(?P<terms>(?:[“\"'‘][^”\"'’]+[”\"'’]"
+        r"(?:\s*(?:,|and)\s*)?)+)\s*(?:[.;]|$)",
+        text,
+        re.I,
+    )
+    for m in matches_quoted_imperative_definition_repeal:
+        for term in _quoted_terms(m.group("terms")):
+            normalized_term = term.rstrip(";:").strip()
+            if normalized_term:
+                subs.append(
+                    {
+                        "original": f"TEXT_DEFINITION_ENTRY_{normalized_term}",
+                        "replacement": "",
+                        "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+                    }
+                )
 
     matches_entry_defining_repeal = re.finditer(
         r"\bomit\s+(?:the\s+)?entr(?:y|ies)\s+defining\s+"
