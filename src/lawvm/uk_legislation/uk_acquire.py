@@ -174,9 +174,12 @@ def _is_stale(archive: Any, url: str, ttl: float) -> bool:
 def _store_if_new(archive: Any, url: str, data: bytes, sc: str = "xml") -> bool:
     """Store only if content digest differs from what is already stored."""
     spans = archive.history(url)
+    digest = hashlib.sha256(data).hexdigest()
     if spans:
-        digest = hashlib.sha256(data).hexdigest()
         if spans[-1].digest == digest:
+            observe = getattr(archive, "observe", None)
+            if callable(observe):
+                observe(url, digest)
             return False
     archive.store(url, data, storage_class=sc)
     return True

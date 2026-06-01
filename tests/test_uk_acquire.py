@@ -13,6 +13,7 @@ from lawvm.uk_legislation.uk_acquire import (
     UKAcquireReport,
     UKAcquirePlan,
     _parse_statute_id,
+    _store_if_new,
     build_acquire_plan,
     acquire_statute,
 )
@@ -34,6 +35,7 @@ class _FakeArchive:
         self._existing: set[str] = set(existing or [])
         self._history: dict[str, list[Any]] = dict(history_map or {})
         self.store_calls: list[tuple[str, str]] = []
+        self.observe_calls: list[tuple[str, str]] = []
 
     def has(self, locator: str) -> bool:
         return locator in self._existing
@@ -44,6 +46,9 @@ class _FakeArchive:
     def store(self, locator: str, data: bytes, storage_class: str = "xml") -> None:  # noqa: ARG002
         self.store_calls.append((locator, storage_class))
         self._existing.add(locator)
+
+    def observe(self, locator: str, digest: str) -> None:
+        self.observe_calls.append((locator, digest))
 
     def close(self) -> None:
         pass
@@ -151,6 +156,29 @@ def test_build_acquire_plan_wrong_statute_id_raises() -> None:
     archive = _FakeArchive()
     with pytest.raises(ValueError, match="invalid UK statute id"):
         build_acquire_plan("not/valid", archive)
+
+
+def test_store_if_new_observes_same_digest_without_duplicate_store() -> None:
+    import hashlib
+
+    locator = "https://www.legislation.gov.uk/uksi/2015/879/data.xml"
+    data = b"<Legislation>same mutable payload</Legislation>"
+    digest = hashlib.sha256(data).hexdigest()
+
+    class _Span:
+        def __init__(self) -> None:
+            self.digest = digest
+
+    archive = _FakeArchive(
+        existing={locator},
+        history_map={locator: [_Span()]},
+    )
+
+    stored = _store_if_new(archive, locator, data, "xml")
+
+    assert stored is False
+    assert archive.store_calls == []
+    assert archive.observe_calls == [(locator, digest)]
 
 
 # ---------------------------------------------------------------------------
