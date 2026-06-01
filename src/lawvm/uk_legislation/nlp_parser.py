@@ -156,10 +156,13 @@ _UK_CARRIED_PARENT_CONTEXT_RE = (
     r"(?:\s+of\s+(?:that|the)\s+Schedule)?"
 )
 _UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
+_UK_TEXT_BOUNDARY_UNIT_RE = r"(?:regulation|paragraph|sub-paragraph|subsection|section)"
+_UK_TEXT_BOUNDARY_SUFFIX_RE = r"(?:\s+[0-9A-Za-z]+)?(?:\s*\([^)]+\))*"
+
 _UK_AT_END_TARGET_QUALIFIER_RE = (
     r"(?: of (?:(?:that|the) )?"
-    r"(?:paragraph|sub-paragraph|subsection|section)"
-    r"(?:\s*\([^)]+\))*(?:\s+[0-9A-Za-z]+)?"
+    rf"{_UK_TEXT_BOUNDARY_UNIT_RE}"
+    rf"{_UK_TEXT_BOUNDARY_SUFFIX_RE}"
     r"(?:\s+of\s+(?:(?:that|the)\s+Schedule|Schedule\s+[0-9A-Za-z]+"
     r"(?:\s+to\s+(?:(?:the\s+)?[A-Z][^,;“”]{0,160}?\bAct(?:\s+\d{4})?|"
     r"the\s+\d{4}\s+Act))?))?"
@@ -210,6 +213,9 @@ UK_WHEREVER_APPEARING_SUBSTITUTION_RULE_ID = (
 )
 UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID = (
     "uk_effect_quoted_substitution_scope_note_text_patch"
+)
+UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID = (
+    "uk_effect_quoted_substitute_dash_quoted_payload_text_patch"
 )
 UK_BOTH_SUBSEQUENT_OCCURRENCES_SUBSTITUTION_RULE_ID = (
     "uk_effect_both_subsequent_occurrences_substitution_text_patch"
@@ -2106,7 +2112,7 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
     """
     matches_nested_quote_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.+)[”\"'’],?\s+"
-        r"substitute\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*;?$",
+        r"substitute\s*[—-]?\s+[“\"'‘](?P<replacement>.+)[”\"'’]\s*;?$",
         text,
         re.I,
     )
@@ -2123,6 +2129,24 @@ def _parse_leading_substitutions(text: str, subs: list) -> None:
                     "original": original,
                     "replacement": replacement,
                     "rule_id": "uk_effect_nested_quote_substitution_text_patch",
+                }
+            )
+
+    matches_quoted_dash_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"substitute\s*[—-]\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?$",
+        text,
+        re.I,
+    )
+    for m in matches_quoted_dash_substituted:
+        original = m.group("original").strip()
+        replacement = m.group("replacement").strip()
+        if original and replacement:
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "rule_id": UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID,
                 }
             )
 
@@ -2267,7 +2291,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
         r"(?P<all_occurrences>,?\s+(?:wherever\s+occurring|"
         r"in (?:(?:each|both) places?|each place|each of the two places)"
-        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+        r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|occurring|appear)s?(?:\s+in\s+[^,;]+)?)?))?"
         r"(?P<insert_separator>\s*,?\s+)(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
@@ -3181,7 +3205,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"after [“\"'‘](.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
         r"(?P<all_occurrences>,?\s+in (?:(?:each|both) places?|each of the two places)"
-        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+        r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|appear)s?(?:\s+in\s+[^,;]+)?)?)?"
         r"(?P<insert_separator>\s*,?\s+)(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
@@ -3306,8 +3330,8 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
 
     matches_at_beginning_carried_parent_insert = re.finditer(
         r"at the beginning(?: of (?:(?:that|the) )?"
-        r"(?:paragraph|sub-paragraph|subsection|section)"
-        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?"
+        rf"{_UK_TEXT_BOUNDARY_UNIT_RE}"
+        rf"{_UK_TEXT_BOUNDARY_SUFFIX_RE}(?:\s+\([^)]*\))?"
         rf"{_UK_CARRIED_PARENT_CONTEXT_RE}{_UK_SOURCE_ASIDE_RE}),?\s+"
         r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
@@ -3324,7 +3348,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         )
 
     matches_at_beginning_insert = re.finditer(
-        r"at the beginning(?: of (?:(?:that|the) )?(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?)?,?\s+"
+        rf"at the beginning(?: of (?:(?:that|the) )?{_UK_TEXT_BOUNDARY_UNIT_RE}{_UK_TEXT_BOUNDARY_SUFFIX_RE}(?:\s+\([^)]*\))?)?,?\s+"
         r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
@@ -3342,7 +3366,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     matches_preposed_at_beginning_insert = re.finditer(
         r"(?:there is inserted|there are inserted|there shall be inserted)\s+"
         r"at the beginning(?: of (?:(?:that|the) )?"
-        r"(?:paragraph|sub-paragraph|subsection|section)(?:\s+\([^)]+\))?"
+        rf"{_UK_TEXT_BOUNDARY_UNIT_RE}{_UK_TEXT_BOUNDARY_SUFFIX_RE}"
         r"(?:\s+\([^)]*\))?)?,?\s+"
         r"(?:the\s+)?words?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
         text,
@@ -3359,8 +3383,8 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
 
     matches_at_end_carried_parent_insert = re.finditer(
         r"at the end(?: of (?:(?:that|the) )?"
-        r"(?:paragraph|sub-paragraph|subsection|section)"
-        r"(?:\s+\([^)]+\))?(?:\s+\([^)]*\))?"
+        rf"{_UK_TEXT_BOUNDARY_UNIT_RE}"
+        rf"{_UK_TEXT_BOUNDARY_SUFFIX_RE}(?:\s+\([^)]*\))?"
         rf"{_UK_CARRIED_PARENT_CONTEXT_RE}{_UK_CARRIED_ENACTMENT_CONTEXT_RE}),?\s+"
         r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",

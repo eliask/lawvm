@@ -8750,6 +8750,16 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_beginning_text_insertion_patch",
         ),
         (
+            "6 At the beginning of regulation 6(1) insert “Subject to regulation 13C(6)”.",
+            "words inserted",
+            "reg. 6(1)",
+            "TEXT_BEGINNING",
+            "Subject to regulation 13C(6)",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_beginning_text_insertion_patch",
+        ),
+        (
             "b in subsection (4), after “(1)” there shall be inserted "
             "“ or subsection (1A) ” .",
             "words inserted",
@@ -8908,6 +8918,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         ),
         (
+            "5 In paragraph (3), after “specified scheme” in both places "
+            "that it occurs, insert “or specified section, as applicable” .",
+            "words inserted",
+            "reg. 11A(3)",
+            "specified scheme",
+            "specified scheme or specified section, as applicable",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        ),
+        (
             "2 In section 1(3)(a), after “authority” substitute “ responsible for the school education ” .",
             "words inserted",
             "s. 1(3)(a)",
@@ -8938,6 +8959,21 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             0,
             StructuralAction.TEXT_REPLACE,
             "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
+        ),
+        (
+            "4 At the end of regulation 7(5)(b)(ii) (assessment of charges) "
+            "insert “or where no such fee is imposed by virtue of the operation "
+            "of regulation 6(5) and (6)” .",
+            "words inserted",
+            "reg. 7(5)(b)(ii)",
+            "TEXT_END",
+            (
+                "or where no such fee is imposed by virtue of the operation "
+                "of regulation 6(5) and (6)"
+            ),
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_at_end_text_insertion_patch",
         ),
         (
             "a in the first unnumbered paragraph for the words from “The tenancy” "
@@ -9095,6 +9131,22 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             0,
             StructuralAction.TEXT_REPLACE,
             "uk_effect_quoted_anchor_block_substitution_text_patch",
+        ),
+        (
+            "a for “ ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC ” substitute— "
+            "“ ISSUED IN ACCORDANCE WITH THE OECD FOREST AND PLANT SCHEME AND "
+            "THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) REGULATIONS 2002 ” ;",
+            "words substituted",
+            "Sch. 7",
+            "ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC",
+            (
+                "ISSUED IN ACCORDANCE WITH THE OECD FOREST AND PLANT SCHEME "
+                "AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+                "REGULATIONS 2002"
+            ),
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
         ),
         (
             "i leave out “a solicitor” and insert “ a practising solicitor ” ,",
@@ -9257,6 +9309,7 @@ def test_compile_additional_frontier_text_patch_idioms(
         "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
         "uk_effect_range_to_end_quoted_dash_substitution_text_patch",
         "uk_effect_range_unquoted_substitution_text_patch",
+        "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
         "uk_effect_target_scoped_each_child_after_word_insert_text_patch",
     }:
         assert lowering_rejections
