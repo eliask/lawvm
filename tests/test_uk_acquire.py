@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from lawvm.uk_legislation.uk_acquire import (
+    UKAcquireReport,
     UKAcquirePlan,
     _parse_statute_id,
     build_acquire_plan,
@@ -212,10 +213,26 @@ def test_cli_dry_run_no_archive_json_mode(tmp_path: Path, capsys) -> None:
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
+    assert payload["report_kind"] == "uk_acquire_plan_report"
+    assert payload["schema"] == "lawvm.uk_acquire_plan_report.v1"
+    assert payload["truth_claim"] == "uk_acquisition_plan_source_cache_evidence_only"
+    assert payload["replay_claims"] is False
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["agreement_claims"] is False
     assert payload["statute_id"] == "ukpga/2020/17"
     assert payload["enacted_already_cached"] is False
     assert payload["current_stale"] is True
     assert payload["effects_stale"] is True
+    assert payload["summary"]["dry_run"] is True
+    assert payload["summary"]["would_fetch_count"] == 3
+    assert payload["rows"] == []
+    assert payload["forbidden_shortcuts"] == [
+        "cache_presence_as_source_semantics",
+        "acquisition_plan_as_replay_authorization",
+        "would_fetch_as_source_completeness_proof",
+    ]
 
 
 def test_cli_dry_run_enacted_only_shows_only_enacted(tmp_path: Path, capsys) -> None:
@@ -233,8 +250,62 @@ def test_cli_dry_run_enacted_only_shows_only_enacted(tmp_path: Path, capsys) -> 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     # Plan still shows all resource states; caller decides what to do.
+    assert payload["report_kind"] == "uk_acquire_plan_report"
     assert "enacted_url" in payload
     assert "enacted/data.xml" in payload["enacted_url"]
+
+
+def test_uk_acquire_report_jsonable_wraps_live_report() -> None:
+    from lawvm.tools.uk_acquire import uk_acquire_report_jsonable
+
+    report = UKAcquireReport(
+        statute_id="ukpga/2020/17",
+        enacted_fetched=True,
+        current_already_cached=True,
+        effects_pages_fetched=2,
+        affecting_fetched=1,
+        affecting_cached=3,
+        affecting_errors=1,
+        affecting_events=[
+            {
+                "rule_id": "uk_prefetch_http_error",
+                "owner_phase": "acquisition",
+                "blocking": True,
+            }
+        ],
+    )
+
+    payload = uk_acquire_report_jsonable(
+        report=report,
+        db_path=Path("/tmp/uk.farchive"),
+        enacted_only=False,
+        affecting=True,
+        force_refresh=False,
+    )
+
+    assert payload["report_kind"] == "uk_acquire_report"
+    assert payload["schema"] == "lawvm.uk_acquire_report.v1"
+    assert payload["truth_claim"] == (
+        "uk_acquisition_materialization_report_not_replay_authority"
+    )
+    assert payload["replay_claims"] is False
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["agreement_claims"] is False
+    assert payload["statute_id"] == "ukpga/2020/17"
+    assert payload["archive_path"] == "/tmp/uk.farchive"
+    assert payload["affecting_events"] == report.affecting_events
+    assert payload["rows"] == report.affecting_events
+    assert payload["summary"]["has_errors"] is True
+    assert payload["summary"]["error_count"] == 1
+    assert payload["summary"]["affecting_event_count"] == 1
+    assert payload["filtered_summary"] == payload["summary"]
+    assert payload["forbidden_shortcuts"] == [
+        "fetched_source_as_parsed_source_semantics",
+        "cached_source_as_current_legal_truth",
+        "acquisition_success_as_replay_authorization",
+    ]
 
 
 # ---------------------------------------------------------------------------
