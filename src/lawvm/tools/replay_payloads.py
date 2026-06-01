@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.adjudication_evidence import (
     adjudication_finding_evidence_rows,
     adjudication_kind_counts,
@@ -486,7 +487,7 @@ def build_uk_replay_payload(
         base_id=statute_id,
         as_of=pit_date or "latest",
     )
-    return {
+    legacy_payload = {
         "jurisdiction": "uk",
         "base_id": statute_id,
         "as_of": pit_date,
@@ -686,6 +687,69 @@ def build_uk_replay_payload(
         "divergences": [],
         "replayed_text": replayed_text,
     }
+    summary = {
+        "statute_id": statute_id,
+        "pit_date": pit_date,
+        "mode": legacy_payload["mode"],
+        "error": error,
+        "ops_count": int(n_ops),
+        "effect_count": n_effects,
+        "adjudications_count": len(replay_adjudications),
+        "compile_observation_count": len(compile_observations),
+        "compile_rejection_count": len(blocking_compile_rejections),
+        "blocking_compile_rejection_count": len(blocking_compile_rejections),
+        "similarity": similarity,
+        "comparison_class": comparison_class or None,
+        "oracle_available": oracle_available,
+        "timeline_mode": timeline_mode,
+        "n_provisions": n_provisions,
+        "n_versions": n_versions,
+        "pit_materialized_eids": pit_materialized_eids,
+        "source_enacted_status": enacted_source_status,
+        "source_oracle_status": oracle_source_status,
+        "source_enacted_missing": legacy_payload["source"]["enacted_missing"],
+        "source_oracle_missing": legacy_payload["source"]["oracle_missing"],
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_replay_report",
+        schema="lawvm.uk_replay_report.v1",
+        truth_claim="uk_replay_materialization_and_declared_oracle_agreement_report",
+        replay_claims=True,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=similarity is not None,
+        summary=summary,
+        filters={
+            "statute_id": statute_id,
+            "pit_date": pit_date,
+            "enacted_only": enacted_only,
+            "db_path": db_path,
+            "comparison_class": comparison_class or None,
+            "timeline_mode": timeline_mode,
+        },
+        filtered_summary=summary,
+        rows=(),
+        rows_truncated=False,
+        detail={
+            **legacy_payload,
+            "safe_default": "use_replay_payload_as_materialization_diagnostics_not_source_truth",
+            "forbidden_shortcuts": (
+                "oracle_agreement_as_source_truth",
+                "compile_observation_as_replay_authorization",
+                "manual_frontier_as_executable_claim",
+                "metadata_backfill_as_source_only_semantics",
+            ),
+            "next_promotion_requires": (
+                "source_identity",
+                "target_identity",
+                "payload_identity",
+                "temporal_extent_applicability",
+                "mutation_boundary_proof",
+            ),
+        },
+    ).to_dict()
 
 
 def replay_text_from_ir(body: Any, *, irnode_to_text: Any) -> str | None:
