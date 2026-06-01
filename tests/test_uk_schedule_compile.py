@@ -19006,10 +19006,15 @@ def test_compile_source_named_section_table_entry_column_insert_uses_owned_cell_
 
 
 def test_table_cell_source_section_name_predicate_preserves_boundaries() -> None:
+    table_selectors_mod._cached_lower_source_text.cache_clear()
+    _source_text_names_section_label.cache_clear()
+    source_text = "In section 98 of TMA 1970, in the second column of the Table."
     assert _source_text_names_section_label(
-        "In section 98 of TMA 1970, in the second column of the Table.",
+        source_text,
         "98",
     )
+    assert not _source_text_names_section_label(source_text, "99")
+    assert table_selectors_mod._cached_lower_source_text.cache_info().hits >= 1
     assert _source_text_names_section_label(
         "In section 98A of TMA 1970, in the second column of the Table.",
         "98A",
@@ -19022,10 +19027,7 @@ def test_table_cell_source_section_name_predicate_preserves_boundaries() -> None
         "Within section 98 of TMA 1970, in the second column of the Table.",
         "98",
     )
-    assert not _source_text_names_section_label(
-        "In section 99 of TMA 1970, in the second column of the Table.",
-        "98",
-    )
+    assert not _source_text_names_section_label("In section 99 of TMA 1970.", "98")
 
 
 def test_table_cell_source_target_context_skips_ancestors_for_non_carrier_target(
