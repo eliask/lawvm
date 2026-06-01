@@ -504,6 +504,77 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
     ).to_dict()
 
 
+def uk_effect_not_found_report_jsonable(
+    *,
+    statute_id: str,
+    effect_id: str,
+    loaded_effect_count: int,
+    applicability_mode: str,
+    parse_rejections: tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any]:
+    parse_observation_rows = tuple(dict(row) for row in parse_rejections)
+    parse_rejection_rows = _blocking_rows(parse_observation_rows)
+    legacy_payload = {
+        "report_kind": "uk_effect_frontier_report",
+        "error": "EFFECT_ID_NOT_FOUND",
+        "statute_id": statute_id,
+        "effect_id": effect_id,
+        "loaded_effect_count": loaded_effect_count,
+        "applicability_mode": applicability_mode,
+        "effect_feed_parse_rejections": {
+            "count": len(parse_rejection_rows),
+            "rule_counts": rule_counts(list(parse_rejection_rows)),
+            "rows": list(parse_rejection_rows),
+        },
+        "effect_feed_observation_count": len(parse_observation_rows),
+        "effect_feed_observation_rule_counts": rule_counts(list(parse_observation_rows)),
+        "effect_feed_observations": list(parse_observation_rows),
+    }
+    summary = {
+        "statute_id": statute_id,
+        "effect_id": effect_id,
+        "error": "EFFECT_ID_NOT_FOUND",
+        "loaded_effect_count": loaded_effect_count,
+        "applicability_mode": applicability_mode,
+        "effect_feed_observation_count": len(parse_observation_rows),
+        "effect_feed_parse_rejection_count": len(parse_rejection_rows),
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_effect_frontier_report",
+        schema="lawvm.uk_effect_frontier_report.v1",
+        truth_claim="uk_single_effect_frontier_diagnostics_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "statute_id": statute_id,
+            "effect_id": effect_id,
+            "applicability_mode": applicability_mode,
+        },
+        filtered_summary=summary,
+        rows=(),
+        rows_truncated=False,
+        detail={
+            **legacy_payload,
+            "safe_default": "classify_missing_effect_without_authorizing_replay",
+            "forbidden_shortcuts": (
+                "missing_effect_as_no_op_success",
+                "loaded_effect_count_as_source_completeness_proof",
+                "effect_feed_observation_as_replay_authorization",
+            ),
+            "next_promotion_requires": (
+                "effect_feed_source_identity",
+                "effect_id_identity",
+                "source_instruction_witness",
+            ),
+        },
+    ).to_dict()
+
+
 def _collect_statute_eids(statute: "IRStatute") -> set[str]:
     from lawvm.tools.uk_replay import _get_all_eids
 
@@ -768,29 +839,16 @@ def main(args: "argparse.Namespace") -> None:
         )
         effect = next((e for e in effects if e.effect_id == effect_id), None)
         if effect is None:
-            parse_observation_rows = tuple(dict(row) for row in effect_feed_parse_rejections)
-            parse_rejection_rows = _blocking_rows(parse_observation_rows)
             if json_output:
                 print(
                     json.dumps(
-                        {
-                            "report_kind": "uk_effect_frontier_report",
-                            "error": "EFFECT_ID_NOT_FOUND",
-                            "statute_id": statute_id,
-                            "effect_id": effect_id,
-                            "loaded_effect_count": len(effects),
-                            "applicability_mode": applicability_mode,
-                            "effect_feed_parse_rejections": {
-                                "count": len(parse_rejection_rows),
-                                "rule_counts": rule_counts(list(parse_rejection_rows)),
-                                "rows": list(parse_rejection_rows),
-                            },
-                            "effect_feed_observation_count": len(parse_observation_rows),
-                            "effect_feed_observation_rule_counts": rule_counts(
-                                list(parse_observation_rows)
-                            ),
-                            "effect_feed_observations": list(parse_observation_rows),
-                        },
+                        uk_effect_not_found_report_jsonable(
+                            statute_id=statute_id,
+                            effect_id=effect_id,
+                            loaded_effect_count=len(effects),
+                            applicability_mode=applicability_mode,
+                            parse_rejections=tuple(effect_feed_parse_rejections),
+                        ),
                         ensure_ascii=False,
                         indent=2,
                         sort_keys=True,
