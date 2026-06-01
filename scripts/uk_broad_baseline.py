@@ -304,12 +304,18 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["compile_rejection_owner_phase_counts"] = _owner_phase_counts(
             compile_rejections
         )
+        result["compile_rejection_rule_owner_phase_counts"] = (
+            _rule_owner_phase_counts(compile_rejections)
+        )
         result["n_blocking_compile_rejections"] = len(blocking_compile_rejections)
         result["blocking_compile_rejection_rule_counts"] = _rule_counts(
             blocking_compile_rejections
         )
         result["blocking_compile_rejection_owner_phase_counts"] = _owner_phase_counts(
             blocking_compile_rejections
+        )
+        result["blocking_compile_rejection_rule_owner_phase_counts"] = (
+            _rule_owner_phase_counts(blocking_compile_rejections)
         )
         manual_frontier_records = [
             row
@@ -326,14 +332,29 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["manual_frontier_owner_phase_counts"] = _owner_phase_counts(
             manual_frontier_records
         )
+        result["manual_frontier_rule_owner_phase_counts"] = (
+            _manual_frontier_rule_owner_phase_counts(manual_frontier_records)
+        )
         result["manual_frontier_manual_compile_candidate_rule_counts"] = (
             _manual_frontier_rule_counts_for_status(
                 manual_frontier_records,
                 "manual_compile_candidate",
             )
         )
+        result["manual_frontier_manual_compile_candidate_rule_owner_phase_counts"] = (
+            _manual_frontier_rule_owner_phase_counts_for_status(
+                manual_frontier_records,
+                "manual_compile_candidate",
+            )
+        )
         result["manual_frontier_deterministic_candidate_rule_counts"] = (
             _manual_frontier_rule_counts_for_status(
+                manual_frontier_records,
+                "deterministic_frontend_candidate",
+            )
+        )
+        result["manual_frontier_deterministic_candidate_rule_owner_phase_counts"] = (
+            _manual_frontier_rule_owner_phase_counts_for_status(
                 manual_frontier_records,
                 "deterministic_frontend_candidate",
             )
@@ -496,19 +517,40 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_owner_phase_counts = _aggregate_row_count_maps(
         results, "manual_frontier_owner_phase_counts"
     )
+    manual_frontier_rule_owner_phase_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_rule_owner_phase_counts"
+    )
     compile_rejection_owner_phase_counts = _aggregate_row_count_maps(
         results, "compile_rejection_owner_phase_counts"
     )
+    compile_rejection_rule_owner_phase_counts = _aggregate_row_count_maps(
+        results, "compile_rejection_rule_owner_phase_counts"
+    )
     blocking_compile_rejection_owner_phase_counts = _aggregate_row_count_maps(
         results, "blocking_compile_rejection_owner_phase_counts"
+    )
+    blocking_compile_rejection_rule_owner_phase_counts = _aggregate_row_count_maps(
+        results, "blocking_compile_rejection_rule_owner_phase_counts"
     )
     manual_frontier_manual_compile_candidate_rule_counts = _aggregate_row_count_maps(
         results,
         "manual_frontier_manual_compile_candidate_rule_counts",
     )
+    manual_frontier_manual_compile_candidate_rule_owner_phase_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_manual_compile_candidate_rule_owner_phase_counts",
+        )
+    )
     manual_frontier_deterministic_candidate_rule_counts = _aggregate_row_count_maps(
         results,
         "manual_frontier_deterministic_candidate_rule_counts",
+    )
+    manual_frontier_deterministic_candidate_rule_owner_phase_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_deterministic_candidate_rule_owner_phase_counts",
+        )
     )
     manual_frontier_template_status_counts = _aggregate_row_count_maps(
         results, "manual_frontier_template_status_counts"
@@ -572,15 +614,30 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_status_counts": manual_frontier_status_counts,
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
         "manual_frontier_owner_phase_counts": manual_frontier_owner_phase_counts,
+        "manual_frontier_rule_owner_phase_counts": (
+            manual_frontier_rule_owner_phase_counts
+        ),
         "compile_rejection_owner_phase_counts": compile_rejection_owner_phase_counts,
+        "compile_rejection_rule_owner_phase_counts": (
+            compile_rejection_rule_owner_phase_counts
+        ),
         "blocking_compile_rejection_owner_phase_counts": (
             blocking_compile_rejection_owner_phase_counts
+        ),
+        "blocking_compile_rejection_rule_owner_phase_counts": (
+            blocking_compile_rejection_rule_owner_phase_counts
         ),
         "manual_frontier_manual_compile_candidate_rule_counts": (
             manual_frontier_manual_compile_candidate_rule_counts
         ),
+        "manual_frontier_manual_compile_candidate_rule_owner_phase_counts": (
+            manual_frontier_manual_compile_candidate_rule_owner_phase_counts
+        ),
         "manual_frontier_deterministic_candidate_rule_counts": (
             manual_frontier_deterministic_candidate_rule_counts
+        ),
+        "manual_frontier_deterministic_candidate_rule_owner_phase_counts": (
+            manual_frontier_deterministic_candidate_rule_owner_phase_counts
         ),
         "manual_frontier_template_status_counts": manual_frontier_template_status_counts,
         "manual_frontier_template_gap_status_counts": (
@@ -867,6 +924,26 @@ def _manual_frontier_rule_counts_for_status(
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_rule_owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        _phase_rule_key(row, str(row.get("manual_compile_rule_id") or "unknown"))
+        for row in rows
+    )
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_rule_owner_phase_counts_for_status(
+    rows: list[dict[str, Any]],
+    status: str,
+) -> dict[str, int]:
+    counts = Counter(
+        _phase_rule_key(row, str(row.get("manual_compile_rule_id") or "unknown"))
+        for row in rows
+        if str(row.get("manual_compile_status") or "") == status
+    )
+    return dict(sorted(counts.items()))
+
+
 def _manual_frontier_template_status_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts = Counter(
         str(row.get("suggested_claim_template_status") or "none")
@@ -918,6 +995,18 @@ def _blocking_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts = Counter(str(row.get("rule_id") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _phase_rule_key(row: dict[str, Any], rule_id: str) -> str:
+    return f"{uk_phase_owner_for_diagnostic(row)}:{rule_id}"
+
+
+def _rule_owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        _phase_rule_key(row, str(row.get("rule_id") or "unknown"))
+        for row in rows
+    )
     return dict(sorted(counts.items()))
 
 
@@ -1116,12 +1205,28 @@ def run_driver(
             for phase, count in summary["manual_frontier_owner_phase_counts"].items()
         )
         print(f"  manual_frontier_owner_phase_counts: {counts}")
+    if summary["manual_frontier_rule_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase_rule}={count}"
+            for phase_rule, count in summary[
+                "manual_frontier_rule_owner_phase_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_rule_owner_phase_counts: {counts}")
     if summary["compile_rejection_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase}={count}"
             for phase, count in summary["compile_rejection_owner_phase_counts"].items()
         )
         print(f"  compile_rejection_owner_phase_counts: {counts}")
+    if summary["compile_rejection_rule_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase_rule}={count}"
+            for phase_rule, count in summary[
+                "compile_rejection_rule_owner_phase_counts"
+            ].items()
+        )
+        print(f"  compile_rejection_rule_owner_phase_counts: {counts}")
     if summary["blocking_compile_rejection_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase}={count}"
@@ -1130,6 +1235,14 @@ def run_driver(
             ].items()
         )
         print(f"  blocking_compile_rejection_owner_phase_counts: {counts}")
+    if summary["blocking_compile_rejection_rule_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase_rule}={count}"
+            for phase_rule, count in summary[
+                "blocking_compile_rejection_rule_owner_phase_counts"
+            ].items()
+        )
+        print(f"  blocking_compile_rejection_rule_owner_phase_counts: {counts}")
     if summary["mutation_boundary_event_count"]:
         print(
             "  mutation_boundary: "
@@ -1159,6 +1272,14 @@ def run_driver(
             ].items()
         )
         print(f"  manual_compile_candidate_rule_counts: {counts}")
+    if summary["manual_frontier_manual_compile_candidate_rule_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase_rule}={count}"
+            for phase_rule, count in summary[
+                "manual_frontier_manual_compile_candidate_rule_owner_phase_counts"
+            ].items()
+        )
+        print(f"  manual_compile_candidate_rule_owner_phase_counts: {counts}")
     if summary["manual_frontier_deterministic_candidate_rule_counts"]:
         counts = ", ".join(
             f"{rule_id}={count}"
@@ -1167,6 +1288,14 @@ def run_driver(
             ].items()
         )
         print(f"  deterministic_frontend_candidate_rule_counts: {counts}")
+    if summary["manual_frontier_deterministic_candidate_rule_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase_rule}={count}"
+            for phase_rule, count in summary[
+                "manual_frontier_deterministic_candidate_rule_owner_phase_counts"
+            ].items()
+        )
+        print(f"  deterministic_frontend_candidate_rule_owner_phase_counts: {counts}")
     if summary["manual_frontier_template_status_counts"]:
         counts = ", ".join(
             f"{status}={count}"
