@@ -146,6 +146,15 @@ def test_validate_semantic_claim_accepts_schema_and_workqueue_provenance_only() 
     assert row["validation_issues"] == []
     assert row["executable"] is False
     assert row["replay_authorized"] is False
+    assert row["authorization_status"] == "validated_non_executable_claim"
+    assert (
+        row["authorization_rule_id"]
+        == "uk_execution_authorization_semantic_claim_validated_non_executable"
+    )
+    assert "mutation_boundary_proof" in row["required_proofs"]
+    assert row["execution_authorization"]["validator_status"] == (
+        "validated_provenance_only"
+    )
     assert row["blocking"] is False
 
 
@@ -227,6 +236,8 @@ def test_uk_semantic_claims_validate_text_report_prints_owner_phase(
 
     out = capsys.readouterr().out
     assert "Owner phases: typed_elaboration=1" in out
+    assert "Authorization statuses: validated_non_executable_claim=1" in out
+    assert "Accepted authorization statuses: validated_non_executable_claim=1" in out
     assert "Accepted owner phases: typed_elaboration=1" in out
     assert "owner_phase=typed_elaboration" in out
 
@@ -6668,6 +6679,15 @@ def test_uk_semantic_claims_validate_main_writes_jsonl_and_fails_on_rejected(
     assert payload["summary"]["rejected_count"] == 1
     assert payload["summary"]["input_error_count"] == 0
     assert payload["summary"]["replay_authorized_count"] == 0
+    assert payload["summary"]["authorization_status_counts"] == {
+        "claim_rejected_workqueue_mismatch": 1
+    }
+    assert payload["summary"]["rejected_authorization_status_counts"] == {
+        "claim_rejected_workqueue_mismatch": 1
+    }
+    assert payload["summary"]["rejected_missing_proof_counts"] == {
+        "workqueue_provenance_match": 1
+    }
     assert payload["validation_jsonl"] == {
         "path": str(validation_path),
         "rows": 1,
@@ -6675,6 +6695,7 @@ def test_uk_semantic_claims_validate_main_writes_jsonl_and_fails_on_rejected(
     validation_row = json.loads(validation_path.read_text(encoding="utf-8"))
     assert validation_row["validator_status"] == "rejected_workqueue_mismatch"
     assert validation_row["replay_authorized"] is False
+    assert validation_row["authorization_status"] == "claim_rejected_workqueue_mismatch"
 
 
 def test_uk_semantic_claims_validate_main_reports_workqueue_input_errors(
@@ -6905,6 +6926,21 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
     }
     assert summary["rejected_operation_family_proof_family_counts"] == {
         "table_surface_mutation": 1,
+    }
+    assert summary["authorization_status_counts"] == {
+        "claim_rejected_schema": 1,
+        "validated_non_executable_claim": 1,
+    }
+    assert summary["accepted_authorization_status_counts"] == {
+        "validated_non_executable_claim": 1,
+    }
+    assert summary["rejected_authorization_status_counts"] == {
+        "claim_rejected_schema": 1,
+    }
+    assert summary["accepted_missing_proof_counts"]["mutation_boundary_proof"] == 1
+    assert summary["rejected_missing_proof_counts"] == {
+        "non_executable_claim_shape": 1,
+        "valid_claim_schema": 1,
     }
 
 
