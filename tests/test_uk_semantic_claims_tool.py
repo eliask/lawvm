@@ -203,6 +203,34 @@ def test_uk_semantic_claims_validate_main_uses_physical_line_number(
     assert payload["rows"][0]["line_number"] == 1
 
 
+def test_uk_semantic_claims_validate_text_report_prints_owner_phase(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    input_path = tmp_path / "claims.jsonl"
+    workqueue_path = tmp_path / "workqueue.jsonl"
+    input_path.write_text(json.dumps(_claim_row()) + "\n", encoding="utf-8")
+    workqueue_path.write_text(json.dumps(_workqueue_row()) + "\n", encoding="utf-8")
+
+    uk_semantic_claims.main(
+        Namespace(
+            input=str(input_path),
+            workqueue_jsonl=str(workqueue_path),
+            live_targets_jsonl="",
+            json=False,
+            summary_only=False,
+            validation_jsonl="",
+            fail_on_rejected=False,
+            fail_on_input_error=False,
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert "Owner phases: typed_elaboration=1" in out
+    assert "Accepted owner phases: typed_elaboration=1" in out
+    assert "owner_phase=typed_elaboration" in out
+
+
 def test_validate_semantic_claim_accepts_duplicate_identical_workqueue_id() -> None:
     workqueue = _workqueue_row()
     duplicate = dict(workqueue)
