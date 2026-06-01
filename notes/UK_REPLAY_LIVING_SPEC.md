@@ -53,6 +53,17 @@ Current UK-specific invariants:
 - oracle/local fallback IDs require a stable visible label or a structural container role
   - replay must not synthesize public fallback IDs such as `section-7-item` for unlabeled non-container nodes, because repeated unlabeled siblings would collide and create replay-only benchmark identities
   - unlabeled non-container source shape remains addressable only through the surrounding target/operation evidence unless a later source phase assigns a stable legal label
+- definition ordered-list children may ground through their source-owned implicit
+  child label when the parser has already emitted
+  `uk_definition_ordered_list_child_preserved`
+  - this is an oracle-alignment path match only; the IR child label remains unset
+    when the source XML `ListItem` has no public `id`/`eId`
+  - if the oracle has no matching child path, replay still suppresses local
+    fallback instead of minting public IDs for unlabeled list items
+  - current witness: `ukpga/1968/70` `s. 17(3)`, where the enacted XML's
+    definition-local `OrderedList Type="alpha"` carries source-owned implicit
+    labels `a`-`d` and the current oracle exposes `section-17-3-a` through
+    `section-17-3-d`
 - structural replacement preserves existing target identity from either source `eId` or source `id`
   - replacing a found node may not drop its identity because the base parser carried the identifier as `id` instead of `eId`
   - current witness: `asc/2021/1` / `wsi/2021/1349 reg. 42(3)(b)`, replacing `Sch. 5 para. 9(c)`

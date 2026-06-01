@@ -54,6 +54,15 @@ def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
     return clean_label
 
 
+def _definition_ordered_list_grounding_label(node: UKMutableNode) -> str:
+    """Return a source-owned implicit alpha label for definition list children."""
+    if node.attrs.get("source_rule_id") != "uk_definition_ordered_list_child_preserved":
+        return ""
+    if _uk_kind_value(node.kind).lower() != "item":
+        return ""
+    return _clean_num(str(node.attrs.get("definition_child_label") or ""))
+
+
 def _slugify_grounding_heading(text: str) -> str:
     if not text:
         return ""
@@ -316,7 +325,10 @@ class UKReplayGroundingMixin:
             kind_name = _uk_kind_value(kind).lower()
             if is_eur and kind_name == "section":
                 kind_name = "article"
-            clean_label = _grounding_clean_label(kind_name, node.label)
+            clean_label = _grounding_clean_label(
+                kind_name,
+                node.label,
+            ) or _definition_ordered_list_grounding_label(node)
             raw_label = str(node.label or "").strip()
             heading = node.attrs.get("heading") or ""
             if (
