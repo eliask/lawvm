@@ -1842,6 +1842,10 @@ def classify_uk_effect_source_pathology(
             r"(?:is|are)\s+(?:omitted|repealed)",
             norm_text,
         ) or re.search(
+            r"\b(?:omit|repeal)\s+the\s+words\s+(?:following|after)\s+"
+            r"(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\)",
+            norm_text,
+        ) or re.search(
             r"\bfor\s+the\s+words\s+after\s+(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\)\s+substitute\b",
             norm_text,
         ):

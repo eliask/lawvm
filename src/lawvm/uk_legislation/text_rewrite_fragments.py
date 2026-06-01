@@ -1947,7 +1947,7 @@ def append_source_carried_tail_rewrite_observations(
             reason_code="source_carried_child_tail_repeal_lowered",
             reason=(
                 "UK source text explicitly repeals the words following "
-                "a named paragraph inside the affected subsection; lowering "
+                "a named paragraph inside the affected parent; lowering "
                 "preserves that as a bounded child-tail text selector instead "
                 "of deleting from the whole parent."
             ),
@@ -1958,6 +1958,7 @@ def append_source_carried_tail_rewrite_observations(
                 "target_ref": target_ref,
                 "target": str(target),
                 "text_match": op_text_match,
+                "source_anchor_child_kind": str(primary.get("source_anchor_child_kind") or ""),
                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
                 "target_supplied_subsection_context": str(
