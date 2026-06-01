@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_semantic_claim_validation,
@@ -5579,96 +5580,125 @@ def _validation_report_jsonable(
         for status, count in status_counts.items()
         if status in _REJECTED_STATUSES and status != "input_error"
     )
-    report: dict[str, Any] = {
-        "report_kind": "uk_semantic_claim_validation_report",
+    summary_payload = {
+        "row_count": len(rows),
+        "accepted_count": accepted_count,
+        "rejected_count": rejected_count,
+        "input_error_count": input_error_count,
+        "replay_authorized_count": 0,
+        "validator_status_counts": dict(sorted(status_counts.items())),
+        "validator_rule_counts": dict(sorted(rule_counts.items())),
+        "manual_compile_rule_counts": dict(sorted(manual_rule_counts.items())),
+        "owner_phase_counts": dict(sorted(owner_phase_counts.items())),
+        "authorization_status_counts": dict(
+            sorted(authorization_status_counts.items())
+        ),
+        "accepted_authorization_status_counts": dict(
+            sorted(accepted_authorization_status_counts.items())
+        ),
+        "rejected_authorization_status_counts": dict(
+            sorted(rejected_authorization_status_counts.items())
+        ),
+        "missing_proof_counts": dict(sorted(missing_proof_counts.items())),
+        "accepted_missing_proof_counts": dict(
+            sorted(accepted_missing_proof_counts.items())
+        ),
+        "rejected_missing_proof_counts": dict(
+            sorted(rejected_missing_proof_counts.items())
+        ),
+        "accepted_owner_phase_counts": dict(
+            sorted(accepted_owner_phase_counts.items())
+        ),
+        "rejected_owner_phase_counts": dict(
+            sorted(rejected_owner_phase_counts.items())
+        ),
+        "proposed_outcome_kind_counts": dict(sorted(outcome_kind_counts.items())),
+        "operation_family_proof_semantic_counts": dict(
+            sorted(proof_semantic_counts.items())
+        ),
+        "accepted_operation_family_proof_semantic_counts": dict(
+            sorted(accepted_proof_semantic_counts.items())
+        ),
+        "rejected_operation_family_proof_semantic_counts": dict(
+            sorted(rejected_proof_semantic_counts.items())
+        ),
+        "operation_family_proof_family_counts": dict(
+            sorted(proof_family_counts.items())
+        ),
+        "accepted_operation_family_proof_family_counts": dict(
+            sorted(accepted_proof_family_counts.items())
+        ),
+        "rejected_operation_family_proof_family_counts": dict(
+            sorted(rejected_proof_family_counts.items())
+        ),
+        "matched_template_required_validator_check_counts": dict(
+            sorted(matched_template_validator_check_counts.items())
+        ),
+        "accepted_matched_template_required_validator_check_counts": dict(
+            sorted(accepted_matched_template_validator_check_counts.items())
+        ),
+        "rejected_matched_template_required_validator_check_counts": dict(
+            sorted(rejected_matched_template_validator_check_counts.items())
+        ),
+        "matched_template_required_ownership_counts": dict(
+            sorted(matched_template_ownership_counts.items())
+        ),
+        "accepted_matched_template_required_ownership_counts": dict(
+            sorted(accepted_matched_template_ownership_counts.items())
+        ),
+        "rejected_matched_template_required_ownership_counts": dict(
+            sorted(rejected_matched_template_ownership_counts.items())
+        ),
+        "matched_template_required_operation_family_proof_semantic_counts": dict(
+            sorted(matched_template_proof_semantic_counts.items())
+        ),
+        "accepted_matched_template_required_operation_family_proof_semantic_counts": dict(
+            sorted(accepted_matched_template_proof_semantic_counts.items())
+        ),
+        "rejected_matched_template_required_operation_family_proof_semantic_counts": dict(
+            sorted(rejected_matched_template_proof_semantic_counts.items())
+        ),
+    }
+    report_rows: tuple[dict[str, Any], ...] = ()
+    if not summary_only:
+        report_rows = tuple(dict(row) for row in rows)
+    detail: dict[str, Any] = {
         "input_path": str(input_path),
         "workqueue_path": str(workqueue_path) if workqueue_path is not None else "",
         "live_target_index_path": str(live_target_path) if live_target_path is not None else "",
-        "summary": {
-            "row_count": len(rows),
-            "accepted_count": accepted_count,
-            "rejected_count": rejected_count,
-            "input_error_count": input_error_count,
-            "replay_authorized_count": 0,
-            "validator_status_counts": dict(sorted(status_counts.items())),
-            "validator_rule_counts": dict(sorted(rule_counts.items())),
-            "manual_compile_rule_counts": dict(sorted(manual_rule_counts.items())),
-            "owner_phase_counts": dict(sorted(owner_phase_counts.items())),
-            "authorization_status_counts": dict(
-                sorted(authorization_status_counts.items())
-            ),
-            "accepted_authorization_status_counts": dict(
-                sorted(accepted_authorization_status_counts.items())
-            ),
-            "rejected_authorization_status_counts": dict(
-                sorted(rejected_authorization_status_counts.items())
-            ),
-            "missing_proof_counts": dict(sorted(missing_proof_counts.items())),
-            "accepted_missing_proof_counts": dict(
-                sorted(accepted_missing_proof_counts.items())
-            ),
-            "rejected_missing_proof_counts": dict(
-                sorted(rejected_missing_proof_counts.items())
-            ),
-            "accepted_owner_phase_counts": dict(
-                sorted(accepted_owner_phase_counts.items())
-            ),
-            "rejected_owner_phase_counts": dict(
-                sorted(rejected_owner_phase_counts.items())
-            ),
-            "proposed_outcome_kind_counts": dict(sorted(outcome_kind_counts.items())),
-            "operation_family_proof_semantic_counts": dict(
-                sorted(proof_semantic_counts.items())
-            ),
-            "accepted_operation_family_proof_semantic_counts": dict(
-                sorted(accepted_proof_semantic_counts.items())
-            ),
-            "rejected_operation_family_proof_semantic_counts": dict(
-                sorted(rejected_proof_semantic_counts.items())
-            ),
-            "operation_family_proof_family_counts": dict(
-                sorted(proof_family_counts.items())
-            ),
-            "accepted_operation_family_proof_family_counts": dict(
-                sorted(accepted_proof_family_counts.items())
-            ),
-            "rejected_operation_family_proof_family_counts": dict(
-                sorted(rejected_proof_family_counts.items())
-            ),
-            "matched_template_required_validator_check_counts": dict(
-                sorted(matched_template_validator_check_counts.items())
-            ),
-            "accepted_matched_template_required_validator_check_counts": dict(
-                sorted(accepted_matched_template_validator_check_counts.items())
-            ),
-            "rejected_matched_template_required_validator_check_counts": dict(
-                sorted(rejected_matched_template_validator_check_counts.items())
-            ),
-            "matched_template_required_ownership_counts": dict(
-                sorted(matched_template_ownership_counts.items())
-            ),
-            "accepted_matched_template_required_ownership_counts": dict(
-                sorted(accepted_matched_template_ownership_counts.items())
-            ),
-            "rejected_matched_template_required_ownership_counts": dict(
-                sorted(rejected_matched_template_ownership_counts.items())
-            ),
-            "matched_template_required_operation_family_proof_semantic_counts": dict(
-                sorted(matched_template_proof_semantic_counts.items())
-            ),
-            "accepted_matched_template_required_operation_family_proof_semantic_counts": dict(
-                sorted(accepted_matched_template_proof_semantic_counts.items())
-            ),
-            "rejected_matched_template_required_operation_family_proof_semantic_counts": dict(
-                sorted(rejected_matched_template_proof_semantic_counts.items())
-            ),
-        },
+        "semantic_claim_validation_claims": True,
+        "next_promotion_requires": (
+            "replay_validator",
+            "source_target_payload_temporal_extent_proof",
+            "mutation_boundary_proof",
+        ),
     }
-    if not summary_only:
-        report["rows"] = [dict(row) for row in rows]
+    evidence_jsonl: Mapping[str, Any] = {}
+    written_paths: tuple[str, ...] = ()
     if validation_jsonl is not None:
-        report["validation_jsonl"] = dict(validation_jsonl)
-    return report
+        evidence_jsonl = dict(validation_jsonl)
+        detail["validation_jsonl"] = dict(validation_jsonl)
+        path = str(validation_jsonl.get("path") or "")
+        written_paths = (path,) if path else ()
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_semantic_claim_validation_report",
+        schema="lawvm.uk_semantic_claim_validation_report.v1",
+        truth_claim="uk_semantic_claim_validation_non_executable_evidence_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary_payload,
+        filters={},
+        filtered_summary=summary_payload,
+        rows=report_rows,
+        rows_truncated=False,
+        evidence_jsonl=evidence_jsonl,
+        written_paths=written_paths,
+        detail=detail,
+    ).to_dict()
 
 
 def _matched_template_counter(

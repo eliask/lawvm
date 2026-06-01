@@ -6675,6 +6675,17 @@ def test_uk_semantic_claims_validate_main_writes_jsonl_and_fails_on_rejected(
     assert excinfo.value.code == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["report_kind"] == "uk_semantic_claim_validation_report"
+    assert payload["schema"] == "lawvm.uk_semantic_claim_validation_report.v1"
+    assert (
+        payload["truth_claim"]
+        == "uk_semantic_claim_validation_non_executable_evidence_only"
+    )
+    assert payload["replay_claims"] is False
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["agreement_claims"] is False
+    assert payload["semantic_claim_validation_claims"] is True
     assert payload["summary"]["accepted_count"] == 0
     assert payload["summary"]["rejected_count"] == 1
     assert payload["summary"]["input_error_count"] == 0
@@ -6692,6 +6703,11 @@ def test_uk_semantic_claims_validate_main_writes_jsonl_and_fails_on_rejected(
         "path": str(validation_path),
         "rows": 1,
     }
+    assert payload["evidence_jsonl"] == {
+        "path": str(validation_path),
+        "rows": 1,
+    }
+    assert payload["written_paths"] == [str(validation_path)]
     validation_row = json.loads(validation_path.read_text(encoding="utf-8"))
     assert validation_row["validator_status"] == "rejected_workqueue_mismatch"
     assert validation_row["replay_authorized"] is False
@@ -6907,7 +6923,11 @@ def test_uk_semantic_claims_validation_report_summarizes_proof_semantics(
         summary_only=True,
     )
 
-    assert "rows" not in report
+    assert report["rows"] == []
+    assert report["rows_truncated"] is False
+    assert report["filtered_summary"] == report["summary"]
+    assert report["replay_claims"] is False
+    assert report["semantic_claim_validation_claims"] is True
     summary = report["summary"]
     assert summary["operation_family_proof_semantic_counts"] == {
         "table_surface_insert_anchor_and_live_carrier": 2,
