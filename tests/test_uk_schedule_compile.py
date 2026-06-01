@@ -4422,7 +4422,7 @@ def test_compile_same_schedule_inserted_anchor_ground_insert_as_source_chain() -
     } == {"uk_effect_amendment_program_inserted_anchor_structural_insert_lowered"}
     observation = lowering_records[0]
     assert observation["family"] == "amendment_program_lowering"
-    assert observation["reason_code"] == "same_schedule_single_ground_source_chain_insert"
+    assert observation["reason_code"] == "same_schedule_ground_source_chain_insert"
     assert observation["target_ref"] == "Sch. 2 Ground 5G"
     assert observation["source_inserted_by_label"] == "17"
     assert observation["source_inserted_by_scope"] == "this_schedule"
@@ -4430,7 +4430,124 @@ def test_compile_same_schedule_inserted_anchor_ground_insert_as_source_chain() -
     assert observation["blocking"] is False
 
 
-def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program() -> None:
+def test_compile_contextual_same_schedule_inserted_anchor_ground_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-22">
+          <Pnumber>22</Pnumber>
+          <P1para>
+            <Text>
+              After Ground 6A (inserted by paragraph 21 ) insert—
+              Ground 6B Any of the following applies.
+            </Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-inserted-anchor-ground-contextual",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-24",
+        affected_uri="/id/ukpga/1988/50/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="50",
+        affected_provisions="Sch. 2 Ground 6B",
+        affecting_uri="/id/ukpga/2025/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="26",
+        affecting_provisions="Sch. 1 para. 22",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-05-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert str(ops[0].target) == "schedule:2/paragraph:ground/subparagraph:6b"
+    assert ops[0].payload is not None
+    assert ops[0].payload.label == "6b"
+    assert ops[0].payload.text == "Any of the following applies."
+    observation = lowering_records[0]
+    assert observation["reason_code"] == (
+        "same_schedule_contextual_ground_source_chain_insert"
+    )
+    assert observation["source_inserted_by"] == "paragraph 21"
+    assert observation["source_inserted_by_scope"] == "unspecified"
+    assert observation["source_inserted_by_scope_inferred_from_affecting_provision"] is True
+
+
+def test_compile_multi_ground_inserted_anchor_range_split_by_feed_targets() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-7">
+          <Pnumber>7</Pnumber>
+          <P1para>
+            <Text>
+              After Ground 2ZA (inserted by paragraph 6 of this Schedule) insert—
+              Ground 2ZB The landlord holds a superior tenancy.
+              Ground 2ZC The landlord has another source-owned reason.
+              Ground 2ZD The superior tenancy has ended.
+            </Text>
+          </P1para>
+        </P1>
+        """
+    )
+    lowering_records: list[dict[str, Any]] = []
+    ops = []
+    for target_ref in ("Sch. 2 Ground 2ZB", "Sch. 2 Ground 2ZC", "Sch. 2 Ground 2ZD"):
+        effect = UKEffectRecord(
+            effect_id=f"key-inserted-anchor-ground-range-{target_ref[-3:].lower()}",
+            effect_type="words inserted",
+            applied=True,
+            requires_applied=True,
+            modified="2026-04-24",
+            affected_uri="/id/ukpga/1988/50/schedule/2",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="1988",
+            affected_number="50",
+            affected_provisions=target_ref,
+            affecting_uri="/id/ukpga/2025/26",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2025",
+            affecting_number="26",
+            affecting_provisions="Sch. 1 para. 7",
+            affecting_title="Test Amendment Act",
+            in_force_dates=[{"date": "2026-05-01", "prospective": "false"}],
+        )
+        ops.extend(
+            compile_effect_to_ir_ops(
+                effect,
+                extracted_el,
+                lowering_rejections_out=lowering_records,
+            )
+        )
+
+    assert [str(op.target) for op in ops] == [
+        "schedule:2/paragraph:ground/subparagraph:2zb",
+        "schedule:2/paragraph:ground/subparagraph:2zc",
+        "schedule:2/paragraph:ground/subparagraph:2zd",
+    ]
+    assert [op.payload.text if op.payload is not None else "" for op in ops] == [
+        "The landlord holds a superior tenancy.",
+        "The landlord has another source-owned reason.",
+        "The superior tenancy has ended.",
+    ]
+    assert {
+        row["compiled_payload_label"] for row in lowering_records
+        if row["rule_id"] == "uk_effect_amendment_program_inserted_anchor_structural_insert_lowered"
+    } == {"2zb", "2zc", "2zd"}
+
+
+def test_compile_inserted_anchor_structural_insert_blocks_when_payload_excludes_target() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-7">
@@ -4455,7 +4572,7 @@ def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program()
         affected_class="UnitedKingdomPublicGeneralAct",
         affected_year="1988",
         affected_number="50",
-        affected_provisions="Sch. 2 Ground 2ZB-2ZD",
+        affected_provisions="Sch. 2 Ground 2ZD",
         affecting_uri="/id/ukpga/2025/26",
         affecting_class="UnitedKingdomPublicGeneralAct",
         affecting_year="2025",
@@ -4479,7 +4596,7 @@ def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program()
     rejection = lowering_records[0]
     assert rejection["family"] == "amendment_program_lowering"
     assert rejection["reason_code"] == "insert_targets_prior_amendment_inserted_anchor"
-    assert rejection["target_ref"] == "Sch. 2 Ground 2ZB"
+    assert rejection["target_ref"] == "Sch. 2 Ground 2ZD"
     assert rejection["inserted_anchor_kind"] == "ground"
     assert rejection["inserted_anchor_label"] == "2za"
     assert rejection["source_inserted_by"] == "paragraph 6 of this Schedule"

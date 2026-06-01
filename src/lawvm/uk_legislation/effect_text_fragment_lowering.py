@@ -451,8 +451,6 @@ def lower_uk_text_fragment_rewrite(
         and content_ir is not None
         and dict(content_ir.get("attrs") or {}).get("source_rule_id")
         == UK_AMENDMENT_PROGRAM_INSERTED_ANCHOR_STRUCTURAL_INSERT_RULE_ID
-        and content_ir.get("kind") == _addr_leaf_kind(target)
-        and _clean_num(str(content_ir.get("label") or "")) == _clean_num(_addr_leaf_label(target) or "")
     ):
         return UKTextFragmentLowering(
             target=target,
