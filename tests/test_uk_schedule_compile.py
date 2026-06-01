@@ -46294,6 +46294,82 @@ def test_compile_quoted_words_anchor_to_end_substitution() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_from_beginning_end_anchor_occurrence_substitution_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "i from the beginning to \u201corder\u201d where it first occurs substitute "
+        "\u201cWhere a harbour revision order is subject to the affirmative procedure\u201d;"
+    )
+
+    assert fragments == [
+        {
+            "original": "TEXT_FROM__TO_order",
+            "replacement": "Where a harbour revision order is subject to the affirmative procedure",
+            "occurrence": "1",
+            "rule_id": "uk_effect_from_beginning_end_anchor_occurrence_substitution_text_patch",
+        }
+    ]
+
+
+def test_compile_from_beginning_end_anchor_occurrence_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="article-7-d-i">
+          <Pnumber>i</Pnumber>
+          <Text>i from the beginning to \u201corder\u201d where it first occurs
+          substitute \u201cWhere a harbour revision order is subject to the
+          affirmative procedure by virtue of section 54A(4) of this Act, as
+          soon as possible after the order has been made or the Scottish
+          Parliament has decided not to approve the draft statutory instrument
+          containing it\u201d;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-5b5d98eadb7d8d1165726d734f9acde2",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-01-01",
+        affected_uri="/id/ukpga/1964/40/schedule/3/paragraph/24/subparagraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1964",
+        affected_number="40",
+        affected_provisions="Sch. 3 para. 24(3)",
+        affecting_uri="/id/ssi/2014/1",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2014",
+        affecting_number="1",
+        affecting_provisions="art. 7(d)(i)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2014-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("schedule", "3"), ("paragraph", "24"), ("subparagraph", "3"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM__TO_order"
+    assert op.text_patch.selector.occurrence == 1
+    assert op.text_patch.replacement.startswith("Where a harbour revision order")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_from_beginning_end_anchor_occurrence_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_after_anchor_before_final_word_substitution() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -1808,6 +1808,29 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             )
         )
 
+    matches_bare_from_beginning_end_occurrence_substituted = re.finditer(
+        r"\bfrom\s+the\s+beginning\s+to\s+"
+        r"[“\"'‘](?P<end>.*?)[”\"'’]\s+"
+        r"where\s+it\s+(?:(?P<ordinal_pre>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+        r"(?:occurs|appears)|(?:occurs|appears)\s+"
+        r"(?P<ordinal_post>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)),?\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_bare_from_beginning_end_occurrence_substituted:
+        ordinal = m.group("ordinal_pre") or m.group("ordinal_post")
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", m.group("end").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_from_beginning_end_anchor_occurrence_substitution_text_patch",
+                    occurrence=_ORDINAL_OCCURRENCES[ordinal.lower()],
+                )
+            )
+        )
+
     matches_from_beginning_passive_substituted = re.finditer(
         r"for\s+(?:the\s+)?words?\s+from\s+the\s+beginning"
         r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
