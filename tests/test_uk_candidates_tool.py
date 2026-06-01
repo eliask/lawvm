@@ -4767,6 +4767,7 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
     }
     assert evidence_rows[0]["schema"] == "lawvm.uk_replay_adjudication_frontier.v1"
     assert evidence_rows[0]["rule_id"] == "uk_replay_adjudication_frontier_workqueue"
+    assert evidence_rows[0]["owner_phase"] == "replay_invariants"
     assert evidence_rows[0]["work_item_kind"] == "replay_adjudication_review"
     assert evidence_rows[0]["claim_status"] == "unresolved_work_item"
     assert evidence_rows[0]["validator_status"] == "not_validated"

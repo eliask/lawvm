@@ -1041,12 +1041,16 @@ def _replay_adjudication_evidence_row_jsonable(
     kind = str(record.get("kind") or "unknown")
     detail = record.get("detail")
     detail_payload = dict(detail) if isinstance(detail, Mapping) else {}
+    owner_phase_record: dict[str, Any] = dict(detail_payload)
+    owner_phase_record.setdefault("rule_id", kind)
+    owner_phase_record.setdefault("phase", "replay")
     diagnostic = adjudication_record_diagnostic_detail(record)
     return {
         "schema": "lawvm.uk_replay_adjudication_frontier.v1",
         "rule_id": "uk_replay_adjudication_frontier_workqueue",
         "family": "replay_adjudication_frontier",
         "phase": "replay_adjudication",
+        "owner_phase": uk_phase_owner_for_diagnostic(owner_phase_record),
         "jurisdiction": "uk",
         "work_item_kind": "replay_adjudication_review",
         "claim_kind": "replay_adjudication",
