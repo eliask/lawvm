@@ -223,11 +223,12 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "base_too_small": ["ukpga/1945/10", "ukpga/1945/9"],
         "effect_rows_absent_or_unpublished": ["uksi/2000/1043"],
     }
-    assert summary["non_manual_source_chain_frontier_count"] == 3
-    assert summary["non_manual_source_chain_frontier_statutes"] == [
+    assert summary["non_manual_source_chain_frontier_count"] == 1
+    assert summary["non_manual_source_chain_frontier_statutes"] == ["uksi/2000/1043"]
+    assert summary["source_or_oracle_pathology_frontier_count"] == 2
+    assert summary["source_or_oracle_pathology_frontier_statutes"] == [
         "ukpga/1945/10",
         "ukpga/1945/9",
-        "uksi/2000/1043",
     ]
     assert summary["zero_oracle_retention_count"] == 1
     assert summary["zero_oracle_retention_eids"] == 420
@@ -605,6 +606,49 @@ def test_summarize_results_splits_non_admitted_replay_lens_rows() -> None:
     assert summary["non_manual_source_chain_frontier_statutes"] == []
     assert summary["replay_lens_frontier_count"] == 1
     assert summary["replay_lens_frontier_statutes"] == ["uksi/2009/3023"]
+
+
+def test_summarize_results_splits_mixed_replay_lens_and_source_insufficient_rows() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1868/119",
+                "score_status": "scored",
+                "aligned": 91.4,
+                "aligned_excluding_grounding_collateral": 91.4,
+                "unaligned": 27.6,
+                "n_grounding_collateral": 0,
+                "n_replay": 32,
+                "n_oracle": 35,
+                "n_effects": 29,
+                "n_ops": 0,
+                "n_compile_rejections": 48,
+                "n_blocking_compile_rejections": 1,
+                "compile_rejection_rule_counts": {
+                    "uk_effect_lowering_no_supported_action_rejected": 27,
+                    "uk_effect_structural_pseudo_definition_target_rejected": 1,
+                },
+                "manual_frontier_status_counts": {
+                    "non_textual_or_out_of_scope": 28,
+                    "source_insufficient": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"nonreplay_effect_frontier": 1}
+    assert summary["source_chain_frontier_reasons"] == {
+        "effect_rows_not_admitted_by_replay_lens": 1,
+        "manual_frontier_source_insufficient": 1,
+    }
+    assert summary["source_chain_frontier_statutes"] == {
+        "effect_rows_not_admitted_by_replay_lens": ["ukpga/1868/119"],
+        "manual_frontier_source_insufficient": ["ukpga/1868/119"],
+    }
+    assert summary["non_manual_source_chain_frontier_count"] == 0
+    assert summary["non_manual_source_chain_frontier_statutes"] == []
+    assert summary["replay_lens_frontier_count"] == 1
+    assert summary["replay_lens_frontier_statutes"] == ["ukpga/1868/119"]
 
 
 def test_summarize_results_counts_compile_rejection_dominated_residuals() -> None:
@@ -1256,6 +1300,34 @@ def test_run_driver_non_manual_source_chain_flag_allows_empty_effect_feed(
     assert "source_chain_frontier[effect_feed_empty]: uksi/2012/1206" in out
     assert "non_manual_source_chain_frontier=0" in out
     assert "empty_effect_feed_frontier=1: uksi/2012/1206" in out
+
+
+def test_run_driver_non_manual_source_chain_flag_allows_source_or_oracle_pathology(
+    monkeypatch,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1945/9",
+            "score_status": "source_frontier",
+            "source_frontier_reason": "base_too_small",
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1945/9"],
+            None,
+            fail_on_non_manual_source_chain_frontier=True,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "source_chain_frontier[base_too_small]: ukpga/1945/9" in out
+    assert "non_manual_source_chain_frontier=0" in out
+    assert "source_or_oracle_pathology_frontier=1: ukpga/1945/9" in out
 
 
 def test_run_driver_non_manual_source_chain_flag_allows_manual_source_insufficient(
