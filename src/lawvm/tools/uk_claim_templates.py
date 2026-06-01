@@ -18,19 +18,45 @@ class _QuotedSubstitutionPair(NamedTuple):
 
 
 def _quoted_for_substitute_pair(source_preview: str) -> _QuotedSubstitutionPair:
-    """Return the quoted preimage/replacement pair from a simple formula."""
+    """Return the preimage/replacement pair from a simple substitution formula."""
+    source_norm = " ".join(source_preview.split())
     replacement_match = re.search(
         r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]"
         r"(?:\s+\([^)]{0,320}\))*\s+"
         r"substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
-        " ".join(source_preview.split()),
+        source_norm,
         flags=re.I,
     )
-    if replacement_match is None:
+    if replacement_match is not None:
+        return _QuotedSubstitutionPair(
+            text_match=" ".join(replacement_match.group("old").split()),
+            replacement=" ".join(replacement_match.group("new").split()),
+        )
+    lower_norm = source_norm.casefold()
+    prefix = "for a reference to "
+    separator = " substitute a reference to "
+    old_start = lower_norm.find(prefix)
+    if old_start < 0:
+        return _QuotedSubstitutionPair(text_match="", replacement="")
+    old_start += len(prefix)
+    old_end = lower_norm.find(separator, old_start)
+    if old_end < 0:
+        return _QuotedSubstitutionPair(text_match="", replacement="")
+    new_start = old_end + len(separator)
+    replacement_tail = source_norm[new_start:]
+    stop_indexes = [
+        replacement_tail.find(separator)
+        for separator in ("—", "–", ";")
+        if replacement_tail.find(separator) >= 0
+    ]
+    new_end = min(stop_indexes) if stop_indexes else len(replacement_tail)
+    old_text = source_norm[old_start:old_end].strip(" ,;")
+    new_text = replacement_tail[:new_end].strip(" ,;")
+    if not old_text or not new_text:
         return _QuotedSubstitutionPair(text_match="", replacement="")
     return _QuotedSubstitutionPair(
-        text_match=" ".join(replacement_match.group("old").split()),
-        replacement=" ".join(replacement_match.group("new").split()),
+        text_match=" ".join(old_text.split()),
+        replacement=" ".join(new_text.split()),
     )
 
 
@@ -113,6 +139,21 @@ def _first_blocking_lowering_rejection_detail(*, row: Any) -> dict[str, Any]:
         if rejection.get("blocking") is True:
             return dict(rejection)
     return first_rejection
+
+
+def _source_payload_instruction_context_detail(*, row: Any) -> dict[str, Any]:
+    """Return parent instruction evidence for payload-fragment manual rows."""
+    for rejection in row.summary.lowering_rejections:
+        if not isinstance(rejection, dict):
+            continue
+        if (
+            str(rejection.get("rule_id") or "")
+            != "uk_effect_source_payload_without_instruction_context_rejected"
+        ):
+            continue
+        if str(rejection.get("source_parent_context_preview") or "").strip():
+            return dict(rejection)
+    return {}
 
 
 def _definition_child_and_tail_parts(source_preview: str) -> dict[str, str]:
@@ -342,8 +383,30 @@ def _surface_text_rewrite_claim_template(
     summary = row.summary
     effect = row.effect
     source_preview = " ".join((summary.source_extracted_text_preview or "").split())
+    context_detail = _source_payload_instruction_context_detail(row=row)
+    context_preview = " ".join(
+        str(context_detail.get("source_parent_context_preview") or "").split()
+    )
     quoted_substitution = _quoted_for_substitute_pair(source_preview)
-    return _with_required_operation_family_proof_semantics({
+    context_used_for_text_pair = False
+    if not quoted_substitution.replacement and context_preview:
+        context_quoted_substitution = _quoted_for_substitute_pair(context_preview)
+        if context_quoted_substitution.replacement:
+            quoted_substitution = context_quoted_substitution
+            context_used_for_text_pair = True
+    ownership = list(required_ownership)
+    validator_checks = list(required_validator_checks)
+    if context_detail:
+        if "complete_source_parent_instruction_context" not in ownership:
+            ownership.append("complete_source_parent_instruction_context")
+        if (
+            "claim_uses_complete_parent_instruction_not_payload_fragment"
+            not in validator_checks
+        ):
+            validator_checks.append(
+                "claim_uses_complete_parent_instruction_not_payload_fragment"
+            )
+    template = {
         "schema": "lawvm.uk_semantic_compile_claim_template.v1",
         "claim_kind": "semantic_compile",
         "claim_status": "template_only_not_validated",
@@ -361,10 +424,25 @@ def _surface_text_rewrite_claim_template(
         "candidate_source_preview": source_preview[:500],
         "text_match": quoted_substitution.text_match,
         "replacement": quoted_substitution.replacement,
-        "required_ownership": required_ownership,
-        "required_validator_checks": required_validator_checks,
+        "required_ownership": ownership,
+        "required_validator_checks": validator_checks,
         "executable": False,
-    })
+    }
+    if context_detail:
+        template.update(
+            {
+                "payload_fragment_preview": source_preview[:500],
+                "source_parent_context_preview": context_preview[:500],
+                "source_parent_id": str(context_detail.get("source_parent_id") or ""),
+                "source_context_rule_id": str(context_detail.get("rule_id") or ""),
+                "source_context_reason_code": str(
+                    context_detail.get("reason_code") or ""
+                ),
+                "source_context_parser": str(context_detail.get("parser") or ""),
+                "source_context_used_for_text_pair": context_used_for_text_pair,
+            }
+        )
+    return _with_required_operation_family_proof_semantics(template)
 
 
 def _table_crossheading_claim_template(
