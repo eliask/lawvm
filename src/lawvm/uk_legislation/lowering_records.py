@@ -15,7 +15,10 @@ from lawvm.uk_legislation.effects import (
     uk_nonstructural_replay_candidate_family,
 )
 from lawvm.uk_legislation.manual_claim_templates import uk_manual_claim_template_status
-from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
+from lawvm.uk_legislation.phase_discipline import (
+    uk_phase_owner_for_diagnostic,
+    uk_phase_owner_for_manual_frontier,
+)
 from lawvm.uk_legislation.effect_temporal_cessation import (
     UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
     temporal_ceases_to_have_effect_exclusion_rule_for_ops,
@@ -63,6 +66,11 @@ def _effect_lowering_record_base(
     return payload
 
 
+def _ensure_uk_owner_phase(payload: dict[str, Any]) -> dict[str, Any]:
+    payload.setdefault("owner_phase", uk_phase_owner_for_diagnostic(payload))
+    return payload
+
+
 def _effect_diagnostic(
     *,
     rule_id: str,
@@ -72,18 +80,20 @@ def _effect_diagnostic(
     reason: str = "",
     **detail: Any,
 ) -> dict[str, Any]:
-    return diagnostic_detail(
-        rule_id=rule_id,
-        family=family,
-        phase="lowering",
-        reason=reason,
-        blocking=blocking,
-        effect_id=str(effect.effect_id or ""),
-        affecting_act_id=str(effect.affecting_act_id or ""),
-        affected_provisions=str(effect.affected_provisions or ""),
-        affecting_provisions=str(effect.affecting_provisions or ""),
-        effect_type=str(effect.effect_type or ""),
-        detail=detail,
+    return _ensure_uk_owner_phase(
+        diagnostic_detail(
+            rule_id=rule_id,
+            family=family,
+            phase="lowering",
+            reason=reason,
+            blocking=blocking,
+            effect_id=str(effect.effect_id or ""),
+            affecting_act_id=str(effect.affecting_act_id or ""),
+            affected_provisions=str(effect.affected_provisions or ""),
+            affecting_provisions=str(effect.affecting_provisions or ""),
+            effect_type=str(effect.effect_type or ""),
+            detail=detail,
+        )
     )
 
 
@@ -113,6 +123,7 @@ def _append_uk_effect_lowering_rejection(
         blocking=True,
     )
     payload.update(detail or {})
+    _ensure_uk_owner_phase(payload)
     rejections_out.append(payload)
 
 
@@ -142,6 +153,7 @@ def _append_uk_effect_lowering_observation(
         blocking=False,
     )
     payload.update(detail or {})
+    _ensure_uk_owner_phase(payload)
     observations_out.append(payload)
 
 
@@ -387,6 +399,7 @@ def mark_nonreplay_lowering_rejections_nonblocking(
             "nonstructural effect row; the lowering diagnostic is evidence, "
             "not a replay blocker."
         )
+        _ensure_uk_owner_phase(rejection)
         changed = True
     return changed
 
@@ -439,6 +452,7 @@ def mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
             "UK text/tree replay; the lowering diagnostic is evidence, not a "
             "replay blocker."
         )
+        _ensure_uk_owner_phase(rejection)
         changed = True
     return changed
 

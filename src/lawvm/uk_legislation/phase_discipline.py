@@ -136,6 +136,8 @@ def uk_phase_owner_for_diagnostic(record: Mapping[str, Any]) -> str:
         return UK_PHASE_EFFECT_METADATA_FRONTEND
     if any(token in combined for token in _SOURCE_EXTRACTION_RULE_TOKENS):
         return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    if "nonstructural" in combined:
+        return UK_PHASE_CANONICAL_OP_COMPILATION
     if "replay" in combined:
         return UK_PHASE_REPLAY_INVARIANTS
     if "oracle" in combined or "compare" in combined:

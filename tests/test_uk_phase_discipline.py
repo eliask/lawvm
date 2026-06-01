@@ -81,6 +81,16 @@ def test_diagnostic_phase_owner_prefers_explicit_and_infers_common_families() ->
         uk_phase_owner_for_diagnostic({"rule_id": "uk_oracle_projection_artifact"})
         == UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
     )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_effect_nonstructural_unsupported_no_ops_observed",
+                "family": "nonstructural_replay_observation",
+                "phase": "lowering",
+            }
+        )
+        == UK_PHASE_CANONICAL_OP_COMPILATION
+    )
 
 
 def test_phase_owner_counts_for_diagnostics_returns_stable_sorted_counts() -> None:
