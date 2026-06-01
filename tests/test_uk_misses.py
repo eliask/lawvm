@@ -135,6 +135,8 @@ def test_uk_misses_ukpga_1978_30_matches_uk_replay() -> None:
     # Internal consistency checks
     assert data["report_kind"] == "uk_misses_report"
     assert data["statute_id"] == "ukpga/1978/30"
+    assert isinstance(data["rejection_owner_phase_counts"], dict)
+    assert isinstance(data["blocking_rejection_owner_phase_counts"], dict)
     similarity = data["similarity"]
     assert 0.0 <= similarity <= 1.0
 

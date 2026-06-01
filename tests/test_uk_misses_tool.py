@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lawvm.tools.uk_misses import (
     _blocking_compile_records,
+    _diagnostic_owner_phase_counts,
     _rejection_rule_histogram,
 )
 
@@ -38,4 +39,18 @@ def test_uk_misses_splits_blocking_compile_records() -> None:
     assert {rule_id: count for rule_id, count, _ in blocking_histogram} == {
         "legacy_blocking_without_flag": 1,
         "uk_effect_lowering_no_supported_action_rejected": 1,
+    }
+
+
+def test_uk_misses_groups_compile_records_by_owner_phase() -> None:
+    rows = [
+        {"owner_phase": "typed_elaboration"},
+        {"rule_id": "uk_effect_feed_empty_recorded"},
+        {"rule_id": "uk_replay_existing_target_conflict_gap"},
+    ]
+
+    assert _diagnostic_owner_phase_counts(rows) == {
+        "effect_metadata_frontend": 1,
+        "replay_invariants": 1,
+        "typed_elaboration": 1,
     }
