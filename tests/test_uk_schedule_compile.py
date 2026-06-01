@@ -52747,6 +52747,69 @@ def test_compile_after_paragraph_insert_connector_sibling_lowers_tail_and_insert
     )
 
 
+def test_compile_after_paragraph_insert_connector_sibling_lowers_schedule_parent() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-39-paragraph-8-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>b at the end of paragraph (c) insert , or d an SCE formed in accordance with Council Regulation (EC) No 1435/2003 on the Statute for a European Cooperative Society.</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-9ca4772c6efaf7c7b2896cd6680ef4e2",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-07-31",
+        affected_uri="/id/ukpga/2014/14/schedule/4/paragraph/82/subparagraph/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2014",
+        affected_number="14",
+        affected_provisions="Sch. 4 para. 82(3)",
+        affecting_uri="/id/ukpga/2014/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="26",
+        affecting_provisions="Sch. 39 para. 8(b)",
+        affecting_title="Co-operative and Community Benefit Societies Act 2014",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    rule_id = "uk_effect_after_paragraph_insert_connector_sibling_lowered"
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT]
+    assert [op.witness_rule_id for op in ops] == [rule_id, rule_id]
+    assert ops[0].target.path == (
+        ("schedule", "4"),
+        ("paragraph", "82"),
+        ("subparagraph", "3"),
+        ("item", "c"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.replacement == ", or"
+    assert ops[1].target.path == (
+        ("schedule", "4"),
+        ("paragraph", "82"),
+        ("subparagraph", "3"),
+        ("item", "d"),
+    )
+    assert ops[1].payload is not None
+    assert ops[1].payload.kind is IRNodeKind.ITEM
+    assert ops[1].payload.label == "d"
+    assert ops[1].payload.text.startswith("an SCE formed in accordance with Council Regulation")
+    assert any(
+        row["rule_id"] == rule_id
+        and row["anchor_target"] == "schedule:4/paragraph:82/subparagraph:3/item:c"
+        and row["payload"]["target"] == "schedule:4/paragraph:82/subparagraph:3/item:d"
+        for row in observations
+    )
+
+
 def test_compile_after_paragraph_insert_connector_sibling_replays_tail_and_insert() -> None:
     extracted_el = ET.fromstring(
         f"""
