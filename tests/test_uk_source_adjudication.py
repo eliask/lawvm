@@ -4080,6 +4080,25 @@ def test_classify_uk_effect_inserted_parent_structural_insert_as_amendment_progr
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_as_inserted_anchor_structural_insert_as_amendment_program() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "c after paragraph 2B(8) as inserted, insert- 9 "
+            "“Relevant body” means a Strategic Health Authority."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:41/subsection:3"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "amendment_text_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_heading_facet_target() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
