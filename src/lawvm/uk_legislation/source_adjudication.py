@@ -1225,6 +1225,16 @@ def _looks_like_table_surface_instruction(text: str, *, target_paths: Iterable[s
         or re.search(r"\bomit\s+(?:the\s+)?reference\s+to\b", norm)
         or re.search(r"\bomit\s+(?:the\s+)?entries?\s+(?:for|relating\s+to)\b", norm)
         or re.search(
+            r"\bomit\s+(?:the\s+)?(?:first|second|third|\d+(?:st|nd|rd|th)?)\s+"
+            r"rows?\s+after\s+(?:the\s+)?heading\b",
+            norm,
+        )
+        or re.search(
+            r"\bomit\s+(?:the\s+)?heading\b.{0,240}\b(?:rows?\s+following\s+it|"
+            r"(?:first|second|third|\d+(?:st|nd|rd|th)?)\s+rows?\s+following)\b",
+            norm,
+        )
+        or re.search(
             r"\bafter\s+[“\"'‘][^\"'\u201c\u201d\u2018\u2019]{1,500}[”\"'’],?\s+insert(?:\b|\s*[—-])",
             norm,
         )
