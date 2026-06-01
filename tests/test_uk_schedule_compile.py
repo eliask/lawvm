@@ -27357,6 +27357,50 @@ def test_executor_replace_reuses_eid_lookup_parent_without_path_walk(monkeypatch
     assert executor._eid_lookup_index["section-1-1"][2] == 0
 
 
+def test_executor_replace_non_eid_child_does_not_clear_warm_eid_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2001/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="a",
+                            text="old child",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    section, _parent, _idx = executor._find_node_and_parent_statute("section-1")
+    assert section is not None
+    assert executor._eid_lookup_index is not None
+    old_child = section.children[0]
+
+    def fail_clear() -> None:
+        raise AssertionError("non-EID child replacement should preserve the warm EID index")
+
+    monkeypatch.setattr(executor, "_clear_eid_lookup_index", fail_clear)
+    replacement = UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a", text="new child")
+
+    assert executor._replace_node_in_statute(old_child, replacement)
+    assert section.children[0] is replacement
+    assert executor._find_node_and_parent_statute("section-1")[0] is section
+
+
 def test_executor_target_lookup_cache_tracks_structural_mutations() -> None:
     statute = IRStatute(
         statute_id="ukpga/2001/1",
