@@ -273,7 +273,7 @@ def _is_prior_same_schedule_paragraph_chain(
     detail: dict[str, Any],
     effect: UKEffectRecord,
 ) -> bool:
-    if detail.get("source_inserted_by_scope") != "this_schedule":
+    if detail.get("source_inserted_by_scope") not in {"this_schedule", "unspecified"}:
         return False
     source_label = _clean_num(detail.get("source_inserted_by_label") or "")
     affecting_label = _affecting_schedule_paragraph_label(effect)
@@ -282,6 +282,12 @@ def _is_prior_same_schedule_paragraph_chain(
     if not source_label.isdigit() or not affecting_label.isdigit():
         return False
     return int(source_label) < int(affecting_label)
+
+
+def _source_chain_scope_is_inferred_from_affecting_provision(
+    detail: dict[str, Any],
+) -> bool:
+    return detail.get("source_inserted_by_scope") == "unspecified"
 
 
 def _inserted_anchor_payload_labels(
@@ -307,6 +313,25 @@ def _ground_label_series_stem(label: str) -> str:
     """Return the numeric series that groups related UK ground labels."""
     match = re.match(r"([0-9]+)", str(label or ""))
     return match.group(1) if match is not None else ""
+
+
+def _ground_payload_text_for_label(
+    *,
+    inserted_label: str,
+    inserted_text: str,
+    target_label: str,
+) -> str:
+    labels: list[tuple[str, int, int]] = [(inserted_label, 0, 0)]
+    labels.extend(
+        (_clean_num(match.group("label")), match.start(), match.end())
+        for match in _GROUND_PAYLOAD_LABEL_RE.finditer(inserted_text or "")
+    )
+    for index, (label, start, payload_start) in enumerate(labels):
+        if _clean_num(label) != _clean_num(target_label):
+            continue
+        end = labels[index + 1][1] if index + 1 < len(labels) else len(inserted_text)
+        return " ".join(inserted_text[payload_start:end].split()).strip()
+    return ""
 
 
 def lower_amendment_program_inserted_anchor_structural_insert(
@@ -337,15 +362,15 @@ def lower_amendment_program_inserted_anchor_structural_insert(
     target_leaf_kind = str(_addr_leaf_kind(target) or "").lower()
     target_leaf_label = _clean_num(_addr_leaf_label(target) or "")
     inserted_label = _clean_num(detail.get("inserted_label") or "")
+    inserted_payload_labels = tuple(str(label) for label in detail.get("inserted_payload_labels") or ())
     if (
         detail.get("inserted_anchor_kind") != "ground"
         or detail.get("direction") != "after"
-        or detail.get("inserted_payload_label_count") != 1
         or not _is_prior_same_schedule_paragraph_chain(detail=detail, effect=effect)
         or _addr_container(target) != "schedule"
         or target_leaf_kind != "subparagraph"
         or not inserted_label
-        or inserted_label != target_leaf_label
+        or target_leaf_label not in inserted_payload_labels
     ):
         return UKAmendmentProgramInsertedAnchorLowering(
             target=target,
@@ -353,7 +378,11 @@ def lower_amendment_program_inserted_anchor_structural_insert(
             detail=None,
         )
 
-    inserted_text = str(detail.get("inserted_text") or "").strip()
+    inserted_text = _ground_payload_text_for_label(
+        inserted_label=inserted_label,
+        inserted_text=str(detail.get("inserted_text") or ""),
+        target_label=target_leaf_label,
+    )
     if not inserted_text:
         return UKAmendmentProgramInsertedAnchorLowering(
             target=target,
@@ -374,13 +403,18 @@ def lower_amendment_program_inserted_anchor_structural_insert(
         },
         "children": [],
     }
+    inferred_scope = _source_chain_scope_is_inferred_from_affecting_provision(detail)
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
         rule_id=UK_AMENDMENT_PROGRAM_INSERTED_ANCHOR_STRUCTURAL_INSERT_RULE_ID,
         family="amendment_program_lowering",
-        reason_code="same_schedule_single_ground_source_chain_insert",
+        reason_code=(
+            "same_schedule_contextual_ground_source_chain_insert"
+            if inferred_scope
+            else "same_schedule_ground_source_chain_insert"
+        ),
         reason=(
-            "UK source text inserts one Ground after an anchor explicitly "
+            "UK source text inserts Ground payload material after an anchor "
             "inserted by an earlier paragraph of the same amendment schedule; "
             "lowering emits only the feed-target child and does not search "
             "base law for the inserted anchor."
@@ -392,6 +426,8 @@ def lower_amendment_program_inserted_anchor_structural_insert(
             "target_ref": target_ref,
             "target": str(lowered_target),
             **detail,
+            "compiled_payload_label": target_leaf_label,
+            "source_inserted_by_scope_inferred_from_affecting_provision": inferred_scope,
         },
     )
     return UKAmendmentProgramInsertedAnchorLowering(
