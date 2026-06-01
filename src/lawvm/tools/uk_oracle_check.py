@@ -24,10 +24,12 @@ from typing import Any
 
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
+from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.uk_legislation.grounding_collateral import (
     grounding_collateral_eids as _shared_grounding_collateral_eids,
     score_with_grounding_collateral_excluded,
 )
+from lawvm.uk_legislation.phase_discipline import UK_PHASE_REPLAY_INVARIANTS
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_counts_for_diagnostics
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -76,6 +78,12 @@ def _format_owner_phase_counts(counts: dict[str, int]) -> str:
     if not counts:
         return "{}"
     return ", ".join(f"{phase}={count}" for phase, count in counts.items())
+
+
+def _format_counts(counts: Counter[str]) -> str:
+    if not counts:
+        return "{}"
+    return ", ".join(f"{key}={count}" for key, count in sorted(counts.items()))
 
 
 def _collect_replay_eids(replayed_ir: Any) -> set[str]:
@@ -410,6 +418,24 @@ def oracle_check_uk_statute(
         if str(d.get("rule_id") or "") == _REPEAL_NOT_WARRANTED_RULE_ID
     )
     mutation_reports = build_mutation_invariant_reports(mutation_events)
+    mutation_proofs = tuple(
+        MutationBoundaryProof.from_mutation_invariant_report(
+            report,
+            proof_id=f"uk-oracle-check-mutation-boundary:{index}:{report.op_id or '<missing>'}",
+            jurisdiction="uk",
+            materialization_surface="uk_oracle_check_replay",
+            owner_phase=UK_PHASE_REPLAY_INVARIANTS,
+            safe_default="treat_unproved_boundary_as_replay_invariant_residual",
+            forbidden_shortcuts=(
+                "ignore_unexplained_changed_paths",
+                "use_oracle_agreement_as_boundary_proof",
+                "broaden_target_region_after_replay",
+            ),
+        )
+        for index, report in enumerate(mutation_reports)
+    )
+    mutation_proof_status_counts = Counter(proof.status for proof in mutation_proofs)
+    mutation_proof_rule_counts = Counter(proof.rule_id for proof in mutation_proofs)
     mutation_unexplained_reports = [
         report
         for report in mutation_reports
@@ -449,6 +475,14 @@ def oracle_check_uk_statute(
             f"reports={len(mutation_reports)}  "
             f"unexplained_reports={len(mutation_unexplained_reports)}  "
             f"unexplained_paths={mutation_unexplained_path_count}"
+        ),
+        (
+            "Mutation boundary proof statuses: "
+            f"{_format_counts(mutation_proof_status_counts)}"
+        ),
+        (
+            "Mutation boundary proof rules: "
+            f"{_format_counts(mutation_proof_rule_counts)}"
         ),
         (
             "Base source: "
