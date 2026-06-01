@@ -1,7 +1,7 @@
 """Shared JSON payload builders for replay-oriented CLI commands."""
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.adjudication_evidence import (
@@ -59,6 +59,25 @@ def _record_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _record_required_proof_counts(
+    records: Iterable[Mapping[str, Any]],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        if record.get("replay_authorized") is True:
+            continue
+        proofs = record.get("required_proofs") or ()
+        if not isinstance(proofs, list | tuple):
+            counts["invalid_required_proofs_shape"] = (
+                counts.get("invalid_required_proofs_shape", 0) + 1
+            )
+            continue
+        for proof in proofs:
+            key = _text_field(proof, default="unknown") or "unknown"
+            counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _uk_replay_adjudication_bucket_counts(adjudications: Iterable[Any]) -> dict[str, int]:
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_replay_adjudication_bucket,
@@ -94,6 +113,38 @@ def _uk_replay_adjudication_to_dict(adjudication: Any) -> dict[str, Any]:
 
 def _blocking_rejections(rejections: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [rejection for rejection in rejections if is_blocking_compile_record(rejection)]
+
+
+def _with_uk_compile_authorization(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    lane: str,
+) -> list[dict[str, Any]]:
+    from lawvm.uk_legislation.execution_authorization import (
+        uk_execution_authorization_from_compile_record,
+    )
+    from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
+
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        row = dict(record)
+        owner_phase = uk_phase_owner_for_diagnostic(row)
+        row["owner_phase"] = owner_phase
+        authorization = uk_execution_authorization_from_compile_record(
+            record=row,
+            lane=lane,
+            owner_phase=owner_phase,
+        ).to_dict()
+        row["execution_authorization"] = authorization
+        row["executable"] = authorization["executable"]
+        row["replay_authorized"] = authorization["replay_authorized"]
+        row["authorization_status"] = authorization["authorization_status"]
+        row["authorization_rule_id"] = authorization["authorization_rule_id"]
+        row["required_proofs"] = authorization["required_proofs"]
+        row["safe_default"] = authorization["safe_default"]
+        row["forbidden_shortcuts"] = authorization["forbidden_shortcuts"]
+        rows.append(row)
+    return rows
 
 
 def _uk_diagnostic_owner_phase_counts(records: Iterable[dict[str, Any]]) -> dict[str, int]:
@@ -319,19 +370,34 @@ def build_uk_replay_payload(
     error: str | None = None,
 ) -> dict[str, Any]:
     replay_adjudications = list(adjudications)
-    effect_feed_parse_rejection_rows = [dict(item) for item in effect_feed_parse_rejections]
-    lowering_rejection_rows = [dict(item) for item in lowering_rejections]
-    authority_rejection_rows = [dict(item) for item in authority_rejections]
-    source_parse_rejection_rows = [dict(item) for item in source_parse_rejections]
-    effect_source_pathology_rows = [
-        dict(item) for item in effect_source_pathology_observations
-    ]
-    manual_compile_frontier_rows = [
-        dict(item) for item in manual_compile_frontier_observations
-    ]
-    source_acquisition_rejection_rows = [
-        dict(item) for item in source_acquisition_rejections
-    ]
+    source_parse_rejection_rows = _with_uk_compile_authorization(
+        source_parse_rejections,
+        lane="source_parse",
+    )
+    effect_feed_parse_rejection_rows = _with_uk_compile_authorization(
+        effect_feed_parse_rejections,
+        lane="effect_feed_parse",
+    )
+    effect_source_pathology_rows = _with_uk_compile_authorization(
+        effect_source_pathology_observations,
+        lane="effect_source_pathology",
+    )
+    manual_compile_frontier_rows = _with_uk_compile_authorization(
+        manual_compile_frontier_observations,
+        lane="manual_compile_frontier",
+    )
+    source_acquisition_rejection_rows = _with_uk_compile_authorization(
+        source_acquisition_rejections,
+        lane="source_acquisition",
+    )
+    lowering_rejection_rows = _with_uk_compile_authorization(
+        lowering_rejections,
+        lane="lowering",
+    )
+    authority_rejection_rows = _with_uk_compile_authorization(
+        authority_rejections,
+        lane="authority",
+    )
     compile_observations = [
         *source_parse_rejection_rows,
         *effect_feed_parse_rejection_rows,
@@ -395,6 +461,13 @@ def build_uk_replay_payload(
         "compile_observation_owner_phase_counts": _uk_diagnostic_owner_phase_counts(
             compile_observations
         ),
+        "compile_observation_authorization_status_counts": _record_field_counts(
+            compile_observations,
+            "authorization_status",
+        ),
+        "compile_observation_missing_proof_counts": _record_required_proof_counts(
+            compile_observations
+        ),
         "manual_compile_status_counts": _record_field_counts(
             manual_compile_frontier_rows,
             "manual_compile_status",
@@ -415,6 +488,13 @@ def build_uk_replay_payload(
         "compile_rejection_count": len(blocking_compile_rejections),
         "compile_rejection_rule_counts": _rejection_rule_counts(blocking_compile_rejections),
         "compile_rejection_owner_phase_counts": _uk_diagnostic_owner_phase_counts(
+            blocking_compile_rejections
+        ),
+        "compile_rejection_authorization_status_counts": _record_field_counts(
+            blocking_compile_rejections,
+            "authorization_status",
+        ),
+        "compile_rejection_missing_proof_counts": _record_required_proof_counts(
             blocking_compile_rejections
         ),
         "blocking_compile_rejection_count": len(blocking_compile_rejections),

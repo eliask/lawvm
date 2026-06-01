@@ -1092,6 +1092,18 @@ def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
         "affecting_source_extraction": 2,
         "typed_elaboration": 1,
     }
+    assert payload["compile_observation_authorization_status_counts"] == {
+        "effect_source_pathology_diagnostic_evidence_only": 1,
+        "manual_claim_required": 1,
+        "source_acquisition_compile_blocked": 1,
+    }
+    assert payload["compile_rejection_authorization_status_counts"] == {
+        "source_acquisition_compile_blocked": 1,
+    }
+    assert payload["compile_rejection_missing_proof_counts"] == {
+        "official_source_witness": 1,
+        "source_acquisition_success": 1,
+    }
     assert payload["manual_compile_status_counts"] == {"manual_compile_candidate": 1}
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1,
@@ -1105,12 +1117,21 @@ def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
     assert payload["compile_observations"]["effect_source_pathology"][0]["source_pathology"] == (
         "missing_extracted_source"
     )
+    assert payload["compile_observations"]["effect_source_pathology"][0][
+        "authorization_status"
+    ] == "effect_source_pathology_diagnostic_evidence_only"
     assert payload["compile_observations"]["manual_compile_frontier"][0][
         "manual_compile_status"
     ] == "manual_compile_candidate"
+    assert payload["compile_observations"]["manual_compile_frontier"][0][
+        "authorization_status"
+    ] == "manual_claim_required"
     assert payload["compile_rejections"]["source_acquisition"][0]["rule_id"] == (
         "uk_affecting_act_xml_missing_rejected"
     )
+    assert payload["compile_rejections"]["source_acquisition"][0][
+        "authorization_status"
+    ] == "source_acquisition_compile_blocked"
 
 
 def test_uk_replay_regime_payload_uses_contract_lanes() -> None:
