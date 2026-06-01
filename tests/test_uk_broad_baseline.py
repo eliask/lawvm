@@ -161,6 +161,19 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                     "apply_op": 3,
                     "replace_text": 1,
                 },
+                "mutation_boundary_proof_status_counts": {
+                    "proved": 2,
+                    "unresolved": 1,
+                    "violated": 1,
+                },
+                "mutation_boundary_proof_rule_counts": {
+                    "mutation_boundary_path_set_proved": 2,
+                    "mutation_boundary_path_set_unresolved": 1,
+                    "mutation_boundary_path_set_violated": 1,
+                },
+                "mutation_boundary_proof_owner_phase_counts": {
+                    "replay_invariants": 4,
+                },
             },
             {
                 "statute_id": "ukpga/1961/60",
@@ -375,6 +388,19 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "apply_op": 3,
         "replace_text": 1,
     }
+    assert summary["mutation_boundary_proof_status_counts"] == {
+        "proved": 2,
+        "unresolved": 1,
+        "violated": 1,
+    }
+    assert summary["mutation_boundary_proof_rule_counts"] == {
+        "mutation_boundary_path_set_proved": 2,
+        "mutation_boundary_path_set_unresolved": 1,
+        "mutation_boundary_path_set_violated": 1,
+    }
+    assert summary["mutation_boundary_proof_owner_phase_counts"] == {
+        "replay_invariants": 4,
+    }
     assert summary["mutation_boundary_unexplained_statutes"] == [
         "ukpga/1986/61",
     ]
@@ -456,6 +482,13 @@ def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
         "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": 1,
     }
     assert diagnostics["mutation_boundary_helper_counts"] == {"replace_text": 1}
+    assert diagnostics["mutation_boundary_proof_status_counts"] == {"violated": 1}
+    assert diagnostics["mutation_boundary_proof_rule_counts"] == {
+        "mutation_boundary_path_set_violated": 1,
+    }
+    assert diagnostics["mutation_boundary_proof_owner_phase_counts"] == {
+        "replay_invariants": 1,
+    }
     assert diagnostics["mutation_boundary_unexplained_samples"] == [
         {
             "op_id": "op-1",
@@ -463,6 +496,39 @@ def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
             "outcome": "replaced_node",
             "result_codes": ["REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"],
             "unexplained_paths": ["body/section:2"],
+        }
+    ]
+    assert diagnostics["mutation_boundary_proof_samples"] == [
+        {
+            "proof_id": "uk-broad-mutation-boundary:0:op-1",
+            "jurisdiction": "uk",
+            "materialization_surface": "uk_broad_baseline_replay",
+            "operation_id": "op-1",
+            "owner_phase": "replay_invariants",
+            "rule_id": "mutation_boundary_path_set_violated",
+            "status": "violated",
+            "helper": "replace_text",
+            "outcome": "replaced_node",
+            "selected_target_paths": ["body/section:1"],
+            "allowed_mutation_regions": ["body/section:1"],
+            "changed_paths": ["body/section:2"],
+            "covered_changed_paths": [],
+            "unexplained_changed_paths": ["body/section:2"],
+            "declared_allowance_paths": [],
+            "declared_recovery_paths": [],
+            "declared_recovery_rule_ids": [],
+            "declared_migration_paths": [],
+            "declared_migration_rule_ids": [],
+            "matched_allowance_rule_ids": [],
+            "result_codes": ["REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"],
+            "path_set_invariant_holds": False,
+            "safe_default": "treat_unproved_boundary_as_replay_invariant_residual",
+            "forbidden_shortcuts": [
+                "ignore_unexplained_changed_paths",
+                "use_oracle_agreement_as_boundary_proof",
+                "broaden_target_region_after_replay",
+            ],
+            "detail": {},
         }
     ]
 

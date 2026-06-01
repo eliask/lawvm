@@ -46,6 +46,7 @@ from typing import Any, Optional
 
 from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_compile_record,
 )
@@ -207,6 +208,25 @@ def _mutation_boundary_diagnostics(
         for result in report.results
     )
     helper_counts = Counter(report.helper for report in reports)
+    proofs = tuple(
+        MutationBoundaryProof.from_mutation_invariant_report(
+            report,
+            proof_id=f"uk-broad-mutation-boundary:{index}:{report.op_id or '<missing>'}",
+            jurisdiction="uk",
+            materialization_surface="uk_broad_baseline_replay",
+            owner_phase=UK_PHASE_REPLAY_INVARIANTS,
+            safe_default="treat_unproved_boundary_as_replay_invariant_residual",
+            forbidden_shortcuts=(
+                "ignore_unexplained_changed_paths",
+                "use_oracle_agreement_as_boundary_proof",
+                "broaden_target_region_after_replay",
+            ),
+        )
+        for index, report in enumerate(reports)
+    )
+    proof_status_counts = Counter(proof.status for proof in proofs)
+    proof_rule_counts = Counter(proof.rule_id for proof in proofs)
+    proof_owner_phase_counts = Counter(proof.owner_phase for proof in proofs)
     samples = [
         {
             "op_id": report.op_id,
@@ -220,6 +240,11 @@ def _mutation_boundary_diagnostics(
         }
         for report in unexplained_reports[:5]
     ]
+    proof_samples = [
+        proof.to_dict()
+        for proof in proofs
+        if proof.status in {"unresolved", "violated"}
+    ][:5]
     return {
         "n_mutation_events": len(mutation_events),
         "n_mutation_boundary_reports": len(reports),
@@ -232,7 +257,15 @@ def _mutation_boundary_diagnostics(
             sorted(result_code_counts.items())
         ),
         "mutation_boundary_helper_counts": dict(sorted(helper_counts.items())),
+        "mutation_boundary_proof_status_counts": dict(
+            sorted(proof_status_counts.items())
+        ),
+        "mutation_boundary_proof_rule_counts": dict(sorted(proof_rule_counts.items())),
+        "mutation_boundary_proof_owner_phase_counts": dict(
+            sorted(proof_owner_phase_counts.items())
+        ),
         "mutation_boundary_unexplained_samples": samples,
+        "mutation_boundary_proof_samples": proof_samples,
     }
 
 
@@ -669,6 +702,15 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     mutation_boundary_helper_counts = _aggregate_row_count_maps(
         results, "mutation_boundary_helper_counts"
     )
+    mutation_boundary_proof_status_counts = _aggregate_row_count_maps(
+        results, "mutation_boundary_proof_status_counts"
+    )
+    mutation_boundary_proof_rule_counts = _aggregate_row_count_maps(
+        results, "mutation_boundary_proof_rule_counts"
+    )
+    mutation_boundary_proof_owner_phase_counts = _aggregate_row_count_maps(
+        results, "mutation_boundary_proof_owner_phase_counts"
+    )
     mutation_boundary_unexplained_rows = [
         r
         for r in scored
@@ -818,6 +860,13 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "mutation_boundary_result_code_counts": mutation_boundary_result_code_counts,
         "mutation_boundary_helper_counts": mutation_boundary_helper_counts,
+        "mutation_boundary_proof_status_counts": (
+            mutation_boundary_proof_status_counts
+        ),
+        "mutation_boundary_proof_rule_counts": mutation_boundary_proof_rule_counts,
+        "mutation_boundary_proof_owner_phase_counts": (
+            mutation_boundary_proof_owner_phase_counts
+        ),
         "mutation_boundary_unexplained_statutes": sorted(
             str(r.get("statute_id") or "")
             for r in mutation_boundary_unexplained_rows
@@ -1881,6 +1930,22 @@ def run_driver(
             ].items()
         )
         print(f"  mutation_boundary_result_code_counts: {counts}")
+    if summary["mutation_boundary_proof_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "mutation_boundary_proof_status_counts"
+            ].items()
+        )
+        print(f"  mutation_boundary_proof_status_counts: {counts}")
+    if summary["mutation_boundary_proof_rule_counts"]:
+        counts = ", ".join(
+            f"{rule_id}={count}"
+            for rule_id, count in summary[
+                "mutation_boundary_proof_rule_counts"
+            ].items()
+        )
+        print(f"  mutation_boundary_proof_rule_counts: {counts}")
     if summary["mutation_boundary_unexplained_statutes"]:
         print(
             "  mutation_boundary_unexplained_statutes: "
