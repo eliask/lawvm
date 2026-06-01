@@ -10499,6 +10499,10 @@ def test_source_parent_each_provision_substitution_candidate_prefilter() -> None
         "In each provision specified below, for “A” or, as the case may be, “B” "
         "there is substituted “C”."
     )
+    assert _source_parent_each_provision_substitution_candidate(
+        "IN EACH PROVISION specified below, for “A” or, as the case may be, “B” "
+        "THERE IS SUBSTITUTED “C”."
+    )
     assert not _source_parent_each_provision_substitution_candidate(
         "In each provision specified below, omit the entries relating to fees."
     )
