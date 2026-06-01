@@ -424,7 +424,7 @@ def build_operation_surface(
                     },
                 )
             )
-        if target_status == "skeleton_duplicate_resolved":
+        if target_status == "skeleton_duplicate_resolved" and target_address_candidate.status == "candidate":
             rule_id = "nz_target_address_skeleton_duplicate_resolved"
             reason = "source path duplicate is caused by non-current end skeleton nodes; primary node target kept"
             findings.append(

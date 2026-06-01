@@ -456,6 +456,51 @@ def test_build_operation_surface_resolves_end_skeleton_duplicates_with_named_obs
     )
 
 
+def test_build_operation_surface_does_not_recover_skeleton_duplicate_without_address() -> None:
+    xml = b"""\
+<act>
+  <body>
+    <part id="P2"><label>2</label><heading>Live part</heading>
+      <prov id="S22"><label>22</label><heading>Live section</heading>
+        <notes>
+          <history-note id="HN1">
+            <amended-provision>Section 22(1) first proviso</amended-provision>
+            <amending-operation>repealed</amending-operation>
+            Section 22(1) first proviso: repealed by section 3 of the Example Amendment Act 2025 (2025 No 4).
+          </history-note>
+        </notes>
+      </prov>
+    </part>
+  </body>
+  <end>
+    <skeletons>
+      <skeleton.act>
+        <skeleton.act.body>
+          <part id="SP2"><label>2</label><heading>Historical part</heading>
+            <prov id="SS22"><label>22</label><heading>Historical section</heading></prov>
+          </part>
+        </skeleton.act.body>
+      </skeleton.act>
+    </skeletons>
+  </end>
+</act>
+"""
+
+    report = build_operation_surface(
+        parse_nz_source_document(xml),
+        archived_dependency_work_ids=frozenset({"act_public_2025_4"}),
+    )
+
+    assert report.summary()["target_surface_status_counts"] == {"skeleton_duplicate_resolved": 1}
+    assert report.summary()["target_address_status_counts"] == {"blocked_target_hint_unparsed": 1}
+    assert [finding["rule_id"] for finding in report.findings] == [
+        "nz_target_address_hint_unparsed",
+        "nz_lowering_readiness_blocked_target_hint_unparsed",
+    ]
+    assert report.findings[0]["target_resolution"]["target_resolution_status"] == "rejected"
+    assert "selected_target" not in report.findings[0]["target_resolution"]
+
+
 def test_build_operation_surface_resolves_attached_heading_from_context_with_named_observation() -> None:
     xml = b"""\
 <act>
