@@ -54062,6 +54062,139 @@ def test_compile_after_paragraph_insert_labelled_series_lowers_semicolon_and_sib
     assert [payload["label"] for payload in series_rows[0]["payloads"]] == ["c", "d", "e"]
 
 
+def test_compile_after_paragraph_insert_full_stop_tail_lowers_patch_and_siblings() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-7-paragraph-4-6">
+          <Pnumber>6</Pnumber>
+          <Text>6 At the end of paragraph (4), omit the full-stop and insert— ; d a charge under a collective single charge structure; e a collective existing rights charge. .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2e5c7144550a5003a4d4d4f8fed7b499",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-10-01",
+        affected_uri="/id/uksi/2015/879/regulation/2",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2015",
+        affected_number="879",
+        affected_provisions="reg. 2",
+        affecting_uri="/id/uksi/2022/255/schedule/7/paragraph/4/6",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="255",
+        affecting_provisions="Sch. 7 para. 4(6)",
+        affecting_title="Occupational Pension Schemes (Administration, Investment, Charges and Governance) (Amendment) Regulations 2022",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    rule_id = "uk_effect_after_paragraph_insert_labelled_series_lowered"
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.INSERT, StructuralAction.INSERT]
+    assert [op.witness_rule_id for op in ops] == [rule_id, rule_id, rule_id]
+    assert [str(op.target) for op in ops] == [
+        "section:2/subsection:4/paragraph:c",
+        "section:2/subsection:4/paragraph:d",
+        "section:2/subsection:4/paragraph:e",
+    ]
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "."
+    assert ops[0].text_patch.selector.occurrence == -1
+    assert ops[0].text_patch.replacement == ";"
+    assert [op.payload.label if op.payload is not None else None for op in ops[1:]] == ["d", "e"]
+    assert ops[1].payload is not None
+    assert ops[1].payload.text == "a charge under a collective single charge structure"
+    assert ops[2].payload is not None
+    assert ops[2].payload.text == "a collective existing rights charge"
+    assert [row["rule_id"] for row in observations if row["rule_id"].endswith("_rejected")] == []
+    series_rows = [row for row in observations if row["rule_id"] == rule_id]
+    assert len(series_rows) == 1
+    assert series_rows[0]["source_id"] == "schedule-7-paragraph-4-6"
+    assert series_rows[0]["anchor_target"] == "section:2/subsection:4/paragraph:c"
+    assert series_rows[0]["anchor_patch_kind"] == "replace_final_full_stop"
+    assert series_rows[0]["start_label"] == "d"
+    assert series_rows[0]["end_label"] == "e"
+
+
+def test_compile_after_paragraph_insert_full_stop_tail_replays_patch_and_siblings() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-7-paragraph-4-6">
+          <Text>6 At the end of paragraph (4), omit the full-stop and insert— ; d a charge under a collective single charge structure; e a collective existing rights charge. .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-2e5c7144550a5003a4d4d4f8fed7b499",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-10-01",
+        affected_uri="/id/uksi/2015/879/regulation/2",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2015",
+        affected_number="879",
+        affected_provisions="reg. 2",
+        affecting_uri="/id/uksi/2022/255/schedule/7/paragraph/4/6",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="255",
+        affecting_provisions="Sch. 7 para. 4(6)",
+        affecting_title="Occupational Pension Schemes (Administration, Investment, Charges and Governance) (Amendment) Regulations 2022",
+        in_force_dates=[],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    base = IRStatute(
+        statute_id="uksi/2015/879",
+        title="Test Regulations",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="a charge under a single charge structure;",
+                                ),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="a flat fee charge;"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="an existing rights charge."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [(child.label, child.text) for child in subsection.children] == [
+        ("a", "a charge under a single charge structure;"),
+        ("b", "a flat fee charge;"),
+        ("c", "an existing rights charge;"),
+        ("d", "a charge under a collective single charge structure"),
+        ("e", "a collective existing rights charge"),
+    ]
+    assert not adjudications
+
+
 @pytest.mark.parametrize(
     ("source_text", "anchor_label", "inserted_label", "inserted_text"),
     [

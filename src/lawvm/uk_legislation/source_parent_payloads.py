@@ -159,6 +159,12 @@ _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_TEXT_RE = re.compile(
     r"insert (?P<payload>.{0,2000})$",
     flags=re.I | re.S,
 )
+_UK_AT_END_PARAGRAPH_OMIT_FULL_STOP_INSERT_LABELLED_SERIES_TEXT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,3}"
+    r"At\s+the\s+end\s+of\s+paragraph\s+\((?P<subsection>[0-9A-Za-z]+)\),\s*"
+    r"omit\s+the\s+full-stop\s+and\s+insert\s*[—–-]\s*(?P<payload>.{0,2000})$",
+    flags=re.I | re.S,
+)
 _UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_REF_RE = re.compile(
     r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*"
     r"\((?P<subsection>[0-9A-Za-z]+)\)\s*"
@@ -321,6 +327,20 @@ def _next_alpha_label(label: str) -> str:
         chars[index] = "a"
         index -= 1
     return "a" + "".join(chars)
+
+
+def _previous_alpha_label(label: str) -> str:
+    chars = list(label.strip().lower())
+    if not chars or any(not ("a" <= char <= "z") for char in chars):
+        return ""
+    index = len(chars) - 1
+    while index >= 0:
+        if chars[index] != "a":
+            chars[index] = chr(ord(chars[index]) - 1)
+            return "".join(chars)
+        chars[index] = "z"
+        index -= 1
+    return ""
 
 
 def _next_same_stem_alnum_label(label: str) -> str:
@@ -720,7 +740,76 @@ def _source_after_paragraph_insert_labelled_series(
 ) -> Optional[dict[str, Any]]:
     """Lower `after paragraph (b), insert ; c ...; d ...; or e ...` rows."""
     if extracted_el is None or _tag(extracted_el) not in {"P3", "P4"}:
-        return None
+        if extracted_el is None or _tag(extracted_el) != "P2":
+            return None
+        text = " ".join((extracted_text or "").split()).strip()
+        text_match = _UK_AT_END_PARAGRAPH_OMIT_FULL_STOP_INSERT_LABELLED_SERIES_TEXT_RE.match(text)
+        if text_match is None:
+            return None
+        parent_target = _parse_affected_target(affected_provisions or "")
+        if len(parent_target.path) != 1 or str(parent_target.path[0][0]).lower() != "section":
+            return None
+        section = str(parent_target.path[0][1])
+        subsection = _source_parent_range_label(text_match.group("subsection"))
+        if not section or not subsection:
+            return None
+        payload_text = text_match.group("payload").strip()
+        if not payload_text.startswith(";"):
+            return None
+        payload_tail = payload_text[1:].strip()
+        matches = list(_UK_LABELLED_SERIES_ITEM_RE.finditer(payload_tail))
+        if not matches:
+            return None
+        payloads: list[dict[str, str]] = []
+        for index, match in enumerate(matches):
+            label = _source_parent_range_label(match.group("label"))
+            next_start = matches[index + 1].start() if index + 1 < len(matches) else len(payload_tail)
+            item_text = payload_tail[match.end() : next_start].strip()
+            item_text = item_text.rstrip(_PAYLOAD_RSTRIP)
+            if not label or not item_text:
+                return None
+            payloads.append(
+                {
+                    "label": label,
+                    "text": item_text,
+                    "target_ref": f"s. {section}({subsection})({label})",
+                    "target": f"section:{section}/subsection:{subsection}/paragraph:{label}",
+                }
+            )
+        start_label = payloads[0]["label"]
+        if any(len(payload["label"]) != 1 for payload in payloads):
+            return None
+        anchor_label = _previous_alpha_label(start_label)
+        if not anchor_label:
+            return None
+        expected_labels = tuple(
+            chr(label_ord)
+            for label_ord in range(ord(start_label), ord(payloads[-1]["label"]) + 1)
+        )
+        if tuple(payload["label"] for payload in payloads) != expected_labels:
+            return None
+        anchor_target = LegalAddress(
+            path=(
+                ("section", section),
+                ("subsection", subsection),
+                ("paragraph", anchor_label),
+            )
+        )
+        return {
+            "rule_id": UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+            "source_id": str(extracted_el.get("id") or ""),
+            "source_instruction": text[: text_match.start("payload")].strip(),
+            "target_ref": affected_provisions,
+            "section": section,
+            "subsection": subsection,
+            "anchor_label": anchor_label,
+            "anchor_target": str(anchor_target),
+            "start_label": start_label,
+            "end_label": payloads[-1]["label"],
+            "semicolon_target": str(anchor_target),
+            "anchor_patch_kind": "replace_final_full_stop",
+            "payloads": tuple(payloads),
+        }
     ref_match = _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_REF_RE.match(affected_provisions or "")
     if ref_match is None:
         return None

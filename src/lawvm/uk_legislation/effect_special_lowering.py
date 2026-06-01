@@ -199,23 +199,36 @@ def lower_uk_after_paragraph_insert_labelled_series(  # noqa: PLR0913
             ("paragraph", str(after_paragraph_series["anchor_label"])),
         )
     )
-    semicolon_patch = TextPatchSpec(
-        kind=TextPatchKindEnum.APPEND,
-        selector=TextSelector(match_text="TEXT_END", occurrence=0),
-        replacement=";",
-    )
+    anchor_patch_kind = str(after_paragraph_series.get("anchor_patch_kind") or "")
+    if anchor_patch_kind == "replace_final_full_stop":
+        semicolon_patch = TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text=".", occurrence=-1),
+            replacement=";",
+        )
+        op_text_match = "."
+        op_text_occurrence = -1
+    else:
+        semicolon_patch = TextPatchSpec(
+            kind=TextPatchKindEnum.APPEND,
+            selector=TextSelector(match_text="TEXT_END", occurrence=0),
+            replacement=";",
+        )
+        op_text_match = "TEXT_END"
+        op_text_occurrence = 0
     semicolon_rewrite = _uk_text_rewrite_spec(
         fragment_subs=[
             {
-                "original": "TEXT_END",
+                "original": op_text_match,
                 "replacement": ";",
                 "rule_id": UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+                "anchor_patch_kind": anchor_patch_kind,
             }
         ],
         text_patch=semicolon_patch,
-        op_text_match="TEXT_END",
+        op_text_match=op_text_match,
         op_text_replacement=";",
-        op_text_occurrence=0,
+        op_text_occurrence=op_text_occurrence,
     )
     semicolon_witness = UKLoweredOperationWitness(
         op_id=f"{effect.effect_id}_semicolon",
