@@ -4,6 +4,7 @@ from lawvm.uk_legislation.si_source_semantics import (
     is_uk_si_document_id,
     scan_si_source_semantics_bytes,
 )
+from scripts.uk_si_semantics_scan import _owner_phase_counts
 
 
 def _records(xml: str):
@@ -44,11 +45,13 @@ def test_si_source_semantics_records_metadata_commencement_and_structure() -> No
     assert structure["has_secondary_prelims"] is True
     assert structure["has_body"] is True
     assert structure["has_signed_section"] is True
+    assert structure["owner_phase"] == "affecting_source_extraction"
 
     commencement = by_family["si_commencement_surface"].to_dict()
     assert commencement["status"] == "single_date"
     assert commencement["coming_into_force_dates"] == ("2022-02-01",)
     assert commencement["coming_into_force_element_count"] == 1
+    assert commencement["owner_phase"] == "effect_metadata_frontend"
     assert "si_commencement_default_surface" not in by_family
 
 
@@ -236,6 +239,7 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
 
     vires = by_family["si_vires_recital_surface"][0]
     assert vires["status"] == "matched"
+    assert vires["owner_phase"] == "affecting_source_extraction"
     assert vires["has_vires_phrase"] is True
     assert vires["citation_count"] == 1
     assert vires["citation_texts"] == ("section 2",)
@@ -250,6 +254,10 @@ def test_si_source_semantics_records_vires_and_body_semantic_surfaces() -> None:
     assert (
         by_family["si_body_commencement_clause_surface"][0]["source_role"]
         == "instrument_body_provision"
+    )
+    assert (
+        by_family["si_body_commencement_clause_surface"][0]["owner_phase"]
+        == "effect_metadata_frontend"
     )
     assert by_family["si_body_commencement_clause_surface"][0][
         "commencement_clause_kinds"
@@ -533,6 +541,37 @@ def test_si_source_semantics_parse_error_is_blocking_record() -> None:
     assert row["family"] == "si_source_parse_error"
     assert row["status"] == "blocking"
     assert row["rule_id"] == "uk_si_source_xml_parse_error"
+    assert row["owner_phase"] == "affecting_source_extraction"
+
+
+def test_si_semantics_scan_owner_phase_counts_use_record_rows() -> None:
+    rows = [
+        row.to_dict()
+        for row in _records(
+            """
+            <Legislation xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+              <ukm:SecondaryMetadata>
+                <ukm:ComingIntoForce>
+                  <ukm:DateTime Date="2022-02-01"/>
+                </ukm:ComingIntoForce>
+              </ukm:SecondaryMetadata>
+              <Secondary>
+                <Body>
+                  <P1>
+                    <Pnumber>1.</Pnumber>
+                    <P1para><Text>This Order applies to England.</Text></P1para>
+                  </P1>
+                </Body>
+              </Secondary>
+            </Legislation>
+            """
+        )
+    ]
+
+    assert _owner_phase_counts(rows) == {
+        "affecting_source_extraction": 1,
+        "effect_metadata_frontend": 2,
+    }
 
 
 def test_is_uk_si_document_id_classifies_si_like_ids() -> None:

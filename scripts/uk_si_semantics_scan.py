@@ -46,6 +46,14 @@ def ids_from_file(path: Path) -> list[str]:
     ]
 
 
+def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    from lawvm.uk_legislation.phase_discipline import (
+        uk_phase_owner_counts_for_diagnostics,
+    )
+
+    return uk_phase_owner_counts_for_diagnostics(rows)
+
+
 def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.si_source_semantics import (
@@ -144,6 +152,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "n_records": len(rows),
         "families": dict(family_counts),
         "statuses": dict(status_counts),
+        "owner_phase_counts": _owner_phase_counts(rows),
         "document_minor_types": dict(document_minor_type_counts),
         "expected_body_unit_kinds": dict(expected_body_unit_counts),
         "commencement_default_statuses": dict(commencement_default_status_counts),

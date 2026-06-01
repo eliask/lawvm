@@ -12,6 +12,11 @@ import re
 from typing import Any
 
 from lawvm.core.regex_safety import compile_classifier_regex
+from lawvm.uk_legislation.phase_discipline import (
+    UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
+    UK_PHASE_EFFECT_METADATA_FRONTEND,
+    UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER,
+)
 
 from lxml import etree as ET
 
@@ -86,6 +91,25 @@ _EXPECTED_BODY_UNIT_BY_MINOR_TYPE = {
     "regulation": "regulation",
     "rule": "rule",
 }
+_SI_EFFECT_METADATA_FAMILIES = frozenset(
+    {
+        "si_application_clause_surface",
+        "si_body_commencement_clause_surface",
+        "si_commencement_default_surface",
+        "si_commencement_surface",
+        "si_extent_clause_surface",
+        "si_revocation_lapse_surface",
+        "si_temporal_effect_clause_surface",
+    }
+)
+_SI_SOURCE_EXTRACTION_FAMILIES = frozenset(
+    {
+        "si_correction_slip_surface",
+        "si_source_parse_error",
+        "si_structure_vocabulary",
+        "si_vires_recital_surface",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -112,7 +136,18 @@ class UKSISourceSemanticsRecord:
         if self.text_preview:
             row["text_preview"] = self.text_preview
         row.update(self.detail)
+        row.setdefault("owner_phase", _owner_phase_for_si_semantics_family(self.family))
         return row
+
+
+def _owner_phase_for_si_semantics_family(family: str) -> str:
+    """Return the UK compiler phase that owns an SI semantics inventory family."""
+    family_text = str(family or "")
+    if family_text in _SI_EFFECT_METADATA_FAMILIES:
+        return UK_PHASE_EFFECT_METADATA_FRONTEND
+    if family_text in _SI_SOURCE_EXTRACTION_FAMILIES:
+        return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
 
 
 def is_uk_si_document_id(statute_id: str) -> bool:
