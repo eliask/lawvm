@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, cast
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
 
 if TYPE_CHECKING:
@@ -2357,26 +2358,44 @@ def _uk_candidates_report_jsonable(
         "rows_with_residual_analysis_unavailable": rows_with_residual_analysis_unavailable,
         "rows_with_candidate_analysis_skipped": rows_with_candidate_analysis_skipped,
     }
-    payload: dict[str, Any] = {
-        "report_kind": "uk_candidates_frontier_report",
-        "label": label,
-        "filters": filters,
-        "summary": _limit_summary_count_maps(
-            summary_payload,
-            limit=summary_count_limit,
-        ),
-    }
+    limited_summary = _limit_summary_count_maps(
+        summary_payload,
+        limit=summary_count_limit,
+    )
+    report_rows: tuple[dict[str, Any], ...] = ()
     if not summary_only:
         emitted_rows = (
             [_compact_uk_candidate_row_jsonable(row) for row in rows]
             if compact_rows
             else rows
         )
-        payload["rows"] = [
+        report_rows = tuple(
             _limit_row_count_maps(row, limit=row_count_limit)
             for row in emitted_rows
-        ]
-    return payload
+        )
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_candidates_frontier_report",
+        schema="lawvm.uk_candidates_frontier_report.v1",
+        truth_claim="uk_saved_bench_candidate_frontier_diagnostics_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=True,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=limited_summary,
+        filters=filters,
+        filtered_summary=limited_summary,
+        rows=report_rows,
+        rows_truncated=bool(summary_payload.get("frontier_truncated")),
+        detail={
+            "label": label,
+            "candidate_claim_scope": "frontier_triage_only",
+            "next_promotion_requires": (
+                "candidate_set_completeness_and_execution_authorization"
+            ),
+        },
+    ).to_dict()
 
 
 def _print_uk_candidates_text_summary(report: Mapping[str, Any]) -> None:
