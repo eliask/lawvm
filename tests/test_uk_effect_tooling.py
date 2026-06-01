@@ -8163,6 +8163,32 @@ def test_uk_effect_report_jsonable_records_single_effect_evidence() -> None:
     )
 
     assert report["report_kind"] == "uk_effect_frontier_report"
+    assert report["schema"] == "lawvm.uk_effect_frontier_report.v1"
+    assert report["truth_claim"] == "uk_single_effect_frontier_diagnostics_only"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["rows_truncated"] is False
+    assert report["summary"]["effect_id"] == "eff-1"
+    assert report["summary"]["compiled_op_count"] == 1
+    assert report["summary"]["lowering_observation_count"] == 1
+    assert report["summary"]["lowering_rejection_count"] == 0
+    assert report["summary"]["candidate"] is True
+    assert report["summary"]["authorization_status"] == "replay_authorized"
+    assert report["filtered_summary"] == report["summary"]
+    assert report["rows"][0]["effect_id"] == "eff-1"
+    assert report["rows"][0]["execution_authorization"] == report[
+        "execution_authorization"
+    ]
+    assert report["forbidden_shortcuts"] == [
+        "effect_metadata_as_replay_authorization",
+        "source_extraction_as_payload_identity",
+        "candidate_flag_as_execution_authorization",
+        "oracle_shape_as_source_truth",
+    ]
+    assert "mutation_boundary_proof" in report["next_promotion_requires"]
     assert report["source_surface"] == {}
     assert report["applicability_mode"] == "effective_date_plus_feed_applied"
     assert report["effect"]["applied"] is True

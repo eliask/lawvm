@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.source_state import (
@@ -333,7 +334,7 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
                 ],
             }
         ).to_dict()
-    return {
+    legacy_payload = {
         "report_kind": "uk_effect_frontier_report",
         "statute_id": statute_id,
         "applicability_mode": applicability_mode,
@@ -426,6 +427,81 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         "candidate": candidate,
         "ops": op_rows,
     }
+    summary = {
+        "statute_id": statute_id,
+        "effect_id": effect.effect_id,
+        "effect_type": effect.effect_type or "",
+        "applicability_mode": applicability_mode,
+        "source_pathology": source_pathology or "",
+        "source_extracted": extracted is not None,
+        "compiled_op_count": len(op_rows),
+        "lowering_observation_count": len(lowering_observation_rows),
+        "lowering_rejection_count": len(lowering_rejection_rows),
+        "effect_feed_observation_count": len(parse_observation_rows),
+        "effect_feed_parse_rejection_count": len(parse_rejection_rows),
+        "source_parse_observation_count": len(source_parse_observation_rows),
+        "source_parse_rejection_count": len(source_parse_rejection_rows),
+        "source_acquisition_observation_count": len(source_acquisition_observation_rows),
+        "source_acquisition_rejection_count": len(source_acquisition_rejection_rows),
+        "manual_compile_status": manual_frontier["status"],
+        "manual_compile_rule_id": manual_frontier["rule_id"],
+        "owner_phase": manual_frontier_owner_phase,
+        "authorization_status": execution_authorization["authorization_status"],
+        "executable": execution_authorization["executable"],
+        "replay_authorized": execution_authorization["replay_authorized"],
+        "candidate": candidate,
+    }
+    report_row = {
+        "statute_id": statute_id,
+        "effect_id": effect.effect_id,
+        "effect_type": effect.effect_type or "",
+        "affected_provisions": effect.affected_provisions,
+        "affecting_act_id": effect.affecting_act_id,
+        "affecting_provisions": effect.affecting_provisions,
+        "manual_compile_frontier": manual_frontier,
+        "execution_authorization": execution_authorization,
+        "frontier_work_item": frontier_work_item,
+        "compiled_op_count": len(op_rows),
+        "lowering_rejection_count": len(lowering_rejection_rows),
+        "candidate": candidate,
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_effect_frontier_report",
+        schema="lawvm.uk_effect_frontier_report.v1",
+        truth_claim="uk_single_effect_frontier_diagnostics_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "applicability_mode": applicability_mode,
+        },
+        filtered_summary=summary,
+        rows=(report_row,),
+        rows_truncated=False,
+        detail={
+            **legacy_payload,
+            "safe_default": "classify_single_effect_without_authorizing_replay",
+            "forbidden_shortcuts": (
+                "effect_metadata_as_replay_authorization",
+                "source_extraction_as_payload_identity",
+                "candidate_flag_as_execution_authorization",
+                "oracle_shape_as_source_truth",
+            ),
+            "next_promotion_requires": (
+                "source_identity",
+                "target_identity",
+                "payload_identity",
+                "temporal_extent_applicability",
+                "mutation_boundary_proof",
+            ),
+        },
+    ).to_dict()
 
 
 def _collect_statute_eids(statute: "IRStatute") -> set[str]:
