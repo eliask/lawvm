@@ -32,6 +32,7 @@ from pathlib import Path
 
 import pytest
 
+from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
 from lawvm.tools.uk_oracle_check import (
     _classify_divergences,
     _grounding_collateral_eids,
@@ -160,6 +161,15 @@ def test_classify_divergences_repeal_not_warranted_keeps_in_oracle_suspect() -> 
     )
     assert "section-10" in result["oracle_suspect"]
     assert "section-10" not in result["deterministic_gap"]
+
+
+def test_tree_path_to_diagnostic_string_renders_mutation_path() -> None:
+    assert (
+        tree_path_to_diagnostic_string(
+            (("body", ""), ("section", "5"), ("subsection", "1"))
+        )
+        == "body/section:5/subsection:1"
+    )
 
 
 # ---------------------------------------------------------------------------

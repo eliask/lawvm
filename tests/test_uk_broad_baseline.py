@@ -4,6 +4,8 @@ import json
 import sys
 from types import SimpleNamespace
 
+from lawvm.core.mutation_events import MutationEvent
+
 import scripts.uk_broad_baseline as uk_broad_baseline
 
 
@@ -115,6 +117,18 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                 },
                 "manual_frontier_template_gap_rule_counts": {
                     "uk_manual_frontier_parser_or_extraction_candidate": 2,
+                },
+                "n_mutation_events": 4,
+                "n_mutation_boundary_reports": 4,
+                "n_mutation_boundary_unexplained_reports": 1,
+                "n_mutation_boundary_unexplained_paths": 2,
+                "mutation_boundary_result_code_counts": {
+                    "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": 1,
+                    "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION": 1,
+                },
+                "mutation_boundary_helper_counts": {
+                    "apply_op": 3,
+                    "replace_text": 1,
                 },
             },
             {
@@ -250,6 +264,55 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert summary["manual_frontier_template_gap_rule_counts"] == {
         "uk_manual_frontier_parser_or_extraction_candidate": 2,
     }
+    assert summary["mutation_boundary_event_count"] == 4
+    assert summary["mutation_boundary_report_count"] == 4
+    assert summary["mutation_boundary_unexplained_report_count"] == 1
+    assert summary["mutation_boundary_unexplained_path_count"] == 2
+    assert summary["mutation_boundary_result_code_counts"] == {
+        "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": 1,
+        "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION": 1,
+    }
+    assert summary["mutation_boundary_helper_counts"] == {
+        "apply_op": 3,
+        "replace_text": 1,
+    }
+    assert summary["mutation_boundary_unexplained_statutes"] == [
+        "ukpga/1986/61",
+    ]
+
+
+def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
+    diagnostics = uk_broad_baseline._mutation_boundary_diagnostics(
+        [
+            MutationEvent(
+                op_id="op-1",
+                source_statute="ukpga/2000/1",
+                action="replace",
+                helper="replace_text",
+                outcome="replaced_node",
+                resolved_target_path=(("body", ""), ("section", "1")),
+                replaced_paths=((("body", ""), ("section", "2")),),
+            )
+        ]
+    )
+
+    assert diagnostics["n_mutation_events"] == 1
+    assert diagnostics["n_mutation_boundary_reports"] == 1
+    assert diagnostics["n_mutation_boundary_unexplained_reports"] == 1
+    assert diagnostics["n_mutation_boundary_unexplained_paths"] == 1
+    assert diagnostics["mutation_boundary_result_code_counts"] == {
+        "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET": 1,
+    }
+    assert diagnostics["mutation_boundary_helper_counts"] == {"replace_text": 1}
+    assert diagnostics["mutation_boundary_unexplained_samples"] == [
+        {
+            "op_id": "op-1",
+            "helper": "replace_text",
+            "outcome": "replaced_node",
+            "result_codes": ["REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"],
+            "unexplained_paths": ["body/section:2"],
+        }
+    ]
 
 
 def test_summarize_results_counts_grounding_dominated_residuals() -> None:
