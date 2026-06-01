@@ -192,9 +192,10 @@ _SOURCE_TAIL_TEXT_CACHE: dict[ET._Element, str] = {}
 def evict_source_fragment_context_caches(root: Optional[ET._Element]) -> None:
     if root is None:
         return
-    for el in tuple(root.iter()):
-        _SOURCE_LEAD_TEXT_CACHE.pop(el, None)
-        _SOURCE_TAIL_TEXT_CACHE.pop(el, None)
+    for cache in (_SOURCE_LEAD_TEXT_CACHE, _SOURCE_TAIL_TEXT_CACHE):
+        for el in tuple(cache):
+            if el is root or el.getroottree().getroot() is root:
+                cache.pop(el, None)
 
 
 def append_source_fragment_context_observations(
