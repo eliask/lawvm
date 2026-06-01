@@ -393,6 +393,30 @@ def test_build_uk_replay_payload_shape() -> None:
     )
 
     assert payload["jurisdiction"] == "uk"
+    assert payload["report_kind"] == "uk_replay_report"
+    assert payload["schema"] == "lawvm.uk_replay_report.v1"
+    assert payload["truth_claim"] == (
+        "uk_replay_materialization_and_declared_oracle_agreement_report"
+    )
+    assert payload["replay_claims"] is True
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["agreement_claims"] is True
+    assert payload["rows"] == []
+    assert payload["rows_truncated"] is False
+    assert payload["summary"]["statute_id"] == "ukpga/1998/42"
+    assert payload["summary"]["ops_count"] == 12
+    assert payload["summary"]["similarity"] == 0.75
+    assert payload["summary"]["compile_rejection_count"] == 1
+    assert payload["filtered_summary"] == payload["summary"]
+    assert payload["forbidden_shortcuts"] == [
+        "oracle_agreement_as_source_truth",
+        "compile_observation_as_replay_authorization",
+        "manual_frontier_as_executable_claim",
+        "metadata_backfill_as_source_only_semantics",
+    ]
+    assert "mutation_boundary_proof" in payload["next_promotion_requires"]
     assert payload["base_id"] == "ukpga/1998/42"
     assert payload["uk_replay_regime"] == {
         "semantic_replay_lane": "effects_assisted_replay",
