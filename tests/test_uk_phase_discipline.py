@@ -33,6 +33,15 @@ def test_manual_frontier_phase_owner_classifies_phase_boundaries() -> None:
     )
     assert (
         uk_phase_owner_for_manual_frontier(
+            manual_compile_status="source_insufficient",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_definition_range_to_end_source_context_insufficient"
+            ),
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
+        uk_phase_owner_for_manual_frontier(
             manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id=(
                 "uk_manual_frontier_deictic_amendment_program_target_candidate"

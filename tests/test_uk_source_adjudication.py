@@ -1484,6 +1484,34 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_deictic_definition_range_source_context_gap() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P4",
+        extracted_text=(
+            "ii for the words from \u201cits repeal\u201d to the end of the definition "
+            "substitute \u201c IP completion day \u201d ."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "reason_code": "overlap_substitution_parse_failed",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_definition_range_to_end_source_context_insufficient"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_unquoted_preimage_substitution_source_insufficient() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
