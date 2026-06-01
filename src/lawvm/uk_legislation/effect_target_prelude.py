@@ -11,6 +11,7 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
+    SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     TARGET_RECOVERED,
     TargetResolutionCertificate,
 )
@@ -842,6 +843,26 @@ def refine_flat_p1para_schedule_insert_target(
             "metadata_target": str(target),
             "normalized_target": str(refined_target),
             "removed_part_label": _addr_field(target, "part") or "",
+            "target_resolution": TargetResolutionCertificate(
+                rule_id=_UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
+                phase="lowering",
+                reason=(
+                    "UK source names a schedule Part as insertion context while "
+                    "the source-owned payload is a direct labelled schedule paragraph."
+                ),
+                status=TARGET_RECOVERED,
+                source_target=str(target),
+                selected_target=str(refined_target),
+                candidate_count=1,
+                scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+                detail={
+                    "target_ref": t_str,
+                    "removed_part_label": _addr_field(target, "part") or "",
+                    "jurisdiction_status": (
+                        "flat_insert_payload_uses_nonaddressable_schedule_part_context"
+                    ),
+                },
+            ).to_diagnostic_detail(),
         },
     )
     return refined_target

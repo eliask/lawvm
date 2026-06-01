@@ -44527,6 +44527,12 @@ def test_compile_flat_p1para_schedule_paragraph_insert_owns_heading_gap() -> Non
         row.get("rule_id") == "uk_effect_nonaddressable_schedule_part_insert_target_normalized"
         and row.get("metadata_target") == "schedule:2/part:1/paragraph:17b"
         and row.get("normalized_target") == "schedule:2/paragraph:17b"
+        and row.get("target_resolution", {}).get("target_resolution_status") == "recovered"
+        and row.get("target_resolution", {}).get("scope_confidence")
+        == "explicit_source_with_context"
+        and row.get("target_resolution", {}).get("source_target")
+        == "schedule:2/part:1/paragraph:17b"
+        and row.get("target_resolution", {}).get("selected_target") == "schedule:2/paragraph:17b"
         for row in lowering_records
     )
     assert any(
