@@ -231,6 +231,7 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "ukpga/1945/9",
     ]
     assert summary["zero_oracle_retention_count"] == 1
+    assert summary["zero_oracle_retention_statutes"] == ["ukpga/1938/22"]
     assert summary["zero_oracle_retention_eids"] == 420
     assert summary["triage_buckets"] == {
         "base_metadata_only_frontier": 1,
@@ -331,6 +332,7 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert summary["manual_frontier_template_gap_rule_counts"] == {
         "uk_manual_frontier_parser_or_extraction_candidate": 2,
     }
+    assert summary["manual_frontier_template_gap_count"] == 2
     assert summary["mutation_boundary_event_count"] == 4
     assert summary["mutation_boundary_report_count"] == 4
     assert summary["mutation_boundary_unexplained_report_count"] == 1
@@ -385,6 +387,8 @@ def test_broad_baseline_report_envelope_declares_agreement_scope(tmp_path) -> No
     assert report["dry_run_claims"] is False
     assert report["summary"]["scored_count"] == 1
     assert report["summary"]["source_frontier_count"] == 1
+    assert report["summary"]["manual_frontier_template_gap_count"] == 0
+    assert report["summary"]["zero_oracle_retention_statutes"] == []
     assert report["filters"]["snapshot_path"] == str(snapshot_path)
     assert report["written_paths"] == [str(snapshot_path)]
     assert "agreement_as_execution_authorization" in report["forbidden_shortcuts"]

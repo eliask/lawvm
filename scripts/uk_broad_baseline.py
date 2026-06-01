@@ -769,6 +769,10 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_template_gap_rule_counts": (
             manual_frontier_template_gap_rule_counts
         ),
+        "manual_frontier_template_gap_count": sum(
+            int(count or 0)
+            for count in manual_frontier_template_gap_status_counts.values()
+        ),
         "mutation_boundary_event_count": sum(
             int(r.get("n_mutation_events") or 0) for r in scored
         ),
@@ -808,6 +812,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             for r in deterministic_frontend_candidate_rows
         ),
         "zero_oracle_retention_count": len(zero_oracle_retention),
+        "zero_oracle_retention_statutes": sorted(
+            str(r.get("statute_id") or "") for r in zero_oracle_retention
+        ),
         "zero_oracle_retention_eids": sum(
             int(r.get("n_zero_oracle_retention_eids") or r.get("n_replay") or 0)
             for r in zero_oracle_retention
