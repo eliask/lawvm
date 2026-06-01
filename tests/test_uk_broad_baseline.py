@@ -253,6 +253,36 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
         "structural_match_eid_scheme_residual": ["eur/2019/1841"],
         "zero_oracle_retention": ["ukpga/1938/22"],
     }
+    assert summary["agreement_residual_family_counts"] == {
+        "agreement": 1,
+        "error": 1,
+        "non_commensurable_surface": 2,
+        "replay_bug": 1,
+        "source_footing_gap": 3,
+        "topology_granularity_mismatch": 1,
+    }
+    assert summary["agreement_residual_status_counts"] == {
+        "error": 1,
+        "frontier": 5,
+        "residual": 3,
+    }
+    assert summary["agreement_residual_owner_phase_counts"] == {
+        "affecting_source_extraction": 2,
+        "compare_oracle_classification": 4,
+        "effect_metadata_frontend": 1,
+        "replay_invariants": 1,
+        "source_pathology_manual_frontier": 1,
+    }
+    assert summary["agreement_residual_rule_counts"] == {
+        "uk_broad_base_metadata_only_frontier": 1,
+        "uk_broad_error": 1,
+        "uk_broad_high_fidelity_after_grounding": 1,
+        "uk_broad_no_effect_rows_frontier": 1,
+        "uk_broad_residual_after_grounding": 1,
+        "uk_broad_source_frontier:base_too_small": 2,
+        "uk_broad_structural_match_eid_scheme_residual": 1,
+        "uk_broad_zero_oracle_retention": 1,
+    }
     assert summary["active_unclassified_residual_count"] == 2
     assert summary["active_unclassified_residual_statutes"] == [
         "eur/2019/1841",
@@ -389,11 +419,18 @@ def test_broad_baseline_report_envelope_declares_agreement_scope(tmp_path) -> No
     assert report["summary"]["source_frontier_count"] == 1
     assert report["summary"]["manual_frontier_template_gap_count"] == 0
     assert report["summary"]["zero_oracle_retention_statutes"] == []
+    assert report["summary"]["agreement_residual_family_counts"] == {
+        "agreement": 1,
+        "source_footing_gap": 1,
+    }
     assert report["filters"]["snapshot_path"] == str(snapshot_path)
     assert report["written_paths"] == [str(snapshot_path)]
     assert "agreement_as_execution_authorization" in report["forbidden_shortcuts"]
     assert "mutation_boundary_proof" in report["next_promotion_requires"]
     assert len(report["rows"]) == 2
+    assert report["rows"][0]["agreement_residual"]["family"] == "agreement"
+    assert report["rows"][0]["agreement_residual"]["status"] == "residual"
+    assert report["rows"][1]["agreement_residual"]["family"] == "source_footing_gap"
 
 
 def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
