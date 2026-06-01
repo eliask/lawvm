@@ -77,6 +77,7 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "definition_child_structural_payload_boundary_claim",
         "definition_child_text_tail_boundary_claim",
         "definition_entry_insert_term_boundary_claim",
+        "effect_metadata_source_fragment_text_patch_boundary_claim",
         "mixed_body_heading_split_boundary_claim",
         "range_to_container_source_range_payload_and_lineage",
         "referent_qualified_occurrence_scope_claim",

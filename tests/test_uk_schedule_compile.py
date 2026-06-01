@@ -2767,6 +2767,44 @@ def test_parenthesized_occurrence_substitution_keeps_all_occurrences_rule() -> N
     ]
 
 
+def test_all_occurrences_substitution_accepts_that_it_occurs_wording() -> None:
+    fragments = parse_fragment_substitution(
+        'in subsection (4), for "president" in both places that it occurs '
+        'substitute "Chamber President";'
+    )
+
+    assert fragments == [
+        {
+            "original": "president",
+            "replacement": "Chamber President",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
+def test_all_occurrences_insert_accepts_these_words_occurs_wording() -> None:
+    fragments = parse_fragment_substitution(
+        'after "housing benefit" in each place where these words occur insert '
+        '"or universal credit"'
+    )
+
+    assert fragments == [
+        {
+            "original": "housing benefit",
+            "replacement": "housing benefit or universal credit",
+            "rule_id": "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        }
+    ]
+
+
+def test_subsequently_occurs_substitution_remains_unlowered_without_boundary() -> None:
+    fragments = parse_fragment_substitution(
+        'for "president" where it subsequently occurs substitute "Chamber President"'
+    )
+
+    assert fragments == []
+
+
 def test_parenthesized_ordinal_places_substitution_lowers_each_named_occurrence() -> None:
     fragments = parse_fragment_substitution(
         'for "GDPR" (in the second and third places) substitute "UK GDPR"'
@@ -28480,6 +28518,7 @@ def test_compile_wherever_occurring_records_all_occurrences_lowering_observation
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
             "extracted_tag": "P3",
             "has_extracted_source": True,
             "extracted_text_preview": (

@@ -331,7 +331,7 @@ _UK_MULTI_OCCURRENCE_SUBSTITUTION_RE = re.compile(
     rf"(?:\s*(?:,|and|or)\s*[“”\"'‘]{_NON_QUOTE}{{0,500}}?[”\"'’]){{0,{_MULTI_TERM_LIST_MAX}}}"
     r")"
     r",?\s+in\s+(?:each|both)\s+places?"
-    r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+    r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those|these)\s+words?\s+|(?:it|they)\s+)?"
     r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
     r"(?:\s*\))?,?\s+"
     r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
@@ -906,7 +906,7 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
     matches_all_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"(?:\(\s*)?(?:in|at) (?:each|both) places?"
-        r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
+        r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those|these)\s+words?\s+|(?:it|they)\s+)?"
         r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
         r"(?:\s*\))?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
@@ -2291,7 +2291,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
         r"(?P<all_occurrences>,?\s+(?:wherever\s+occurring|"
         r"in (?:(?:each|both) places?|each place|each of the two places)"
-        r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those words?)\s+)?"
+        r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those|these)\s+words?\s+|(?:it|they)\s+)?"
         r"(?:occurs?|occurring|appear)s?(?:\s+in\s+[^,;]+)?)?))?"
         r"(?P<insert_separator>\s*,?\s+)(?:there is inserted|there are inserted|there shall be inserted|there is entered|there are entered|there shall be entered|insert|enter)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
