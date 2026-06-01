@@ -668,6 +668,7 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
         "rule_id": "uk_prefetch_http_error",
         "phase": "acquisition",
         "blocking": True,
+        "owner_phase": "affecting_source_extraction",
     }
     base_ir = IRStatute(
         statute_id="ukpga/1998/42",
@@ -826,8 +827,10 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
         "error_count": 1,
         "event_count": 1,
         "event_rule_counts": {"uk_prefetch_http_error": 1},
+        "event_owner_phase_counts": {"affecting_source_extraction": 1},
         "blocking_event_count": 1,
         "blocking_event_rule_counts": {"uk_prefetch_http_error": 1},
+        "blocking_event_owner_phase_counts": {"affecting_source_extraction": 1},
         "events": [prefetch_event],
     }
     assert payload["adjudication_kind_counts"] == {"uk_replay_target_not_found": 1}
@@ -1013,6 +1016,7 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
         "status": "error",
         "reason": "http_500",
         "blocking": True,
+        "owner_phase": "affecting_source_extraction",
     }
 
     monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
@@ -1062,7 +1066,9 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
     ) in out
     assert "Prefetch:   fetched=0 cached=0 errors=1 events=1 blocking=1" in out
     assert "Prefetch rules: uk_prefetch_http_error=1" in out
+    assert "Prefetch owner phases: affecting_source_extraction=1" in out
     assert "Prefetch blocking rules: uk_prefetch_http_error=1" in out
+    assert "Prefetch blocking owner phases: affecting_source_extraction=1" in out
     assert (
         "Compile observations: source_parse=0 feed_parse=1 effect_source_pathology=0 "
         "manual_compile_frontier=0 source_acquisition=0 lowering=1 authority=1 total=3"

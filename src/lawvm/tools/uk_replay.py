@@ -513,9 +513,17 @@ def _uk_prefetch_text_lines(report: dict[str, Any]) -> list[str]:
     event_rules = _format_counts(report.get("event_rule_counts"))
     if event_rules:
         lines.append(f"Prefetch rules: {event_rules}")
+    event_owner_phases = _format_counts(report.get("event_owner_phase_counts"))
+    if event_owner_phases:
+        lines.append(f"Prefetch owner phases: {event_owner_phases}")
     blocking_event_rules = _format_counts(report.get("blocking_event_rule_counts"))
     if blocking_event_rules:
         lines.append(f"Prefetch blocking rules: {blocking_event_rules}")
+    blocking_event_owner_phases = _format_counts(
+        report.get("blocking_event_owner_phase_counts")
+    )
+    if blocking_event_owner_phases:
+        lines.append(f"Prefetch blocking owner phases: {blocking_event_owner_phases}")
     return lines
 
 

@@ -251,6 +251,7 @@ def test_fetch_missing_for_statute_records_http_error_event(monkeypatch) -> None
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "affecting_source_extraction",
         },
     )
 
@@ -366,9 +367,14 @@ def test_fetch_missing_for_statute_includes_supported_nonstructural_replay_famil
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "affecting_source_extraction",
         },
     )
+    assert report.to_dict()["event_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+    }
     assert report.to_dict()["blocking_event_rule_counts"] == {}
+    assert report.to_dict()["blocking_event_owner_phase_counts"] == {}
 
 
 def test_fetch_missing_for_statute_records_successful_fetch_source_witness(monkeypatch) -> None:
@@ -424,10 +430,15 @@ def test_fetch_missing_for_statute_records_successful_fetch_source_witness(monke
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "affecting_source_extraction",
         },
     )
     assert report.to_dict()["event_rule_counts"] == {"uk_prefetch_affecting_act_fetched": 1}
+    assert report.to_dict()["event_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+    }
     assert report.to_dict()["blocking_event_rule_counts"] == {}
+    assert report.to_dict()["blocking_event_owner_phase_counts"] == {}
 
 
 def test_fetch_missing_for_statute_records_cached_source_witness(monkeypatch) -> None:
@@ -469,10 +480,15 @@ def test_fetch_missing_for_statute_records_cached_source_witness(monkeypatch) ->
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "affecting_source_extraction",
         },
     )
     assert report.to_dict()["event_rule_counts"] == {"uk_prefetch_affecting_act_cached": 1}
+    assert report.to_dict()["event_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+    }
     assert report.to_dict()["blocking_event_rule_counts"] == {}
+    assert report.to_dict()["blocking_event_owner_phase_counts"] == {}
 
 
 def test_fetch_missing_for_statute_can_fetch_enacted_affecting_lane(monkeypatch) -> None:
@@ -599,6 +615,7 @@ def test_fetch_missing_for_statute_threads_feed_parse_rejections(monkeypatch) ->
             "strict_disposition": "block",
             "quirks_disposition": "record",
             "statute_id": sid,
+            "owner_phase": "effect_metadata_frontend",
         },
     )
 
@@ -644,6 +661,17 @@ def test_prefetch_report_defaults_legacy_feed_events_to_blocking(monkeypatch) ->
         "uk_effect_feed_pages_absent_recorded": 1,
         "uk_effect_feed_xml_parse_rejected": 1,
     }
+    assert payload["event_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+        "effect_metadata_frontend": 1,
+    }
     assert payload["blocking_event_rule_counts"] == {
         "uk_effect_feed_xml_parse_rejected": 1,
+    }
+    assert payload["blocking_event_owner_phase_counts"] == {
+        "effect_metadata_frontend": 1,
+    }
+    assert {event["owner_phase"] for event in payload["events"]} == {
+        "affecting_source_extraction",
+        "effect_metadata_frontend",
     }

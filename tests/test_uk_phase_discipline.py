@@ -78,6 +78,12 @@ def test_diagnostic_phase_owner_prefers_explicit_and_infers_common_families() ->
         == UK_PHASE_EFFECT_METADATA_FRONTEND
     )
     assert (
+        uk_phase_owner_for_diagnostic(
+            {"rule_id": "uk_prefetch_http_error", "phase": "acquisition"}
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
         uk_phase_owner_for_diagnostic({"rule_id": "uk_replay_oracle_branch_retained"})
         == UK_PHASE_REPLAY_INVARIANTS
     )

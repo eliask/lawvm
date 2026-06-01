@@ -134,6 +134,7 @@ def uk_phase_owner_for_diagnostic(record: Mapping[str, Any]) -> str:
         "source_acquisition" in combined
         or "source_parse" in combined
         or "affecting_act" in combined
+        or phase == "acquisition"
     ):
         return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
     if "effect_feed" in combined or "metadata" in combined:
