@@ -1307,6 +1307,12 @@ def try_lower_table_column_entry_omission(
     original_targets_str: list[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTableBatchLoweringResult:
+    effect_type_lower = str(effect.effect_type or "").lower()
+    extracted_text_lower = str(extracted_text or "").lower()
+    if not any(term in effect_type_lower for term in ("omit", "repeal")) and not any(
+        term in extracted_text_lower for term in ("omit", "repeal")
+    ):
+        return UKTableBatchLoweringResult(handled=False)
     selector = _uk_table_column_entry_omission_text_patch_claim(
         target_ref=t_str,
         target=target,
