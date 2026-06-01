@@ -296,6 +296,7 @@ UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID = (
     "uk_effect_all_occurrences_word_repeal_text_patch"
 )
 UK_ORDINAL_WORD_REPEAL_RULE_ID = "uk_effect_ordinal_word_repeal_text_patch"
+UK_UNQUOTED_TYPE_LABEL_REPEAL_RULE_ID = "uk_effect_unquoted_type_label_repeal_text_patch"
 UK_SECTION_REFERENCE_REPEAL_RULE_ID = "uk_effect_section_reference_repeal_text_patch"
 UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID = (
     "uk_effect_range_repeal_pre_predicate_comma_text_patch"
@@ -3710,6 +3711,21 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
                 "replacement": "",
                 "occurrence": _ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
                 "rule_id": UK_ORDINAL_WORD_REPEAL_RULE_ID,
+            }
+        )
+
+    matches_unquoted_type_label_repeal = re.finditer(
+        r"\bomit\s+(?P<label>Type\s+[0-9A-Z]{1,4})\b\s*[.;]?",
+        text,
+        re.I,
+    )
+    for m in matches_unquoted_type_label_repeal:
+        label = m.group("label").strip()
+        subs.append(
+            {
+                "original": f"TEXT_UNIQUE_LITERAL{US}{label}",
+                "replacement": "",
+                "rule_id": UK_UNQUOTED_TYPE_LABEL_REPEAL_RULE_ID,
             }
         )
 

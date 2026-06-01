@@ -62,6 +62,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_QUOTED_WORD_WHERE_ORDINAL_OCCURRENCES_SUBSTITUTION_RULE_ID,
     UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
     UK_ORDINAL_WORD_REPEAL_RULE_ID,
+    UK_UNQUOTED_TYPE_LABEL_REPEAL_RULE_ID,
     UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
@@ -2147,6 +2148,28 @@ def append_basic_text_rewrite_observations(
                 "UK source text repeals an explicitly ordinal occurrence of "
                 "a quoted word; lowering preserves the requested occurrence "
                 "as a bounded text deletion scoped to the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_UNQUOTED_TYPE_LABEL_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_UNQUOTED_TYPE_LABEL_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_unquoted_type_label_repeal_text_patch",
+            reason=(
+                "UK source text omits a single unquoted Type label; lowering "
+                "preserves this as a unique-literal text deletion and does not "
+                "delete the containing type entry."
             ),
             effect=effect,
             extracted_el=extracted_el,

@@ -211,6 +211,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="unique_fee_sum_selector",
     ),
+    "uk_replay_unique_literal_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a unique-literal text rewrite after proving the "
+            "resolved target has exactly one matching literal."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="unique_literal_selector",
+    ),
     "uk_replay_each_other_place_after_anchor_insert_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a relative each-other-place insertion after "

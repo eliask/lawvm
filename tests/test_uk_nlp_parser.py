@@ -2972,6 +2972,18 @@ def test_parse_fragment_substitution_handles_direct_quoted_word_omission_at_end(
     ]
 
 
+def test_parse_fragment_substitution_handles_unquoted_type_label_repeal() -> None:
+    subs = parse_fragment_substitution("b omit Type 12.")
+
+    assert subs == [
+        {
+            "original": f"TEXT_UNIQUE_LITERAL{US}Type 12",
+            "replacement": "",
+            "rule_id": "uk_effect_unquoted_type_label_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_all_occurrences_word_repeal() -> None:
     subs = parse_fragment_substitution(
         "d in subsection (6), the word \u201cqualifying\u201d in each place where it "

@@ -601,6 +601,101 @@ def test_replay_unique_fee_sum_blocks_multiple_currency_amounts() -> None:
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_unique_literal_repeal_deletes_single_literal_only() -> None:
+    op = LegalOperation(
+        op_id="uk_test_unique_literal_repeal",
+        sequence=0,
+        action=StructuralAction.TEXT_REPEAL,
+        target=LegalAddress(path=(("section", "558"), ("subsection", "2"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text=f"TEXT_UNIQUE_LITERAL{US}Type 12", occurrence=0),
+            replacement=None,
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="558",
+                    attrs={"eId": "section-558"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            attrs={"eId": "section-558-2"},
+                            text="Investments include Type 12.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Investments include ."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_unique_literal_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "unique_literal_selector"
+
+
+def test_replay_unique_literal_repeal_blocks_multiple_literals() -> None:
+    op = LegalOperation(
+        op_id="uk_test_unique_literal_repeal_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPEAL,
+        target=LegalAddress(path=(("section", "558"), ("subsection", "2"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text=f"TEXT_UNIQUE_LITERAL{US}Type 12", occurrence=0),
+            replacement=None,
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="558",
+                    attrs={"eId": "section-558"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            attrs={"eId": "section-558-2"},
+                            text="Type 12 and Type 12 both appear.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Type 12 and Type 12 both appear."
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     candidates_by_len = {
         90: [_GroundingTextCandidate(2, "too-short", "x" * 90)],
@@ -29540,6 +29635,71 @@ def test_compile_ordinal_word_repeal_records_observation() -> None:
     assert observations[0]["text_match"] == "qualifying"
     assert observations[0]["replacement"] == ""
     assert observations[0]["occurrence"] == 1
+
+
+def test_compile_unquoted_type_label_repeal_lowers_to_unique_literal_delete() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>b omit Type 12.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-0065afa830e3c87275152e33f08e534b",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="",
+        affected_uri="/id/ukpga/2007/3/section/558/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 558(2)",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="s. 55(4)(b)(11)",
+        affecting_title="Test Act",
+        in_force_dates=[],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target.path == (("section", "558"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.DELETE
+    assert op.text_patch.selector.match_text == f"TEXT_UNIQUE_LITERAL{US}Type 12"
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_unquoted_type_label_repeal_text_patch"
+        in op.provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_unquoted_type_label_repeal_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_unquoted_type_label_repeal_text_patch"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["target"] == "section:558/subsection:2"
+    assert observations[0]["text_match"] == f"TEXT_UNIQUE_LITERAL{US}Type 12"
+    assert observations[0]["replacement"] == ""
 
 
 def test_compile_each_case_occurs_records_all_occurrences_lowering_observation() -> None:
