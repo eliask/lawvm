@@ -1433,6 +1433,22 @@ def _looks_like_amendment_program_inserted_parent_instruction(text: str) -> bool
     )
 
 
+def _looks_like_amendment_program_inserted_anchor_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if "as inserted" not in norm:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:after|before)\s+"
+            r"(?:paragraph|sub-?paragraph|subsection)\s+"
+            r"(?:\([0-9A-Za-z]+\)|[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?)\s+"
+            r"as\s+inserted(?:\s+by\b[^,;—-]{0,120})?,?\s+"
+            r"insert(?:\b|\s*[—-])",
+            norm,
+        )
+    )
+
+
 def _looks_like_non_substantive_shell(text: str) -> bool:
     norm = " ".join((text or "").split()).strip()
     if not norm:
@@ -1782,7 +1798,9 @@ def classify_uk_effect_source_pathology(
             return "table_entry_target_unsupported"
         if _looks_like_schedule_list_entry_instruction(norm_text):
             return "schedule_list_entry_target_unsupported"
-        if _looks_like_amendment_program_inserted_parent_instruction(norm_text):
+        if _looks_like_amendment_program_inserted_parent_instruction(
+            norm_text
+        ) or _looks_like_amendment_program_inserted_anchor_instruction(norm_text):
             return "amendment_text_target_unsupported"
         if _looks_like_structural_sibling_insert_instruction(norm_text):
             return "structural_sibling_insert_unsupported"
