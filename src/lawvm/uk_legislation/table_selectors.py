@@ -288,11 +288,16 @@ def _is_regex_word_char(char: str) -> bool:
 
 
 @functools.lru_cache(maxsize=8192)
+def _cached_lower_source_text(text: str) -> str:
+    return text.lower()
+
+
+@functools.lru_cache(maxsize=8192)
 def _source_text_names_section_label(text: str, label: str) -> bool:
     # The same source/ancestor instruction text is tested by several table
     # selector families for the same target. Cache the pure predicate, not the
     # downstream authorization decision.
-    text_lower = text.lower()
+    text_lower = _cached_lower_source_text(text)
     phrase = "in section"
     if phrase not in text_lower:
         return False
