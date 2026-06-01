@@ -1452,6 +1452,23 @@ def _looks_like_definition_child_structural_insert_instruction(text: str) -> boo
     )
 
 
+_DEICTIC_DEFINITION_RANGE_TO_END_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+(?:the\s+)?words?\s+from\s+[\"“][^\"”]{1,240}[\"”]\s+"
+    r"to\s+the\s+end\s+of\s+the\s+definition,?\s+"
+    r"substitute\s+[\"“][^\"”]{1,600}[\"”]",
+    flags=re.I,
+)
+
+
+def _looks_like_deictic_definition_range_to_end_substitution(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if "to the end of the definition" not in norm or "substitute" not in norm:
+        return False
+    if "in the definition of" in norm:
+        return False
+    return bool(_DEICTIC_DEFINITION_RANGE_TO_END_SUBSTITUTION_RE.search(norm))
+
+
 def _looks_like_amendment_program_inserted_parent_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -2632,6 +2649,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_definition_child_structural_insert_candidate",
             "reason": "The source inserts a child inside a definition while explicitly preserving or moving an existing connector/tail; a claim or future compiler must identify the definition child, inserted payload structure, and tail ownership before replay.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_deictic_definition_range_to_end_substitution(extracted_text_norm)
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_definition_range_to_end_source_context_insufficient",
+            "reason": "The source substitutes from a quoted anchor to the end of the definition but the extracted child row does not name the definition term; replay requires parent source context or a typed definition-boundary proof before emitting a definition-scoped text patch.",
         }
 
     if (
