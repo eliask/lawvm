@@ -4885,6 +4885,163 @@ def test_compile_source_parent_definition_child_structural_sibling_insert() -> N
     assert adjudications[0].detail["strict_disposition"] == "record"
 
 
+def test_compile_source_parent_definition_child_structural_sibling_insert_for_regulation_target() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-paragraph-63-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In regulation 2 (interpretation)—</Text>
+            <P3 id="schedule-paragraph-63-2-a">
+              <Pnumber>a</Pnumber>
+              <P3para>
+                <Text>in the definition of “authorised officer”—</Text>
+                <P4 id="schedule-paragraph-63-2-a-ii">
+                  <Pnumber>ii</Pnumber>
+                  <P4para>
+                    <Text>after sub-paragraph (a) insert—</Text>
+                    <BlockAmendment Context="unknown" TargetClass="unknown" TargetSubClass="unknown" Format="double">
+                      <P3>
+                        <Pnumber>aa</Pnumber>
+                        <P3para><Text>a person authorised by the Scottish Ministers, and</Text></P3para>
+                      </P3>
+                    </BlockAmendment>
+                    <AppendText>,</AppendText>
+                  </P4para>
+                </P4>
+              </P3para>
+            </P3>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P4")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_sibling_insert_regulation",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-04-01",
+        affected_uri="/id/uksi/2002/3026/regulation/2",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2002",
+        affected_number="3026",
+        affected_provisions="reg. 2",
+        affecting_uri="/id/uksi/2019/734/schedule/paragraph/63/2/a/ii",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="734",
+        affecting_provisions="Sch. para. 63(2)(a)(ii)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2019-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:2/item:aa"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    payload = _required_payload(ops[0])
+    assert payload.text == "a person authorised by the Scottish Ministers, and;"
+    assert payload.attrs["definition_term"] == "authorised officer"
+    assert payload.attrs["definition_child_label"] == "aa"
+    assert payload.attrs["source_anchor_child_label"] == "a"
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["payloads"][0]["target"] == "section:2/item:aa"
+    assert rows[0]["blocking"] is False
+
+
+def test_compile_source_parent_definition_child_structural_sibling_insert_for_regulation_paragraph_target() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-7-paragraph-4-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In paragraph (1)—</Text>
+            <P3 id="schedule-7-paragraph-4-2-c">
+              <Pnumber>c</Pnumber>
+              <P3para>
+                <Text>in the definition of “performance fee” —</Text>
+                <P4 id="schedule-7-paragraph-4-2-c-iii">
+                  <Pnumber>iii</Pnumber>
+                  <P4para>
+                    <Text>after sub-paragraph (b) insert—</Text>
+                    <BlockAmendment Context="unknown" Format="double" TargetClass="unknown" TargetSubClass="unknown">
+                      <P3>
+                        <Pnumber>c</Pnumber>
+                        <P3para><Text>is not calculated by reference to the value of members’ rights;</Text></P3para>
+                      </P3>
+                    </BlockAmendment>
+                    <AppendText>;</AppendText>
+                  </P4para>
+                </P4>
+              </P3para>
+            </P3>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P4")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_child_structural_sibling_insert_regulation_paragraph",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-08-01",
+        affected_uri="/id/uksi/2015/879/regulation/2/paragraph/1",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2015",
+        affected_number="879",
+        affected_provisions="reg. 2(1)",
+        affecting_uri="/id/uksi/2022/255/schedule/7/paragraph/4/2/c/iii",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="255",
+        affecting_provisions="Sch. 7 para. 4(2)(c)(iii)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2022-08-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:2/subsection:1/item:c"
+    payload = _required_payload(ops[0])
+    assert payload.text == "is not calculated by reference to the value of members’ rights;"
+    assert payload.attrs["definition_term"] == "performance fee"
+    assert payload.attrs["definition_child_label"] == "c"
+    assert payload.attrs["source_anchor_child_label"] == "b"
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["payloads"][0]["target"] == "section:2/subsection:1/item:c"
+    assert rows[0]["blocking"] is False
+
+
 def test_compile_exact_definition_child_structural_sibling_insert_in_subsection() -> None:
     extracted_el = ET.fromstring(
         f"""
