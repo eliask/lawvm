@@ -158,7 +158,12 @@ _UK_CARRIED_PARENT_CONTEXT_RE = (
 _UK_SOURCE_ASIDE_RE = r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)?\))?"
 _UK_AT_END_TARGET_QUALIFIER_RE = (
     r"(?: of (?:(?:that|the) )?"
-    r"(?:paragraph|sub-paragraph|subsection|section)(?:\s*\([^)]+\))*)?"
+    r"(?:paragraph|sub-paragraph|subsection|section)"
+    r"(?:\s*\([^)]+\))*(?:\s+[0-9A-Za-z]+)?"
+    r"(?:\s+of\s+(?:(?:that|the)\s+Schedule|Schedule\s+[0-9A-Za-z]+"
+    r"(?:\s+to\s+(?:(?:the\s+)?[A-Z][^,;“”]{0,160}?\bAct(?:\s+\d{4})?|"
+    r"the\s+\d{4}\s+Act))?))?"
+    r")?"
 )
 _UK_CARRIED_ENACTMENT_CONTEXT_RE = (
     r"(?:\s+of\s+(?:that\s+Act|(?:the\s+)?[A-Z][^,;“”]*?\bAct\s+\d{4}))?"
@@ -3371,6 +3376,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     matches_at_end_unquoted_sentence_insert = re.finditer(
         rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE},?\s+"
         r"insert(?:\s+(?:the\s+)?words?)?\s+"
+        r"(?!(?:the\s+)?words?\s+[“\"'‘])"
         r"(?P<inserted>[A-Za-z][^.;]+?)\s*\."
         r"(?=\s+(?:[0-9]+[A-Z]?|[a-z])\s+[A-Z]|\s*$)",
         text,
