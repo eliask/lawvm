@@ -62,6 +62,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     _fragment_substitution_amendment_program_inserted_parent_child_insert,
+    lower_amendment_program_inserted_anchor_structural_insert,
     reject_amendment_program_inserted_parent_structural_insert,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
@@ -707,14 +708,37 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             target=target,
         )
     )
-    if amendment_program_inserted_parent_child_insert is None and reject_amendment_program_inserted_parent_structural_insert(
-        effect=effect,
-        curr_action=curr_action,
-        target=target,
-        target_ref=t_str,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        lowering_rejections_out=lowering_rejections_out,
+    amendment_program_inserted_anchor_insert_applied = False
+    if amendment_program_inserted_parent_child_insert is None:
+        amendment_program_inserted_anchor_insert = (
+            lower_amendment_program_inserted_anchor_structural_insert(
+                effect=effect,
+                curr_action=curr_action,
+                target=target,
+                content_ir=content_ir,
+                target_ref=t_str,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+        )
+        target = amendment_program_inserted_anchor_insert.target
+        content_ir = amendment_program_inserted_anchor_insert.content_ir
+        amendment_program_inserted_anchor_insert_applied = (
+            amendment_program_inserted_anchor_insert.applied
+        )
+    if (
+        amendment_program_inserted_parent_child_insert is None
+        and not amendment_program_inserted_anchor_insert_applied
+        and reject_amendment_program_inserted_parent_structural_insert(
+            effect=effect,
+            curr_action=curr_action,
+            target=target,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
     ):
         return unchanged
 
