@@ -1334,7 +1334,8 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
             norm,
         )
         or re.search(
-            r"\bafter\s+that\s+(?:paragraph|sub-?paragraph|subsection)\s*,?\s+insert(?:\b|\s*[—-])",
+            r"\bafter\s+that\s+(?:unnumbered\s+paragraph|paragraph|sub-?paragraph|subsection)"
+            r"\s*,?\s+insert(?:\b|\s*[—-])",
             norm,
         )
         or re.search(
