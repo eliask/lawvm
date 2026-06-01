@@ -1535,6 +1535,14 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
     )
 
     assert report["report_kind"] == "uk_candidates_frontier_report"
+    assert report["schema"] == "lawvm.uk_candidates_frontier_report.v1"
+    assert report["truth_claim"] == "uk_saved_bench_candidate_frontier_diagnostics_only"
+    assert report["candidate_effect_claims"] is True
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["candidate_claim_scope"] == "frontier_triage_only"
     assert report["label"] == "uk_frontier"
     assert report["filters"]["types"] == ["asp", "ukpga"]
     assert report["filters"]["effect_budget"] == 25
@@ -1789,7 +1797,12 @@ def test_candidates_report_jsonable_can_omit_rows_for_summary_only() -> None:
     assert report["summary"]["saved_legacy_effect_count"] == 10
     assert report["summary"]["saved_effect_row_count"] == 7
     assert report["summary"]["saved_effect_feed_page_count"] == 3
-    assert "rows" not in report
+    assert report["filtered_summary"] == report["summary"]
+    assert report["rows"] == []
+    assert report["rows_truncated"] is False
+    assert report["candidate_effect_claims"] is True
+    assert report["replay_claims"] is False
+    assert report["agreement_claims"] is False
 
 
 def test_candidates_report_jsonable_can_limit_summary_count_maps() -> None:
@@ -1844,7 +1857,9 @@ def test_candidates_report_jsonable_can_limit_summary_count_maps() -> None:
         "replay_adjudication_kind_counts": 1,
     }
     assert report["filters"]["summary_count_limit"] == 2
-    assert "rows" not in report
+    assert report["filtered_summary"] == summary
+    assert report["rows"] == []
+    assert report["rows_truncated"] is False
 
 
 def test_load_saved_bench_run_does_not_mask_loader_type_errors() -> None:
@@ -2268,7 +2283,10 @@ def test_uk_candidates_top_zero_json_summary_preserves_matched_frontier(monkeypa
     assert payload["summary"]["frontier_truncated"] is True
     assert payload["summary"]["emitted_row_count"] == 0
     assert payload["summary"]["status_counts"] == {"frontier prefilter only": 2}
-    assert "rows" not in payload
+    assert payload["rows"] == []
+    assert payload["rows_truncated"] is True
+    assert payload["candidate_effect_claims"] is True
+    assert payload["replay_claims"] is False
 
 
 def test_uk_candidates_top_zero_summary_aggregates_saved_bench_counts_without_diagnostics(
@@ -2343,7 +2361,10 @@ def test_uk_candidates_top_zero_summary_aggregates_saved_bench_counts_without_di
         "uk_replay_text_match_missing": 5
     }
     assert payload["summary"]["replay_adjudication_bucket_counts"] == {"text_surface": 5}
-    assert "rows" not in payload
+    assert payload["rows"] == []
+    assert payload["rows_truncated"] is True
+    assert payload["canonical_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
 
 
 def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch, capsys) -> None:
