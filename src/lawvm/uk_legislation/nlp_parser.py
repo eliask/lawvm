@@ -2009,6 +2009,25 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             continue
         subs.append({"original": m.group(1), "replacement": m.group(2)})
 
+    matches_target_qualified_passive_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"in\s+(?:paragraph|sub-paragraph|subsection)\s+\(?[A-Za-z0-9]+\)?,?\s+"
+        r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"(?:(?:the )?words? )?[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_target_qualified_passive_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": "uk_effect_target_qualified_passive_substitution_text_patch",
+            }
+        )
+
     matches_dangling_passive_substitution_quote = re.finditer(
         r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]"
         r"(?:\s*\([^)]*\))?\s+there\s+(?:is|are|shall\s+be)\s+substituted\s+"

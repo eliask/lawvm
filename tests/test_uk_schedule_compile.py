@@ -41075,6 +41075,78 @@ def test_compile_parenthesized_nested_quote_substitution_lowers_to_text_patch() 
     )
 
 
+def test_target_qualified_passive_substitution_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "a for the words \u201con the date he signs the certificate\u201d in paragraph (b), "
+        "there shall be substituted the words "
+        "\u201con the date seven days before the date on which he signs the certificate\u201d;"
+    )
+
+    assert fragments == [
+        {
+            "original": "on the date he signs the certificate",
+            "replacement": "on the date seven days before the date on which he signs the certificate",
+            "rule_id": "uk_effect_target_qualified_passive_substitution_text_patch",
+        }
+    ]
+
+
+def test_compile_target_qualified_passive_substitution_lowers_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-5-a">
+          <Pnumber>a</Pnumber>
+          <Text>a for the words \u201con the date he signs the certificate\u201d in
+          paragraph (b), there shall be substituted the words \u201con the date
+          seven days before the date on which he signs the certificate\u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f813bcdc93286f6254659cd1faac010d",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2002-03-19",
+        affected_uri="/id/ukpga/1995/26/section/60/subsection/7A/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1995",
+        affected_number="26",
+        affected_provisions="s. 60(7A)(b)",
+        affecting_uri="/id/uksi/2002/380",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2002",
+        affecting_number="380",
+        affecting_provisions="reg. 5(a)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2002-03-19", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "60"), ("subsection", "7a"), ("paragraph", "b"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "on the date he signs the certificate"
+    assert op.text_patch.replacement == "on the date seven days before the date on which he signs the certificate"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_target_qualified_passive_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_words_in_brackets_substitution_lowers_to_bounded_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
