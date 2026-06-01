@@ -4375,6 +4375,7 @@ def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program()
             <Text>
               After Ground 2ZA (inserted by paragraph 6 of this Schedule) insert—
               Ground 2ZB The landlord holds a superior tenancy.
+              Ground 2ZC The landlord has another source-owned reason.
             </Text>
           </P1para>
         </P1>
@@ -4418,9 +4419,13 @@ def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program()
     assert rejection["inserted_anchor_kind"] == "ground"
     assert rejection["inserted_anchor_label"] == "2za"
     assert rejection["source_inserted_by"] == "paragraph 6 of this Schedule"
+    assert rejection["source_inserted_by_label"] == "6"
+    assert rejection["source_inserted_by_scope"] == "this_schedule"
     assert rejection["direction"] == "after"
     assert rejection["anchor_label"] == "2za"
     assert rejection["inserted_label"] == "2zb"
+    assert rejection["inserted_payload_labels"] == ["2zb", "2zc"]
+    assert rejection["inserted_payload_label_count"] == 2
     assert "superior tenancy" in rejection["inserted_text_preview"]
     assert rejection["blocking"] is True
     assert rejection["strict_disposition"] == "block"
@@ -4475,8 +4480,12 @@ def test_compile_as_inserted_parenthetical_anchor_preserves_full_anchor_label() 
     assert rejection["inserted_anchor_kind"] == "paragraph"
     assert rejection["inserted_anchor_label"] == "2b(8)"
     assert rejection["source_inserted_by"] == "as inserted"
+    assert rejection["source_inserted_by_label"] == ""
+    assert rejection["source_inserted_by_scope"] == "deictic"
     assert rejection["anchor_label"] == "2b(8)"
     assert rejection["inserted_label"] == "9"
+    assert rejection["inserted_payload_labels"] == ["9"]
+    assert rejection["inserted_payload_label_count"] == 1
 
 
 def test_compile_structural_sibling_insert_does_not_append_when_feed_target_is_inserted_child() -> None:
