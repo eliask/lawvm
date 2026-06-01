@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
+from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_manual_frontier,
+)
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
 
 if TYPE_CHECKING:
@@ -348,6 +351,12 @@ def _validation_row_jsonable(
         current_blocking_rules=current_blocking_rules,
         current_compiled_op_count=int(current_summary.n_ops),
     )
+    current_authorization = uk_execution_authorization_from_manual_frontier(
+        manual_compile_status=current_manual_status,
+        manual_compile_rule_id=current_manual_rule_id,
+        owner_phase=current_owner_phase,
+        validator_status=validation_status.status,
+    ).to_dict()
     return _manual_frontier_validation_row(
         rule_id=validation_status.rule_id,
         validator_status=validation_status.status,
@@ -376,6 +385,20 @@ def _validation_row_jsonable(
                 "available" if current_template else "not_available"
             ),
             "current_suggested_claim_template": current_template,
+            "current_execution_authorization": current_authorization,
+            "current_executable": current_authorization["executable"],
+            "current_replay_authorized": current_authorization["replay_authorized"],
+            "current_authorization_status": current_authorization[
+                "authorization_status"
+            ],
+            "current_authorization_rule_id": current_authorization[
+                "authorization_rule_id"
+            ],
+            "current_required_proofs": current_authorization["required_proofs"],
+            "current_safe_default": current_authorization["safe_default"],
+            "current_forbidden_shortcuts": current_authorization[
+                "forbidden_shortcuts"
+            ],
         },
     )
 
@@ -544,11 +567,19 @@ def _validation_report_jsonable(
         for row in rows
         if str(row.get("current_owner_phase") or "")
     )
+    current_authorization_status_counts = Counter(
+        str(row.get("current_authorization_status") or "unknown")
+        for row in rows
+        if str(row.get("current_authorization_status") or "")
+    )
+    current_missing_proof_counts = _required_proof_counter(rows)
     remaining_manual_rule_counts: Counter[str] = Counter()
     remaining_manual_status_counts: Counter[str] = Counter()
     remaining_suggested_claim_template_status_counts: Counter[str] = Counter()
     remaining_source_pathology_counts: Counter[str] = Counter()
     remaining_owner_phase_counts: Counter[str] = Counter()
+    remaining_authorization_status_counts: Counter[str] = Counter()
+    remaining_missing_proof_counts: Counter[str] = Counter()
     stale_original_manual_rule_counts: Counter[str] = Counter()
     current_blocking_lowering_rule_counts: Counter[str] = Counter()
     remaining_blocking_lowering_rule_counts: Counter[str] = Counter()
@@ -615,6 +646,12 @@ def _validation_report_jsonable(
             owner_phase = str(row.get("current_owner_phase") or "")
             if owner_phase:
                 remaining_owner_phase_counts[owner_phase] += 1
+            authorization_status = str(row.get("current_authorization_status") or "")
+            if authorization_status:
+                remaining_authorization_status_counts[authorization_status] += 1
+            remaining_missing_proof_counts.update(
+                _required_proof_counter((row,))
+            )
             remaining_blocking_lowering_rule_counts.update(blocking_rules)
         if _is_stale_manual_frontier_validation(row):
             original_rule_id = str(row.get("original_manual_compile_rule_id") or "")
@@ -651,6 +688,12 @@ def _validation_report_jsonable(
                 sorted(original_owner_phase_counts.items())
             ),
             "current_owner_phase_counts": dict(sorted(current_owner_phase_counts.items())),
+            "current_authorization_status_counts": dict(
+                sorted(current_authorization_status_counts.items())
+            ),
+            "current_missing_proof_counts": dict(
+                sorted(current_missing_proof_counts.items())
+            ),
             "remaining_manual_status_counts": dict(
                 sorted(remaining_manual_status_counts.items())
             ),
@@ -663,6 +706,12 @@ def _validation_report_jsonable(
             ),
             "remaining_owner_phase_counts": dict(
                 sorted(remaining_owner_phase_counts.items())
+            ),
+            "remaining_authorization_status_counts": dict(
+                sorted(remaining_authorization_status_counts.items())
+            ),
+            "remaining_missing_proof_counts": dict(
+                sorted(remaining_missing_proof_counts.items())
             ),
             "stale_original_manual_rule_counts": dict(
                 sorted(stale_original_manual_rule_counts.items())
@@ -714,6 +763,16 @@ def _string_tuple_from_value(value: object) -> tuple[str, ...]:
     if isinstance(value, list | tuple):
         return tuple(str(item) for item in value if str(item))
     return ()
+
+
+def _required_proof_counter(rows: tuple[Mapping[str, Any], ...]) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("current_replay_authorized") is True:
+            continue
+        proofs = row.get("current_required_proofs") or ()
+        counts.update(_string_tuple_from_value(proofs))
+    return counts
 
 
 def _template_mapping(row: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -792,6 +851,11 @@ def _remaining_workqueue_rows(
         row["validator_current_owner_phase"] = str(
             validation.get("current_owner_phase") or ""
         )
+        current_authorization = validation.get("current_execution_authorization")
+        if isinstance(current_authorization, Mapping):
+            row["execution_authorization"] = dict(current_authorization)
+        else:
+            row["execution_authorization"] = {}
         # Preserve the original workqueue evidence fields, but expose the
         # current classification at top level so downstream queue tooling does
         # not accidentally group by stale exported families.
@@ -809,6 +873,21 @@ def _remaining_workqueue_rows(
         )
         row["current_source_pathology"] = row["validator_current_source_pathology"]
         row["current_owner_phase"] = row["validator_current_owner_phase"]
+        row["executable"] = bool(validation.get("current_executable") or False)
+        row["replay_authorized"] = bool(
+            validation.get("current_replay_authorized") or False
+        )
+        row["authorization_status"] = str(
+            validation.get("current_authorization_status") or ""
+        )
+        row["authorization_rule_id"] = str(
+            validation.get("current_authorization_rule_id") or ""
+        )
+        row["required_proofs"] = list(validation.get("current_required_proofs") or ())
+        row["safe_default"] = str(validation.get("current_safe_default") or "")
+        row["forbidden_shortcuts"] = list(
+            validation.get("current_forbidden_shortcuts") or ()
+        )
         current_template = validation.get("current_suggested_claim_template")
         if isinstance(current_template, Mapping) and current_template:
             row["suggested_claim_template"] = dict(current_template)
@@ -890,12 +969,28 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         + _format_count_map(summary.get("current_owner_phase_counts"))
     )
     print(
+        "Current authorization statuses: "
+        + _format_count_map(summary.get("current_authorization_status_counts"))
+    )
+    print(
+        "Current missing proofs: "
+        + _format_count_map(summary.get("current_missing_proof_counts"))
+    )
+    print(
         "Remaining source pathologies: "
         + _format_count_map(summary.get("remaining_source_pathology_counts"))
     )
     print(
         "Remaining owner phases: "
         + _format_count_map(summary.get("remaining_owner_phase_counts"))
+    )
+    print(
+        "Remaining authorization statuses: "
+        + _format_count_map(summary.get("remaining_authorization_status_counts"))
+    )
+    print(
+        "Remaining missing proofs: "
+        + _format_count_map(summary.get("remaining_missing_proof_counts"))
     )
     print(
         "Remaining blocking lowering: "

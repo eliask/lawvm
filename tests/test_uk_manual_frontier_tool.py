@@ -158,6 +158,11 @@ def test_validate_manual_frontier_rows_marks_stale_and_still_blocked(
         "uk_effect_metadata_cross_container_renumber_rejected"
     ]
     assert rows[1]["current_suggested_claim_template_status"] == "available"
+    assert rows[0]["current_authorization_status"] == "replay_authorized"
+    assert rows[0]["current_replay_authorized"] is True
+    assert rows[1]["current_authorization_status"] == "manual_claim_required"
+    assert rows[1]["current_replay_authorized"] is False
+    assert "mutation_boundary_proof" in rows[1]["current_required_proofs"]
     assert rows[2]["current_compiled_op_count"] == 1
     assert rows[2]["current_blocking_lowering_rule_ids"] == []
     assert rows[2]["current_manual_compile_rule_id"] == (
@@ -214,6 +219,37 @@ def test_uk_manual_frontier_validate_main_emits_json(
                         "text_rewrite_source_preimage_and_live_target"
                     ],
                 },
+                "current_execution_authorization": {
+                    "executable": False,
+                    "replay_authorized": False,
+                    "authorization_status": "manual_claim_required",
+                    "authorization_rule_id": (
+                        "uk_execution_authorization_manual_claim_required"
+                    ),
+                    "owner_phase": "typed_elaboration",
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                    "validator_status": "still_manual_frontier",
+                    "required_proofs": ["mutation_boundary_proof"],
+                    "safe_default": (
+                        "block_until_validated_claim_authorizes_replay"
+                    ),
+                    "forbidden_shortcuts": ["unvalidated_manual_claim_execution"],
+                    "detail": {},
+                },
+                "current_executable": False,
+                "current_replay_authorized": False,
+                "current_authorization_status": "manual_claim_required",
+                "current_authorization_rule_id": (
+                    "uk_execution_authorization_manual_claim_required"
+                ),
+                "current_required_proofs": ["mutation_boundary_proof"],
+                "current_safe_default": (
+                    "block_until_validated_claim_authorizes_replay"
+                ),
+                "current_forbidden_shortcuts": [
+                    "unvalidated_manual_claim_execution"
+                ],
             },
         ),
     )
@@ -258,11 +294,23 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert payload["summary"]["current_owner_phase_counts"] == {
         "typed_elaboration": 1
     }
+    assert payload["summary"]["current_authorization_status_counts"] == {
+        "manual_claim_required": 1
+    }
+    assert payload["summary"]["current_missing_proof_counts"] == {
+        "mutation_boundary_proof": 1
+    }
     assert payload["summary"]["remaining_source_pathology_counts"] == {
         "heading_only_ref_unsupported": 1
     }
     assert payload["summary"]["remaining_owner_phase_counts"] == {
         "typed_elaboration": 1
+    }
+    assert payload["summary"]["remaining_authorization_status_counts"] == {
+        "manual_claim_required": 1
+    }
+    assert payload["summary"]["remaining_missing_proof_counts"] == {
+        "mutation_boundary_proof": 1
     }
     assert payload["summary"]["remaining_blocking_lowering_rule_counts"] == {
         "uk_effect_heading_only_ref_rejected": 1
@@ -322,6 +370,12 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert remaining_row["current_source_pathology"] == "heading_only_ref_unsupported"
     assert remaining_row["validator_current_owner_phase"] == "typed_elaboration"
     assert remaining_row["current_owner_phase"] == "typed_elaboration"
+    assert remaining_row["authorization_status"] == "manual_claim_required"
+    assert remaining_row["replay_authorized"] is False
+    assert remaining_row["required_proofs"] == ["mutation_boundary_proof"]
+    assert remaining_row["execution_authorization"]["authorization_status"] == (
+        "manual_claim_required"
+    )
     assert remaining_row["suggested_claim_template"] == {
         "action_family": "facet_text_rewrite",
         "required_ownership": ["fresh_current_claim"],
@@ -574,6 +628,29 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
                     "claim_identifies_table_ordering_rule_or_anchor"
                 ],
             },
+            "current_execution_authorization": {
+                "executable": False,
+                "replay_authorized": False,
+                "authorization_status": "manual_claim_required",
+                "authorization_rule_id": "uk_execution_authorization_manual_claim_required",
+                "owner_phase": "typed_elaboration",
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+                "validator_status": "still_manual_frontier",
+                "required_proofs": ["mutation_boundary_proof"],
+                "safe_default": "block_until_validated_claim_authorizes_replay",
+                "forbidden_shortcuts": ["unvalidated_manual_claim_execution"],
+                "detail": {},
+            },
+            "current_executable": False,
+            "current_replay_authorized": False,
+            "current_authorization_status": "manual_claim_required",
+            "current_authorization_rule_id": (
+                "uk_execution_authorization_manual_claim_required"
+            ),
+            "current_required_proofs": ["mutation_boundary_proof"],
+            "current_safe_default": "block_until_validated_claim_authorizes_replay",
+            "current_forbidden_shortcuts": ["unvalidated_manual_claim_execution"],
         },
     )
 
@@ -609,6 +686,12 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     assert remaining[0]["current_blocking_lowering_rule_ids"] == [
         "uk_effect_table_entry_instruction_rejected"
     ]
+    assert remaining[0]["authorization_status"] == "manual_claim_required"
+    assert remaining[0]["replay_authorized"] is False
+    assert remaining[0]["required_proofs"] == ["mutation_boundary_proof"]
+    assert remaining[0]["execution_authorization"]["authorization_status"] == (
+        "manual_claim_required"
+    )
     assert remaining[0]["suggested_claim_template_status"] == "available"
     assert remaining[0]["suggested_claim_template"]["required_ownership"] == [
         "source_named_table_surface",
