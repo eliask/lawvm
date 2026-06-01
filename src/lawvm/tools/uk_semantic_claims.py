@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
 
 if TYPE_CHECKING:
     import argparse
@@ -5028,6 +5029,23 @@ def _matched_template_obligation_summary(
     }
 
 
+def _manual_claim_owner_phase(
+    row: Mapping[str, Any],
+    workqueue_row: Mapping[str, Any] | None,
+) -> str:
+    for source in (workqueue_row or {}, row):
+        for key in ("current_owner_phase", "owner_phase", "manual_compile_owner_phase"):
+            value = _optional_string(source, key)
+            if value:
+                return value
+    source = workqueue_row or row
+    return uk_phase_owner_for_manual_frontier(
+        manual_compile_status=_optional_string(source, "manual_compile_status"),
+        manual_compile_rule_id=_optional_string(source, "manual_compile_rule_id"),
+        source_pathology=_optional_string(source, "source_pathology"),
+    )
+
+
 def _validation_row(
     row: Mapping[str, Any],
     *,
@@ -5047,6 +5065,7 @@ def _validation_row(
     matched_work_item_id = ""
     if workqueue_row is not None:
         matched_work_item_id = _optional_string(workqueue_row, "work_item_id")
+    owner_phase = _manual_claim_owner_phase(row, workqueue_row)
     return {
         "schema": _VALIDATION_SCHEMA,
         **diagnostic_detail(
@@ -5086,6 +5105,7 @@ def _validation_row(
         "statute_id": _optional_string(row, "statute_id"),
         "effect_id": _optional_string(row, "effect_id"),
         "manual_compile_rule_id": _optional_string(row, "manual_compile_rule_id"),
+        "owner_phase": owner_phase,
         "action_family": _optional_string(row, "action_family"),
         "work_item_id": _optional_string(row, "work_item_id"),
         "matched_work_item_id": matched_work_item_id,
@@ -5388,6 +5408,23 @@ def _validation_report_jsonable(
         for row in rows
         if str(row.get("manual_compile_rule_id") or "")
     )
+    owner_phase_counts = Counter(
+        str(row.get("owner_phase") or "unknown")
+        for row in rows
+        if str(row.get("owner_phase") or "")
+    )
+    accepted_owner_phase_counts = Counter(
+        str(row.get("owner_phase") or "unknown")
+        for row in rows
+        if str(row.get("validator_status") or "") in _ACCEPTED_STATUSES
+        and str(row.get("owner_phase") or "")
+    )
+    rejected_owner_phase_counts = Counter(
+        str(row.get("owner_phase") or "unknown")
+        for row in rows
+        if str(row.get("validator_status") or "") in _REJECTED_STATUSES
+        and str(row.get("owner_phase") or "")
+    )
     outcome_kind_counts = Counter(
         str(row.get("proposed_outcome_kind") or "unknown")
         for row in rows
@@ -5502,6 +5539,13 @@ def _validation_report_jsonable(
             "validator_status_counts": dict(sorted(status_counts.items())),
             "validator_rule_counts": dict(sorted(rule_counts.items())),
             "manual_compile_rule_counts": dict(sorted(manual_rule_counts.items())),
+            "owner_phase_counts": dict(sorted(owner_phase_counts.items())),
+            "accepted_owner_phase_counts": dict(
+                sorted(accepted_owner_phase_counts.items())
+            ),
+            "rejected_owner_phase_counts": dict(
+                sorted(rejected_owner_phase_counts.items())
+            ),
             "proposed_outcome_kind_counts": dict(sorted(outcome_kind_counts.items())),
             "operation_family_proof_semantic_counts": dict(
                 sorted(proof_semantic_counts.items())

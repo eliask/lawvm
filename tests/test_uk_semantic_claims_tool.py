@@ -141,6 +141,7 @@ def test_validate_semantic_claim_accepts_schema_and_workqueue_provenance_only() 
         == "schema_workqueue_shape_and_declared_obligations_non_executable"
     )
     assert row["matched_work_item_id"] == "uk-manual-frontier-demo"
+    assert row["owner_phase"] == "typed_elaboration"
     assert row["proposed_outcome_kind"] == "canonical_operations"
     assert row["validation_issues"] == []
     assert row["executable"] is False
@@ -6941,6 +6942,9 @@ def test_uk_semantic_claims_validation_report_summarizes_template_obligations(
     )
 
     summary = report["summary"]
+    assert summary["owner_phase_counts"] == {"typed_elaboration": 2}
+    assert summary["accepted_owner_phase_counts"] == {"typed_elaboration": 1}
+    assert summary["rejected_owner_phase_counts"] == {"typed_elaboration": 1}
     assert summary["matched_template_required_validator_check_counts"] == {
         "changed_paths_are_within_claimed_table_surface": 2,
         "claim_identifies_exact_table_carrier": 2,
