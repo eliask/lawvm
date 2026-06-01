@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_semantic_claim_validation,
+)
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
 
 if TYPE_CHECKING:
@@ -256,6 +259,15 @@ def _string_tuple_from_value(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(item for item in value if isinstance(item, str) and item)
+
+
+def _required_proof_counter(rows: tuple[Mapping[str, Any], ...]) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        counts.update(_string_tuple_from_value(row.get("required_proofs")))
+    return counts
 
 
 def _duplicate_string_reference_issues(
@@ -5066,6 +5078,14 @@ def _validation_row(
     if workqueue_row is not None:
         matched_work_item_id = _optional_string(workqueue_row, "work_item_id")
     owner_phase = _manual_claim_owner_phase(row, workqueue_row)
+    strict_disposition = "block" if validator_status in _REJECTED_STATUSES else "record"
+    quirks_disposition = strict_disposition if validator_status in _REJECTED_STATUSES else "record"
+    authorization = uk_execution_authorization_from_semantic_claim_validation(
+        validator_status=validator_status,
+        owner_phase=owner_phase,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+    ).to_dict()
     return {
         "schema": _VALIDATION_SCHEMA,
         **diagnostic_detail(
@@ -5074,12 +5094,8 @@ def _validation_row(
             phase="claim_validation",
             reason=reason,
             blocking=validator_status in _REJECTED_STATUSES,
-            strict_disposition=(
-                "block" if validator_status in _REJECTED_STATUSES else "record"
-            ),
-            quirks_disposition=(
-                "block" if validator_status in _REJECTED_STATUSES else "record"
-            ),
+            strict_disposition=strict_disposition,
+            quirks_disposition=quirks_disposition,
         ),
         "jurisdiction": "uk",
         "validator_status": validator_status,
@@ -5113,8 +5129,14 @@ def _validation_row(
         "source_preview_sha256": _claim_source_preview_sha256(row),
         "proposed_outcome_kind": _optional_string(proposed_outcome, "outcome_kind"),
         "validation_issues": list(issues),
-        "executable": False,
-        "replay_authorized": False,
+        "execution_authorization": authorization,
+        "executable": authorization["executable"],
+        "replay_authorized": authorization["replay_authorized"],
+        "authorization_status": authorization["authorization_status"],
+        "authorization_rule_id": authorization["authorization_rule_id"],
+        "required_proofs": authorization["required_proofs"],
+        "safe_default": authorization["safe_default"],
+        "forbidden_shortcuts": authorization["forbidden_shortcuts"],
     }
 
 
@@ -5413,6 +5435,38 @@ def _validation_report_jsonable(
         for row in rows
         if str(row.get("owner_phase") or "")
     )
+    authorization_status_counts = Counter(
+        str(row.get("authorization_status") or "unknown")
+        for row in rows
+        if str(row.get("authorization_status") or "")
+    )
+    accepted_authorization_status_counts = Counter(
+        str(row.get("authorization_status") or "unknown")
+        for row in rows
+        if str(row.get("validator_status") or "") in _ACCEPTED_STATUSES
+        and str(row.get("authorization_status") or "")
+    )
+    rejected_authorization_status_counts = Counter(
+        str(row.get("authorization_status") or "unknown")
+        for row in rows
+        if str(row.get("validator_status") or "") in _REJECTED_STATUSES
+        and str(row.get("authorization_status") or "")
+    )
+    missing_proof_counts = _required_proof_counter(rows)
+    accepted_missing_proof_counts = _required_proof_counter(
+        tuple(
+            row
+            for row in rows
+            if str(row.get("validator_status") or "") in _ACCEPTED_STATUSES
+        )
+    )
+    rejected_missing_proof_counts = _required_proof_counter(
+        tuple(
+            row
+            for row in rows
+            if str(row.get("validator_status") or "") in _REJECTED_STATUSES
+        )
+    )
     accepted_owner_phase_counts = Counter(
         str(row.get("owner_phase") or "unknown")
         for row in rows
@@ -5540,6 +5594,22 @@ def _validation_report_jsonable(
             "validator_rule_counts": dict(sorted(rule_counts.items())),
             "manual_compile_rule_counts": dict(sorted(manual_rule_counts.items())),
             "owner_phase_counts": dict(sorted(owner_phase_counts.items())),
+            "authorization_status_counts": dict(
+                sorted(authorization_status_counts.items())
+            ),
+            "accepted_authorization_status_counts": dict(
+                sorted(accepted_authorization_status_counts.items())
+            ),
+            "rejected_authorization_status_counts": dict(
+                sorted(rejected_authorization_status_counts.items())
+            ),
+            "missing_proof_counts": dict(sorted(missing_proof_counts.items())),
+            "accepted_missing_proof_counts": dict(
+                sorted(accepted_missing_proof_counts.items())
+            ),
+            "rejected_missing_proof_counts": dict(
+                sorted(rejected_missing_proof_counts.items())
+            ),
             "accepted_owner_phase_counts": dict(
                 sorted(accepted_owner_phase_counts.items())
             ),
@@ -5640,12 +5710,33 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
     )
     print("Owner phases: " + _format_count_map(summary.get("owner_phase_counts")))
     print(
+        "Authorization statuses: "
+        + _format_count_map(summary.get("authorization_status_counts"))
+    )
+    print("Missing proofs: " + _format_count_map(summary.get("missing_proof_counts")))
+    print(
         "Accepted owner phases: "
         + _format_count_map(summary.get("accepted_owner_phase_counts"))
     )
     print(
+        "Accepted authorization statuses: "
+        + _format_count_map(summary.get("accepted_authorization_status_counts"))
+    )
+    print(
+        "Accepted missing proofs: "
+        + _format_count_map(summary.get("accepted_missing_proof_counts"))
+    )
+    print(
         "Rejected owner phases: "
         + _format_count_map(summary.get("rejected_owner_phase_counts"))
+    )
+    print(
+        "Rejected authorization statuses: "
+        + _format_count_map(summary.get("rejected_authorization_status_counts"))
+    )
+    print(
+        "Rejected missing proofs: "
+        + _format_count_map(summary.get("rejected_missing_proof_counts"))
     )
     print(
         "Outcome kinds: "
