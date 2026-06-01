@@ -68,11 +68,18 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
+_SOURCE_PARENT_EACH_PROVISION_MARKERS = (
+    "In each provision",
+    "in each provision",
+    "IN EACH PROVISION",
+)
+_SOURCE_PARENT_SUBSTITUTION_MARKERS = ("substitut", "Substitut", "SUBSTITUT")
 
 
 def _source_parent_each_provision_substitution_candidate(text: str) -> bool:
-    lowered = text.lower()
-    return "in each provision" in lowered and "substitut" in lowered
+    return any(marker in text for marker in _SOURCE_PARENT_EACH_PROVISION_MARKERS) and any(
+        marker in text for marker in _SOURCE_PARENT_SUBSTITUTION_MARKERS
+    )
 
 
 # BRANCH (|the words? ) replaces (?:(?:the\s+)?words?\s+)?;
