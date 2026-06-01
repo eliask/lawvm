@@ -5638,6 +5638,15 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         "Manual rules: "
         + _format_count_map(summary.get("manual_compile_rule_counts"))
     )
+    print("Owner phases: " + _format_count_map(summary.get("owner_phase_counts")))
+    print(
+        "Accepted owner phases: "
+        + _format_count_map(summary.get("accepted_owner_phase_counts"))
+    )
+    print(
+        "Rejected owner phases: "
+        + _format_count_map(summary.get("rejected_owner_phase_counts"))
+    )
     print(
         "Outcome kinds: "
         + _format_count_map(summary.get("proposed_outcome_kind_counts"))
@@ -5747,6 +5756,7 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
             f"{row.get('validator_status')} {row.get('claim_id') or '-'} "
             f"{row.get('statute_id') or '-'} {row.get('effect_id') or '-'} "
             f"rule={row.get('manual_compile_rule_id') or '-'} "
+            f"owner_phase={row.get('owner_phase') or '-'} "
             f"outcome={row.get('proposed_outcome_kind') or '-'} "
             f"replay_authorized={row.get('replay_authorized')}"
         )
