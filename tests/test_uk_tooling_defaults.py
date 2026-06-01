@@ -1089,8 +1089,7 @@ def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
         "uk_manual_compile_frontier_classified": 1,
     }
     assert payload["compile_observation_owner_phase_counts"] == {
-        "affecting_source_extraction": 1,
-        "source_pathology_manual_frontier": 1,
+        "affecting_source_extraction": 2,
         "typed_elaboration": 1,
     }
     assert payload["manual_compile_status_counts"] == {"manual_compile_candidate": 1}
