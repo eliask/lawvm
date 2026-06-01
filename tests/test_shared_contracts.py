@@ -28,6 +28,9 @@ from lawvm.core.frontier_work_item import (
     validate_frontier_work_item,
 )
 from lawvm.core.frozen_values import FrozenDict
+from lawvm.core.mutation_accounting import build_mutation_invariant_reports
+from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
+from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.source_witness import (
     DigestWitness,
     SourceWitness,
@@ -198,6 +201,66 @@ def test_agreement_residual_rejects_unknown_family() -> None:
             rule_id="bad_rule",
             safe_default="classify",
             forbidden_shortcuts=("shortcut",),
+        )
+
+
+def test_mutation_boundary_proof_projects_passive_accounting() -> None:
+    report = build_mutation_invariant_reports(
+        (
+            MutationEvent(
+                op_id="op-1",
+                source_statute="ukpga/2000/1",
+                action="replace",
+                helper="replace_text",
+                outcome="replaced_node",
+                resolved_target_path=(("body", ""), ("section", "1")),
+                replaced_paths=((("body", ""), ("section", "2")),),
+            ),
+        )
+    )[0]
+
+    proof = MutationBoundaryProof.from_mutation_invariant_report(
+        report,
+        proof_id="proof-1",
+        jurisdiction="uk",
+        materialization_surface="unit_test_replay",
+        owner_phase="replay_invariants",
+        safe_default="block_or_classify_residual",
+        forbidden_shortcuts=("ignore_unexplained_changed_paths",),
+    )
+
+    data = proof.to_dict()
+
+    assert data["status"] == "violated"
+    assert data["rule_id"] == "mutation_boundary_path_set_violated"
+    assert data["selected_target_paths"] == ["body/section:1"]
+    assert data["unexplained_changed_paths"] == ["body/section:2"]
+    assert data["result_codes"] == ["REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"]
+    assert "ignore_unexplained_changed_paths" in data["forbidden_shortcuts"]
+
+
+def test_mutation_boundary_proof_requires_safe_default_and_forbidden_shortcuts() -> None:
+    with pytest.raises(ValueError, match="MutationBoundaryProof.safe_default"):
+        MutationBoundaryProof(
+            proof_id="bad",
+            jurisdiction="uk",
+            materialization_surface="surface",
+            operation_id="op-1",
+            owner_phase="replay_invariants",
+            rule_id="rule",
+            status="proved",
+            forbidden_shortcuts=("shortcut",),
+        )
+    with pytest.raises(ValueError, match="MutationBoundaryProof.forbidden_shortcuts"):
+        MutationBoundaryProof(
+            proof_id="bad",
+            jurisdiction="uk",
+            materialization_surface="surface",
+            operation_id="op-1",
+            owner_phase="replay_invariants",
+            rule_id="rule",
+            status="proved",
+            safe_default="classify",
         )
 
 
