@@ -4199,6 +4199,26 @@ def test_classify_uk_effect_at_end_child_dash_block_insert_as_structural_sibling
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_at_end_full_stop_omission_insert_as_structural_sibling() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "At the end of paragraph (4), omit the full-stop and insert— ; "
+            "d a charge under a collective single charge structure; "
+            "e a collective existing rights charge. ."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:2"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "structural_sibling_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_before_child_block_insert_in_inserted_parent_as_amendment_program() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",

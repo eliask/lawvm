@@ -1353,6 +1353,12 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
             norm,
         )
         or re.search(
+            r"\bat\s+the\s+end\s+of\s+(?:paragraph|sub-?paragraph|subsection)"
+            r"\s*\([0-9A-Za-z]+\)\s*,?\s+omit\s+(?:the\s+)?full[- ]stop\s+"
+            r"and\s+insert\s*[—-]",
+            norm,
+        )
+        or re.search(
             r"\bat\s+the\s+end\s+of\s+"
             r"(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+"
             r"insert\s+[,;:]?\s*(?:and|or)\s+[a-z]\b",
