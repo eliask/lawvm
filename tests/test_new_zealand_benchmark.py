@@ -416,6 +416,53 @@ def test_build_nz_benchmark_report_is_archive_first_and_blocks_replay(tmp_path) 
     ]
 
 
+def test_build_nz_benchmark_report_default_payload_path_has_empty_candidate_maps(tmp_path) -> None:
+    version = "act_public_2020_1_en_2025-01-01"
+    xml_locator = "https://www.legislation.govt.nz/act/public/2020/1/en/2025-01-01.xml"
+    xml = b"""\
+<act date.as.at="2025-01-01">
+  <cover><title>Example Act 2020</title></cover>
+  <body>
+    <prov id="S1"><label>1</label><heading>Title</heading>
+      <notes>
+        <history-note>
+          <amended-provision>Section 1</amended-provision>
+          <amending-operation>amended</amending-operation>
+          <amending-provision href="A4">section 4</amending-provision>
+          Section 1: amended, on 1 January 2025, by section 4 of the Example Amendment Act 2024 (2024 No 10).
+        </history-note>
+      </notes>
+    </prov>
+  </body>
+</act>
+"""
+    archive = _FakeArchive(
+        {
+            f"https://api.legislation.govt.nz/v0/versions/{version}/": (
+                b'{"version_id":"act_public_2020_1_en_2025-01-01","formats":[{"type":"xml",'
+                b'"url":"https://www.legislation.govt.nz/act/public/2020/1/en/latest.xml"}]}'
+            ),
+            xml_locator: xml,
+        }
+    )
+
+    report = build_nz_benchmark_report(
+        archive,
+        db_path=tmp_path / "nz.farchive",
+        work_ids=("act_public_2020_1",),
+    )
+
+    summary = report.summary()
+    assert summary["operation_witness_rows"] == 1
+    assert summary["payload_status_counts"] == {}
+    assert summary["effect_candidate_witness_rule_counts"] == {}
+    assert summary["effect_candidate_action_witness_rule_counts"] == {}
+    assert summary["effect_preflight_status_counts"] == {}
+    assert summary["replay_blocked"] == 1
+    assert report.work_reports[0].effect_candidate_witness_rule_counts == {}
+    assert report.work_reports[0].effect_candidate_action_witness_rule_counts == {}
+
+
 def test_build_nz_benchmark_report_records_max_work_selection_context(tmp_path) -> None:
     archive = _FakeArchive(
         {
