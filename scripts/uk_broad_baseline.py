@@ -109,9 +109,16 @@ _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS = frozenset(
         "effect_feed_empty",
     }
 )
+_SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS = frozenset(
+    {
+        "base_too_small",
+        "oracle_metadata_only",
+    }
+)
 _SOURCE_CHAIN_COMPLETENESS_EXCLUDED_REASONS = (
     _MANUAL_SOURCE_CHAIN_FRONTIER_REASONS | _REPLAY_LENS_FRONTIER_REASONS
     | _OFFICIAL_EMPTY_EFFECT_FEED_FRONTIER_REASONS
+    | _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS
 )
 
 
@@ -543,6 +550,17 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             )
         }
     )
+    source_or_oracle_pathology_frontier_statutes = sorted(
+        {
+            str(row.get("statute_id") or "")
+            for row in results
+            if str(row.get("statute_id") or "")
+            and any(
+                reason in _SOURCE_OR_ORACLE_PATHOLOGY_FRONTIER_REASONS
+                for reason in _source_chain_frontier_reasons_for_row(row)
+            )
+        }
+    )
     zero_oracle_retention = [
         r
         for r in scored
@@ -683,6 +701,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "replay_lens_frontier_statutes": replay_lens_frontier_statutes,
         "empty_effect_feed_frontier_count": len(empty_effect_feed_frontier_statutes),
         "empty_effect_feed_frontier_statutes": empty_effect_feed_frontier_statutes,
+        "source_or_oracle_pathology_frontier_count": len(
+            source_or_oracle_pathology_frontier_statutes
+        ),
+        "source_or_oracle_pathology_frontier_statutes": (
+            source_or_oracle_pathology_frontier_statutes
+        ),
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "triage_bucket_statutes": triage_bucket_statutes,
         "manual_frontier_status_counts": manual_frontier_status_counts,
@@ -943,7 +967,7 @@ def _source_chain_frontier_reasons_for_row(row: dict[str, Any]) -> tuple[str, ..
         else:
             reasons.append("effect_rows_absent_or_unpublished")
     elif bucket == "nonreplay_effect_frontier":
-        if _has_only_non_textual_or_out_of_scope_manual_frontier(row):
+        if _has_replay_lens_or_source_insufficient_only_manual_frontier(row):
             reasons.append("effect_rows_not_admitted_by_replay_lens")
         elif _has_missing_structural_payload_record(row):
             reasons.append("effect_rows_missing_structural_payload")
@@ -992,7 +1016,7 @@ def _has_manual_frontier_source_insufficient_record(row: dict[str, Any]) -> bool
     return int(counts.get("source_insufficient") or 0) > 0
 
 
-def _has_only_non_textual_or_out_of_scope_manual_frontier(
+def _has_replay_lens_or_source_insufficient_only_manual_frontier(
     row: dict[str, Any],
 ) -> bool:
     counts = row.get("manual_frontier_status_counts") or {}
@@ -1001,7 +1025,11 @@ def _has_only_non_textual_or_out_of_scope_manual_frontier(
     total = sum(int(value or 0) for value in counts.values())
     if total == 0:
         return False
-    return int(counts.get("non_textual_or_out_of_scope") or 0) == total
+    replay_lens_count = int(counts.get("non_textual_or_out_of_scope") or 0)
+    source_insufficient_count = int(counts.get("source_insufficient") or 0)
+    if replay_lens_count == 0:
+        return False
+    return replay_lens_count + source_insufficient_count == total
 
 
 def _is_retained_eu_mixed_representation_residual(row: dict[str, Any]) -> bool:
@@ -1446,6 +1474,12 @@ def run_driver(
             "  empty_effect_feed_frontier="
             f"{summary['empty_effect_feed_frontier_count']}: "
             f"{', '.join(summary['empty_effect_feed_frontier_statutes'])}"
+        )
+    if summary["source_or_oracle_pathology_frontier_count"]:
+        print(
+            "  source_or_oracle_pathology_frontier="
+            f"{summary['source_or_oracle_pathology_frontier_count']}: "
+            f"{', '.join(summary['source_or_oracle_pathology_frontier_statutes'])}"
         )
     if summary["triage_buckets"]:
         buckets = ", ".join(
