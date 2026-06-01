@@ -1088,12 +1088,20 @@ def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
         "uk_effect_source_pathology_classified": 1,
         "uk_manual_compile_frontier_classified": 1,
     }
+    assert payload["compile_observation_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+        "source_pathology_manual_frontier": 1,
+        "typed_elaboration": 1,
+    }
     assert payload["manual_compile_status_counts"] == {"manual_compile_candidate": 1}
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1,
     }
     assert payload["blocking_compile_rejection_rule_counts"] == {
         "uk_affecting_act_xml_missing_rejected": 1,
+    }
+    assert payload["blocking_compile_rejection_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
     }
     assert payload["compile_observations"]["effect_source_pathology"][0]["source_pathology"] == (
         "missing_extracted_source"
