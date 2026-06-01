@@ -40,9 +40,13 @@ _EFFECT_METADATA_RULE_TOKENS = (
     "temporal",
 )
 _SOURCE_EXTRACTION_RULE_TOKENS = (
+    "broad_schedule_flat_payload",
     "fragment_context",
     "instruction_header",
+    "missing_extracted_source",
     "missing_payload",
+    "non_substantive_shell_payload",
+    "payload_fragment_without_action",
     "payload_missing",
     "payload_without_action",
     "parser_or_extraction",
@@ -53,6 +57,7 @@ _SOURCE_EXTRACTION_RULE_TOKENS = (
     "text_patch_postimage_chain_gap",
     "text_patch_preimage_chain_gap",
     "text_patch_target_source_chain_gap",
+    "unhandled_instruction_text",
     "unquoted_preimage",
 )
 _TYPED_ELABORATION_RULE_TOKENS = (
@@ -121,10 +126,9 @@ def uk_phase_owner_for_diagnostic(record: Mapping[str, Any]) -> str:
     rule_id = str(record.get("rule_id") or "").lower()
     family = str(record.get("family") or "").lower()
     phase = str(record.get("phase") or "").lower()
-    combined = f"{rule_id} {family} {phase}"
+    source_pathology = str(record.get("source_pathology") or "").lower()
+    combined = f"{rule_id} {family} {phase} {source_pathology}"
     if "manual_compile_frontier" in combined:
-        return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
-    if "source_pathology" in combined:
         return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
     if (
         "source_acquisition" in combined
@@ -134,10 +138,14 @@ def uk_phase_owner_for_diagnostic(record: Mapping[str, Any]) -> str:
         return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
     if "effect_feed" in combined or "metadata" in combined:
         return UK_PHASE_EFFECT_METADATA_FRONTEND
+    if any(token in combined for token in _EFFECT_METADATA_RULE_TOKENS):
+        return UK_PHASE_EFFECT_METADATA_FRONTEND
     if any(token in combined for token in _SOURCE_EXTRACTION_RULE_TOKENS):
         return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
     if "nonstructural" in combined:
         return UK_PHASE_CANONICAL_OP_COMPILATION
+    if any(token in combined for token in _TYPED_ELABORATION_RULE_TOKENS):
+        return UK_PHASE_TYPED_ELABORATION
     if "replay" in combined:
         return UK_PHASE_REPLAY_INVARIANTS
     if "oracle" in combined or "compare" in combined:
@@ -149,6 +157,8 @@ def uk_phase_owner_for_diagnostic(record: Mapping[str, Any]) -> str:
         or "range_to_container" in combined
     ):
         return UK_PHASE_TYPED_ELABORATION
+    if "source_pathology" in combined:
+        return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
     if phase == "lowering" or rule_id.startswith("uk_effect_"):
         return UK_PHASE_CANONICAL_OP_COMPILATION
     return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER

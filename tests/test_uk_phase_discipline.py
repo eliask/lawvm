@@ -95,6 +95,45 @@ def test_diagnostic_phase_owner_prefers_explicit_and_infers_common_families() ->
         )
         == UK_PHASE_CANONICAL_OP_COMPILATION
     )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_effect_source_pathology_classified",
+                "family": "source_pathology",
+                "source_pathology": "missing_extracted_source",
+            }
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_effect_source_pathology_classified",
+                "family": "source_pathology",
+                "source_pathology": "table_entry_target_unsupported",
+            }
+        )
+        == UK_PHASE_TYPED_ELABORATION
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_effect_source_pathology_classified",
+                "family": "source_pathology",
+                "source_pathology": "commencement_effect_out_of_scope",
+            }
+        )
+        == UK_PHASE_EFFECT_METADATA_FRONTEND
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_effect_source_pathology_classified",
+                "family": "source_pathology",
+            }
+        )
+        == UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
+    )
 
 
 def test_phase_owner_counts_for_diagnostics_returns_stable_sorted_counts() -> None:
