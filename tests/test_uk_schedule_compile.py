@@ -2797,6 +2797,20 @@ def test_all_occurrences_insert_accepts_these_words_occurs_wording() -> None:
     ]
 
 
+def test_before_anchor_all_occurrences_insert_accepts_each_place_wording() -> None:
+    fragments = parse_fragment_substitution(
+        'before "miscellaneous", in each place it appears, insert " relevant "'
+    )
+
+    assert fragments == [
+        {
+            "original": "miscellaneous",
+            "replacement": " relevant miscellaneous",
+            "rule_id": "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch",
+        }
+    ]
+
+
 def test_subsequently_occurs_substitution_remains_unlowered_without_boundary() -> None:
     fragments = parse_fragment_substitution(
         'for "president" where it subsequently occurs substitute "Chamber President"'
@@ -29713,6 +29727,68 @@ def test_compile_after_anchor_each_place_occurring_records_all_occurrences_obser
         for record in lowering_records
         if record["rule_id"] == "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"
     ] == ["uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch"]
+
+
+def test_compile_before_anchor_each_place_insert_records_all_occurrences_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="section-22-3">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 153 (how relief works), before \u201cmiscellaneous\u201d, in each place it appears, insert \u201c relevant \u201d.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_before_anchor_each_place_insert",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-03-26",
+        affected_uri="/id/ukpga/2007/3/section/153",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 153",
+        affecting_uri="/id/ukpga/2015/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="11",
+        affecting_provisions="s. 22(3)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2015-03-26", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "153"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "miscellaneous"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == " relevant miscellaneous"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["text_match"] == "miscellaneous"
+    assert observations[0]["replacement"] == " relevant miscellaneous"
+    assert observations[0]["occurrence"] == 0
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
 def test_compile_metadata_carried_after_ordinal_insert_preserves_bounded_occurrence() -> None:

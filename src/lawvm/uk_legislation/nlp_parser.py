@@ -187,6 +187,9 @@ UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_closing_quote_insert_text_patch"
 )
+UK_BEFORE_QUOTED_ANCHOR_ALL_OCCURRENCES_INSERT_RULE_ID = (
+    "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
+)
 UK_AFTER_REFERENCE_SECTION_INSERT_RULE_ID = (
     "uk_effect_after_reference_section_insert_text_patch"
 )
@@ -3276,10 +3279,15 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         )
 
     matches_before_insert = re.finditer(
-        r"before [“\"'‘](.*?)[”\"'’]"
-        r"(?:,\s+in the\s+(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+place it (?:occurs|appears))?"
+        rf"before\s+[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
+        rf"(?:(?P<ordinal_scope>,\s+in\s+the\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})"
+        r"\s+place\s+it\s+(?:occurs|appears))|"
+        r"(?P<all_occurrences>,?\s+in\s+(?:each|both)\s+places?"
+        r"(?:\s+(?:(?:where|that)\s+)?"
+        r"(?:(?:it|they)\s+|(?:those|these)\s+words?\s+)?"
+        r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?))?"
         r",?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
-        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
+        rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
         text,
         re.I,
     )
@@ -3292,16 +3300,18 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
             re.I | re.S,
         ):
             continue
-        original = m.group(1)
-        inserted = m.group(3)
+        original = m.group("original")
+        inserted = m.group("inserted")
         joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "
         patch = {
             "original": original,
             "replacement": f"{inserted}{joiner}{original}",
         }
-        if m.group(2):
-            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group(2).lower()]
+        if m.group("ordinal_scope"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
             patch["rule_id"] = "uk_effect_before_quoted_anchor_ordinal_insert_text_patch"
+        elif m.group("all_occurrences"):
+            patch["rule_id"] = UK_BEFORE_QUOTED_ANCHOR_ALL_OCCURRENCES_INSERT_RULE_ID
         else:
             patch["rule_id"] = "uk_effect_before_quoted_anchor_insert_text_patch"
         subs.append(patch)
