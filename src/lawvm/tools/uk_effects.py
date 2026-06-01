@@ -1009,7 +1009,9 @@ def uk_effects_report_jsonable(
             "summary_scope": "emitted_fast_limit_rows",
         }
     if not summary_only:
-        payload["rows"] = [_effect_report_row_jsonable(row) for row in rows]
+        payload["rows"] = [
+            _effect_report_row_jsonable(row, statute_id=statute_id) for row in rows
+        ]
     return payload
 
 
@@ -1178,7 +1180,11 @@ def _effect_row_matches_filters(
     )
 
 
-def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
+def _effect_report_row_jsonable(
+    row: _EffectReportRow,
+    *,
+    statute_id: str,
+) -> dict[str, Any]:
     from lawvm.uk_legislation.execution_authorization import (
         uk_execution_authorization_from_manual_frontier,
     )
@@ -1212,7 +1218,12 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
             manual_compile_rule_id=summary.manual_compile_rule_id,
             owner_phase=owner_phase,
         ).to_dict()
+    suggested_claim_template = _manual_compile_suggested_claim_template(
+        statute_id=statute_id,
+        row=row,
+    )
     payload = {
+        "statute_id": statute_id,
         "effect_id": effect.effect_id,
         "effect_type": effect.effect_type or "",
         "affected_provisions": effect.affected_provisions,
@@ -1251,6 +1262,10 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
                 summary.manual_compile_blocking_lowering_rule_ids
             ),
         },
+        "suggested_claim_template_status": (
+            "available" if suggested_claim_template else "not_available"
+        ),
+        "suggested_claim_template": suggested_claim_template,
         "execution_authorization": execution_authorization,
         "candidate": summary.candidate,
         "compiled_op_count": summary.n_ops,
@@ -1396,7 +1411,7 @@ def _manual_compile_evidence_row_jsonable(
         uk_execution_authorization_from_manual_frontier,
     )
 
-    effect_payload = _effect_report_row_jsonable(row)
+    effect_payload = _effect_report_row_jsonable(row, statute_id=statute_id)
     summary = row.summary
     effect = row.effect
     suggested_claim_template = _manual_compile_suggested_claim_template(

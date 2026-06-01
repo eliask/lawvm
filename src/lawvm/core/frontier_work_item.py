@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from lawvm.core.frozen_values import freeze_mapping
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FrontierWorkItem:
     """Describe useful non-executable work without promoting it to replay."""
 
@@ -93,7 +93,7 @@ class FrontierWorkItem:
             "jurisdiction": self.jurisdiction,
             "source_artifact_id": self.source_artifact_id,
             "source_unit_id": self.source_unit_id,
-            "source_witness": dict(self.source_witness),
+            "source_witness": _plain_jsonable(self.source_witness),
             "owner_phase": self.owner_phase,
             "frontier_family": self.frontier_family,
             "frontier_status": self.frontier_status,
@@ -108,7 +108,7 @@ class FrontierWorkItem:
             "executable": self.executable,
             "replay_authorized": self.replay_authorized,
             "authorization_status": self.authorization_status,
-            "detail": dict(self.detail),
+            "detail": _plain_jsonable(self.detail),
         }
 
 
@@ -153,3 +153,13 @@ def validate_frontier_work_item(row: Mapping[str, Any]) -> tuple[str, ...]:
     if not isinstance(row.get("detail", {}), Mapping):
         issues.append("detail must be a mapping")
     return tuple(issues)
+
+
+def _plain_jsonable(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_jsonable(inner) for key, inner in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain_jsonable(inner) for inner in value]
+    if isinstance(value, set | frozenset):
+        return sorted((_plain_jsonable(inner) for inner in value), key=repr)
+    return value
