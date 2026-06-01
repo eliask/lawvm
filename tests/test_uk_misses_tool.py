@@ -92,9 +92,74 @@ def test_uk_misses_report_envelope_preserves_legacy_fields() -> None:
     assert report["similarity"] == 0.75
     assert report["only_in_oracle_count"] == 1
     assert report["only_in_oracle_buckets"] == {"section-1": ["section-1-a"]}
+    assert report["agreement_residual"]["family"] == (
+        "accepted_non_executable_frontier"
+    )
+    assert report["agreement_residual"]["status"] == "frontier"
+    assert report["agreement_residual"]["owner_phase"] == "typed_elaboration"
+    assert report["agreement_residual"]["missing_proofs"] == [
+        "canonical_operation_compilation",
+    ]
+    assert report["summary"]["agreement_residual_family_counts"] == {
+        "accepted_non_executable_frontier": 1,
+    }
     assert report["summary"]["blocking_rejection_owner_phase_counts"] == {
         "typed_elaboration": 1,
     }
     assert report["rows"][0]["side"] == "only_in_oracle"
+    assert report["rows"][0]["agreement_residual"]["family"] == (
+        "accepted_non_executable_frontier"
+    )
     assert "eid_bucket_as_target_authority" in report["forbidden_shortcuts"]
     assert "mutation_boundary_proof" in report["next_promotion_requires"]
+
+
+def test_uk_misses_report_classifies_zero_oracle_retention() -> None:
+    report = uk_misses_report_jsonable(
+        statute_id="ukpga/1938/22",
+        db_path=Path("data/uk_legislation.farchive"),
+        similarity=0.0,
+        replay_compare_eid_count=420,
+        oracle_compare_eid_count=0,
+        common_eid_count=0,
+        only_in_oracle_count=0,
+        only_in_replayed_count=420,
+        only_in_oracle_buckets={},
+        only_in_replayed_buckets={"section-1": ["section-1"]},
+        blocking_rejection_rule_counts={},
+        blocking_rejection_owner_phase_counts={},
+        rejection_rule_counts={},
+        rejection_owner_phase_counts={},
+    )
+
+    assert report["agreement_residual"]["family"] == "non_commensurable_surface"
+    assert report["agreement_residual"]["status"] == "frontier"
+    assert report["agreement_residual"]["owner_phase"] == (
+        "compare_oracle_classification"
+    )
+    assert report["agreement_residual"]["missing_proofs"] == [
+        "commensurable_oracle_surface",
+    ]
+
+
+def test_uk_misses_report_classifies_exact_agreement() -> None:
+    report = uk_misses_report_jsonable(
+        statute_id="ukpga/1996/5",
+        db_path=Path("data/uk_legislation.farchive"),
+        similarity=1.0,
+        replay_compare_eid_count=12,
+        oracle_compare_eid_count=12,
+        common_eid_count=12,
+        only_in_oracle_count=0,
+        only_in_replayed_count=0,
+        only_in_oracle_buckets={},
+        only_in_replayed_buckets={},
+        blocking_rejection_rule_counts={},
+        blocking_rejection_owner_phase_counts={},
+        rejection_rule_counts={},
+        rejection_owner_phase_counts={},
+    )
+
+    assert report["agreement_residual"]["family"] == "agreement"
+    assert report["agreement_residual"]["status"] == "agrees"
+    assert report["agreement_residual"]["missing_proofs"] == []

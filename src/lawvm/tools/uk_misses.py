@@ -19,7 +19,12 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.uk_legislation.phase_discipline import (
+    UK_PHASE_CANONICAL_OP_COMPILATION,
+    UK_PHASE_COMPARE_ORACLE_CLASSIFICATION,
+)
 
 if TYPE_CHECKING:
     import argparse
@@ -143,6 +148,16 @@ def uk_misses_report_jsonable(
     rejection_owner_phase_counts: dict[str, int],
 ) -> dict[str, Any]:
     """Build a replay/oracle residual report without promoting agreement to truth."""
+    agreement_residual = _uk_misses_agreement_residual(
+        statute_id=statute_id,
+        similarity=similarity,
+        replay_compare_eid_count=replay_compare_eid_count,
+        oracle_compare_eid_count=oracle_compare_eid_count,
+        only_in_oracle_count=only_in_oracle_count,
+        only_in_replayed_count=only_in_replayed_count,
+        blocking_rejection_rule_counts=blocking_rejection_rule_counts,
+        blocking_rejection_owner_phase_counts=blocking_rejection_owner_phase_counts,
+    ).to_dict()
     legacy_payload: dict[str, Any] = {
         "statute_id": statute_id,
         "archive_path": str(db_path),
@@ -158,6 +173,7 @@ def uk_misses_report_jsonable(
         "blocking_rejection_owner_phase_counts": blocking_rejection_owner_phase_counts,
         "rejection_rule_counts": rejection_rule_counts,
         "rejection_owner_phase_counts": rejection_owner_phase_counts,
+        "agreement_residual": agreement_residual,
     }
     summary = {
         "statute_id": statute_id,
@@ -171,17 +187,31 @@ def uk_misses_report_jsonable(
         "blocking_rejection_owner_phase_counts": blocking_rejection_owner_phase_counts,
         "rejection_rule_counts": rejection_rule_counts,
         "rejection_owner_phase_counts": rejection_owner_phase_counts,
+        "agreement_residual_family_counts": {
+            str(agreement_residual["family"]): 1,
+        },
+        "agreement_residual_status_counts": {
+            str(agreement_residual["status"]): 1,
+        },
+        "agreement_residual_owner_phase_counts": {
+            str(agreement_residual["owner_phase"]): 1,
+        },
+        "agreement_residual_rule_counts": {
+            str(agreement_residual["rule_id"]): 1,
+        },
     }
     rows = (
         {
             "side": "only_in_oracle",
             "eid_count": only_in_oracle_count,
             "buckets": only_in_oracle_buckets,
+            "agreement_residual": agreement_residual,
         },
         {
             "side": "only_in_replayed",
             "eid_count": only_in_replayed_count,
             "buckets": only_in_replayed_buckets,
+            "agreement_residual": agreement_residual,
         },
     )
     return EvidenceSurfaceReport(
@@ -217,6 +247,148 @@ def uk_misses_report_jsonable(
             ),
         },
     ).to_dict()
+
+
+def _uk_misses_agreement_residual(
+    *,
+    statute_id: str,
+    similarity: float,
+    replay_compare_eid_count: int,
+    oracle_compare_eid_count: int,
+    only_in_oracle_count: int,
+    only_in_replayed_count: int,
+    blocking_rejection_rule_counts: dict[str, int],
+    blocking_rejection_owner_phase_counts: dict[str, int],
+) -> AgreementResidual:
+    family = _uk_misses_residual_family(
+        replay_compare_eid_count=replay_compare_eid_count,
+        oracle_compare_eid_count=oracle_compare_eid_count,
+        only_in_oracle_count=only_in_oracle_count,
+        only_in_replayed_count=only_in_replayed_count,
+        blocking_rejection_rule_counts=blocking_rejection_rule_counts,
+    )
+    status = _uk_misses_residual_status(
+        family=family,
+        only_in_oracle_count=only_in_oracle_count,
+        only_in_replayed_count=only_in_replayed_count,
+    )
+    owner_phase = _uk_misses_residual_owner_phase(
+        family=family,
+        blocking_rejection_owner_phase_counts=blocking_rejection_owner_phase_counts,
+    )
+    rule_id = f"uk_misses_{family}"
+    return AgreementResidual(
+        residual_id=f"uk-misses:{statute_id}",
+        jurisdiction="uk",
+        agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
+        family=family,
+        status=status,
+        owner_phase=owner_phase,
+        rule_id=rule_id,
+        source_artifact_id=statute_id,
+        replay_count=replay_compare_eid_count,
+        oracle_count=oracle_compare_eid_count,
+        missing_proofs=_uk_misses_missing_proofs(
+            family=family,
+            blocking_rejection_rule_counts=blocking_rejection_rule_counts,
+        ),
+        safe_default="classify_residual_without_mutating_replay",
+        forbidden_shortcuts=(
+            "oracle_miss_as_replay_authorization",
+            "agreement_as_source_truth",
+            "eid_bucket_as_target_authority",
+        ),
+        detail={
+            "similarity": similarity,
+            "only_in_oracle_count": only_in_oracle_count,
+            "only_in_replayed_count": only_in_replayed_count,
+            "blocking_rejection_rule_counts": blocking_rejection_rule_counts,
+            "blocking_rejection_owner_phase_counts": (
+                blocking_rejection_owner_phase_counts
+            ),
+        },
+    )
+
+
+def _uk_misses_residual_family(
+    *,
+    replay_compare_eid_count: int,
+    oracle_compare_eid_count: int,
+    only_in_oracle_count: int,
+    only_in_replayed_count: int,
+    blocking_rejection_rule_counts: dict[str, int],
+) -> str:
+    if only_in_oracle_count == 0 and only_in_replayed_count == 0:
+        return "agreement"
+    if oracle_compare_eid_count == 0 and replay_compare_eid_count > 0:
+        return "non_commensurable_surface"
+    if replay_compare_eid_count == 0 and oracle_compare_eid_count > 0:
+        return "source_footing_gap"
+    if _has_counts(blocking_rejection_rule_counts):
+        return "accepted_non_executable_frontier"
+    if only_in_oracle_count > 0 and only_in_replayed_count > 0:
+        return "topology_granularity_mismatch"
+    return "replay_bug"
+
+
+def _uk_misses_residual_status(
+    *,
+    family: str,
+    only_in_oracle_count: int,
+    only_in_replayed_count: int,
+) -> str:
+    if family == "agreement":
+        return "agrees"
+    if family in {
+        "accepted_non_executable_frontier",
+        "non_commensurable_surface",
+        "source_footing_gap",
+    }:
+        return "frontier"
+    if only_in_oracle_count or only_in_replayed_count:
+        return "residual"
+    return "frontier"
+
+
+def _uk_misses_residual_owner_phase(
+    *,
+    family: str,
+    blocking_rejection_owner_phase_counts: dict[str, int],
+) -> str:
+    if family == "accepted_non_executable_frontier":
+        owner_phase = _dominant_count_key(blocking_rejection_owner_phase_counts)
+        return owner_phase or UK_PHASE_CANONICAL_OP_COMPILATION
+    return UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
+
+
+def _uk_misses_missing_proofs(
+    *,
+    family: str,
+    blocking_rejection_rule_counts: dict[str, int],
+) -> tuple[str, ...]:
+    if family == "agreement":
+        return ()
+    proofs: list[str] = []
+    if family in {"non_commensurable_surface", "source_footing_gap"}:
+        proofs.append("commensurable_oracle_surface")
+    if family == "accepted_non_executable_frontier" or _has_counts(
+        blocking_rejection_rule_counts
+    ):
+        proofs.append("canonical_operation_compilation")
+    if family in {"replay_bug", "topology_granularity_mismatch"}:
+        proofs.append("mutation_boundary_proof")
+    return tuple(dict.fromkeys(proofs))
+
+
+def _has_counts(counts: dict[str, int]) -> bool:
+    return any(int(count or 0) > 0 for count in counts.values())
+
+
+def _dominant_count_key(counts: dict[str, int]) -> str:
+    if not counts:
+        return ""
+    key, count = max(counts.items(), key=lambda item: (int(item[1] or 0), item[0]))
+    return str(key) if int(count or 0) > 0 else ""
 
 
 def main(args: "argparse.Namespace") -> None:
