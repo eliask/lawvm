@@ -515,10 +515,11 @@ def source_definition_child_structural_sibling_insert(
             ),
         }
 
-    section_match = _SECTION_TARGET_RE.match(affected_provisions or "")
-    if section_match is None:
+    target_path = _section_or_subsection_target_path(affected_provisions)
+    if not target_path:
         return None
-    section_label = _clean_num(section_match.group("section"))
+    section_label = target_path[0][1]
+    subsection_label = target_path[1][1] if len(target_path) > 1 else ""
     if not section_label:
         return None
 
@@ -532,10 +533,10 @@ def source_definition_child_structural_sibling_insert(
         return None
 
     row_text = " ".join((extracted_text or "").split()).strip()
-    row_label = _clean_num(_direct_structural_num(extracted_el))
+    row_label = " ".join(_direct_structural_num(extracted_el).split()).strip()
     if row_label:
         row_text = re.sub(
-            rf"^\s*(?:{re.escape(row_label)}\s+){{1,2}}(?=after\s+paragraph\b)",
+            rf"^\s*(?:{re.escape(row_label)}\s+){{1,2}}(?=after\s+(?:sub-?paragraph|paragraph)\b)",
             "",
             row_text,
             count=1,
@@ -545,9 +546,19 @@ def source_definition_child_structural_sibling_insert(
     if match is None:
         return None
     anchor_label = _clean_num(match.group("anchor"))
-    payloads = _definition_child_insert_payloads(
-        match.group("payload"),
-        anchor_label=anchor_label,
+    has_block_amendment = any(_tag(node) == "BlockAmendment" for node in extracted_el.iter())
+    payloads = (
+        _definition_child_block_amendment_insert_payloads(
+            extracted_el,
+            anchor_label=anchor_label,
+            allow_intercalated_after_anchor=True,
+        )
+        if has_block_amendment
+        else _definition_child_insert_payloads(
+            match.group("payload"),
+            anchor_label=anchor_label,
+            allow_intercalated_after_anchor=True,
+        )
     )
     if not payloads:
         return None
@@ -557,15 +568,20 @@ def source_definition_child_structural_sibling_insert(
         "source_instruction": row_text[: match.start("payload")].strip(),
         "target_ref": affected_provisions,
         "section": section_label,
+        "subsection": subsection_label,
         "definition_term": definition_term,
         "anchor_label": anchor_label,
-        "anchor_target": f"section:{section_label}/item:{anchor_label}",
+        "anchor_target": str(LegalAddress(path=(*target_path, ("item", anchor_label)))),
         "payloads": tuple(
             {
                 "label": payload["label"],
                 "text": payload["text"],
-                "target_ref": f"s. {section_label}({payload['label']})",
-                "target": f"section:{section_label}/item:{payload['label']}",
+                "target_ref": (
+                    f"s. {section_label}({subsection_label})({payload['label']})"
+                    if subsection_label
+                    else f"s. {section_label}({payload['label']})"
+                ),
+                "target": str(LegalAddress(path=(*target_path, ("item", payload["label"])))),
             }
             for payload in payloads
         ),
