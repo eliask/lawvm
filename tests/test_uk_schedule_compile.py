@@ -29,6 +29,7 @@ from lawvm.uk_legislation.source_adjudication import (
 from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
+    UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
     US,
     parse_fragment_substitution,
 )
@@ -6657,6 +6658,82 @@ def test_compile_words_inserted_at_end_of_nested_target_to_text_replace() -> Non
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_text_insertion_patch"
         in ops[0].provenance_tags
+    )
+
+
+def test_compile_insert_at_end_not_as_part_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-27-paragraph-4-3">
+          <Pnumber>3</Pnumber>
+          <Text>
+            3 In that subsection, insert at the end (not as part of paragraph
+            (e))\u2014 \u201cunless the individual gives notice in a return under
+            section 8 of TMA 1970 that this section is not to apply in
+            relation to the individual for that year.\u201d
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-39ffb7c21551a88d4882c639adfcee46",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-12-11",
+        affected_uri="/id/ukpga/2007/3/section/809E/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 809E(1)",
+        affecting_uri="/id/ukpga/2012/14",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="14",
+        affecting_provisions="Sch. 27 para. 4(3)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2012-12-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == UK_AT_END_NOT_AS_PART_INSERT_RULE_ID
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_at_end_not_as_part_text_insertion_patch"
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["canonical_text_match"] == "TEXT_END"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "809e"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == (
+        "unless the individual gives notice in a return under section 8 of TMA "
+        "1970 that this section is not to apply in relation to the individual "
+        "for that year."
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_AT_END_NOT_AS_PART_INSERT_RULE_ID}"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
     )
 
 

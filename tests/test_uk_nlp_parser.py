@@ -2698,6 +2698,27 @@ def test_parse_fragment_substitution_handles_insert_at_end_reverse_order() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_insert_at_end_not_as_part() -> None:
+    subs = parse_fragment_substitution(
+        "3 In that subsection, insert at the end (not as part of paragraph "
+        "(e))\u2014 \u201cunless the individual gives notice in a return under section "
+        "8 of TMA 1970 that this section is not to apply in relation to the "
+        "individual for that year.\u201d"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "unless the individual gives notice in a return under section "
+                "8 of TMA 1970 that this section is not to apply in relation "
+                "to the individual for that year."
+            ),
+            "rule_id": "uk_effect_at_end_not_as_part_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_insert_text_at_end_reverse_order() -> None:
     subs = parse_fragment_substitution(
         "i insert \u201c or \u201d at the end of sub-paragraph (ii);"

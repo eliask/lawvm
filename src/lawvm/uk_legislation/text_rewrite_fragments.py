@@ -34,6 +34,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_IN_DEFINITION_CHILD_BEFORE_ANCHOR_INSERT_RULE_ID,
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
+    UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
     UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID,
     UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
@@ -1972,6 +1973,31 @@ def append_basic_text_rewrite_observations(
                 "matching closing quote. Lowering records the source-text "
                 "recovery and preserves the explicit at-end boundary as a "
                 "bounded TEXT_END append."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "canonical_text_match": "TEXT_END",
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AT_END_NOT_AS_PART_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_at_end_not_as_part_text_insertion_patch",
+            reason=(
+                "UK source text inserts quoted words at the end of the "
+                "affected target while specifying that the payload is not part "
+                "of an existing paragraph. Lowering preserves the explicit "
+                "at-end boundary as a TEXT_END append and records the "
+                "placement qualifier instead of creating a structural child."
             ),
             effect=effect,
             extracted_el=extracted_el,
