@@ -60,6 +60,30 @@ def _renumbered_descendant_text(
     return text
 
 
+def _is_uk_parent_sibling_promotion_renumber_shape(
+    source_target: LegalAddress,
+    destination: LegalAddress,
+) -> bool:
+    """Return true for child provision -> parent-sibling renumber shapes.
+
+    Example: ``s. 3A(4)(b)`` becoming ``s. 3A(4A)``.  The child leaves its
+    current parent and becomes a sibling of that parent; broader migrations stay
+    outside this helper.
+    """
+    if len(source_target.path) < 3:
+        return False
+    if len(destination.path) != len(source_target.path) - 1:
+        return False
+    if destination.path[:-1] != source_target.path[:-2]:
+        return False
+    source_parent_kind, source_parent_label = source_target.path[-2]
+    destination_kind, destination_label = destination.path[-1]
+    return (
+        destination_kind == source_parent_kind
+        and _clean_num(destination_label) != _clean_num(source_parent_label)
+    )
+
+
 def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadataRenumberTargets]:
     """Return source/destination targets for an explicit UK metadata renumber row.
 
@@ -107,6 +131,19 @@ def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadata
                 "UK effect metadata explicitly says a provision is renumbered "
                 "as a same-parent sibling; lowering preserves a typed renumber "
                 "instead of replaying the row as another repeal of the destination label"
+            ),
+        )
+    if _is_uk_parent_sibling_promotion_renumber_shape(source_target, destination):
+        return UKMetadataRenumberTargets(
+            source_target=source_target,
+            destination=destination,
+            rule_id="uk_effect_metadata_parent_sibling_promotion_renumber_lowered",
+            reason_code="explicit_effect_metadata_child_promoted_to_parent_sibling",
+            reason=(
+                "UK effect metadata explicitly says a child provision is "
+                "renumbered as a sibling of its current parent; lowering "
+                "preserves a typed renumber so replay can move only the named "
+                "child and emit lineage evidence."
             ),
         )
     return None
