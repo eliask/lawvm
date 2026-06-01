@@ -76,6 +76,27 @@ def test_parse_fragment_substitution_returns_fresh_fragment_dicts() -> None:
     assert second == [{"original": "old words", "replacement": "new words"}]
 
 
+def test_parse_fragment_substitution_handles_quoted_substitute_dash_quoted_payload() -> None:
+    subs = parse_fragment_substitution(
+        "a for \u201c ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC \u201d "
+        "substitute\u2014 \u201c ISSUED IN ACCORDANCE WITH THE OECD FOREST AND "
+        "PLANT SCHEME AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+        "REGULATIONS 2002 \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC",
+            "replacement": (
+                "ISSUED IN ACCORDANCE WITH THE OECD FOREST AND PLANT SCHEME "
+                "AND THE FOREST REPRODUCTIVE MATERIAL (GREAT BRITAIN) "
+                "REGULATIONS 2002"
+            ),
+            "rule_id": "uk_effect_quoted_substitute_dash_quoted_payload_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_there_is_inserted() -> None:
     subs = parse_fragment_substitution(
         'c in subsection (6) after “Agency,” there is inserted '
@@ -338,6 +359,21 @@ def test_parse_fragment_substitution_handles_after_anchor_in_both_places_where_i
         {
             "original": "court",
             "replacement": "court or the First-tier Tribunal",
+            "rule_id": "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_after_anchor_in_both_places_that_it_occurs_insert() -> None:
+    subs = parse_fragment_substitution(
+        "5 In paragraph (3), after \u201cspecified scheme\u201d in both places "
+        "that it occurs, insert \u201cor specified section, as applicable\u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "specified scheme",
+            "replacement": "specified scheme or specified section, as applicable",
             "rule_id": "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         }
     ]
@@ -1576,6 +1612,20 @@ def test_parse_fragment_substitution_handles_beginning_of_subsection_insert() ->
     ]
 
 
+def test_parse_fragment_substitution_handles_beginning_of_regulation_insert() -> None:
+    subs = parse_fragment_substitution(
+        "6 At the beginning of regulation 6(1) insert \u201cSubject to regulation 13C(6)\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEGINNING",
+            "replacement": "Subject to regulation 13C(6)",
+            "rule_id": "uk_effect_beginning_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_beginning_insert_with_carried_parent_context() -> None:
     subs = parse_fragment_substitution(
         "1 At the beginning of sub-paragraph (1) of paragraph 4 of that Schedule "
@@ -2606,6 +2656,25 @@ def test_parse_fragment_substitution_handles_at_end_new_line_unquoted_insert() -
             "original": "TEXT_FROM__TO_END",
             "replacement": "But see section 12ABZA",
             "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_at_end_of_regulation_insert() -> None:
+    subs = parse_fragment_substitution(
+        "4 At the end of regulation 7(5)(b)(ii) (assessment of charges) "
+        "insert \u201cor where no such fee is imposed by virtue of the operation "
+        "of regulation 6(5) and (6)\u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "or where no such fee is imposed by virtue of the operation "
+                "of regulation 6(5) and (6)"
+            ),
+            "rule_id": "uk_effect_at_end_text_insertion_patch",
         }
     ]
 

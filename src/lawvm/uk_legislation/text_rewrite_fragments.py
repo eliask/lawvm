@@ -21,6 +21,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID,
     UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID,
     UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
+    UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID,
     UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID,
     UK_AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RULE_ID,
@@ -772,6 +773,35 @@ def append_basic_text_rewrite_observations(
                     "UK effect source explicitly substitutes a quoted expression "
                     "using passive drafting language; lowering preserves it as a "
                     "text patch scoped to the affected target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_QUOTED_SUBSTITUTE_DASH_QUOTED_PAYLOAD_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_quoted_substitute_dash_quoted_payload",
+                reason=(
+                    "UK source text substitutes a quoted preimage using a dash "
+                    "separator before a quoted payload; lowering treats the dash "
+                    "as instruction punctuation and preserves a target-local "
+                    "text patch."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
