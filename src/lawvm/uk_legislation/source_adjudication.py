@@ -1167,7 +1167,7 @@ def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
             r"\b(?:before|after|for)\s+(?:the\s+)?entry\s+(?:(?:relating|relation)\s+to|for)\b",
             norm,
         )
-        or re.search(r"\bfor\s+(?:the\s+)?entry\s+beginning\b", norm)
+        or re.search(r"\bfor\s+(?:the\s+)?entry\s+(?:beginning|that\s+begins?)\b", norm)
         or re.search(r"\bomit\s+(?:the\s+)?entry\s+for\b", norm)
     ):
         return False

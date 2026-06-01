@@ -1944,6 +1944,32 @@ def test_classify_uk_manual_compile_frontier_marks_entry_beginning_substitution_
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_entry_that_begins_substitution_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "4 In paragraph 6 of Schedule 2 (application to existing enactments), "
+            "for the entry that begins \u201cPolice area\u201d substitute- "
+            "in relation to Scotland, expressions relating to the police."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "reason_code": "overlap_substitution_parse_failed",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_structural_sibling_insert_before_generic_parser() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
