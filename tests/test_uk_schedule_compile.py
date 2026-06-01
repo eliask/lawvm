@@ -11632,6 +11632,86 @@ def test_compile_source_range_pseudo_definition_entry_inserts_with_explicit_anch
     )
 
 
+def test_compile_direct_definition_list_end_insert_as_schedule_entry() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-8-paragraph-22-e">
+          <Pnumber>e</Pnumber>
+          <P3para>
+            <Text>
+              at the end insert—
+              Definitions relating to the EU and the United Kingdom's withdrawal
+              “The Communities” means Euratom, the Economic Community and the
+              Coal and Steel Community, but a reference to any or all of those
+              Communities is to be treated as being or including a reference to
+              the EU.
+              “E.C.S.C. Treaty” means the Treaty establishing the European Coal
+              and Steel Community, signed at Paris on 18 April 1951.
+            </Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a84e4adeb79fc2eff6c6ee0545dd93f0",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-29",
+        affected_uri="/id/ukpga/1978/30",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1978",
+        affected_number="30",
+        affected_provisions="Sch. 1",
+        affecting_uri="/id/ukpga/2018/16",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2018",
+        affecting_number="16",
+        affecting_provisions="Sch. 8 para. 22(e)",
+        affecting_title="European Union (Withdrawal) Act 2018",
+        in_force_dates=[{"date": "2018-07-04", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=extracted_el,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("schedule", "1"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert "Definitions relating to the EU" in ops[0].payload.text
+    assert "“The Communities” means Euratom" in ops[0].payload.text
+    assert (
+        ops[0].witness_rule_id
+        == "uk_effect_direct_definition_entry_list_end_schedule_entry_insert"
+    )
+    selector_note = next(
+        note for note in ops[0].provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "end"
+    assert selector["placement_family"] == "definition_list_end_from_direct_source_row"
+    assert selector["source_row_id"] == "schedule-8-paragraph-22-e"
+    assert selector["source_inserted_definition_terms"] == [
+        "The Communities",
+        "E.C.S.C. Treaty",
+    ]
+    observation = next(
+        record
+        for record in observations
+        if record["rule_id"] == "uk_effect_direct_definition_entry_list_end_schedule_entry_insert"
+    )
+    assert observation["blocking"] is False
+    assert observation["owner_phase"] == "typed_elaboration"
+
+
 def test_replay_source_range_definition_list_end_inserts_direct_schedule_entry() -> None:
     op = LegalOperation(
         op_id="uk_test_definition_list_end_insert",
@@ -11712,6 +11792,53 @@ def test_replay_source_range_definition_list_end_inserts_direct_schedule_entry()
     assert subparagraph.children[-1].text == (
         "“television multiplex service” means a multiplex service within the meaning of "
         "Part I of the 1996 Act"
+    )
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_end_position_resolved"
+        and adjudication.detail["reason_code"] == "definition_list_end_direct_entry_boundary"
+        for adjudication in adjudications
+    )
+
+
+def test_replay_direct_definition_list_end_inserts_direct_schedule_entry() -> None:
+    op = LegalOperation(
+        op_id="uk_test_direct_definition_list_end_insert",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            label=None,
+            text='Definitions relating to the EU “The Communities” means Euratom.',
+        ),
+        provenance_tags=(
+            'schedule_list_entry_selector:{"rule_id":"uk_effect_direct_definition_entry_list_end_schedule_entry_insert",'
+            '"direction":"end","anchor_text":"","inserted_text":"Definitions relating to the EU",'
+            '"placement_family":"definition_list_end_from_direct_source_row"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/1978/30",
+        title="Interpretation Act 1978",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="British subject;"),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="The Tax Acts."),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert len(replayed.supplements[0].children) == 3
+    assert replayed.supplements[0].children[-1].text == (
+        'Definitions relating to the EU “The Communities” means Euratom.'
     )
     assert any(
         adjudication.kind == "uk_replay_schedule_list_entry_end_position_resolved"

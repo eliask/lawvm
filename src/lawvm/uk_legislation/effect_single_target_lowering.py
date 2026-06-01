@@ -26,6 +26,7 @@ from lawvm.uk_legislation.effect_payload_rejections import (
 )
 from lawvm.uk_legislation.effect_schedule_lowering import (
     lower_source_range_definition_list_end_schedule_entries,
+    try_lower_direct_definition_list_end_schedule_entry,
     try_lower_schedule_list_entry_mutation,
     try_lower_schedule_table_end_rows_insert,
 )
@@ -376,6 +377,22 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
         lowering_rejections_out=lowering_rejections_out,
     )
     if _append_handled_lowering_op(target_ops, schedule_table_end_rows):
+        return unchanged
+    direct_definition_list_end = try_lower_direct_definition_list_end_schedule_entry(
+        effect=effect,
+        action=action,
+        t_str=t_str,
+        target=target,
+        heading_facet_target=heading_facet_target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        sequence=ctx.sequence,
+        effect_witness=ctx.effect_witness,
+        extraction_witness=ctx.extraction_witness,
+        original_targets_str=ctx.original_targets_str,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if _extend_handled_lowering_ops(target_ops, direct_definition_list_end):
         return unchanged
     schedule_list_entry = try_lower_schedule_list_entry_mutation(
         effect=effect,

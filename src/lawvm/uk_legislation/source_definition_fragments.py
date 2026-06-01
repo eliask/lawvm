@@ -204,6 +204,9 @@ UK_METADATA_PSEUDO_DEFINITION_ENTRY_INSERT_RULE_ID = (
 UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID = (
     "uk_effect_source_range_definition_entry_list_end_schedule_entry_insert"
 )
+UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID = (
+    "uk_effect_direct_definition_entry_list_end_schedule_entry_insert"
+)
 UK_SOURCE_RANGE_DEFINITION_ENTRY_AT_END_REJECTION_RULE_ID = (
     "uk_effect_source_range_definition_entry_at_end_insert_rejected"
 )
@@ -310,8 +313,27 @@ def _target_ref_names_pseudo_definition_child(target_ref: str) -> bool:
 
 def _quoted_terms(text: str) -> tuple[str, ...]:
     terms: list[str] = []
-    for match in re.finditer(r"[“\"'‘](.*?)[”\"'’]", str(text or "")):
-        term = " ".join(match.group(1).split()).strip()
+    normalized = str(text or "")
+    for pos, char in enumerate(normalized):
+        close_quote = _SOURCE_DEFINITION_QUOTE_CLOSE.get(char)
+        if close_quote is None:
+            continue
+        if (
+            char == "'"
+            and pos > 0
+            and pos + 1 < len(normalized)
+            and normalized[pos - 1].isalnum()
+            and normalized[pos + 1].isalnum()
+        ):
+            continue
+        close = normalized.find(close_quote, pos + 1)
+        if close < 0:
+            if char == "'":
+                continue
+            break
+        if close - pos > 240:
+            continue
+        term = " ".join(normalized[pos + 1 : close].split()).strip()
         if term and term not in terms:
             terms.append(term)
     return tuple(terms)
@@ -350,6 +372,7 @@ def _source_range_definition_entry_list_end_fragment(
     *,
     metadata_terms: tuple[str, ...],
     source_row_id: str,
+    rule_id: str = UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
 ) -> Optional[dict[str, str]]:
     normalized = " ".join(str(row_text or "").split()).strip()
     if not normalized:
@@ -369,8 +392,22 @@ def _source_range_definition_entry_list_end_fragment(
         "source_payload_additional_definition_terms": US.join(extra_terms),
         "source_row_id": source_row_id,
         "source_row_text": normalized[:500],
-        "rule_id": UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+        "rule_id": rule_id,
     }
+
+
+def direct_definition_entry_list_end_fragment(
+    *,
+    row_text: str,
+    source_row_id: str,
+) -> Optional[dict[str, str]]:
+    """Parse a direct source row that inserts definition entries at list end."""
+    return _source_range_definition_entry_list_end_fragment(
+        row_text,
+        metadata_terms=(),
+        source_row_id=source_row_id,
+        rule_id=UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+    )
 
 
 def _metadata_pseudo_definition_entry_insert_fragment(
@@ -1095,6 +1132,8 @@ def _looks_like_definition_entry_payload(text: str, *, include_includes: bool = 
             continue
         close = normalized.find(close_quote, pos + 1)
         if close < 0:
+            if char == "'":
+                continue
             return False
         if close - pos > 240:
             continue

@@ -31,8 +31,10 @@ from lawvm.uk_legislation.schedule_list_selectors import (
     split_schedule_entry_insert_payload,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
+    UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID as _UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
     UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID as _UK_SOURCE_RANGE_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
     UKPseudoDefinitionEntryRangeTextPatches,
+    direct_definition_entry_list_end_fragment,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE as _SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
@@ -59,6 +61,9 @@ from lawvm.uk_legislation.witnesses import (
 
 
 _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
+_UK_DIRECT_DEFINITION_LIST_END_PLACEMENT_FAMILY = (
+    "definition_list_end_from_direct_source_row"
+)
 
 
 @dataclass(frozen=True)
@@ -231,6 +236,112 @@ def try_lower_schedule_table_end_rows_insert(
                 f"{json.dumps(schedule_table_end_rows_selector, ensure_ascii=False)}"
             ),
             witness_rule_id=_UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
+        ),
+    )
+
+
+def try_lower_direct_definition_list_end_schedule_entry(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    heading_facet_target: bool,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKScheduleBatchLoweringResult:
+    if action != "insert" or heading_facet_target:
+        return UKScheduleBatchLoweringResult(handled=False)
+    if len(target.path) != 1 or str(target.path[0][0]).lower() != "schedule":
+        return UKScheduleBatchLoweringResult(handled=False)
+    source_row_id = (
+        str(extracted_el.get("id") or extracted_el.get("Id") or "")
+        if extracted_el is not None
+        else ""
+    )
+    entry = direct_definition_entry_list_end_fragment(
+        row_text=extracted_text or "",
+        source_row_id=source_row_id,
+    )
+    if entry is None:
+        return UKScheduleBatchLoweringResult(handled=False)
+    inserted_text = str(entry.get("inserted_text") or "").strip()
+    if not inserted_text:
+        return UKScheduleBatchLoweringResult(handled=True)
+    selector = {
+        "rule_id": _UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+        "direction": "end",
+        "anchor_text": "",
+        "inserted_text": inserted_text,
+        "target_ref": t_str,
+        "target": str(target),
+        "placement_family": _UK_DIRECT_DEFINITION_LIST_END_PLACEMENT_FAMILY,
+        "source_row_id": source_row_id,
+        "source_inserted_definition_terms": tuple(
+            term
+            for term in str(entry.get("source_inserted_definition_terms") or "").split("\x1f")
+            if term
+        ),
+        "source_payload_additional_definition_terms": tuple(
+            term
+            for term in str(entry.get("source_payload_additional_definition_terms") or "").split("\x1f")
+            if term
+        ),
+    }
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+        family="definition_entry_elaboration",
+        reason_code="direct_definition_list_end_insert_structural_list_end",
+        reason=(
+            "UK affecting source row directly inserts definition entries at "
+            "the end of a schedule definition-list surface. Lowering emits a "
+            "typed schedule-entry insert, and replay must prove direct "
+            "schedule-entry children before mutating the target."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            **selector,
+            "source_row_text": str(entry.get("source_row_text") or ""),
+        },
+    )
+    payload_node = IRNode(
+        kind=IRNodeKind.SCHEDULE_ENTRY,
+        label=None,
+        text=inserted_text,
+        attrs={
+            "source_rule_id": "uk_direct_definition_list_end_insert_payload",
+            "anchor_direction": "end",
+            "placement_family": _UK_DIRECT_DEFINITION_LIST_END_PLACEMENT_FAMILY,
+            "source_row_id": source_row_id,
+        },
+    )
+    return UKScheduleBatchLoweringResult(
+        handled=True,
+        ops=(
+            _build_schedule_payload_op(
+                effect=effect,
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=target,
+                payload=payload_node,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                original_targets_str=original_targets_str,
+                t_str=t_str,
+                provenance_note=(
+                    f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}"
+                    f"{json.dumps(selector, ensure_ascii=False)}"
+                ),
+                witness_rule_id=_UK_DIRECT_DEFINITION_ENTRY_LIST_END_INSERT_RULE_ID,
+            ),
         ),
     )
 

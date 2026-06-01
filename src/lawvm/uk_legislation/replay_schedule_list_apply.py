@@ -71,6 +71,12 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_END_POSITION_RULE_ID = (
     "uk_replay_schedule_list_entry_end_position_resolved"
 )
+_UK_DEFINITION_LIST_END_PLACEMENT_FAMILIES = frozenset(
+    {
+        "definition_list_end_from_source_range",
+        "definition_list_end_from_direct_source_row",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -483,7 +489,8 @@ class UKReplayScheduleListApplyMixin:
         direction = str(selector.get("direction") or "")
         end_definition_list_carrier = (
             direction == "end"
-            and str(selector.get("placement_family") or "") == "definition_list_end_from_source_range"
+            and str(selector.get("placement_family") or "")
+            in _UK_DEFINITION_LIST_END_PLACEMENT_FAMILIES
         )
         local_list_insert_carrier = (
             str(selector.get("entry_carrier_family") or "") == "non_schedule_local_list"
@@ -558,7 +565,10 @@ class UKReplayScheduleListApplyMixin:
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
         if direction == "end":
-            if str(selector.get("placement_family") or "") != "definition_list_end_from_source_range":
+            if (
+                str(selector.get("placement_family") or "")
+                not in _UK_DEFINITION_LIST_END_PLACEMENT_FAMILIES
+            ):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
@@ -603,7 +613,7 @@ class UKReplayScheduleListApplyMixin:
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_END_POSITION_RULE_ID,
                 message=(
-                    "UK replay placed a source-range definition-list-end "
+                    "UK replay placed an owned definition-list-end "
                     "schedule-entry insert after the last direct entry child."
                 ),
                 op=op,
