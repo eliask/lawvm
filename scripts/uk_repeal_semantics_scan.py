@@ -81,6 +81,16 @@ def _selected_source_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
+
+    return dict(
+        sorted(
+            Counter(uk_phase_owner_for_diagnostic(row) for row in rows).items()
+        )
+    )
+
+
 def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.repeal_semantics_witnesses import (
@@ -170,6 +180,7 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
         "n_statutes_scanned": len(ids),
         "n_witnesses": len(witnesses),
         "families": dict(Counter(w.family for w in witnesses)),
+        "owner_phase_counts": _owner_phase_counts(all_rows),
         "n_source_diagnostics": len(diagnostics),
         "witnesses": rows,
     }
