@@ -439,6 +439,33 @@ def test_summarize_results_counts_compile_rejection_dominated_residuals() -> Non
     assert summary["triage_buckets"] == {"compile_rejection_dominated_residual": 1}
 
 
+def test_summarize_results_classifies_retained_repeal_oracle_branch() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1973/33",
+                "score_status": "scored",
+                "aligned": 50.0,
+                "aligned_excluding_grounding_collateral": 50.0,
+                "unaligned": 50.0,
+                "n_grounding_collateral": 0,
+                "n_replay": 19,
+                "n_oracle": 38,
+                "n_only_in_oracle": 19,
+                "n_only_in_replayed": 0,
+                "n_ops": 1,
+                "n_compile_rejections": 0,
+                "n_blocking_compile_rejections": 0,
+                "retained_repeal_oracle_targets": ["section-1"],
+                "n_retained_repeal_oracle_targets": 1,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"retained_repeal_oracle_branch": 1}
+    assert summary["active_unclassified_residual_count"] == 0
+
+
 def test_summarize_results_counts_retained_eu_mixed_representation_residuals() -> None:
     summary = uk_broad_baseline.summarize_results(
         [
