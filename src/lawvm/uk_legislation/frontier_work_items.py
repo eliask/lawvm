@@ -33,16 +33,26 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or row.get("validator_status")
         or ""
     )
+    source_artifact_id = str(
+        row.get("source_artifact_id")
+        or row.get("affecting_act_id")
+        or row.get("affecting_uri")
+        or row.get("affected_uri")
+        or statute_id
+    )
+    source_unit_id = str(
+        row.get("source_unit_id")
+        or effect_id
+        or row.get("rule_id")
+        or frontier_family
+    )
     return FrontierWorkItem(
-        work_item_id=str(row.get("work_item_id") or f"uk-frontier-{statute_id}-{effect_id}"),
-        jurisdiction="uk",
-        source_artifact_id=str(
-            row.get("affecting_act_id")
-            or row.get("affecting_uri")
-            or row.get("affected_uri")
-            or statute_id
+        work_item_id=str(
+            row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
         ),
-        source_unit_id=effect_id,
+        jurisdiction="uk",
+        source_artifact_id=source_artifact_id,
+        source_unit_id=source_unit_id,
         source_witness=source_witness,
         owner_phase=str(
             row.get("current_owner_phase")
