@@ -7,6 +7,7 @@ from lawvm.uk_legislation.phase_discipline import (
     UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER,
     UK_PHASE_TYPED_ELABORATION,
     uk_phase_owner_for_diagnostic,
+    uk_phase_owner_counts_for_diagnostics,
     uk_phase_owner_for_manual_frontier,
 )
 
@@ -80,3 +81,17 @@ def test_diagnostic_phase_owner_prefers_explicit_and_infers_common_families() ->
         uk_phase_owner_for_diagnostic({"rule_id": "uk_oracle_projection_artifact"})
         == UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
     )
+
+
+def test_phase_owner_counts_for_diagnostics_returns_stable_sorted_counts() -> None:
+    assert uk_phase_owner_counts_for_diagnostics(
+        (
+            {"owner_phase": UK_PHASE_TYPED_ELABORATION},
+            {"rule_id": "uk_effect_feed_empty_recorded"},
+            {"rule_id": "uk_replay_existing_target_conflict_gap"},
+        )
+    ) == {
+        UK_PHASE_EFFECT_METADATA_FRONTEND: 1,
+        UK_PHASE_REPLAY_INVARIANTS: 1,
+        UK_PHASE_TYPED_ELABORATION: 1,
+    }

@@ -117,6 +117,12 @@ def _blocking_compile_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     return [row for row in rows if is_blocking_compile_record(row)]
 
 
+def _diagnostic_owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    from lawvm.uk_legislation.phase_discipline import uk_phase_owner_counts_for_diagnostics
+
+    return uk_phase_owner_counts_for_diagnostics(rows)
+
+
 def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.tools.uk_replay import _archive_url_for_statute, _get_all_eids
@@ -240,8 +246,13 @@ def main(args: "argparse.Namespace") -> None:
         *authority_rejections,
     ]
     rejection_histogram = _rejection_rule_histogram(all_compile_rejections)
+    rejection_owner_phase_counts = _diagnostic_owner_phase_counts(all_compile_rejections)
+    blocking_compile_records = _blocking_compile_records(all_compile_rejections)
     blocking_rejection_histogram = _rejection_rule_histogram(
-        _blocking_compile_records(all_compile_rejections)
+        blocking_compile_records
+    )
+    blocking_rejection_owner_phase_counts = _diagnostic_owner_phase_counts(
+        blocking_compile_records
     )
 
     if json_output:
@@ -267,10 +278,12 @@ def main(args: "argparse.Namespace") -> None:
                         rule_id: count
                         for rule_id, count, _ in blocking_rejection_histogram
                     },
+                    "blocking_rejection_owner_phase_counts": blocking_rejection_owner_phase_counts,
                     "rejection_rule_counts": {
                         rule_id: count
                         for rule_id, count, _ in rejection_histogram
                     },
+                    "rejection_owner_phase_counts": rejection_owner_phase_counts,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -311,6 +324,13 @@ def main(args: "argparse.Namespace") -> None:
     print()
 
     print("COMPILE DIAGNOSTICS")
+    if rejection_owner_phase_counts:
+        print(
+            "  owner_phases: "
+            + ", ".join(
+                f"{phase}={count}" for phase, count in rejection_owner_phase_counts.items()
+            )
+        )
     if rejection_histogram:
         for rule_id, count, pairs in rejection_histogram:
             print(f"  {count:4d}  {rule_id}")
@@ -326,6 +346,13 @@ def main(args: "argparse.Namespace") -> None:
     print()
 
     print("BLOCKING COMPILE REJECTIONS")
+    if blocking_rejection_owner_phase_counts:
+        print(
+            "  owner_phases: "
+            + ", ".join(
+                f"{phase}={count}" for phase, count in blocking_rejection_owner_phase_counts.items()
+            )
+        )
     if blocking_rejection_histogram:
         for rule_id, count, pairs in blocking_rejection_histogram:
             print(f"  {count:4d}  {rule_id}")

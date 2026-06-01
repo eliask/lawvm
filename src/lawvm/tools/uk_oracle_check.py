@@ -27,7 +27,7 @@ from lawvm.uk_legislation.grounding_collateral import (
     grounding_collateral_eids as _shared_grounding_collateral_eids,
     score_with_grounding_collateral_excluded,
 )
-from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_counts_for_diagnostics
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -69,11 +69,6 @@ def _grounding_collateral_eids(
             alignment_events,
         )
     )
-
-
-def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
-    counts = Counter(uk_phase_owner_for_diagnostic(row) for row in rows)
-    return dict(sorted(counts.items()))
 
 
 def _format_owner_phase_counts(counts: dict[str, int]) -> str:
@@ -391,9 +386,15 @@ def oracle_check_uk_statute(
         if not _is_manual_frontier_rule(str(r.get("rule_id") or ""))
         and str(r.get("rule_id") or "") != _REPEAL_NOT_WARRANTED_RULE_ID
     ]
-    compile_rejection_owner_phase_counts = _owner_phase_counts(compile_rejection_rows)
-    manual_frontier_owner_phase_counts = _owner_phase_counts(manual_frontier_rejection_rows)
-    deterministic_rejection_owner_phase_counts = _owner_phase_counts(deterministic_rejection_rows)
+    compile_rejection_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(
+        compile_rejection_rows
+    )
+    manual_frontier_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(
+        manual_frontier_rejection_rows
+    )
+    deterministic_rejection_owner_phase_counts = uk_phase_owner_counts_for_diagnostics(
+        deterministic_rejection_rows
+    )
 
     # Count compile rejections by category
     n_mf_rejections = sum(

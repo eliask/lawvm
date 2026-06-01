@@ -1,7 +1,8 @@
 """UK frontend phase-owner classification for diagnostics and work queues."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 
@@ -149,3 +150,11 @@ def uk_phase_owner_for_diagnostic(record: Mapping[str, Any]) -> str:
     if phase == "lowering" or rule_id.startswith("uk_effect_"):
         return UK_PHASE_CANONICAL_OP_COMPILATION
     return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
+
+
+def uk_phase_owner_counts_for_diagnostics(
+    records: Iterable[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Return stable owner-phase counts for a diagnostic/workqueue row set."""
+    counts = Counter(uk_phase_owner_for_diagnostic(record) for record in records)
+    return dict(sorted(counts.items()))
