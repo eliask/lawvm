@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from lawvm.tools.uk_misses import (
     _blocking_compile_records,
     _diagnostic_owner_phase_counts,
     _rejection_rule_histogram,
+    uk_misses_report_jsonable,
 )
 
 
@@ -54,3 +57,44 @@ def test_uk_misses_groups_compile_records_by_owner_phase() -> None:
         "replay_invariants": 1,
         "typed_elaboration": 1,
     }
+
+
+def test_uk_misses_report_envelope_preserves_legacy_fields() -> None:
+    report = uk_misses_report_jsonable(
+        statute_id="ukpga/1978/30",
+        db_path=Path("data/uk_legislation.farchive"),
+        similarity=0.75,
+        replay_compare_eid_count=3,
+        oracle_compare_eid_count=4,
+        common_eid_count=3,
+        only_in_oracle_count=1,
+        only_in_replayed_count=0,
+        only_in_oracle_buckets={"section-1": ["section-1-a"]},
+        only_in_replayed_buckets={},
+        blocking_rejection_rule_counts={"uk_effect_target_gap": 1},
+        blocking_rejection_owner_phase_counts={"typed_elaboration": 1},
+        rejection_rule_counts={"uk_effect_target_gap": 1},
+        rejection_owner_phase_counts={"typed_elaboration": 1},
+    )
+
+    assert report["report_kind"] == "uk_misses_report"
+    assert report["schema"] == "lawvm.uk_misses_report.v1"
+    assert (
+        report["truth_claim"]
+        == "uk_replay_oracle_residual_diagnostics_not_source_truth"
+    )
+    assert report["replay_claims"] is True
+    assert report["agreement_claims"] is True
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["statute_id"] == "ukpga/1978/30"
+    assert report["similarity"] == 0.75
+    assert report["only_in_oracle_count"] == 1
+    assert report["only_in_oracle_buckets"] == {"section-1": ["section-1-a"]}
+    assert report["summary"]["blocking_rejection_owner_phase_counts"] == {
+        "typed_elaboration": 1,
+    }
+    assert report["rows"][0]["side"] == "only_in_oracle"
+    assert "eid_bucket_as_target_authority" in report["forbidden_shortcuts"]
+    assert "mutation_boundary_proof" in report["next_promotion_requires"]
