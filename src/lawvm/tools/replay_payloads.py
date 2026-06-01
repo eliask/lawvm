@@ -102,12 +102,33 @@ def _uk_replay_adjudication_owner_phase_counts(
 
 
 def _uk_replay_adjudication_to_dict(adjudication: Any) -> dict[str, Any]:
+    from lawvm.uk_legislation.execution_authorization import (
+        uk_execution_authorization_from_replay_adjudication,
+    )
     from lawvm.uk_legislation.phase_discipline import (
         uk_phase_owner_for_replay_adjudication,
     )
+    from lawvm.uk_legislation.source_adjudication import (
+        classify_uk_replay_adjudication_bucket,
+    )
 
     payload = _adjudication_to_dict(adjudication)
-    payload["owner_phase"] = uk_phase_owner_for_replay_adjudication(adjudication)
+    owner_phase = uk_phase_owner_for_replay_adjudication(adjudication)
+    bucket = classify_uk_replay_adjudication_bucket(payload["kind"])
+    authorization = uk_execution_authorization_from_replay_adjudication(
+        adjudication=adjudication,
+        owner_phase=owner_phase,
+        bucket=bucket,
+    ).to_dict()
+    payload["owner_phase"] = owner_phase
+    payload["execution_authorization"] = authorization
+    payload["executable"] = authorization["executable"]
+    payload["replay_authorized"] = authorization["replay_authorized"]
+    payload["authorization_status"] = authorization["authorization_status"]
+    payload["authorization_rule_id"] = authorization["authorization_rule_id"]
+    payload["required_proofs"] = authorization["required_proofs"]
+    payload["safe_default"] = authorization["safe_default"]
+    payload["forbidden_shortcuts"] = authorization["forbidden_shortcuts"]
     return payload
 
 
@@ -370,6 +391,10 @@ def build_uk_replay_payload(
     error: str | None = None,
 ) -> dict[str, Any]:
     replay_adjudications = list(adjudications)
+    replay_adjudication_rows = [
+        _uk_replay_adjudication_to_dict(adjudication)
+        for adjudication in replay_adjudications
+    ]
     source_parse_rejection_rows = _with_uk_compile_authorization(
         source_parse_rejections,
         lane="source_parse",
@@ -452,10 +477,14 @@ def build_uk_replay_payload(
         "replay_adjudication_owner_phase_counts": (
             _uk_replay_adjudication_owner_phase_counts(replay_adjudications)
         ),
-        "adjudications": [
-            _uk_replay_adjudication_to_dict(adjudication)
-            for adjudication in replay_adjudications
-        ],
+        "replay_adjudication_authorization_status_counts": _record_field_counts(
+            replay_adjudication_rows,
+            "authorization_status",
+        ),
+        "replay_adjudication_missing_proof_counts": _record_required_proof_counts(
+            replay_adjudication_rows
+        ),
+        "adjudications": replay_adjudication_rows,
         "compile_observation_count": len(compile_observations),
         "compile_observation_rule_counts": _rejection_rule_counts(compile_observations),
         "compile_observation_owner_phase_counts": _uk_diagnostic_owner_phase_counts(

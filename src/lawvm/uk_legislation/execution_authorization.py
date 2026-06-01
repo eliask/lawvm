@@ -18,6 +18,14 @@ _COMPILE_LANE_PROOFS: dict[str, tuple[str, ...]] = {
     "authority": ("authority_surface_selection", "replay_authority_contract"),
 }
 
+_REPLAY_ADJUDICATION_BUCKET_PROOFS: dict[str, tuple[str, ...]] = {
+    "replay_bug": ("replay_executor_fix", "mutation_boundary_proof"),
+    "source_shape": ("source_shape_elaboration", "mutation_boundary_proof"),
+    "text_surface": ("text_surface_preimage_or_payload_boundary",),
+    "nonblocking_observation": ("replay_authority_not_claimed",),
+    "unknown": ("replay_adjudication_classification",),
+}
+
 
 def uk_execution_authorization_from_manual_frontier(
     *,
@@ -181,6 +189,49 @@ def uk_execution_authorization_from_compile_record(
         required_proofs=("canonical_operation_or_replay_authorization",),
         safe_default="record_diagnostic_without_promoting_to_replay_authority",
         record=record,
+    )
+
+
+def uk_execution_authorization_from_replay_adjudication(
+    *,
+    adjudication: Any,
+    owner_phase: str,
+    bucket: str,
+) -> ExecutionAuthorization:
+    """Build authorization facts for UK replay adjudication residual rows."""
+    kind = str(getattr(adjudication, "kind", "") or "")
+    detail = dict(getattr(adjudication, "detail", {}) or {})
+    blocking = bool(detail.get("blocking", bucket not in {"nonblocking_observation"}))
+    strict_disposition = str(
+        detail.get("strict_disposition") or ("block" if blocking else "record")
+    )
+    quirks_disposition = str(detail.get("quirks_disposition") or "record")
+    bucket_id = str(bucket or "unknown")
+    return ExecutionAuthorization(
+        executable=False,
+        replay_authorized=False,
+        authorization_status=f"replay_adjudication_{bucket_id}",
+        authorization_rule_id=f"uk_execution_authorization_replay_adjudication_{bucket_id}",
+        owner_phase=owner_phase,
+        strict_disposition=strict_disposition,
+        quirks_disposition=quirks_disposition,
+        validator_status="replay_adjudication_residual",
+        required_proofs=_REPLAY_ADJUDICATION_BUCKET_PROOFS.get(
+            bucket_id,
+            _REPLAY_ADJUDICATION_BUCKET_PROOFS["unknown"],
+        ),
+        safe_default="treat_adjudication_as_residual_not_replay_authority",
+        forbidden_shortcuts=(
+            "adjudication_as_replay_authority",
+            "oracle_backed_mutation",
+            "target_guessing",
+            "residual_over_promotion",
+        ),
+        detail={
+            "adjudication_kind": kind,
+            "bucket": bucket_id,
+            "record_rule_id": str(detail.get("rule_id") or kind),
+        },
     )
 
 
