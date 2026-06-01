@@ -81,6 +81,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_cross_container_renumber_candidate",
         "uk_manual_frontier_crossheading_candidate",
+        "uk_manual_frontier_deictic_amendment_program_target_candidate",
         "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "uk_manual_frontier_definition_child_structural_insert_candidate",
@@ -5747,6 +5748,106 @@ def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_ins
     assert template["inserted_anchor_label"] == "2za"
     assert template["source_inserted_by"] == "paragraph 6 of this Schedule"
     assert "superior tenancy" in template["inserted_text_preview"]
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_amendment_program_template_marks_deictic_anchor() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-amendment-program-deictic-anchor",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-06-01",
+        affected_uri="/id/ukpga/2006/28/section/41/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="28",
+        affected_provisions="s. 41(3)",
+        affecting_uri="/id/uksi/2006/1407",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="1407",
+        affecting_provisions="Sch. 1 Pt. 2 para. 15(c)",
+        affecting_title="Test Order 2006",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="amendment_text_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+                    "blocking": True,
+                    "target_ref": "s. 41(3)",
+                    "target": "section:41/subsection:3",
+                    "inserted_anchor_kind": "paragraph",
+                    "inserted_anchor_label": "2b(8)",
+                    "source_inserted_by": "as inserted",
+                    "direction": "after",
+                    "anchor_label": "2b(8)",
+                    "inserted_label": "9",
+                    "inserted_text_preview": '"Relevant body" means a Strategic Health Authority.',
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "after paragraph 2B(8) as inserted, insert- 9 "
+                '"Relevant body" means a Strategic Health Authority.'
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_deictic_amendment_program_target_candidate"
+            ),
+            manual_compile_reason="Deictic amendment-program anchor requires a claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2006/28",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2006/28",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert payload["suggested_claim_template_status"] == "available"
+    assert template["action_family"] == "amendment_program_target_mutation"
+    assert (
+        template["placement_family"]
+        == "deictic_inserted_anchor_instruction_context_required"
+    )
+    assert "claimed_inserted_anchor_source_instruction" in template["required_ownership"]
+    assert "claim_proves_as_inserted_anchor_from_source_context" in (
+        template["required_validator_checks"]
+    )
+    assert template["source_inserted_by"] == "as inserted"
     assert template["executable"] is False
 
 
