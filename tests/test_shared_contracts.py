@@ -21,6 +21,11 @@ from lawvm.core.frontier_work_item import (
     validate_frontier_work_item,
 )
 from lawvm.core.frozen_values import FrozenDict
+from lawvm.core.source_witness import (
+    DigestWitness,
+    SourceWitness,
+    source_witness_from_mapping,
+)
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
@@ -136,6 +141,51 @@ def test_frontier_work_item_rejects_replay_promotion() -> None:
 
     assert "frontier work items must be non-executable" in issues
     assert "frontier work items must not be replay-authorized" in issues
+
+
+def test_source_witness_normalizes_digest_and_preserves_wire_fields() -> None:
+    witness = source_witness_from_mapping(
+        {
+            "affecting_act_id": "ukpga/2025/1",
+            "affecting_provisions": "s. 2",
+            "source_sha256": "abc123",
+            "source_status": "available",
+        },
+        default_role="affecting_source",
+    )
+
+    data = witness.to_dict()
+
+    assert data["source_role"] == "affecting_source"
+    assert data["artifact_id"] == "ukpga/2025/1"
+    assert data["source_unit_id"] == "s. 2"
+    assert data["digest_algorithm"] == "sha256"
+    assert data["digest"] == "abc123"
+    assert data["source_sha256"] == "abc123"
+    assert data["source_status"] == "available"
+
+
+def test_source_witness_computes_preview_digest() -> None:
+    witness = source_witness_from_mapping(
+        {"text_preview": "source fragment"},
+        default_role="source_preview",
+        default_artifact_id="ukpga/2025/1",
+        default_source_unit_id="eff-1",
+    )
+
+    data = witness.to_dict()
+
+    assert data["artifact_id"] == "ukpga/2025/1"
+    assert data["bounded_preview"] == "source fragment"
+    assert data["preview_digest_algorithm"] == "sha256"
+    assert data["preview_digest"]
+
+
+def test_source_witness_requires_role_and_digest_witness_requires_digest() -> None:
+    with pytest.raises(ValueError, match="source_role"):
+        SourceWitness(source_role="")
+    with pytest.raises(ValueError, match="digest"):
+        DigestWitness(digest_algorithm="sha256", digest="")
 
 
 def test_processing_status_validates_degraded_blockers() -> None:

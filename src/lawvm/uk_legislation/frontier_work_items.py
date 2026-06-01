@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from lawvm.core.frontier_work_item import FrontierWorkItem
+from lawvm.core.source_witness import source_witness_from_mapping
 
 
 def uk_frontier_work_item_from_manual_frontier_row(
@@ -80,8 +81,13 @@ def uk_frontier_work_item_from_manual_frontier_row(
         ),
         "compiled_op_count": _nonnegative_int(row.get("compiled_op_count")),
         "compare_shape": str(row.get("compare_shape") or target_context.get("compare_shape") or ""),
-        "source_witness_kind": _source_witness_kind(source_witness),
     }
+    normalized_source_witness = source_witness_from_mapping(
+        source_witness,
+        default_role=_source_witness_role(source_witness),
+        default_artifact_id=source_artifact_id,
+        default_source_unit_id=source_unit_id,
+    ).to_dict()
     return FrontierWorkItem(
         work_item_id=str(
             row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
@@ -89,7 +95,7 @@ def uk_frontier_work_item_from_manual_frontier_row(
         jurisdiction="uk",
         source_artifact_id=source_artifact_id,
         source_unit_id=source_unit_id,
-        source_witness=source_witness,
+        source_witness=normalized_source_witness,
         owner_phase=str(
             row.get("current_owner_phase")
             or row.get("owner_phase")
@@ -156,14 +162,14 @@ def _nonnegative_int(value: Any) -> int:
     return 0
 
 
-def _source_witness_kind(source_witness: Mapping[str, Any]) -> str:
+def _source_witness_role(source_witness: Mapping[str, Any]) -> str:
     if source_witness.get("source_sha256") or source_witness.get("affecting_act_id"):
         return "affecting_source"
     if source_witness.get("text_preview"):
         return "source_preview"
     if source_witness:
         return "source_context"
-    return ""
+    return "unspecified_source"
 
 
 def _candidate_targets(row: Mapping[str, Any]) -> tuple[str, ...]:

@@ -2496,6 +2496,12 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert payload["frontier_work_item"]["source_witness"]["source_sha256"] == (
         "affecting-sha"
     )
+    assert payload["frontier_work_item"]["source_witness"]["source_role"] == (
+        "affecting_source"
+    )
+    assert payload["frontier_work_item"]["source_witness"]["digest"] == (
+        "affecting-sha"
+    )
     assert payload["frontier_work_item"]["detail"]["manual_compile_reason"] == (
         "Heading facet requires an explicit manual claim."
     )
@@ -2503,9 +2509,6 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert payload["frontier_work_item"]["detail"]["blocking_lowering_rule_ids"] == [
         "uk_effect_heading_only_ref_rejected",
     ]
-    assert payload["frontier_work_item"]["detail"]["source_witness_kind"] == (
-        "affecting_source"
-    )
     assert payload["suggested_claim_template_status"] == "available"
     assert payload["suggested_claim_template"]["action_family"] == "facet_text_rewrite"
     assert payload["source"] == {
