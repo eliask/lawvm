@@ -1560,9 +1560,18 @@ def _looks_like_source_carried_structured_tail_substitution(text: str) -> bool:
         return False
     if "substitute" not in norm:
         return False
-    if "—" in text or "--" in text or " - " in text:
-        return bool(re.search(r"(?:—|--|\s-\s)\s*(?:\(?[a-z0-9]+\)?|[ivxlcdm]+)\s+\w", norm))
-    return bool(_CARRIED_TAIL_LABEL_LABEL_RE.search(norm))
+    substitute_match = re.search(r"\bsubstitute[d]?\b", norm)
+    if substitute_match is None:
+        return False
+    replacement_tail = norm[substitute_match.end() :]
+    if "—" in replacement_tail or "--" in replacement_tail or " - " in replacement_tail:
+        return bool(
+            re.search(
+                r"(?:—|--|\s-\s)\s*(?:\(?[a-z0-9]+\)?|[ivxlcdm]+)\s+\w",
+                replacement_tail,
+            )
+        )
+    return bool(_CARRIED_TAIL_LABEL_LABEL_RE.search(replacement_tail))
 
 
 def _looks_like_top_level_roman_structured_tail_substitution(text: str) -> bool:

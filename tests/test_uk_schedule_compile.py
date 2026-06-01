@@ -43573,6 +43573,36 @@ def test_manual_frontier_classifies_corresponding_table_entry_unresolved() -> No
     assert manual_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
+def test_source_pathology_does_not_treat_simple_tail_substitution_as_structured() -> None:
+    source_pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "b in subsection (5), for the words from “, or if that person” "
+            "to the end substitute “or civil partner”."
+        ),
+        op_actions=("text_replace",),
+        target_paths=("section:17/subsection:5",),
+        effect_type="words substituted",
+    )
+
+    assert source_pathology == ""
+
+
+def test_source_pathology_keeps_structured_tail_substitution_frontier() -> None:
+    source_pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "in subsection (5), for the words from “if” to the end substitute— "
+            "a first replacement, and b second replacement."
+        ),
+        op_actions=("text_replace",),
+        target_paths=("section:17/subsection:5",),
+        effect_type="words substituted",
+    )
+
+    assert source_pathology == "source_carried_structured_tail_substitution_unsupported"
+
+
 def test_manual_frontier_classifies_table_point_and_row_anchor_parser_misses() -> None:
     point_rejection = {
         "rule_id": "uk_effect_overlap_substitution_unlowered",
