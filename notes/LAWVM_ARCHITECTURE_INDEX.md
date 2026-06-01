@@ -79,6 +79,10 @@ Finland exercises them deeply, but there are still migration seams:
 - Legacy apply dispatch still exists for bounded cases.
 - Some temporal and migration semantics are still projected through Finland
   replay products while core ownership matures.
+- Finland should adopt the UK evidence/workqueue discipline for its next
+  frontier loop: non-executable claim templates, source witness hashes,
+  manual-frontier status, and typed residual classes before any unsafe replay
+  shortcut.
 - CLI and serialized outputs are useful but not stable public APIs.
 
 This is acceptable for v0.1 as an alpha / research preview, provided it remains
