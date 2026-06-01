@@ -81,6 +81,14 @@ class AfterAnchorToEndSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class AfterAnchorBeforeFinalWordSelector:
+    """``after Anchor`` up to, but not including, a final connector word."""
+
+    anchor: str
+    final_word: str
+
+
+@dataclass(frozen=True, slots=True)
 class OpeningWordsSelector:
     """The opening words of the provision."""
 
@@ -171,6 +179,7 @@ UKTextSelector = (
     | RangeFromToSelector
     | RangeToEndSelector
     | AfterAnchorToEndSelector
+    | AfterAnchorBeforeFinalWordSelector
     | OpeningWordsSelector
     | BeginningSelector
     | EndSelector
@@ -229,6 +238,8 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
         return f"TEXT_FROM_{selector.start}_TO_END"
     if isinstance(selector, AfterAnchorToEndSelector):
         return f"TEXT_AFTER_{selector.anchor}_TO_END"
+    if isinstance(selector, AfterAnchorBeforeFinalWordSelector):
+        return f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}{selector.anchor}{US}{selector.final_word}"
     if isinstance(selector, OpeningWordsSelector):
         return "TEXT_OPENING_WORDS"
     if isinstance(selector, BeginningSelector):
@@ -295,6 +306,11 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
         parts = original.split(US, 3)
         if len(parts) == 4:
             return ExceptChildSelector(parts[1], parts[2], parts[3])
+        return RawSelector(original)
+    if original.startswith(f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}"):
+        parts = original.split(US, 2)
+        if len(parts) == 3:
+            return AfterAnchorBeforeFinalWordSelector(parts[1], parts[2])
         return RawSelector(original)
     if original.startswith("TEXT_AFTER_") and original.endswith("_TO_END"):
         return AfterAnchorToEndSelector(original[len("TEXT_AFTER_") : -len("_TO_END")])

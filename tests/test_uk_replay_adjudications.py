@@ -32,6 +32,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _insert_at_end_of_definition_text,
     _insert_after_definition_text,
     _remove_trailing_context_word,
+    _rewrite_after_anchor_to_before_final_word_text,
     _rewrite_after_anchor_to_end_text,
     _rewrite_anchor_in_definition_entry_text,
     _rewrite_definition_entry_text,
@@ -1270,6 +1271,38 @@ def test_rewrite_after_anchor_to_end_text_uses_exact_anchor_occurrence() -> None
 
     assert applied is True
     assert rewritten == "before anchor one, before anchor kept tail"
+
+
+def test_rewrite_after_anchor_to_before_final_word_preserves_connector() -> None:
+    rewritten, applied = _rewrite_after_anchor_to_before_final_word_text(
+        "if applied) old tail and",
+        anchor="applied)",
+        final_word="and",
+        replacement="new tail",
+        occurrence=0,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == "if applied) new tail and"
+
+
+def test_rewrite_after_anchor_to_before_final_word_rejects_missing_final_connector() -> None:
+    original = "if applied) old tail or"
+
+    rewritten, applied = _rewrite_after_anchor_to_before_final_word_text(
+        original,
+        anchor="applied)",
+        final_word="and",
+        replacement="new tail",
+        occurrence=0,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
 
 
 def test_rewrite_after_anchor_to_end_text_uses_normalized_anchor() -> None:
@@ -4173,6 +4206,80 @@ def test_executor_applies_after_anchor_to_end_text_patch_without_flattening_chil
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
     assert adjudications[0].detail["source_shape"] == "after_anchor_to_end_selector"
+
+
+def test_executor_applies_after_anchor_before_final_word_patch_without_flattening_children() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/6",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(),
+        ),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="5",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="5",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.ITEM,
+                                        label="a",
+                                        text="where section 5 applied) old tail and",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_anchor_before_final_word",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(
+                path=(
+                    ("schedule", "1"),
+                    ("paragraph", "5"),
+                    ("subparagraph", "5"),
+                    ("item", "a"),
+                )
+            ),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}applied){US}and",
+                    occurrence=0,
+                ),
+                replacement="new tail",
+            ),
+            source=_source(),
+        )
+    )
+
+    item = executor.statute.supplements[0].children[0].children[0].children[0]
+    assert item.text == "where section 5 applied) new tail and"
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_after_anchor_before_final_word_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "after_anchor_before_final_word_selector"
 
 
 def test_executor_applies_before_child_text_patch_without_flattening_children() -> None:

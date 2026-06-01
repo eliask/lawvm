@@ -45622,6 +45622,70 @@ def test_compile_quoted_words_anchor_to_end_substitution() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_after_anchor_before_final_word_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>i in paragraph (a), for the words after \u201capplied)\u201d (but not including the \u201cand\u201d at the end of the paragraph), substitute \u201cit could deal with the offender if it had just convicted the offender\u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_anchor_before_final_word_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-01",
+        affected_uri="/id/ukpga/2000/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="6",
+        affected_provisions="Sch. 1 para. 5(5)(a)",
+        affecting_uri="/id/ukpga/2020/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="9",
+        affecting_provisions="Sch. 2 para. 52(2)(b)(i)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "1"),
+        ("paragraph", "5"),
+        ("subparagraph", "5"),
+        ("item", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert (
+        ops[0].text_patch.selector.match_text
+        == f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}applied){US}and"
+    )
+    assert (
+        ops[0].text_patch.replacement
+        == "it could deal with the offender if it had just convicted the offender"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_anchor_before_final_word_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_after_anchor_before_final_word_substitution_text_patch"
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_missing_space_before_there_is_substituted() -> None:
     extracted_el = ET.fromstring(
         f"""
