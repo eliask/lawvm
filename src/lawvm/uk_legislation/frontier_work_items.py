@@ -14,9 +14,9 @@ def uk_frontier_work_item_from_manual_frontier_row(
     """Project a UK manual-frontier row as a non-executable work item."""
     template = _mapping(row.get("suggested_claim_template"))
     source_witness = _first_mapping(
-        row.get("source_witness"),
         row.get("affecting_source_witness"),
         row.get("source"),
+        row.get("source_witness"),
     )
     statute_id = str(row.get("statute_id") or "")
     effect_id = str(row.get("effect_id") or "")

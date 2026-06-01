@@ -2353,6 +2353,12 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "affecting_source_extraction": 1,
             "canonical_op_compilation": 1,
         },
+        "manual_frontier_work_item_family_counts": {
+            "uk_manual_frontier_missing_payload_source_insufficient": 1,
+        },
+        "manual_frontier_work_item_authorization_status_counts": {
+            "source_insufficient": 1,
+        },
         "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,
@@ -2476,6 +2482,17 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert "mutation_boundary_proof" in payload["execution_authorization"][
         "required_proofs"
     ]
+    assert payload["frontier_work_item"]["frontier_family"] == (
+        "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert payload["frontier_work_item"]["authorization_status"] == (
+        "manual_claim_required"
+    )
+    assert payload["frontier_work_item"]["executable"] is False
+    assert payload["frontier_work_item"]["replay_authorized"] is False
+    assert payload["frontier_work_item"]["source_witness"]["source_sha256"] == (
+        "affecting-sha"
+    )
     assert payload["source"] == {
         "extracted": True,
         "tag": "P1",
@@ -2617,6 +2634,12 @@ def test_single_uk_effect_report_includes_manual_claim_template() -> None:
     )
     assert report["execution_authorization"]["owner_phase"] == "typed_elaboration"
     assert report["execution_authorization"]["replay_authorized"] is False
+    assert report["frontier_work_item"]["frontier_family"] == (
+        "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert "before paragraph 1" in report["frontier_work_item"]["source_witness"][
+        "text_preview"
+    ]
     assert report["suggested_claim_template_status"] == "available"
     assert report["suggested_claim_template"]["action_family"] == (
         "schedule_part_wrapper_insertion"
@@ -6275,6 +6298,10 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
     assert summary["manual_compile_candidate_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1,
         "uk_manual_frontier_unclassified": 1,
+    }
+    assert summary["manual_frontier_work_item_authorization_status_counts"] == {
+        "manual_claim_required": 2,
+        "out_of_scope": 1,
     }
 
 

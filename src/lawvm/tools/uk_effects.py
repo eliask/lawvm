@@ -689,6 +689,9 @@ def uk_effects_summary_counts(
     matched_effect_count_before_limit: int | None = None,
 ) -> dict[str, Any]:
     """Aggregate UK effect classifications without changing row semantics."""
+    from lawvm.uk_legislation.execution_authorization import (
+        uk_execution_authorization_from_manual_frontier,
+    )
 
     emitted_effect_count = len(rows)
     matched_effect_count = (
@@ -722,6 +725,8 @@ def uk_effects_summary_counts(
     manual_compile_rule_counts: dict[str, int] = {}
     manual_compile_candidate_rule_counts: dict[str, int] = {}
     manual_compile_owner_phase_counts: dict[str, int] = {}
+    manual_frontier_work_item_family_counts: dict[str, int] = {}
+    manual_frontier_work_item_authorization_status_counts: dict[str, int] = {}
     suggested_claim_template_status_counts: dict[str, int] = {}
     lowering_observation_owner_phase_counts: dict[str, int] = {}
     lowering_rejection_owner_phase_counts: dict[str, int] = {}
@@ -744,7 +749,14 @@ def uk_effects_summary_counts(
         manual_compile_rule_counts[manual_rule_key] = (
             manual_compile_rule_counts.get(manual_rule_key, 0) + 1
         )
-        owner_phase_key = summary.manual_compile_owner_phase or "unknown"
+        owner_phase_key = (
+            summary.manual_compile_owner_phase
+            or uk_phase_owner_for_manual_frontier(
+                manual_compile_status=summary.manual_compile_status or "",
+                manual_compile_rule_id=summary.manual_compile_rule_id or "",
+                source_pathology=summary.source_pathology or "",
+            )
+        )
         manual_compile_owner_phase_counts[owner_phase_key] = (
             manual_compile_owner_phase_counts.get(owner_phase_key, 0) + 1
         )
@@ -752,6 +764,26 @@ def uk_effects_summary_counts(
             manual_compile_candidate_rule_counts[manual_rule_key] = (
                 manual_compile_candidate_rule_counts.get(manual_rule_key, 0) + 1
             )
+        if summary.manual_compile_status and owner_phase_key:
+            authorization = uk_execution_authorization_from_manual_frontier(
+                manual_compile_status=summary.manual_compile_status,
+                manual_compile_rule_id=summary.manual_compile_rule_id,
+                owner_phase=owner_phase_key,
+            )
+            if authorization.replay_authorized is False:
+                manual_frontier_work_item_family_counts[manual_rule_key] = (
+                    manual_frontier_work_item_family_counts.get(manual_rule_key, 0) + 1
+                )
+                authorization_key = authorization.authorization_status or "unknown"
+                manual_frontier_work_item_authorization_status_counts[
+                    authorization_key
+                ] = (
+                    manual_frontier_work_item_authorization_status_counts.get(
+                        authorization_key,
+                        0,
+                    )
+                    + 1
+                )
         template_status = _actionable_claim_template_status(
             statute_id=statute_id,
             row=row,
@@ -868,6 +900,12 @@ def uk_effects_summary_counts(
         ),
         "manual_compile_owner_phase_counts": dict(
             sorted(manual_compile_owner_phase_counts.items())
+        ),
+        "manual_frontier_work_item_family_counts": dict(
+            sorted(manual_frontier_work_item_family_counts.items())
+        ),
+        "manual_frontier_work_item_authorization_status_counts": dict(
+            sorted(manual_frontier_work_item_authorization_status_counts.items())
         ),
         "suggested_claim_template_status_counts": dict(
             sorted(suggested_claim_template_status_counts.items())
@@ -1144,6 +1182,9 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
     from lawvm.uk_legislation.execution_authorization import (
         uk_execution_authorization_from_manual_frontier,
     )
+    from lawvm.uk_legislation.frontier_work_items import (
+        uk_frontier_work_item_from_manual_frontier_row,
+    )
     from lawvm.tools.uk_effect import (
         blocking_lowering_rejection_rule_counts,
         has_blocking_lowering_rejection,
@@ -1157,13 +1198,21 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
     lowering_observations = tuple(summary.lowering_rejections)
     lowering_rejections = _blocking_rows(lowering_observations)
     execution_authorization: dict[str, Any] = {}
-    if summary.manual_compile_status and summary.manual_compile_owner_phase:
+    owner_phase = (
+        summary.manual_compile_owner_phase
+        or uk_phase_owner_for_manual_frontier(
+            manual_compile_status=summary.manual_compile_status or "",
+            manual_compile_rule_id=summary.manual_compile_rule_id or "",
+            source_pathology=summary.source_pathology or "",
+        )
+    )
+    if summary.manual_compile_status and owner_phase:
         execution_authorization = uk_execution_authorization_from_manual_frontier(
             manual_compile_status=summary.manual_compile_status,
             manual_compile_rule_id=summary.manual_compile_rule_id,
-            owner_phase=summary.manual_compile_owner_phase,
+            owner_phase=owner_phase,
         ).to_dict()
-    return {
+    payload = {
         "effect_id": effect.effect_id,
         "effect_type": effect.effect_type or "",
         "affected_provisions": effect.affected_provisions,
@@ -1196,7 +1245,7 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
             "status": summary.manual_compile_status or "",
             "rule_id": summary.manual_compile_rule_id or "",
             "reason": summary.manual_compile_reason or "",
-            "owner_phase": summary.manual_compile_owner_phase or "",
+            "owner_phase": owner_phase,
             "lowering_rule_ids": list(summary.manual_compile_lowering_rule_ids),
             "blocking_lowering_rule_ids": list(
                 summary.manual_compile_blocking_lowering_rule_ids
@@ -1233,6 +1282,30 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
         ),
         "lowering_rejections": [dict(item) for item in lowering_rejections],
     }
+    if execution_authorization.get("replay_authorized") is False:
+        payload["frontier_work_item"] = (
+            uk_frontier_work_item_from_manual_frontier_row(
+                {
+                    **payload,
+                    "owner_phase": owner_phase,
+                    "manual_compile_status": summary.manual_compile_status or "",
+                    "manual_compile_rule_id": summary.manual_compile_rule_id or "",
+                    "executable": execution_authorization["executable"],
+                    "replay_authorized": execution_authorization["replay_authorized"],
+                    "authorization_status": execution_authorization[
+                        "authorization_status"
+                    ],
+                    "required_proofs": execution_authorization["required_proofs"],
+                    "safe_default": execution_authorization["safe_default"],
+                    "forbidden_shortcuts": execution_authorization[
+                        "forbidden_shortcuts"
+                    ],
+                }
+            ).to_dict()
+        )
+    else:
+        payload["frontier_work_item"] = {}
+    return payload
 
 
 def _manual_compile_work_item_id(
