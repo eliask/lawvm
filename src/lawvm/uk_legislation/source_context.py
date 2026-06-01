@@ -162,6 +162,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
       - _source_parent_map_cache: values contain root as a parent element
       - _source_ancestor_chain_cache: inner tuples contain root as terminal ancestor
       - _EXTRACTION_CONTEXT_CACHE: UKExtractionContext.parent_map contains root
+      - source_fragment_context caches: keys are root descendant elements
       - table_sources caches: fee-table index and repeal-extent table hold root
     Explicit removal breaks these cycles immediately, making root eligible for
     reference-count GC.
@@ -171,6 +172,10 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     _source_parent_map_cache.pop(root, None)
     _source_ancestor_chain_cache.pop(root, None)
     _EXTRACTION_CONTEXT_CACHE.pop(root, None)
+    from lawvm.uk_legislation.source_fragment_context import (  # noqa: PLC0415
+        evict_source_fragment_context_caches,
+    )
+    evict_source_fragment_context_caches(root)
     # Lazy import to avoid circular dependency: table_sources → uk_grafter → ...
     # does not import source_context, so this is safe.
     from lawvm.uk_legislation.table_sources import (  # noqa: PLC0415
