@@ -48,6 +48,7 @@ _SOURCE_EXTRACTION_RULE_TOKENS = (
     "missing_payload",
     "non_substantive_payload",
     "non_substantive_shell_payload",
+    "payload_descendant_eid_synthesis",
     "payload_fragment_without_action",
     "payload_missing",
     "payload_without_action",
@@ -61,6 +62,7 @@ _SOURCE_EXTRACTION_RULE_TOKENS = (
     "text_patch_target_source_chain_gap",
     "unhandled_instruction_text",
     "unquoted_preimage",
+    "whole_schedule_payload_descendant_eid_synthesis",
 )
 _TYPED_ELABORATION_RULE_TOKENS = (
     "amendment_program",

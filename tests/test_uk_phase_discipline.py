@@ -134,6 +134,26 @@ def test_diagnostic_phase_owner_prefers_explicit_and_infers_common_families() ->
     assert (
         uk_phase_owner_for_diagnostic(
             {
+                "rule_id": "uk_payload_descendant_eid_synthesis",
+                "family": "payload_normalization",
+                "phase": "lowering",
+            }
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_whole_schedule_payload_descendant_eid_synthesis",
+                "family": "payload_normalization",
+                "phase": "lowering",
+            }
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
                 "rule_id": "uk_effect_source_pathology_classified",
                 "family": "source_pathology",
                 "source_pathology": "table_entry_target_unsupported",
