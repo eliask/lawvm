@@ -61,6 +61,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID,
     UK_ORDINAL_WORD_REPEAL_RULE_ID,
     UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
+    UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
@@ -72,8 +73,6 @@ from lawvm.uk_legislation.source_amendment_program_fragments import (
 )
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
-
-UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID = "uk_effect_multi_quoted_word_repeal_text_patches"
 UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID = (
     "uk_effect_metadata_carried_quoted_words_repeal_text_patch"
 )

@@ -3449,6 +3449,26 @@ def test_parse_fragment_substitution_handles_listed_word_and_range_to_end_repeal
     ]
 
 
+def test_parse_fragment_substitution_handles_listed_quoted_word_omission() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (4), omit\u2014 a \u201cSubject to subsection (5),\u201d, "
+        "and b \u201cbefore 6 October\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "Subject to subsection (5),",
+            "replacement": "",
+            "rule_id": "uk_effect_multi_quoted_word_repeal_text_patches",
+        },
+        {
+            "original": "before 6 October",
+            "replacement": "",
+            "rule_id": "uk_effect_multi_quoted_word_repeal_text_patches",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_where_ordinal_occurring_substitution() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (1)(a), for the words from \u201can\u201d, where second occurring, "

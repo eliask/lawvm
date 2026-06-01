@@ -309,6 +309,7 @@ UK_WHEREVER_THEY_OCCUR_SUBSTITUTION_RULE_ID = (
 UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
     "uk_effect_listed_word_and_range_to_end_repeal_text_patch"
 )
+UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID = "uk_effect_multi_quoted_word_repeal_text_patches"
 UK_ORDINAL_SENTENCE_REPEAL_RULE_ID = "uk_effect_ordinal_sentence_repeal_text_patch"
 UK_ORDINAL_PARAGRAPH_REPEAL_RULE_ID = "uk_effect_ordinal_paragraph_repeal_text_patch"
 UK_OPENING_WORDS_OMISSION_RULE_ID = "uk_effect_opening_words_omission_text_patch"
@@ -3741,6 +3742,24 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
                     "rule_id": UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID,
                 },
             ]
+        )
+
+    matches_listed_quoted_word_omission = re.finditer(
+        r"\bomit\s*[—-]\s*(?P<items>.{1,1200}?)(?:[.;]|$)",
+        text,
+        re.I | re.S,
+    )
+    for m in matches_listed_quoted_word_omission:
+        terms = _quoted_terms(m.group("items"))
+        if len(terms) < 2:
+            continue
+        subs.extend(
+            {
+                "original": term,
+                "replacement": "",
+                "rule_id": UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+            }
+            for term in terms
         )
 
     matches_imperative_contextual_word_omission = re.finditer(

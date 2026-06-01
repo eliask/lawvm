@@ -30,6 +30,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
+    UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     US,
     parse_fragment_substitution,
@@ -55229,6 +55230,80 @@ def test_compile_multi_quoted_word_repeal_lowers_separate_text_deletes() -> None
         "or other person",
         "or any person named in the order",
     )
+
+
+def test_compile_listed_quoted_word_omission_lowers_separate_text_deletes() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-8-paragraph-6-2">
+          <Pnumber>2</Pnumber>
+          <Text>
+            2 In subsection (4), omit\u2014
+            a \u201cSubject to subsection (5),\u201d, and
+            b \u201cbefore 6 October\u201d.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-0de81f7355fe6abceb09c43c8db46124",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-07-17",
+        affected_uri="/id/ukpga/2007/3/section/158/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 158(4)",
+        affecting_uri="/id/ukpga/2014/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="26",
+        affecting_provisions="Sch. 8 para. 6(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-07-17", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_REPEAL,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "158"), ("subsection", "4")),
+        (("section", "158"), ("subsection", "4")),
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == [
+        "Subject to subsection (5),",
+        "before 6 October",
+    ]
+    assert all(op.text_patch is not None for op in ops)
+    assert all(op.text_patch.kind is TextPatchKindEnum.DELETE for op in ops if op.text_patch)
+    assert all(op.text_patch.replacement is None for op in ops if op.text_patch)
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID}"
+        in op.provenance_tags
+        for op in ops
+    )
+    split_rows = [
+        row for row in observations if row["rule_id"] == UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID
+    ]
+    assert len(split_rows) == 1
+    assert split_rows[0]["target"] == "section:158/subsection:4"
+    assert split_rows[0]["fragments"] == (
+        "Subject to subsection (5),",
+        "before 6 October",
+    )
+    assert split_rows[0]["blocking"] is False
+    assert split_rows[0]["strict_disposition"] == "record"
 
 
 def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned(monkeypatch) -> None:
