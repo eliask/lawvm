@@ -16,6 +16,7 @@ from lawvm.core.execution_authorization import (
     ExecutionAuthorization,
     validate_execution_authorization,
 )
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frontier_work_item import (
     FrontierWorkItem,
     validate_frontier_work_item,
@@ -186,6 +187,52 @@ def test_source_witness_requires_role_and_digest_witness_requires_digest() -> No
         SourceWitness(source_role="")
     with pytest.raises(ValueError, match="digest"):
         DigestWitness(digest_algorithm="sha256", digest="")
+
+
+def test_evidence_surface_report_declares_non_replay_claims() -> None:
+    report = EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_effects_frontier_report",
+        schema="lawvm.uk_effects_frontier_report.v1",
+        truth_claim="uk_effect_feed_and_frontier_diagnostics_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary={"matched_effects": 1, "truncated": False},
+        filters={"limit": 1},
+        filtered_summary={"matched_effects": 1},
+        rows=({"effect_id": "eff-1"},),
+        rows_truncated=False,
+        detail={"statute_id": "ukpga/2000/1"},
+    )
+
+    data = report.to_dict()
+
+    assert data["jurisdiction"] == "uk"
+    assert data["replay_claims"] is False
+    assert data["canonical_effect_claims"] is False
+    assert data["candidate_effect_claims"] is False
+    assert data["dry_run_claims"] is False
+    assert data["agreement_claims"] is False
+    assert data["rows"] == [{"effect_id": "eff-1"}]
+    assert data["statute_id"] == "ukpga/2000/1"
+
+
+def test_evidence_surface_report_requires_claim_flags() -> None:
+    with pytest.raises(ValueError, match="replay_claims"):
+        EvidenceSurfaceReport(
+            jurisdiction="uk",
+            report_kind="bad",
+            schema="schema",
+            truth_claim="claim",
+            replay_claims=cast(Any, "false"),
+            canonical_effect_claims=False,
+            candidate_effect_claims=False,
+            dry_run_claims=False,
+            agreement_claims=False,
+        )
 
 
 def test_processing_status_validates_degraded_blockers() -> None:

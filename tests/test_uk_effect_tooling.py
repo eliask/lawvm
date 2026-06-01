@@ -6416,7 +6416,12 @@ def test_uk_effects_limit_zero_summary_preserves_matched_count() -> None:
         "replay_applicable": 0,
         "not_replay_applicable": 0,
     }
-    assert "rows" not in report
+    assert report["rows"] == []
+    assert report["rows_truncated"] is True
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
 
 
 def test_uk_effects_report_jsonable_can_expose_source_surface() -> None:
@@ -6790,7 +6795,9 @@ def test_uk_effects_main_limit_zero_json_summary_preserves_matched_count(
     assert payload["summary"]["matched_effects"] == 2
     assert payload["summary"]["emitted_effect_count"] == 0
     assert payload["summary"]["truncated"] is True
-    assert "rows" not in payload
+    assert payload["rows"] == []
+    assert payload["rows_truncated"] is True
+    assert payload["replay_claims"] is False
 
 
 def test_uk_effects_text_splits_feed_observations_from_rejections(
@@ -7750,7 +7757,16 @@ def test_uk_effects_report_jsonable_can_omit_rows_for_summary_only() -> None:
         "structural_for_replay": 0,
         "not_structural_for_replay": 0,
     }
-    assert "rows" not in report
+    assert report["schema"] == "lawvm.uk_effects_frontier_report.v1"
+    assert report["truth_claim"] == "uk_effect_feed_and_frontier_diagnostics_only"
+    assert report["filtered_summary"] == report["summary"]
+    assert report["rows"] == []
+    assert report["rows_truncated"] is False
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
 
 
 def test_uk_effects_rejects_conflicting_candidate_filters(capsys) -> None:

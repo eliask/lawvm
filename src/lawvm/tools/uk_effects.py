@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.tools.uk_claim_templates import (
     UK_CLAIM_TEMPLATE_RULE_IDS as _UK_CLAIM_TEMPLATE_RULE_IDS,
     manual_compile_suggested_claim_template as _manual_compile_suggested_claim_template,
@@ -974,15 +975,14 @@ def uk_effects_report_jsonable(
     parse_rejection_rows = _blocking_rows(parse_observation_rows)
     source_parse_observation_rows = tuple(dict(item) for item in source_parse_observations)
     source_parse_rejection_rows = _blocking_rows(source_parse_observation_rows)
-    payload: dict[str, Any] = {
-        "report_kind": "uk_effects_frontier_report",
+    filters_payload = _effect_filters_jsonable(filters)
+    summary_payload = uk_effects_summary_counts(
+        rows,
+        statute_id=statute_id,
+        matched_effect_count_before_limit=matched_effect_count_before_limit,
+    )
+    detail: dict[str, Any] = {
         "statute_id": statute_id,
-        "filters": _effect_filters_jsonable(filters),
-        "summary": uk_effects_summary_counts(
-            rows,
-            statute_id=statute_id,
-            matched_effect_count_before_limit=matched_effect_count_before_limit,
-        ),
         "effect_feed_parse_rejections": {
             "count": len(parse_rejection_rows),
             "rule_counts": _rule_counts(parse_rejection_rows),
@@ -1001,18 +1001,35 @@ def uk_effects_report_jsonable(
         "source_parse_observations": list(source_parse_observation_rows),
     }
     if source is not None:
-        payload["source"] = source
+        detail["source"] = source
     if filters.fast_limit:
-        payload["fast_limit"] = {
+        detail["fast_limit"] = {
             "applied": True,
             "matched_effect_count_exact": False,
             "summary_scope": "emitted_fast_limit_rows",
         }
+    report_rows: tuple[dict[str, Any], ...] = ()
     if not summary_only:
-        payload["rows"] = [
+        report_rows = tuple(
             _effect_report_row_jsonable(row, statute_id=statute_id) for row in rows
-        ]
-    return payload
+        )
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_effects_frontier_report",
+        schema="lawvm.uk_effects_frontier_report.v1",
+        truth_claim="uk_effect_feed_and_frontier_diagnostics_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary_payload,
+        filters=filters_payload,
+        filtered_summary=summary_payload,
+        rows=report_rows,
+        rows_truncated=bool(summary_payload.get("truncated")),
+        detail=detail,
+    ).to_dict()
 
 
 def _effect_context_source_jsonable(context: _EffectSummaryContext) -> dict[str, Any]:
