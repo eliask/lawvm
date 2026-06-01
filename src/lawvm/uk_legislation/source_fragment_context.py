@@ -68,6 +68,13 @@ _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE = re.compile(
     r"[“\"'‘](?P<replacement>.*?)[”\"'’]",
     flags=re.I,
 )
+
+
+def _source_parent_each_provision_substitution_candidate(text: str) -> bool:
+    lowered = text.lower()
+    return "in each provision" in lowered and "substitut" in lowered
+
+
 # BRANCH (|the words? ) replaces (?:(?:the\s+)?words?\s+)?;
 # literal spaces replace \s+ inside sub-groups.
 _SOURCE_PARENT_FOLLOWING_PROVISIONS_SUBSTITUTION_RE = re.compile(
@@ -914,6 +921,8 @@ def _fragment_substitutions_source_parent_each_provision_substitution(
         ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not _source_parent_each_provision_substitution_candidate(candidate_text):
+            continue
         match = _SOURCE_PARENT_EACH_PROVISION_SUBSTITUTION_RE.search(candidate_text)
         if match is None:
             continue
