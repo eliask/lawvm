@@ -1111,7 +1111,10 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_claimed_child_range_boundary",
             ],
         )
-    if summary.manual_compile_rule_id == "uk_manual_frontier_amendment_program_target_candidate":
+    if summary.manual_compile_rule_id in {
+        "uk_manual_frontier_amendment_program_target_candidate",
+        "uk_manual_frontier_deictic_amendment_program_target_candidate",
+    }:
         detail = _first_lowering_rejection_detail(
             row=row,
             rule_id="uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
@@ -1125,16 +1128,33 @@ def manual_compile_suggested_claim_template(
             statute_id=statute_id,
             row=row,
             action_family="amendment_program_target_mutation",
-            placement_family="inserted_parent_instruction_context_required",
+            placement_family=(
+                "deictic_inserted_anchor_instruction_context_required"
+                if summary.manual_compile_rule_id
+                == "uk_manual_frontier_deictic_amendment_program_target_candidate"
+                else "inserted_parent_instruction_context_required"
+            ),
             required_ownership=[
                 "source_amendment_program_context",
                 "inserted_parent_instruction",
+                *(
+                    ["claimed_inserted_anchor_source_instruction"]
+                    if summary.manual_compile_rule_id
+                    == "uk_manual_frontier_deictic_amendment_program_target_candidate"
+                    else []
+                ),
                 "derived_child_target_boundary",
                 "mutation_boundary",
             ],
             required_validator_checks=[
                 "source_witness_targets_text_inserted_by_same_amending_program",
                 "claim_identifies_the_parent_instruction_that_created_the_target",
+                *(
+                    ["claim_proves_as_inserted_anchor_from_source_context"]
+                    if summary.manual_compile_rule_id
+                    == "uk_manual_frontier_deictic_amendment_program_target_candidate"
+                    else []
+                ),
                 "claim_identifies_exact_inserted_parent_or_child_boundary",
                 "claim_preserves_unclaimed_inserted_payload_and_live_target_text",
                 "changed_paths_are_within_declared_amendment_program_target",

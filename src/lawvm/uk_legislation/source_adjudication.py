@@ -2063,6 +2063,21 @@ def _has_repeal_table_feed_source_target_gap(
     return has_source_owned_structural_row and has_unmatched_feed_target
 
 
+def _has_deictic_amendment_program_inserted_anchor(
+    lowering_rows: tuple[dict[str, Any], ...],
+) -> bool:
+    for row in lowering_rows:
+        if (
+            str(row.get("rule_id") or "")
+            == "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected"
+            and is_blocking_compile_record(row)
+            and str(row.get("source_inserted_by") or "").strip().lower()
+            == "as inserted"
+        ):
+            return True
+    return False
+
+
 # Compiled at module scope per §1.11.  Site #3 (census): greedy .+ between
 # two anchors inside classify_uk_manual_compile_frontier — bound to .{0,600}?
 # (lazy).  Fast-guard: "period specified" is a literal substring of the first
@@ -2284,6 +2299,12 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
         source_pathology_norm,
     )
+    if _has_deictic_amendment_program_inserted_anchor(lowering_rows):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_deictic_amendment_program_target_candidate",
+            "reason": "The source targets text inserted by another amendment instruction but identifies the prior anchor only as 'as inserted'; a claim or future source-context compiler must prove the instruction that created the anchor before replay.",
+        }
     if (
         source_pathology_norm == "structural_sibling_insert_unsupported"
         and _looks_like_deictic_structural_sibling_insert_instruction(extracted_text_norm)

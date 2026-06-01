@@ -1990,6 +1990,63 @@ def test_classify_uk_manual_compile_frontier_marks_amendment_program_target() ->
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_deictic_amendment_program_anchor_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="amendment_text_target_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "c after paragraph 2B(8) as inserted, insert- 9 "
+            '"Relevant body" means a Strategic Health Authority.'
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected"
+                ),
+                "blocking": True,
+                "source_inserted_by": "as inserted",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_deictic_amendment_program_target_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_keeps_explicit_amendment_program_anchor_deterministic() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="amendment_text_target_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "After Ground 2ZA (inserted by paragraph 6 of this Schedule) "
+            "insert- Ground 2ZB The landlord holds a superior tenancy."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": (
+                    "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected"
+                ),
+                "blocking": True,
+                "source_inserted_by": "paragraph 6 of this Schedule",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_table_entry_target() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
