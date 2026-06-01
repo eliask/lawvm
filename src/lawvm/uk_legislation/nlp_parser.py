@@ -199,6 +199,9 @@ UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID = (
 UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_text_patch"
 UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_except_child_substitution_text_patch"
 UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
+UK_WHEREVER_APPEARING_SUBSTITUTION_RULE_ID = (
+    "uk_effect_wherever_appearing_substitution_text_patch"
+)
 UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID = (
     "uk_effect_quoted_substitution_scope_note_text_patch"
 )
@@ -280,6 +283,7 @@ UK_LISTED_WORD_AND_RANGE_TO_END_REPEAL_RULE_ID = (
 )
 UK_ORDINAL_SENTENCE_REPEAL_RULE_ID = "uk_effect_ordinal_sentence_repeal_text_patch"
 UK_ORDINAL_PARAGRAPH_REPEAL_RULE_ID = "uk_effect_ordinal_paragraph_repeal_text_patch"
+UK_OPENING_WORDS_OMISSION_RULE_ID = "uk_effect_opening_words_omission_text_patch"
 UK_DANGLING_PASSIVE_SUBSTITUTION_QUOTE_RULE_ID = (
     "uk_effect_dangling_passive_substitution_quote_text_patch"
 )
@@ -711,6 +715,21 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             }
         )
 
+    matches_wherever_appearing_substituted = re.finditer(
+        rf"for\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+        rf"wherever\s+appearing,?\s+substitute\s+[“”\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_wherever_appearing_substituted:
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "rule_id": UK_WHEREVER_APPEARING_SUBSTITUTION_RULE_ID,
+            }
+        )
+
     matches_wherever_they_occur_substituted = re.finditer(
         r"for\s+(?:(?:the\s+)?words?\s+)?"
         r"[“\"'‘](?P<original>[^\"'\u201c\u201d\u2018\u2019]{1,500})[”\"'’],?\s+"
@@ -861,7 +880,7 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
 
     matches_all_occurrences_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
-        r"(?:\(\s*)?in (?:each|both) places?"
+        r"(?:\(\s*)?(?:in|at) (?:each|both) places?"
         r"(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)?"
         r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
         r"(?:\s*\))?,?\s+"
@@ -915,8 +934,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
 
     matches_each_case_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](?P<original>.*?)[”\"'’],?\s+"
-        r"in each case\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)"
-        r"(?:occurs?|appears?),?\s+"
+        r"in each case(?:\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)"
+        r"(?:occurs?|appears?))?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
         r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>.*?)[”\"'’]",
         text,
@@ -3130,7 +3149,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
 
     matches_before_insert = re.finditer(
         r"before [“\"'‘](.*?)[”\"'’]"
-        r"(?:,\s+in the\s+(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+place it occurs)?"
+        r"(?:,\s+in the\s+(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+place it (?:occurs|appears))?"
         r",?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
@@ -3461,7 +3480,8 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
 
     matches_ordinal_paragraph_repeal = re.finditer(
         rf"\bomit\s+(?:the\s+)?(?P<ordinals>(?:{_ORDINAL_OCCURRENCE_WORDS})"
-        rf"(?:\s*(?:,|and)\s*(?:{_ORDINAL_OCCURRENCE_WORDS}))*)\s+paragraphs?\b",
+        rf"(?:\s*(?:,|and)\s*(?:{_ORDINAL_OCCURRENCE_WORDS}))*)\s+"
+        r"(?:unnumbered\s+)?paragraphs?\b",
         text,
         re.I,
     )
@@ -3475,6 +3495,22 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
                     "rule_id": UK_ORDINAL_PARAGRAPH_REPEAL_RULE_ID,
                 }
             )
+
+    matches_opening_words_omitted = re.finditer(
+        r"\bomit\s+(?:the\s+)?opening\s+words\b",
+        text,
+        re.I,
+    )
+    for _m in matches_opening_words_omitted:
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=OpeningWordsSelector(),
+                    replacement="",
+                    rule_id=UK_OPENING_WORDS_OMISSION_RULE_ID,
+                )
+            )
+        )
 
     matches_listed_word_and_range_to_end_repeal = re.finditer(
         r"(?:the\s+)?words?\s*[—-]\s*"
@@ -3575,7 +3611,9 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
 
     matches_repeal_range = re.finditer(
         r"(?:the\s+)?words?\s+from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
-        r"(?:\s+\(\s*where\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+occurring\s*\))?"
+        r"(?:\s+\(\s*(?:where\s+)?(?:it\s+)?(?:in\s+)?(?:the\s+)?"
+        r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
+        r"(?:\s+place\s+where\s+it\s+occurs|\s+occurring)\s*\))?"
         r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’](?P<pre_predicate_comma>,)?\s+"
         r"(?:are|is|shall\s+be)\s+(?:omitted|repealed)",
         text,
@@ -3670,18 +3708,24 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
         subs.append({"original": f"FROM_{m.group(1)}_TO_{m.group(2)}", "replacement": ""})
 
     matches_omit_range = re.finditer(
-        r"\bomit\s+(?:(?:the\s+)?words?\s+)?from\s+[“\"'‘](.*?)[”\"'’]\s+to\s+[“\"'‘](.*?)[”\"'’]",
+        r"\bomit\s+(?:(?:the\s+)?words?\s+)?from\s+[“\"'‘](?P<start>.*?)[”\"'’]"
+        r"(?:\s+\(\s*(?:where\s+)?(?:it\s+)?(?:in\s+)?(?:the\s+)?"
+        r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
+        r"(?:\s+place\s+where\s+it\s+occurs|\s+occurring)\s*\))?"
+        r"\s+to\s+[“\"'‘](?P<end>.*?)[”\"'’]",
         text,
         re.I,
     )
     for m in matches_omit_range:
-        subs.append(
-            {
-                "original": f"TEXT_FROM_{m.group(1).strip()}_TO_{m.group(2).strip()}",
-                "replacement": "",
-                "rule_id": "uk_effect_omit_quoted_range_text_patch",
-            }
-        )
+        patch = {
+            "original": f"TEXT_FROM_{m.group('start').strip()}_TO_{m.group('end').strip()}",
+            "replacement": "",
+            "rule_id": "uk_effect_omit_quoted_range_text_patch",
+        }
+        if m.group("ordinal"):
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
+            patch["rule_id"] = "uk_effect_range_occurrence_repeal_text_patch"
+        subs.append(patch)
 
     matches_omit_after_anchor = re.finditer(
         r"\bomit\s+(?:the\s+)?words?\s+after\s+[“\"'‘](?P<anchor>.*?)[”\"'’]",
@@ -3751,7 +3795,7 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
             )
 
     matches_imperative_definition_repeal = re.finditer(
-        r"\bomit\s+(?:the\s+)?definitions?\s+of\s+(.+?)(?:[.;]|$)",
+        r"\bomit\s+(?:the\s+)?definitions?\s+of\s*[—:-]?\s+(.+?)(?:[.;]|$)",
         text,
         re.I,
     )
