@@ -30,6 +30,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
+    UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     US,
     parse_fragment_substitution,
 )
@@ -47409,6 +47410,81 @@ def test_compile_omit_words_after_anchor_to_tail_delete() -> None:
         "uk_effect_after_anchor_to_end_omission_text_patch"
     ]
     assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_omit_section_reference_to_text_delete() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-4">
+          <Pnumber>4</Pnumber>
+          <Text>
+            4 In section 11(2) (income charged at the basic rate: persons
+            other than individuals), omit the reference to section 12.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-3459db2b9f878db317f8e5f35ea12a17",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-04-22",
+        affected_uri="/id/ukpga/2007/3/section/11/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 11(2)",
+        affecting_uri="/id/ukpga/2008/9",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="9",
+        affecting_provisions="Sch. 1 para. 4",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2009-04-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == UK_SECTION_REFERENCE_REPEAL_RULE_ID
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "explicit_section_reference_repeal_text_patch"
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target.path == (("section", "11"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.DELETE
+    assert op.text_patch.selector.match_text == "section 12"
+    assert op.text_patch.replacement is None
+    assert _fragment_substitution(op) == [
+        {
+            "original": "section 12",
+            "replacement": "",
+        }
+    ]
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_SECTION_REFERENCE_REPEAL_RULE_ID}"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
 
 
 def test_compile_definition_child_tail_after_anchor_to_end_preserves_source_scope() -> None:

@@ -277,6 +277,7 @@ UK_ALL_OCCURRENCES_WORD_REPEAL_RULE_ID = (
     "uk_effect_all_occurrences_word_repeal_text_patch"
 )
 UK_ORDINAL_WORD_REPEAL_RULE_ID = "uk_effect_ordinal_word_repeal_text_patch"
+UK_SECTION_REFERENCE_REPEAL_RULE_ID = "uk_effect_section_reference_repeal_text_patch"
 UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID = (
     "uk_effect_range_repeal_pre_predicate_comma_text_patch"
 )
@@ -3944,6 +3945,22 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
                 "original": f"TEXT_AFTER_{m.group('anchor').strip()}_TO_END",
                 "replacement": "",
                 "rule_id": "uk_effect_after_anchor_to_end_omission_text_patch",
+            }
+        )
+
+    matches_omit_section_reference = re.finditer(
+        r"\bomit\s+the\s+reference\s+to\s+"
+        r"(?P<reference>section\s+[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))*)"
+        r"\s*(?:[.;]|,\s*(?:and)?|$)",
+        text,
+        re.I,
+    )
+    for m in matches_omit_section_reference:
+        subs.append(
+            {
+                "original": m.group("reference").strip(),
+                "replacement": "",
+                "rule_id": UK_SECTION_REFERENCE_REPEAL_RULE_ID,
             }
         )
 

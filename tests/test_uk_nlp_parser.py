@@ -1899,6 +1899,21 @@ def test_parse_fragment_substitution_handles_omit_words_after_anchor() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_section_reference_omission() -> None:
+    subs = parse_fragment_substitution(
+        "4 In section 11(2) (income charged at the basic rate: persons other "
+        "than individuals), omit the reference to section 12."
+    )
+
+    assert subs == [
+        {
+            "original": "section 12",
+            "replacement": "",
+            "rule_id": "uk_effect_section_reference_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_missing_space_before_there_is_substituted() -> None:
     subs = parse_fragment_substitution(
         "4 In subsection (4), for the words \u201cneglecting or refusing to pay\u201d"
