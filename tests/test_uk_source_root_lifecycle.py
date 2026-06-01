@@ -38,10 +38,13 @@ from lxml import etree as ET
 from typing import Optional
 
 from lawvm.uk_legislation.source_context import (
+    UKAffectingSourceContext,
     _source_ancestor_chain,
     _source_ancestor_chain_cache,
     _source_parent_map,
     _source_parent_map_cache,
+    _unique_unnumbered_root_schedule,
+    _unique_unnumbered_root_schedule_cache,
     evict_source_root_caches,
 )
 
@@ -78,9 +81,45 @@ _ANOTHER_XML = """\
 </Legislation>
 """
 
+_UNNUMBERED_SCHEDULE_XML = """\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Schedule id="schedule">
+    <Paragraph id="schedule-paragraph-1">
+      <Pnumber>1</Pnumber>
+      <Text>Paragraph text.</Text>
+    </Paragraph>
+  </Schedule>
+</Legislation>
+"""
+
+_MULTIPLE_UNNUMBERED_SCHEDULE_XML = """\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Schedule>
+    <Text>First schedule.</Text>
+  </Schedule>
+  <Schedule>
+    <Text>Second schedule.</Text>
+  </Schedule>
+</Legislation>
+"""
+
 
 def _make_root(xml: str = _SIMPLE_XML) -> ET._Element:
     return ET.fromstring(xml)
+
+
+def _context_for_root(root: ET._Element) -> UKAffectingSourceContext:
+    return UKAffectingSourceContext(
+        xml_bytes=None,
+        root=root,
+        parent_map=None,
+        exact_id_map={},
+        sequence_map={},
+        source_status="available",
+        source_size=0,
+        locator="test://source",
+        authority_layer="TEST",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +201,35 @@ def test_source_ancestor_chain_releases_when_root_gc_d() -> None:
     del chain2
     del direct_children
     gc.collect()
+
+
+def test_unique_unnumbered_root_schedule_cache_evicts_with_source_root() -> None:
+    root = _make_root(_UNNUMBERED_SCHEDULE_XML)
+    context = _context_for_root(root)
+
+    schedule = _unique_unnumbered_root_schedule(context)
+
+    assert schedule is not None
+    assert schedule.get("id") == "schedule"
+    assert root in _unique_unnumbered_root_schedule_cache
+    assert _unique_unnumbered_root_schedule(context) is schedule
+
+    evict_source_root_caches(root)
+
+    assert root not in _unique_unnumbered_root_schedule_cache
+
+
+def test_unique_unnumbered_root_schedule_negative_cache_evicts_with_source_root() -> None:
+    root = _make_root(_MULTIPLE_UNNUMBERED_SCHEDULE_XML)
+    context = _context_for_root(root)
+
+    assert _unique_unnumbered_root_schedule(context) is None
+    assert root in _unique_unnumbered_root_schedule_cache
+    assert _unique_unnumbered_root_schedule_cache[root] is None
+
+    evict_source_root_caches(root)
+
+    assert root not in _unique_unnumbered_root_schedule_cache
 
 
 # ---------------------------------------------------------------------------

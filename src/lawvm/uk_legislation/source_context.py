@@ -151,6 +151,8 @@ _source_parent_map_cache: dict[ET._Element, dict[ET._Element, ET._Element]] = {}
 
 _source_ancestor_chain_cache: dict[ET._Element, dict[int, tuple[ET._Element, ...]]] = {}
 
+_unique_unnumbered_root_schedule_cache: dict[ET._Element, Optional[ET._Element]] = {}
+
 
 def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     """Explicitly release module-level cache entries for root.
@@ -162,6 +164,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
       - _source_parent_map_cache: values contain root as a parent element
       - _source_ancestor_chain_cache: inner tuples contain root as terminal ancestor
       - _EXTRACTION_CONTEXT_CACHE: UKExtractionContext.parent_map contains root
+      - _unique_unnumbered_root_schedule_cache: values may be root descendants
       - source_fragment_context caches: keys are root descendant elements
       - table_sources caches: fee-table index and repeal-extent table hold root
     Explicit removal breaks these cycles immediately, making root eligible for
@@ -172,6 +175,7 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     _source_parent_map_cache.pop(root, None)
     _source_ancestor_chain_cache.pop(root, None)
     _EXTRACTION_CONTEXT_CACHE.pop(root, None)
+    _unique_unnumbered_root_schedule_cache.pop(root, None)
     from lawvm.uk_legislation.source_fragment_context import (  # noqa: PLC0415
         evict_source_fragment_context_caches,
     )
@@ -977,6 +981,9 @@ def _single_unnumbered_schedule_context_normalized_ref(
 def _unique_unnumbered_root_schedule(context: UKAffectingSourceContext) -> Optional[ET._Element]:
     if context.root is None:
         return None
+    cached = _unique_unnumbered_root_schedule_cache.get(context.root)
+    if cached is not None or context.root in _unique_unnumbered_root_schedule_cache:
+        return cached
     unnumbered_schedules: list[ET._Element] = []
     for schedule in context.root.iter():
         if _tag(schedule) != "Schedule":
@@ -989,8 +996,11 @@ def _unique_unnumbered_root_schedule(context: UKAffectingSourceContext) -> Optio
         }:
             unnumbered_schedules.append(schedule)
     if len(unnumbered_schedules) != 1:
+        _unique_unnumbered_root_schedule_cache[context.root] = None
         return None
-    return unnumbered_schedules[0]
+    result = unnumbered_schedules[0]
+    _unique_unnumbered_root_schedule_cache[context.root] = result
+    return result
 
 
 def _source_instruction_id_for_extracted(
