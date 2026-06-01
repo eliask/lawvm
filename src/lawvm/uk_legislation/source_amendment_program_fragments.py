@@ -49,6 +49,11 @@ _SOURCE_AMENDMENT_INSERTED_ANCHOR_STRUCTURAL_INSERT_RE = re.compile(
     r"(?P<inserted_text>[\s\S]{1,8000})\s*$",
     flags=re.I,
 )
+_SOURCE_INSERTED_BY_PARAGRAPH_RE = re.compile(
+    r"\bparagraph\s+(?P<label>[0-9A-Za-z]+)\b(?P<this_schedule>\s+of\s+this\s+Schedule)?",
+    flags=re.I,
+)
+_GROUND_PAYLOAD_LABEL_RE = re.compile(r"\bGround\s+(?P<label>[0-9][0-9A-Za-z]*)\b", flags=re.I)
 UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID = (
     "uk_effect_amendment_program_inserted_parent_child_insert_text_patch"
 )
@@ -185,16 +190,71 @@ def _amendment_program_inserted_anchor_structural_insert(
     inserted_label = source_label(match.group("inserted_label"))
     if not anchor_label or not inserted_label or anchor_label == inserted_label:
         return None
+    source_inserted_by = " ".join(str(match.group("inserted_by") or "as inserted").split())
+    inserted_payload_labels = _inserted_anchor_payload_labels(
+        anchor_kind=str(match.group("anchor_kind") or ""),
+        inserted_label=inserted_label,
+        inserted_text=str(match.group("inserted_text") or ""),
+    )
     return {
         "target": str(target),
         "inserted_anchor_kind": str(match.group("anchor_kind") or "").lower().replace("-", ""),
         "inserted_anchor_label": anchor_label,
-        "source_inserted_by": " ".join(str(match.group("inserted_by") or "as inserted").split()),
+        "source_inserted_by": source_inserted_by,
+        **_source_inserted_by_detail(source_inserted_by),
         "direction": str(match.group("direction") or "").lower(),
         "anchor_label": anchor_label,
         "inserted_label": inserted_label,
+        "inserted_payload_labels": inserted_payload_labels,
+        "inserted_payload_label_count": len(inserted_payload_labels),
         "inserted_text_preview": " ".join(str(match.group("inserted_text") or "").split())[:240],
     }
+
+
+def _source_inserted_by_detail(source_inserted_by: str) -> dict[str, str]:
+    """Return normalized source-chain fields for inserted-anchor diagnostics."""
+    if source_inserted_by == "as inserted":
+        return {
+            "source_inserted_by_label": "",
+            "source_inserted_by_scope": "deictic",
+        }
+    match = _SOURCE_INSERTED_BY_PARAGRAPH_RE.search(source_inserted_by)
+    if match is None:
+        return {
+            "source_inserted_by_label": "",
+            "source_inserted_by_scope": "unparsed",
+        }
+    return {
+        "source_inserted_by_label": _clean_num(match.group("label")),
+        "source_inserted_by_scope": (
+            "this_schedule" if match.group("this_schedule") else "unspecified"
+        ),
+    }
+
+
+def _inserted_anchor_payload_labels(
+    *,
+    anchor_kind: str,
+    inserted_label: str,
+    inserted_text: str,
+) -> list[str]:
+    """Return payload labels visible in an inserted-anchor instruction."""
+    labels = [inserted_label]
+    if str(anchor_kind or "").lower().replace("-", "") == "ground":
+        inserted_stem = _ground_label_series_stem(inserted_label)
+        labels.extend(
+            candidate
+            for match in _GROUND_PAYLOAD_LABEL_RE.finditer(inserted_text or "")
+            if (candidate := _clean_num(match.group("label")))
+            and _ground_label_series_stem(candidate) == inserted_stem
+        )
+    return list(dict.fromkeys(label for label in labels if label))
+
+
+def _ground_label_series_stem(label: str) -> str:
+    """Return the numeric series that groups related UK ground labels."""
+    match = re.match(r"([0-9]+)", str(label or ""))
+    return match.group(1) if match is not None else ""
 
 
 def _fragment_substitution_amendment_program_inserted_parent_child_insert(
