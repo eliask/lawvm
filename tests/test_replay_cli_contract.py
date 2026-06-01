@@ -435,6 +435,9 @@ def test_build_uk_replay_payload_shape() -> None:
     assert payload["adjudications_count"] == 1
     assert payload["adjudication_kind_counts"] == {"uk_replay_payload_missing": 1}
     assert payload["replay_adjudication_bucket_counts"] == {"replay_bug": 1}
+    assert payload["replay_adjudication_owner_phase_counts"] == {
+        "affecting_source_extraction": 1
+    }
     assert payload["adjudications"] == [
         {
             "kind": "uk_replay_payload_missing",
@@ -442,6 +445,7 @@ def test_build_uk_replay_payload_shape() -> None:
             "source_statute": "ukpga/2020/1",
             "op_id": "op-1",
             "detail": {"rule_id": "uk_replay_payload_missing", "phase": "replay"},
+            "owner_phase": "affecting_source_extraction",
         }
     ]
     assert payload["compile_rejection_count"] == 1
@@ -827,8 +831,12 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
         "events": [prefetch_event],
     }
     assert payload["adjudication_kind_counts"] == {"uk_replay_target_not_found": 1}
+    assert payload["replay_adjudication_owner_phase_counts"] == {
+        "replay_invariants": 1
+    }
     assert payload["adjudications"][0]["kind"] == "uk_replay_target_not_found"
     assert payload["adjudications"][0]["source_statute"] == "ukpga/2020/1"
+    assert payload["adjudications"][0]["owner_phase"] == "replay_invariants"
     assert payload["compile_rejection_count"] == 1
     assert payload["compile_rejection_rule_counts"] == {
         "uk_effect_lowering_no_ops_rejected": 1,
@@ -1075,6 +1083,7 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
     assert "blocking lowering rules: uk_effect_lowering_no_ops_rejected=1" in out
     assert "Replay adjudications: 1" in out
     assert "Replay adjudication buckets: replay_bug=1" in out
+    assert "Replay adjudication owner phases: replay_invariants=1" in out
     assert "Replay adjudication kinds: uk_replay_target_not_found=1" in out
     assert (
         "Oracle alignment: enabled=false changed=None cleared=None oracle_assigned=None "
@@ -1124,6 +1133,10 @@ def test_uk_replay_adjudication_text_formatter_prints_requested_samples() -> Non
     )
     assert (
         lines[2]
+        == "Replay adjudication owner phases: replay_invariants=3"
+    )
+    assert (
+        lines[3]
         == "Replay adjudication kinds: "
         "uk_replay_repealed_target_gap=1, uk_replay_text_match_missing=2"
     )

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from lawvm.uk_legislation.phase_discipline import (
     UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
     UK_PHASE_CANONICAL_OP_COMPILATION,
@@ -6,7 +8,9 @@ from lawvm.uk_legislation.phase_discipline import (
     UK_PHASE_REPLAY_INVARIANTS,
     UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER,
     UK_PHASE_TYPED_ELABORATION,
+    uk_phase_owner_counts_for_replay_adjudications,
     uk_phase_owner_for_diagnostic,
+    uk_phase_owner_for_replay_adjudication,
     uk_phase_owner_counts_for_diagnostics,
     uk_phase_owner_for_manual_frontier,
 )
@@ -104,4 +108,18 @@ def test_phase_owner_counts_for_diagnostics_returns_stable_sorted_counts() -> No
         UK_PHASE_EFFECT_METADATA_FRONTEND: 1,
         UK_PHASE_REPLAY_INVARIANTS: 1,
         UK_PHASE_TYPED_ELABORATION: 1,
+    }
+
+
+def test_replay_adjudication_phase_owner_uses_replay_phase() -> None:
+    adjudication = SimpleNamespace(
+        kind="uk_replay_target_not_found",
+        detail={"target": "section:99"},
+    )
+    assert (
+        uk_phase_owner_for_replay_adjudication(adjudication)
+        == UK_PHASE_REPLAY_INVARIANTS
+    )
+    assert uk_phase_owner_counts_for_replay_adjudications((adjudication,)) == {
+        UK_PHASE_REPLAY_INVARIANTS: 1
     }

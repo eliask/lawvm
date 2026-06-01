@@ -160,3 +160,24 @@ def uk_phase_owner_counts_for_diagnostics(
     """Return stable owner-phase counts for a diagnostic/workqueue row set."""
     counts = Counter(uk_phase_owner_for_diagnostic(record) for record in records)
     return dict(sorted(counts.items()))
+
+
+def uk_phase_owner_for_replay_adjudication(adjudication: Any) -> str:
+    """Return the owner phase for a UK replay adjudication object."""
+    kind = str(getattr(adjudication, "kind", "") or "")
+    detail = dict(getattr(adjudication, "detail", {}) or {})
+    record: dict[str, Any] = dict(detail)
+    record.setdefault("rule_id", str(record.get("rule_id") or kind))
+    record.setdefault("phase", str(record.get("phase") or "replay"))
+    return uk_phase_owner_for_diagnostic(record)
+
+
+def uk_phase_owner_counts_for_replay_adjudications(
+    adjudications: Iterable[Any],
+) -> dict[str, int]:
+    """Return stable owner-phase counts for UK replay adjudications."""
+    counts = Counter(
+        uk_phase_owner_for_replay_adjudication(adjudication)
+        for adjudication in adjudications
+    )
+    return dict(sorted(counts.items()))

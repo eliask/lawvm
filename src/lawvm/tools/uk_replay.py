@@ -589,6 +589,9 @@ def _uk_replay_adjudication_text_lines(
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_replay_adjudication_bucket,
     )
+    from lawvm.uk_legislation.phase_discipline import (
+        uk_phase_owner_counts_for_replay_adjudications,
+    )
 
     counts: Counter[str] = Counter()
     bucket_counts: Counter[str] = Counter()
@@ -602,9 +605,16 @@ def _uk_replay_adjudication_text_lines(
     bucket_text = ", ".join(
         f"{bucket}={count}" for bucket, count in sorted(bucket_counts.items())
     )
+    owner_phase_text = ", ".join(
+        f"{phase}={count}"
+        for phase, count in uk_phase_owner_counts_for_replay_adjudications(
+            adjudications
+        ).items()
+    )
     lines = [
         f"Replay adjudications: {sum(counts.values())}",
         f"Replay adjudication buckets: {bucket_text}",
+        f"Replay adjudication owner phases: {owner_phase_text}",
         f"Replay adjudication kinds: {kind_text}",
     ]
     lines.extend(

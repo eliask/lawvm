@@ -72,6 +72,26 @@ def _uk_replay_adjudication_bucket_counts(adjudications: Iterable[Any]) -> dict[
     return dict(sorted(counts.items()))
 
 
+def _uk_replay_adjudication_owner_phase_counts(
+    adjudications: Iterable[Any],
+) -> dict[str, int]:
+    from lawvm.uk_legislation.phase_discipline import (
+        uk_phase_owner_counts_for_replay_adjudications,
+    )
+
+    return uk_phase_owner_counts_for_replay_adjudications(adjudications)
+
+
+def _uk_replay_adjudication_to_dict(adjudication: Any) -> dict[str, Any]:
+    from lawvm.uk_legislation.phase_discipline import (
+        uk_phase_owner_for_replay_adjudication,
+    )
+
+    payload = _adjudication_to_dict(adjudication)
+    payload["owner_phase"] = uk_phase_owner_for_replay_adjudication(adjudication)
+    return payload
+
+
 def _blocking_rejections(rejections: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [rejection for rejection in rejections if is_blocking_compile_record(rejection)]
 
@@ -363,8 +383,12 @@ def build_uk_replay_payload(
         "replay_adjudication_bucket_counts": _uk_replay_adjudication_bucket_counts(
             replay_adjudications
         ),
+        "replay_adjudication_owner_phase_counts": (
+            _uk_replay_adjudication_owner_phase_counts(replay_adjudications)
+        ),
         "adjudications": [
-            _adjudication_to_dict(adjudication) for adjudication in replay_adjudications
+            _uk_replay_adjudication_to_dict(adjudication)
+            for adjudication in replay_adjudications
         ],
         "compile_observation_count": len(compile_observations),
         "compile_observation_rule_counts": _rejection_rule_counts(compile_observations),
