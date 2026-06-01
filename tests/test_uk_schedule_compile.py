@@ -29163,6 +29163,72 @@ def test_compile_each_place_occurring_records_all_occurrences_lowering_observati
     assert all_occurrence_record["occurrence"] == 0
 
 
+def test_compile_the_prefixed_each_place_appears_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-7-paragraph-1-3-b">
+          <Pnumber>b</Pnumber>
+          <Text>
+            b for the \u201c the first owner \u201d (in each place it appears)
+            substitute \u201cthe financier\u201d ;
+          </Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-c871d39c4595cb52103de331d4e93add",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-02-22",
+        affected_uri="/id/ukpga/2007/3/section/564D",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 564D",
+        affecting_uri="/id/ukpga/2024/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="3",
+        affecting_provisions="Sch. 7 para. 1(3)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2024-02-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "564d"),)
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == " the first owner "
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement == "the financier"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_all_occurrences_substitution_text_patch"
+        in op.provenance_tags
+    )
+    all_occurrence_records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_all_occurrences_substitution_text_patch"
+    ]
+    assert len(all_occurrence_records) == 1
+    assert all_occurrence_records[0]["family"] == "text_rewrite_lowering"
+    assert all_occurrence_records[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert all_occurrence_records[0]["blocking"] is False
+    assert all_occurrence_records[0]["strict_disposition"] == "record"
+    assert all_occurrence_records[0]["text_match"] == " the first owner "
+    assert all_occurrence_records[0]["replacement"] == "the financier"
+
+
 def test_compile_all_occurrences_word_repeal_records_observation() -> None:
     extracted_el = ET.fromstring(
         f"""

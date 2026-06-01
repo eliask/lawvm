@@ -934,6 +934,21 @@ def test_parse_fragment_substitution_handles_parenthesized_all_occurrences_subst
     ]
 
 
+def test_parse_fragment_substitution_handles_the_prefixed_parenthesized_all_occurrences() -> None:
+    subs = parse_fragment_substitution(
+        "b for the \u201c the first owner \u201d (in each place it appears) "
+        "substitute \u201cthe financier\u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": " the first owner ",
+            "replacement": "the financier",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_words_in_brackets_substitution() -> None:
     subs = parse_fragment_substitution(
         "9 In section 100(6), for the words in brackets substitute "

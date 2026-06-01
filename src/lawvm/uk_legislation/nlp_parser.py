@@ -918,7 +918,7 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             )
 
     matches_all_occurrences_substituted = re.finditer(
-        r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
+        r"for (?:(?:the )?words? |the\s+)?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"(?:\(\s*)?(?:in|at) (?:each|both) places?"
         r"(?:\s+(?:(?:where|that)\s+)?(?:(?:it|they|those|these)\s+words?\s+|(?:it|they)\s+)?"
         r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?"
