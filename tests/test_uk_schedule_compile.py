@@ -5257,6 +5257,67 @@ def test_compile_block_amendment_definition_child_inserted_by_qualifier() -> Non
     )
 
 
+def test_compile_definition_child_structural_sibling_insert_for_regulation_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="regulation-6-2-a-i">
+          <Pnumber>i</Pnumber>
+          <P4para>
+            <Text>
+              i in the definition of “charges”, after paragraph (e), insert—
+              ; f costs solely attributable to holding physical assets; ;
+            </Text>
+          </P4para>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-d43bdf4e61f50d6d683bfe4c6c0b6e2f",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-10-01",
+        affected_uri="/id/uksi/2015/879/regulation/2/paragraph/1",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2015",
+        affected_number="879",
+        affected_provisions="reg. 2(1)",
+        affecting_uri="/id/uksi/2021/1070/regulation/6/paragraph/2/subparagraph/a",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2021",
+        affecting_number="1070",
+        affecting_provisions="reg. 6(2)(a)(i)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2021-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=extracted_el,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:2/subsection:1/item:f"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "f"
+    assert ops[0].payload.text == "costs solely attributable to holding physical assets;"
+    assert ops[0].payload.attrs["definition_term"] == "charges"
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["payloads"][0]["target"] == "section:2/subsection:1/item:f"
+    assert rows[0]["blocking"] is False
+
+
 def test_compile_definition_child_structural_sibling_insert_rejects_source_subsection_mismatch() -> None:
     extracted_el = ET.fromstring(
         f"""

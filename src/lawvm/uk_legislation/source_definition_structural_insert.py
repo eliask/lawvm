@@ -29,7 +29,7 @@ _AFTER_PARAGRAPH_DEFINITION_CHILD_INSERT_RE = re.compile(
     flags=re.I | re.S,
 )
 _IN_DEFINITION_AFTER_PARAGRAPH_BEFORE_CONNECTOR_INSERT_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)"
     r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W).*?)?"
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
@@ -40,17 +40,17 @@ _IN_DEFINITION_AFTER_PARAGRAPH_BEFORE_CONNECTOR_INSERT_RE = re.compile(
     flags=re.I | re.S,
 )
 _IN_DEFINITION_AFTER_PARAGRAPH_INSERT_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)"
     r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W).*?)?"
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
     r"(?:as\s+inserted\s+by\s+(?:regulation|section|paragraph)\s+[0-9A-Za-z(). -]{1,80},?\s+)?"
-    r"after\s+(?:sub-?paragraph|paragraph)\s+\((?P<anchor>[a-z][a-z0-9]*)\)\s+"
+    r"after\s+(?:sub-?paragraph|paragraph)\s+\((?P<anchor>[a-z][a-z0-9]*)\),?\s+"
     r"insert\s*[—–-]\s*(?P<payload>.+?)\s*$",
     flags=re.I | re.S,
 )
 _IN_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RE = re.compile(
-    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+)?"
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)\b.*?)?"
     r"\bin\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\)\s*,?\s+"
     r"in\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
@@ -63,6 +63,11 @@ _IN_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RE = re.compile(
 _SECTION_TARGET_RE = re.compile(r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*$", flags=re.I)
 _SECTION_SUBSECTION_TARGET_RE = re.compile(
     r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\)\s*$",
+    flags=re.I,
+)
+_REGULATION_TARGET_RE = re.compile(r"^\s*reg\.\s*(?P<section>[0-9A-Za-z]+)\s*$", flags=re.I)
+_REGULATION_PARAGRAPH_TARGET_RE = re.compile(
+    r"^\s*reg\.\s*(?P<section>[0-9A-Za-z]+)\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\)\s*$",
     flags=re.I,
 )
 _DEFINITION_CHILD_INSERT_PAYLOAD_RE = re.compile(
@@ -152,9 +157,18 @@ def _section_or_subsection_target_path(affected_provisions: str) -> tuple[tuple[
             ("section", _clean_num(section_match.group("section"))),
             ("subsection", _clean_num(section_match.group("subsection"))),
         )
+    regulation_paragraph_match = _REGULATION_PARAGRAPH_TARGET_RE.match(affected_provisions or "")
+    if regulation_paragraph_match is not None:
+        return (
+            ("section", _clean_num(regulation_paragraph_match.group("section"))),
+            ("subsection", _clean_num(regulation_paragraph_match.group("subsection"))),
+        )
     section_only_match = _SECTION_TARGET_RE.match(affected_provisions or "")
     if section_only_match is not None:
         return (("section", _clean_num(section_only_match.group("section"))),)
+    regulation_only_match = _REGULATION_TARGET_RE.match(affected_provisions or "")
+    if regulation_only_match is not None:
+        return (("section", _clean_num(regulation_only_match.group("section"))),)
     return ()
 
 
