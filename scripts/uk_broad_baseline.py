@@ -44,11 +44,21 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_compile_record,
 )
-from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
+from lawvm.uk_legislation.phase_discipline import (
+    UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
+    UK_PHASE_CANONICAL_OP_COMPILATION,
+    UK_PHASE_COMPARE_ORACLE_CLASSIFICATION,
+    UK_PHASE_EFFECT_METADATA_FRONTEND,
+    UK_PHASE_REPLAY_INVARIANTS,
+    UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER,
+    UK_PHASE_TYPED_ELABORATION,
+    uk_phase_owner_for_diagnostic,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -670,6 +680,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         for r in results
         if _triage_bucket_for_row(r) in _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS
     ]
+    agreement_residuals = [
+        _agreement_residual_for_row(row).to_dict() for row in results
+    ]
     deterministic_frontend_candidate_rows = [
         r
         for r in results
@@ -709,6 +722,22 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "triage_buckets": dict(sorted(triage_buckets.items())),
         "triage_bucket_statutes": triage_bucket_statutes,
+        "agreement_residual_family_counts": _agreement_residual_field_counts(
+            agreement_residuals,
+            "family",
+        ),
+        "agreement_residual_status_counts": _agreement_residual_field_counts(
+            agreement_residuals,
+            "status",
+        ),
+        "agreement_residual_owner_phase_counts": _agreement_residual_field_counts(
+            agreement_residuals,
+            "owner_phase",
+        ),
+        "agreement_residual_rule_counts": _agreement_residual_field_counts(
+            agreement_residuals,
+            "rule_id",
+        ),
         "manual_frontier_status_counts": manual_frontier_status_counts,
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
         "manual_frontier_owner_phase_counts": manual_frontier_owner_phase_counts,
@@ -846,7 +875,7 @@ def uk_broad_baseline_report_jsonable(
             "snapshot_path": str(snapshot_path) if snapshot_path is not None else "",
         },
         filtered_summary=summary_payload,
-        rows=tuple(results),
+        rows=tuple(_row_with_agreement_residual(row) for row in results),
         rows_truncated=False,
         written_paths=(str(snapshot_path),) if snapshot_path is not None else (),
         detail={
@@ -905,7 +934,16 @@ def _annotate_row_work_selection(row: dict[str, Any]) -> dict[str, Any]:
         source_chain_reasons[0] if source_chain_reasons else ""
     )
     row["source_chain_frontier_reasons"] = list(source_chain_reasons)
+    row["agreement_residual"] = _agreement_residual_for_row(row).to_dict()
     return row
+
+
+def _row_with_agreement_residual(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    residual = payload.get("agreement_residual")
+    if not isinstance(residual, dict):
+        payload["agreement_residual"] = _agreement_residual_for_row(payload).to_dict()
+    return payload
 
 
 def _triage_bucket_for_row(row: dict[str, Any]) -> str:
@@ -952,6 +990,209 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
     if _is_bounded_low_volume_residual(row):
         return "bounded_low_volume_residual"
     return "residual_after_grounding"
+
+
+def _agreement_residual_for_row(row: dict[str, Any]) -> AgreementResidual:
+    """Project one broad-baseline row into the shared agreement residual shape."""
+    bucket = _triage_bucket_for_row(row)
+    family = _agreement_residual_family(bucket)
+    status = _agreement_residual_status(bucket, row)
+    return AgreementResidual(
+        residual_id=f"uk-broad:{str(row.get('statute_id') or 'unknown')}",
+        jurisdiction="uk",
+        agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
+        family=family,
+        status=status,
+        owner_phase=_agreement_residual_owner_phase(bucket),
+        rule_id=f"uk_broad_{bucket}",
+        source_artifact_id=str(row.get("statute_id") or ""),
+        replay_count=_nonnegative_int(row.get("n_replay")),
+        oracle_count=_nonnegative_int(row.get("n_oracle")),
+        missing_proofs=_agreement_residual_missing_proofs(bucket, row),
+        safe_default="classify_residual_without_replay_promotion",
+        forbidden_shortcuts=(
+            "oracle_score_as_source_truth",
+            "agreement_as_execution_authorization",
+            "source_or_target_over_promotion",
+        ),
+        detail={
+            "triage_bucket": bucket,
+            "score_status": str(row.get("score_status") or ""),
+            "aligned": row.get("aligned"),
+            "aligned_excluding_grounding_collateral": row.get(
+                "aligned_excluding_grounding_collateral"
+            ),
+            "unaligned": row.get("unaligned"),
+            "source_frontier_reason": str(row.get("source_frontier_reason") or ""),
+            "source_chain_frontier_reasons": _source_chain_frontier_reasons_for_row(row),
+            "n_grounding_collateral": _nonnegative_int(
+                row.get("n_grounding_collateral")
+            ),
+            "n_only_in_oracle": _nonnegative_int(row.get("n_only_in_oracle")),
+            "n_only_in_replayed": _nonnegative_int(row.get("n_only_in_replayed")),
+            "manual_frontier_status_counts": row.get("manual_frontier_status_counts")
+            or {},
+            "compile_rejection_rule_counts": row.get("compile_rejection_rule_counts")
+            or {},
+        },
+    )
+
+
+def _agreement_residual_family(bucket: str) -> str:
+    if bucket == "error":
+        return "error"
+    if bucket.startswith("source_frontier:"):
+        return "source_footing_gap"
+    if bucket in {
+        "base_metadata_only_frontier",
+        "zero_oracle_retention",
+    }:
+        return "non_commensurable_surface"
+    if bucket in {
+        "effect_feed_absent_frontier",
+        "no_compiled_ops_frontier",
+        "no_effect_rows_frontier",
+        "nonreplay_effect_frontier",
+    }:
+        return "source_footing_gap"
+    if bucket == "manual_compile_frontier_residual":
+        return "accepted_non_executable_frontier"
+    if bucket == "retained_repeal_oracle_branch":
+        return "oracle_editorial_pathology"
+    if bucket in {
+        "bounded_low_volume_residual",
+        "retained_eu_mixed_representation_residual",
+        "structural_match_eid_scheme_residual",
+    }:
+        return "topology_granularity_mismatch"
+    if bucket == "grounding_dominated_residual":
+        return "target_recovery_mismatch"
+    if bucket == "high_fidelity_after_grounding":
+        return "agreement"
+    if bucket in {
+        "compile_rejection_dominated_residual",
+        "residual_after_grounding",
+    }:
+        return "replay_bug"
+    return "unknown"
+
+
+def _agreement_residual_status(bucket: str, row: dict[str, Any]) -> str:
+    if bucket == "error":
+        return "error"
+    if bucket.startswith("source_frontier:") or bucket.endswith("_frontier"):
+        return "frontier"
+    if bucket in {
+        "manual_compile_frontier_residual",
+        "zero_oracle_retention",
+        "base_metadata_only_frontier",
+        "retained_repeal_oracle_branch",
+    }:
+        return "frontier"
+    aligned = float(
+        row.get("aligned_excluding_grounding_collateral")
+        or row.get("aligned")
+        or 0.0
+    )
+    misses = _nonnegative_int(row.get("n_only_in_oracle")) + _nonnegative_int(
+        row.get("n_only_in_replayed")
+    )
+    if bucket == "high_fidelity_after_grounding" and aligned >= 100.0 and misses == 0:
+        return "agrees"
+    return "residual"
+
+
+def _agreement_residual_owner_phase(bucket: str) -> str:
+    if bucket == "error":
+        return UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER
+    if bucket.startswith("source_frontier:"):
+        return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    if bucket in {
+        "base_metadata_only_frontier",
+        "zero_oracle_retention",
+        "retained_repeal_oracle_branch",
+        "structural_match_eid_scheme_residual",
+    }:
+        return UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
+    if bucket in {
+        "effect_feed_absent_frontier",
+        "no_effect_rows_frontier",
+        "nonreplay_effect_frontier",
+    }:
+        return UK_PHASE_EFFECT_METADATA_FRONTEND
+    if bucket == "manual_compile_frontier_residual":
+        return UK_PHASE_TYPED_ELABORATION
+    if bucket == "no_compiled_ops_frontier":
+        return UK_PHASE_CANONICAL_OP_COMPILATION
+    if bucket == "grounding_dominated_residual":
+        return UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
+    if bucket in {
+        "compile_rejection_dominated_residual",
+        "residual_after_grounding",
+    }:
+        return UK_PHASE_REPLAY_INVARIANTS
+    return UK_PHASE_COMPARE_ORACLE_CLASSIFICATION
+
+
+def _agreement_residual_missing_proofs(
+    bucket: str,
+    row: dict[str, Any],
+) -> tuple[str, ...]:
+    proofs: list[str] = []
+    if bucket == "error":
+        proofs.append("successful_execution")
+    if bucket.startswith("source_frontier:") or bucket in {
+        "effect_feed_absent_frontier",
+        "no_effect_rows_frontier",
+        "nonreplay_effect_frontier",
+        "no_compiled_ops_frontier",
+    }:
+        proofs.append("source_identity")
+    if bucket in {
+        "base_metadata_only_frontier",
+        "zero_oracle_retention",
+    }:
+        proofs.append("commensurable_oracle_surface")
+    if bucket == "manual_compile_frontier_residual":
+        proofs.extend(
+            (
+                "target_identity",
+                "payload_or_boundary_identity",
+                "mutation_boundary_proof",
+            )
+        )
+    if bucket in {
+        "compile_rejection_dominated_residual",
+        "residual_after_grounding",
+    }:
+        proofs.append("canonical_operation_compilation")
+    if bucket in {
+        "bounded_low_volume_residual",
+        "retained_eu_mixed_representation_residual",
+        "structural_match_eid_scheme_residual",
+    }:
+        proofs.append("topology_or_eid_scheme_reconciliation")
+    if bucket == "grounding_dominated_residual":
+        proofs.append("target_identity")
+    if _nonnegative_int(row.get("n_mutation_boundary_unexplained_paths")) > 0:
+        proofs.append("mutation_boundary_proof")
+    return tuple(dict.fromkeys(proofs))
+
+
+def _agreement_residual_field_counts(
+    residuals: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts = Counter(str(residual.get(field) or "unknown") for residual in residuals)
+    return dict(sorted(counts.items()))
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
 
 
 def _source_chain_frontier_reason_for_row(row: dict[str, Any]) -> str:

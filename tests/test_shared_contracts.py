@@ -2,6 +2,7 @@ from typing import Any, cast
 
 import pytest
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.candidate_set_certificate import (
     CANDIDATE_SET_COMPLETE,
     CANDIDATE_SET_TRUNCATED,
@@ -157,6 +158,47 @@ def test_frontier_work_item_rejects_replay_promotion() -> None:
 
     assert "frontier work items must be non-executable" in issues
     assert "frontier work items must not be replay-authorized" in issues
+
+
+def test_agreement_residual_classifies_without_replay_promotion() -> None:
+    residual = AgreementResidual(
+        residual_id="uk-broad:ukpga/1938/22",
+        jurisdiction="uk",
+        agreement_surface="replay_eid_set_vs_current_oracle_eid_set",
+        family="non_commensurable_surface",
+        status="frontier",
+        owner_phase="compare_oracle_classification",
+        rule_id="uk_broad_zero_oracle_retention",
+        source_artifact_id="ukpga/1938/22",
+        replay_count=420,
+        oracle_count=0,
+        missing_proofs=("commensurable_oracle_surface",),
+        safe_default="classify_residual_without_replay_promotion",
+        forbidden_shortcuts=("oracle_score_as_source_truth",),
+        detail={"triage_bucket": "zero_oracle_retention"},
+    )
+
+    data = residual.to_dict()
+
+    assert data["family"] == "non_commensurable_surface"
+    assert data["status"] == "frontier"
+    assert data["missing_proofs"] == ["commensurable_oracle_surface"]
+    assert "oracle_score_as_source_truth" in data["forbidden_shortcuts"]
+
+
+def test_agreement_residual_rejects_unknown_family() -> None:
+    with pytest.raises(ValueError, match="AgreementResidual.family"):
+        AgreementResidual(
+            residual_id="bad",
+            jurisdiction="uk",
+            agreement_surface="surface",
+            family="loose_string",
+            status="frontier",
+            owner_phase="compare_oracle_classification",
+            rule_id="bad_rule",
+            safe_default="classify",
+            forbidden_shortcuts=("shortcut",),
+        )
 
 
 def test_source_witness_normalizes_digest_and_preserves_wire_fields() -> None:
