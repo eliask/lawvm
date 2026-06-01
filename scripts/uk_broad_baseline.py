@@ -147,6 +147,24 @@ def _normalized_compare_eids(
     )
 
 
+def _retained_repeal_oracle_targets(
+    ops: list[Any],
+    oracle_only_eids: set[str],
+) -> list[str]:
+    """Find source-backed repeal roots still exposed by the current oracle."""
+    from lawvm.core.semantic_types import StructuralAction
+    from lawvm.uk_legislation.target_anchors import _fallback_target_eid
+
+    targets: set[str] = set()
+    for op in ops:
+        if op.action is not StructuralAction.REPEAL:
+            continue
+        target_eid = _fallback_target_eid(op.target)
+        if target_eid in oracle_only_eids:
+            targets.add(target_eid)
+    return sorted(targets)
+
+
 def score_one(statute_id: str) -> dict[str, Any]:
     """Score one statute from the farchive. Returns a result dict (never raises)."""
     from farchive import Farchive
@@ -302,16 +320,25 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 )
 
                 common_eids = replay_compare_eids & oracle_compare_eids
+                oracle_only_eids = oracle_compare_eids - replay_compare_eids
                 collateral_score = score_with_grounding_collateral_excluded(
                     replay_compare_eids,
                     oracle_compare_eids,
                     alignment_events,
                 )
+                retained_repeal_targets = _retained_repeal_oracle_targets(
+                    ops,
+                    oracle_only_eids,
+                )
                 result["n_common"] = len(common_eids)
-                result["n_only_in_oracle"] = len(oracle_compare_eids - replay_compare_eids)
+                result["n_only_in_oracle"] = len(oracle_only_eids)
                 result["n_only_in_replayed"] = len(replay_compare_eids - oracle_compare_eids)
                 result["n_replay"] = len(replay_compare_eids)
                 result["n_oracle"] = len(oracle_compare_eids)
+                result["retained_repeal_oracle_targets"] = retained_repeal_targets
+                result["n_retained_repeal_oracle_targets"] = len(
+                    retained_repeal_targets
+                )
                 result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
                 result["n_zero_oracle_retention_eids"] = (
                     len(replay_compare_eids) if not oracle_compare_eids else 0
@@ -561,6 +588,8 @@ def _triage_bucket_for_row(row: dict[str, Any]) -> str:
         return "grounding_dominated_residual"
     if _is_manual_compile_frontier_residual(row):
         return "manual_compile_frontier_residual"
+    if int(row.get("n_retained_repeal_oracle_targets") or 0) > 0:
+        return "retained_repeal_oracle_branch"
     if _is_compile_rejection_dominated_residual(row):
         return "compile_rejection_dominated_residual"
     if _is_retained_eu_mixed_representation_residual(row):
