@@ -70,6 +70,9 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.source_definition_fragments import (
     _fragment_substitution_source_carried_quoted_text_substitution,
 )
+from lawvm.uk_legislation.source_fragment_context import (
+    _source_parent_each_provision_substitution_candidate,
+)
 from lawvm.uk_legislation.substitution_metadata import _expand_sibling_targets_from_text
 from lawvm.uk_legislation.table_sources import (
     _uk_repeal_table_column_entry_clause_mentions_target,
@@ -10488,6 +10491,19 @@ def test_compile_source_parent_each_provision_substitution_from_child_target_row
         and record["reason_code"] == "text_substitution_resolved_from_each_provision_parent"
         and record["blocking"] is False
         for record in lowering_records
+    )
+
+
+def test_source_parent_each_provision_substitution_candidate_prefilter() -> None:
+    assert _source_parent_each_provision_substitution_candidate(
+        "In each provision specified below, for “A” or, as the case may be, “B” "
+        "there is substituted “C”."
+    )
+    assert not _source_parent_each_provision_substitution_candidate(
+        "In each provision specified below, omit the entries relating to fees."
+    )
+    assert not _source_parent_each_provision_substitution_candidate(
+        "For “A” substitute “B” in section 1."
     )
 
 
