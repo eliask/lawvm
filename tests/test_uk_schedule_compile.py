@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 import lawvm.uk_legislation.replay_target_lookup as replay_target_lookup_mod
+import lawvm.uk_legislation.table_selectors as table_selectors_mod
 import lawvm.uk_legislation.uk_amendment_replay as uk_replay_mod
 from lawvm.core.ir import (
     IRNode,
@@ -78,7 +79,10 @@ from lawvm.uk_legislation.table_sources import (
     _uk_repeal_table_column_entry_clause_mentions_target,
     _uk_table_cell_mentions_target,
 )
-from lawvm.uk_legislation.table_selectors import _source_text_names_section_label
+from lawvm.uk_legislation.table_selectors import (
+    _source_or_parent_names_containing_target_for_table_cell,
+    _source_text_names_section_label,
+)
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -19022,6 +19026,37 @@ def test_table_cell_source_section_name_predicate_preserves_boundaries() -> None
         "In section 99 of TMA 1970, in the second column of the Table.",
         "98",
     )
+
+
+def test_table_cell_source_target_context_skips_ancestors_for_non_carrier_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="parent">
+          <Text>In section 98 of TMA 1970, in the second column of the Table.</Text>
+          <P2 id="child">
+            <Text>unrelated child text</Text>
+          </P2>
+        </P1>
+        """
+    )
+    extracted_el = next(el for el in source_root.iter() if el.get("id") == "child")
+
+    def fail_normalize(_el: ET._Element) -> str:
+        raise AssertionError("non-carrier table target must not scan source ancestors")
+
+    monkeypatch.setattr(table_selectors_mod, "_normalized_element_text", fail_normalize)
+
+    context = _source_or_parent_names_containing_target_for_table_cell(
+        text="",
+        target=LegalAddress((("section", "98"), ("paragraph", "1"))),
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+
+    assert context.source_names_containing_target is False
+    assert context.source_parent_id == ""
 
 
 def test_table_column_entry_omission_skips_non_omission_sources(
