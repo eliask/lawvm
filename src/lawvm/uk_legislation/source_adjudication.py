@@ -1160,6 +1160,27 @@ def _looks_like_definition_entry_payload(text: str) -> bool:
     )
 
 
+_DEFINITION_LIST_END_INSERT_RE = re.compile(
+    r"\bat\s+the\s+end\s+insert(?:ed)?\s*[—-]?\s+"
+    r"(?:definitions?\s+relating\s+to\b.{0,240}?)?"
+    r"[\"“][^\"”]{1,200}[\"”]\s+"
+    r"(?:means|has\s+the\s+(?:same\s+)?meaning|is\s+to\s+be\s+construed)\b",
+    flags=re.I,
+)
+
+
+def _looks_like_definition_list_end_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if "at the end" not in norm or "insert" not in norm:
+        return False
+    if not (
+        "definitions relating" in norm
+        or re.search(r"[\"“][^\"”]{1,200}[\"”]\s+means\b", norm)
+    ):
+        return False
+    return bool(_DEFINITION_LIST_END_INSERT_RE.search(norm))
+
+
 def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     if not (
@@ -2580,6 +2601,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_appropriate_place_candidate",
             "reason": "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_definition_list_end_insert_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_definition_list_end_insert_candidate",
+            "reason": "The source inserts definition entries at the end of a definition-list surface; a deterministic definition-list-end compiler must prove the list carrier, payload entries, and append point before replaying that row.",
         }
 
     if (

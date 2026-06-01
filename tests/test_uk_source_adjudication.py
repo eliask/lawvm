@@ -2606,6 +2606,31 @@ def test_classify_uk_manual_compile_frontier_promotes_definition_list_end_insert
     assert result["rule_id"] == "uk_manual_frontier_definition_list_end_insert_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_definition_list_end_insert_before_generic_parser() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text=(
+            "e at the end insert- Definitions relating to the EU and the United Kingdom's withdrawal "
+            "\u201cThe Communities\u201d means Euratom, the Economic Community and the Coal and Steel Community."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "reason_code": "overlap_substitution_parse_failed",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_list_end_insert_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_accepts_ceases_replay_repeal() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="ceases to have effect",
