@@ -254,6 +254,9 @@ UK_DEFINITION_CHILD_TAIL_AFTER_ANCHOR_TO_END_RULE_ID = (
 UK_AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTION_RULE_ID = (
     "uk_effect_after_anchor_before_final_word_substitution_text_patch"
 )
+UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID = (
+    "uk_effect_after_anchor_to_end_unquoted_substitution_text_patch"
+)
 UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_patch"
 UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
     "uk_effect_at_end_unquoted_text_insertion_patch"
@@ -1691,6 +1694,30 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     selector=AfterAnchorToEndSelector(m.group(1).strip()),
                     replacement=m.group(2).strip(),
                     rule_id="uk_effect_after_anchor_to_end_substitution_text_patch",
+                )
+            )
+        )
+
+    matches_after_anchor_unquoted_substituted = re.finditer(
+        r"for (?:the )?words? (?:after|following) [“\"'‘]"
+        rf"(?P<anchor>{_NON_QUOTE}{{1,250}})[”\"'’]"
+        r"\s+substitute(?:\s*[—-])?\s+(?![“\"'‘])"
+        r"(?P<replacement>[\s\S]{1,1800}?)\s*$",
+        text,
+        re.I,
+    )
+    for m in matches_after_anchor_unquoted_substituted:
+        if any(
+            start <= m.start() and m.end() <= end
+            for start, end in definition_child_tail_after_anchor_spans
+        ):
+            continue
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterAnchorToEndSelector(m.group("anchor").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id=UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
                 )
             )
         )

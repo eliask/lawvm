@@ -1807,6 +1807,50 @@ def test_parse_fragment_substitution_handles_words_following_anchor_substitution
     ]
 
 
+def test_parse_fragment_substitution_handles_unquoted_words_after_anchor_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "2 In subsection (2), for the words after \u201callowable\u201d "
+        "substitute for income tax purposes as a deduction in calculating the "
+        "net income of the payer (see Step 2 of the calculation in section 23). "
+        "This is subject to subsection (3)."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_allowable_TO_END",
+            "replacement": (
+                "for income tax purposes as a deduction in calculating the net "
+                "income of the payer (see Step 2 of the calculation in section "
+                "23). This is subject to subsection (3)."
+            ),
+            "rule_id": "uk_effect_after_anchor_to_end_unquoted_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_dash_carried_words_after_anchor_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "10 In section 169, in subsection (4), for the words after "
+        "\u201cbefore\u201d substitute \u2014 a the termination date relating to the "
+        "latest issue of shares which met that condition, or b if that issue "
+        "is an issue in respect of which the investor has made a claim under "
+        "section 257AB, the date on which the claim was made."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_before_TO_END",
+            "replacement": (
+                "a the termination date relating to the latest issue of shares "
+                "which met that condition, or b if that issue is an issue in "
+                "respect of which the investor has made a claim under section "
+                "257AB, the date on which the claim was made."
+            ),
+            "rule_id": "uk_effect_after_anchor_to_end_unquoted_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_scopes_definition_child_tail_anchor_substitution() -> None:
     subs = parse_fragment_substitution(
         "a in the definition of \u201cextended sentence\u201d, in the words following "

@@ -27,6 +27,7 @@ from lawvm.uk_legislation.source_adjudication import (
     classify_uk_manual_compile_frontier,
 )
 from lawvm.uk_legislation.nlp_parser import (
+    UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     US,
     parse_fragment_substitution,
@@ -47199,6 +47200,84 @@ def test_compile_heading_facet_words_following_anchor_to_tail_replace() -> None:
     assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
     assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_Scotland_TO_END"
     assert ops[0].text_patch.replacement == "or Northern Ireland."
+
+
+def test_compile_unquoted_words_after_anchor_to_tail_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>
+            2 In subsection (2), for the words after \u201callowable\u201d
+            substitute for income tax purposes as a deduction in calculating
+            the net income of the payer (see Step 2 of the calculation in
+            section 23). This is subject to subsection (3).
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-466549706c67d20f0db885c69a232ab8",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-06",
+        affected_uri="/id/ukpga/2007/3/section/574/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 574(2)",
+        affecting_uri="/id/ukpga/2009/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2009",
+        affecting_number="10",
+        affecting_provisions="Sch. 23 para. 4(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2010-04-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert (
+        observations[0]["reason_code"]
+        == "after_anchor_to_end_unquoted_substitution_text_patch"
+    )
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "574"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.REPLACE
+    assert op.text_patch.selector.match_text == "TEXT_AFTER_allowable_TO_END"
+    assert op.text_patch.replacement == (
+        "for income tax purposes as a deduction in calculating the net income "
+        "of the payer (see Step 2 of the calculation in section 23). This is "
+        "subject to subsection (3)."
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID}"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
 
 
 def test_compile_omit_words_after_anchor_to_tail_delete() -> None:
