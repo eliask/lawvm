@@ -580,6 +580,18 @@ def test_build_uk_replay_payload_keeps_recorded_manual_frontier_nonblocking() ->
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1
     }
+    assert payload["manual_frontier_work_item_family_counts"] == {
+        "uk_manual_frontier_heading_facet_candidate": 1
+    }
+    assert payload["manual_frontier_work_item_authorization_status_counts"] == {
+        "manual_claim_required": 1
+    }
+    work_item = payload["compile_observations"]["manual_compile_frontier"][0][
+        "frontier_work_item"
+    ]
+    assert work_item["frontier_family"] == "uk_manual_frontier_heading_facet_candidate"
+    assert work_item["executable"] is False
+    assert work_item["replay_authorized"] is False
     assert payload["replay_adjudication_bucket_counts"] == {}
 
 

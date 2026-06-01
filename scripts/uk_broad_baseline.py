@@ -361,6 +361,18 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["manual_frontier_missing_proof_counts"] = (
             _manual_frontier_missing_proof_counts(manual_frontier_records)
         )
+        result["manual_frontier_work_item_family_counts"] = (
+            _manual_frontier_work_item_field_counts(
+                manual_frontier_records,
+                "frontier_family",
+            )
+        )
+        result["manual_frontier_work_item_authorization_status_counts"] = (
+            _manual_frontier_work_item_field_counts(
+                manual_frontier_records,
+                "authorization_status",
+            )
+        )
         result["manual_frontier_rule_owner_phase_counts"] = (
             _manual_frontier_rule_owner_phase_counts(manual_frontier_records)
         )
@@ -558,6 +570,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_missing_proof_counts = _aggregate_row_count_maps(
         results, "manual_frontier_missing_proof_counts"
     )
+    manual_frontier_work_item_family_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_work_item_family_counts"
+    )
+    manual_frontier_work_item_authorization_status_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_work_item_authorization_status_counts"
+    )
     manual_frontier_rule_owner_phase_counts = _aggregate_row_count_maps(
         results, "manual_frontier_rule_owner_phase_counts"
     )
@@ -676,6 +694,12 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             manual_frontier_authorization_status_owner_phase_counts
         ),
         "manual_frontier_missing_proof_counts": manual_frontier_missing_proof_counts,
+        "manual_frontier_work_item_family_counts": (
+            manual_frontier_work_item_family_counts
+        ),
+        "manual_frontier_work_item_authorization_status_counts": (
+            manual_frontier_work_item_authorization_status_counts
+        ),
         "manual_frontier_rule_owner_phase_counts": (
             manual_frontier_rule_owner_phase_counts
         ),
@@ -1015,6 +1039,21 @@ def _manual_frontier_missing_proof_counts(
             counts["invalid_required_proofs_shape"] += 1
             continue
         counts.update(str(proof or "unknown") for proof in required_proofs)
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_work_item_field_counts(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        work_item = row.get("frontier_work_item")
+        if not isinstance(work_item, dict):
+            continue
+        value = str(work_item.get(field) or "")
+        if value:
+            counts[value] += 1
     return dict(sorted(counts.items()))
 
 
@@ -1387,6 +1426,22 @@ def run_driver(
             ].items()
         )
         print(f"  manual_frontier_missing_proof_counts: {counts}")
+    if summary["manual_frontier_work_item_family_counts"]:
+        counts = ", ".join(
+            f"{family}={count}"
+            for family, count in summary[
+                "manual_frontier_work_item_family_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_family_counts: {counts}")
+    if summary["manual_frontier_work_item_authorization_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_work_item_authorization_status_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_work_item_authorization_status_counts: {counts}")
     if summary["manual_frontier_rule_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase_rule}={count}"

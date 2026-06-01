@@ -754,6 +754,14 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
                     "mutation_boundary_proof": 2,
                     "official_source_witness": 1,
                 },
+                "manual_frontier_work_item_family_counts": {
+                    "uk_manual_frontier_heading_facet_candidate": 2,
+                    "uk_manual_frontier_source_insufficient": 1,
+                },
+                "manual_frontier_work_item_authorization_status_counts": {
+                    "manual_claim_required": 2,
+                    "source_insufficient": 1,
+                },
             },
         ]
     )
@@ -769,6 +777,14 @@ def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
     assert summary["manual_frontier_missing_proof_counts"] == {
         "mutation_boundary_proof": 2,
         "official_source_witness": 1,
+    }
+    assert summary["manual_frontier_work_item_family_counts"] == {
+        "uk_manual_frontier_heading_facet_candidate": 2,
+        "uk_manual_frontier_source_insufficient": 1,
+    }
+    assert summary["manual_frontier_work_item_authorization_status_counts"] == {
+        "manual_claim_required": 2,
+        "source_insufficient": 1,
     }
 
 

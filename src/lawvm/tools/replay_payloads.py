@@ -59,6 +59,23 @@ def _record_field_counts(
     return dict(sorted(counts.items()))
 
 
+def _record_nested_field_counts(
+    records: Iterable[dict[str, Any]],
+    mapping_field: str,
+    field: str,
+    *,
+    default: str = "__none__",
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        mapping = record.get(mapping_field)
+        if not isinstance(mapping, Mapping):
+            continue
+        key = _text_field(mapping.get(field), default=default) or default
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _record_required_proof_counts(
     records: Iterable[Mapping[str, Any]],
 ) -> dict[str, int]:
@@ -140,6 +157,7 @@ def _with_uk_compile_authorization(
     records: Iterable[Mapping[str, Any]],
     *,
     lane: str,
+    source_artifact_id: str = "",
 ) -> list[dict[str, Any]]:
     from lawvm.uk_legislation.execution_authorization import (
         uk_execution_authorization_from_compile_record,
@@ -149,6 +167,8 @@ def _with_uk_compile_authorization(
     rows: list[dict[str, Any]] = []
     for record in records:
         row = dict(record)
+        if source_artifact_id and not row.get("source_artifact_id"):
+            row["source_artifact_id"] = source_artifact_id
         owner_phase = uk_phase_owner_for_diagnostic(row)
         row["owner_phase"] = owner_phase
         authorization = uk_execution_authorization_from_compile_record(
@@ -164,6 +184,14 @@ def _with_uk_compile_authorization(
         row["required_proofs"] = authorization["required_proofs"]
         row["safe_default"] = authorization["safe_default"]
         row["forbidden_shortcuts"] = authorization["forbidden_shortcuts"]
+        if lane == "manual_compile_frontier" and row["replay_authorized"] is False:
+            from lawvm.uk_legislation.frontier_work_items import (
+                uk_frontier_work_item_from_manual_frontier_row,
+            )
+
+            row["frontier_work_item"] = (
+                uk_frontier_work_item_from_manual_frontier_row(row).to_dict()
+            )
         rows.append(row)
     return rows
 
@@ -410,6 +438,7 @@ def build_uk_replay_payload(
     manual_compile_frontier_rows = _with_uk_compile_authorization(
         manual_compile_frontier_observations,
         lane="manual_compile_frontier",
+        source_artifact_id=statute_id,
     )
     source_acquisition_rejection_rows = _with_uk_compile_authorization(
         source_acquisition_rejections,
@@ -504,6 +533,18 @@ def build_uk_replay_payload(
         "manual_compile_rule_counts": _record_field_counts(
             manual_compile_frontier_rows,
             "manual_compile_rule_id",
+        ),
+        "manual_frontier_work_item_family_counts": _record_nested_field_counts(
+            manual_compile_frontier_rows,
+            "frontier_work_item",
+            "frontier_family",
+        ),
+        "manual_frontier_work_item_authorization_status_counts": (
+            _record_nested_field_counts(
+                manual_compile_frontier_rows,
+                "frontier_work_item",
+                "authorization_status",
+            )
         ),
         "compile_observation_lane_counts": {
             "source_parse": len(source_parse_rejection_rows),

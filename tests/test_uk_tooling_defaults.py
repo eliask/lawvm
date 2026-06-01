@@ -1108,6 +1108,12 @@ def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1,
     }
+    assert payload["manual_frontier_work_item_family_counts"] == {
+        "uk_manual_frontier_heading_facet_candidate": 1,
+    }
+    assert payload["manual_frontier_work_item_authorization_status_counts"] == {
+        "manual_claim_required": 1,
+    }
     assert payload["blocking_compile_rejection_rule_counts"] == {
         "uk_affecting_act_xml_missing_rejected": 1,
     }

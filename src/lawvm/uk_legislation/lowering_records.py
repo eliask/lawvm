@@ -12,6 +12,9 @@ from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
 )
+from lawvm.uk_legislation.frontier_work_items import (
+    uk_frontier_work_item_from_manual_frontier_row,
+)
 from lawvm.uk_legislation.effects import (
     _COMMENCEMENT_EFFECT_TYPES,
     UKEffectRecord,
@@ -543,6 +546,10 @@ def append_manual_compile_frontier_diagnostic(
     record["safe_default"] = authorization["safe_default"]
     record["forbidden_shortcuts"] = authorization["forbidden_shortcuts"]
     record["validator_status"] = authorization["validator_status"]
+    if record["replay_authorized"] is False:
+        record["frontier_work_item"] = (
+            uk_frontier_work_item_from_manual_frontier_row(record).to_dict()
+        )
     diagnostics_out.append(record)
 
 
