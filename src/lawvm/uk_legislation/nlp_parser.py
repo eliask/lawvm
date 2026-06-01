@@ -258,6 +258,9 @@ UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_pa
 UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
     "uk_effect_at_end_unquoted_text_insertion_patch"
 )
+UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID = (
+    "uk_effect_at_end_dangling_insert_quote_text_patch"
+)
 UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID = (
     "uk_effect_at_end_quoted_dash_text_insertion_patch"
 )
@@ -3424,6 +3427,23 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 "original": "TEXT_FROM__TO_END",
                 "replacement": inserted,
                 "rule_id": "uk_effect_at_end_text_insertion_patch",
+            }
+        )
+
+    matches_at_end_dangling_quote_insert = re.finditer(
+        rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE},?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘]"
+        rf"(?P<inserted>{_NON_QUOTE}{{1,800}})\s*$",
+        text,
+        re.I,
+    )
+    for m in matches_at_end_dangling_quote_insert:
+        subs.append(
+            {
+                "original": "TEXT_FROM__TO_END",
+                "replacement": m.group("inserted").strip(),
+                "rule_id": UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
             }
         )
 

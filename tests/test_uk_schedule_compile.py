@@ -26,7 +26,11 @@ from lawvm.uk_legislation.source_adjudication import (
     classify_uk_effect_source_pathology,
     classify_uk_manual_compile_frontier,
 )
-from lawvm.uk_legislation.nlp_parser import US, parse_fragment_substitution
+from lawvm.uk_legislation.nlp_parser import (
+    UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
+    US,
+    parse_fragment_substitution,
+)
 from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
 from lawvm.uk_legislation.effect_temporal import (
     UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
@@ -6730,6 +6734,94 @@ def test_schedule_qualified_at_end_insert_fragment_parses_as_append() -> None:
             "rule_id": "uk_effect_at_end_text_insertion_patch",
         }
     ]
+
+
+def test_at_end_dangling_insert_quote_fragment_parses_as_append() -> None:
+    fragments = parse_fragment_substitution(
+        "4 In subsection (3) (person liable for tax is person to whom income "
+        "is treated as arising), at the end insert \u201c, but this is subject "
+        "to section 733A."
+    )
+
+    assert fragments == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": ", but this is subject to section 733A.",
+            "rule_id": UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
+        }
+    ]
+
+
+def test_compile_at_end_dangling_insert_quote_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-8-paragraph-34-4">
+          <Pnumber>4</Pnumber>
+          <Text>
+            4 In subsection (3) (person liable for tax is person to whom
+            income is treated as arising), at the end insert \u201c, but this
+            is subject to section 733A.
+          </Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-at-end-dangling-insert-quote",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-11-16",
+        affected_uri="/id/ukpga/2007/3/section/731/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 731(3)",
+        affecting_uri="/id/ukpga/2017/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="Sch. 8 para. 34(4)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "at_end_dangling_insert_quote_text_patch"
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["canonical_text_match"] == "TEXT_END"
+    assert observations[0]["replacement"] == ", but this is subject to section 733A."
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "731"), ("subsection", "3"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == ", but this is subject to section 733A."
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID}"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
 
 
 def test_compile_schedule_qualified_at_end_insert_to_text_append() -> None:
