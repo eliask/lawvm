@@ -44672,6 +44672,7 @@ def test_source_pathology_filter_observes_out_of_scope_compiled_ops() -> None:
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "source_pathology_manual_frontier",
             "source_pathology": "as_if_application_modification_unsupported",
             "compiled_op_count": 1,
         }
@@ -54089,6 +54090,7 @@ def test_pipeline_compile_ops_records_structural_effect_lowered_to_no_ops(monkey
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
         },
         {
             "rule_id": "uk_effect_lowering_no_ops_rejected",
@@ -54103,6 +54105,7 @@ def test_pipeline_compile_ops_records_structural_effect_lowered_to_no_ops(monkey
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
         }
     ]
 
@@ -54178,6 +54181,7 @@ def test_source_pathology_out_of_scope_reclassifies_no_supported_action_nonblock
             "nonblocking_reclassification_rule_id": "uk_effect_nonreplay_lowering_observed",
             "replay_relevance": "source_pathology_out_of_scope",
             "source_pathology": "as_if_application_modification_unsupported",
+            "owner_phase": "source_pathology_manual_frontier",
             "reclassification_reason": (
                 "Source-pathology classification proves this row is outside direct "
                 "UK text/tree replay; the lowering diagnostic is evidence, not a "
@@ -54293,6 +54297,7 @@ def test_pipeline_compile_ops_records_nonstructural_replay_candidates_lowered_to
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
             "nonstructural_replay_candidate_family": "revoked_repeal",
         },
         {
@@ -54308,6 +54313,7 @@ def test_pipeline_compile_ops_records_nonstructural_replay_candidates_lowered_to
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
             "nonstructural_replay_candidate_family": "ceases_to_have_effect_repeal",
         },
     ]
@@ -54380,6 +54386,7 @@ def test_pipeline_compile_ops_records_unsupported_nonstructural_no_ops(monkeypat
             "blocking": False,
             "strict_disposition": "record",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
         }
     ]
 

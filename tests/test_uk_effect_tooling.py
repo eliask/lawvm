@@ -659,6 +659,7 @@ def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
         diagnostics[0]["manual_compile_rule_id"]
         == "uk_manual_frontier_heading_facet_candidate"
     )
+    assert diagnostics[0]["owner_phase"] == "typed_elaboration"
     assert diagnostics[0]["suggested_claim_template_status"] == "available"
 
 
@@ -1763,6 +1764,7 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "source_pathology_manual_frontier",
             "source_pathology": "range_to_container_target_unsupported",
             "compiled_actions": ("replace",),
             "compiled_targets": ("part:2/chapter:1",),
@@ -2054,6 +2056,7 @@ def test_summarize_uk_effect_records_structural_no_op_lowering_rejection(monkeyp
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "owner_phase": "canonical_op_compilation",
         },
     )
 
