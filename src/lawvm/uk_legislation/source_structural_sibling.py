@@ -20,6 +20,7 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 _SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?:in\s+.{1,240}?,\s*)?"
     r"after\s+(?P<source_kind>sub-?paragraph|paragraph|subsection|item)\s+"
     r"\((?P<anchor_label>[0-9A-Za-z]+)\),?\s+"
     r"insert\s*[—-]\s*(?P<inserted_label>[0-9A-Za-z]+)\s+"
@@ -94,20 +95,33 @@ def _structural_sibling_insert_from_source(
     anchor_label = _clean_num(match.group("anchor_label"))
     if not inserted_label or not anchor_label or inserted_label == anchor_label:
         return None
-    if inserted_label == _clean_num(_addr_leaf_label(target) or ""):
-        return None
+    target_leaf_label = _clean_num(_addr_leaf_label(target) or "")
+    target_leaf_kind = str(_addr_leaf_kind(target) or "").lower()
+    target_mode = "parent"
+    child_parent = target
+    if inserted_label == target_leaf_label:
+        if len(target.path) < 2 or not target_leaf_kind:
+            return None
+        target_mode = "inserted_child"
+        child_parent = LegalAddress(path=target.path[:-1])
     child_kind = _child_kind_for_structural_sibling_insert(
-        target=target,
+        target=child_parent,
         source_kind=match.group("source_kind"),
         inserted_label=inserted_label,
     )
     if not child_kind:
         return None
+    if target_mode == "inserted_child" and child_kind != target_leaf_kind:
+        return None
     inserted_text = " ".join(match.group("inserted_text").split()).strip()
     inserted_text = re.sub(r"\s*;\s*;\s*$", ";", inserted_text).strip()
     if not inserted_text:
         return None
-    new_target = canonicalize_uk_address(LegalAddress(path=(*target.path, (child_kind, inserted_label))))
+    new_target = (
+        canonicalize_uk_address(target)
+        if target_mode == "inserted_child"
+        else canonicalize_uk_address(LegalAddress(path=(*target.path, (child_kind, inserted_label))))
+    )
     return {
         "anchor_label": anchor_label,
         "child_kind": child_kind,
@@ -115,6 +129,7 @@ def _structural_sibling_insert_from_source(
         "inserted_text": inserted_text,
         "new_target": str(new_target),
         "source_kind": _normalize_structural_sibling_source_kind(match.group("source_kind")),
+        "target_mode": target_mode,
     }
 
 
@@ -143,14 +158,18 @@ def lower_source_structural_sibling_insert(
     if detail is None:
         return UKStructuralSiblingInsertLowering(target=target, content_ir=content_ir, detail=None)
 
-    lowered_target = canonicalize_uk_address(
-        LegalAddress(
-            path=(
-                *target.path,
-                (
-                    detail["child_kind"],
-                    detail["inserted_label"],
-                ),
+    lowered_target = (
+        canonicalize_uk_address(target)
+        if detail["target_mode"] == "inserted_child"
+        else canonicalize_uk_address(
+            LegalAddress(
+                path=(
+                    *target.path,
+                    (
+                        detail["child_kind"],
+                        detail["inserted_label"],
+                    ),
+                )
             )
         )
     )
