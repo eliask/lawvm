@@ -59,6 +59,9 @@ from lawvm.uk_legislation.provision_extractor import (
     _find_provision_from_search_root,
     _find_provision_greedy,
     _get_id_sequence,
+    _has_block_amendment_anchor_instruction,
+    _has_for_substitute_instruction,
+    _has_trailing_insert_or_substitute_instruction,
     _instruction_text_before_amendment_container,
     _match_node,
 )
@@ -5770,6 +5773,25 @@ def test_extract_provision_bytes_keeps_enclosing_instruction_when_only_inline_am
 def test_parse_ref_preserves_regulation_kind_for_secondary_legislation() -> None:
     assert _parse_ref("reg. 46(2)") == (("regulation", "46"), (None, "2"))
     assert _parse_ref("regs. 1(2)") == (("regulation", "1"), (None, "2"))
+
+
+def test_extraction_selection_instruction_predicates_preserve_matches() -> None:
+    assert _has_for_substitute_instruction(
+        'in subsection (4), for "old words" substitute "new words"'
+    )
+    assert not _has_for_substitute_instruction(
+        'in subsection (4), omit "old words"'
+    )
+    assert _has_trailing_insert_or_substitute_instruction("after subsection (6) insert-")
+    assert _has_trailing_insert_or_substitute_instruction("for subsection (2) substitute—")
+    assert not _has_trailing_insert_or_substitute_instruction(
+        'after subsection (6) insert "new text"'
+    )
+    assert _has_block_amendment_anchor_instruction('insert after "existing words"')
+    assert _has_block_amendment_anchor_instruction(
+        "at the appropriate place, in alphabetical order"
+    )
+    assert not _has_block_amendment_anchor_instruction("insert a new definition")
 
 
 def test_extract_provision_bytes_keeps_block_substitution_instruction_context() -> None:

@@ -14,6 +14,13 @@ from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 # Eviction is explicit via the compile-loop lifecycle (evict_source_root_caches).
 _INSTRUCTION_TEXT_CACHE: dict[ET._Element, str] = {}
 _NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
+_FOR_SUBSTITUTE_INSTRUCTION_RE = re.compile(r"\bfor\b.+\bsubstitute\b")
+_TRAILING_INSERT_OR_SUBSTITUTE_RE = re.compile(r"\b(?:insert|substitute)\s*[—-]?\s*$")
+_INSERT_BEFORE_AFTER_QUOTE_RE = re.compile(r"\binsert\s+(?:before|after)\s+[“\"']", re.I)
+_APPROPRIATE_PLACE_ALPHA_ORDER_RE = re.compile(
+    r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order",
+    re.I,
+)
 
 
 class UKExtractionContext(NamedTuple):
@@ -407,6 +414,27 @@ def _find_provision_from_search_root(
     return _find_provision_greedy(search_root, path)
 
 
+def _has_for_substitute_instruction(text: str) -> bool:
+    return "for" in text and "substitute" in text and _FOR_SUBSTITUTE_INSTRUCTION_RE.search(text) is not None
+
+
+def _has_trailing_insert_or_substitute_instruction(text: str) -> bool:
+    return ("insert" in text or "substitute" in text) and _TRAILING_INSERT_OR_SUBSTITUTE_RE.search(text) is not None
+
+
+def _has_block_amendment_anchor_instruction(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "insert" in lowered
+        and ("before" in lowered or "after" in lowered)
+        and _INSERT_BEFORE_AFTER_QUOTE_RE.search(text) is not None
+    ) or (
+        "appropriate place" in lowered
+        and "alphabetical order" in lowered
+        and _APPROPRIATE_PLACE_ALPHA_ORDER_RE.search(text) is not None
+    )
+
+
 def _select_extracted_match(
     el: ET._Element,
     parent_map: Optional[dict[ET._Element, ET._Element]] = None,
@@ -420,15 +448,15 @@ def _select_extracted_match(
         if parent is not None:
             local_text = _text_content(el).strip().lower()
             lead_in_text = _instruction_text_before_amendment_container(el).strip().lower()
-            if re.search(r"\bfor\b.+\bsubstitute\b", local_text):
+            if _has_for_substitute_instruction(local_text):
                 for child in el.iter():
                     if child is not el and _tag(child) == "BlockAmendment":
                         return el
-            if re.search(r"\b(?:insert|substitute)\s*[—-]?\s*$", lead_in_text):
+            if _has_trailing_insert_or_substitute_instruction(lead_in_text):
                 for child in el.iter():
                     if child is not el and _tag(child) in ("BlockAmendment", "InlineAmendment"):
                         return el
-            if re.search(r"\b(?:insert|substitute)\s*[—-]?\s*$", local_text):
+            if _has_trailing_insert_or_substitute_instruction(local_text):
                 siblings = list(parent)
                 try:
                     idx = siblings.index(el)
@@ -461,10 +489,7 @@ def _select_extracted_match(
             continue
         if _tag(child) == "BlockAmendment":
             lead_in_text = _instruction_text_before_amendment_container(el) or _instruction_text_before_amendment_container(child)
-            if (
-                re.search(r"\binsert\s+(?:before|after)\s+[“\"']", lead_in_text, re.I)
-                or re.search(r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order", lead_in_text, re.I)
-            ):
+            if _has_block_amendment_anchor_instruction(lead_in_text):
                 return el
         if _tag(child) == "BlockAmendment":
             return child
