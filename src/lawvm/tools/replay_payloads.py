@@ -76,6 +76,12 @@ def _blocking_rejections(rejections: Iterable[dict[str, Any]]) -> list[dict[str,
     return [rejection for rejection in rejections if is_blocking_compile_record(rejection)]
 
 
+def _uk_diagnostic_owner_phase_counts(records: Iterable[dict[str, Any]]) -> dict[str, int]:
+    from lawvm.uk_legislation.phase_discipline import uk_phase_owner_counts_for_diagnostics
+
+    return uk_phase_owner_counts_for_diagnostics(records)
+
+
 def build_no_replay_payload(
     result: Any,
     *,
@@ -362,6 +368,9 @@ def build_uk_replay_payload(
         ],
         "compile_observation_count": len(compile_observations),
         "compile_observation_rule_counts": _rejection_rule_counts(compile_observations),
+        "compile_observation_owner_phase_counts": _uk_diagnostic_owner_phase_counts(
+            compile_observations
+        ),
         "manual_compile_status_counts": _record_field_counts(
             manual_compile_frontier_rows,
             "manual_compile_status",
@@ -381,8 +390,14 @@ def build_uk_replay_payload(
         },
         "compile_rejection_count": len(blocking_compile_rejections),
         "compile_rejection_rule_counts": _rejection_rule_counts(blocking_compile_rejections),
+        "compile_rejection_owner_phase_counts": _uk_diagnostic_owner_phase_counts(
+            blocking_compile_rejections
+        ),
         "blocking_compile_rejection_count": len(blocking_compile_rejections),
         "blocking_compile_rejection_rule_counts": _rejection_rule_counts(
+            blocking_compile_rejections
+        ),
+        "blocking_compile_rejection_owner_phase_counts": _uk_diagnostic_owner_phase_counts(
             blocking_compile_rejections
         ),
         "blocking_compile_rejection_lane_counts": {

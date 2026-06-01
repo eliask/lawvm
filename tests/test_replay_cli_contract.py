@@ -453,6 +453,10 @@ def test_build_uk_replay_payload_shape() -> None:
         "uk_container_number_inferred_from_source_uri": 1,
         "uk_effect_lowering_no_ops_rejected": 1
     }
+    assert payload["compile_observation_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+        "canonical_op_compilation": 1,
+    }
     assert payload["compile_observation_lane_counts"] == {
         "source_parse": 1,
         "effect_feed_parse": 0,
@@ -465,6 +469,9 @@ def test_build_uk_replay_payload_shape() -> None:
     assert payload["blocking_compile_rejection_count"] == 1
     assert payload["blocking_compile_rejection_rule_counts"] == {
         "uk_effect_lowering_no_ops_rejected": 1
+    }
+    assert payload["blocking_compile_rejection_owner_phase_counts"] == {
+        "canonical_op_compilation": 1,
     }
     assert payload["blocking_compile_rejection_lane_counts"] == {
         "source_parse": 0,
@@ -537,6 +544,10 @@ def test_build_uk_replay_payload_keeps_recorded_manual_frontier_nonblocking() ->
 
     assert payload["compile_observation_count"] == 1
     assert payload["compile_rejection_count"] == 0
+    assert payload["compile_observation_owner_phase_counts"] == {
+        "typed_elaboration": 1,
+    }
+    assert payload["blocking_compile_rejection_owner_phase_counts"] == {}
     assert payload["blocking_compile_rejection_lane_counts"]["manual_compile_frontier"] == 0
     assert payload["blocking_compile_rejection_rule_counts_by_lane"]["manual_compile_frontier"] == {}
     assert payload["compile_rejections"]["manual_compile_frontier"] == []
@@ -829,6 +840,11 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
         "uk_effect_lowering_no_ops_rejected": 1,
         "uk_manual_compile_frontier_classified": 1,
     }
+    assert payload["compile_observation_owner_phase_counts"] == {
+        "canonical_op_compilation": 2,
+        "effect_metadata_frontend": 1,
+        "typed_elaboration": 1,
+    }
     assert payload["manual_compile_status_counts"] == {"manual_compile_candidate": 1}
     assert payload["manual_compile_rule_counts"] == {
         "uk_manual_frontier_heading_facet_candidate": 1,
@@ -845,6 +861,9 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
     assert payload["blocking_compile_rejection_count"] == 1
     assert payload["blocking_compile_rejection_rule_counts"] == {
         "uk_effect_lowering_no_ops_rejected": 1,
+    }
+    assert payload["blocking_compile_rejection_owner_phase_counts"] == {
+        "canonical_op_compilation": 1,
     }
     assert payload["blocking_compile_rejection_lane_counts"] == {
         "source_parse": 0,
