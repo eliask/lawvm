@@ -22,7 +22,10 @@ from lawvm.uk_legislation.repeal_semantics_witnesses import (
     source_text_repeal_semantics_family,
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
-from scripts.uk_repeal_semantics_scan import _selected_source_audit_summary
+from scripts.uk_repeal_semantics_scan import (
+    _owner_phase_counts,
+    _selected_source_audit_summary,
+)
 
 
 _DB_PATH = Path(__file__).resolve().parents[1] / "data" / "uk_legislation.farchive"
@@ -118,6 +121,7 @@ def test_source_phrase_xml_scan_reports_text_level_no_revive_witness() -> None:
     assert row["source_status"] == "source_phrase_scan"
     assert row["source_tag"] == "Text"
     assert row["source_locator"] == "source.xml"
+    assert row["owner_phase"] == "affecting_source_extraction"
 
 
 def test_duplicate_repeal_target_witness_requires_multiple_affecting_provisions() -> None:
@@ -201,6 +205,37 @@ def test_affecting_act_phrase_candidate_links_phrase_act_to_repeal_effect() -> N
     assert row["source_phrase_rule_id"] == phrase.rule_id
     assert row["source_phrase_count"] == 1
     assert row["source_locator"] == "source.xml"
+    assert row["owner_phase"] == "affecting_source_extraction"
+
+
+def test_repeal_semantics_scan_owner_phase_counts_use_witness_rows() -> None:
+    rows = [
+        UKRepealSemanticsWitness(
+            family="repeal_of_repeal_no_revive_phrase",
+            statute_id="ukpga/2026/1",
+            effect_id="",
+            effect_type="",
+            affected_provisions="",
+            affecting_act_id="ukpga/2026/1",
+            affecting_provisions="",
+            rule_id="uk_repeal_semantics_source_phrase_repeal_of_repeal_no_revive_phrase",
+        ).to_dict(),
+        UKRepealSemanticsWitness(
+            family="body_schedule_repeal_double_entry_candidate",
+            statute_id="ukpga/2000/1",
+            effect_id="e1",
+            effect_type="repealed",
+            affected_provisions="s. 1",
+            affecting_act_id="ukpga/2026/1",
+            affecting_provisions="Sch. 13",
+            rule_id="uk_repeal_semantics_body_schedule_double_entry_candidate",
+        ).to_dict(),
+    ]
+
+    assert _owner_phase_counts(rows) == {
+        "affecting_source_extraction": 1,
+        "canonical_op_compilation": 1,
+    }
 
 
 @pytest.mark.skipif(

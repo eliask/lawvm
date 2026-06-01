@@ -19,6 +19,11 @@ from lawvm.uk_legislation.effect_source_selection import (
     select_source_for_effect,
 )
 from lawvm.uk_legislation.effects import UKEffectRecord, load_effects_for_statute_from_archive
+from lawvm.uk_legislation.phase_discipline import (
+    UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
+    UK_PHASE_CANONICAL_OP_COMPILATION,
+    uk_phase_owner_for_diagnostic,
+)
 from lawvm.uk_legislation.source_context import UKAffectingSourceContext
 
 
@@ -75,7 +80,25 @@ class UKRepealSemanticsWitness:
         if self.related_affecting_provisions:
             row["related_affecting_provisions"] = self.related_affecting_provisions
         row.update(self.detail)
+        owner_phase = _owner_phase_for_witness_family(self.family)
+        if owner_phase:
+            row.setdefault("owner_phase", owner_phase)
+        row.setdefault("owner_phase", uk_phase_owner_for_diagnostic(row))
         return row
+
+
+def _owner_phase_for_witness_family(family: str) -> str:
+    """Return the UK phase that owns one repeal-semantics witness family."""
+    family_text = str(family or "")
+    if family_text.startswith("affecting_act_") or family_text in {
+        "repeal_of_repeal_no_revive_phrase",
+        "repeal_of_repeal_phrase",
+        "repeal_revival_phrase",
+    }:
+        return UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    if "double_entry" in family_text or family_text == "duplicate_repeal_target_candidate":
+        return UK_PHASE_CANONICAL_OP_COMPILATION
+    return ""
 
 
 def is_repeal_semantics_effect(effect: UKEffectRecord) -> bool:
