@@ -4366,6 +4366,70 @@ def test_compile_amendment_program_inserted_parent_child_insert_as_target_local_
     assert amended_text.index("ai a court") < amended_text.index("i\n\nthe offence")
 
 
+def test_compile_same_schedule_inserted_anchor_ground_insert_as_source_chain() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-18">
+          <Pnumber>18</Pnumber>
+          <P1para>
+            <Text>
+              After Ground 5F (inserted by paragraph 17 of this Schedule) insert—
+              Ground 5G The landlord needs to occupy the dwelling-house.
+            </Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-inserted-anchor-ground-single",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-24",
+        affected_uri="/id/ukpga/1988/50/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="50",
+        affected_provisions="Sch. 2 Ground 5G",
+        affecting_uri="/id/ukpga/2025/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="26",
+        affecting_provisions="Sch. 1 para. 18",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-05-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.INSERT
+    assert str(ops[0].target) == "schedule:2/paragraph:ground/subparagraph:5g"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind == IRNodeKind.SUBPARAGRAPH
+    assert ops[0].payload.label == "5g"
+    assert "landlord needs to occupy" in (ops[0].payload.text or "")
+    assert ops[0].payload.attrs["source_rule_id"] == (
+        "uk_effect_amendment_program_inserted_anchor_structural_insert_lowered"
+    )
+    assert {
+        row["rule_id"] for row in lowering_records
+    } == {"uk_effect_amendment_program_inserted_anchor_structural_insert_lowered"}
+    observation = lowering_records[0]
+    assert observation["family"] == "amendment_program_lowering"
+    assert observation["reason_code"] == "same_schedule_single_ground_source_chain_insert"
+    assert observation["target_ref"] == "Sch. 2 Ground 5G"
+    assert observation["source_inserted_by_label"] == "17"
+    assert observation["source_inserted_by_scope"] == "this_schedule"
+    assert observation["inserted_payload_labels"] == ["5g"]
+    assert observation["blocking"] is False
+
+
 def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program() -> None:
     extracted_el = ET.fromstring(
         f"""
