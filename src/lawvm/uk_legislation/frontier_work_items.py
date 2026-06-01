@@ -13,6 +13,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
 ) -> FrontierWorkItem:
     """Project a UK manual-frontier row as a non-executable work item."""
     template = _mapping(row.get("suggested_claim_template"))
+    manual_frontier = _mapping(row.get("manual_compile_frontier"))
+    target_context = _mapping(row.get("target_context"))
     source_witness = _first_mapping(
         row.get("affecting_source_witness"),
         row.get("source"),
@@ -46,6 +48,40 @@ def uk_frontier_work_item_from_manual_frontier_row(
         or row.get("rule_id")
         or frontier_family
     )
+    detail = {
+        "statute_id": statute_id,
+        "effect_id": effect_id,
+        "source_pathology": str(
+            row.get("current_source_pathology") or row.get("source_pathology") or ""
+        ),
+        "manual_compile_reason": str(
+            row.get("current_manual_compile_reason")
+            or row.get("manual_compile_reason")
+            or manual_frontier.get("reason")
+            or ""
+        ),
+        "suggested_claim_template_status": str(
+            row.get("suggested_claim_template_status") or ""
+        ),
+        "claim_status": str(row.get("claim_status") or ""),
+        "validator_status": str(row.get("validator_status") or ""),
+        "lowering_rule_ids": _first_string_tuple(
+            row.get("current_lowering_rule_ids"),
+            row.get("manual_compile_lowering_rule_ids"),
+            row.get("validator_current_lowering_rule_ids"),
+            manual_frontier.get("lowering_rule_ids"),
+        ),
+        "blocking_lowering_rule_ids": _first_string_tuple(
+            row.get("current_blocking_lowering_rule_ids"),
+            row.get("manual_compile_blocking_lowering_rule_ids"),
+            row.get("validator_current_blocking_lowering_rule_ids"),
+            manual_frontier.get("blocking_lowering_rule_ids"),
+            _mapping(row.get("blocking_lowering_rejection_rule_counts")).keys(),
+        ),
+        "compiled_op_count": _nonnegative_int(row.get("compiled_op_count")),
+        "compare_shape": str(row.get("compare_shape") or target_context.get("compare_shape") or ""),
+        "source_witness_kind": _source_witness_kind(source_witness),
+    }
     return FrontierWorkItem(
         work_item_id=str(
             row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
@@ -72,19 +108,10 @@ def uk_frontier_work_item_from_manual_frontier_row(
         required_proofs=_string_tuple(row.get("required_proofs")),
         safe_default=str(row.get("safe_default") or ""),
         forbidden_shortcuts=_string_tuple(row.get("forbidden_shortcuts")),
-        executable=bool(row.get("executable")),
-        replay_authorized=bool(row.get("replay_authorized")),
+        executable=_bool_flag(row.get("executable")),
+        replay_authorized=_bool_flag(row.get("replay_authorized")),
         authorization_status=str(row.get("authorization_status") or ""),
-        detail={
-            "statute_id": statute_id,
-            "effect_id": effect_id,
-            "source_pathology": str(
-                row.get("current_source_pathology") or row.get("source_pathology") or ""
-            ),
-            "suggested_claim_template_status": str(
-                row.get("suggested_claim_template_status") or ""
-            ),
-        },
+        detail=detail,
     )
 
 
@@ -104,7 +131,39 @@ def _string_tuple(value: Any) -> tuple[str, ...]:
         return (value,) if value else ()
     if isinstance(value, list | tuple):
         return tuple(str(item) for item in value if str(item))
+    if not isinstance(value, Mapping) and hasattr(value, "__iter__"):
+        return tuple(str(item) for item in value if str(item))
     return ()
+
+
+def _first_string_tuple(*values: Any) -> tuple[str, ...]:
+    for value in values:
+        items = _string_tuple(value)
+        if items:
+            return items
+    return ()
+
+
+def _bool_flag(value: Any) -> bool:
+    return value if isinstance(value, bool) else False
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
+
+
+def _source_witness_kind(source_witness: Mapping[str, Any]) -> str:
+    if source_witness.get("source_sha256") or source_witness.get("affecting_act_id"):
+        return "affecting_source"
+    if source_witness.get("text_preview"):
+        return "source_preview"
+    if source_witness:
+        return "source_context"
+    return ""
 
 
 def _candidate_targets(row: Mapping[str, Any]) -> tuple[str, ...]:

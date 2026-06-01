@@ -2465,7 +2465,7 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         ),
     )
 
-    payload = _effect_report_row_jsonable(row)
+    payload = _effect_report_row_jsonable(row, statute_id="ukpga/2000/1")
 
     assert payload["manual_compile_frontier"] == {
         "status": "manual_compile_candidate",
@@ -2485,6 +2485,9 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert payload["frontier_work_item"]["frontier_family"] == (
         "uk_manual_frontier_heading_facet_candidate"
     )
+    assert payload["frontier_work_item"]["candidate_operation_family"] == (
+        "facet_text_rewrite"
+    )
     assert payload["frontier_work_item"]["authorization_status"] == (
         "manual_claim_required"
     )
@@ -2493,6 +2496,18 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert payload["frontier_work_item"]["source_witness"]["source_sha256"] == (
         "affecting-sha"
     )
+    assert payload["frontier_work_item"]["detail"]["manual_compile_reason"] == (
+        "Heading facet requires an explicit manual claim."
+    )
+    assert payload["frontier_work_item"]["detail"]["statute_id"] == "ukpga/2000/1"
+    assert payload["frontier_work_item"]["detail"]["blocking_lowering_rule_ids"] == [
+        "uk_effect_heading_only_ref_rejected",
+    ]
+    assert payload["frontier_work_item"]["detail"]["source_witness_kind"] == (
+        "affecting_source"
+    )
+    assert payload["suggested_claim_template_status"] == "available"
+    assert payload["suggested_claim_template"]["action_family"] == "facet_text_rewrite"
     assert payload["source"] == {
         "extracted": True,
         "tag": "P1",
@@ -2870,6 +2885,18 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     assert payload["frontier_work_item"]["candidate_targets"] == ["s. 1"]
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False
+    assert payload["frontier_work_item"]["detail"]["claim_status"] == (
+        "unresolved_work_item"
+    )
+    assert payload["frontier_work_item"]["detail"]["validator_status"] == (
+        "not_validated"
+    )
+    assert payload["frontier_work_item"]["detail"]["lowering_rule_ids"] == [
+        "uk_effect_heading_only_ref_rejected"
+    ]
+    assert payload["frontier_work_item"]["detail"]["blocking_lowering_rule_ids"] == [
+        "uk_effect_heading_only_ref_rejected"
+    ]
     assert payload["suggested_claim_template_status"] == "available"
     template = payload["suggested_claim_template"]
     assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"
