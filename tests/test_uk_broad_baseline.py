@@ -698,6 +698,52 @@ def test_summarize_results_routes_large_manual_frontier_residuals() -> None:
     assert summary["triage_buckets"] == {"manual_compile_frontier_residual": 1}
 
 
+def test_summarize_results_aggregates_manual_frontier_authorization() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1990/8",
+                "score_status": "scored",
+                "aligned": 83.81,
+                "aligned_excluding_grounding_collateral": 83.81,
+                "unaligned": 74.4,
+                "n_grounding_collateral": 0,
+                "n_replay": 6906,
+                "n_oracle": 8240,
+                "n_only_in_oracle": 1334,
+                "n_only_in_replayed": 0,
+                "n_compile_rejections": 3655,
+                "n_blocking_compile_rejections": 130,
+                "manual_frontier_authorization_status_counts": {
+                    "manual_claim_required": 2,
+                    "source_insufficient": 1,
+                },
+                "manual_frontier_authorization_status_owner_phase_counts": {
+                    "typed_elaboration:manual_claim_required": 2,
+                    "affecting_source_extraction:source_insufficient": 1,
+                },
+                "manual_frontier_missing_proof_counts": {
+                    "mutation_boundary_proof": 2,
+                    "official_source_witness": 1,
+                },
+            },
+        ]
+    )
+
+    assert summary["manual_frontier_authorization_status_counts"] == {
+        "manual_claim_required": 2,
+        "source_insufficient": 1,
+    }
+    assert summary["manual_frontier_authorization_status_owner_phase_counts"] == {
+        "affecting_source_extraction:source_insufficient": 1,
+        "typed_elaboration:manual_claim_required": 2,
+    }
+    assert summary["manual_frontier_missing_proof_counts"] == {
+        "mutation_boundary_proof": 2,
+        "official_source_witness": 1,
+    }
+
+
 def test_compile_rejection_bucket_ignores_nonblocking_observations() -> None:
     summary = uk_broad_baseline.summarize_results(
         [

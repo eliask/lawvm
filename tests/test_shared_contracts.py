@@ -12,6 +12,10 @@ from lawvm.core.evidence_contracts import (
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
 )
+from lawvm.core.execution_authorization import (
+    ExecutionAuthorization,
+    validate_execution_authorization,
+)
 from lawvm.core.frozen_values import FrozenDict
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplayCheckpoint, ReplaySummary, ReplayTextView
@@ -23,6 +27,57 @@ from lawvm.core.verification_contracts import (
     VerifyIssue,
     VerifySummary,
 )
+
+
+def test_execution_authorization_allows_explicit_replay_authorized_rows() -> None:
+    authorization = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id="test_authorized_rule",
+        owner_phase="canonical_op_compilation",
+        strict_disposition="record",
+        required_proofs=(),
+        safe_default="execute_lowered_operations",
+    )
+
+    data = authorization.to_dict()
+
+    assert data["replay_authorized"] is True
+    assert data["required_proofs"] == []
+    assert validate_execution_authorization(data) == ()
+
+
+def test_execution_authorization_rejects_hidden_promotion() -> None:
+    issues = validate_execution_authorization(
+        {
+            "executable": False,
+            "replay_authorized": True,
+            "authorization_status": "bad",
+            "authorization_rule_id": "bad_rule",
+            "owner_phase": "typed_elaboration",
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+            "required_proofs": (),
+            "safe_default": "block",
+        }
+    )
+
+    assert "replay_authorized requires executable" in issues
+
+
+def test_execution_authorization_requires_missing_proofs_for_frontier_rows() -> None:
+    with pytest.raises(ValueError, match="non-authorized row must list required_proofs"):
+        ExecutionAuthorization(
+            executable=False,
+            replay_authorized=False,
+            authorization_status="manual_claim_required",
+            authorization_rule_id="test_manual_rule",
+            owner_phase="typed_elaboration",
+            strict_disposition="record",
+            required_proofs=(),
+            safe_default="block_until_claim",
+        )
 
 
 def test_processing_status_validates_degraded_blockers() -> None:

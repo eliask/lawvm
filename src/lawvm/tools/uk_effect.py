@@ -251,6 +251,10 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
     source_acquisition_rejections: tuple[dict[str, Any], ...] = (),
     source_parse_observations: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
+    from lawvm.uk_legislation.execution_authorization import (
+        uk_execution_authorization_from_manual_frontier,
+    )
+    from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
     from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 
     source_acquisition_observation_rows = tuple(
@@ -283,6 +287,16 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         manual_frontier=manual_frontier,
         show_text=show_text,
     )
+    manual_frontier_owner_phase = uk_phase_owner_for_manual_frontier(
+        manual_compile_status=manual_frontier["status"],
+        manual_compile_rule_id=manual_frontier["rule_id"],
+        source_pathology=source_pathology or "",
+    )
+    execution_authorization = uk_execution_authorization_from_manual_frontier(
+        manual_compile_status=manual_frontier["status"],
+        manual_compile_rule_id=manual_frontier["rule_id"],
+        owner_phase=manual_frontier_owner_phase,
+    ).to_dict()
     return {
         "report_kind": "uk_effect_frontier_report",
         "statute_id": statute_id,
@@ -311,6 +325,7 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
             "text": _text_snippet(extracted, limit=100000 if show_text else 300),
         },
         "manual_compile_frontier": manual_frontier,
+        "execution_authorization": execution_authorization,
         "suggested_claim_template_status": (
             "available" if suggested_claim_template else "not_available"
         ),

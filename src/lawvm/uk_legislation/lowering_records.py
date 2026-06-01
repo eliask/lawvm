@@ -9,6 +9,9 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
+from lawvm.uk_legislation.execution_authorization import (
+    uk_execution_authorization_from_manual_frontier,
+)
 from lawvm.uk_legislation.effects import (
     _COMMENCEMENT_EFFECT_TYPES,
     UKEffectRecord,
@@ -524,6 +527,22 @@ def append_manual_compile_frontier_diagnostic(
     )
     if template_status:
         record["suggested_claim_template_status"] = template_status
+    authorization = uk_execution_authorization_from_manual_frontier(
+        manual_compile_status=str(record["manual_compile_status"]),
+        manual_compile_rule_id=str(record["manual_compile_rule_id"]),
+        owner_phase=str(record["owner_phase"]),
+        strict_disposition=str(record["strict_disposition"]),
+        quirks_disposition=str(record["quirks_disposition"]),
+    ).to_dict()
+    record["execution_authorization"] = authorization
+    record["executable"] = authorization["executable"]
+    record["replay_authorized"] = authorization["replay_authorized"]
+    record["authorization_status"] = authorization["authorization_status"]
+    record["authorization_rule_id"] = authorization["authorization_rule_id"]
+    record["required_proofs"] = authorization["required_proofs"]
+    record["safe_default"] = authorization["safe_default"]
+    record["forbidden_shortcuts"] = authorization["forbidden_shortcuts"]
+    record["validator_status"] = authorization["validator_status"]
     diagnostics_out.append(record)
 
 

@@ -332,6 +332,17 @@ def score_one(statute_id: str) -> dict[str, Any]:
         result["manual_frontier_owner_phase_counts"] = _owner_phase_counts(
             manual_frontier_records
         )
+        result["manual_frontier_authorization_status_counts"] = (
+            _manual_frontier_authorization_status_counts(manual_frontier_records)
+        )
+        result["manual_frontier_authorization_status_owner_phase_counts"] = (
+            _manual_frontier_authorization_status_owner_phase_counts(
+                manual_frontier_records
+            )
+        )
+        result["manual_frontier_missing_proof_counts"] = (
+            _manual_frontier_missing_proof_counts(manual_frontier_records)
+        )
         result["manual_frontier_rule_owner_phase_counts"] = (
             _manual_frontier_rule_owner_phase_counts(manual_frontier_records)
         )
@@ -517,6 +528,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_owner_phase_counts = _aggregate_row_count_maps(
         results, "manual_frontier_owner_phase_counts"
     )
+    manual_frontier_authorization_status_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_authorization_status_counts"
+    )
+    manual_frontier_authorization_status_owner_phase_counts = (
+        _aggregate_row_count_maps(
+            results,
+            "manual_frontier_authorization_status_owner_phase_counts",
+        )
+    )
+    manual_frontier_missing_proof_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_missing_proof_counts"
+    )
     manual_frontier_rule_owner_phase_counts = _aggregate_row_count_maps(
         results, "manual_frontier_rule_owner_phase_counts"
     )
@@ -614,6 +637,13 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "manual_frontier_status_counts": manual_frontier_status_counts,
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
         "manual_frontier_owner_phase_counts": manual_frontier_owner_phase_counts,
+        "manual_frontier_authorization_status_counts": (
+            manual_frontier_authorization_status_counts
+        ),
+        "manual_frontier_authorization_status_owner_phase_counts": (
+            manual_frontier_authorization_status_owner_phase_counts
+        ),
+        "manual_frontier_missing_proof_counts": manual_frontier_missing_proof_counts,
         "manual_frontier_rule_owner_phase_counts": (
             manual_frontier_rule_owner_phase_counts
         ),
@@ -912,6 +942,38 @@ def _manual_frontier_rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _manual_frontier_authorization_status_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts = Counter(str(row.get("authorization_status") or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_authorization_status_owner_phase_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts = Counter(
+        _phase_rule_key(row, str(row.get("authorization_status") or "unknown"))
+        for row in rows
+    )
+    return dict(sorted(counts.items()))
+
+
+def _manual_frontier_missing_proof_counts(
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        if row.get("replay_authorized") is True:
+            continue
+        required_proofs = row.get("required_proofs") or ()
+        if not isinstance(required_proofs, list | tuple):
+            counts["invalid_required_proofs_shape"] += 1
+            continue
+        counts.update(str(proof or "unknown") for proof in required_proofs)
+    return dict(sorted(counts.items()))
+
+
 def _manual_frontier_rule_counts_for_status(
     rows: list[dict[str, Any]],
     status: str,
@@ -1205,6 +1267,33 @@ def run_driver(
             for phase, count in summary["manual_frontier_owner_phase_counts"].items()
         )
         print(f"  manual_frontier_owner_phase_counts: {counts}")
+    if summary["manual_frontier_authorization_status_counts"]:
+        counts = ", ".join(
+            f"{status}={count}"
+            for status, count in summary[
+                "manual_frontier_authorization_status_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_authorization_status_counts: {counts}")
+    if summary["manual_frontier_authorization_status_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase_status}={count}"
+            for phase_status, count in summary[
+                "manual_frontier_authorization_status_owner_phase_counts"
+            ].items()
+        )
+        print(
+            "  manual_frontier_authorization_status_owner_phase_counts: "
+            f"{counts}"
+        )
+    if summary["manual_frontier_missing_proof_counts"]:
+        counts = ", ".join(
+            f"{proof}={count}"
+            for proof, count in summary[
+                "manual_frontier_missing_proof_counts"
+            ].items()
+        )
+        print(f"  manual_frontier_missing_proof_counts: {counts}")
     if summary["manual_frontier_rule_owner_phase_counts"]:
         counts = ", ".join(
             f"{phase_rule}={count}"
