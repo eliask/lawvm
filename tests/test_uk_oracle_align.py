@@ -120,6 +120,66 @@ def test_pipeline_apply_ops_runs_oracle_alignment_when_enabled(tmp_path) -> None
     ]
 
 
+def test_oracle_alignment_uses_definition_ordered_list_child_label(tmp_path) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/1968/70",
+        title="Demo",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    attrs={"eId": "section-17"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-17-3"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="any map, plan, graph or drawing;",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "document",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    events: list[dict] = []
+
+    result = UKReplayPipeline(tmp_path).apply_ops(
+        statute,
+        [],
+        eid_map={
+            "body:section-17": "section-17",
+            "body:section-17:subsection-3": "section-17-3",
+            "body:section-17:subsection-3:paragraph-a": "section-17-3-a",
+        },
+        text_map={},
+        allow_oracle_alignment=True,
+        oracle_alignment_events_out=events,
+    )
+
+    item = result.body.children[0].children[0].children[0]
+    assert item.label is None
+    assert item.attrs["eId"] == "section-17-3-a"
+    assert any(
+        event["after_eid"] == "section-17-3-a"
+        and event["match_method"] == "flat"
+        and event["match_key"] == "flat:body:section-17:subsection-3:paragraph-a"
+        for event in events
+    )
+
+
 def test_align_uk_replay_to_oracle_disabled_without_eid_map() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/1",
