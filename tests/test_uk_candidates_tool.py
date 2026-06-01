@@ -1678,12 +1678,14 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
             "uk_effect_payload_missing": 2,
             "uk_residual_compile_note": 1,
         },
+        "residual_compile_observation_owner_phase_counts": {},
         "residual_compile_rejection_count": 3,
         "rows_with_residual_compile_rejections": 2,
         "residual_compile_rejection_rule_counts": {
             "uk_effect_authority_filter_rejected": 1,
             "uk_effect_payload_missing": 2,
         },
+        "residual_compile_rejection_owner_phase_counts": {},
         "source_counts": {
             "missing_extracted_source": 2,
             "uncovered_body": 1,
@@ -1735,6 +1737,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
         "non_candidate_compare_counts": {"oracle_missing_live_branch": 1},
         "manual_compile_status_counts": {},
         "manual_compile_rule_counts": {},
+        "manual_compile_owner_phase_counts": {},
         "suggested_claim_template_status_counts": {
             "available": 1,
             "not_available": 1,
@@ -2178,7 +2181,8 @@ def test_print_uk_candidates_text_summary_uses_report_summary(capsys) -> None:
     ) in out
     assert "compare_evidence: all=commensurable=1 candidate=commensurable=1 non_candidate={}" in out
     assert (
-        "manual_compile_frontier: status={} rules={} claim_templates=available=1"
+        "manual_compile_frontier: status={} rules={} owner_phases={} "
+        "claim_templates=available=1"
         in out
     )
     assert "rejection_rules:" in out

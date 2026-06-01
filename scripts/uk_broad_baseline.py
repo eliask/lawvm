@@ -44,6 +44,8 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = REPO_ROOT / "data" / "uk_legislation.farchive"
 _LEG_BASE = "https://www.legislation.gov.uk"
@@ -251,8 +253,14 @@ def score_one(statute_id: str) -> dict[str, Any]:
         blocking_compile_rejections = _blocking_records(compile_rejections)
         result["n_compile_rejections"] = len(compile_rejections)
         result["compile_rejection_rule_counts"] = _rule_counts(compile_rejections)
+        result["compile_rejection_owner_phase_counts"] = _owner_phase_counts(
+            compile_rejections
+        )
         result["n_blocking_compile_rejections"] = len(blocking_compile_rejections)
         result["blocking_compile_rejection_rule_counts"] = _rule_counts(
+            blocking_compile_rejections
+        )
+        result["blocking_compile_rejection_owner_phase_counts"] = _owner_phase_counts(
             blocking_compile_rejections
         )
         manual_frontier_records = [
@@ -265,6 +273,9 @@ def score_one(statute_id: str) -> dict[str, Any]:
             manual_frontier_records
         )
         result["manual_frontier_rule_counts"] = _manual_frontier_rule_counts(
+            manual_frontier_records
+        )
+        result["manual_frontier_owner_phase_counts"] = _owner_phase_counts(
             manual_frontier_records
         )
         result["manual_frontier_manual_compile_candidate_rule_counts"] = (
@@ -431,6 +442,15 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_rule_counts = _aggregate_row_count_maps(
         results, "manual_frontier_rule_counts"
     )
+    manual_frontier_owner_phase_counts = _aggregate_row_count_maps(
+        results, "manual_frontier_owner_phase_counts"
+    )
+    compile_rejection_owner_phase_counts = _aggregate_row_count_maps(
+        results, "compile_rejection_owner_phase_counts"
+    )
+    blocking_compile_rejection_owner_phase_counts = _aggregate_row_count_maps(
+        results, "blocking_compile_rejection_owner_phase_counts"
+    )
     manual_frontier_manual_compile_candidate_rule_counts = _aggregate_row_count_maps(
         results,
         "manual_frontier_manual_compile_candidate_rule_counts",
@@ -488,6 +508,11 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "triage_bucket_statutes": triage_bucket_statutes,
         "manual_frontier_status_counts": manual_frontier_status_counts,
         "manual_frontier_rule_counts": manual_frontier_rule_counts,
+        "manual_frontier_owner_phase_counts": manual_frontier_owner_phase_counts,
+        "compile_rejection_owner_phase_counts": compile_rejection_owner_phase_counts,
+        "blocking_compile_rejection_owner_phase_counts": (
+            blocking_compile_rejection_owner_phase_counts
+        ),
         "manual_frontier_manual_compile_candidate_rule_counts": (
             manual_frontier_manual_compile_candidate_rule_counts
         ),
@@ -813,6 +838,11 @@ def _rule_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(uk_phase_owner_for_diagnostic(row) for row in rows)
+    return dict(sorted(counts.items()))
+
+
 def _source_state_fields(prefix: str, state: Any) -> dict[str, Any]:
     fields: dict[str, Any] = {
         f"{prefix}_source_status": state.status.value,
@@ -997,6 +1027,26 @@ def run_driver(
             for status, count in summary["manual_frontier_status_counts"].items()
         )
         print(f"  manual_frontier_status_counts: {counts}")
+    if summary["manual_frontier_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase}={count}"
+            for phase, count in summary["manual_frontier_owner_phase_counts"].items()
+        )
+        print(f"  manual_frontier_owner_phase_counts: {counts}")
+    if summary["compile_rejection_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase}={count}"
+            for phase, count in summary["compile_rejection_owner_phase_counts"].items()
+        )
+        print(f"  compile_rejection_owner_phase_counts: {counts}")
+    if summary["blocking_compile_rejection_owner_phase_counts"]:
+        counts = ", ".join(
+            f"{phase}={count}"
+            for phase, count in summary[
+                "blocking_compile_rejection_owner_phase_counts"
+            ].items()
+        )
+        print(f"  blocking_compile_rejection_owner_phase_counts: {counts}")
     if summary["manual_frontier_manual_compile_candidate_rule_counts"]:
         counts = ", ".join(
             f"{rule_id}={count}"

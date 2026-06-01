@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
 
 if TYPE_CHECKING:
     import argparse
@@ -286,6 +287,15 @@ def _validation_row_jsonable(
     effect_id = str(row.get("effect_id") or "")
     original_manual_status = str(row.get("manual_compile_status") or "")
     original_manual_rule_id = str(row.get("manual_compile_rule_id") or "")
+    original_owner_phase = str(
+        row.get("owner_phase")
+        or row.get("manual_compile_owner_phase")
+        or uk_phase_owner_for_manual_frontier(
+            manual_compile_status=original_manual_status,
+            manual_compile_rule_id=original_manual_rule_id,
+            source_pathology=str(row.get("source_pathology") or ""),
+        )
+    )
     wrong_schema_row = _wrong_schema_validation_row(row)
     if wrong_schema_row is not None:
         return wrong_schema_row
@@ -318,10 +328,19 @@ def _validation_row_jsonable(
             extra={
                 "original_manual_compile_status": original_manual_status,
                 "original_manual_compile_rule_id": original_manual_rule_id,
+                "original_owner_phase": original_owner_phase,
             },
         )
     current_manual_status = str(current_summary.manual_compile_status or "")
     current_manual_rule_id = str(current_summary.manual_compile_rule_id or "")
+    current_owner_phase = str(
+        current_summary.manual_compile_owner_phase
+        or uk_phase_owner_for_manual_frontier(
+            manual_compile_status=current_manual_status,
+            manual_compile_rule_id=current_manual_rule_id,
+            source_pathology=str(current_summary.source_pathology or ""),
+        )
+    )
     current_blocking_rules = tuple(current_summary.manual_compile_blocking_lowering_rule_ids)
     current_template = dict(current_suggested_claim_template or {})
     validation_status = _validation_status(
@@ -338,8 +357,10 @@ def _validation_row_jsonable(
         extra={
             "original_manual_compile_status": original_manual_status,
             "original_manual_compile_rule_id": original_manual_rule_id,
+            "original_owner_phase": original_owner_phase,
             "current_manual_compile_status": current_manual_status,
             "current_manual_compile_rule_id": current_manual_rule_id,
+            "current_owner_phase": current_owner_phase,
             "current_manual_compile_reason": str(current_summary.manual_compile_reason or ""),
             "current_compiled_op_count": int(current_summary.n_ops),
             "current_lowering_observation_rule_ids": [
@@ -513,10 +534,21 @@ def _validation_report_jsonable(
         for row in rows
         if str(row.get("current_source_pathology") or "")
     )
+    original_owner_phase_counts = Counter(
+        str(row.get("original_owner_phase") or "unknown")
+        for row in rows
+        if str(row.get("original_owner_phase") or "")
+    )
+    current_owner_phase_counts = Counter(
+        str(row.get("current_owner_phase") or "unknown")
+        for row in rows
+        if str(row.get("current_owner_phase") or "")
+    )
     remaining_manual_rule_counts: Counter[str] = Counter()
     remaining_manual_status_counts: Counter[str] = Counter()
     remaining_suggested_claim_template_status_counts: Counter[str] = Counter()
     remaining_source_pathology_counts: Counter[str] = Counter()
+    remaining_owner_phase_counts: Counter[str] = Counter()
     stale_original_manual_rule_counts: Counter[str] = Counter()
     current_blocking_lowering_rule_counts: Counter[str] = Counter()
     remaining_blocking_lowering_rule_counts: Counter[str] = Counter()
@@ -580,6 +612,9 @@ def _validation_report_jsonable(
             source_pathology = str(row.get("current_source_pathology") or "")
             if source_pathology:
                 remaining_source_pathology_counts[source_pathology] += 1
+            owner_phase = str(row.get("current_owner_phase") or "")
+            if owner_phase:
+                remaining_owner_phase_counts[owner_phase] += 1
             remaining_blocking_lowering_rule_counts.update(blocking_rules)
         if _is_stale_manual_frontier_validation(row):
             original_rule_id = str(row.get("original_manual_compile_rule_id") or "")
@@ -612,6 +647,10 @@ def _validation_report_jsonable(
             "current_source_pathology_counts": dict(
                 sorted(current_source_pathology_counts.items())
             ),
+            "original_owner_phase_counts": dict(
+                sorted(original_owner_phase_counts.items())
+            ),
+            "current_owner_phase_counts": dict(sorted(current_owner_phase_counts.items())),
             "remaining_manual_status_counts": dict(
                 sorted(remaining_manual_status_counts.items())
             ),
@@ -621,6 +660,9 @@ def _validation_report_jsonable(
             ),
             "remaining_source_pathology_counts": dict(
                 sorted(remaining_source_pathology_counts.items())
+            ),
+            "remaining_owner_phase_counts": dict(
+                sorted(remaining_owner_phase_counts.items())
             ),
             "stale_original_manual_rule_counts": dict(
                 sorted(stale_original_manual_rule_counts.items())
@@ -747,6 +789,9 @@ def _remaining_workqueue_rows(
         row["validator_current_source_pathology"] = str(
             validation.get("current_source_pathology") or ""
         )
+        row["validator_current_owner_phase"] = str(
+            validation.get("current_owner_phase") or ""
+        )
         # Preserve the original workqueue evidence fields, but expose the
         # current classification at top level so downstream queue tooling does
         # not accidentally group by stale exported families.
@@ -763,6 +808,7 @@ def _remaining_workqueue_rows(
             row["validator_current_blocking_lowering_rule_ids"]
         )
         row["current_source_pathology"] = row["validator_current_source_pathology"]
+        row["current_owner_phase"] = row["validator_current_owner_phase"]
         current_template = validation.get("current_suggested_claim_template")
         if isinstance(current_template, Mapping) and current_template:
             row["suggested_claim_template"] = dict(current_template)
@@ -840,8 +886,16 @@ def _print_text_report(report: Mapping[str, Any], *, summary_only: bool = False)
         + _format_count_map(summary.get("current_source_pathology_counts"))
     )
     print(
+        "Current owner phases: "
+        + _format_count_map(summary.get("current_owner_phase_counts"))
+    )
+    print(
         "Remaining source pathologies: "
         + _format_count_map(summary.get("remaining_source_pathology_counts"))
+    )
+    print(
+        "Remaining owner phases: "
+        + _format_count_map(summary.get("remaining_owner_phase_counts"))
     )
     print(
         "Remaining blocking lowering: "

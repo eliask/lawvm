@@ -199,6 +199,7 @@ def test_uk_manual_frontier_validate_main_emits_json(
                 "effect_id": rows[0]["effect_id"],
                 "current_manual_compile_status": "manual_compile_candidate",
                 "current_manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+                "current_owner_phase": "typed_elaboration",
                 "current_compiled_op_count": 0,
                 "current_blocking_lowering_rule_ids": [
                     "uk_effect_heading_only_ref_rejected"
@@ -254,8 +255,14 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert payload["summary"]["current_source_pathology_counts"] == {
         "heading_only_ref_unsupported": 1
     }
+    assert payload["summary"]["current_owner_phase_counts"] == {
+        "typed_elaboration": 1
+    }
     assert payload["summary"]["remaining_source_pathology_counts"] == {
         "heading_only_ref_unsupported": 1
+    }
+    assert payload["summary"]["remaining_owner_phase_counts"] == {
+        "typed_elaboration": 1
     }
     assert payload["summary"]["remaining_blocking_lowering_rule_counts"] == {
         "uk_effect_heading_only_ref_rejected": 1
@@ -313,6 +320,8 @@ def test_uk_manual_frontier_validate_main_emits_json(
         "heading_only_ref_unsupported"
     )
     assert remaining_row["current_source_pathology"] == "heading_only_ref_unsupported"
+    assert remaining_row["validator_current_owner_phase"] == "typed_elaboration"
+    assert remaining_row["current_owner_phase"] == "typed_elaboration"
     assert remaining_row["suggested_claim_template"] == {
         "action_family": "facet_text_rewrite",
         "required_ownership": ["fresh_current_claim"],
@@ -549,6 +558,7 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
             "rule_id": "uk_manual_frontier_validator_still_manual_frontier",
             "current_manual_compile_status": "manual_compile_candidate",
             "current_manual_compile_rule_id": "uk_manual_frontier_table_appropriate_place_candidate",
+            "current_owner_phase": "typed_elaboration",
             "current_source_pathology": "table_entry_target_unsupported",
             "current_compiled_op_count": 0,
             "current_blocking_lowering_rule_ids": [
@@ -591,6 +601,8 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     assert remaining[0]["current_source_pathology"] == (
         "table_entry_target_unsupported"
     )
+    assert remaining[0]["validator_current_owner_phase"] == "typed_elaboration"
+    assert remaining[0]["current_owner_phase"] == "typed_elaboration"
     assert remaining[0]["validator_current_blocking_lowering_rule_ids"] == [
         "uk_effect_table_entry_instruction_rejected"
     ]

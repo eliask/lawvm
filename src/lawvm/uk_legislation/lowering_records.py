@@ -15,6 +15,7 @@ from lawvm.uk_legislation.effects import (
     uk_nonstructural_replay_candidate_family,
 )
 from lawvm.uk_legislation.manual_claim_templates import uk_manual_claim_template_status
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
 from lawvm.uk_legislation.effect_temporal_cessation import (
     UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
     temporal_ceases_to_have_effect_exclusion_rule_for_ops,
@@ -482,6 +483,11 @@ def append_manual_compile_frontier_diagnostic(
         family="manual_compile_frontier",
         effect=effect,
         blocking=False,
+        owner_phase=uk_phase_owner_for_manual_frontier(
+            manual_compile_status=manual_frontier["status"],
+            manual_compile_rule_id=manual_frontier["rule_id"],
+            source_pathology=source_pathology or "",
+        ),
         manual_compile_status=manual_frontier["status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         manual_compile_reason=manual_frontier["reason"],
