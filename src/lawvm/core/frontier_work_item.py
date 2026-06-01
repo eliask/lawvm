@@ -22,6 +22,8 @@ class FrontierWorkItem:
     required_claim_kind: str
     safe_default: str
     source_witness: Mapping[str, Any] = field(default_factory=dict)
+    target_witness: Mapping[str, Any] = field(default_factory=dict)
+    compare_witness: Mapping[str, Any] = field(default_factory=dict)
     candidate_operation_family: str = ""
     candidate_targets: tuple[str, ...] = ()
     guidance_refs: tuple[str, ...] = ()
@@ -79,9 +81,19 @@ class FrontierWorkItem:
         )
         if not isinstance(self.source_witness, Mapping):
             raise ValueError("FrontierWorkItem.source_witness must be a mapping")
+        if not isinstance(self.target_witness, Mapping):
+            raise ValueError("FrontierWorkItem.target_witness must be a mapping")
+        if not isinstance(self.compare_witness, Mapping):
+            raise ValueError("FrontierWorkItem.compare_witness must be a mapping")
         if not isinstance(self.detail, Mapping):
             raise ValueError("FrontierWorkItem.detail must be a mapping")
         object.__setattr__(self, "source_witness", freeze_mapping(self.source_witness))
+        object.__setattr__(self, "target_witness", freeze_mapping(self.target_witness))
+        object.__setattr__(
+            self,
+            "compare_witness",
+            freeze_mapping(self.compare_witness),
+        )
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
         issues = validate_frontier_work_item(self.to_dict())
         if issues:
@@ -94,6 +106,8 @@ class FrontierWorkItem:
             "source_artifact_id": self.source_artifact_id,
             "source_unit_id": self.source_unit_id,
             "source_witness": _plain_jsonable(self.source_witness),
+            "target_witness": _plain_jsonable(self.target_witness),
+            "compare_witness": _plain_jsonable(self.compare_witness),
             "owner_phase": self.owner_phase,
             "frontier_family": self.frontier_family,
             "frontier_status": self.frontier_status,
@@ -133,8 +147,9 @@ def validate_frontier_work_item(row: Mapping[str, Any]) -> tuple[str, ...]:
         issues.append("frontier work items must be non-executable")
     if row.get("replay_authorized") is not False:
         issues.append("frontier work items must not be replay-authorized")
-    if not isinstance(row.get("source_witness", {}), Mapping):
-        issues.append("source_witness must be a mapping")
+    for key in ("source_witness", "target_witness", "compare_witness"):
+        if not isinstance(row.get(key, {}), Mapping):
+            issues.append(f"{key} must be a mapping")
     for key in (
         "candidate_targets",
         "guidance_refs",

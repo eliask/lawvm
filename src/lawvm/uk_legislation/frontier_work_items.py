@@ -88,6 +88,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
         default_artifact_id=source_artifact_id,
         default_source_unit_id=source_unit_id,
     ).to_dict()
+    target_witness = _target_witness(row)
+    compare_witness = _compare_witness(row, target_witness=target_witness)
     return FrontierWorkItem(
         work_item_id=str(
             row.get("work_item_id") or f"uk-frontier-{source_artifact_id}-{source_unit_id}"
@@ -96,6 +98,8 @@ def uk_frontier_work_item_from_manual_frontier_row(
         source_artifact_id=source_artifact_id,
         source_unit_id=source_unit_id,
         source_witness=normalized_source_witness,
+        target_witness=target_witness,
+        compare_witness=compare_witness,
         owner_phase=str(
             row.get("current_owner_phase")
             or row.get("owner_phase")
@@ -180,3 +184,69 @@ def _candidate_targets(row: Mapping[str, Any]) -> tuple[str, ...]:
         *_string_tuple(target_context.get("resolver_eids")),
     )
     return tuple(dict.fromkeys(targets))
+
+
+def _target_witness(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    target_context = _mapping(row.get("target_context"))
+    witness = {
+        "surface": str(
+            target_context.get("surface")
+            or row.get("target_surface")
+            or "effect_feed_affected_provisions"
+        ),
+        "affected_provisions": str(
+            target_context.get("affected_provisions")
+            or row.get("affected_provisions")
+            or ""
+        ),
+        "candidate_targets": _candidate_targets(row),
+        "resolver_eids": _first_string_tuple(
+            target_context.get("resolver_eids"),
+            row.get("resolver_eids"),
+        ),
+    }
+    return _compact_witness(witness)
+
+
+def _compare_witness(
+    row: Mapping[str, Any],
+    *,
+    target_witness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    target_context = _mapping(row.get("target_context"))
+    compare = _mapping(row.get("compare"))
+    witness = {
+        "surface": "replay_vs_current_oracle_target_presence",
+        "compare_shape": str(
+            row.get("compare_shape")
+            or target_context.get("compare_shape")
+            or compare.get("shape")
+            or ""
+        ),
+        "resolver_eids": _first_string_tuple(
+            compare.get("resolver_eids"),
+            target_witness.get("resolver_eids"),
+        ),
+        "base_target_hits": _bool_tuple(compare.get("base_target_hits")),
+        "oracle_target_hits": _bool_tuple(compare.get("oracle_target_hits")),
+        "base_descendant_hits": _bool_tuple(compare.get("base_descendant_hits")),
+        "oracle_descendant_hits": _bool_tuple(compare.get("oracle_descendant_hits")),
+        "base_parent_hits": _bool_tuple(compare.get("base_parent_hits")),
+        "oracle_parent_hits": _bool_tuple(compare.get("oracle_parent_hits")),
+    }
+    return _compact_witness(witness)
+
+
+def _bool_tuple(value: Any) -> tuple[bool, ...]:
+    if isinstance(value, list | tuple):
+        return tuple(bool(item) for item in value)
+    return ()
+
+
+def _compact_witness(witness: Mapping[str, Any]) -> Mapping[str, Any]:
+    compact: dict[str, Any] = {}
+    for key, value in witness.items():
+        if value in ("", (), [], {}, None):
+            continue
+        compact[str(key)] = value
+    return compact
