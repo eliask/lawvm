@@ -4137,6 +4137,107 @@ def test_compile_source_owned_schedule_structural_sibling_insert() -> None:
     assert paragraph.children[1].attrs["eId"] == "schedule-10-paragraph-1-aa"
 
 
+def test_compile_source_owned_structural_sibling_insert_when_feed_targets_inserted_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-9-paragraph-12">
+          <Pnumber>12</Pnumber>
+          <P1para>
+            <Text>
+              In section 107(1) of the Powers of Criminal Courts (Sentencing)
+              Act 2000 (definition of “youth detention accommodation” for the
+              purposes of detention and training orders), after paragraph (a)
+              insert—
+              aa a secure college; .
+            </Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-867f320fedf30c1f8d21554d200a70f1",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-04-13",
+        affected_uri="/id/ukpga/2000/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="6",
+        affected_provisions="s. 107(1)(aa)",
+        affecting_uri="/id/ukpga/2015/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="2",
+        affecting_provisions="Sch. 9 para. 12",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2015-04-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "107"), ("subsection", "1"), ("paragraph", "aa"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[0].payload.label == "aa"
+    assert ops[0].payload.text == "a secure college; ."
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_structural_sibling_insert_lowered",
+    ]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["target"] == "section:107/subsection:1/paragraph:aa"
+
+
+def test_compile_source_owned_structural_sibling_insert_rejects_feed_label_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-9-paragraph-12">
+          <Pnumber>12</Pnumber>
+          <P1para>
+            <Text>In section 107(1), after paragraph (a) insert— aa a secure college; .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-structural-sibling-mismatch",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-04-13",
+        affected_uri="/id/ukpga/2000/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="6",
+        affected_provisions="s. 107(1)(ab)",
+        affecting_uri="/id/ukpga/2015/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2015",
+        affecting_number="2",
+        affecting_provisions="Sch. 9 para. 12",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2015-04-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert "uk_effect_structural_sibling_insert_lowered" not in {
+        row["rule_id"] for row in lowering_records
+    }
+
+
 def test_compile_amendment_program_inserted_parent_child_insert_as_target_local_text_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
