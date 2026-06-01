@@ -14363,6 +14363,113 @@ def test_compile_child_tail_omit_uses_exact_feed_subsection_context() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_child_tail_omit_uses_exact_feed_paragraph_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-8-paragraph-69-e-iv">
+          <Pnumber>iv</Pnumber>
+          <Text>iv omit the words after paragraph (c); and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-target-paragraph-child-tail",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2006-10-01",
+        affected_uri="/id/ukpga/1968/67/schedule/4/paragraph/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="67",
+        affected_provisions="Sch. 4 para. 9",
+        affecting_uri="/id/uksi/2006/2407",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="2407",
+        affecting_provisions="Sch. 8 Pt. 1 para. 69(e)(iv)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2006-10-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("schedule", "4"), ("paragraph", "9"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_c"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["target_supplied_subsection_context"] == "true"
+
+
+def test_compile_child_tail_substitution_accepts_following_to_end() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-34-paragraph-6-b">
+          <Pnumber>b</Pnumber>
+          <Text>b for the words following paragraph (c) to the end of the subsection
+          substitute “is specified as a prescription only medicine”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-tail-following-to-end",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-08-14",
+        affected_uri="/id/ukpga/1968/67/section/58A/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="67",
+        affected_provisions="s. 58A(1)",
+        affecting_uri="/id/ukpga/2012/7",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="7",
+        affecting_provisions="Sch. 34 para. 6(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2012-08-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "58a"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_c"
+    assert _required_text_patch_replacement(ops[0]) == (
+        "is specified as a prescription only medicine"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_substitution_text_patch",
+    ]
+
+
 def test_compile_deictic_child_tail_omit_uses_previous_source_sibling_context() -> None:
     source_root = ET.fromstring(
         f"""
@@ -32619,6 +32726,61 @@ def test_compile_malformed_overlap_substitution_records_unlowered_rejection() ->
     assert rejection["strict_disposition"] == "block"
     assert rejection["quirks_disposition"] == "record"
     assert "relevant words are changed" in rejection["extracted_text_preview"]
+
+
+def test_compile_flat_target_paragraph_substitution_lowers_exact_structural_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="article-6-1-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in subsection (1), for paragraph (a) (and the following “and”),
+          substitute the following paragraph— a that there is a superintendent
+          in relation to the retail pharmacy business, and ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-flat-target-paragraph-substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-12-01",
+        affected_uri="/id/ukpga/1968/67/section/71/1/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="67",
+        affected_provisions="s. 71(1)(a)",
+        affecting_uri="/id/uksi/2022/849",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="849",
+        affecting_provisions="art. 6(1)(a)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2022-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "71"), ("subsection", "1"), ("paragraph", "a"))
+    payload = _required_payload(ops[0])
+    assert payload.kind is IRNodeKind.PARAGRAPH
+    assert payload.label == "a"
+    assert payload.text == (
+        "that there is a superintendent in relation to the retail pharmacy business, and"
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_flat_target_paragraph_substitution_text_payload"
+    ]
+    assert lowering_records[0]["family"] == "action_family_recovery"
+    assert lowering_records[0]["strict_disposition"] == "block"
 
 
 def test_compile_mixed_body_heading_text_substitution_lowers_current_body_lane() -> None:

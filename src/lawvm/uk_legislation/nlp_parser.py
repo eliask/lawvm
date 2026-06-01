@@ -341,6 +341,20 @@ _AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RE = re.compile(
     r"(?P<inserted>.{1,1200}?)(?:\s+\.)?$",
     re.I,
 )
+_AFTER_QUOTED_ANCHOR_WHERE_IT_APPEARS_FOR_ORDINAL_BLOCK_INSERT_RE = re.compile(
+    rf"after\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’],?\s+"
+    rf"where\s+(?:(?:it|they|those\s+words?)\s+)?"
+    rf"(?:appears?|occurs?)\s+for\s+the\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+time,?\s+"
+    r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)\s*[—-]\s+"
+    r"(?P<inserted>.{1,1200}?)(?:\s+\.)?$",
+    re.I,
+)
+_AFTER_QUOTED_ANCHOR_JOINED_INSERT_RE = re.compile(
+    rf"after\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
+    r"insert\s+(?:the\s+)?(?:words?\s+)?"
+    rf"[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
 _AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RE = re.compile(
     rf"after\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
     r"(?P<insert_separator>\s*,?\s+)(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
@@ -867,6 +881,38 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             }
         )
 
+    matches_parenthetical_each_occurrence_substituted = re.finditer(
+        rf"for\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
+        r"\(\s*at\s+each\s+place\s+where\s+(?:it|they|those\s+words?)\s+"
+        r"(?:occurs?|appears?)\s*\),?\s+substitute\s+"
+        rf"[“”\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_parenthetical_each_occurrence_substituted:
+        subs.append(
+            {
+                "original": m.group("original"),
+                "replacement": m.group("replacement"),
+                "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+            }
+        )
+
+    matches_every_reference_substituted = re.finditer(
+        rf"for\s+every\s+reference\s+to\s+[“”\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s+"
+        rf"substitute\s+[“”\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_every_reference_substituted:
+        subs.append(
+            {
+                "original": m.group("original"),
+                "replacement": m.group("replacement"),
+                "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+            }
+        )
+
     matches_each_case_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](?P<original>.*?)[”\"'’],?\s+"
         r"in each case\s+(?:where\s+)?(?:(?:it|they|those words?)\s+)"
@@ -1353,7 +1399,10 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         subs.append(patch)
 
     matches_range_to_end_substituted = re.finditer(
-        r"for (?:the )?words?(?:\s+from)?\s+[“\"'‘](?P<start>.*?)[”\"'’]"
+        r"for (?:the )?words?(?:\s+from)?\s+"
+        r"(?:the\s+(?P<pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
+        r"\s+occurrence\s+of\s+)?"
+        r"[“\"'‘](?P<start>.*?)[”\"'’]"
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
         r" (?:to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
@@ -1373,8 +1422,9 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = "uk_effect_range_to_end_there_is_substituted_text_patch"
         elif m.group("dash"):
             patch["rule_id"] = UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID
-        if m.group("ordinal"):
-            patch["occurrence"] = _ORDINAL_OCCURRENCES[m.group("ordinal").lower()]
+        ordinal = m.group("ordinal") or m.group("pre_ordinal")
+        if ordinal:
+            patch["occurrence"] = _ORDINAL_OCCURRENCES[ordinal.lower()]
         subs.append(patch)
 
     matches_anchor_to_end_substituted = re.finditer(
@@ -2162,6 +2212,23 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
             }
         )
 
+    for m in _AFTER_QUOTED_ANCHOR_JOINED_INSERT_RE.finditer(text):
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "rule_id": "uk_effect_after_quoted_anchor_insert_text_patch",
+            }
+        )
+
     for m in _AFTER_QUOTED_ANCHOR_DANGLING_INSERT_QUOTE_RE.finditer(text):
         original = m.group("original")
         inserted = m.group("inserted")
@@ -2282,7 +2349,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     )
     for m in matches_after_anchor_block_insert:
         original = m.group("original").strip()
-        inserted = re.sub(r"\s+\.$", "", m.group("inserted").strip()).strip()
+        inserted = re.sub(r"\s*\.$", "", m.group("inserted").strip()).strip()
         if inserted and not inserted.startswith(("“", '"', "'", "‘")):
             joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
             subs.append(
@@ -2325,6 +2392,21 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                     "rule_id": UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID,
                 }
             )
+
+    for m in _AFTER_QUOTED_ANCHOR_WHERE_IT_APPEARS_FOR_ORDINAL_BLOCK_INSERT_RE.finditer(text):
+        original = m.group("original").strip()
+        inserted = re.sub(r"\s+\.$", "", m.group("inserted").strip()).strip()
+        if not inserted or inserted.startswith(("“", '"', "'", "‘")):
+            continue
+        joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "occurrence": _ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
+                "rule_id": UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID,
+            }
+        )
 
     for m in _AFTER_REFERENCE_SECTION_INSERT_RE.finditer(text):
         anchor = " ".join(m.group("anchor").split()).strip()
@@ -3223,12 +3305,12 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     matches_at_end_unquoted_dash_insert = re.finditer(
         rf"at the end{_UK_AT_END_TARGET_QUALIFIER_RE}"
         r"(?:\s+\([^)]*\))?,?\s+"
-        r"insert\s*[—-]\s+(?P<inserted>[^.;]+?)\s*\.?\s*$",
+        r"insert\s*[—-]\s+(?P<inserted>.{1,1200}?)\s*;?\s*(?:and)?\s*$",
         text,
         re.I,
     )
     for m in matches_at_end_unquoted_dash_insert:
-        inserted = m.group("inserted").strip()
+        inserted = re.sub(r"\s*\.$", "", m.group("inserted").strip()).strip()
         subs.append(
             {
                 "original": "TEXT_FROM__TO_END",
@@ -3675,6 +3757,22 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
     )
     for m in matches_imperative_definition_repeal:
         for term in _quoted_terms(m.group(1)):
+            subs.append(
+                {
+                    "original": f"TEXT_DEFINITION_ENTRY_{term}",
+                    "replacement": "",
+                    "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+                }
+            )
+
+    matches_entry_defining_repeal = re.finditer(
+        r"\bomit\s+(?:the\s+)?entr(?:y|ies)\s+defining\s+"
+        r"(?P<terms>.{1,700}?)(?:[.;]|,\s*(?:and)?|$)",
+        text,
+        re.I | re.S,
+    )
+    for m in matches_entry_defining_repeal:
+        for term in _quoted_terms(m.group("terms")):
             subs.append(
                 {
                     "original": f"TEXT_DEFINITION_ENTRY_{term}",

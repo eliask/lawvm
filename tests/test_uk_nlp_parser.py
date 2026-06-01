@@ -124,6 +124,123 @@ def test_parse_fragment_substitution_handles_secondly_occurring_insert() -> None
     ]
 
 
+def test_parse_fragment_substitution_handles_joined_after_insert_token() -> None:
+    subs = parse_fragment_substitution(
+        "in the definition of “the 2001 Directive”, after “human use”insert “, as amended”."
+    )
+
+    assert subs == [
+        {
+            "original": "human use",
+            "replacement": "human use, as amended",
+            "rule_id": "uk_effect_after_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_parenthetical_each_occurrence_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "In subsection (5), for “Commission” (at each place where it occurs) "
+        "substitute “appropriate committee”."
+    )
+
+    assert subs == [
+        {
+            "original": "Commission",
+            "replacement": "appropriate committee",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_entry_defining_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "omit the entry defining “clinical trial” and “clinical trial certificate”, and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_DEFINITION_ENTRY_clinical trial",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        },
+        {
+            "original": "TEXT_DEFINITION_ENTRY_clinical trial certificate",
+            "replacement": "",
+            "rule_id": "uk_effect_definition_entry_repeal_text_patch",
+        },
+    ]
+
+
+def test_parse_fragment_substitution_handles_where_it_appears_for_ordinal_block_insert() -> None:
+    subs = parse_fragment_substitution(
+        "after “Northern Ireland”, where it appears for the second time, insert— "
+        "or the register of visiting pharmaceutical chemists from a relevant European State ."
+    )
+
+    assert subs == [
+        {
+            "original": "Northern Ireland",
+            "replacement": (
+                "Northern Ireland or the register of visiting pharmaceutical chemists "
+                "from a relevant European State"
+            ),
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_block_insert_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_every_reference_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "for every reference to “the Minister of Health and Social Services for Northern Ireland” "
+        "substitute “the Minister for Health, Social Services and Public Safety”;"
+    )
+
+    assert subs == [
+        {
+            "original": "the Minister of Health and Social Services for Northern Ireland",
+            "replacement": "the Minister for Health, Social Services and Public Safety",
+            "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_first_occurrence_range_to_end() -> None:
+    subs = parse_fragment_substitution(
+        "for the words from the first occurrence of “for the purposes” to the end "
+        "of the subsection substitute “as prescription only medicines”;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_for the purposes_TO_END",
+            "replacement": "as prescription only medicines",
+            "occurrence": "1",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_semicolon_terminated_at_end_block_insert() -> None:
+    subs = parse_fragment_substitution(
+        "at the end insert— or a person registered in the register of visiting "
+        "pharmaceutical chemists from a relevant European State maintained under "
+        "Article 9 of the Pharmacy (Northern Ireland) Order 1976 . ;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "or a person registered in the register of visiting pharmaceutical "
+                "chemists from a relevant European State maintained under Article 9 "
+                "of the Pharmacy (Northern Ireland) Order 1976"
+            ),
+            "rule_id": "uk_effect_at_end_unquoted_text_insertion_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_bare_quoted_anchor_insert() -> None:
     subs = parse_fragment_substitution(
         "i \u201c18,\u201d there shall be inserted \u201c 18A, 18B, 18C, \u201d ; and"
