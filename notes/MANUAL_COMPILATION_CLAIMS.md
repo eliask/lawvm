@@ -218,6 +218,10 @@ The current validator checks only:
   `live_target_precondition_paths` reject the claim before proof semantics are
   considered. Recognized family-specific proof reference, ownership, source,
   and live-path fields are duplicate-sensitive for the same reason
+- validation rows carry a UK `owner_phase` derived from the matched manual
+  workqueue row where available, or from the claim's manual-frontier rule
+  otherwise, so semantic-claim batches can be triaged by the same phase contract
+  as `uk-effects`, `uk-candidates`, and broad-baseline diagnostics
 - operation-family proof semantics resolve `live_target_precondition_ids` only
   to the paths on those referenced live precondition rows; unrelated live
   preconditions declared elsewhere in the claim do not widen the proof's target
@@ -290,6 +294,9 @@ Validation rows also carry `operation_family_proof_count`,
 `operation_family_proof_semantics`, and `operation_family_proof_families`, and
 the validation report summarizes semantic/family counts, so batch review can see
 which proof plans were checked without reparsing the input claim ledger.
+Validation reports also summarize `owner_phase_counts`,
+`accepted_owner_phase_counts`, and `rejected_owner_phase_counts`; these are
+triage evidence only and do not authorize replay.
 Within family-specific proof semantics, a referenced live precondition id
 authorizes only that precondition row's `path`; adding another live precondition
 to the claim does not expand a proof unless the proof explicitly references it
