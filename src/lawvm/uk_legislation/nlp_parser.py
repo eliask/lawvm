@@ -2513,7 +2513,8 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]\s*,?\s+"
         r"in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"
         r"(?:\s+(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s+"
-        r"insert\s+[“\"'‘](.*?)[”\"'’]",
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
