@@ -80,6 +80,9 @@ UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID = (
 UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch"
 )
+UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID = (
+    "uk_effect_metadata_carried_range_insert_substitution_text_patch"
+)
 UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID = (
     "uk_effect_target_scoped_each_child_after_word_insert_text_patch"
 )
@@ -507,6 +510,36 @@ def append_basic_text_rewrite_observations(
                     "canonical_text_match": "TEXT_END",
                     "replacement": str(fragment.get("replacement") or ""),
                     "occurrence": 0,
+                },
+            )
+    if UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
+                family="action_family_recovery",
+                reason_code="effect_metadata_range_insert_substitution_source",
+                reason=(
+                    "UK effect metadata classifies the row as substituted words "
+                    "while the source formula says insert after naming a bounded "
+                    "word range; lowering preserves the range replacement as an "
+                    "owned metadata/source reconciliation rather than treating "
+                    "insert as a generic replacement verb."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
                 },
             )
     if UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID in rule_ids:

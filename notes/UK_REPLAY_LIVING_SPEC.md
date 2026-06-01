@@ -803,6 +803,13 @@ Current block-substitution context invariant:
 Current parser-surface normalization invariant:
 
 - UK source text is not mutated for storage, replay payloads, or source witnesses just to make parser regular expressions easier
+- UK XML text extraction must preserve document order through nested inline amendment
+  markup: an inline element tail such as the instruction semicolon belongs after
+  all descendants of that inline element, not before a nested `Term`/`Citation`
+  text node. This is a source-surface invariant, not a parser repair. Current
+  witness: `ukpga/1988/50` affected `Sch. 2 Ground 7` by `ukpga/2025/26`
+  `Sch. 1 para. 23(a)`, where the source replacement contains an inline
+  `Term` inside an `InlineAmendment`.
 - `normalize_uk_parser_text(...)` builds a parser-only view:
   - transport whitespace is collapsed, matching the existing parser behavior
   - dash-like instruction punctuation outside quoted legal text is normalized to a single dash surface
@@ -883,6 +890,15 @@ Current payload-descendant source-ref invariant:
 - Some source rows omit the insertion verb while the official effect feed supplies `words inserted`, for example `after "hospital" where firstly occurring "or in a care home service"`. These may lower under `uk_effect_metadata_carried_after_ordinal_insert_text_patch` only when the feed action is insertion and the source row supplies a quoted anchor, explicit ordinal occurrence, and quoted payload. This is an effect-feed elaboration observation, not a generic parser action. Current witnesses: `asp/2003/13` affected `s. 254(7)(b)` and `s. 254(8)(b)` by `ssi/2005/465 Sch. 1 para. 32(21)`.
 - Some source rows use `after "X" substitute "Y"` while the official effect feed supplies `word(s) inserted`. These may lower under `uk_effect_metadata_carried_after_substitute_insert_text_patch` only when the feed action is insertion and the source row supplies a quoted anchor plus quoted payload, with optional ordinal occurrence wording between the anchor and `substitute`. This is an owned metadata/source reconciliation; it must record `effect_metadata_insert_after_anchor_substitute_source` and must not convert ordinary substitution rows into insertion rows. Current witnesses: `asp/2004/4` affected `s. 1(3)(a)` by `asp/2009/7 s. 1(2)` and `s. 6(a)`.
 - Some source rows use `at the end of sub-paragraph (i) substitute "Y"` while the official effect feed supplies `word(s) inserted`. These may lower under `uk_effect_metadata_carried_at_end_substitute_insert_text_patch` only when the feed action is insertion and the carried child reference matches the feed target leaf. This records `effect_metadata_insert_at_end_substitute_source` and compiles a bounded `TEXT_END` append, not a parent replacement. Current witness: `asp/2004/4` affected `s. 19(5)(b)(i)` by `asp/2009/7 s. 1(8)(b)(i)`.
+- Some source rows use `for the words from "X" to "Y" insert "Z"` while the
+  official effect feed supplies `word(s) substituted`. These may lower under
+  `uk_effect_metadata_carried_range_insert_substitution_text_patch` only when
+  the feed action is substitution and the source row supplies an explicit quoted
+  bounded range plus quoted replacement payload. This records
+  `effect_metadata_range_insert_substitution_source` and compiles a bounded
+  `TEXT_FROM_X_TO_Y` replacement; it must not turn ordinary `word(s) inserted`
+  rows into replacements. Current witness: `ukpga/1988/50` affected
+  `Sch. 2 Ground 7` by `ukpga/2025/26` `Sch. 1 para. 23(a)`.
 - Source rows may say `after the word "X", where it occurs in each of paragraphs (a) and (b), insert "Y"` while the effect feed emits one row per listed child. Lowering may use `uk_effect_target_scoped_each_child_after_word_insert_text_patch` only when the feed target leaf kind and label are one of the source-listed children; it records `explicit_each_child_after_word_insert_scoped_by_feed_target` and does not mutate siblings from a parent row. Current witnesses: `asp/2004/4` affected `s. 16(3)(a)` and `s. 16(3)(b)` by `asp/2016/8 Sch. para. 15(b)`.
 - Source child rows such as `where it first occurs, insert "Y"` may lower under `uk_effect_source_parent_carried_after_word_ordinal_insert_text_patch` when the source parent supplies a quoted `after the word "X"` anchor and the child row supplies the ordinal and insertion payload. This records `source_parent_carried_after_word_ordinal_insert`; without the parent anchor, the child row remains under-specified. Current witnesses: `asp/2004/4` affected `s. 31` by `asp/2016/8 Sch. para. 22(a)-(b)`.
 - the parser may lower inverted wording `the word "Y" is inserted after the word "X" where it second appears` to the same text-patch shape, using `uk_effect_word_inserted_after_word_where_ordinal_text_patch`. The inserted word is not treated as a structural payload; the quoted preimage and ordinal remain source-owned. Current witness: `asp/2000/1` affected `Sch. 2 para. 2` by `asp/2010/8 s. 118(8)(a)(i)`.

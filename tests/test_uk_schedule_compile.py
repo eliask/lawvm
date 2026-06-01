@@ -8480,6 +8480,18 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         ),
         (
+            "a in the first unnumbered paragraph for the words from “The tenancy” "
+            "to “devolved” insert “The tenancy has devolved on a person "
+            "(the “ new tenant ”)” ;",
+            "words substituted",
+            "sch. 2 para. 7",
+            "TEXT_FROM_The tenancy_TO_devolved",
+            "The tenancy has devolved on a person (the “ new tenant ”)",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_metadata_carried_range_insert_substitution_text_patch",
+        ),
+        (
             "c repeal the words “or to the Scottish Crime and Drug Enforcement Agency”.",
             "words repealed",
             "s. 24(2)(b)",
@@ -8781,6 +8793,7 @@ def test_compile_additional_frontier_text_patch_idioms(
         "uk_effect_anchor_to_end_block_substitution_text_patch",
         "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         "uk_effect_metadata_carried_after_substitute_insert_text_patch",
+        "uk_effect_metadata_carried_range_insert_substitution_text_patch",
         "uk_effect_range_to_end_ordinal_block_substitution_text_patch",
         "uk_effect_range_to_end_quoted_dash_substitution_text_patch",
         "uk_effect_range_unquoted_substitution_text_patch",
@@ -8801,6 +8814,48 @@ def test_compile_additional_frontier_text_patch_idioms(
     else:
         assert ops[0].text_patch.replacement == expected_replacement
     assert f"{_NOTE_TEXT_REWRITE_RULE}{expected_rule_id}" in ops[0].provenance_tags
+
+
+def test_compile_range_insert_substitution_requires_substitution_metadata() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="test-range-insert-action-family">
+          <Text>a for the words from \u201cThe tenancy\u201d to \u201cdevolved\u201d insert \u201cnew text\u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_range_insert_metadata_negative",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-10-04",
+        affected_uri="/id/ukpga/1988/50",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="50",
+        affected_provisions="Sch. 2 Ground 7",
+        affecting_uri="/id/ukpga/2025/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="26",
+        affecting_provisions="Sch. 1 para. 23(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2025-10-04", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert ops == []
+    assert "uk_effect_metadata_carried_range_insert_substitution_text_patch" not in {
+        row["rule_id"] for row in lowering_rejections
+    }
 
 
 def test_compile_source_parent_carried_after_word_ordinal_insert() -> None:
