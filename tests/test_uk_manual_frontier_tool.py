@@ -713,9 +713,14 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
         "uk_manual_frontier_table_appropriate_place_candidate"
     )
     assert remaining[0]["frontier_work_item"]["source_unit_id"] == "eff-live"
-    assert remaining[0]["frontier_work_item"]["source_witness"] == {
-        "text_preview": "live"
-    }
+    assert remaining[0]["frontier_work_item"]["source_witness"]["source_role"] == (
+        "source_preview"
+    )
+    assert remaining[0]["frontier_work_item"]["source_witness"]["text_preview"] == "live"
+    assert remaining[0]["frontier_work_item"]["source_witness"]["bounded_preview"] == (
+        "live"
+    )
+    assert remaining[0]["frontier_work_item"]["source_witness"]["preview_digest"]
     assert remaining[0]["frontier_work_item"]["required_validator_checks"] == [
         "claim_identifies_table_ordering_rule_or_anchor"
     ]
