@@ -2243,6 +2243,7 @@ def test_uk_effects_summary_counts_are_stable() -> None:
                 manual_compile_status="deterministic_frontend_supported",
                 manual_compile_rule_id="uk_manual_frontier_deterministic_supported",
                 manual_compile_reason="Already lowers without blocking rejections.",
+                manual_compile_owner_phase="canonical_op_compilation",
             ),
         ),
         _EffectReportRow(
@@ -2300,6 +2301,7 @@ def test_uk_effects_summary_counts_are_stable() -> None:
                 manual_compile_status="source_insufficient",
                 manual_compile_rule_id="uk_manual_frontier_missing_payload_source_insufficient",
                 manual_compile_reason="No extracted payload is available.",
+                manual_compile_owner_phase="affecting_source_extraction",
             ),
         ),
     )
@@ -2333,6 +2335,10 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "uk_manual_frontier_missing_payload_source_insufficient": 1,
         },
         "manual_compile_candidate_rule_counts": {},
+        "manual_compile_owner_phase_counts": {
+            "affecting_source_extraction": 1,
+            "canonical_op_compilation": 1,
+        },
         "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,
@@ -2345,6 +2351,10 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "no_lowerable_operations": 1,
             "payload_missing": 1,
         },
+        "lowering_observation_owner_phase_counts": {
+            "affecting_source_extraction": 1,
+            "canonical_op_compilation": 1,
+        },
         "rows_with_lowering_rejections": 1,
         "rows_with_blocking_lowering_rejections": 1,
         "rows_with_source_acquisition_observations": 1,
@@ -2352,9 +2362,15 @@ def test_uk_effects_summary_counts_are_stable() -> None:
             "uk_affecting_act_xml_cached_recorded": 1,
             "uk_affecting_act_xml_missing_rejected": 1,
         },
+        "source_acquisition_observation_owner_phase_counts": {
+            "affecting_source_extraction": 2,
+        },
         "rows_with_source_acquisition_rejections": 1,
         "source_acquisition_rejection_rule_counts": {
             "uk_affecting_act_xml_missing_rejected": 1,
+        },
+        "source_acquisition_rejection_owner_phase_counts": {
+            "affecting_source_extraction": 1,
         },
         "lowering_rejection_rule_counts": {
             "uk_effect_lowering_no_ops_rejected": 1,
@@ -2362,11 +2378,17 @@ def test_uk_effects_summary_counts_are_stable() -> None:
         "lowering_rejection_reason_code_counts": {
             "no_lowerable_operations": 1,
         },
+        "lowering_rejection_owner_phase_counts": {
+            "canonical_op_compilation": 1,
+        },
         "blocking_lowering_rejection_rule_counts": {
             "uk_effect_lowering_no_ops_rejected": 1,
         },
         "blocking_lowering_rejection_reason_code_counts": {
             "no_lowerable_operations": 1,
+        },
+        "blocking_lowering_rejection_owner_phase_counts": {
+            "canonical_op_compilation": 1,
         },
     }
 
@@ -2415,6 +2437,7 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
             manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
             manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_owner_phase="typed_elaboration",
             manual_compile_lowering_rule_ids=("uk_effect_heading_only_ref_rejected",),
             manual_compile_blocking_lowering_rule_ids=(
                 "uk_effect_heading_only_ref_rejected",
@@ -2428,6 +2451,7 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "status": "manual_compile_candidate",
         "rule_id": "uk_manual_frontier_heading_facet_candidate",
         "reason": "Heading facet requires an explicit manual claim.",
+        "owner_phase": "typed_elaboration",
         "lowering_rule_ids": ["uk_effect_heading_only_ref_rejected"],
         "blocking_lowering_rule_ids": ["uk_effect_heading_only_ref_rejected"],
     }
@@ -2479,6 +2503,7 @@ def test_heading_frontier_template_distinguishes_part_wrapper_insert() -> None:
             manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
             manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_owner_phase="typed_elaboration",
             manual_compile_lowering_rule_ids=("uk_effect_heading_only_ref_rejected",),
             manual_compile_blocking_lowering_rule_ids=(
                 "uk_effect_heading_only_ref_rejected",
@@ -2681,6 +2706,7 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
             manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
             manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_owner_phase="typed_elaboration",
             manual_compile_lowering_rule_ids=("uk_effect_heading_only_ref_rejected",),
             manual_compile_blocking_lowering_rule_ids=(
                 "uk_effect_heading_only_ref_rejected",
@@ -2746,6 +2772,8 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     assert payload["affecting_uri"] == "/id/ukpga/2025/1"
     assert payload["manual_compile_status"] == "manual_compile_candidate"
     assert payload["manual_compile_rule_id"] == "uk_manual_frontier_heading_facet_candidate"
+    assert payload["owner_phase"] == "typed_elaboration"
+    assert payload["manual_compile_owner_phase"] == "typed_elaboration"
     assert payload["manual_compile_lowering_rule_ids"] == [
         "uk_effect_heading_only_ref_rejected"
     ]

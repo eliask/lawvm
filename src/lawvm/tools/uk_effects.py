@@ -14,6 +14,10 @@ from lawvm.tools.uk_claim_templates import (
     manual_compile_suggested_claim_template as _manual_compile_suggested_claim_template,
 )
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
+from lawvm.uk_legislation.phase_discipline import (
+    uk_phase_owner_for_diagnostic,
+    uk_phase_owner_for_manual_frontier,
+)
 from lawvm.uk_legislation.source_state import (
     uk_source_parse_observations_from_ir,
     uk_source_xml_parse_rejection,
@@ -139,6 +143,7 @@ class _EffectSummary:
     manual_compile_status: str = ""
     manual_compile_rule_id: str = ""
     manual_compile_reason: str = ""
+    manual_compile_owner_phase: str = ""
     manual_compile_lowering_rule_ids: tuple[str, ...] = ()
     manual_compile_blocking_lowering_rule_ids: tuple[str, ...] = ()
     text_patch_evidence: tuple[dict[str, Any], ...] = ()
@@ -646,6 +651,11 @@ def summarize_uk_effect(
         manual_compile_status=manual_frontier["status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         manual_compile_reason=manual_frontier["reason"],
+        manual_compile_owner_phase=uk_phase_owner_for_manual_frontier(
+            manual_compile_status=manual_frontier["status"],
+            manual_compile_rule_id=manual_frontier["rule_id"],
+            source_pathology=source_pathology,
+        ),
         manual_compile_lowering_rule_ids=tuple(
             sorted(
                 {
@@ -711,7 +721,13 @@ def uk_effects_summary_counts(
     manual_compile_status_counts: dict[str, int] = {}
     manual_compile_rule_counts: dict[str, int] = {}
     manual_compile_candidate_rule_counts: dict[str, int] = {}
+    manual_compile_owner_phase_counts: dict[str, int] = {}
     suggested_claim_template_status_counts: dict[str, int] = {}
+    lowering_observation_owner_phase_counts: dict[str, int] = {}
+    lowering_rejection_owner_phase_counts: dict[str, int] = {}
+    blocking_lowering_rejection_owner_phase_counts: dict[str, int] = {}
+    source_acquisition_observation_owner_phase_counts: dict[str, int] = {}
+    source_acquisition_rejection_owner_phase_counts: dict[str, int] = {}
     rows_with_resolver_eids = 0
     for row in rows:
         effect = row.effect
@@ -727,6 +743,10 @@ def uk_effects_summary_counts(
         )
         manual_compile_rule_counts[manual_rule_key] = (
             manual_compile_rule_counts.get(manual_rule_key, 0) + 1
+        )
+        owner_phase_key = summary.manual_compile_owner_phase or "unknown"
+        manual_compile_owner_phase_counts[owner_phase_key] = (
+            manual_compile_owner_phase_counts.get(owner_phase_key, 0) + 1
         )
         if manual_status_key == "manual_compile_candidate":
             manual_compile_candidate_rule_counts[manual_rule_key] = (
@@ -777,6 +797,10 @@ def uk_effects_summary_counts(
             source_acquisition_observation_rule_counts[rule_id] = (
                 source_acquisition_observation_rule_counts.get(rule_id, 0) + 1
             )
+            owner_phase = uk_phase_owner_for_diagnostic(observation)
+            source_acquisition_observation_owner_phase_counts[owner_phase] = (
+                source_acquisition_observation_owner_phase_counts.get(owner_phase, 0) + 1
+            )
         if source_acquisition_rejections:
             rows_with_source_acquisition_rejections += 1
         for rejection in source_acquisition_rejections:
@@ -784,10 +808,18 @@ def uk_effects_summary_counts(
             source_acquisition_rejection_rule_counts[rule_id] = (
                 source_acquisition_rejection_rule_counts.get(rule_id, 0) + 1
             )
+            owner_phase = uk_phase_owner_for_diagnostic(rejection)
+            source_acquisition_rejection_owner_phase_counts[owner_phase] = (
+                source_acquisition_rejection_owner_phase_counts.get(owner_phase, 0) + 1
+            )
         for observation in summary.lowering_rejections:
             rule_id = str(observation.get("rule_id") or "unknown")
             lowering_observation_rule_counts[rule_id] = (
                 lowering_observation_rule_counts.get(rule_id, 0) + 1
+            )
+            owner_phase = uk_phase_owner_for_diagnostic(observation)
+            lowering_observation_owner_phase_counts[owner_phase] = (
+                lowering_observation_owner_phase_counts.get(owner_phase, 0) + 1
             )
             reason_code = str(observation.get("reason_code") or "")
             if reason_code:
@@ -799,6 +831,13 @@ def uk_effects_summary_counts(
             lowering_rejection_rule_counts[rule_id] = lowering_rejection_rule_counts.get(rule_id, 0) + 1
             blocking_lowering_rejection_rule_counts[rule_id] = (
                 blocking_lowering_rejection_rule_counts.get(rule_id, 0) + 1
+            )
+            owner_phase = uk_phase_owner_for_diagnostic(rejection)
+            lowering_rejection_owner_phase_counts[owner_phase] = (
+                lowering_rejection_owner_phase_counts.get(owner_phase, 0) + 1
+            )
+            blocking_lowering_rejection_owner_phase_counts[owner_phase] = (
+                blocking_lowering_rejection_owner_phase_counts.get(owner_phase, 0) + 1
             )
             reason_code = str(rejection.get("reason_code") or "")
             if reason_code:
@@ -827,6 +866,9 @@ def uk_effects_summary_counts(
         "manual_compile_candidate_rule_counts": dict(
             sorted(manual_compile_candidate_rule_counts.items())
         ),
+        "manual_compile_owner_phase_counts": dict(
+            sorted(manual_compile_owner_phase_counts.items())
+        ),
         "suggested_claim_template_status_counts": dict(
             sorted(suggested_claim_template_status_counts.items())
         ),
@@ -839,6 +881,9 @@ def uk_effects_summary_counts(
         "lowering_observation_reason_code_counts": dict(
             sorted(lowering_observation_reason_code_counts.items())
         ),
+        "lowering_observation_owner_phase_counts": dict(
+            sorted(lowering_observation_owner_phase_counts.items())
+        ),
         "rows_with_lowering_rejections": rows_with_lowering_rejections,
         "rows_with_blocking_lowering_rejections": rows_with_blocking_lowering_rejections,
         "rows_with_source_acquisition_observations": (
@@ -847,19 +892,31 @@ def uk_effects_summary_counts(
         "source_acquisition_observation_rule_counts": dict(
             sorted(source_acquisition_observation_rule_counts.items())
         ),
+        "source_acquisition_observation_owner_phase_counts": dict(
+            sorted(source_acquisition_observation_owner_phase_counts.items())
+        ),
         "rows_with_source_acquisition_rejections": rows_with_source_acquisition_rejections,
         "source_acquisition_rejection_rule_counts": dict(
             sorted(source_acquisition_rejection_rule_counts.items())
         ),
+        "source_acquisition_rejection_owner_phase_counts": dict(
+            sorted(source_acquisition_rejection_owner_phase_counts.items())
+        ),
         "lowering_rejection_rule_counts": dict(sorted(lowering_rejection_rule_counts.items())),
         "lowering_rejection_reason_code_counts": dict(
             sorted(lowering_rejection_reason_code_counts.items())
+        ),
+        "lowering_rejection_owner_phase_counts": dict(
+            sorted(lowering_rejection_owner_phase_counts.items())
         ),
         "blocking_lowering_rejection_rule_counts": dict(
             sorted(blocking_lowering_rejection_rule_counts.items())
         ),
         "blocking_lowering_rejection_reason_code_counts": dict(
             sorted(blocking_lowering_rejection_reason_code_counts.items())
+        ),
+        "blocking_lowering_rejection_owner_phase_counts": dict(
+            sorted(blocking_lowering_rejection_owner_phase_counts.items())
         ),
     }
 
@@ -1129,6 +1186,7 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
             "status": summary.manual_compile_status or "",
             "rule_id": summary.manual_compile_rule_id or "",
             "reason": summary.manual_compile_reason or "",
+            "owner_phase": summary.manual_compile_owner_phase or "",
             "lowering_rule_ids": list(summary.manual_compile_lowering_rule_ids),
             "blocking_lowering_rule_ids": list(
                 summary.manual_compile_blocking_lowering_rule_ids
@@ -1289,6 +1347,8 @@ def _manual_compile_evidence_row_jsonable(
         "manual_compile_status": summary.manual_compile_status or "",
         "manual_compile_rule_id": summary.manual_compile_rule_id or "",
         "manual_compile_reason": summary.manual_compile_reason or "",
+        "owner_phase": summary.manual_compile_owner_phase or "",
+        "manual_compile_owner_phase": summary.manual_compile_owner_phase or "",
         "manual_compile_lowering_rule_ids": list(
             summary.manual_compile_lowering_rule_ids
         ),
@@ -1429,6 +1489,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
             "Manual compile frontier statuses: "
             + _format_count_map(manual_compile_status_counts)
         )
+    manual_compile_owner_phase_counts = summary_counts.get(
+        "manual_compile_owner_phase_counts",
+        {},
+    )
+    if manual_compile_owner_phase_counts:
+        print(
+            "Manual compile frontier owner phases: "
+            + _format_count_map(manual_compile_owner_phase_counts)
+        )
     suggested_claim_template_status_counts = summary_counts.get(
         "suggested_claim_template_status_counts",
         {},
@@ -1464,6 +1533,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
             "Rows with source acquisition observations: "
             f"{summary_counts.get('rows_with_source_acquisition_observations', 0)}"
         )
+        owner_phase_counts = summary_counts.get(
+            "source_acquisition_observation_owner_phase_counts",
+            {},
+        )
+        if owner_phase_counts:
+            print(
+                "Source acquisition observation owner phases: "
+                + _format_count_map(owner_phase_counts)
+            )
         print("Source acquisition observation rules:")
         for rule_id, count in source_acquisition_observation_rule_counts.items():
             print(f"  {rule_id}: {count}")
@@ -1472,6 +1550,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
             "Rows with source acquisition rejections: "
             f"{summary_counts.get('rows_with_source_acquisition_rejections', 0)}"
         )
+        owner_phase_counts = summary_counts.get(
+            "source_acquisition_rejection_owner_phase_counts",
+            {},
+        )
+        if owner_phase_counts:
+            print(
+                "Source acquisition rejection owner phases: "
+                + _format_count_map(owner_phase_counts)
+            )
         print("Source acquisition rejection rules:")
         for rule_id, count in source_acquisition_rejection_rule_counts.items():
             print(f"  {rule_id}: {count}")
@@ -1480,6 +1567,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
             "Rows with lowering observations: "
             f"{summary_counts.get('rows_with_lowering_observations', 0)}"
         )
+        owner_phase_counts = summary_counts.get(
+            "lowering_observation_owner_phase_counts",
+            {},
+        )
+        if owner_phase_counts:
+            print(
+                "Lowering observation owner phases: "
+                + _format_count_map(owner_phase_counts)
+            )
         print("Lowering observation rules:")
         for rule_id, count in summary_counts["lowering_observation_rule_counts"].items():
             print(f"  {rule_id}: {count}")
@@ -1490,6 +1586,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
         ].items():
             print(f"  {reason_code}: {count}")
     if summary_counts["lowering_rejection_rule_counts"]:
+        owner_phase_counts = summary_counts.get(
+            "lowering_rejection_owner_phase_counts",
+            {},
+        )
+        if owner_phase_counts:
+            print(
+                "Lowering rejection owner phases: "
+                + _format_count_map(owner_phase_counts)
+            )
         print("Lowering rejection rules:")
         for rule_id, count in summary_counts["lowering_rejection_rule_counts"].items():
             print(f"  {rule_id}: {count}")
@@ -1504,6 +1609,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
             "Rows with blocking lowering rejections: "
             f"{summary_counts.get('rows_with_blocking_lowering_rejections', 0)}"
         )
+        owner_phase_counts = summary_counts.get(
+            "blocking_lowering_rejection_owner_phase_counts",
+            {},
+        )
+        if owner_phase_counts:
+            print(
+                "Blocking lowering rejection owner phases: "
+                + _format_count_map(owner_phase_counts)
+            )
         print("Blocking lowering rejection rules:")
         for rule_id, count in summary_counts["blocking_lowering_rejection_rule_counts"].items():
             print(f"  {rule_id}: {count}")

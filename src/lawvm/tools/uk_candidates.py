@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, cast
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
 
 if TYPE_CHECKING:
     import argparse
@@ -1173,6 +1174,13 @@ def _rejection_rule_counts(rows: tuple[dict[str, Any], ...]) -> dict[str, int]:
     return _count_map_jsonable(counts)
 
 
+def _owner_phase_counts(rows: tuple[dict[str, Any], ...]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        counts[uk_phase_owner_for_diagnostic(row)] += 1
+    return _count_map_jsonable(counts)
+
+
 def _blocking_rows(rows: tuple[dict[str, Any], ...]) -> tuple[dict[str, Any], ...]:
     return tuple(row for row in rows if is_blocking_compile_record(row))
 
@@ -1203,6 +1211,13 @@ def _merged_rejection_rule_counts(*row_groups: tuple[dict[str, Any], ...]) -> di
     counts: Counter[str] = Counter()
     for rows in row_groups:
         counts.update(_rejection_rule_counts(rows))
+    return _count_map_jsonable(counts)
+
+
+def _merged_owner_phase_counts(*row_groups: tuple[dict[str, Any], ...]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for rows in row_groups:
+        counts.update(_owner_phase_counts(rows))
     return _count_map_jsonable(counts)
 
 
@@ -1376,6 +1391,7 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
     residual_candidate_samples_omitted: int = 0,
     manual_compile_status_counts: Mapping[str, int] | None = None,
     manual_compile_rule_counts: Mapping[str, int] | None = None,
+    manual_compile_owner_phase_counts: Mapping[str, int] | None = None,
     suggested_claim_template_status_counts: Mapping[str, int] | None = None,
     lowering_observation_rule_counts: Mapping[str, int] | None = None,
     rows_with_lowering_observations: int = 0,
@@ -1532,6 +1548,9 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
         "non_candidate_compare_counts": _count_map_jsonable(non_candidate_compare_counts),
         "manual_compile_status_counts": _count_map_jsonable(manual_compile_status_counts or {}),
         "manual_compile_rule_counts": _count_map_jsonable(manual_compile_rule_counts or {}),
+        "manual_compile_owner_phase_counts": _count_map_jsonable(
+            manual_compile_owner_phase_counts or {}
+        ),
         "suggested_claim_template_status_counts": _count_map_jsonable(
             suggested_claim_template_status_counts or {}
         ),
@@ -1571,6 +1590,14 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
             residual_authority_rows,
             residual_execution_rows,
         ),
+        "residual_compile_observation_owner_phase_counts": _merged_owner_phase_counts(
+            residual_feed_rows,
+            residual_source_pathology_rows,
+            residual_source_acquisition_rows,
+            residual_lowering_rows,
+            residual_authority_rows,
+            residual_execution_rows,
+        ),
         "residual_compile_observations": {
             "effect_feed_parse": list(residual_feed_rows),
             "effect_source_pathology": list(residual_source_pathology_rows),
@@ -1581,6 +1608,14 @@ def _uk_candidate_row_jsonable(  # noqa: PLR0913
         },
         "residual_compile_rejection_count": residual_compile_rejection_count,
         "residual_compile_rejection_rule_counts": _merged_rejection_rule_counts(
+            residual_feed_rejection_rows,
+            residual_source_pathology_rejection_rows,
+            residual_source_acquisition_rejection_rows,
+            residual_lowering_rejection_rows,
+            residual_authority_rejection_rows,
+            residual_execution_rejection_rows,
+        ),
+        "residual_compile_rejection_owner_phase_counts": _merged_owner_phase_counts(
             residual_feed_rejection_rows,
             residual_source_pathology_rejection_rows,
             residual_source_acquisition_rejection_rows,
@@ -1790,6 +1825,7 @@ def _uk_candidates_report_jsonable(
     source_acquisition_rejection_rule_counts: Counter[str] = Counter()
     manual_compile_status_counts: Counter[str] = Counter()
     manual_compile_rule_counts: Counter[str] = Counter()
+    manual_compile_owner_phase_counts: Counter[str] = Counter()
     suggested_claim_template_status_counts: Counter[str] = Counter()
     lowering_observation_rule_counts: Counter[str] = Counter()
     bench_authority_observation_count = 0
@@ -1863,9 +1899,11 @@ def _uk_candidates_report_jsonable(
     residual_compile_rejection_count = 0
     rows_with_residual_compile_rejections = 0
     residual_compile_rejection_rule_counts: Counter[str] = Counter()
+    residual_compile_rejection_owner_phase_counts: Counter[str] = Counter()
     residual_compile_observation_count = 0
     rows_with_residual_compile_observations = 0
     residual_compile_observation_rule_counts: Counter[str] = Counter()
+    residual_compile_observation_owner_phase_counts: Counter[str] = Counter()
     saved_legacy_effect_count = 0
     saved_effect_row_count = 0
     saved_effect_feed_page_count = 0
@@ -2006,12 +2044,16 @@ def _uk_candidates_report_jsonable(
             rows_with_residual_compile_rejections += 1
         for rule_id, count in dict(row.get("residual_compile_rejection_rule_counts") or {}).items():
             residual_compile_rejection_rule_counts[str(rule_id)] += int(count)
+        for phase, count in dict(row.get("residual_compile_rejection_owner_phase_counts") or {}).items():
+            residual_compile_rejection_owner_phase_counts[str(phase)] += int(count)
         row_residual_compile_observation_count = int(row.get("residual_compile_observation_count") or 0)
         residual_compile_observation_count += row_residual_compile_observation_count
         if row_residual_compile_observation_count:
             rows_with_residual_compile_observations += 1
         for rule_id, count in dict(row.get("residual_compile_observation_rule_counts") or {}).items():
             residual_compile_observation_rule_counts[str(rule_id)] += int(count)
+        for phase, count in dict(row.get("residual_compile_observation_owner_phase_counts") or {}).items():
+            residual_compile_observation_owner_phase_counts[str(phase)] += int(count)
         row_source_acquisition_observation_count = int(
             row.get("rows_with_source_acquisition_observations") or 0
         )
@@ -2079,6 +2121,8 @@ def _uk_candidates_report_jsonable(
             manual_compile_status_counts[str(key)] += int(count)
         for key, count in dict(row.get("manual_compile_rule_counts") or {}).items():
             manual_compile_rule_counts[str(key)] += int(count)
+        for key, count in dict(row.get("manual_compile_owner_phase_counts") or {}).items():
+            manual_compile_owner_phase_counts[str(key)] += int(count)
         for key, count in dict(row.get("suggested_claim_template_status_counts") or {}).items():
             suggested_claim_template_status_counts[str(key)] += int(count)
         row_lowering_observation_rule_counts = dict(
@@ -2243,10 +2287,16 @@ def _uk_candidates_report_jsonable(
         "residual_compile_observation_rule_counts": _count_map_jsonable(
             residual_compile_observation_rule_counts
         ),
+        "residual_compile_observation_owner_phase_counts": _count_map_jsonable(
+            residual_compile_observation_owner_phase_counts
+        ),
         "residual_compile_rejection_count": residual_compile_rejection_count,
         "rows_with_residual_compile_rejections": rows_with_residual_compile_rejections,
         "residual_compile_rejection_rule_counts": _count_map_jsonable(
             residual_compile_rejection_rule_counts
+        ),
+        "residual_compile_rejection_owner_phase_counts": _count_map_jsonable(
+            residual_compile_rejection_owner_phase_counts
         ),
         "source_counts": _count_map_jsonable(source_counts),
         "compare_counts": _count_map_jsonable(compare_counts),
@@ -2276,6 +2326,9 @@ def _uk_candidates_report_jsonable(
         "non_candidate_compare_counts": _count_map_jsonable(non_candidate_compare_counts),
         "manual_compile_status_counts": _count_map_jsonable(manual_compile_status_counts),
         "manual_compile_rule_counts": _count_map_jsonable(manual_compile_rule_counts),
+        "manual_compile_owner_phase_counts": _count_map_jsonable(
+            manual_compile_owner_phase_counts
+        ),
         "suggested_claim_template_status_counts": _count_map_jsonable(
             suggested_claim_template_status_counts
         ),
@@ -2474,12 +2527,14 @@ def _print_uk_candidates_text_summary(report: Mapping[str, Any]) -> None:
     if (
         summary.get("manual_compile_status_counts")
         or summary.get("manual_compile_rule_counts")
+        or summary.get("manual_compile_owner_phase_counts")
         or summary.get("suggested_claim_template_status_counts")
     ):
         print(
             "  manual_compile_frontier: "
             f"status={_format_counts(summary.get('manual_compile_status_counts'))} "
             f"rules={_format_counts(summary.get('manual_compile_rule_counts'))} "
+            f"owner_phases={_format_counts(summary.get('manual_compile_owner_phase_counts'))} "
             "claim_templates="
             f"{_format_counts(summary.get('suggested_claim_template_status_counts'))}"
         )
@@ -2497,6 +2552,8 @@ def _print_uk_candidates_text_summary(report: Mapping[str, Any]) -> None:
         or summary.get("replay_adjudication_bucket_counts")
         or summary.get("residual_compile_observation_rule_counts")
         or summary.get("residual_compile_rejection_rule_counts")
+        or summary.get("residual_compile_observation_owner_phase_counts")
+        or summary.get("residual_compile_rejection_owner_phase_counts")
         or summary.get("source_acquisition_observation_rule_counts")
         or summary.get("source_acquisition_rejection_rule_counts")
         or summary.get("bench_authority_observation_rule_counts")
@@ -2559,8 +2616,18 @@ def _print_uk_candidates_text_summary(report: Mapping[str, Any]) -> None:
             + _format_counts(summary.get("residual_compile_observation_rule_counts"))
         )
         print(
+            "    residual_compile_observation_owner_phases: "
+            + _format_counts(
+                summary.get("residual_compile_observation_owner_phase_counts")
+            )
+        )
+        print(
             "    residual_compile: "
             + _format_counts(summary.get("residual_compile_rejection_rule_counts"))
+        )
+        print(
+            "    residual_compile_owner_phases: "
+            + _format_counts(summary.get("residual_compile_rejection_owner_phase_counts"))
         )
         print(
             "    source_acquisition_observation: "
@@ -2957,6 +3024,7 @@ def _summarize_effect_inventory(
     source_acquisition_rejection_rule_counts: Counter[str] = Counter()
     manual_compile_status_counts: Counter[str] = Counter()
     manual_compile_rule_counts: Counter[str] = Counter()
+    manual_compile_owner_phase_counts: Counter[str] = Counter()
     suggested_claim_template_status_counts: Counter[str] = Counter()
     rows_with_lowering_observations = 0
     rows_with_blocking_lowering_rejections = 0
@@ -2976,6 +3044,8 @@ def _summarize_effect_inventory(
             manual_compile_status_counts[summary.manual_compile_status] += 1
         if getattr(summary, "manual_compile_rule_id", ""):
             manual_compile_rule_counts[summary.manual_compile_rule_id] += 1
+        if getattr(summary, "manual_compile_owner_phase", ""):
+            manual_compile_owner_phase_counts[summary.manual_compile_owner_phase] += 1
         lowering_observations = tuple(summary.lowering_rejections)
         lowering_rejections = _blocking_rows(lowering_observations)
         if lowering_observations:
@@ -3033,6 +3103,7 @@ def _summarize_effect_inventory(
         "non_candidate_compare_counts": non_candidate_compare_counts,
         "manual_compile_status_counts": manual_compile_status_counts,
         "manual_compile_rule_counts": manual_compile_rule_counts,
+        "manual_compile_owner_phase_counts": manual_compile_owner_phase_counts,
         "suggested_claim_template_status_counts": suggested_claim_template_status_counts,
         "lowering_observation_rule_counts": lowering_observation_rule_counts,
         "rows_with_lowering_observations": rows_with_lowering_observations,
@@ -3197,6 +3268,11 @@ def _residual_candidate_inventory(
                     ),
                 },
             }
+            manual_compile_owner_phase = str(
+                getattr(summary, "manual_compile_owner_phase", "") or ""
+            )
+            if manual_compile_owner_phase:
+                sample["manual_compile_owner_phase"] = manual_compile_owner_phase
             sample_priority = _sample_priority(summary)
             for root in sorted(overlapping_roots):
                 existing_priority = residual_candidate_root_sample_priorities.get(root)
@@ -3780,6 +3856,10 @@ def main(args: "argparse.Namespace") -> None:
                         non_candidate_compare_counts=inventory["non_candidate_compare_counts"],
                         manual_compile_status_counts=inventory.get("manual_compile_status_counts", {}),
                         manual_compile_rule_counts=inventory.get("manual_compile_rule_counts", {}),
+                        manual_compile_owner_phase_counts=inventory.get(
+                            "manual_compile_owner_phase_counts",
+                            {},
+                        ),
                         suggested_claim_template_status_counts=inventory.get(
                             "suggested_claim_template_status_counts",
                             {},
@@ -4515,6 +4595,10 @@ def main(args: "argparse.Namespace") -> None:
                 non_candidate_compare_counts=non_candidate_compare_counts,
                 manual_compile_status_counts=inventory.get("manual_compile_status_counts", {}),
                 manual_compile_rule_counts=inventory.get("manual_compile_rule_counts", {}),
+                manual_compile_owner_phase_counts=inventory.get(
+                    "manual_compile_owner_phase_counts",
+                    {},
+                ),
                 suggested_claim_template_status_counts=inventory.get(
                     "suggested_claim_template_status_counts",
                     {},

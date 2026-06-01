@@ -89,6 +89,17 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
                     "uk_manual_frontier_parser_or_extraction_candidate": 2,
                     "uk_manual_frontier_repeal_table_candidate": 3,
                 },
+                "manual_frontier_owner_phase_counts": {
+                    "affecting_source_extraction": 2,
+                    "typed_elaboration": 3,
+                },
+                "compile_rejection_owner_phase_counts": {
+                    "affecting_source_extraction": 4,
+                    "typed_elaboration": 1,
+                },
+                "blocking_compile_rejection_owner_phase_counts": {
+                    "typed_elaboration": 1,
+                },
                 "manual_frontier_manual_compile_candidate_rule_counts": {
                     "uk_manual_frontier_repeal_table_candidate": 3,
                 },
@@ -211,6 +222,17 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     assert summary["manual_frontier_rule_counts"] == {
         "uk_manual_frontier_parser_or_extraction_candidate": 2,
         "uk_manual_frontier_repeal_table_candidate": 3,
+    }
+    assert summary["manual_frontier_owner_phase_counts"] == {
+        "affecting_source_extraction": 2,
+        "typed_elaboration": 3,
+    }
+    assert summary["compile_rejection_owner_phase_counts"] == {
+        "affecting_source_extraction": 4,
+        "typed_elaboration": 1,
+    }
+    assert summary["blocking_compile_rejection_owner_phase_counts"] == {
+        "typed_elaboration": 1,
     }
     assert summary["manual_frontier_manual_compile_candidate_rule_counts"] == {
         "uk_manual_frontier_repeal_table_candidate": 3,
