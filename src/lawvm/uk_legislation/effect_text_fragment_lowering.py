@@ -93,6 +93,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
+    UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
     UK_SOURCE_PARENT_CARRIED_AFTER_WORD_ORDINAL_INSERT_RULE_ID,
     UK_TARGET_SCOPED_EACH_CHILD_AFTER_WORD_INSERT_RULE_ID,
@@ -112,8 +113,6 @@ _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
     r"occurs?,? insert [“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
     flags=re.I,
 )
-
-
 @dataclass(frozen=True)
 class UKTextFragmentLowering:
     target: LegalAddress
@@ -703,6 +702,15 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_at_end_substitute_insert is not None:
             subs = [metadata_carried_at_end_substitute_insert]
+    if not subs:
+        metadata_carried_range_insert_substitution = (
+            _effect_metadata_carried_range_insert_substitution_fragment(
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+            )
+        )
+        if metadata_carried_range_insert_substitution is not None:
+            subs = [metadata_carried_range_insert_substitution]
     if not subs:
         target_scoped_each_child_after_word_insert = (
             _effect_target_scoped_each_child_after_word_insert_fragment(
@@ -1643,6 +1651,110 @@ def _effect_metadata_carried_after_substitute_insert_fragment(
     if occurrence:
         fragment["occurrence"] = occurrence
     return fragment
+
+
+def _effect_metadata_carried_range_insert_substitution_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word substituted", "words substituted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    range_insert = _parse_metadata_carried_range_insert_substitution(text)
+    if range_insert is None:
+        return None
+    start, end, replacement = range_insert
+    if not start or not end or not replacement:
+        return None
+    return {
+        "original": f"TEXT_FROM_{start}_TO_{end}",
+        "replacement": replacement,
+        "rule_id": UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
+    }
+
+
+def _parse_metadata_carried_range_insert_substitution(text: str) -> Optional[tuple[str, str, str]]:
+    lower = text.lower()
+    search_at = 0
+    while search_at < len(text):
+        for_pos = lower.find("for ", search_at)
+        if for_pos < 0:
+            return None
+        pos = _consume_metadata_carried_range_insert_prefix(lower, for_pos + len("for "))
+        if pos is None:
+            search_at = for_pos + len("for ")
+            continue
+        start, pos = _read_simple_quoted_segment(text, pos)
+        if not start:
+            search_at = for_pos + len("for ")
+            continue
+        pos = _skip_spaces(text, pos)
+        if not lower.startswith("to ", pos):
+            search_at = for_pos + len("for ")
+            continue
+        pos = _skip_spaces(text, pos + len("to "))
+        end, pos = _read_simple_quoted_segment(text, pos)
+        if not end:
+            search_at = for_pos + len("for ")
+            continue
+        pos = _skip_spaces(text, pos)
+        if not lower.startswith("insert ", pos):
+            search_at = for_pos + len("for ")
+            continue
+        pos = _skip_spaces(text, pos + len("insert "))
+        if pos >= len(text) or text[pos] not in "“\"'‘":
+            search_at = for_pos + len("for ")
+            continue
+        replacement_surface = text[pos + 1 :].strip()
+        if replacement_surface.endswith((".", ";")):
+            replacement_surface = replacement_surface[:-1].strip()
+        if not replacement_surface.endswith(("”", '"', "'", "’")):
+            return None
+        replacement = " ".join(replacement_surface[:-1].split()).strip()
+        return (start, end, replacement)
+    return None
+
+
+def _consume_metadata_carried_range_insert_prefix(lower: str, pos: int) -> Optional[int]:
+    if lower.startswith("the ", pos):
+        pos += len("the ")
+    if lower.startswith("word ", pos):
+        pos += len("word ")
+    elif lower.startswith("words ", pos):
+        pos += len("words ")
+    else:
+        return None
+    if not lower.startswith("from ", pos):
+        return None
+    return pos + len("from ")
+
+
+def _read_simple_quoted_segment(text: str, pos: int) -> tuple[str, int]:
+    if pos >= len(text):
+        return ("", pos)
+    close_quote_by_open = {
+        '"': '"',
+        "'": "'",
+        "“": "”",
+        "‘": "’",
+    }
+    close_quote = close_quote_by_open.get(text[pos])
+    if close_quote is None:
+        return ("", pos)
+    end = text.find(close_quote, pos + 1)
+    if end < 0:
+        return ("", pos)
+    return (" ".join(text[pos + 1 : end].split()).strip(), end + 1)
+
+
+def _skip_spaces(text: str, pos: int) -> int:
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    return pos
 
 
 def _occurrence_from_after_substitute_scope(scope: str) -> str:

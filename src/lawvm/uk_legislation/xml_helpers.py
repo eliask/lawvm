@@ -24,11 +24,15 @@ def _tag(el: ET._Element) -> str:
 def _text_content(el: ET._Element) -> str:
     """Recursively collect normalised text."""
     parts: list[str] = []
-    for node in el.iter():
+    def collect(node: ET._Element, *, include_tail: bool) -> None:
         if node.text:
             parts.append(node.text)
-        if node.tail and node is not el:
+        for child in node:
+            collect(child, include_tail=True)
+        if include_tail and node.tail:
             parts.append(node.tail)
+
+    collect(el, include_tail=False)
     return " ".join(" ".join(parts).split())
 
 
