@@ -1141,6 +1141,9 @@ def _effect_row_matches_filters(
 
 
 def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
+    from lawvm.uk_legislation.execution_authorization import (
+        uk_execution_authorization_from_manual_frontier,
+    )
     from lawvm.tools.uk_effect import (
         blocking_lowering_rejection_rule_counts,
         has_blocking_lowering_rejection,
@@ -1153,6 +1156,13 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
     source_acquisition_rejections = _blocking_rows(source_acquisition_observations)
     lowering_observations = tuple(summary.lowering_rejections)
     lowering_rejections = _blocking_rows(lowering_observations)
+    execution_authorization: dict[str, Any] = {}
+    if summary.manual_compile_status and summary.manual_compile_owner_phase:
+        execution_authorization = uk_execution_authorization_from_manual_frontier(
+            manual_compile_status=summary.manual_compile_status,
+            manual_compile_rule_id=summary.manual_compile_rule_id,
+            owner_phase=summary.manual_compile_owner_phase,
+        ).to_dict()
     return {
         "effect_id": effect.effect_id,
         "effect_type": effect.effect_type or "",
@@ -1192,6 +1202,7 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
                 summary.manual_compile_blocking_lowering_rule_ids
             ),
         },
+        "execution_authorization": execution_authorization,
         "candidate": summary.candidate,
         "compiled_op_count": summary.n_ops,
         "resolver_eids": list(summary.resolver_eids),

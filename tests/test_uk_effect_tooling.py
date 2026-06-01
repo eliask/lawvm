@@ -659,8 +659,19 @@ def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
         diagnostics[0]["manual_compile_rule_id"]
         == "uk_manual_frontier_heading_facet_candidate"
     )
-    assert diagnostics[0]["owner_phase"] == "typed_elaboration"
+    assert diagnostics[0]["owner_phase"] == "affecting_source_extraction"
     assert diagnostics[0]["suggested_claim_template_status"] == "available"
+    assert diagnostics[0]["executable"] is False
+    assert diagnostics[0]["replay_authorized"] is False
+    assert diagnostics[0]["authorization_status"] == "manual_claim_required"
+    assert (
+        diagnostics[0]["authorization_rule_id"]
+        == "uk_execution_authorization_manual_claim_required"
+    )
+    assert "mutation_boundary_proof" in diagnostics[0]["required_proofs"]
+    assert diagnostics[0]["safe_default"] == (
+        "block_until_validated_claim_authorizes_replay"
+    )
 
 
 def test_uk_effect_fmt_target_preserves_heading_facet() -> None:
@@ -2458,6 +2469,13 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "lowering_rule_ids": ["uk_effect_heading_only_ref_rejected"],
         "blocking_lowering_rule_ids": ["uk_effect_heading_only_ref_rejected"],
     }
+    assert payload["execution_authorization"]["authorization_status"] == (
+        "manual_claim_required"
+    )
+    assert payload["execution_authorization"]["replay_authorized"] is False
+    assert "mutation_boundary_proof" in payload["execution_authorization"][
+        "required_proofs"
+    ]
     assert payload["source"] == {
         "extracted": True,
         "tag": "P1",
@@ -2594,6 +2612,11 @@ def test_single_uk_effect_report_includes_manual_claim_template() -> None:
     assert report["manual_compile_frontier"]["rule_id"] == (
         "uk_manual_frontier_heading_facet_candidate"
     )
+    assert report["execution_authorization"]["authorization_status"] == (
+        "manual_claim_required"
+    )
+    assert report["execution_authorization"]["owner_phase"] == "typed_elaboration"
+    assert report["execution_authorization"]["replay_authorized"] is False
     assert report["suggested_claim_template_status"] == "available"
     assert report["suggested_claim_template"]["action_family"] == (
         "schedule_part_wrapper_insertion"
