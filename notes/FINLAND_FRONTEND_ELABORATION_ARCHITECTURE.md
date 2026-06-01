@@ -313,15 +313,24 @@ That supports both strict mode and proof/evidence tooling.
 
 Near-term implementation work should follow this order:
 
-1. Grow typed clause AST coverage for the current Finland failure families.
-2. Route existing supplement logic through those typed parsers.
-3. Move citation/provenance handling out of row-name blacklists and into typed
+1. Add a Finland evidence/workqueue discipline modeled on the UK frontier:
+   non-executable claim templates, `executable=false` review scaffolds, source
+   witness hashes, manual-frontier status, phase-owned residual classes, and
+   typed workqueue exports for cases that are not safe to replay from the
+   deterministic frontend. These are evidence surfaces, not replay shortcuts.
+2. Grow typed clause AST coverage for the current Finland failure families.
+3. Route existing supplement logic through those typed parsers.
+4. Move citation/provenance handling out of row-name blacklists and into typed
    modifier nodes.
-4. Expand payload elaboration helpers for:
+5. Expand payload elaboration helpers for:
    - row-table mixed clauses
    - single-row content-only section payloads
    - sparse omission-driven subsection alignment
-5. Keep strengthening replay invariants and duplicate-text lints.
+6. Keep strengthening replay invariants and duplicate-text lints.
+
+The first item should make Finland's non-replay frontier inspectable in the
+same style as UK: rows that need human/LLM/editorial interpretation must remain
+non-executable until a validator emits canonical operations and provenance.
 
 ## 8. Non-Goals
 
