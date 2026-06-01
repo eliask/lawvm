@@ -347,6 +347,50 @@ def test_summarize_results_counts_frontiers_and_zero_oracle_retention() -> None:
     ]
 
 
+def test_broad_baseline_report_envelope_declares_agreement_scope(tmp_path) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    report = uk_broad_baseline.uk_broad_baseline_report_jsonable(
+        [
+            {
+                "statute_id": "ukpga/1992/41",
+                "score_status": "scored",
+                "aligned": 98.7,
+                "aligned_excluding_grounding_collateral": 98.7,
+                "unaligned": 98.7,
+                "n_replay": 10,
+                "n_oracle": 10,
+            },
+            {
+                "statute_id": "ukpga/1945/9",
+                "score_status": "source_frontier",
+                "source_frontier_reason": "base_too_small",
+            },
+        ],
+        ids=["ukpga/1992/41", "ukpga/1945/9"],
+        snapshot_path=snapshot_path,
+    )
+
+    assert report["jurisdiction"] == "uk"
+    assert report["report_kind"] == "uk_broad_baseline_agreement_report"
+    assert report["schema"] == "lawvm.uk_broad_baseline_agreement_report.v1"
+    assert (
+        report["truth_claim"]
+        == "uk_replay_oracle_agreement_regression_guard_not_source_truth"
+    )
+    assert report["replay_claims"] is True
+    assert report["agreement_claims"] is True
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["summary"]["scored_count"] == 1
+    assert report["summary"]["source_frontier_count"] == 1
+    assert report["filters"]["snapshot_path"] == str(snapshot_path)
+    assert report["written_paths"] == [str(snapshot_path)]
+    assert "agreement_as_execution_authorization" in report["forbidden_shortcuts"]
+    assert "mutation_boundary_proof" in report["next_promotion_requires"]
+    assert len(report["rows"]) == 2
+
+
 def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
     diagnostics = uk_broad_baseline._mutation_boundary_diagnostics(
         [
@@ -994,6 +1038,45 @@ def test_run_driver_can_fail_on_active_unclassified_residuals(monkeypatch, capsy
         == 1
     )
     assert "active_unclassified_residuals=1: ukpga/1986/61" in capsys.readouterr().out
+
+
+def test_run_driver_writes_broad_baseline_report(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    def fake_run(*_args, **_kwargs):
+        row = {
+            "statute_id": "ukpga/1992/41",
+            "score_status": "scored",
+            "aligned": 98.7,
+            "aligned_excluding_grounding_collateral": 98.7,
+            "unaligned": 98.7,
+            "n_replay": 10,
+            "n_oracle": 10,
+        }
+        return SimpleNamespace(returncode=0, stdout=json.dumps(row), stderr="")
+
+    monkeypatch.setattr(uk_broad_baseline.subprocess, "run", fake_run)
+    snapshot_path = tmp_path / "snapshot.json"
+    report_path = tmp_path / "report.json"
+
+    assert (
+        uk_broad_baseline.run_driver(
+            ["ukpga/1992/41"],
+            snapshot_path,
+            report_path,
+        )
+        == 0
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["report_kind"] == "uk_broad_baseline_agreement_report"
+    assert report["filters"]["ids"] == ["ukpga/1992/41"]
+    assert report["filters"]["snapshot_path"] == str(snapshot_path)
+    assert report["summary"]["scored_count"] == 1
+    assert report["rows"][0]["triage_bucket"] == "high_fidelity_after_grounding"
+    assert "Wrote broad-baseline evidence report" in capsys.readouterr().out
 
 
 def test_run_driver_fail_flag_accepts_manual_frontier_residuals(monkeypatch, capsys) -> None:
