@@ -659,6 +659,8 @@ def _benchmark_work(
     effect_candidate_blocked_operation_family_instruction_subfamily_status_counts: Mapping[str, int] = {}
     effect_candidate_payload_structural_subfamily_status_counts: Mapping[str, int] = {}
     effect_candidate_payload_structural_subfamily_counts: Mapping[str, int] = {}
+    effect_candidate_witness_rule_counts: Mapping[str, int] = {}
+    effect_candidate_action_witness_rule_counts: Mapping[str, int] = {}
     effect_candidate_text_replace_witness_support_status_counts: Mapping[str, int] = {}
     effect_candidate_action_text_replace_witness_support_status_counts: Mapping[str, int] = {}
     effect_candidate_action_source_change_text_witness_status_counts: Mapping[str, int] = {}
