@@ -44376,6 +44376,55 @@ def test_compile_metadata_sibling_renumber_lowers_typed_destination_op() -> None
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_metadata_parent_sibling_promotion_renumber_lowers_typed_destination_op() -> None:
+    effect = UKEffectRecord(
+        effect_id="key-test-renumber-3a-4-b",
+        effect_type="s. 3A(4)(b) renumbered as s. 3A(4A)",
+        applied=True,
+        requires_applied=True,
+        modified="2014-04-01",
+        affected_uri="/id/ukpga/2000/6/section/3A/subsection/4A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="6",
+        affected_provisions="s. 3A(4A)",
+        affecting_uri="/id/ukpga/2013/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2013",
+        affecting_number="22",
+        affecting_provisions="Sch. 2 para. 5(3)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, None, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.RENUMBER
+    assert ops[0].target.path == (
+        ("section", "3a"),
+        ("subsection", "4"),
+        ("paragraph", "b"),
+    )
+    assert ops[0].destination is not None
+    assert ops[0].destination.path == (("section", "3a"), ("subsection", "4a"))
+    assert (
+        ops[0].witness_rule_id
+        == "uk_effect_metadata_parent_sibling_promotion_renumber_lowered"
+    )
+    assert (
+        lowering_records[0]["rule_id"]
+        == "uk_effect_metadata_parent_sibling_promotion_renumber_lowered"
+    )
+    assert (
+        lowering_records[0]["reason_code"]
+        == "explicit_effect_metadata_child_promoted_to_parent_sibling"
+    )
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_compile_metadata_cross_container_renumber_corrects_effect_type_destination_from_source_and_affected_target() -> None:
     effect = UKEffectRecord(
         effect_id="key-test-corrected-renumber",

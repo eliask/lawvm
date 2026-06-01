@@ -11,7 +11,10 @@ from lawvm.core.mutation_boundary import TreePath
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
-from lawvm.uk_legislation.metadata_rewrites import _renumbered_descendant_text
+from lawvm.uk_legislation.metadata_rewrites import (
+    _is_uk_parent_sibling_promotion_renumber_shape,
+    _renumbered_descendant_text,
+)
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
@@ -77,6 +80,14 @@ class _RenumberReplaySelf(Protocol):
         helper: str,
     ) -> None: ...
 
+    def _record_promoted_child_renumber_mutation_event(
+        self,
+        *,
+        old_path: TreePath | None,
+        new_node: UKMutableNode,
+        helper: str,
+    ) -> None: ...
+
 
 def _renumber_replay_self(replay: object) -> _RenumberReplaySelf:
     return cast(_RenumberReplaySelf, replay)
@@ -91,6 +102,10 @@ class UKReplayRenumberApplyMixin:
             replay._emit_top_section_snapshot(op)
             return
         if self._apply_same_parent_sibling_renumber(op):
+            replay._record_invariant_violations(op)
+            replay._emit_top_section_snapshot(op)
+            return
+        if self._apply_parent_sibling_promotion_renumber(op):
             replay._record_invariant_violations(op)
             replay._emit_top_section_snapshot(op)
             return
@@ -153,6 +168,9 @@ class UKReplayRenumberApplyMixin:
             len(destination.path) == len(source_target.path)
             and destination.path[:-1] == source_target.path[:-1]
             and _addr_leaf_kind(destination) == _addr_leaf_kind(source_target)
+        ) or _is_uk_parent_sibling_promotion_renumber_shape(
+            source_target,
+            destination,
         )
 
     def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
@@ -287,5 +305,60 @@ class UKReplayRenumberApplyMixin:
             old_path=old_path,
             new_node=moved,
             helper="_apply_same_parent_sibling_renumber",
+        )
+        return True
+
+    def _apply_parent_sibling_promotion_renumber(self, op: LegalOperation) -> bool:
+        replay = _renumber_replay_self(self)
+        source_target = canonicalize_uk_address(op.target)
+        destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
+        if destination is None:
+            return False
+        if not _is_uk_parent_sibling_promotion_renumber_shape(source_target, destination):
+            return False
+
+        source_node, source_parent, source_idx = replay._find_node_by_target(source_target)
+        if source_node is None or source_parent is None or source_idx is None:
+            return False
+        destination_node, _destination_parent, _destination_idx = replay._find_node_by_target(destination)
+        if destination_node is not None:
+            return False
+        grandparent_target = LegalAddress(path=source_target.path[:-2])
+        grandparent_node, _grandparent_parent, _grandparent_idx = replay._find_node_by_target(
+            grandparent_target
+        )
+        if grandparent_node is None or source_parent not in grandparent_node.children:
+            return False
+
+        destination_label = _addr_leaf_label(destination)
+        destination_kind = _addr_leaf_kind(destination) or ""
+        if not destination_kind:
+            return False
+
+        moved = dc_replace(
+            source_node,
+            kind=uk_ir_node_kind(destination_kind),
+            label=destination_label,
+            text=_renumbered_descendant_text(
+                source_node.text or "",
+                source_label=source_node.label,
+                destination_label=destination_label,
+            ),
+            attrs={**dict(source_node.attrs), "eId": replay._derive_target_eid(destination)},
+        )
+        old_path = replay._tree_path_for_mutable_node(source_node)
+        replay._remove_eid_lookup_subtree(source_node)
+        source_parent.children.pop(source_idx)
+        uk_insert_child_sorted(grandparent_node, moved)
+        try:
+            moved_idx = grandparent_node.children.index(moved)
+        except ValueError:
+            moved_idx = None
+        replay._add_eid_lookup_subtree(moved, grandparent_node, moved_idx)
+        replay._note_structure_mutation()
+        replay._record_promoted_child_renumber_mutation_event(
+            old_path=old_path,
+            new_node=moved,
+            helper="_apply_parent_sibling_promotion_renumber",
         )
         return True

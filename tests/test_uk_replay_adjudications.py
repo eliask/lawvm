@@ -1015,6 +1015,88 @@ def test_same_parent_sibling_renumber_reindexes_warm_eid_lookup() -> None:
     assert executor._structure_mutation_serial == 1
 
 
+def test_replay_uk_ops_emit_mutation_event_for_parent_sibling_promotion_renumber() -> None:
+    mutation_events: list[MutationEvent] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/6",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3A",
+                    attrs={"eId": "section-3A"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            text="",
+                            attrs={"eId": "section-3A-4"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="a Retained paragraph.",
+                                    attrs={"eId": "section-3A-4-a"},
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text="b Promoted paragraph.",
+                                    attrs={"eId": "section-3A-4-b"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk-test-renumber-3a-4-b",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(
+            path=(("section", "3a"), ("subsection", "4"), ("paragraph", "b"))
+        ),
+        destination=LegalAddress(path=(("section", "3a"), ("subsection", "4a"))),
+        source=_source(),
+        sequence=1,
+        witness_rule_id="uk_effect_metadata_parent_sibling_promotion_renumber_lowered",
+    )
+
+    replayed = replay_uk_ops(statute, [op], mutation_events_out=mutation_events)
+
+    section = replayed.body.children[0]
+    assert [(child.kind, child.label) for child in section.children] == [
+        (IRNodeKind.SUBSECTION, "4"),
+        (IRNodeKind.SUBSECTION, "4a"),
+    ]
+    assert [(child.kind, child.label) for child in section.children[0].children] == [
+        (IRNodeKind.PARAGRAPH, "a")
+    ]
+    assert section.children[1].text == "4aPromoted paragraph."
+    assert section.children[1].attrs["eId"] == "section-3a-4a"
+    assert len(mutation_events) == 1
+    event = mutation_events[0]
+    assert event.op_id == "uk-test-renumber-3a-4-b"
+    assert event.action == "renumber"
+    assert event.helper == "_apply_parent_sibling_promotion_renumber"
+    assert event.outcome == "renumbered_node"
+    assert event.resolved_target_path == (
+        ("section", "3a"),
+        ("subsection", "4"),
+        ("paragraph", "b"),
+    )
+    assert event.parent_path == (("section", "3A"),)
+    assert event.renumbered_paths == (
+        (
+            (("section", "3A"), ("subsection", "4"), ("paragraph", "b")),
+            (("section", "3A"), ("subsection", "4a")),
+        ),
+    )
+
+
 def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
     assert _uk_definition_term_lexical_variants("") == ()
     assert _uk_definition_term_lexical_variants("education") == ("educational",)
