@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from pathlib import Path
 
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
@@ -127,3 +128,44 @@ def test_target_index_row_from_absent_bytes_preserves_statute_and_source() -> No
     assert row["source"] == "current"
     assert row["source_status"] == "absent"
     assert row["target_paths"] == []
+
+
+def test_live_target_index_json_report_is_validation_evidence_only(tmp_path) -> None:
+    report = uk_live_targets.live_target_index_report_jsonable(
+        (
+            {
+                "schema": "lawvm.uk_live_target_index.v1",
+                "statute_id": "ukpga/2000/1",
+                "source": "current",
+                "source_status": "available",
+                "target_paths": ["section:1"],
+                "target_fingerprints": {
+                    "section:1": {
+                        "text_sha256": "a" * 64,
+                        "subtree_sha256": "b" * 64,
+                    }
+                },
+            },
+        ),
+        source="current",
+        db_path=Path("data/uk_legislation.farchive"),
+        out_path=tmp_path / "live-targets.jsonl",
+    )
+
+    assert report["jurisdiction"] == "uk"
+    assert report["report_kind"] == "uk_live_target_index_report"
+    assert report["schema"] == "lawvm.uk_live_target_index_report.v1"
+    assert report["truth_claim"] == "uk_live_target_index_validation_evidence_only"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["summary"]["row_count"] == 1
+    assert report["summary"]["source_status_counts"] == {"available": 1}
+    assert report["summary"]["total_target_paths"] == 1
+    assert report["summary"]["total_target_fingerprints"] == 1
+    assert report["evidence_jsonl"]["target_index_jsonl"]["row_count"] == 1
+    assert "live_target_index_as_target_authority" in report["forbidden_shortcuts"]
+    assert "mutation_boundary_proof" in report["next_promotion_requires"]
+    assert len(report["rows"]) == 1

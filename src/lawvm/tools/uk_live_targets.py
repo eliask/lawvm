@@ -8,6 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.ir import IRNode, IRStatute
 
 if TYPE_CHECKING:
@@ -190,6 +191,79 @@ def build_live_target_index_rows(
     return tuple(rows)
 
 
+def live_target_index_report_jsonable(
+    rows: tuple[dict[str, Any], ...],
+    *,
+    source: str,
+    db_path: Path,
+    out_path: Path | None = None,
+) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    total_target_paths = 0
+    total_fingerprints = 0
+    for row in rows:
+        status = str(row.get("source_status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+        target_paths = row.get("target_paths")
+        if isinstance(target_paths, list | tuple):
+            total_target_paths += len(target_paths)
+        fingerprints = row.get("target_fingerprints")
+        if isinstance(fingerprints, dict):
+            total_fingerprints += len(fingerprints)
+    summary = {
+        "row_count": len(rows),
+        "source_status_counts": dict(sorted(status_counts.items())),
+        "total_target_paths": total_target_paths,
+        "total_target_fingerprints": total_fingerprints,
+    }
+    evidence_jsonl: dict[str, Any] = {}
+    written_paths: tuple[str, ...] = ()
+    if out_path is not None:
+        evidence_jsonl = {
+            "target_index_jsonl": {
+                "path": str(out_path),
+                "schema": _LIVE_TARGET_INDEX_SCHEMA,
+                "row_count": len(rows),
+            }
+        }
+        written_paths = (str(out_path),)
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_live_target_index_report",
+        schema="lawvm.uk_live_target_index_report.v1",
+        truth_claim="uk_live_target_index_validation_evidence_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "source": source,
+            "db_path": str(db_path),
+        },
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        evidence_jsonl=evidence_jsonl,
+        written_paths=written_paths,
+        detail={
+            "safe_default": "use_only_as_semantic_claim_validation_precondition",
+            "forbidden_shortcuts": (
+                "live_target_index_as_target_authority",
+                "live_target_index_as_replay_authorization",
+                "target_guessing",
+            ),
+            "next_promotion_requires": (
+                "source_instruction_witness",
+                "target_identity",
+                "payload_identity",
+                "mutation_boundary_proof",
+            ),
+        },
+    ).to_dict()
+
+
 def main(args: "argparse.Namespace") -> None:
     statute_ids = tuple(str(value) for value in getattr(args, "statute_ids", ()) if value)
     if not statute_ids:
@@ -210,7 +284,19 @@ def main(args: "argparse.Namespace") -> None:
     if out_path is not None:
         _write_jsonl_rows(out_path, rows)
     if bool(getattr(args, "json", False)):
-        print(json.dumps({"rows": rows}, ensure_ascii=False, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                live_target_index_report_jsonable(
+                    rows,
+                    source=source,
+                    db_path=db_path,
+                    out_path=out_path,
+                ),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return
     if out_path is not None:
         print(f"Wrote {len(rows)} live-target index rows -> {out_path}")
