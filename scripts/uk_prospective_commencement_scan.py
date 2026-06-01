@@ -49,6 +49,23 @@ def ids_from_file(path: Path) -> list[str]:
     ]
 
 
+def _owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    from lawvm.uk_legislation.phase_discipline import (
+        uk_phase_owner_counts_for_diagnostics,
+    )
+
+    return uk_phase_owner_counts_for_diagnostics(rows)
+
+
+def _limited_rows_and_owner_phase_counts(
+    all_rows: list[dict[str, Any]],
+    *,
+    limit: int | None,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    rows = all_rows[:limit] if limit is not None else all_rows
+    return rows, _owner_phase_counts(all_rows)
+
+
 def run_scan(args: argparse.Namespace) -> dict[str, Any]:
     from farchive import Farchive
     from lawvm.uk_legislation.prospective_commencement_witnesses import (
@@ -81,15 +98,18 @@ def run_scan(args: argparse.Namespace) -> dict[str, Any]:
             diagnostics_out=diagnostics,
         )
 
-    rows = [witness.to_dict() for witness in witnesses]
-    if args.limit is not None:
-        rows = rows[: args.limit]
+    all_rows = [witness.to_dict() for witness in witnesses]
+    rows, owner_phase_counts = _limited_rows_and_owner_phase_counts(
+        all_rows,
+        limit=args.limit,
+    )
     return {
         "as_of": args.as_of,
         "n_statutes_scanned": len(ids),
         "n_witnesses": len(witnesses),
         "statuses": prospective_commencement_status_counts(witnesses),
         "rules": dict(Counter(w.rule_id for w in witnesses)),
+        "owner_phase_counts": owner_phase_counts,
         "n_source_diagnostics": len(diagnostics),
         "witnesses": rows,
     }
