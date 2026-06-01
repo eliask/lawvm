@@ -64,6 +64,7 @@ from typing import List, Dict
 from lawvm.uk_legislation.source_text_normalization import normalize_uk_parser_text
 from lawvm.uk_legislation.text_selectors import (
     AfterAnchorToEndSelector,
+    AfterAnchorBeforeFinalWordSelector,
     AfterChildSelector,
     BeforeChildSelector,
     DefinitionAnchorSelector,
@@ -236,6 +237,9 @@ UK_ANCHOR_TO_END_BLOCK_SUBSTITUTION_RULE_ID = (
 UK_DEFINITION_CHILD_TAIL_AFTER_ANCHOR_TO_END_RULE_ID = (
     "uk_effect_definition_child_tail_after_anchor_to_end_text_patch"
 )
+UK_AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTION_RULE_ID = (
+    "uk_effect_after_anchor_before_final_word_substitution_text_patch"
+)
 UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID = "uk_effect_after_child_text_insertion_patch"
 UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID = (
     "uk_effect_at_end_unquoted_text_insertion_patch"
@@ -328,6 +332,16 @@ _QUOTED_SUBSTITUTION_SCOPE_NOTE_RE = re.compile(
     rf"for\s+(?:(?:the\s+)?words?\s+)?"
     rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
     r"\((?P<scope_note>[^()]{1,500})\),?\s+substitute\s+"
+    rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
+    re.I,
+)
+_AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTED_RE = re.compile(
+    rf"for\s+(?:the\s+)?words?\s+(?:after|following)\s+[“\"'‘]"
+    rf"(?P<anchor>{_NON_QUOTE}{{1,500}})[”\"'’]\s*"
+    r"\(\s*but\s+not\s+including\s+the\s+[“\"'‘]"
+    rf"(?P<final_word>{_NON_QUOTE}{{1,100}})[”\"'’]\s+"
+    r"at\s+the\s+end\s+of\s+(?:the\s+)?(?:paragraph|sub-paragraph|subsection|section)\s*\)"
+    r",?\s+substitute\s+"
     rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
@@ -1620,6 +1634,22 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                 "replacement": replacement,
                 "rule_id": UK_DEFINITION_CHILD_TAIL_AFTER_ANCHOR_TO_END_RULE_ID,
             }
+        )
+
+    for m in _AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTED_RE.finditer(text):
+        anchor = m.group("anchor").strip()
+        final_word = m.group("final_word").strip()
+        replacement = m.group("replacement").strip()
+        if not anchor or not final_word or not replacement:
+            continue
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterAnchorBeforeFinalWordSelector(anchor, final_word),
+                    replacement=replacement,
+                    rule_id=UK_AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTION_RULE_ID,
+                )
+            )
         )
 
     matches_after_anchor_substituted = re.finditer(

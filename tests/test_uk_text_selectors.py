@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from lawvm.uk_legislation.text_selectors import (
+    AfterAnchorBeforeFinalWordSelector,
     AfterAnchorToEndSelector,
     AfterChildSelector,
     BeforeChildSelector,
@@ -47,6 +48,13 @@ class TestSelectorToLegacyOriginal:
 
     def test_after_anchor_to_end(self) -> None:
         assert selector_to_legacy_original(AfterAnchorToEndSelector("bar")) == "TEXT_AFTER_bar_TO_END"
+
+    def test_after_anchor_before_final_word(self) -> None:
+        sel = AfterAnchorBeforeFinalWordSelector("applied)", "and")
+        assert (
+            selector_to_legacy_original(sel)
+            == "TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD\x1fapplied)\x1fand"
+        )
 
     def test_opening_words(self) -> None:
         assert selector_to_legacy_original(OpeningWordsSelector()) == "TEXT_OPENING_WORDS"
@@ -188,6 +196,14 @@ class TestParserProductionParity:
                     "original": "TEXT_AFTER_anchor word_TO_END",
                     "replacement": "inserted text",
                     "rule_id": "uk_effect_after_anchor_to_end_substitution_text_patch",
+                }],
+            ),
+            (
+                'for the words after "applied)" (but not including the "and" at the end of the paragraph), substitute "new tail"',
+                [{
+                    "original": "TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD\x1fapplied)\x1fand",
+                    "replacement": "new tail",
+                    "rule_id": "uk_effect_after_anchor_before_final_word_substitution_text_patch",
                 }],
             ),
             (

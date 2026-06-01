@@ -146,6 +146,15 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="after_anchor_to_end_selector",
     ),
+    "uk_replay_after_anchor_before_final_word_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied an after-anchor text rewrite while preserving "
+            "the source-named final connector word."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="after_anchor_before_final_word_selector",
+    ),
     "uk_replay_node_local_range_text_rewrite_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a node-local bounded range text rewrite "

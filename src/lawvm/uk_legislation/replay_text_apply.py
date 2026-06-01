@@ -17,6 +17,7 @@ from lawvm.uk_legislation.text_matching import (
     _text_patch_pattern,
 )
 from lawvm.uk_legislation.text_selectors import (
+    AfterAnchorBeforeFinalWordSelector,
     AfterAnchorToEndSelector,
     FromChildEndSelector,
     RangeFromToSelector,
@@ -1120,6 +1121,59 @@ def _rewrite_after_anchor_to_end_text(
     return " ".join(f"{text[: anchor_match.end()]}{joiner}{replacement}".split()).strip(), True
 
 
+def _rewrite_after_anchor_to_before_final_word_text(
+    text: str,
+    *,
+    anchor: str,
+    final_word: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    if not anchor or not final_word or not replacement:
+        return text, False
+    ordinal = occurrence if occurrence > 0 else 1
+    anchor_matches = list(re.finditer(re.escape(anchor), text))
+    if len(anchor_matches) >= ordinal:
+        anchor_match = anchor_matches[ordinal - 1]
+    else:
+        anchor_pattern = _text_patch_pattern(
+            anchor,
+            allow_punctuation_spacing=allow_punctuation_spacing,
+            allow_word_punctuation_elision=allow_word_punctuation_elision,
+        )
+        pattern_matches = list(re.finditer(anchor_pattern, text, flags=re.I | re.S))
+        if len(pattern_matches) < ordinal:
+            return text, False
+        anchor_match = pattern_matches[ordinal - 1]
+
+    final_pattern = rf"(?<![A-Za-z0-9]){re.escape(final_word)}(?![A-Za-z0-9])\s*[,;.]?\s*$"
+    final_matches = list(re.finditer(final_pattern, text, flags=re.I))
+    if len(final_matches) != 1:
+        return text, False
+    final_match = final_matches[0]
+    if final_match.start() <= anchor_match.end():
+        return text, False
+
+    prefix = text[: anchor_match.end()]
+    suffix = text[final_match.start() :]
+    before_joiner = (
+        ""
+        if prefix.endswith((" ", "\t", "\n", "\r"))
+        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    after_joiner = (
+        ""
+        if replacement.endswith((" ", "\t", "\n", "\r"))
+        or suffix.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    rewritten = f"{prefix}{before_joiner}{replacement}{after_joiner}{suffix}"
+    return " ".join(rewritten.split()).strip(), True
+
+
 def _rewrite_definition_child_tail_after_anchor_to_end_text(
     text: str,
     *,
@@ -1528,6 +1582,27 @@ class UKReplayTextApplyMixin:
                 recovery_rule_ids_out.extend(fallback_recovery_rule_ids)
                 recovery_rule_ids_out.append(
                     "uk_replay_definition_child_tail_after_anchor_to_end_text_rewrite_applied"
+                )
+            return rebuilt, True
+
+        after_before_final_selector = selector_from_legacy_original(match)
+        if isinstance(after_before_final_selector, AfterAnchorBeforeFinalWordSelector):
+            new_text, changed = _rewrite_after_anchor_to_before_final_word_text(
+                text,
+                anchor=after_before_final_selector.anchor,
+                final_word=after_before_final_selector.final_word,
+                replacement=replacement,
+                occurrence=occurrence,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            if not changed:
+                return node, False
+            rebuilt = dc_replace(node, text=new_text)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_after_anchor_before_final_word_text_rewrite_applied"
                 )
             return rebuilt, True
 
@@ -3366,6 +3441,29 @@ class UKReplayTextApplyMixin:
                 dc_replace(target_node, text=new_text),
             )
             self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        after_before_final_selector = selector_from_legacy_original(match)
+        if isinstance(after_before_final_selector, AfterAnchorBeforeFinalWordSelector):
+            rebuilt, applied = self._apply_unique_text_node_rewrite(
+                node,
+                text_nodes,
+                lambda text: _rewrite_after_anchor_to_before_final_word_text(
+                    text,
+                    anchor=after_before_final_selector.anchor,
+                    final_word=after_before_final_selector.final_word,
+                    replacement=replacement,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                ),
+            )
+            if not applied:
+                return node, False
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_after_anchor_before_final_word_text_rewrite_applied"
+                )
             return rebuilt, True
 
         after_anchor_selector = selector_from_legacy_original(match)

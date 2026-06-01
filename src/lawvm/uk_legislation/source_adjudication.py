@@ -414,6 +414,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_after_definition_child_flat_ordinal_insert_applied",
         "uk_replay_after_definition_child_structured_insert_applied",
         "uk_replay_after_definition_text_insert_applied",
+        "uk_replay_after_anchor_before_final_word_text_rewrite_applied",
         "uk_replay_after_anchor_to_end_text_rewrite_applied",
         "uk_replay_after_words_in_brackets_text_rewrite_applied",
         "uk_replay_amendment_program_inserted_parent_child_insert_applied",

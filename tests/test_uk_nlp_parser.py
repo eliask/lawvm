@@ -1045,6 +1045,22 @@ def test_parse_fragment_substitution_handles_anchor_to_end_block_substitution() 
     ]
 
 
+def test_parse_fragment_substitution_handles_after_anchor_before_final_word_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "i in paragraph (a), for the words after \u201capplied)\u201d "
+        "(but not including the \u201cand\u201d at the end of the paragraph), substitute "
+        "\u201cit could deal with the offender\u201d;"
+    )
+
+    assert subs == [
+        {
+            "original": f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}applied){US}and",
+            "replacement": "it could deal with the offender",
+            "rule_id": "uk_effect_after_anchor_before_final_word_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_anchor_onwards_block_substitution() -> None:
     subs = parse_fragment_substitution(
         "4 In subsection (4), for the words from \u201cwhether as being\u201d onwards "
