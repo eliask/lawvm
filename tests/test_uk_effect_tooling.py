@@ -8740,11 +8740,36 @@ def test_uk_effect_json_missing_effect_id_emits_typed_error_bundle(
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert excinfo.value.code == 1
+    assert payload["report_kind"] == "uk_effect_frontier_report"
+    assert payload["schema"] == "lawvm.uk_effect_frontier_report.v1"
+    assert payload["truth_claim"] == "uk_single_effect_frontier_diagnostics_only"
+    assert payload["replay_claims"] is False
+    assert payload["canonical_effect_claims"] is False
+    assert payload["candidate_effect_claims"] is False
+    assert payload["dry_run_claims"] is False
+    assert payload["agreement_claims"] is False
     assert payload["error"] == "EFFECT_ID_NOT_FOUND"
     assert payload["statute_id"] == "ukpga/2000/1"
     assert payload["effect_id"] == "eff-missing"
     assert payload["loaded_effect_count"] == 1
     assert payload["applicability_mode"] == "effective_date_only"
+    assert payload["summary"] == {
+        "statute_id": "ukpga/2000/1",
+        "effect_id": "eff-missing",
+        "error": "EFFECT_ID_NOT_FOUND",
+        "loaded_effect_count": 1,
+        "applicability_mode": "effective_date_only",
+        "effect_feed_observation_count": 2,
+        "effect_feed_parse_rejection_count": 1,
+    }
+    assert payload["filtered_summary"] == payload["summary"]
+    assert payload["rows"] == []
+    assert payload["rows_truncated"] is False
+    assert payload["forbidden_shortcuts"] == [
+        "missing_effect_as_no_op_success",
+        "loaded_effect_count_as_source_completeness_proof",
+        "effect_feed_observation_as_replay_authorization",
+    ]
     assert payload["effect_feed_parse_rejections"]["rule_counts"] == {
         "uk_effect_feed_xml_parse_rejected": 1,
     }
