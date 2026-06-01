@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
 
 from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.source_state import (
     uk_source_parse_observations_from_ir,
     uk_source_xml_parse_rejection,
@@ -128,6 +129,104 @@ def _eid_side_report_jsonable(
     }
 
 
+def uk_eids_report_jsonable(
+    *,
+    statute_id: str,
+    archive_path: Path | str,
+    prefix: str,
+    side: str,
+    show_text: bool,
+    reports: list[dict[str, Any]],
+) -> dict[str, Any]:
+    source_status_counts: dict[str, int] = {}
+    source_parse_observation_rule_counts: dict[str, int] = {}
+    source_parse_rejection_rule_counts: dict[str, int] = {}
+    for report in reports:
+        source_status = str(report["source_status"])
+        source_status_counts[source_status] = source_status_counts.get(source_status, 0) + 1
+        for rule_id, count in dict(report["source_parse_observation_rule_counts"]).items():
+            rule_key = str(rule_id)
+            source_parse_observation_rule_counts[rule_key] = (
+                source_parse_observation_rule_counts.get(rule_key, 0) + int(count)
+            )
+        for rule_id, count in dict(report["source_parse_rejection_rule_counts"]).items():
+            rule_key = str(rule_id)
+            source_parse_rejection_rule_counts[rule_key] = (
+                source_parse_rejection_rule_counts.get(rule_key, 0) + int(count)
+            )
+
+    summary = {
+        "statute_id": statute_id,
+        "side_count": len(reports),
+        "missing_side_count": sum(1 for report in reports if report["missing"]),
+        "available_side_count": sum(
+            1 for report in reports if report["source_status"] == "available"
+        ),
+        "source_status_counts": dict(sorted(source_status_counts.items())),
+        "source_parse_observation_count": sum(
+            int(report["source_parse_observation_count"]) for report in reports
+        ),
+        "source_parse_observation_rule_counts": dict(
+            sorted(source_parse_observation_rule_counts.items())
+        ),
+        "source_parse_rejection_count": sum(
+            int(report["source_parse_rejection_count"]) for report in reports
+        ),
+        "source_parse_rejection_rule_counts": dict(
+            sorted(source_parse_rejection_rule_counts.items())
+        ),
+        "match_count": sum(int(report["matches"]) for report in reports),
+        "emitted_count": sum(int(report["emitted"]) for report in reports),
+        "truncated_side_count": sum(1 for report in reports if report["truncated"]),
+    }
+    legacy_payload = {
+        "report_kind": "uk_eids_report",
+        "statute_id": statute_id,
+        "archive_path": str(archive_path),
+        "prefix": prefix,
+        "side": side,
+        "show_text": show_text,
+        "sides": reports,
+    }
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_eids_report",
+        schema="lawvm.uk_eids_report.v1",
+        truth_claim="uk_eid_source_inspection_evidence_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary,
+        filters={
+            "statute_id": statute_id,
+            "prefix": prefix,
+            "side": side,
+            "show_text": show_text,
+            "db_path": str(archive_path),
+        },
+        filtered_summary=summary,
+        rows=tuple(reports),
+        rows_truncated=any(bool(report["truncated"]) for report in reports),
+        detail={
+            **legacy_payload,
+            "safe_default": "use_only_as_source_eid_inspection_evidence",
+            "forbidden_shortcuts": (
+                "eid_prefix_match_as_target_authority",
+                "eid_inspection_as_replay_authorization",
+                "text_preview_as_payload_identity",
+            ),
+            "next_promotion_requires": (
+                "source_instruction_witness",
+                "target_identity",
+                "payload_identity",
+                "mutation_boundary_proof",
+            ),
+        },
+    ).to_dict()
+
+
 def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.tools.uk_replay import _archive_url_for_statute
@@ -241,15 +340,14 @@ def main(args: "argparse.Namespace") -> None:
 
     if json_output:
         print(json.dumps(
-            {
-                "report_kind": "uk_eids_report",
-                "statute_id": statute_id,
-                "archive_path": str(db_path),
-                "prefix": prefix,
-                "side": side,
-                "show_text": show_text,
-                "sides": reports,
-            },
+            uk_eids_report_jsonable(
+                statute_id=statute_id,
+                archive_path=db_path,
+                prefix=prefix,
+                side=side,
+                show_text=show_text,
+                reports=reports,
+            ),
             ensure_ascii=False,
             indent=2,
             sort_keys=True,

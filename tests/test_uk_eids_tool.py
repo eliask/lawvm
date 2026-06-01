@@ -12,6 +12,7 @@ from lawvm.tools.uk_eids import (
     _iter_prefixed_rows,
     _limit_rows_with_evidence,
     _source_state,
+    uk_eids_report_jsonable,
 )
 
 
@@ -161,6 +162,93 @@ def test_eid_side_report_jsonable_splits_source_parse_observations_from_rejectio
             "blocking": True,
         }
     ]
+
+
+def test_uk_eids_report_jsonable_wraps_inspection_in_evidence_envelope() -> None:
+    reports = [
+        _eid_side_report_jsonable(
+            statute_id="ukpga/2000/1",
+            prefix="section-72",
+            side="base",
+            source_url="https://example.test/ukpga/2000/1/enacted/data.xml",
+            rows=[("section-72-1", "one")],
+            total_matches=2,
+            truncated=True,
+            missing=False,
+            source_status="available",
+            source_size=123,
+            source_sha256="base-sha",
+            show_text=False,
+        ),
+        _eid_side_report_jsonable(
+            statute_id="ukpga/2000/1",
+            prefix="section-72",
+            side="oracle",
+            source_url="https://example.test/ukpga/2000/1/data.xml",
+            rows=[],
+            total_matches=0,
+            truncated=False,
+            missing=True,
+            source_status="absent",
+            source_size=0,
+            source_sha256="",
+            show_text=False,
+            source_parse_rejections=[
+                {
+                    "rule_id": "uk_oracle_xml_parse_rejected",
+                    "blocking": True,
+                }
+            ],
+        ),
+    ]
+
+    report = uk_eids_report_jsonable(
+        statute_id="ukpga/2000/1",
+        archive_path="/tmp/uk.farchive",
+        prefix="section-72",
+        side="both",
+        show_text=False,
+        reports=reports,
+    )
+
+    assert report["report_kind"] == "uk_eids_report"
+    assert report["schema"] == "lawvm.uk_eids_report.v1"
+    assert report["truth_claim"] == "uk_eid_source_inspection_evidence_only"
+    assert report["replay_claims"] is False
+    assert report["canonical_effect_claims"] is False
+    assert report["candidate_effect_claims"] is False
+    assert report["dry_run_claims"] is False
+    assert report["agreement_claims"] is False
+    assert report["archive_path"] == "/tmp/uk.farchive"
+    assert report["prefix"] == "section-72"
+    assert report["sides"] == reports
+    assert report["rows"] == reports
+    assert report["rows_truncated"] is True
+    assert report["summary"] == {
+        "statute_id": "ukpga/2000/1",
+        "side_count": 2,
+        "missing_side_count": 1,
+        "available_side_count": 1,
+        "source_status_counts": {"absent": 1, "available": 1},
+        "source_parse_observation_count": 1,
+        "source_parse_observation_rule_counts": {
+            "uk_oracle_xml_parse_rejected": 1,
+        },
+        "source_parse_rejection_count": 1,
+        "source_parse_rejection_rule_counts": {
+            "uk_oracle_xml_parse_rejected": 1,
+        },
+        "match_count": 2,
+        "emitted_count": 1,
+        "truncated_side_count": 1,
+    }
+    assert report["filtered_summary"] == report["summary"]
+    assert report["forbidden_shortcuts"] == [
+        "eid_prefix_match_as_target_authority",
+        "eid_inspection_as_replay_authorization",
+        "text_preview_as_payload_identity",
+    ]
+    assert "mutation_boundary_proof" in report["next_promotion_requires"]
 
 
 def test_uk_eids_json_provenance_preserves_limit_zero_matches(monkeypatch, tmp_path, capsys) -> None:
