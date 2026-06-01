@@ -1084,6 +1084,22 @@ def test_parse_fragment_substitution_handles_post_quoted_ordinal_there_is_substi
     ]
 
 
+def test_parse_fragment_substitution_handles_ordinal_with_parenthetical_qualifier() -> None:
+    subs = parse_fragment_substitution(
+        "3 In the definition of \u201cbody of persons\u201d for \u201cor\u201d, "
+        "in the second place it appears (before \u201csociety\u201d), substitute \u201c and \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "or",
+            "replacement": "and",
+            "occurrence": "2",
+            "rule_id": "uk_effect_post_quoted_ordinal_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_parenthesized_nested_quote_substitution() -> None:
     subs = parse_fragment_substitution(
         "5 In section 293(2)(d), for \u201c(\u201ca progress report\u201d) "

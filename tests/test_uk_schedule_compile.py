@@ -42256,6 +42256,60 @@ def test_compile_post_quoted_ordinal_substitution_preserves_bounded_occurrence()
     assert _required_fragment_substitution(op)[0]["occurrence"] == "1"
 
 
+def test_compile_ordinal_substitution_with_parenthetical_qualifier_preserves_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <Text>3 In the definition of \u201cbody of persons\u201d for \u201cor\u201d, in the
+          second place it appears (before \u201csociety\u201d), substitute \u201c and \u201d .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6e0077939a202438627fe9079b14e7d6",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="",
+        affected_uri="/id/ukpga/2007/3/section/989",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 989",
+        affecting_uri="/id/ukpga/2007/3",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="3",
+        affecting_provisions="Sch. 1 para. 562(3)",
+        affecting_title="Test Act",
+        in_force_dates=[],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "989"),)
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "or"
+    assert op.text_patch.selector.occurrence == 2
+    assert op.text_patch.replacement == "and"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_ordinal_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "2"
+
+
 def test_compile_post_quoted_ordinal_there_is_substituted_preserves_bounded_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

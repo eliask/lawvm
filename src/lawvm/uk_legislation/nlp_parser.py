@@ -1053,7 +1053,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
     matches_post_quoted_ordinal_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"\(?\s*in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"
-        r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s*\)?,?\s+"
+        r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?"
+        r"(?:\s*\([^)]{1,200}\))?,?\s*\)?,?\s+"
         r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
         r"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](.*?)[”\"'’]",
         text,
