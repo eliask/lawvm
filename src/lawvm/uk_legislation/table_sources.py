@@ -76,8 +76,9 @@ def _uk_first_quote_group(match: re.Match[str], *names: str) -> str:
 
 _UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_CLAUSE_RE = re.compile(
     r"\bIn\s+[^.;]{0,320}?\b(?:the\s+)?words?\s+"
+    r"(?:from\s+)?"
     + _uk_quoted_capture("quoted")
-    + r"[^.;]{0,80}(?:[.;]|$)",
+    + r"[^.;]{0,180}(?:[.;]|$)",
     flags=re.I,
 )
 _UK_FLAT_REPEAL_SCHEDULE_STRUCTURAL_CLAUSE_RE = re.compile(
@@ -433,12 +434,18 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> _UKRepealTableQu
     range_match = re.search(
         r"\bthe\s+words?\s+from\s+"
         + quoted("start")
+        + r"(?:\s+\(\s*in\s+the\s+"
+        r"(?P<start_occurrence>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
+        r"\s+place[^)]{0,80}\))*"
         + r"(?:,?\s+where\s+(?:they|it|the\s+words?)\s+"
         r"(?P<occurrence>firstly|first|1st|secondly|second|2nd|thirdly|third|3rd|fourthly|fourth|4th|fifthly|fifth|5th)"
         r"\s+occurs?)?"
         r",?\s+to\s+"
         r"(?:(?:the\s+)?end|"
         + quoted("end")
+        + r"(?:\s+\(\s*in\s+the\s+"
+        r"(?P<end_occurrence>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
+        r"\s+place[^)]{0,80}\))*"
         + r")",
         text,
         re.I,
@@ -459,8 +466,17 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> _UKRepealTableQu
         occurrence = 0
         if range_match.group("occurrence"):
             occurrence = _uk_ordinal_to_int(range_match.group("occurrence")) or 0
+        if range_match.group("start_occurrence"):
+            occurrence = _uk_ordinal_to_int(range_match.group("start_occurrence")) or 0
+        end_occurrence = 0
+        if range_match.group("end_occurrence"):
+            end_occurrence = _uk_ordinal_to_int(range_match.group("end_occurrence")) or 0
         if end:
-            return _UKRepealTableQuotedWordsSelector(f"TEXT_FROM_{start}_TO_{end}", occurrence, 0)
+            return _UKRepealTableQuotedWordsSelector(
+                f"TEXT_FROM_{start}_TO_{end}",
+                occurrence,
+                end_occurrence,
+            )
         return _UKRepealTableQuotedWordsSelector(f"TEXT_FROM_{start}_TO_END", occurrence, 0)
     match = re.search(
         r"\bthe\s+words?\s+"
@@ -513,6 +529,7 @@ def _uk_flat_repeal_schedule_quoted_words_text_repeal(
     effect_type = str(effect.effect_type or "").strip().lower()
     if effect_type not in {
         "",
+        "repealed in part",
         "words repealed",
         "word repealed",
         "words omitted",
@@ -538,7 +555,13 @@ def _uk_flat_repeal_schedule_quoted_words_text_repeal(
         )
         if not enactment_match_basis:
             continue
-        original = _uk_first_quote_group(match, "quoted_double", "quoted_single")
+        original, occurrence, end_occurrence = _uk_repeal_table_quoted_words_selector(
+            clause
+        )
+        if not original:
+            original = _uk_first_quote_group(match, "quoted_double", "quoted_single")
+            occurrence = 0
+            end_occurrence = 0
         if not original:
             continue
         matches.append(
@@ -546,8 +569,8 @@ def _uk_flat_repeal_schedule_quoted_words_text_repeal(
                 table_index=-1,
                 original=original,
                 additional_originals=(),
-                occurrence=0,
-                end_occurrence=0,
+                occurrence=occurrence,
+                end_occurrence=end_occurrence,
                 rule_id=_UK_FLAT_REPEAL_SCHEDULE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
                 row_text=clause,
                 enactment_cell=" ".join(enactment_context.split())[-240:],
@@ -1155,6 +1178,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     effect_type = str(effect.effect_type or "").strip().lower()
     word_effect = effect_type in {
         "",
+        "repealed in part",
         "words repealed",
         "word repealed",
         "words omitted",

@@ -485,6 +485,7 @@ def test_summarize_results_counts_bounded_low_volume_residuals() -> None:
     )
 
     assert summary["triage_buckets"] == {"bounded_low_volume_residual": 1}
+    assert summary["active_unclassified_residual_count"] == 0
 
 
 def test_summarize_results_routes_low_volume_manual_frontier_residuals() -> None:

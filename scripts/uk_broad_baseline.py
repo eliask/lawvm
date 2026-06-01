@@ -81,7 +81,6 @@ _MANUAL_FRONTIER_TEMPLATE_ACTIONABLE_STATUSES = frozenset(
 )
 _ACTIVE_UNCLASSIFIED_RESIDUAL_BUCKETS = frozenset(
     {
-        "bounded_low_volume_residual",
         "compile_rejection_dominated_residual",
         "grounding_dominated_residual",
         "residual_after_grounding",
