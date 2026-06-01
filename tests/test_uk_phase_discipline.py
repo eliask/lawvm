@@ -114,6 +114,26 @@ def test_diagnostic_phase_owner_prefers_explicit_and_infers_common_families() ->
     assert (
         uk_phase_owner_for_diagnostic(
             {
+                "rule_id": "uk_effect_instruction_text_payload_rejected",
+                "family": "source_pathology_filter",
+                "source_pathology": "instruction_text_reused_as_payload",
+            }
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
+                "rule_id": "uk_effect_non_substantive_payload_rejected",
+                "family": "source_pathology_filter",
+                "source_pathology": "non_substantive_shell_payload",
+            }
+        )
+        == UK_PHASE_AFFECTING_SOURCE_EXTRACTION
+    )
+    assert (
+        uk_phase_owner_for_diagnostic(
+            {
                 "rule_id": "uk_effect_source_pathology_classified",
                 "family": "source_pathology",
                 "source_pathology": "table_entry_target_unsupported",
