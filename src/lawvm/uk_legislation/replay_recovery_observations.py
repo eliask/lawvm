@@ -192,6 +192,16 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
         strict_disposition="record",
         source_shape="after_words_in_brackets_selector",
     ),
+    "uk_replay_at_end_words_in_parentheses_text_rewrite_applied": UKReplayRecoveryObservation(
+        message=(
+            "UK replay applied a text insertion at the end of parenthesized "
+            "words after proving the resolved target has exactly one "
+            "parenthesized text span."
+        ),
+        family="text_rewrite_recovery",
+        strict_disposition="record",
+        source_shape="at_end_words_in_parentheses_selector",
+    ),
     "uk_replay_each_other_place_after_anchor_insert_applied": UKReplayRecoveryObservation(
         message=(
             "UK replay applied a relative each-other-place insertion after "

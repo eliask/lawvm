@@ -964,6 +964,21 @@ def test_parse_fragment_substitution_handles_words_in_brackets_substitution() ->
     ]
 
 
+def test_parse_fragment_substitution_handles_at_end_words_in_parentheses_insert() -> None:
+    subs = parse_fragment_substitution(
+        "d in subsection (3), at the end of the words in parentheses, "
+        "insert \u201c or 11B \u201d , and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AT_END_WORDS_IN_PARENTHESES",
+            "replacement": " or 11B",
+            "rule_id": "uk_effect_at_end_words_in_parentheses_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_first_and_second_occurrence_substitution() -> None:
     subs = parse_fragment_substitution(
         "i for \u201c retained \u201d (in the first and second places it appears) "

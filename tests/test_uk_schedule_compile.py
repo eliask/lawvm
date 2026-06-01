@@ -427,6 +427,93 @@ def test_replay_after_words_in_brackets_blocks_ambiguous_parenthesized_spans() -
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_replay_at_end_words_in_parentheses_inserts_inside_unique_span() -> None:
+    op = LegalOperation(
+        op_id="uk_test_at_end_words_in_parentheses_replay",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "13"), ("subsection", "3"))),
+        text_patch=_replace_patch("TEXT_AT_END_WORDS_IN_PARENTHESES", " or 11B"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="13",
+                    attrs={"eId": "section-13"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-13-3"},
+                            text="The charge applies (see sections 10 and 11A).",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The charge applies (see sections 10 and 11A or 11B)."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_at_end_words_in_parentheses_text_rewrite_applied"
+    assert adjudications[0].detail["source_shape"] == "at_end_words_in_parentheses_selector"
+
+
+def test_replay_at_end_words_in_parentheses_blocks_ambiguous_parenthesized_spans() -> None:
+    op = LegalOperation(
+        op_id="uk_test_at_end_words_in_parentheses_ambiguous",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "13"), ("subsection", "3"))),
+        text_patch=_replace_patch("TEXT_AT_END_WORDS_IN_PARENTHESES", " or 11B"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="13",
+                    attrs={"eId": "section-13"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-13-3"},
+                            text="The charge applies (see sections 10 and 11A) (temporary).",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor: Any = UKReplayExecutor(base, adjudications_out=adjudications)
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The charge applies (see sections 10 and 11A) (temporary)."
+    assert len(adjudications) == 1
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_uk_grounding_length_window_candidates_preserve_oracle_order() -> None:
     candidates_by_len = {
         90: [_GroundingTextCandidate(2, "too-short", "x" * 90)],
@@ -42565,6 +42652,64 @@ def test_compile_after_words_in_brackets_insert_lowers_to_bounded_selector() -> 
     ]
     assert len(records) == 1
     assert records[0]["reason_code"] == "after_words_in_brackets_insert"
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_at_end_words_in_parentheses_insert_lowers_to_inside_parentheses_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>d</Pnumber>
+          <Text>d at the end of the words in parentheses, insert \u201cor 11B\u201d</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-f0563b444b1d40e5e182dbd0444dabac",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-07-24",
+        affected_uri="/id/ukpga/2007/3/section/13/subsection/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 13(3)",
+        affecting_uri="/id/ukpga/2014/29",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="29",
+        affecting_provisions="s. 9(6)(d)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2018-07-24", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "13"), ("subsection", "3"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_AT_END_WORDS_IN_PARENTHESES"
+    assert op.text_patch.replacement == " or 11B"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_words_in_parentheses_insert_text_patch"
+        in op.provenance_tags
+    )
+    records = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_at_end_words_in_parentheses_insert_text_patch"
+    ]
+    assert len(records) == 1
+    assert records[0]["reason_code"] == "at_end_words_in_parentheses_insert"
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 

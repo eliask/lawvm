@@ -1484,6 +1484,27 @@ class UKReplayTextApplyMixin:
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_after_words_in_brackets_text_rewrite_applied")
             return rebuilt, True
+        if match == "TEXT_AT_END_WORDS_IN_PARENTHESES":
+            bracket_matches = list(_UK_BRACKETED_TEXT_PATTERN.finditer(text))
+            if occurrence > 0:
+                if occurrence > len(bracket_matches):
+                    return node, False
+                bracket_match = bracket_matches[occurrence - 1]
+            else:
+                if len(bracket_matches) != 1:
+                    return node, False
+                bracket_match = bracket_matches[0]
+            insert_at = bracket_match.end() - 1
+            rebuilt = dc_replace(
+                node,
+                text=f"{text[:insert_at]}{replacement}{text[insert_at:]}",
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_at_end_words_in_parentheses_text_rewrite_applied"
+                )
+            return rebuilt, True
         if match.startswith("TEXT_AFTER_EACH_OTHER_OCCURRENCE\x1f"):
             anchor = match.split("\x1f", 1)[1].strip()
             if not anchor:
@@ -2237,6 +2258,39 @@ class UKReplayTextApplyMixin:
             self._replace_node_in_statute(node, rebuilt)
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_after_words_in_brackets_text_rewrite_applied")
+            return rebuilt, True
+        if match == "TEXT_AT_END_WORDS_IN_PARENTHESES":
+            all_matches: list[TextNodeRegexMatch] = []
+            for path, text_node in text_nodes:
+                for bracket_match in _UK_BRACKETED_TEXT_PATTERN.finditer(text_node.text or ""):
+                    all_matches.append((path, text_node, bracket_match))
+            if occurrence > 0:
+                if occurrence > len(all_matches):
+                    return node, False
+                path, text_node, bracket_match = all_matches[occurrence - 1]
+            else:
+                if len(all_matches) != 1:
+                    return node, False
+                path, text_node, bracket_match = all_matches[0]
+            old_text = text_node.text or ""
+            insert_at = bracket_match.end() - 1
+            replacement_node = dc_replace(
+                text_node,
+                text=f"{old_text[:insert_at]}{replacement}{old_text[insert_at:]}",
+            )
+            if not path:
+                self._replace_node_in_statute(node, replacement_node)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_at_end_words_in_parentheses_text_rewrite_applied"
+                    )
+                return replacement_node, True
+            rebuilt = self._replace_descendant_at_path(node, path, replacement_node)
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_at_end_words_in_parentheses_text_rewrite_applied"
+                )
             return rebuilt, True
         if match.startswith("TEXT_AFTER_EACH_OTHER_OCCURRENCE\x1f"):
             anchor = match.split("\x1f", 1)[1].strip()
