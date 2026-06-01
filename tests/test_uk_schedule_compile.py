@@ -20545,6 +20545,84 @@ def test_compile_flat_repeal_schedule_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_flat_repeal_schedule_repealed_in_part_word_range_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-7">
+            <Title>Repeals</Title>
+            <Text>
+              Part II Repeals Chapter Short title Extent of repeal
+              1968 c. 70. Law Reform (Miscellaneous Provisions) (Scotland) Act 1968.
+              In section 10(6), the words from “as regards” (in the first place
+              they appear) to “Act of 1957” (in the second place they appear).
+            </Text>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_repeal_schedule_repealed_in_part_word_range",
+        effect_type="repealed in part",
+        applied=True,
+        requires_applied=True,
+        modified="2015-05-11",
+        affected_uri="/id/ukpga/1968/70/section/10/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="70",
+        affected_provisions="s. 10(6)",
+        affected_title="Law Reform (Miscellaneous Provisions) (Scotland) Act 1968",
+        affecting_uri="/id/ukpga/1996/46",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1996",
+        affecting_number="46",
+        affecting_provisions="Sch. 7 Pt. 2",
+        affecting_title="Police Act 1996",
+        in_force_dates=[{"date": "2015-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "10"), ("subsection", "6"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_FROM_as regards_TO_Act of 1957"
+    )
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert ops[0].text_patch.selector.end_occurrence == 2
+    assert (
+        ops[0].witness_rule_id
+        == "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_flat_repeal_schedule_quoted_words_text_repeal"
+        and record["reason_code"] == "unique_flat_repeal_schedule_quoted_words"
+        and record["enactment_match_basis"] == "flat_preceding_context_explicit_short_citation"
+        and record["occurrence"] == 1
+        and record["end_occurrence"] == 2
+        and record["blocking"] is False
+        and record["extent_cell"].startswith("In section 10(6)")
+        for record in lowering_records
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_repeal_table_replacement_payload_rejected"
+        for record in lowering_records
+    )
+
+
 def test_compile_flat_repeal_schedule_quoted_words_ignores_target_qualifier() -> None:
     source_root = ET.fromstring(
         """
