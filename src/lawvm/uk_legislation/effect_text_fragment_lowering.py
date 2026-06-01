@@ -7,6 +7,12 @@ import re
 from lxml import etree as ET
 from typing import Any, Optional
 
+from lawvm.core.target_resolution import (
+    SCOPE_CONFIDENCE_INFERRED_FROM_PAYLOAD,
+    TARGET_RECOVERED,
+    TargetResolutionCandidate,
+    TargetResolutionCertificate,
+)
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -1340,6 +1346,35 @@ def _refine_source_carried_child_text_target(
             "source_child_kind": child_kind,
             "source_child_label": child_label,
             "source_rule_id": str(fragment.get("rule_id") or ""),
+            "target_resolution": TargetResolutionCertificate(
+                rule_id="uk_effect_source_carried_child_text_target_refined",
+                phase="lowering",
+                reason=(
+                    "UK source text identifies a child-local text rewrite inside "
+                    "the effect-feed parent target."
+                ),
+                status=TARGET_RECOVERED,
+                source_target=str(target),
+                selected_target=str(refined),
+                candidate_count=1,
+                candidates=(
+                    TargetResolutionCandidate(
+                        target=str(refined),
+                        reason="source_carried_child_text_refinement",
+                        detail={
+                            "target_ref": target_ref,
+                            "source_child_kind": child_kind,
+                            "source_child_label": child_label,
+                        },
+                    ),
+                ),
+                scope_confidence=SCOPE_CONFIDENCE_INFERRED_FROM_PAYLOAD,
+                detail={
+                    "source_rule_id": str(fragment.get("rule_id") or ""),
+                    "original_leaf_kind": leaf_kind,
+                    "refined_child_kind": child_kind,
+                },
+            ).to_diagnostic_detail(),
         },
     )
     return refined

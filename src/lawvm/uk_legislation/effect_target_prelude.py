@@ -13,6 +13,7 @@ from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE,
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     TARGET_RECOVERED,
+    TargetResolutionCandidate,
     TargetResolutionCertificate,
 )
 from lawvm.uk_legislation.addressing import (
@@ -731,6 +732,41 @@ def refine_enacted_schedule_table_row_part_target(
             "source_part_label": source_schedule_table_row_part_label,
             "source_rule_id": str(extracted_el.get("source_rule_id") or "") if extracted_el is not None else "",
             "source_row_text": str(extracted_el.get("source_row_text") or "") if extracted_el is not None else "",
+            "target_resolution": TargetResolutionCertificate(
+                rule_id=_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID,
+                phase="lowering",
+                reason=(
+                    "UK enacted affecting source exposes the added schedule "
+                    "paragraph under a unique schedule Part."
+                ),
+                status=TARGET_RECOVERED,
+                source_target=str(target),
+                selected_target=str(refined_target),
+                candidate_count=1,
+                candidates=(
+                    TargetResolutionCandidate(
+                        target=str(refined_target),
+                        reason="enacted_schedule_table_row_part_context",
+                        detail={
+                            "target_ref": t_str,
+                            "source_part_label": source_schedule_table_row_part_label,
+                        },
+                    ),
+                ),
+                scope_confidence=SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
+                detail={
+                    "source_rule_id": (
+                        str(extracted_el.get("source_rule_id") or "")
+                        if extracted_el is not None
+                        else ""
+                    ),
+                    "source_row_text": (
+                        str(extracted_el.get("source_row_text") or "")
+                        if extracted_el is not None
+                        else ""
+                    ),
+                },
+            ).to_diagnostic_detail(),
         },
     )
     return refined_target

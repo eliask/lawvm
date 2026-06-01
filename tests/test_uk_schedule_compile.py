@@ -15319,6 +15319,41 @@ def test_compile_source_carried_between_paragraphs_substitution_refines_to_first
         "uk_effect_source_carried_child_text_target_refined",
         "uk_effect_source_carried_between_paragraphs_substitution_text_patch",
     } <= {record["rule_id"] for record in lowering_records}
+    target_refinement = next(
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_source_carried_child_text_target_refined"
+    )
+    assert target_refinement["target_resolution"] == {
+        "rule_id": "uk_effect_source_carried_child_text_target_refined",
+        "family": "target_resolution",
+        "phase": "lowering",
+        "reason": (
+            "UK source text identifies a child-local text rewrite inside "
+            "the effect-feed parent target."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "target_resolution_status": "recovered",
+        "source_target": "section:148/subsection:1",
+        "candidate_count": 1,
+        "target_candidates": (
+            {
+                "target": "section:148/subsection:1/paragraph:a",
+                "reason": "source_carried_child_text_refinement",
+                "target_ref": "s. 148(1)",
+                "source_child_kind": "paragraph",
+                "source_child_label": "a",
+            },
+        ),
+        "selected_target": "section:148/subsection:1/paragraph:a",
+        "selected_target_differs_from_source": True,
+        "scope_confidence": "inferred_from_payload",
+        "source_rule_id": "uk_effect_source_carried_between_paragraphs_substitution_text_patch",
+        "original_leaf_kind": "subsection",
+        "refined_child_kind": "paragraph",
+    }
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
@@ -56108,13 +56143,42 @@ def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> N
     assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
     assert ops[0].payload.label == "32B"
     assert ops[0].payload.text == "NHS Health Scotland"
-    assert any(
-        row.get("rule_id") == "uk_effect_enacted_schedule_table_row_part_target_refined"
-        and row.get("metadata_target") == "schedule:1/paragraph:32b"
-        and row.get("refined_target") == "schedule:1/part:4/paragraph:32b"
-        and row.get("source_part_label") == "4"
+    refinement_record = next(
+        row
         for row in lowering
+        if row.get("rule_id") == "uk_effect_enacted_schedule_table_row_part_target_refined"
     )
+    assert refinement_record["metadata_target"] == "schedule:1/paragraph:32b"
+    assert refinement_record["refined_target"] == "schedule:1/part:4/paragraph:32b"
+    assert refinement_record["source_part_label"] == "4"
+    assert refinement_record["target_resolution"] == {
+        "rule_id": "uk_effect_enacted_schedule_table_row_part_target_refined",
+        "family": "target_resolution",
+        "phase": "lowering",
+        "reason": (
+            "UK enacted affecting source exposes the added schedule "
+            "paragraph under a unique schedule Part."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "target_resolution_status": "recovered",
+        "source_target": "schedule:1/paragraph:32b",
+        "candidate_count": 1,
+        "target_candidates": (
+            {
+                "target": "schedule:1/part:4/paragraph:32b",
+                "reason": "enacted_schedule_table_row_part_context",
+                "target_ref": "sch. 1 para. 32B",
+                "source_part_label": "4",
+            },
+        ),
+        "selected_target": "schedule:1/part:4/paragraph:32b",
+        "selected_target_differs_from_source": True,
+        "scope_confidence": "explicit_source_with_context",
+        "source_rule_id": "uk_affecting_act_enacted_schedule_table_row_source_extracted",
+        "source_row_text": "32B NHS Health Scotland",
+    }
 
 
 def test_pipeline_compile_ops_does_not_extract_ambiguous_enacted_schedule_table_row(
