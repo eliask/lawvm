@@ -4099,6 +4099,25 @@ def test_classify_uk_effect_as_inserted_anchor_structural_insert_as_amendment_pr
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_parenthesized_inserted_ground_anchor_as_amendment_program() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "7 After Ground 2ZA (inserted by paragraph 6 of this Schedule) "
+            "insert- Ground 2ZB The landlord intends to sell the dwelling-house."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:2/ground:2zb-2zd"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "amendment_text_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_heading_facet_target() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",

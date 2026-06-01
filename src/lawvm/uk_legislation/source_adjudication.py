@@ -1435,14 +1435,15 @@ def _looks_like_amendment_program_inserted_parent_instruction(text: str) -> bool
 
 def _looks_like_amendment_program_inserted_anchor_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
-    if "as inserted" not in norm:
+    if "as inserted" not in norm and "inserted by" not in norm:
         return False
     return bool(
         re.search(
             r"\b(?:after|before)\s+"
-            r"(?:paragraph|sub-?paragraph|subsection)\s+"
+            r"(?:ground|paragraph|sub-?paragraph|subsection)\s+"
             r"(?:\([0-9A-Za-z]+\)|[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?)\s+"
-            r"as\s+inserted(?:\s+by\b[^,;—-]{0,120})?,?\s+"
+            r"(?:as\s+inserted(?:\s+by\b[^,;—-]{0,120})?|\(\s*inserted\s+by\b[^)]{0,160}\))"
+            r",?\s+"
             r"insert(?:\b|\s*[—-])",
             norm,
         )
