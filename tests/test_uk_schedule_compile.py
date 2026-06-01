@@ -41246,6 +41246,78 @@ def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> N
     assert _required_fragment_substitution(op)[0]["occurrence"] == "1"
 
 
+def test_passive_after_anchor_ordinal_insert_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "a after \u201ca\u201d, in the second place, there is inserted "
+        "\u201cqualifying\u201d, and"
+    )
+
+    assert fragments == [
+        {
+            "original": "a",
+            "replacement": "a qualifying",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_insert_text_patch",
+        }
+    ]
+
+
+def test_compile_passive_after_anchor_ordinal_insert_lowers_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-12-paragraph-45-3-a">
+          <Pnumber>a</Pnumber>
+          <Text>a after \u201ca\u201d, in the second place, there is inserted
+          \u201cqualifying\u201d, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-149537c67377c98aac257ddce787830c",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1999-05-11",
+        affected_uri="/id/ukpga/1995/26/section/16/subsection/8",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1995",
+        affected_number="26",
+        affected_provisions="s. 16(8)",
+        affecting_uri="/id/ukpga/1999/30",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="1999",
+        affecting_number="30",
+        affecting_provisions="Sch. 12 para. 45(3)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "1999-05-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "16"), ("subsection", "8"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "a"
+    assert op.text_patch.selector.occurrence == 2
+    assert op.text_patch.replacement == "a qualifying"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_ordinal_insert_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_after_anchor_each_other_place_insert_requires_first_occurrence_sibling() -> None:
     source_root = ET.fromstring(
         f"""
