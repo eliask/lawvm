@@ -1775,7 +1775,7 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
-            "owner_phase": "source_pathology_manual_frontier",
+            "owner_phase": "typed_elaboration",
             "source_pathology": "range_to_container_target_unsupported",
             "compiled_actions": ("replace",),
             "compiled_targets": ("part:2/chapter:1",),
@@ -2831,6 +2831,22 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         "applicability_mode": "effective_date_only",
         "authority_mode": "effect_feed_inspection",
     }
+    assert payload["authorization_status"] == "manual_claim_required"
+    assert payload["replay_authorized"] is False
+    assert "mutation_boundary_proof" in payload["required_proofs"]
+    assert payload["frontier_work_item"]["work_item_id"] == payload["work_item_id"]
+    assert payload["frontier_work_item"]["jurisdiction"] == "uk"
+    assert payload["frontier_work_item"]["source_unit_id"] == "eff-heading"
+    assert payload["frontier_work_item"]["owner_phase"] == "typed_elaboration"
+    assert payload["frontier_work_item"]["frontier_family"] == (
+        "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert payload["frontier_work_item"]["candidate_operation_family"] == (
+        "facet_text_rewrite"
+    )
+    assert payload["frontier_work_item"]["candidate_targets"] == ["s. 1"]
+    assert payload["frontier_work_item"]["executable"] is False
+    assert payload["frontier_work_item"]["replay_authorized"] is False
     assert payload["suggested_claim_template_status"] == "available"
     template = payload["suggested_claim_template"]
     assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"

@@ -376,6 +376,23 @@ def test_uk_manual_frontier_validate_main_emits_json(
     assert remaining_row["execution_authorization"]["authorization_status"] == (
         "manual_claim_required"
     )
+    assert remaining_row["frontier_work_item"]["work_item_id"] == (
+        remaining_row["work_item_id"]
+    )
+    assert remaining_row["frontier_work_item"]["frontier_family"] == (
+        "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert remaining_row["frontier_work_item"]["frontier_status"] == (
+        "manual_compile_candidate"
+    )
+    assert remaining_row["frontier_work_item"]["executable"] is False
+    assert remaining_row["frontier_work_item"]["replay_authorized"] is False
+    assert remaining_row["frontier_work_item"]["authorization_status"] == (
+        "manual_claim_required"
+    )
+    assert remaining_row["frontier_work_item"]["required_proofs"] == [
+        "mutation_boundary_proof"
+    ]
     assert remaining_row["suggested_claim_template"] == {
         "action_family": "facet_text_rewrite",
         "required_ownership": ["fresh_current_claim"],
@@ -692,6 +709,16 @@ def test_remaining_workqueue_rows_keep_only_live_manual_frontier_rows() -> None:
     assert remaining[0]["execution_authorization"]["authorization_status"] == (
         "manual_claim_required"
     )
+    assert remaining[0]["frontier_work_item"]["frontier_family"] == (
+        "uk_manual_frontier_table_appropriate_place_candidate"
+    )
+    assert remaining[0]["frontier_work_item"]["source_unit_id"] == "eff-live"
+    assert remaining[0]["frontier_work_item"]["source_witness"] == {
+        "text_preview": "live"
+    }
+    assert remaining[0]["frontier_work_item"]["required_validator_checks"] == [
+        "claim_identifies_table_ordering_rule_or_anchor"
+    ]
     assert remaining[0]["suggested_claim_template_status"] == "available"
     assert remaining[0]["suggested_claim_template"]["required_ownership"] == [
         "source_named_table_surface",
