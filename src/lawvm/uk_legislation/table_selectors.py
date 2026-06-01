@@ -343,21 +343,29 @@ def _source_text_names_section_label(text: str, label: str) -> bool:
         start = label_start + 1
 
 
-def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
-    """Return true when source text explicitly names the broad table carrier."""
-    if not text or not target.path:
-        return False
+def _table_cell_source_carrier_section_label(target: LegalAddress) -> str:
+    if not target.path:
+        return ""
     leaf_kind = _addr_leaf_kind(target)
     leaf_label = _addr_leaf_label(target)
     if leaf_kind == "subsection" and str(leaf_label or "").lower() == "table":
         for kind, label in reversed(target.path[:-1]):
             if kind == "section" and label:
-                leaf_kind = kind
-                leaf_label = label
-                break
-    if leaf_kind != "section" or not leaf_label:
+                return str(label)
+        return ""
+    if leaf_kind == "section" and leaf_label:
+        return str(leaf_label)
+    return ""
+
+
+def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
+    """Return true when source text explicitly names the broad table carrier."""
+    if not text:
         return False
-    return _source_text_names_section_label(text, str(leaf_label))
+    section_label = _table_cell_source_carrier_section_label(target)
+    if not section_label:
+        return False
+    return _source_text_names_section_label(text, section_label)
 
 
 def _source_instruction_surface(text: str) -> str:
@@ -385,7 +393,13 @@ def _source_or_parent_names_containing_target_for_table_cell(
     extracted_el: Optional[ET._Element],
     source_root: Optional[ET._Element],
 ) -> _TableCellSourceTargetContext:
-    if _source_names_containing_target_for_table_cell(text, target):
+    section_label = _table_cell_source_carrier_section_label(target)
+    if not section_label:
+        return _TableCellSourceTargetContext(
+            source_names_containing_target=False,
+            source_parent_id="",
+        )
+    if text and _source_text_names_section_label(text, section_label):
         return _TableCellSourceTargetContext(
             source_names_containing_target=True,
             source_parent_id="",
@@ -393,7 +407,7 @@ def _source_or_parent_names_containing_target_for_table_cell(
     matched_parent_without_id = False
     for ancestor in _source_ancestor_chain(source_root, extracted_el):
         ancestor_text = _normalized_element_text(ancestor)
-        if _source_names_containing_target_for_table_cell(ancestor_text, target):
+        if _source_text_names_section_label(ancestor_text, section_label):
             source_parent_id = str(ancestor.get("id") or "")
             if source_parent_id:
                 return _TableCellSourceTargetContext(
