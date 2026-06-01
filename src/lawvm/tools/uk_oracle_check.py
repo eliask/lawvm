@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
+from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
 from lawvm.uk_legislation.grounding_collateral import (
     grounding_collateral_eids as _shared_grounding_collateral_eids,
     score_with_grounding_collateral_excluded,
@@ -512,11 +513,21 @@ def oracle_check_uk_statute(
             f"MUTATION_BOUNDARY_UNEXPLAINED ({len(mutation_unexplained_reports)} reports):"
         )
         for report in mutation_unexplained_reports[:max_sample]:
+            result_codes = ", ".join(result.code for result in report.results) or "<none>"
+            unexplained_paths = [
+                tree_path_to_diagnostic_string(path)
+                for path in report.unexplained_changed_paths
+            ]
+            path_preview = ", ".join(unexplained_paths[:3]) or "<none>"
+            if len(unexplained_paths) > 3:
+                path_preview = f"{path_preview}, ..."
             lines.append(
                 "  "
                 f"op_id={report.op_id or '<missing>'} helper={report.helper} "
                 f"outcome={report.outcome} "
-                f"unexplained_paths={len(report.unexplained_changed_paths)}"
+                f"result_codes={result_codes} "
+                f"unexplained_paths={len(report.unexplained_changed_paths)} "
+                f"paths={path_preview}"
             )
         if len(mutation_unexplained_reports) > max_sample:
             lines.append(f"  ... ({len(mutation_unexplained_reports) - max_sample} more)")

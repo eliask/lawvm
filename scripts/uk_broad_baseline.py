@@ -167,6 +167,54 @@ def _retained_repeal_oracle_targets(
     return sorted(targets)
 
 
+def _mutation_boundary_diagnostics(
+    mutation_events: list[Any],
+) -> dict[str, Any]:
+    """Summarize passive mutation-boundary accounting for one replay run."""
+    from lawvm.core.mutation_accounting import build_mutation_invariant_reports
+    from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
+
+    reports = build_mutation_invariant_reports(mutation_events)
+    unexplained_reports = [
+        report
+        for report in reports
+        if report.unexplained_changed_paths or not report.path_set_invariant_holds
+    ]
+    result_code_counts = Counter(
+        result.code
+        for report in reports
+        for result in report.results
+    )
+    helper_counts = Counter(report.helper for report in reports)
+    samples = [
+        {
+            "op_id": report.op_id,
+            "helper": report.helper,
+            "outcome": report.outcome,
+            "result_codes": [result.code for result in report.results],
+            "unexplained_paths": [
+                tree_path_to_diagnostic_string(path)
+                for path in report.unexplained_changed_paths
+            ],
+        }
+        for report in unexplained_reports[:5]
+    ]
+    return {
+        "n_mutation_events": len(mutation_events),
+        "n_mutation_boundary_reports": len(reports),
+        "n_mutation_boundary_unexplained_reports": len(unexplained_reports),
+        "n_mutation_boundary_unexplained_paths": sum(
+            len(report.unexplained_changed_paths)
+            for report in unexplained_reports
+        ),
+        "mutation_boundary_result_code_counts": dict(
+            sorted(result_code_counts.items())
+        ),
+        "mutation_boundary_helper_counts": dict(sorted(helper_counts.items())),
+        "mutation_boundary_unexplained_samples": samples,
+    }
+
+
 def score_one(statute_id: str) -> dict[str, Any]:
     """Score one statute from the farchive. Returns a result dict (never raises)."""
     from farchive import Farchive
@@ -304,6 +352,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
         for lane, aligned in (("aligned", True), ("unaligned", False)):
             base_ir = parse_uk_statute_ir_bytes(enacted, statute_id=statute_id)
             alignment_events: list[dict[str, Any]] = []
+            mutation_events: list[Any] = []
             replayed = pipeline.apply_ops(
                 base_ir,
                 ops,
@@ -311,6 +360,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 text_map=text_map,
                 allow_oracle_alignment=aligned,
                 oracle_alignment_events_out=alignment_events if aligned else None,
+                mutation_events_out=mutation_events if aligned else None,
             )
             replay_eids = _eids([replayed.body]) | {
                 e for s in replayed.supplements for e in _eids([s])
@@ -351,6 +401,7 @@ def score_one(statute_id: str) -> dict[str, Any]:
                     retained_repeal_targets
                 )
                 result["n_grounding_collateral"] = len(collateral_score.collateral_eids)
+                result.update(_mutation_boundary_diagnostics(mutation_events))
                 result["n_zero_oracle_retention_eids"] = (
                     len(replay_compare_eids) if not oracle_compare_eids else 0
                 )
@@ -468,6 +519,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     manual_frontier_template_gap_rule_counts = _aggregate_row_count_maps(
         results, "manual_frontier_template_gap_rule_counts"
     )
+    mutation_boundary_result_code_counts = _aggregate_row_count_maps(
+        results, "mutation_boundary_result_code_counts"
+    )
+    mutation_boundary_helper_counts = _aggregate_row_count_maps(
+        results, "mutation_boundary_helper_counts"
+    )
+    mutation_boundary_unexplained_rows = [
+        r
+        for r in scored
+        if int(r.get("n_mutation_boundary_unexplained_reports") or 0) > 0
+        or int(r.get("n_mutation_boundary_unexplained_paths") or 0) > 0
+    ]
     active_unclassified_residuals = [
         r
         for r in results
@@ -525,6 +588,26 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "manual_frontier_template_gap_rule_counts": (
             manual_frontier_template_gap_rule_counts
+        ),
+        "mutation_boundary_event_count": sum(
+            int(r.get("n_mutation_events") or 0) for r in scored
+        ),
+        "mutation_boundary_report_count": sum(
+            int(r.get("n_mutation_boundary_reports") or 0) for r in scored
+        ),
+        "mutation_boundary_unexplained_report_count": sum(
+            int(r.get("n_mutation_boundary_unexplained_reports") or 0)
+            for r in scored
+        ),
+        "mutation_boundary_unexplained_path_count": sum(
+            int(r.get("n_mutation_boundary_unexplained_paths") or 0)
+            for r in scored
+        ),
+        "mutation_boundary_result_code_counts": mutation_boundary_result_code_counts,
+        "mutation_boundary_helper_counts": mutation_boundary_helper_counts,
+        "mutation_boundary_unexplained_statutes": sorted(
+            str(r.get("statute_id") or "")
+            for r in mutation_boundary_unexplained_rows
         ),
         "active_unclassified_residual_count": len(active_unclassified_residuals),
         "active_unclassified_residual_statutes": sorted(
@@ -1047,6 +1130,27 @@ def run_driver(
             ].items()
         )
         print(f"  blocking_compile_rejection_owner_phase_counts: {counts}")
+    if summary["mutation_boundary_event_count"]:
+        print(
+            "  mutation_boundary: "
+            f"events={summary['mutation_boundary_event_count']} "
+            f"reports={summary['mutation_boundary_report_count']} "
+            f"unexplained_reports={summary['mutation_boundary_unexplained_report_count']} "
+            f"unexplained_paths={summary['mutation_boundary_unexplained_path_count']}"
+        )
+    if summary["mutation_boundary_result_code_counts"]:
+        counts = ", ".join(
+            f"{code}={count}"
+            for code, count in summary[
+                "mutation_boundary_result_code_counts"
+            ].items()
+        )
+        print(f"  mutation_boundary_result_code_counts: {counts}")
+    if summary["mutation_boundary_unexplained_statutes"]:
+        print(
+            "  mutation_boundary_unexplained_statutes: "
+            f"{', '.join(summary['mutation_boundary_unexplained_statutes'])}"
+        )
     if summary["manual_frontier_manual_compile_candidate_rule_counts"]:
         counts = ", ".join(
             f"{rule_id}={count}"

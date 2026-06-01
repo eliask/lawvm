@@ -45,6 +45,31 @@ def tree_path_from_legal_address(address: LegalAddress) -> TreePath:
     return tuple((str(kind), str(label)) for kind, label in address.path)
 
 
+def tree_path_to_diagnostic_string(path: TreePath | object) -> str:
+    """Render a mutation-boundary tree path for human and JSON diagnostics."""
+    if isinstance(path, str):
+        return path
+    if not path:
+        return ""
+    if not isinstance(path, Iterable):
+        return str(path)
+    steps: list[str] = []
+    for step in path:
+        if isinstance(step, str):
+            steps.append(step)
+            continue
+        if not isinstance(step, Iterable):
+            steps.append(str(step))
+            continue
+        step_tuple = tuple(step)
+        if len(step_tuple) == 0:
+            continue
+        kind = str(step_tuple[0])
+        label = str(step_tuple[1]) if len(step_tuple) > 1 else ""
+        steps.append(f"{kind}:{label}" if label else kind)
+    return "/".join(steps)
+
+
 def operation_storage_boundary_prefixes(
     op: LegalOperation,
     declared_extra_prefixes: Sequence[TreePath] = (),
