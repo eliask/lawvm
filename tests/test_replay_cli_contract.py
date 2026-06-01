@@ -409,6 +409,9 @@ def test_build_uk_replay_payload_shape() -> None:
     assert payload["summary"]["ops_count"] == 12
     assert payload["summary"]["similarity"] == 0.75
     assert payload["summary"]["compile_rejection_count"] == 1
+    assert payload["summary"]["replay_adjudication_agreement_residual_family_counts"] == {
+        "replay_bug": 1,
+    }
     assert payload["filtered_summary"] == payload["summary"]
     assert payload["forbidden_shortcuts"] == [
         "oracle_agreement_as_source_truth",
@@ -469,6 +472,15 @@ def test_build_uk_replay_payload_shape() -> None:
         "mutation_boundary_proof": 1,
         "replay_executor_fix": 1,
     }
+    assert payload["replay_adjudication_agreement_residual_family_counts"] == {
+        "replay_bug": 1,
+    }
+    assert payload["replay_adjudication_agreement_residual_status_counts"] == {
+        "residual": 1,
+    }
+    assert payload["replay_adjudication_agreement_residual_owner_phase_counts"] == {
+        "affecting_source_extraction": 1,
+    }
     adjudication = payload["adjudications"][0]
     assert adjudication["kind"] == "uk_replay_payload_missing"
     assert adjudication["message"] == "UK replay skipped op"
@@ -477,6 +489,15 @@ def test_build_uk_replay_payload_shape() -> None:
     assert adjudication["owner_phase"] == "affecting_source_extraction"
     assert adjudication["authorization_status"] == "replay_adjudication_replay_bug"
     assert adjudication["replay_authorized"] is False
+    assert adjudication["agreement_residual"]["family"] == "replay_bug"
+    assert adjudication["agreement_residual"]["status"] == "residual"
+    assert adjudication["agreement_residual"]["owner_phase"] == (
+        "affecting_source_extraction"
+    )
+    assert adjudication["agreement_residual"]["missing_proofs"] == [
+        "replay_executor_fix",
+        "mutation_boundary_proof",
+    ]
     assert payload["compile_rejection_count"] == 1
     assert payload["compile_rejection_rule_counts"] == {
         "uk_effect_lowering_no_ops_rejected": 1
@@ -617,6 +638,7 @@ def test_build_uk_replay_payload_keeps_recorded_manual_frontier_nonblocking() ->
     assert work_item["executable"] is False
     assert work_item["replay_authorized"] is False
     assert payload["replay_adjudication_bucket_counts"] == {}
+    assert payload["replay_adjudication_agreement_residual_family_counts"] == {}
 
 
 def test_uk_replay_enacted_only_json_threads_effect_count_parse_rejections(

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
+from lawvm.core.agreement_residual import AgreementResidual
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.adjudication_evidence import (
@@ -96,6 +97,20 @@ def _record_required_proof_counts(
     return dict(sorted(counts.items()))
 
 
+def _record_agreement_residual_field_counts(
+    records: Iterable[Mapping[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        residual = record.get("agreement_residual")
+        if not isinstance(residual, Mapping):
+            continue
+        key = _text_field(residual.get(field), default="unknown") or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def _uk_replay_adjudication_bucket_counts(adjudications: Iterable[Any]) -> dict[str, int]:
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_replay_adjudication_bucket,
@@ -147,7 +162,69 @@ def _uk_replay_adjudication_to_dict(adjudication: Any) -> dict[str, Any]:
     payload["required_proofs"] = authorization["required_proofs"]
     payload["safe_default"] = authorization["safe_default"]
     payload["forbidden_shortcuts"] = authorization["forbidden_shortcuts"]
+    payload["agreement_residual"] = _uk_replay_adjudication_agreement_residual(
+        payload=payload,
+        bucket=bucket,
+        owner_phase=owner_phase,
+        authorization=authorization,
+    ).to_dict()
     return payload
+
+
+def _uk_replay_adjudication_agreement_residual(
+    *,
+    payload: Mapping[str, Any],
+    bucket: str,
+    owner_phase: str,
+    authorization: Mapping[str, Any],
+) -> AgreementResidual:
+    kind = _text_field(payload.get("kind"), default="unknown")
+    op_id = _text_field(payload.get("op_id"))
+    source_statute = _text_field(payload.get("source_statute"))
+    suffix = op_id or kind
+    return AgreementResidual(
+        residual_id=f"uk-replay-adjudication:{source_statute}:{suffix}",
+        jurisdiction="uk",
+        agreement_surface="replay_adjudication",
+        family=_uk_replay_adjudication_residual_family(bucket),
+        status=_uk_replay_adjudication_residual_status(bucket),
+        owner_phase=owner_phase,
+        rule_id=f"uk_replay_adjudication_{bucket or 'unknown'}",
+        source_artifact_id=source_statute,
+        replay_count=0,
+        oracle_count=0,
+        missing_proofs=tuple(str(proof) for proof in authorization.get("required_proofs") or ()),
+        safe_default="treat_adjudication_as_residual_not_replay_authority",
+        forbidden_shortcuts=(
+            "adjudication_as_replay_authority",
+            "oracle_backed_mutation",
+            "residual_over_promotion",
+        ),
+        detail={
+            "kind": kind,
+            "bucket": bucket,
+            "op_id": op_id,
+            "authorization_status": authorization.get("authorization_status"),
+        },
+    )
+
+
+def _uk_replay_adjudication_residual_family(bucket: str) -> str:
+    if bucket == "replay_bug":
+        return "replay_bug"
+    if bucket == "source_shape":
+        return "source_pathology"
+    if bucket == "text_surface":
+        return "topology_granularity_mismatch"
+    if bucket == "nonblocking_observation":
+        return "accepted_non_executable_frontier"
+    return "unknown"
+
+
+def _uk_replay_adjudication_residual_status(bucket: str) -> str:
+    if bucket == "nonblocking_observation":
+        return "frontier"
+    return "residual"
 
 
 def _blocking_rejections(rejections: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -514,6 +591,24 @@ def build_uk_replay_payload(
         "replay_adjudication_missing_proof_counts": _record_required_proof_counts(
             replay_adjudication_rows
         ),
+        "replay_adjudication_agreement_residual_family_counts": (
+            _record_agreement_residual_field_counts(
+                replay_adjudication_rows,
+                "family",
+            )
+        ),
+        "replay_adjudication_agreement_residual_status_counts": (
+            _record_agreement_residual_field_counts(
+                replay_adjudication_rows,
+                "status",
+            )
+        ),
+        "replay_adjudication_agreement_residual_owner_phase_counts": (
+            _record_agreement_residual_field_counts(
+                replay_adjudication_rows,
+                "owner_phase",
+            )
+        ),
         "adjudications": replay_adjudication_rows,
         "compile_observation_count": len(compile_observations),
         "compile_observation_rule_counts": _rejection_rule_counts(compile_observations),
@@ -698,6 +793,15 @@ def build_uk_replay_payload(
         "compile_observation_count": len(compile_observations),
         "compile_rejection_count": len(blocking_compile_rejections),
         "blocking_compile_rejection_count": len(blocking_compile_rejections),
+        "replay_adjudication_agreement_residual_family_counts": legacy_payload[
+            "replay_adjudication_agreement_residual_family_counts"
+        ],
+        "replay_adjudication_agreement_residual_status_counts": legacy_payload[
+            "replay_adjudication_agreement_residual_status_counts"
+        ],
+        "replay_adjudication_agreement_residual_owner_phase_counts": legacy_payload[
+            "replay_adjudication_agreement_residual_owner_phase_counts"
+        ],
         "similarity": similarity,
         "comparison_class": comparison_class or None,
         "oracle_available": oracle_available,
