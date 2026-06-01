@@ -11,6 +11,11 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, NamedTuple, Sequence, cast
 
+from lawvm.core.candidate_set_certificate import (
+    CANDIDATE_SET_COMPLETE,
+    CANDIDATE_SET_TRUNCATED,
+    CandidateSetCertificate,
+)
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
@@ -2373,6 +2378,44 @@ def _uk_candidates_report_jsonable(
             _limit_row_count_maps(row, limit=row_count_limit)
             for row in emitted_rows
         )
+    missing_candidate_count = max(
+        0,
+        int(summary_payload["matched_frontier_count"])
+        - int(summary_payload["inspected_frontier_count"]),
+    )
+    candidate_set_status = (
+        CANDIDATE_SET_TRUNCATED
+        if bool(summary_payload["frontier_truncated"])
+        else CANDIDATE_SET_COMPLETE
+    )
+    candidate_set_blockers = (
+        {"frontier_truncated": 1} if candidate_set_status == CANDIDATE_SET_TRUNCATED else {}
+    )
+    candidate_set_certificate = CandidateSetCertificate(
+        scope_id=f"uk-candidates:{label}",
+        candidate_set_kind="uk_candidates_frontier_rows",
+        phase="tooling",
+        rule_id="uk_candidates_report_candidate_set_projection",
+        reason="candidate frontier report rows are bounded by filters and CLI projection",
+        completeness_status=candidate_set_status,
+        candidate_count=int(summary_payload["matched_frontier_count"]),
+        candidate_ids=tuple(
+            str(row.get("statute_id") or "") for row in rows if str(row.get("statute_id") or "")
+        ),
+        missing_candidate_count=missing_candidate_count,
+        blocker_counts=candidate_set_blockers,
+        blocker_families=tuple(candidate_set_blockers),
+        next_promotion_allowed=False,
+        next_promotion_requires=(
+            "candidate_set_completeness",
+            "execution_authorization",
+        ),
+        detail={
+            "summary_only_projection": summary_only,
+            "emitted_row_count": int(summary_payload["emitted_row_count"]),
+            "inspected_frontier_count": int(summary_payload["inspected_frontier_count"]),
+        },
+    )
     return EvidenceSurfaceReport(
         jurisdiction="uk",
         report_kind="uk_candidates_frontier_report",
@@ -2391,6 +2434,7 @@ def _uk_candidates_report_jsonable(
         detail={
             "label": label,
             "candidate_claim_scope": "frontier_triage_only",
+            "candidate_set_certificate": candidate_set_certificate.to_dict(),
             "next_promotion_requires": (
                 "candidate_set_completeness_and_execution_authorization"
             ),

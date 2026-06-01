@@ -1543,6 +1543,14 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
     assert report["dry_run_claims"] is False
     assert report["agreement_claims"] is False
     assert report["candidate_claim_scope"] == "frontier_triage_only"
+    assert report["candidate_set_certificate"]["completeness_status"] == "complete"
+    assert report["candidate_set_certificate"]["candidate_count"] == 5
+    assert report["candidate_set_certificate"]["missing_candidate_count"] == 0
+    assert report["candidate_set_certificate"]["next_promotion_allowed"] is False
+    assert report["candidate_set_certificate"]["next_promotion_requires"] == [
+        "candidate_set_completeness",
+        "execution_authorization",
+    ]
     assert report["label"] == "uk_frontier"
     assert report["filters"]["types"] == ["asp", "ukpga"]
     assert report["filters"]["effect_budget"] == 25
@@ -1803,6 +1811,8 @@ def test_candidates_report_jsonable_can_omit_rows_for_summary_only() -> None:
     assert report["candidate_effect_claims"] is True
     assert report["replay_claims"] is False
     assert report["agreement_claims"] is False
+    assert report["candidate_set_certificate"]["summary_only_projection"] is True
+    assert report["candidate_set_certificate"]["completeness_status"] == "complete"
 
 
 def test_candidates_report_jsonable_can_limit_summary_count_maps() -> None:
@@ -2287,6 +2297,8 @@ def test_uk_candidates_top_zero_json_summary_preserves_matched_frontier(monkeypa
     assert payload["rows_truncated"] is True
     assert payload["candidate_effect_claims"] is True
     assert payload["replay_claims"] is False
+    assert payload["candidate_set_certificate"]["completeness_status"] == "truncated"
+    assert payload["candidate_set_certificate"]["missing_candidate_count"] == 2
 
 
 def test_uk_candidates_top_zero_summary_aggregates_saved_bench_counts_without_diagnostics(
