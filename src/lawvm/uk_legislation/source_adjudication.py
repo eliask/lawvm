@@ -1355,6 +1355,18 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
     )
 
 
+_DEICTIC_STRUCTURAL_SIBLING_INSERT_RE = re.compile(
+    r"\bafter\s+that\s+"
+    r"(?:unnumbered\s+paragraph|paragraph|sub-?paragraph|subsection)"
+    r"\s*,?\s+insert(?:\b|\s*[—-])"
+)
+
+
+def _looks_like_deictic_structural_sibling_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(_DEICTIC_STRUCTURAL_SIBLING_INSERT_RE.search(norm))
+
+
 def _looks_like_structural_child_range_substitution_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -2273,6 +2285,15 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         source_pathology_norm,
     )
     if (
+        source_pathology_norm == "structural_sibling_insert_unsupported"
+        and _looks_like_deictic_structural_sibling_insert_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
+            "reason": "The source inserts structural siblings after a deictic anchor such as 'that paragraph'; a claim or future source-context compiler must resolve the exact parent and anchor sibling before replay.",
+        }
+    if (
         source_pathology_norm == "source_carried_structured_tail_substitution_unsupported"
         and _looks_like_top_level_roman_structured_tail_substitution(extracted_text)
     ):
@@ -2521,6 +2542,12 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and _looks_like_structural_sibling_insert_instruction(extracted_text_norm)
     ):
+        if _looks_like_deictic_structural_sibling_insert_instruction(extracted_text_norm):
+            return {
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
+                "reason": "The source inserts structural siblings after a deictic anchor such as 'that paragraph'; a claim or future source-context compiler must resolve the exact parent and anchor sibling before replay.",
+            }
         return {
             "status": "deterministic_frontend_candidate",
             "rule_id": "uk_manual_frontier_structural_sibling_insert_candidate",

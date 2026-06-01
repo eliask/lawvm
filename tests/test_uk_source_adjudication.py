@@ -1918,6 +1918,33 @@ def test_classify_uk_manual_compile_frontier_marks_structural_sibling_insert_bef
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_deictic_structural_sibling_insert_manual() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="structural_sibling_insert_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "d after that unnumbered paragraph insert and- if the tenancy arose by "
+            "succession; the tenancy is not an assured agricultural occupancy."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_deictic_structural_sibling_insert_candidate"
+    )
+
+
 def test_classify_uk_manual_compile_frontier_marks_child_tail_sibling_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
