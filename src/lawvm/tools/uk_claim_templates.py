@@ -1013,6 +1013,11 @@ def manual_compile_suggested_claim_template(
             row=row,
             rule_id="uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
         )
+        if not detail:
+            detail = _first_lowering_rejection_detail(
+                row=row,
+                rule_id="uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+            )
         template = _bounded_mutation_claim_template(
             statute_id=statute_id,
             row=row,
@@ -1046,6 +1051,9 @@ def manual_compile_suggested_claim_template(
                 "anchor_label": detail.get("anchor_label", ""),
                 "inserted_label": detail.get("inserted_label", ""),
                 "inserted_text_preview": detail.get("inserted_text_preview", ""),
+                "inserted_anchor_kind": detail.get("inserted_anchor_kind", ""),
+                "inserted_anchor_label": detail.get("inserted_anchor_label", ""),
+                "source_inserted_by": detail.get("source_inserted_by", ""),
             }
         )
         return template
