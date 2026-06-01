@@ -287,6 +287,16 @@ def _section_label_pattern(label: str) -> re.Pattern[str]:
     return re.compile(rf"\bin\s+section\s+{re.escape(label)}\b", re.I)
 
 
+@functools.lru_cache(maxsize=8192)
+def _source_text_names_section_label(text: str, label: str) -> bool:
+    # The same source/ancestor instruction text is tested by several table
+    # selector families for the same target. Cache the pure predicate, not the
+    # downstream authorization decision.
+    if "in section" not in text.lower():
+        return False
+    return _section_label_pattern(label).search(text) is not None
+
+
 def _source_names_containing_target_for_table_cell(text: str, target: LegalAddress) -> bool:
     """Return true when source text explicitly names the broad table carrier."""
     if not text or not target.path:
@@ -301,10 +311,7 @@ def _source_names_containing_target_for_table_cell(text: str, target: LegalAddre
                 break
     if leaf_kind != "section" or not leaf_label:
         return False
-    # Fast substring guard: eliminates ~99% of calls before regex walk.
-    if "in section" not in text.lower():
-        return False
-    return _section_label_pattern(str(leaf_label)).search(text) is not None
+    return _source_text_names_section_label(text, str(leaf_label))
 
 
 def _source_instruction_surface(text: str) -> str:

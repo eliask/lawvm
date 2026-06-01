@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace as dc_replace
+from functools import lru_cache
 from typing import NamedTuple, Optional, Sequence, TypeAlias
 
 from lawvm.core.ir_helpers import _kind_str
@@ -54,6 +55,41 @@ _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
 
 
+@lru_cache(maxsize=262_144)
+def _cached_eid_top_scope_key(eid: str) -> str:
+    parts = eid.split("-")
+    if len(parts) >= 3 and parts[0] in _UK_TOP_SCOPED_EID_PREFIXES and parts[1]:
+        return f"{parts[0]}-{parts[1]}"
+    return ""
+
+
+@lru_cache(maxsize=262_144)
+def _cached_eid_suffix_alias_keys(eid: str) -> tuple[tuple[str, str], ...]:
+    raw = eid.strip()
+    if not raw:
+        return ()
+    aliases: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for separator in ("-", "_"):
+        parts = raw.split(separator)
+        if len(parts) < 2:
+            continue
+        for start in range(1, len(parts)):
+            suffix = separator.join(parts[start:]).strip()
+            if not suffix:
+                continue
+            key = (_cached_eid_top_scope_key(suffix), suffix)
+            if key not in seen:
+                seen.add(key)
+                aliases.append(key)
+            if key[0]:
+                global_key = ("", suffix)
+                if global_key not in seen:
+                    seen.add(global_key)
+                    aliases.append(global_key)
+    return tuple(aliases)
+
+
 def _identity_index(nodes: Sequence[UKMutableNode], target: UKMutableNode) -> int | None:
     for index, node in enumerate(nodes):
         if node is target:
@@ -93,35 +129,10 @@ class UKReplayStateMixin:
         return tuple(values)
 
     def _eid_top_scope_key(self, eid: str) -> str:
-        parts = str(eid or "").split("-")
-        if len(parts) >= 3 and parts[0] in _UK_TOP_SCOPED_EID_PREFIXES and parts[1]:
-            return f"{parts[0]}-{parts[1]}"
-        return ""
+        return _cached_eid_top_scope_key(str(eid or ""))
 
     def _eid_suffix_alias_keys(self, eid: str) -> tuple[tuple[str, str], ...]:
-        raw = str(eid or "").strip()
-        if not raw:
-            return ()
-        aliases: list[tuple[str, str]] = []
-        seen: set[tuple[str, str]] = set()
-        for separator in ("-", "_"):
-            parts = raw.split(separator)
-            if len(parts) < 2:
-                continue
-            for start in range(1, len(parts)):
-                suffix = separator.join(parts[start:]).strip()
-                if not suffix:
-                    continue
-                key = (self._eid_top_scope_key(suffix), suffix)
-                if key not in seen:
-                    seen.add(key)
-                    aliases.append(key)
-                if key[0]:
-                    global_key = ("", suffix)
-                    if global_key not in seen:
-                        seen.add(global_key)
-                        aliases.append(global_key)
-        return tuple(aliases)
+        return _cached_eid_suffix_alias_keys(str(eid or ""))
 
     def _clear_eid_lookup_index(self) -> None:
         self._eid_lookup_index = None
@@ -927,6 +938,15 @@ class UKReplayStateMixin:
                 return True
         body_path = self._find_path_to_node(self.statute.body, old_node)
         if body_path is not None:
+            parent, idx = self._parent_tuple_for_path(self.statute.body, body_path)
+            if parent is not None and idx is not None:
+                self._remove_eid_lookup_subtree(old_node)
+                parent.children[idx] = new_node
+                self._add_eid_lookup_subtree(new_node, parent, idx)
+                if structure_changed:
+                    self._note_structure_mutation()
+                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
+                return True
             self._remove_eid_lookup_subtree(old_node)
             self.statute.body = self._replace_descendant_at_path(self.statute.body, body_path, new_node)
             self._clear_eid_lookup_index()
@@ -945,6 +965,15 @@ class UKReplayStateMixin:
                 return True
             sub_path = self._find_path_to_node(root, old_node)
             if sub_path is not None:
+                parent, child_idx = self._parent_tuple_for_path(root, sub_path)
+                if parent is not None and child_idx is not None:
+                    self._remove_eid_lookup_subtree(old_node)
+                    parent.children[child_idx] = new_node
+                    self._add_eid_lookup_subtree(new_node, parent, child_idx)
+                    if structure_changed:
+                        self._note_structure_mutation()
+                    self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
+                    return True
                 self._remove_eid_lookup_subtree(old_node)
                 self.statute.supplements[idx] = self._replace_descendant_at_path(root, sub_path, new_node)
                 self._clear_eid_lookup_index()

@@ -1113,6 +1113,53 @@ class TreeInvariantViolation:
         }
 
 
+def _iter_duplicate_order_tree_invariant_violations(
+    tree: TreeInvariantNode,
+    *,
+    sort_key: Callable[[Optional[str]], Tuple[int, str, int]],
+    root_path: InvariantPath,
+) -> Iterator[TreeInvariantViolation]:
+    """Specialized traversal for callers that only consume duplicate/order records."""
+
+    def _check(node: TreeInvariantNode, path: InvariantPath) -> Iterator[TreeInvariantViolation]:
+        child_entries: list[tuple[TreeInvariantNode, str, Optional[str]]] = []
+        seen: Dict[Tuple[str, str], int] = {}
+        by_kind: Dict[str, List[str]] = {}
+        for child in node.children:
+            child_kind = _kind_str(child.kind)
+            child_label = child.label
+            child_entries.append((child, child_kind, child_label))
+            if child_label:
+                seen_key = (child_kind, child_label)
+                seen[seen_key] = seen.get(seen_key, 0) + 1
+                by_kind.setdefault(child_kind, []).append(child_label)
+        for (kind, label), count in seen.items():
+            if count > 1:
+                yield TreeInvariantViolation(
+                    kind="duplicate_label",
+                    path=path,
+                    child_kind=kind,
+                    label=label,
+                    count=count,
+                )
+        for kind, labels in by_kind.items():
+            if kind in _ORDERED_INVARIANT_KINDS:
+                keys = [sort_key(label) for label in labels]
+                for i, (left_key, right_key) in enumerate(pairwise(keys)):
+                    if left_key > right_key:
+                        yield TreeInvariantViolation(
+                            kind="sort_order",
+                            path=path,
+                            child_kind=kind,
+                            previous_label=labels[i],
+                            next_label=labels[i + 1],
+                        )
+        for child, child_kind, child_label in child_entries:
+            yield from _check(child, path + ((child_kind, child_label),))
+
+    yield from _check(tree, root_path)
+
+
 def iter_tree_invariant_violations(
     tree: TreeInvariantNode,
     *,
@@ -1127,6 +1174,14 @@ def iter_tree_invariant_violations(
     """
     _sort_key = sort_key if sort_key is not None else _default_sort_key
     selected = frozenset(families) if families is not None else None
+    root = root_path or ((_kind_str(tree.kind), None),)
+    if selected == {"duplicate_label", "sort_order"}:
+        yield from _iter_duplicate_order_tree_invariant_violations(
+            tree,
+            sort_key=_sort_key,
+            root_path=root,
+        )
+        return
 
     def _wants(kind: TreeInvariantKind) -> bool:
         return selected is None or kind in selected
@@ -1202,7 +1257,7 @@ def iter_tree_invariant_violations(
             child_path = path + ((_kind_str(child.kind), child.label),)
             yield from _check(child, child_path)
 
-    yield from _check(tree, root_path or ((_kind_str(tree.kind), None),))
+    yield from _check(tree, root)
 
 
 def check_invariants(
