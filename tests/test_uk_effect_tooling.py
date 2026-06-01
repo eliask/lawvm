@@ -32,7 +32,10 @@ from lawvm.tools.uk_effect import (
     lowering_rejection_rule_counts,
     uk_effect_report_jsonable,
 )
-from lawvm.tools.uk_claim_templates import _definition_entry_terms
+from lawvm.tools.uk_claim_templates import (
+    _definition_entry_terms,
+    manual_compile_suggested_claim_template,
+)
 from lawvm.tools.uk_effects import (
     UK_CLAIM_TEMPLATE_RULE_IDS,
     _EffectFilters,
@@ -118,6 +121,95 @@ def test_uk_claim_template_definition_entry_terms_extracts_multiple_entries() ->
     )
 
     assert terms == ("EEA Agreement", "EEA State")
+
+
+def test_heading_claim_template_carries_source_parent_instruction_context() -> None:
+    effect = UKEffectRecord(
+        effect_id="key-heading-parent-context",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-10-16",
+        affected_uri="/id/uksi/2010/1504/regulation/13/heading",
+        affected_class="UnitedKingdomStatutoryInstrument",
+        affected_year="2010",
+        affected_number="1504",
+        affected_provisions="reg. 13 heading",
+        affecting_uri="/id/uksi/2015/1682/schedule/paragraph/10/bb",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2015",
+        affecting_number="1682",
+        affecting_provisions="Sch. para. 10(bb)",
+        affecting_title="Office of Rail Regulation change",
+    )
+    row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="heading_facet_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": (
+                        "uk_effect_source_payload_without_instruction_context_rejected"
+                    ),
+                    "reason_code": "source_payload_without_instruction_context",
+                    "parser": "parse_fragment_substitution",
+                    "blocking": True,
+                    "source_parent_id": "schedule-paragraph-10",
+                    "source_parent_context_preview": (
+                        "In the following enactments and in the headings referred to, "
+                        "for a reference to the Office of Rail Regulation substitute "
+                        "a reference to the Office of Rail and Road—"
+                    ),
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "bb regulation 13 (enforcement body: the Office of Rail Regulation);"
+            ),
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
+            manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_source_payload_without_instruction_context_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_source_payload_without_instruction_context_rejected",
+            ),
+        ),
+    )
+
+    template = manual_compile_suggested_claim_template(
+        statute_id="uksi/2010/1504",
+        row=row,
+    )
+
+    assert template["action_family"] == "facet_text_rewrite"
+    assert template["text_match"] == "the Office of Rail Regulation"
+    assert template["replacement"] == "the Office of Rail and Road"
+    assert template["payload_fragment_preview"].startswith("bb regulation 13")
+    assert template["source_parent_id"] == "schedule-paragraph-10"
+    assert template["source_context_rule_id"] == (
+        "uk_effect_source_payload_without_instruction_context_rejected"
+    )
+    assert template["source_context_reason_code"] == (
+        "source_payload_without_instruction_context"
+    )
+    assert template["source_context_parser"] == "parse_fragment_substitution"
+    assert template["source_context_used_for_text_pair"] is True
+    assert "complete_source_parent_instruction_context" in template[
+        "required_ownership"
+    ]
+    assert "claim_uses_complete_parent_instruction_not_payload_fragment" in template[
+        "required_validator_checks"
+    ]
+    assert template["executable"] is False
 
 
 def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None:
