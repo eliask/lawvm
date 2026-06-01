@@ -4023,6 +4023,25 @@ def test_classify_uk_effect_deictic_structural_sibling_insert_instruction() -> N
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_deictic_unnumbered_paragraph_structural_sibling_insert() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "d after that unnumbered paragraph insert and- if the tenancy arose by "
+            "succession; the tenancy is not an assured agricultural occupancy."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:2/paragraph:ground/subparagraph:4"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "structural_sibling_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_at_end_child_dash_block_insert_as_structural_sibling() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
