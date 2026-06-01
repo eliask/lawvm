@@ -438,16 +438,21 @@ def test_build_uk_replay_payload_shape() -> None:
     assert payload["replay_adjudication_owner_phase_counts"] == {
         "affecting_source_extraction": 1
     }
-    assert payload["adjudications"] == [
-        {
-            "kind": "uk_replay_payload_missing",
-            "message": "UK replay skipped op",
-            "source_statute": "ukpga/2020/1",
-            "op_id": "op-1",
-            "detail": {"rule_id": "uk_replay_payload_missing", "phase": "replay"},
-            "owner_phase": "affecting_source_extraction",
-        }
-    ]
+    assert payload["replay_adjudication_authorization_status_counts"] == {
+        "replay_adjudication_replay_bug": 1,
+    }
+    assert payload["replay_adjudication_missing_proof_counts"] == {
+        "mutation_boundary_proof": 1,
+        "replay_executor_fix": 1,
+    }
+    adjudication = payload["adjudications"][0]
+    assert adjudication["kind"] == "uk_replay_payload_missing"
+    assert adjudication["message"] == "UK replay skipped op"
+    assert adjudication["source_statute"] == "ukpga/2020/1"
+    assert adjudication["op_id"] == "op-1"
+    assert adjudication["owner_phase"] == "affecting_source_extraction"
+    assert adjudication["authorization_status"] == "replay_adjudication_replay_bug"
+    assert adjudication["replay_authorized"] is False
     assert payload["compile_rejection_count"] == 1
     assert payload["compile_rejection_rule_counts"] == {
         "uk_effect_lowering_no_ops_rejected": 1
