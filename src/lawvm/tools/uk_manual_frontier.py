@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_manual_frontier,
@@ -665,99 +666,133 @@ def _validation_report_jsonable(
     validation_error_count = sum(
         1 for row in rows if _is_validation_error_manual_frontier_validation(row)
     )
-    report: dict[str, Any] = {
-        "report_kind": "uk_manual_frontier_validation_report",
+    summary_payload = {
+        "row_count": len(rows),
+        "remaining_row_count": remaining_count,
+        "stale_row_count": stale_count,
+        "validation_error_count": validation_error_count,
+        "validator_status_counts": dict(sorted(status_counts.items())),
+        "validator_rule_counts": dict(sorted(rule_counts.items())),
+        "original_manual_rule_counts": dict(sorted(original_manual_rule_counts.items())),
+        "current_manual_status_counts": dict(
+            sorted(current_manual_status_counts.items())
+        ),
+        "current_manual_rule_counts": dict(sorted(current_manual_rule_counts.items())),
+        "current_suggested_claim_template_status_counts": dict(
+            sorted(current_suggested_claim_template_status_counts.items())
+        ),
+        "current_source_pathology_counts": dict(
+            sorted(current_source_pathology_counts.items())
+        ),
+        "original_owner_phase_counts": dict(
+            sorted(original_owner_phase_counts.items())
+        ),
+        "current_owner_phase_counts": dict(sorted(current_owner_phase_counts.items())),
+        "current_authorization_status_counts": dict(
+            sorted(current_authorization_status_counts.items())
+        ),
+        "current_missing_proof_counts": dict(
+            sorted(current_missing_proof_counts.items())
+        ),
+        "remaining_manual_status_counts": dict(
+            sorted(remaining_manual_status_counts.items())
+        ),
+        "remaining_manual_rule_counts": dict(sorted(remaining_manual_rule_counts.items())),
+        "remaining_suggested_claim_template_status_counts": dict(
+            sorted(remaining_suggested_claim_template_status_counts.items())
+        ),
+        "remaining_source_pathology_counts": dict(
+            sorted(remaining_source_pathology_counts.items())
+        ),
+        "remaining_owner_phase_counts": dict(
+            sorted(remaining_owner_phase_counts.items())
+        ),
+        "remaining_authorization_status_counts": dict(
+            sorted(remaining_authorization_status_counts.items())
+        ),
+        "remaining_missing_proof_counts": dict(
+            sorted(remaining_missing_proof_counts.items())
+        ),
+        "stale_original_manual_rule_counts": dict(
+            sorted(stale_original_manual_rule_counts.items())
+        ),
+        "current_blocking_lowering_rule_counts": dict(
+            sorted(current_blocking_lowering_rule_counts.items())
+        ),
+        "remaining_blocking_lowering_rule_counts": dict(
+            sorted(remaining_blocking_lowering_rule_counts.items())
+        ),
+        "current_template_action_family_counts": dict(
+            sorted(current_template_action_family_counts.items())
+        ),
+        "remaining_template_action_family_counts": dict(
+            sorted(remaining_template_action_family_counts.items())
+        ),
+        "current_template_required_validator_check_counts": dict(
+            sorted(current_template_validator_check_counts.items())
+        ),
+        "remaining_template_required_validator_check_counts": dict(
+            sorted(remaining_template_validator_check_counts.items())
+        ),
+        "current_template_required_ownership_counts": dict(
+            sorted(current_template_ownership_counts.items())
+        ),
+        "remaining_template_required_ownership_counts": dict(
+            sorted(remaining_template_ownership_counts.items())
+        ),
+        "current_template_required_operation_family_proof_semantic_counts": dict(
+            sorted(current_template_proof_semantic_counts.items())
+        ),
+        "remaining_template_required_operation_family_proof_semantic_counts": dict(
+            sorted(remaining_template_proof_semantic_counts.items())
+        ),
+    }
+    report_rows: tuple[dict[str, Any], ...] = ()
+    if not summary_only:
+        report_rows = tuple(dict(row) for row in rows)
+    detail: dict[str, Any] = {
         "input_path": str(input_path),
         "db_path": str(db_path),
-        "summary": {
-            "row_count": len(rows),
-            "remaining_row_count": remaining_count,
-            "stale_row_count": stale_count,
-            "validation_error_count": validation_error_count,
-            "validator_status_counts": dict(sorted(status_counts.items())),
-            "validator_rule_counts": dict(sorted(rule_counts.items())),
-            "original_manual_rule_counts": dict(sorted(original_manual_rule_counts.items())),
-            "current_manual_status_counts": dict(
-                sorted(current_manual_status_counts.items())
-            ),
-            "current_manual_rule_counts": dict(sorted(current_manual_rule_counts.items())),
-            "current_suggested_claim_template_status_counts": dict(
-                sorted(current_suggested_claim_template_status_counts.items())
-            ),
-            "current_source_pathology_counts": dict(
-                sorted(current_source_pathology_counts.items())
-            ),
-            "original_owner_phase_counts": dict(
-                sorted(original_owner_phase_counts.items())
-            ),
-            "current_owner_phase_counts": dict(sorted(current_owner_phase_counts.items())),
-            "current_authorization_status_counts": dict(
-                sorted(current_authorization_status_counts.items())
-            ),
-            "current_missing_proof_counts": dict(
-                sorted(current_missing_proof_counts.items())
-            ),
-            "remaining_manual_status_counts": dict(
-                sorted(remaining_manual_status_counts.items())
-            ),
-            "remaining_manual_rule_counts": dict(sorted(remaining_manual_rule_counts.items())),
-            "remaining_suggested_claim_template_status_counts": dict(
-                sorted(remaining_suggested_claim_template_status_counts.items())
-            ),
-            "remaining_source_pathology_counts": dict(
-                sorted(remaining_source_pathology_counts.items())
-            ),
-            "remaining_owner_phase_counts": dict(
-                sorted(remaining_owner_phase_counts.items())
-            ),
-            "remaining_authorization_status_counts": dict(
-                sorted(remaining_authorization_status_counts.items())
-            ),
-            "remaining_missing_proof_counts": dict(
-                sorted(remaining_missing_proof_counts.items())
-            ),
-            "stale_original_manual_rule_counts": dict(
-                sorted(stale_original_manual_rule_counts.items())
-            ),
-            "current_blocking_lowering_rule_counts": dict(
-                sorted(current_blocking_lowering_rule_counts.items())
-            ),
-            "remaining_blocking_lowering_rule_counts": dict(
-                sorted(remaining_blocking_lowering_rule_counts.items())
-            ),
-            "current_template_action_family_counts": dict(
-                sorted(current_template_action_family_counts.items())
-            ),
-            "remaining_template_action_family_counts": dict(
-                sorted(remaining_template_action_family_counts.items())
-            ),
-            "current_template_required_validator_check_counts": dict(
-                sorted(current_template_validator_check_counts.items())
-            ),
-            "remaining_template_required_validator_check_counts": dict(
-                sorted(remaining_template_validator_check_counts.items())
-            ),
-            "current_template_required_ownership_counts": dict(
-                sorted(current_template_ownership_counts.items())
-            ),
-            "remaining_template_required_ownership_counts": dict(
-                sorted(remaining_template_ownership_counts.items())
-            ),
-            "current_template_required_operation_family_proof_semantic_counts": dict(
-                sorted(current_template_proof_semantic_counts.items())
-            ),
-            "remaining_template_required_operation_family_proof_semantic_counts": dict(
-                sorted(remaining_template_proof_semantic_counts.items())
-            ),
-        },
+        "manual_frontier_validation_claims": True,
+        "next_promotion_requires": (
+            "semantic_claim_validation",
+            "execution_authorization",
+            "mutation_boundary_proof",
+        ),
     }
-    if not summary_only:
-        report["rows"] = [dict(row) for row in rows]
+    evidence_jsonl: dict[str, Any] = {}
+    written_paths: list[str] = []
     if validation_jsonl is not None:
-        report["validation_jsonl"] = dict(validation_jsonl)
+        detail["validation_jsonl"] = dict(validation_jsonl)
+        evidence_jsonl["validation_jsonl"] = dict(validation_jsonl)
+        path = str(validation_jsonl.get("path") or "")
+        if path:
+            written_paths.append(path)
     if remaining_jsonl is not None:
-        report["remaining_jsonl"] = dict(remaining_jsonl)
-    return report
+        detail["remaining_jsonl"] = dict(remaining_jsonl)
+        evidence_jsonl["remaining_jsonl"] = dict(remaining_jsonl)
+        path = str(remaining_jsonl.get("path") or "")
+        if path:
+            written_paths.append(path)
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_manual_frontier_validation_report",
+        schema="lawvm.uk_manual_frontier_validation_report.v1",
+        truth_claim="uk_manual_frontier_validation_diagnostics_only",
+        replay_claims=False,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=False,
+        summary=summary_payload,
+        filters={},
+        filtered_summary=summary_payload,
+        rows=report_rows,
+        rows_truncated=False,
+        evidence_jsonl=evidence_jsonl,
+        written_paths=tuple(written_paths),
+        detail=detail,
+    ).to_dict()
 
 
 def _string_tuple_from_value(value: object) -> tuple[str, ...]:
