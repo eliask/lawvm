@@ -254,6 +254,9 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
     from lawvm.uk_legislation.execution_authorization import (
         uk_execution_authorization_from_manual_frontier,
     )
+    from lawvm.uk_legislation.frontier_work_items import (
+        uk_frontier_work_item_from_manual_frontier_row,
+    )
     from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
     from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 
@@ -297,6 +300,39 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         manual_compile_rule_id=manual_frontier["rule_id"],
         owner_phase=manual_frontier_owner_phase,
     ).to_dict()
+    frontier_work_item: dict[str, Any] = {}
+    if execution_authorization["replay_authorized"] is False:
+        frontier_work_item = uk_frontier_work_item_from_manual_frontier_row(
+            {
+                "statute_id": statute_id,
+                "effect_id": effect.effect_id,
+                "affected_uri": str(getattr(effect, "affected_uri", "") or ""),
+                "affecting_uri": str(getattr(effect, "affecting_uri", "") or ""),
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "manual_compile_status": manual_frontier["status"],
+                "manual_compile_rule_id": manual_frontier["rule_id"],
+                "owner_phase": manual_frontier_owner_phase,
+                "source": {
+                    "text_preview": _text_snippet(
+                        extracted,
+                        limit=100000 if show_text else 300,
+                    ),
+                },
+                "suggested_claim_template": suggested_claim_template,
+                "executable": execution_authorization["executable"],
+                "replay_authorized": execution_authorization["replay_authorized"],
+                "authorization_status": execution_authorization[
+                    "authorization_status"
+                ],
+                "required_proofs": execution_authorization["required_proofs"],
+                "safe_default": execution_authorization["safe_default"],
+                "forbidden_shortcuts": execution_authorization[
+                    "forbidden_shortcuts"
+                ],
+            }
+        ).to_dict()
     return {
         "report_kind": "uk_effect_frontier_report",
         "statute_id": statute_id,
@@ -326,6 +362,7 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
         },
         "manual_compile_frontier": manual_frontier,
         "execution_authorization": execution_authorization,
+        "frontier_work_item": frontier_work_item,
         "suggested_claim_template_status": (
             "available" if suggested_claim_template else "not_available"
         ),
