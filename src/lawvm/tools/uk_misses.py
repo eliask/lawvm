@@ -19,6 +19,8 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+
 if TYPE_CHECKING:
     import argparse
 
@@ -121,6 +123,100 @@ def _diagnostic_owner_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]
     from lawvm.uk_legislation.phase_discipline import uk_phase_owner_counts_for_diagnostics
 
     return uk_phase_owner_counts_for_diagnostics(rows)
+
+
+def uk_misses_report_jsonable(
+    *,
+    statute_id: str,
+    db_path: Path,
+    similarity: float,
+    replay_compare_eid_count: int,
+    oracle_compare_eid_count: int,
+    common_eid_count: int,
+    only_in_oracle_count: int,
+    only_in_replayed_count: int,
+    only_in_oracle_buckets: dict[str, list[str]],
+    only_in_replayed_buckets: dict[str, list[str]],
+    blocking_rejection_rule_counts: dict[str, int],
+    blocking_rejection_owner_phase_counts: dict[str, int],
+    rejection_rule_counts: dict[str, int],
+    rejection_owner_phase_counts: dict[str, int],
+) -> dict[str, Any]:
+    """Build a replay/oracle residual report without promoting agreement to truth."""
+    legacy_payload: dict[str, Any] = {
+        "statute_id": statute_id,
+        "archive_path": str(db_path),
+        "similarity": similarity,
+        "replay_compare_eid_count": replay_compare_eid_count,
+        "oracle_compare_eid_count": oracle_compare_eid_count,
+        "common_eid_count": common_eid_count,
+        "only_in_oracle_count": only_in_oracle_count,
+        "only_in_replayed_count": only_in_replayed_count,
+        "only_in_oracle_buckets": only_in_oracle_buckets,
+        "only_in_replayed_buckets": only_in_replayed_buckets,
+        "blocking_rejection_rule_counts": blocking_rejection_rule_counts,
+        "blocking_rejection_owner_phase_counts": blocking_rejection_owner_phase_counts,
+        "rejection_rule_counts": rejection_rule_counts,
+        "rejection_owner_phase_counts": rejection_owner_phase_counts,
+    }
+    summary = {
+        "statute_id": statute_id,
+        "similarity": similarity,
+        "replay_compare_eid_count": replay_compare_eid_count,
+        "oracle_compare_eid_count": oracle_compare_eid_count,
+        "common_eid_count": common_eid_count,
+        "only_in_oracle_count": only_in_oracle_count,
+        "only_in_replayed_count": only_in_replayed_count,
+        "blocking_rejection_rule_counts": blocking_rejection_rule_counts,
+        "blocking_rejection_owner_phase_counts": blocking_rejection_owner_phase_counts,
+        "rejection_rule_counts": rejection_rule_counts,
+        "rejection_owner_phase_counts": rejection_owner_phase_counts,
+    }
+    rows = (
+        {
+            "side": "only_in_oracle",
+            "eid_count": only_in_oracle_count,
+            "buckets": only_in_oracle_buckets,
+        },
+        {
+            "side": "only_in_replayed",
+            "eid_count": only_in_replayed_count,
+            "buckets": only_in_replayed_buckets,
+        },
+    )
+    return EvidenceSurfaceReport(
+        jurisdiction="uk",
+        report_kind="uk_misses_report",
+        schema="lawvm.uk_misses_report.v1",
+        truth_claim="uk_replay_oracle_residual_diagnostics_not_source_truth",
+        replay_claims=True,
+        canonical_effect_claims=False,
+        candidate_effect_claims=False,
+        dry_run_claims=False,
+        agreement_claims=True,
+        summary=summary,
+        filters={"statute_id": statute_id, "db_path": str(db_path)},
+        filtered_summary=summary,
+        rows=rows,
+        rows_truncated=False,
+        detail={
+            **legacy_payload,
+            "source_footing": "farchive_enacted_xml_plus_current_xml_oracle_eid_sets",
+            "safe_default": "classify_residual_without_mutating_replay",
+            "forbidden_shortcuts": (
+                "oracle_miss_as_replay_authorization",
+                "agreement_as_source_truth",
+                "eid_bucket_as_target_authority",
+            ),
+            "next_promotion_requires": (
+                "source_identity",
+                "target_identity",
+                "payload_identity",
+                "temporal_extent_applicability",
+                "mutation_boundary_proof",
+            ),
+        },
+    ).to_dict()
 
 
 def main(args: "argparse.Namespace") -> None:
@@ -258,33 +354,32 @@ def main(args: "argparse.Namespace") -> None:
     if json_output:
         print(
             json.dumps(
-                {
-                    "report_kind": "uk_misses_report",
-                    "statute_id": statute_id,
-                    "archive_path": str(db_path),
-                    "similarity": similarity,
-                    "replay_compare_eid_count": len(replay_compare_eids),
-                    "oracle_compare_eid_count": len(oracle_compare_eids),
-                    "common_eid_count": len(common),
-                    "only_in_oracle_count": len(only_in_oracle),
-                    "only_in_replayed_count": len(only_in_replayed),
-                    "only_in_oracle_buckets": {
+                uk_misses_report_jsonable(
+                    statute_id=statute_id,
+                    db_path=db_path,
+                    similarity=similarity,
+                    replay_compare_eid_count=len(replay_compare_eids),
+                    oracle_compare_eid_count=len(oracle_compare_eids),
+                    common_eid_count=len(common),
+                    only_in_oracle_count=len(only_in_oracle),
+                    only_in_replayed_count=len(only_in_replayed),
+                    only_in_oracle_buckets={
                         bucket: members for bucket, members in oracle_buckets.items()
                     },
-                    "only_in_replayed_buckets": {
+                    only_in_replayed_buckets={
                         bucket: members for bucket, members in replayed_buckets.items()
                     },
-                    "blocking_rejection_rule_counts": {
+                    blocking_rejection_rule_counts={
                         rule_id: count
                         for rule_id, count, _ in blocking_rejection_histogram
                     },
-                    "blocking_rejection_owner_phase_counts": blocking_rejection_owner_phase_counts,
-                    "rejection_rule_counts": {
+                    blocking_rejection_owner_phase_counts=blocking_rejection_owner_phase_counts,
+                    rejection_rule_counts={
                         rule_id: count
                         for rule_id, count, _ in rejection_histogram
                     },
-                    "rejection_owner_phase_counts": rejection_owner_phase_counts,
-                },
+                    rejection_owner_phase_counts=rejection_owner_phase_counts,
+                ),
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,
