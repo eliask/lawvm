@@ -102,6 +102,14 @@ def test_frontier_work_item_requires_non_executable_work() -> None:
         source_artifact_id="ukpga/2020/1",
         source_unit_id="eff-1",
         source_witness={"source_role": "affecting_source"},
+        target_witness={
+            "surface": "effect_feed_affected_provisions",
+            "affected_provisions": "s. 1",
+        },
+        compare_witness={
+            "surface": "replay_vs_current_oracle_target_presence",
+            "compare_shape": "commensurable",
+        },
         owner_phase="typed_elaboration",
         frontier_family="uk_manual_frontier_heading_facet_candidate",
         frontier_status="manual_compile_candidate",
@@ -119,6 +127,8 @@ def test_frontier_work_item_requires_non_executable_work() -> None:
 
     assert data["executable"] is False
     assert data["replay_authorized"] is False
+    assert data["target_witness"]["affected_provisions"] == "s. 1"
+    assert data["compare_witness"]["compare_shape"] == "commensurable"
     assert validate_frontier_work_item(data) == ()
 
 

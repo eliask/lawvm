@@ -321,6 +321,54 @@ def uk_effect_report_jsonable(  # noqa: PLR0913
                         limit=100000 if show_text else 300,
                     ),
                 },
+                "target_context": {
+                    "surface": "effect_feed_affected_provisions",
+                    "affected_provisions": effect.affected_provisions,
+                    "resolver_eids": [
+                        str(row["resolver_eid"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "compare_shape": compare_shape,
+                },
+                "compare": {
+                    "shape": compare_shape,
+                    "resolver_eids": [
+                        str(row["resolver_eid"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "base_target_hits": [
+                        bool(row["base_target_present"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "oracle_target_hits": [
+                        bool(row["oracle_target_present"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "base_descendant_hits": [
+                        bool(row["base_descendant_present"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "oracle_descendant_hits": [
+                        bool(row["oracle_descendant_present"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "base_parent_hits": [
+                        bool(row["base_parent_present"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                    "oracle_parent_hits": [
+                        bool(row["oracle_parent_present"])
+                        for row in op_rows
+                        if row["resolver_eid"]
+                    ],
+                },
                 "suggested_claim_template": suggested_claim_template,
                 "executable": execution_authorization["executable"],
                 "replay_authorized": execution_authorization["replay_authorized"],

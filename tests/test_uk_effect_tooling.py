@@ -2491,6 +2491,15 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     assert payload["frontier_work_item"]["authorization_status"] == (
         "manual_claim_required"
     )
+    assert payload["frontier_work_item"]["target_witness"] == {
+        "surface": "effect_feed_affected_provisions",
+        "affected_provisions": "s. 1",
+        "candidate_targets": ["s. 1"],
+    }
+    assert payload["frontier_work_item"]["compare_witness"] == {
+        "surface": "replay_vs_current_oracle_target_presence",
+        "compare_shape": "commensurable",
+    }
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False
     assert payload["frontier_work_item"]["source_witness"]["source_sha256"] == (
@@ -2886,6 +2895,15 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         "facet_text_rewrite"
     )
     assert payload["frontier_work_item"]["candidate_targets"] == ["s. 1"]
+    assert payload["frontier_work_item"]["target_witness"] == {
+        "surface": "effect_feed_affected_provisions",
+        "affected_provisions": "s. 1",
+        "candidate_targets": ["s. 1"],
+    }
+    assert payload["frontier_work_item"]["compare_witness"] == {
+        "surface": "replay_vs_current_oracle_target_presence",
+        "compare_shape": "commensurable",
+    }
     assert payload["frontier_work_item"]["executable"] is False
     assert payload["frontier_work_item"]["replay_authorized"] is False
     assert payload["frontier_work_item"]["detail"]["claim_status"] == (
