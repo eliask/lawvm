@@ -207,6 +207,8 @@ def test_oracle_check_uk_statute_has_required_headers() -> None:
     assert "Similarity excluding grounding collateral:" in result
     assert "Rejection owner phases:" in result
     assert "Mutation boundary:" in result
+    assert "Mutation boundary proof statuses:" in result
+    assert "Mutation boundary proof rules:" in result
     assert "Base source:" in result
 
 
