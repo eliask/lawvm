@@ -6157,6 +6157,92 @@ def test_compile_preposed_words_inserted_at_end_to_text_append() -> None:
     )
 
 
+def test_schedule_qualified_at_end_insert_fragment_parses_as_append() -> None:
+    fragments = parse_fragment_substitution(
+        "2 At the end of paragraph 31 of Schedule 5 to the 1995 Act insert "
+        "the words \u201c and for the purposes of this paragraph the time when a "
+        "scheme begins to be wound up shall be determined in accordance with "
+        "regulation 2 of the Occupational Pension Schemes (Winding Up) "
+        "Regulations 1996 \u201d ."
+    )
+
+    assert fragments == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": (
+                "and for the purposes of this paragraph the time when a scheme "
+                "begins to be wound up shall be determined in accordance with "
+                "regulation 2 of the Occupational Pension Schemes (Winding Up) "
+                "Regulations 1996"
+            ),
+            "rule_id": "uk_effect_at_end_text_insertion_patch",
+        }
+    ]
+
+
+def test_compile_schedule_qualified_at_end_insert_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="article-11-2">
+          <Pnumber>2</Pnumber>
+          <Text>
+            2 At the end of paragraph 31 of Schedule 5 to the 1995 Act insert
+            the words \u201c and for the purposes of this paragraph the time when
+            a scheme begins to be wound up shall be determined in accordance
+            with regulation 2 of the Occupational Pension Schemes (Winding Up)
+            Regulations 1996 \u201d .
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-986f4271bdb6bcdf3f48a8f2cb24b810",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="1997-03-06",
+        affected_uri="/id/ukpga/1995/26/schedule/5/paragraph/31",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1995",
+        affected_number="26",
+        affected_provisions="Sch. 5 para. 31",
+        affecting_uri="/id/uksi/1997/664",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="1997",
+        affecting_number="664",
+        affecting_provisions="art. 11(2)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "1997-03-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("schedule", "5"), ("paragraph", "31"))
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement.startswith(
+        "and for the purposes of this paragraph"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_at_end_text_insertion_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_words_inserted_at_end_unquoted_dash_payload_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
