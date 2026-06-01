@@ -38,6 +38,17 @@ _SOURCE_AMENDMENT_INSERTED_PARENT_STRUCTURAL_INSERT_RE = re.compile(
     r"(?P<inserted_text>.+?)\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_AMENDMENT_INSERTED_ANCHOR_STRUCTURAL_INSERT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"(?P<direction>before|after)\s+"
+    r"(?P<anchor_kind>Ground|sub-?paragraph|paragraph|subsection)\s+"
+    r"(?P<anchor_label>[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?)\s+"
+    r"(?:(?:\(\s*inserted\s+by\s+(?P<inserted_by>[^)]{1,240})\s*\))|as\s+inserted)"
+    r",?\s+insert\s*[—–-]\s*"
+    r"(?P<inserted_label>(?:Ground\s+)?[0-9A-Za-z]+)\s+"
+    r"(?P<inserted_text>[\s\S]{1,8000})\s*$",
+    flags=re.I,
+)
 UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID = (
     "uk_effect_amendment_program_inserted_parent_child_insert_text_patch"
 )
@@ -150,6 +161,42 @@ def _amendment_program_inserted_parent_structural_insert(
     }
 
 
+def _amendment_program_inserted_anchor_structural_insert(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Identify inserts after an anchor created by a prior amendment instruction."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text or "inserted" not in text.lower():
+        return None
+    match = _SOURCE_AMENDMENT_INSERTED_ANCHOR_STRUCTURAL_INSERT_RE.match(text)
+    if match is None:
+        return None
+
+    def source_label(value: object) -> str:
+        raw = str(value or "").strip().lower().strip(".")
+        if raw.startswith("(") and raw.endswith(")"):
+            raw = raw[1:-1].strip()
+        raw = re.sub(r"^ground\s+", "", raw, flags=re.I)
+        return raw
+
+    anchor_label = source_label(match.group("anchor_label"))
+    inserted_label = source_label(match.group("inserted_label"))
+    if not anchor_label or not inserted_label or anchor_label == inserted_label:
+        return None
+    return {
+        "target": str(target),
+        "inserted_anchor_kind": str(match.group("anchor_kind") or "").lower().replace("-", ""),
+        "inserted_anchor_label": anchor_label,
+        "source_inserted_by": " ".join(str(match.group("inserted_by") or "as inserted").split()),
+        "direction": str(match.group("direction") or "").lower(),
+        "anchor_label": anchor_label,
+        "inserted_label": inserted_label,
+        "inserted_text_preview": " ".join(str(match.group("inserted_text") or "").split())[:240],
+    }
+
+
 def _fragment_substitution_amendment_program_inserted_parent_child_insert(
     *,
     extracted_text: Optional[str],
@@ -197,7 +244,36 @@ def reject_amendment_program_inserted_parent_structural_insert(
         else None
     )
     if detail is None:
-        return False
+        inserted_anchor_detail = (
+            _amendment_program_inserted_anchor_structural_insert(
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if extracted_text and curr_action == "insert"
+            else None
+        )
+        if inserted_anchor_detail is None:
+            return False
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+            family="amendment_program_lowering",
+            reason_code="insert_targets_prior_amendment_inserted_anchor",
+            reason=(
+                "UK source text inserts material after an anchor that the "
+                "same amendment program says was inserted by another "
+                "instruction; this needs explicit source-chain compilation "
+                "and must not search the base law for a convenient anchor."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                **inserted_anchor_detail,
+            },
+        )
+        return True
 
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,

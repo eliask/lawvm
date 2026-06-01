@@ -5476,6 +5476,103 @@ def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_ins
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_amendment_program_template_carries_inserted_anchor_detail() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-amendment-program-inserted-anchor",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-24",
+        affected_uri="/id/ukpga/1988/50/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="50",
+        affected_provisions="Sch. 2 Ground 2ZB-2ZD",
+        affecting_uri="/id/ukpga/2025/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="26",
+        affecting_provisions="Sch. 1 para. 7",
+        affecting_title="Test Act 2025",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="amendment_text_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+                    "blocking": True,
+                    "target_ref": "Sch. 2 Ground 2ZB",
+                    "target": "schedule:2/paragraph:ground/subparagraph:2zb",
+                    "inserted_anchor_kind": "ground",
+                    "inserted_anchor_label": "2za",
+                    "source_inserted_by": "paragraph 6 of this Schedule",
+                    "direction": "after",
+                    "anchor_label": "2za",
+                    "inserted_label": "2zb",
+                    "inserted_text_preview": "The landlord holds a superior tenancy.",
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                "After Ground 2ZA (inserted by paragraph 6 of this Schedule) "
+                "insert- Ground 2ZB The landlord holds a superior tenancy."
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id="uk_manual_frontier_amendment_program_target_candidate",
+            manual_compile_reason="Inserted anchor needs explicit amendment-program context.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/1988/50",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/1988/50",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "amendment_program_target_mutation"
+    assert template["source_target_surface"] == "Sch. 2 Ground 2ZB"
+    assert template["source_target_address"] == "schedule:2/paragraph:ground/subparagraph:2zb"
+    assert template["insert_direction"] == "after"
+    assert template["anchor_label"] == "2za"
+    assert template["inserted_label"] == "2zb"
+    assert template["inserted_anchor_kind"] == "ground"
+    assert template["inserted_anchor_label"] == "2za"
+    assert template["source_inserted_by"] == "paragraph 6 of this Schedule"
+    assert "superior tenancy" in template["inserted_text_preview"]
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",

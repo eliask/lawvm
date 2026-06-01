@@ -4366,6 +4366,119 @@ def test_compile_amendment_program_inserted_parent_child_insert_as_target_local_
     assert amended_text.index("ai a court") < amended_text.index("i\n\nthe offence")
 
 
+def test_compile_inserted_anchor_structural_insert_blocks_as_amendment_program() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-7">
+          <Pnumber>7</Pnumber>
+          <P1para>
+            <Text>
+              After Ground 2ZA (inserted by paragraph 6 of this Schedule) insert—
+              Ground 2ZB The landlord holds a superior tenancy.
+            </Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-inserted-anchor-ground",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-24",
+        affected_uri="/id/ukpga/1988/50/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1988",
+        affected_number="50",
+        affected_provisions="Sch. 2 Ground 2ZB-2ZD",
+        affecting_uri="/id/ukpga/2025/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="26",
+        affecting_provisions="Sch. 1 para. 7",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-05-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert {
+        row["rule_id"] for row in lowering_records
+    } == {"uk_effect_amendment_program_inserted_anchor_structural_insert_rejected"}
+    rejection = lowering_records[0]
+    assert rejection["family"] == "amendment_program_lowering"
+    assert rejection["reason_code"] == "insert_targets_prior_amendment_inserted_anchor"
+    assert rejection["target_ref"] == "Sch. 2 Ground 2ZB"
+    assert rejection["inserted_anchor_kind"] == "ground"
+    assert rejection["inserted_anchor_label"] == "2za"
+    assert rejection["source_inserted_by"] == "paragraph 6 of this Schedule"
+    assert rejection["direction"] == "after"
+    assert rejection["anchor_label"] == "2za"
+    assert rejection["inserted_label"] == "2zb"
+    assert "superior tenancy" in rejection["inserted_text_preview"]
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+
+
+def test_compile_as_inserted_parenthetical_anchor_preserves_full_anchor_label() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-15-c">
+          <Pnumber>c</Pnumber>
+          <P3para>
+            <Text>
+              c after paragraph 2B(8) as inserted, insert—
+              9 “Relevant body“ means a Strategic Health Authority.
+            </Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-as-inserted-parenthetical-anchor",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-11-25",
+        affected_uri="/id/ukpga/2006/28/section/41/3",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2006",
+        affected_number="28",
+        affected_provisions="s. 41(3)",
+        affecting_uri="/id/uksi/2006/1407",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2006",
+        affecting_number="1407",
+        affecting_provisions="Sch. 1 Pt. 2 para. 15(c)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2007-03-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    rejection = lowering_records[0]
+    assert rejection["rule_id"] == (
+        "uk_effect_amendment_program_inserted_anchor_structural_insert_rejected"
+    )
+    assert rejection["inserted_anchor_kind"] == "paragraph"
+    assert rejection["inserted_anchor_label"] == "2b(8)"
+    assert rejection["source_inserted_by"] == "as inserted"
+    assert rejection["anchor_label"] == "2b(8)"
+    assert rejection["inserted_label"] == "9"
+
+
 def test_compile_structural_sibling_insert_does_not_append_when_feed_target_is_inserted_child() -> None:
     extracted_el = ET.fromstring(
         f"""
