@@ -574,6 +574,8 @@ def _required_operation_family_proof_semantics(
         return ("source_carried_structured_payload_boundary_claim",)
     if action_family == "source_carried_structured_tail_substitution":
         return ("source_carried_structured_tail_boundary_claim",)
+    if action_family == "metadata_carried_text_patch":
+        return ("effect_metadata_source_fragment_text_patch_boundary_claim",)
     if action_family == "range_to_container_substitution":
         return ("range_to_container_source_range_payload_and_lineage",)
     if action_family == "definition_entry_insert":
@@ -1576,6 +1578,34 @@ def manual_compile_suggested_claim_template(
                 "compiler_or_claim_identifies_exact_replacement_or_inserted_payload",
                 "target_scope_is_the_effect_target_or_source_named_descendant_only",
                 "changed_paths_are_within_declared_target_and_payload_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
+    ):
+        detail = _first_blocking_lowering_rejection_detail(row=row)
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="metadata_carried_text_patch",
+            placement_family=str(
+                detail.get("reason_code")
+                or "effect_metadata_source_fragment_reconciliation_required"
+            ),
+            required_ownership=[
+                "official_effect_metadata_action_and_target",
+                "affecting_source_fragment_preimage_or_payload",
+                "source_fragment_is_complete_for_effect_metadata_action",
+                "live_target_text_preimage",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "effect_metadata_supplies_action_family_and_target",
+                "source_fragment_supplies_exact_text_preimage_or_payload",
+                "claim_reconciles_metadata_action_with_source_fragment_shape",
+                "target_scope_is_the_effect_target_or_source_named_descendant_only",
+                "changed_paths_are_within_declared_target_and_text_patch_boundary",
             ],
         )
     if (

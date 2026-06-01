@@ -87,6 +87,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "uk_manual_frontier_definition_child_structural_substitution_candidate",
         "uk_manual_frontier_definition_list_end_insert_candidate",
+        "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_mixed_body_heading_text_substitution_split",
         "uk_manual_frontier_parser_or_extraction_candidate",
@@ -113,6 +114,76 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
     }
     assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
     assert UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
+
+
+def test_metadata_carried_text_patch_claim_template_is_non_executable() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-metadata-carried",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-11-24",
+        affected_uri="/id/ukpga/2007/3/section/35",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 35",
+        affecting_uri="https://www.legislation.gov.uk/id/uksi/2008/3023",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="3023",
+        affecting_provisions="art. 4(a)",
+        affecting_title="Synthetic SI",
+    )
+    row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_overlap_substitution_unlowered",
+                    "reason_code": "overlap_substitution_parse_failed",
+                    "blocking": True,
+                },
+            ),
+            source_extracted=True,
+            source_extracted_tag="P3",
+            source_extracted_text_preview=(
+                "a the amount specified in section 35 is replaced with \"GBP 6,345\";"
+            ),
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
+            ),
+            manual_compile_owner_phase="affecting_source_extraction",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+
+    template = manual_compile_suggested_claim_template(
+        statute_id="ukpga/2007/3",
+        row=row,
+    )
+
+    assert template["action_family"] == "metadata_carried_text_patch"
+    assert template["placement_family"] == "overlap_substitution_parse_failed"
+    assert template["executable"] is False
+    assert "official_effect_metadata_action_and_target" in template[
+        "required_ownership"
+    ]
+    assert "source_fragment_supplies_exact_text_preimage_or_payload" in template[
+        "required_validator_checks"
+    ]
+    assert template["required_operation_family_proof_semantics"] == [
+        "effect_metadata_source_fragment_text_patch_boundary_claim"
+    ]
 
 
 def test_uk_claim_template_definition_entry_terms_extracts_multiple_entries() -> None:
