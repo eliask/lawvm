@@ -2,6 +2,11 @@ from typing import Any, cast
 
 import pytest
 
+from lawvm.core.candidate_set_certificate import (
+    CANDIDATE_SET_COMPLETE,
+    CANDIDATE_SET_TRUNCATED,
+    CandidateSetCertificate,
+)
 from lawvm.core.evidence_contracts import (
     CorpusFindingEvidenceRow,
     CorpusOperationEvidenceRow,
@@ -232,6 +237,63 @@ def test_evidence_surface_report_requires_claim_flags() -> None:
             candidate_effect_claims=False,
             dry_run_claims=False,
             agreement_claims=False,
+        )
+
+
+def test_candidate_set_certificate_records_bounded_completeness() -> None:
+    certificate = CandidateSetCertificate(
+        scope_id="uk-candidates:demo",
+        candidate_set_kind="uk_candidates_frontier_rows",
+        phase="tooling",
+        rule_id="uk_candidates_report_candidate_set_projection",
+        reason="bounded candidate report projection",
+        completeness_status=CANDIDATE_SET_TRUNCATED,
+        candidate_count=3,
+        candidate_ids=("ukpga/2000/1", "ukpga/2000/2"),
+        missing_candidate_count=1,
+        blocker_counts={"frontier_truncated": 1},
+        blocker_families=("frontier_truncated",),
+        next_promotion_allowed=False,
+        next_promotion_requires=("candidate_set_completeness", "execution_authorization"),
+        detail={"summary_only_projection": False},
+    )
+
+    data = certificate.to_dict()
+
+    assert data["completeness_status"] == "truncated"
+    assert data["candidate_count"] == 3
+    assert data["candidate_ids"] == ["ukpga/2000/1", "ukpga/2000/2"]
+    assert data["missing_candidate_count"] == 1
+    assert data["next_promotion_allowed"] is False
+    assert data["summary_only_projection"] is False
+
+
+def test_candidate_set_certificate_rejects_partial_promotion() -> None:
+    with pytest.raises(ValueError, match="next_promotion_allowed"):
+        CandidateSetCertificate(
+            scope_id="scope",
+            candidate_set_kind="kind",
+            phase="tooling",
+            rule_id="rule",
+            reason="bad promotion",
+            completeness_status=CANDIDATE_SET_TRUNCATED,
+            candidate_count=1,
+            missing_candidate_count=1,
+            next_promotion_allowed=True,
+        )
+
+
+def test_candidate_set_certificate_complete_requires_no_missing_candidates() -> None:
+    with pytest.raises(ValueError, match="missing_candidate_count=0"):
+        CandidateSetCertificate(
+            scope_id="scope",
+            candidate_set_kind="kind",
+            phase="tooling",
+            rule_id="rule",
+            reason="bad complete status",
+            completeness_status=CANDIDATE_SET_COMPLETE,
+            candidate_count=1,
+            missing_candidate_count=1,
         )
 
 
