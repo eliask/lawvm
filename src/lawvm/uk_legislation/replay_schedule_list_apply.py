@@ -82,6 +82,11 @@ _UK_DEFINITION_LIST_END_PLACEMENT_FAMILIES = frozenset(
     }
 )
 _UK_LIST_BEGINNING_PLACEMENT_FAMILY = "list_beginning_from_explicit_source"
+_TYPE_LABEL_ANCHOR_RE = re.compile(r"\s*Type\s+(?P<label>[0-9A-Z]{1,4})\s*", re.I)
+_TYPE_LABEL_ENTRY_START_RE = re.compile(
+    r"^\s*Type\s+(?P<label>[0-9A-Z]{1,4})(?![0-9A-Z])\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -1177,6 +1182,20 @@ class UKReplayScheduleListApplyMixin:
             label_re = re.compile(rf"^\s*Exception\s+{label}(?![0-9A-Z])\b", re.I)
             return [entry_row for entry_row in entry_rows if label_re.search(entry_row.child.text or "")]
 
+        def _type_label_matches(anchor: str) -> list[_ScheduleListEntryRow]:
+            if str(selector.get("source_anchor_form") or "") != "type_label":
+                return []
+            anchor_match = _TYPE_LABEL_ANCHOR_RE.fullmatch(anchor)
+            if anchor_match is None:
+                return []
+            anchor_label = anchor_match.group("label").casefold()
+            matches: list[_ScheduleListEntryRow] = []
+            for entry_row in entry_rows:
+                entry_match = _TYPE_LABEL_ENTRY_START_RE.match(entry_row.child.text or "")
+                if entry_match is not None and entry_match.group("label").casefold() == anchor_label:
+                    matches.append(entry_row)
+            return matches
+
         def _matches_for_anchor(anchor: str) -> _ScheduleListEntryAnchorMatch:
             anchor_norm = _compact_normalized_text(anchor)
             matches = [
@@ -1189,6 +1208,11 @@ class UKReplayScheduleListApplyMixin:
             matches = _exception_label_matches(anchor)
             if matches:
                 return _ScheduleListEntryAnchorMatch(matches, "exception_label")
+            matches = _type_label_matches(anchor)
+            if matches:
+                return _ScheduleListEntryAnchorMatch(matches, "type_label")
+            if str(selector.get("source_anchor_form") or "") == "type_label":
+                return _ScheduleListEntryAnchorMatch([], "none")
             matches = [
                 entry_row
                 for entry_row in entry_rows

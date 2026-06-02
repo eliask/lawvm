@@ -41174,6 +41174,232 @@ def test_replay_type_label_entry_insert_requires_unique_anchor() -> None:
     )
 
 
+def test_compile_type_label_entry_repeal_lowers_to_local_schedule_entry() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-1-paragraph-63-7-a-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii omit Types 2 and 3 (tax at dividend trust rate on income attracting dividend tax credits), and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-93fe6f4f5b0bf100f358ad73302d2e94",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/498/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 498(1)",
+        affecting_uri="/id/ukpga/2025/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="8",
+        affecting_provisions="Sch. 1 para. 63(7)(a)(ii)",
+        affecting_title="Finance Act 2025",
+        in_force_dates=[{"date": "2025-05-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target.path == (("section", "498"), ("subsection", "1"))
+    assert op.payload is None
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["Type 2", "Type 3"]
+    assert selector["source_anchor_form"] == "type_label"
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+        and record["reason_code"] == "explicit_schedule_list_entry_repeal_anchor"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_type_label_entry_repeal_requires_all_local_anchors_unique() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Text>omit Types 2 and 3 (tax at dividend trust rate on income attracting dividend tax credits), and</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_type_label_entry_repeal",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/498/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 498(1)",
+        affecting_uri="/id/ukpga/2025/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="8",
+        affecting_provisions="Sch. 1 para. 63(7)(a)(ii)",
+        affecting_title="Finance Act 2025",
+        in_force_dates=[{"date": "2025-05-06", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    assert len(ops) == 1
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="498",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 1 starting rate amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 2 basic rate amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3 dividend trust rate amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3A nominal rate amount."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "Type 1 starting rate amount.",
+        "Type 3A nominal rate amount.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_resolved"
+        and adjudication.detail.get("deleted_count") == 2
+        and adjudication.detail.get("carrier_kind") == "subsection"
+        and adjudication.detail.get("match_modes") == {"Type 2": "type_label", "Type 3": "type_label"}
+        for adjudication in adjudications
+    )
+
+    missing_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="498",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 1 starting rate amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 2 basic rate amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3A nominal rate amount."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    missing_adjudications: list[CompileAdjudication] = []
+
+    missing_replayed = replay_uk_ops(
+        missing_base,
+        ops,
+        adjudications_out=missing_adjudications,
+    )
+
+    missing_subsection = missing_replayed.body.children[0].children[0]
+    assert [child.text for child in missing_subsection.children] == [
+        "Type 1 starting rate amount.",
+        "Type 2 basic rate amount.",
+        "Type 3A nominal rate amount.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("anchor") == "Type 3"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in missing_adjudications
+    )
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="498",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 2 first witness."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 2 duplicate witness."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3 dividend trust rate amount."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ambiguous_adjudications: list[CompileAdjudication] = []
+
+    ambiguous_replayed = replay_uk_ops(
+        ambiguous_base,
+        ops,
+        adjudications_out=ambiguous_adjudications,
+    )
+
+    ambiguous_subsection = ambiguous_replayed.body.children[0].children[0]
+    assert [child.text for child in ambiguous_subsection.children] == [
+        "Type 2 first witness.",
+        "Type 2 duplicate witness.",
+        "Type 3 dividend trust rate amount.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_repeal_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("anchor") == "Type 2"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in ambiguous_adjudications
+    )
+
+
 def test_compile_at_beginning_entry_insert_preserves_local_list_order() -> None:
     extracted_el = ET.fromstring(
         f"""

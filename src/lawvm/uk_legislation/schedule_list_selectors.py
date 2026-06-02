@@ -25,6 +25,11 @@ _TYPE_LABEL_LIST_ENTRY_INSERT_RE = re.compile(
     r"insert\s*[—–-]?\s*(?P<payload>.+)$",
     re.I,
 )
+_TYPE_LABEL_LIST_ENTRY_REPEAL_RE = re.compile(
+    r"\bomit(?:ted)?\s+Types?\s+"
+    r"(?P<anchors>[0-9A-Z]{1,4}(?:\s*(?:,|;|\band\b)\s*[0-9A-Z]{1,4})*)\b",
+    re.I,
+)
 
 _ENTRY_ORDINALS = {
     "first": 1,
@@ -380,6 +385,22 @@ def _split_exception_repeal_anchors(raw: str) -> tuple[str, ...]:
     return tuple(anchors)
 
 
+def _split_type_label_repeal_anchors(raw: str) -> tuple[str, ...]:
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"\s*(?:,|;|\band\b)\s*", str(raw or ""), flags=re.I):
+        label = part.strip().upper()
+        if not re.fullmatch(r"[0-9A-Z]{1,4}", label):
+            continue
+        anchor = f"Type {label}"
+        key = _compact_normalized_text(anchor)
+        if key in seen:
+            continue
+        seen.add(key)
+        anchors.append(anchor)
+    return tuple(anchors)
+
+
 def _uk_schedule_list_entry_repeal_selector(
     *,
     target_ref: str,
@@ -424,6 +445,18 @@ def _uk_schedule_list_entry_repeal_selector(
     ):
         return None
     if local_list_carrier_target:
+        match = _TYPE_LABEL_LIST_ENTRY_REPEAL_RE.search(text)
+        if match is not None:
+            anchors = _split_type_label_repeal_anchors(match.group("anchors"))
+            if anchors:
+                return {
+                    "rule_id": UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+                    "anchors": list(anchors),
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "entry_carrier_family": "non_schedule_local_list",
+                    "source_anchor_form": "type_label",
+                }
         match = re.search(
             r"\bomit(?:ted)?\s+exceptions?\s+(?P<anchors>[0-9A-Z]{1,4}(?:\s*(?:,|;|\band\b)\s*[0-9A-Z]{1,4})*)\b",
             text,
