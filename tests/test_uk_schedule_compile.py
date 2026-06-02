@@ -3350,6 +3350,86 @@ def test_compile_quoted_substitution_records_parenthetical_scope_note() -> None:
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_words_before_quoted_anchor_substitution_preserves_anchor() -> None:
+    fragments = parse_fragment_substitution(
+        "in paragraph (b) for the words before \u201ctwo\u201d substitute \u201c the child has \u201d , and"
+    )
+
+    assert fragments == [
+        {
+            "original": "TEXT_FROM__TO_two",
+            "replacement": "the child has two",
+            "rule_id": "uk_effect_words_before_quoted_anchor_substitution_text_patch",
+        }
+    ]
+    assert parse_fragment_substitution(
+        "for the words before \u201cshall cease\u201d substitute \u201c contact with one of the child's parents \u201d ."
+    ) == [
+        {
+            "original": "TEXT_FROM__TO_shall cease",
+            "replacement": "contact with one of the child's parents shall cease",
+            "rule_id": "uk_effect_words_before_quoted_anchor_substitution_text_patch",
+        }
+    ]
+
+
+def test_compile_words_before_quoted_anchor_substitution_preserves_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-6-3-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in paragraph (b) for the words before \u201ctwo\u201d substitute \u201c the child has \u201d , and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-da673a75baa234d82d69d7e319c1e7b4",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-04-22",
+        affected_uri="/id/ukpga/1989/41/section/11/subsection/5/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="s. 11(5)(b)",
+        affecting_uri="/id/ukpga/2014/6",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="6",
+        affecting_provisions="Sch. 2 para. 6(3)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-04-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "11"),
+        ("subsection", "5"),
+        ("paragraph", "b"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM__TO_two"
+    assert ops[0].text_patch.replacement == "the child has two"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_words_before_quoted_anchor_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_parenthesized_occurrence_substitution_keeps_all_occurrences_rule() -> None:
     fragments = parse_fragment_substitution(
         'for "permit" (in each place it appears) substitute "licence"'

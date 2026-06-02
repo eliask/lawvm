@@ -311,6 +311,9 @@ UK_DEFINITION_CHILD_TAIL_AFTER_ANCHOR_TO_END_RULE_ID = (
 UK_AFTER_ANCHOR_BEFORE_FINAL_WORD_SUBSTITUTION_RULE_ID = (
     "uk_effect_after_anchor_before_final_word_substitution_text_patch"
 )
+UK_WORDS_BEFORE_QUOTED_ANCHOR_SUBSTITUTION_RULE_ID = (
+    "uk_effect_words_before_quoted_anchor_substitution_text_patch"
+)
 UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID = (
     "uk_effect_after_anchor_to_end_unquoted_substitution_text_patch"
 )
@@ -549,6 +552,24 @@ def _before_anchor_insert_joiner(inserted: str, original: str) -> str:
     if original.startswith((" ", ",", ".", ";", ":", ")")):
         return ""
     return " "
+
+
+def _replacement_preserving_following_anchor(replacement: str, anchor: str) -> str:
+    payload = replacement.strip()
+    following_anchor = anchor.strip()
+    if not payload:
+        return following_anchor
+    if not following_anchor:
+        return payload
+    return f"{payload}{_before_anchor_insert_joiner(payload, following_anchor)}{following_anchor}"
+
+
+def _first_named_group(match: re.Match[str], names: tuple[str, ...]) -> str:
+    for name in names:
+        value = match.group(name)
+        if value is not None:
+            return value
+    return ""
 
 
 def _extract_balanced_quoted_payload(
@@ -1933,6 +1954,43 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     selector=OpeningWordsSelector(),
                     replacement=m.group(1).strip(),
                     rule_id="uk_effect_opening_words_substitution_text_patch",
+                )
+            )
+        )
+
+    matches_words_before_quoted_anchor_substituted = re.finditer(
+        r"for\s+(?:the\s+)?words?\s+before\s+"
+        r"(?:“(?P<anchor_curly>[^”]{1,500})”|\"(?P<anchor_double>[^\"]{1,500})\"|"
+        r"‘(?P<anchor_left_single>[^’]{1,500})’|'(?P<anchor_single>[^']{1,500})')"
+        r"\s+substitute\s+"
+        r"(?:“(?P<replacement_curly>[^”]{1,1000})”|\"(?P<replacement_double>[^\"]{1,1000})\"|"
+        r"‘(?P<replacement_left_single>[^’]{1,1000})’|'(?P<replacement_single>[^']{1,1000})')"
+        r"(?:\s*,?\s*(?:and)?\s*[.;]?)?",
+        text,
+        re.I,
+    )
+    for m in matches_words_before_quoted_anchor_substituted:
+        anchor = _first_named_group(
+            m,
+            ("anchor_curly", "anchor_double", "anchor_left_single", "anchor_single"),
+        ).strip()
+        replacement = _first_named_group(
+            m,
+            (
+                "replacement_curly",
+                "replacement_double",
+                "replacement_left_single",
+                "replacement_single",
+            ),
+        ).strip()
+        if not anchor:
+            continue
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", anchor),
+                    replacement=_replacement_preserving_following_anchor(replacement, anchor),
+                    rule_id=UK_WORDS_BEFORE_QUOTED_ANCHOR_SUBSTITUTION_RULE_ID,
                 )
             )
         )
