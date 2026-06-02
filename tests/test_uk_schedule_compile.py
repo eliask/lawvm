@@ -34561,6 +34561,68 @@ def test_compile_range_to_end_missing_the_substitution() -> None:
     assert lowering_records[0]["reason_code"] == "explicit_range_to_end_missing_the_text_patch"
 
 
+def test_compile_bare_quoted_range_to_end_after_words_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-26-4">
+          <Pnumber>4</Pnumber>
+          <Text>4 In that subsection, in the words after paragraph (b), for
+          \u201con the remarriage of the applicant\u201d onwards substitute
+          \u201con the formation by the applicant of a subsequent marriage or civil
+          partnership\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-3521f7e0462ba9b69867deb7981ce7a6",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-25",
+        affected_uri="/id/ukpga/1975/63/section/19/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1975",
+        affected_number="63",
+        affected_provisions="s. 19(2)",
+        affecting_uri="/id/ukpga/2004/33",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="33",
+        affecting_provisions="Sch. 4 para. 26(4)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2005-12-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "19"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM_on the remarriage of the applicant_TO_END"
+    assert op.text_patch.replacement == (
+        "on the formation by the applicant of a subsequent marriage or civil partnership"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_to_end_bare_quoted_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_range_to_end_bare_quoted_substitution_text_patch"
+    ] == ["uk_effect_range_to_end_bare_quoted_substitution_text_patch"]
+    assert lowering_records[0]["reason_code"] == "explicit_range_to_end_bare_quoted_text_patch"
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_parenthetical_occurrence_range_to_end_substitution_fragment_parses() -> None:
     fragments = parse_fragment_substitution(
         "6 In section 126 of the Pensions Act 1995 in paragraph (a) "
@@ -46704,6 +46766,65 @@ def test_compile_from_beginning_unit_block_substitution_lowers_bounded_selector(
     assert (
         ops[0].text_patch.replacement
         == "The accounts and statements of accounts of a corporation to which paragraph 10A does not apply"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_from_beginning_block_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
+def test_compile_from_beginning_block_substitution_strips_wrapping_quotes() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-4-paragraph-17-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 For the words from the beginning to \u201c1(1)(b) of this Act\u201d
+          substitute\u2014 \u201cThis subsection applies, without prejudice to the generality
+          of paragraph (g) of subsection (1) above, where an application for an
+          order under section 2 of this Act is made by virtue of section 1(1)(a)
+          or (b) of this Act.\u201d</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a9b44b2230e607109d287fbb484e4103",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-05-25",
+        affected_uri="/id/ukpga/1975/63/section/3/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1975",
+        affected_number="63",
+        affected_provisions="s. 3(2)",
+        affecting_uri="/id/ukpga/2004/33",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="33",
+        affecting_provisions="Sch. 4 para. 17(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2005-12-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "3"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM__TO_1(1)(b) of this Act"
+    assert ops[0].text_patch.replacement == (
+        "This subsection applies, without prejudice to the generality of paragraph "
+        "(g) of subsection (1) above, where an application for an order under "
+        "section 2 of this Act is made by virtue of section 1(1)(a) or (b) of "
+        "this Act."
     )
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_from_beginning_block_substitution_text_patch"

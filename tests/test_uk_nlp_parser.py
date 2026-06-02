@@ -2779,6 +2779,25 @@ def test_parse_fragment_substitution_handles_range_to_end_missing_the() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_bare_quoted_range_to_end_after_words_context() -> None:
+    subs = parse_fragment_substitution(
+        "4 In that subsection, in the words after paragraph (b), for "
+        "\u201con the remarriage of the applicant\u201d onwards substitute "
+        "\u201con the formation by the applicant of a subsequent marriage or civil partnership\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_on the remarriage of the applicant_TO_END",
+            "replacement": (
+                "on the formation by the applicant of a subsequent marriage or "
+                "civil partnership"
+            ),
+            "rule_id": "uk_effect_range_to_end_bare_quoted_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_preserves_range_to_end_second_occurrence() -> None:
     subs = parse_fragment_substitution(
         "a in subsection (1), for the words from \u201cthe\u201d where it second occurs "
@@ -4039,6 +4058,24 @@ def test_parse_fragment_substitution_handles_from_beginning_block_substitution()
         {
             "original": "TEXT_FROM__TO_the registrar may",
             "replacement": "A1 This section applies where...",
+            "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_from_beginning_dash_quoted_payload() -> None:
+    subs = parse_fragment_substitution(
+        "2 For the words from the beginning to \u201c1(1)(b) of this Act\u201d substitute\u2014 "
+        "\u201cThis subsection applies where an application is made by virtue of "
+        "section 1(1)(a) or (b) of this Act.\u201d"
+    )
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_1(1)(b) of this Act",
+            "replacement": (
+                "This subsection applies where an application is made by virtue "
+                "of section 1(1)(a) or (b) of this Act."
+            ),
             "rule_id": "uk_effect_from_beginning_block_substitution_text_patch",
         }
     ]

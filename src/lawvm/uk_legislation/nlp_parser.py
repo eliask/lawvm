@@ -309,6 +309,9 @@ UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID = (
 UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID = (
     "uk_effect_range_to_end_missing_the_substitution_text_patch"
 )
+UK_RANGE_TO_END_BARE_QUOTED_SUBSTITUTION_RULE_ID = (
+    "uk_effect_range_to_end_bare_quoted_substitution_text_patch"
+)
 UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_labeled_end_range_substitution_text_patch"
 )
@@ -1776,7 +1779,7 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         subs.append(patch)
 
     matches_range_to_end_substituted = re.finditer(
-        r"for (?:the )?words?(?:\s+from)?\s+"
+        r"for (?:(?P<words_prefix>(?:the\s+)?words?(?:\s+from)?\s+))?"
         r"(?:the\s+(?P<pre_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)"
         r"\s+occurrence\s+of\s+)?"
         r"[“\"'‘](?P<start>.*?)[”\"'’]"
@@ -1806,6 +1809,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID
         elif m.group("to_end") and not m.group("end_article"):
             patch["rule_id"] = UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID
+        elif not m.group("words_prefix"):
+            patch["rule_id"] = UK_RANGE_TO_END_BARE_QUOTED_SUBSTITUTION_RULE_ID
         paren_ordinal = m.group("paren_ordinal_pre") or m.group("paren_ordinal_post")
         if paren_ordinal:
             patch["rule_id"] = "uk_effect_range_to_end_parenthetical_occurrence_substitution_text_patch"
@@ -2403,7 +2408,10 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
     )
     for m in matches_from_beginning_block_substituted:
         replacement = m.group(2).strip()
-        if replacement and not replacement.startswith(("“", '"', "'", "‘")):
+        closing_quote = {"“": "”", '"': '"', "'": "'", "‘": "’"}.get(replacement[:1])
+        if closing_quote and replacement.endswith(closing_quote):
+            replacement = replacement[1:-1].strip()
+        if replacement:
             subs.append(
                 fragment_to_legacy_dict(
                     UKTextRewriteFragment(
