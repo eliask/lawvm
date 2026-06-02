@@ -1348,6 +1348,22 @@ def test_parse_fragment_substitution_handles_after_anchor_ordinal_insert() -> No
     ]
 
 
+def test_parse_fragment_substitution_handles_after_anchor_ordinal_occurrence_insert() -> None:
+    subs = parse_fragment_substitution(
+        "ii after the second occurrence of  \u201cmade\u201d insert \u201c"
+        " in relation to local government elections in England \u201d ;"
+    )
+
+    assert subs == [
+        {
+            "original": "made",
+            "replacement": "made in relation to local government elections in England ",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_ordinal_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_ordinal_places_where_insert() -> None:
     subs = parse_fragment_substitution(
         "3 In section 56C(1), after \u201cthe\u201d, in the first and second places "

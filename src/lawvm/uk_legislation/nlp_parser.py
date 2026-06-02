@@ -3006,6 +3006,32 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 }
             )
 
+    matches_after_ordinal_occurrence_insert = re.finditer(
+        rf"after\s+the\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+occurrence\s+of\s+"
+        rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]\s*,?\s+"
+        r"(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+        rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_after_ordinal_occurrence_insert:
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "occurrence": _ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
+                "rule_id": "uk_effect_after_quoted_anchor_ordinal_insert_text_patch",
+            }
+        )
+
     matches_after_ordinal_insert = re.finditer(
         r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]\s*,?\s+"
         r"in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"

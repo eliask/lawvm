@@ -47496,6 +47496,66 @@ def test_compile_after_anchor_ordinal_insert_preserves_bounded_occurrence() -> N
     assert _required_fragment_substitution(op)[0]["occurrence"] == "1"
 
 
+def test_compile_after_anchor_ordinal_occurrence_insert_preserves_bounded_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-2-paragraph-8-2-a-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii after the second occurrence of  \u201cmade\u201d insert \u201c
+            in relation to local government elections in England
+          \u201d ;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-82f921fa94b46a8bf23f8f4b5d5fb9a4",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-05",
+        affected_uri="/id/ukpga/2000/2/section/11/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="2",
+        affected_provisions="s. 11(6)",
+        affecting_uri="/id/asc/2021/1/schedule/2",
+        affecting_class="WelshParliamentAct",
+        affecting_year="2021",
+        affecting_number="1",
+        affecting_provisions="Sch. 2 para. 8(2)(a)(ii)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2022-05-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "11"), ("subsection", "6"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "made"
+    assert op.text_patch.selector.occurrence == 2
+    assert op.text_patch.replacement == (
+        "made in relation to local government elections in England "
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_ordinal_insert_text_patch"
+        in op.provenance_tags
+    )
+    assert _required_fragment_substitution(op)[0]["occurrence"] == "2"
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_passive_after_anchor_ordinal_insert_fragment_parses() -> None:
     fragments = parse_fragment_substitution(
         "a after \u201ca\u201d, in the second place, there is inserted "
