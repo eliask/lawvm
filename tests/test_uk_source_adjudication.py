@@ -1001,6 +1001,25 @@ def test_classify_uk_effect_source_pathology_marks_structured_tail_substitution(
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_accepts_quoted_scalar_tail_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P4",
+        extracted_text=(
+            "i in subsection (1), for the words from “Kingdom” to the end "
+            "substitute “Kingdom if conditions A to D are met.”, and"
+        ),
+        op_actions=["text_replace"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:817/subsection:1"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+    assert is_core_uk_effect_source_candidate(pathology) is True
+
+
 def test_classify_uk_effect_source_pathology_accepts_lowered_anchor_to_end_block_substitution() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",

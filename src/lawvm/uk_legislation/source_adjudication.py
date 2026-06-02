@@ -1620,10 +1620,11 @@ def _looks_like_definition_child_and_tail_substitution(text: str) -> bool:
 _CARRIED_TAIL_FROM_TO_END_RE = re.compile(
     r"\bfor\s+the\s+words\s+from\b.{0,400}?\bto\s+the\s+end\b"
 )
-# The second alternative (no em-dash) needs two roman/alpha label-like tokens.
-# Greedy .+ between them was the ReDoS shape; bound to .{0,400}?.
+# The second alternative (no em-dash) needs two label-like tokens at the start
+# of the replacement payload.  Keep this anchored: otherwise scalar quoted text
+# such as "conditions A to D are met" looks like child labels.
 _CARRIED_TAIL_LABEL_LABEL_RE = re.compile(
-    r"\b(?:[a-z]|[ivxlcdm]+)\s+\w.{0,400}?\b(?:[ivxlcdm]+)\s+\w"
+    r"^\s*(?:[a-z]|[ivxlcdm]+)\s+\w.{0,400}?\b(?:[ivxlcdm]+)\s+\w"
 )
 # Top-level roman payloads such as `substitute - i ... ii ...` need a child
 # carrier claim when the source names only the parent tail range.

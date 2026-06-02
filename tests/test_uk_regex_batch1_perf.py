@@ -51,8 +51,16 @@ def test_carried_tail_positive_with_dash() -> None:
 
 
 def test_carried_tail_positive_no_dash() -> None:
-    text = "for the words from a to the end substitute— ii something here"
+    text = "for the words from a to the end substitute i first thing ii second thing"
     assert _looks_like_source_carried_structured_tail_substitution(text) is True
+
+
+def test_carried_tail_quoted_scalar_condition_range_is_not_structured() -> None:
+    text = (
+        "in subsection (1), for the words from “Kingdom” to the end "
+        "substitute “Kingdom if conditions A to D are met.”, and"
+    )
+    assert _looks_like_source_carried_structured_tail_substitution(text) is False
 
 
 def test_carried_tail_no_to_the_end_returns_false() -> None:
