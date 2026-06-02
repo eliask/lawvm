@@ -879,6 +879,25 @@ def test_classify_uk_effect_empty_nonstructural_source_as_nonstructural_gap() ->
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_sentence_scoped_repeated_insert() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        effect_type="words inserted",
+        extracted_tag="P2",
+        extracted_text=(
+            "2 In subsection (2), at the end of each of the final two sentences "
+            "insert \u201c ; but nothing requires the court to treat such provision "
+            "as setting an upper or lower limit on the provision which may be "
+            "made by an order under section 2. \u201d"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+    )
+
+    assert pathology == "sentence_scoped_repeated_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_marks_commencement_out_of_scope() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",
@@ -1506,7 +1525,7 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
 def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
-        source_pathology="unhandled_instruction_text",
+        source_pathology="sentence_scoped_repeated_insert_unsupported",
         extracted_tag="P2",
         extracted_text=(
             "2 In subsection (2), at the end of each of the final two sentences "

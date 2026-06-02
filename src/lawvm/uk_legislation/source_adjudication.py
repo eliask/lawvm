@@ -48,6 +48,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "source_carried_structured_tail_substitution_unsupported",
         "relative_other_place_occurrence_unsupported",
         "referent_qualified_text_substitution_unsupported",
+        "sentence_scoped_repeated_insert_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
         "appropriate_place_definition_entry_insert_unsupported",
@@ -238,6 +239,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "deterministic_frontend_candidate",
         "uk_manual_frontier_definition_anchor_tail_insert_candidate",
         "The source changes the terminal punctuation of a named definition and inserts following tail text after that definition; compile must split the compound instruction and prove the definition boundary plus inserted tail before replay.",
+    ),
+    "sentence_scoped_repeated_insert_unsupported": _ManualFrontierClassification(
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
+        "The source inserts text at the end of each selected sentence; compile must add a typed sentence-boundary selector and prove each insertion boundary before replay.",
     ),
     "application_modification_payload_out_of_scope": _ManualFrontierClassification(
         "non_textual_or_out_of_scope",
@@ -1914,6 +1920,8 @@ def classify_uk_effect_source_pathology(
             return "relative_other_place_occurrence_unsupported"
         if _looks_like_referent_qualified_text_substitution(norm_text):
             return "referent_qualified_text_substitution_unsupported"
+        if _looks_like_sentence_scoped_repeated_insert_instruction(norm_text):
+            return "sentence_scoped_repeated_insert_unsupported"
         if _looks_like_savings_qualified_text_omission(norm_text):
             return "savings_qualified_text_omission_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:
