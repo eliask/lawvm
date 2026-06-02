@@ -3234,6 +3234,34 @@ def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology
     assert "sibling-aware occurrence selection" in result["reason"]
 
 
+def test_classify_uk_manual_compile_frontier_marks_definition_anchor_tail_insert() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="definition_anchor_tail_insert_unsupported",
+        extracted_tag="P1",
+        extracted_text=(
+            "12 In section 105, in subsection (10), for the full stop at the end "
+            "of the definition of “REMIT requirement” substitute a semicolon "
+            "and after that definition insert — and the reference to the Bank "
+            "of England does not include the Bank acting in its capacity as the "
+            "Prudential Regulation Authority."
+        ),
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_definition_anchor_tail_insert_candidate"
+    assert "definition boundary" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_marks_referent_qualified_pathology() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -3322,6 +3350,27 @@ def test_classify_uk_effect_appropriate_place_definition_entry_source_pathology_
     )
 
     assert pathology == "appropriate_place_definition_entry_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_definition_anchor_tail_insert_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "12 In section 105, in subsection (10), for the full stop at the end "
+            "of the definition of “REMIT requirement” substitute a semicolon "
+            "and after that definition insert — and the reference to the Bank "
+            "of England does not include the Bank acting in its capacity as the "
+            "Prudential Regulation Authority."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "definition_anchor_tail_insert_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 

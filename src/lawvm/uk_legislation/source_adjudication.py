@@ -63,6 +63,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "conditional_temporal_repeal_unsupported",
         "definition_child_and_tail_substitution_unsupported",
         "definition_child_structural_insert_unsupported",
+        "definition_anchor_tail_insert_unsupported",
         "table_entry_target_unsupported",
         "schedule_list_entry_target_unsupported",
         "structural_sibling_insert_unsupported",
@@ -232,6 +233,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "manual_compile_candidate",
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "The source inserts a child inside a definition and explicitly references the existing child-tail connective; a claim or future compiler must own the inserted child shape and connector boundary before replay.",
+    ),
+    "definition_anchor_tail_insert_unsupported": _ManualFrontierClassification(
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_definition_anchor_tail_insert_candidate",
+        "The source changes the terminal punctuation of a named definition and inserts following tail text after that definition; compile must split the compound instruction and prove the definition boundary plus inserted tail before replay.",
     ),
     "application_modification_payload_out_of_scope": _ManualFrontierClassification(
         "non_textual_or_out_of_scope",
@@ -1167,6 +1173,12 @@ _DEFINITION_LIST_END_INSERT_RE = re.compile(
     r"(?:means|has\s+the\s+(?:same\s+)?meaning|is\s+to\s+be\s+construed)\b",
     flags=re.I,
 )
+_DEFINITION_ANCHOR_TAIL_INSERT_RE = re.compile(
+    r"\bfor\s+the\s+full\s+stop\s+at\s+the\s+end\s+of\s+the\s+definition\s+of\s+"
+    r"[\"“][^\"”]{1,200}[\"”]\s+"
+    r"substitute\s+a\s+semicolon\s+and\s+after\s+that\s+definition\s+insert\b",
+    flags=re.I,
+)
 
 
 def _looks_like_definition_list_end_insert_instruction(text: str) -> bool:
@@ -1179,6 +1191,15 @@ def _looks_like_definition_list_end_insert_instruction(text: str) -> bool:
     ):
         return False
     return bool(_DEFINITION_LIST_END_INSERT_RE.search(norm))
+
+
+def _looks_like_definition_anchor_tail_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if "definition of" not in norm or "after that definition" not in norm:
+        return False
+    if "full stop" not in norm or "semicolon" not in norm:
+        return False
+    return bool(_DEFINITION_ANCHOR_TAIL_INSERT_RE.search(norm))
 
 
 def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
@@ -1841,6 +1862,8 @@ def classify_uk_effect_source_pathology(
             return "definition_child_structural_insert_unsupported"
         if _looks_like_definition_child_structural_insert_instruction(norm_text):
             return "definition_child_structural_insert_unsupported"
+        if _looks_like_definition_anchor_tail_insert_instruction(norm_text):
+            return "definition_anchor_tail_insert_unsupported"
         if _looks_like_relative_other_place_occurrence(norm_text):
             return "relative_other_place_occurrence_unsupported"
         if _looks_like_referent_qualified_text_substitution(norm_text):
