@@ -40831,6 +40831,148 @@ def test_replay_exception_entry_insert_requires_unique_local_anchor() -> None:
     )
 
 
+def test_compile_parenthesized_entry_anchor_insert_splits_section_entries() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-6-7">
+          <Pnumber>7</Pnumber>
+          <Text>7 In section 10(4), before the entry (inserted by this Act) relating to section 12A insert—
+          section 11C (income charged at the default basic, higher and additional rates: non-UK resident individuals),
+          section 11D (savings income charged at the savings basic, higher and additional rates: individuals),
+          section 12 (savings income charged at the starting rate for savings), .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-b0be8a07876b7ca313aafa8c9a8fa10c",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-09-15",
+        affected_uri="/id/ukpga/2007/3/section/10/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 10(4)",
+        affecting_uri="/id/ukpga/2016/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="24",
+        affecting_provisions="s. 6(7)",
+        affecting_title="Finance Act 2016",
+        in_force_dates=[{"date": "2016-09-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 3
+    assert all(op.action is StructuralAction.INSERT for op in ops)
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "section 11C (income charged at the default basic, higher and additional rates: non-UK resident individuals)",
+        "section 11D (savings income charged at the savings basic, higher and additional rates: individuals)",
+        "section 12 (savings income charged at the starting rate for savings)",
+    ]
+    assert all(op.target.path == (("section", "10"), ("subsection", "4")) for op in ops)
+    selector_note = next(note for note in ops[0].provenance_tags if note.startswith("schedule_list_entry_selector:"))
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "before"
+    assert selector["anchor_text"] == "section 12A"
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert selector["source_anchor_form"] == "entry_parenthetical_qualifier"
+    assert any(
+        record["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+        and record["reason_code"] == "explicit_schedule_list_entry_anchor"
+        and record["inserted_entry_count"] == 3
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="10",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="section 11A (earlier entry),"),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="section 12A (income charged at dividend ordinary rate),"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "section 11A (earlier entry),",
+        "section 11C (income charged at the default basic, higher and additional rates: non-UK resident individuals)",
+        "section 11D (savings income charged at the savings basic, higher and additional rates: individuals)",
+        "section 12 (savings income charged at the starting rate for savings)",
+        "section 12A (income charged at dividend ordinary rate),",
+    ]
+    assert not any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        for adjudication in adjudications
+    )
+
+
+def test_compile_parenthesized_entry_anchor_insert_does_not_split_prose_commas() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Text>before the entry (inserted by this Act) relating to section 12A insert—
+          section 11C (income charged at the default basic, higher and additional rates: non-UK resident individuals)</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_parenthesized_entry_anchor_prose_commas",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-09-15",
+        affected_uri="/id/ukpga/2007/3/section/10/subsection/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 10(4)",
+        affecting_uri="/id/ukpga/2016/24",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="24",
+        affecting_provisions="s. 6(7)",
+        affecting_title="Finance Act 2016",
+        in_force_dates=[{"date": "2016-09-15", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == (
+        "section 11C (income charged at the default basic, higher and additional rates: non-UK resident individuals)"
+    )
+
+
 def test_compile_exception_entry_omission_lowers_to_local_schedule_entry_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""

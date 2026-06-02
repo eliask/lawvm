@@ -60,6 +60,17 @@ def split_schedule_entry_insert_payload(raw: str) -> tuple[str, ...]:
     entry so lowering does not invent structure from ordinary prose.
     """
     payload = _strip_schedule_entry_payload(raw)
+    section_parts = tuple(
+        _strip_schedule_entry_phrase(part)
+        for part in re.split(r"\s*,\s+(?=(?:and\s+)?sections?\s+[0-9A-Za-z])", payload, flags=re.I)
+    )
+    section_parts = tuple(
+        re.sub(r"^(?:and\s+)", "", part, flags=re.I).strip(" ,;.")
+        for part in section_parts
+        if part
+    )
+    if len(section_parts) > 1 and all(re.match(r"^sections?\s+[0-9A-Za-z]", part, re.I) for part in section_parts):
+        return section_parts
     if ";" not in payload:
         return (payload,) if payload else ()
     parts = tuple(
@@ -174,6 +185,7 @@ def _uk_schedule_list_entry_insert_selector(
     match = re.search(
         r"\b(?P<direction>before|after)\s+(?:the\s+)?"
         r"(?:(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+)?entry\s+"
+        r"(?:\([^)]{1,120}\)\s+)?"
         r"(?:relating\s+to|relation\s+to|for)\s+(?P<anchor>.+?)"
         r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)\s*[—–-]?\s*(?P<payload>.+)$",
         text,
@@ -226,6 +238,8 @@ def _uk_schedule_list_entry_insert_selector(
             selector["entry_carrier_family"] = entry_carrier_family
         if selector is not None and re.search(r"\bentry\s+relation\s+to\b", text, re.I):
             selector["source_anchor_form"] = "entry_relation_to_typo"
+        if selector is not None and re.search(r"\bentry\s+\([^)]{1,120}\)\s+(?:relating\s+to|for)\b", text, re.I):
+            selector["source_anchor_form"] = "entry_parenthetical_qualifier"
         if selector is not None and exception_label_anchor:
             selector["source_anchor_form"] = "exception_label"
         ordinal = match.groupdict().get("ordinal")
