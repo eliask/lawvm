@@ -73,6 +73,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RULE_ID,
     UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
+    UK_REFERENCE_TO_SUBSTITUTION_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
@@ -417,6 +418,31 @@ def append_basic_text_rewrite_observations(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> None:
     rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_REFERENCE_TO_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if str(fragment.get("rule_id") or "") != UK_REFERENCE_TO_SUBSTITUTION_RULE_ID:
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_REFERENCE_TO_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="explicit_reference_to_substitution_text_patch",
+                reason=(
+                    "UK effect source explicitly substitutes one named reference "
+                    "for another; lowering preserves the old and new references "
+                    "as a unique-preimage text patch scoped to the affected target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
     if UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID in rule_ids:
         for fragment in fragment_subs or []:
             if str(fragment.get("rule_id") or "") != UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID:

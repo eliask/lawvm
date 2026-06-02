@@ -54885,6 +54885,60 @@ def test_compile_all_occurrences_passive_with_words_marker() -> None:
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_reference_to_substitution_ignores_historical_parenthetical() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>3</Pnumber>
+          <Text>3 In section 121(1) (application to subsidiaries), for the reference to London Regional Transport (which was substituted by paragraph 4(2) of Schedule 4 to the 1984 Act for the express reference to the London Transport Board) there shall be substituted a reference to Transport for London.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-c66d216cc828a2d96fd017073ca961b7",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-02-15",
+        affected_uri="/id/ukpga/1968/73/section/121/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="73",
+        affected_provisions="s. 121(1)",
+        affecting_uri="/id/uksi/2003/1615",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="1615",
+        affecting_provisions="Sch. 1 para. 4(3)",
+        affecting_title="The Transport for London (Consequential Provisions) Order 2003",
+        in_force_dates=[{"date": "2003-07-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "121"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "London Regional Transport"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == "Transport for London"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_reference_to_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_reference_to_substitution_text_patch"
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_passive_range_repeal_preserves_end_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""
