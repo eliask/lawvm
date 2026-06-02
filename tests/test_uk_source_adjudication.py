@@ -3426,6 +3426,26 @@ def test_classify_uk_effect_appropriate_place_definition_entry_source_pathology_
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_appropriate_alphabetical_definition_entry_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "3 In section 105 (interpretation), there is inserted, in the "
+            "appropriate alphabetical position ““Local Health Board” means a "
+            "Local Health Board established under section 11 of the National "
+            "Health Service (Wales) Act 2006;”."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "appropriate_place_definition_entry_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_definition_anchor_tail_insert_source_pathology() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",

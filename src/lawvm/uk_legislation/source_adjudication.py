@@ -1335,8 +1335,12 @@ def _looks_like_table_crossheading_target(text: str, *, target_paths: Iterable[s
 def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
-        re.search(r"\b(?:at|in)\s+(?:an?|the)\s+appropriate\s+places?\b", norm)
-        and re.search(r"\b(?:insert|insertion|substitute)\b", norm)
+        re.search(
+            r"\b(?:at|in)\s+(?:an?|the)?\s*appropriate\s+"
+            r"(?:places?|alphabetical\s+position)\b",
+            norm,
+        )
+        and re.search(r"\b(?:insert|inserted|insertion|substitute)\b", norm)
     )
 
 
