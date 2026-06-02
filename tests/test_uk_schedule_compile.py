@@ -30,6 +30,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_ANCHOR_TO_END_UNQUOTED_SUBSTITUTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
+    UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID,
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
     US,
@@ -8023,6 +8024,100 @@ def test_at_end_dangling_insert_quote_fragment_parses_as_append() -> None:
             "rule_id": UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
         }
     ]
+
+
+def test_at_end_stray_full_stop_insert_fragment_parses_as_append() -> None:
+    fragments = parse_fragment_substitution(
+        "3 In section 23(2)(a) of the Children Act 1989, at the end insert . "
+        "\u201c (subject to section 49 of the Children Act 2004) \u201d"
+    )
+
+    assert fragments == [
+        {
+            "original": "TEXT_FROM__TO_END",
+            "replacement": "(subject to section 49 of the Children Act 2004)",
+            "rule_id": UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID,
+        }
+    ]
+
+
+def test_compile_at_end_stray_full_stop_insert_to_text_append() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-49-3">
+          <Pnumber>3</Pnumber>
+          <Text>
+            3 In section 23(2)(a) of the Children Act 1989, at the end insert .
+            \u201c (subject to section 49 of the Children Act 2004) \u201d
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-26916dd29034a2384d1ab74b1c68f1c8",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-07-29",
+        affected_uri="/id/ukpga/1989/41/section/23/subsection/2/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="s. 23(2)(a)",
+        affecting_uri="/id/ukpga/2004/31",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2004",
+        affecting_number="31",
+        affecting_provisions="s. 49(3)",
+        affecting_title="Children Act 2004",
+        in_force_dates=[{"date": "2005-01-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "at_end_stray_full_stop_insert_text_patch"
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["canonical_text_match"] == "TEXT_END"
+    assert observations[0]["replacement"] == (
+        "(subject to section 49 of the Children Act 2004)"
+    )
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (
+        ("section", "23"),
+        ("subsection", "2"),
+        ("paragraph", "a"),
+    )
+    assert op.text_patch is not None
+    assert op.text_patch.kind is TextPatchKindEnum.APPEND
+    assert op.text_patch.selector.match_text == "TEXT_END"
+    assert op.text_patch.replacement == (
+        "(subject to section 49 of the Children Act 2004)"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}{UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID}"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
 
 
 def test_compile_at_end_dangling_insert_quote_to_text_append() -> None:

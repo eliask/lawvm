@@ -39,6 +39,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AFTER_CHILD_TEXT_INSERTION_RULE_ID,
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
+    UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID,
     UK_AT_END_UNQUOTED_TEXT_INSERTION_RULE_ID,
     UK_AT_END_QUOTED_DASH_TEXT_INSERTION_RULE_ID,
     UK_AT_END_CARRIED_PARENT_CONTEXT_INSERT_RULE_ID,
@@ -2105,6 +2106,31 @@ def append_basic_text_rewrite_observations(
                 "matching closing quote. Lowering records the source-text "
                 "recovery and preserves the explicit at-end boundary as a "
                 "bounded TEXT_END append."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "canonical_text_match": "TEXT_END",
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="at_end_stray_full_stop_insert_text_patch",
+            reason=(
+                "UK source text explicitly inserts a quoted payload at the end "
+                "of the affected target, but the source phrase has a stray full "
+                "stop between the insertion verb and the quoted payload. "
+                "Lowering records the source-punctuation recovery and preserves "
+                "the explicit at-end boundary as a bounded TEXT_END append."
             ),
             effect=effect,
             extracted_el=extracted_el,
