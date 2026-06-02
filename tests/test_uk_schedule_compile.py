@@ -5819,6 +5819,117 @@ def test_compile_exact_definition_child_structural_sibling_insert_in_subsection(
     ]
 
 
+def test_compile_definition_child_structural_sibling_insert_with_separate_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-1-paragraph-11-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>2 In section 178A (EIS: the no disqualifying arrangements
+            requirement), in subsection (6), in the definition of “relevant tax
+            relief” after paragraph (b) insert— ba SI relief under Part 5B in
+            respect of the shares; .</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-025e7fa74071bbc7af6a150bf4749b5d",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-11-16",
+        affected_uri="/id/ukpga/2007/3/section/178A/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 178A(6)",
+        affecting_uri="/id/ukpga/2017/32/schedule/1/paragraph/11/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="Sch. 1 para. 11(2)",
+        affecting_title="Finance (No. 2) Act 2017",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT]
+    assert str(ops[0].target) == "section:178a/subsection:6/item:ba"
+    assert ops[0].witness_rule_id == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    payload = _required_payload(ops[0])
+    assert payload.kind is IRNodeKind.ITEM
+    assert payload.label == "ba"
+    assert payload.text == "SI relief under Part 5B in respect of the shares;"
+    assert payload.attrs["definition_term"] == "relevant tax relief"
+    assert payload.attrs["definition_child_label"] == "ba"
+    assert payload.attrs["source_anchor_child_label"] == "b"
+    rows = [
+        row
+        for row in lowering_records
+        if row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+    ]
+    assert len(rows) == 1
+    assert rows[0]["section"] == "178a"
+    assert rows[0]["subsection"] == "6"
+    assert rows[0]["anchor_target"] == "section:178a/subsection:6/item:b"
+    assert rows[0]["blocking"] is False
+
+
+def test_compile_definition_child_structural_sibling_insert_rejects_separate_subsection_mismatch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-1-paragraph-11-2">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>2 In section 178A (EIS: the no disqualifying arrangements
+            requirement), in subsection (7), in the definition of “relevant tax
+            relief” after paragraph (b) insert— ba SI relief under Part 5B in
+            respect of the shares; .</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-definition-child-separate-subsection-mismatch",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-11-16",
+        affected_uri="/id/ukpga/2007/3/section/178A/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 178A(6)",
+        affecting_uri="/id/ukpga/2017/32/schedule/1/paragraph/11/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="32",
+        affecting_provisions="Sch. 1 para. 11(2)",
+        affecting_title="Finance (No. 2) Act 2017",
+        in_force_dates=[{"date": "2017-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert not any(
+        row["rule_id"] == "uk_effect_definition_child_structural_sibling_insert_lowered"
+        for row in lowering_records
+    )
+
+
 def test_compile_block_amendment_definition_child_structural_sibling_insert() -> None:
     extracted_el = ET.fromstring(
         f"""

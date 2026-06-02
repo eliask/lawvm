@@ -31,7 +31,9 @@ _AFTER_PARAGRAPH_DEFINITION_CHILD_INSERT_RE = re.compile(
 _IN_DEFINITION_AFTER_PARAGRAPH_BEFORE_CONNECTOR_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)"
-    r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W).*?)?"
+    r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W)"
+    r"(?:(?:(?!\bin\s+the\s+definition\b).){0,240}?"
+    r"\bin\s+subsection\s+\((?P<subsection_context>[0-9A-Za-z]+)\))?.*?)?"
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
     r"after\s+(?:sub-?paragraph|paragraph)\s+\((?P<anchor>[a-z])\)\s+"
     r"\(\s*but\s+before\s+the\s+[“\"'‘](?P<connector>and|or)[”\"'’]\s+"
@@ -42,7 +44,9 @@ _IN_DEFINITION_AFTER_PARAGRAPH_BEFORE_CONNECTOR_INSERT_RE = re.compile(
 _IN_DEFINITION_AFTER_PARAGRAPH_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"(?:in\s+section\s+(?P<section>[0-9A-Za-z]+)"
-    r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W).*?)?"
+    r"(?:\s*\(\s*(?P<subsection>[0-9A-Za-z]+)\s*\))?(?=\W)"
+    r"(?:(?:(?!\bin\s+the\s+definition\b).){0,240}?"
+    r"\bin\s+subsection\s+\((?P<subsection_context>[0-9A-Za-z]+)\))?.*?)?"
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>[^”\"'’]+)[”\"'’],?\s+"
     r"(?:as\s+inserted\s+by\s+(?:regulation|section|paragraph)\s+[0-9A-Za-z(). -]{1,80},?\s+)?"
     r"after\s+(?:sub-?paragraph|paragraph)\s+\((?P<anchor>[a-z][a-z0-9]*)\),?\s+"
@@ -148,6 +152,14 @@ def _definition_child_block_amendment_insert_payloads(
         if payloads:
             return payloads
     return ()
+
+
+def _source_definition_subsection(match: re.Match[str], default: str) -> str:
+    return _clean_num(
+        match.groupdict().get("subsection")
+        or match.groupdict().get("subsection_context")
+        or default
+    )
 
 
 def _section_or_subsection_target_path(affected_provisions: str) -> tuple[tuple[str, str], ...]:
@@ -315,7 +327,7 @@ def source_definition_child_structural_sibling_insert(
             section_label = target_path[0][1]
             subsection_label = target_path[1][1] if len(target_path) > 1 else ""
             source_section = _clean_num(unsupported_match.group("section") or section_label)
-            source_subsection = _clean_num(unsupported_match.group("subsection") or subsection_label)
+            source_subsection = _source_definition_subsection(unsupported_match, subsection_label)
             if (
                 not section_label
                 or source_section != section_label
@@ -327,11 +339,13 @@ def source_definition_child_structural_sibling_insert(
                 _definition_child_block_amendment_insert_payloads(
                     extracted_el,
                     anchor_label=anchor_label,
+                    allow_intercalated_after_anchor=bool(subsection_label),
                 )
                 if has_block_amendment
                 else _definition_child_insert_payloads(
                     unsupported_match.group("payload"),
                     anchor_label=anchor_label,
+                    allow_intercalated_after_anchor=bool(subsection_label),
                 )
             )
             if payloads:
@@ -389,7 +403,7 @@ def source_definition_child_structural_sibling_insert(
         section_label = target_path[0][1]
         subsection_label = target_path[1][1] if len(target_path) > 1 else ""
         source_section = _clean_num(row_match.group("section") or section_label)
-        source_subsection = _clean_num(row_match.group("subsection") or subsection_label)
+        source_subsection = _source_definition_subsection(row_match, subsection_label)
         if (
             not section_label
             or source_section != section_label
@@ -448,7 +462,7 @@ def source_definition_child_structural_sibling_insert(
         section_label = target_path[0][1]
         subsection_label = target_path[1][1] if len(target_path) > 1 else ""
         source_section = _clean_num(explicit_row_match.group("section") or section_label)
-        source_subsection = _clean_num(explicit_row_match.group("subsection") or subsection_label)
+        source_subsection = _source_definition_subsection(explicit_row_match, subsection_label)
         if (
             not section_label
             or source_section != section_label
