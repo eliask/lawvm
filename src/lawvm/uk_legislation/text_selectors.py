@@ -94,6 +94,13 @@ class OpeningWordsSelector:
 
 
 @dataclass(frozen=True, slots=True)
+class OpeningWordsAfterAnchorSelector:
+    """A position after an anchor within the provision's opening words only."""
+
+    anchor: str
+
+
+@dataclass(frozen=True, slots=True)
 class BeginningSelector:
     """The beginning of the provision (insertion anchor)."""
 
@@ -181,6 +188,7 @@ UKTextSelector = (
     | AfterAnchorToEndSelector
     | AfterAnchorBeforeFinalWordSelector
     | OpeningWordsSelector
+    | OpeningWordsAfterAnchorSelector
     | BeginningSelector
     | EndSelector
     | BeforeChildSelector
@@ -242,6 +250,8 @@ def selector_to_legacy_original(selector: UKTextSelector) -> str:
         return f"TEXT_AFTER_ANCHOR_BEFORE_FINAL_WORD{US}{selector.anchor}{US}{selector.final_word}"
     if isinstance(selector, OpeningWordsSelector):
         return "TEXT_OPENING_WORDS"
+    if isinstance(selector, OpeningWordsAfterAnchorSelector):
+        return f"TEXT_OPENING_WORDS_AFTER{US}{selector.anchor}"
     if isinstance(selector, BeginningSelector):
         return "TEXT_BEGINNING"
     if isinstance(selector, EndSelector):
@@ -278,6 +288,8 @@ def selector_from_legacy_original(original: str) -> UKTextSelector:
     """
     if original == "TEXT_OPENING_WORDS":
         return OpeningWordsSelector()
+    if original.startswith(f"TEXT_OPENING_WORDS_AFTER{US}"):
+        return OpeningWordsAfterAnchorSelector(original.split(US, 1)[1])
     if original == "TEXT_BEGINNING":
         return BeginningSelector()
     if original == "TEXT_END":

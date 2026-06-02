@@ -20,6 +20,7 @@ from lawvm.uk_legislation.text_selectors import (
     EndSelector,
     FromChildEndSelector,
     LiteralSelector,
+    OpeningWordsAfterAnchorSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
     RangeToEndSelector,
@@ -58,6 +59,12 @@ class TestSelectorToLegacyOriginal:
 
     def test_opening_words(self) -> None:
         assert selector_to_legacy_original(OpeningWordsSelector()) == "TEXT_OPENING_WORDS"
+
+    def test_opening_words_after_anchor(self) -> None:
+        assert (
+            selector_to_legacy_original(OpeningWordsAfterAnchorSelector("constable"))
+            == "TEXT_OPENING_WORDS_AFTER\x1fconstable"
+        )
 
     def test_beginning(self) -> None:
         assert selector_to_legacy_original(BeginningSelector()) == "TEXT_BEGINNING"
@@ -336,6 +343,7 @@ class TestSelectorFromLegacyOriginal:
             RangeToEndSelector("a_TO_b"),  # inner _TO_ must survive the round-trip
             AfterAnchorToEndSelector("bar"),
             OpeningWordsSelector(),
+            OpeningWordsAfterAnchorSelector("constable"),
             BeginningSelector(),
             EndSelector(),
             BeforeChildSelector("paragraph", "(a)"),

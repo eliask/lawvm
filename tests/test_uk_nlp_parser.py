@@ -171,6 +171,21 @@ def test_parse_fragment_substitution_handles_after_the_word_there_is_inserted() 
     ]
 
 
+def test_parse_fragment_substitution_handles_opening_words_after_anchor_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a after the word \u201cconstable\u201d in the opening words there is inserted "
+        "\u201c or enforcement officer \u201d,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_OPENING_WORDS_AFTER\x1fconstable",
+            "replacement": "constable or enforcement officer ",
+            "rule_id": "uk_effect_opening_words_after_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_secondly_occurring_insert() -> None:
     subs = parse_fragment_substitution(
         'in sub-paragraph (iv), after “board”, where secondly occurring, '

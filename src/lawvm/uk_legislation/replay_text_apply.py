@@ -21,6 +21,7 @@ from lawvm.uk_legislation.text_selectors import (
     AfterAnchorBeforeFinalWordSelector,
     AfterAnchorToEndSelector,
     FromChildEndSelector,
+    OpeningWordsAfterAnchorSelector,
     RangeFromToSelector,
     RangeToEndSelector,
     selector_from_legacy_original,
@@ -144,6 +145,39 @@ def _rewrite_literal_substitution(
         matches = (matches[occurrence - 1],)
     elif occurrence == -1:
         matches = (matches[-1],)
+    new_text = text
+    for match in reversed(matches):
+        new_text = new_text[: match.start()] + replacement + new_text[match.end() :]
+    return ExceptPhraseTextRewrite(new_text, new_text != text)
+
+
+def _rewrite_opening_words_after_anchor(
+    text: str,
+    *,
+    anchor: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> ExceptPhraseTextRewrite:
+    if not anchor:
+        return ExceptPhraseTextRewrite(text, False)
+    pattern = _text_patch_pattern(
+        anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    matches = tuple(re.finditer(pattern, text, flags=re.I))
+    if not matches:
+        return ExceptPhraseTextRewrite(text, False)
+    if occurrence > 0:
+        if occurrence > len(matches):
+            return ExceptPhraseTextRewrite(text, False)
+        matches = (matches[occurrence - 1],)
+    elif occurrence == -1:
+        matches = (matches[-1],)
+    elif len(matches) != 1:
+        return ExceptPhraseTextRewrite(text, False)
     new_text = text
     for match in reversed(matches):
         new_text = new_text[: match.start()] + replacement + new_text[match.end() :]
@@ -2254,6 +2288,22 @@ class UKReplayTextApplyMixin:
             True if at least one substitution was made; False otherwise.
         """
         text_nodes = _text_nodes_in_document_order(node)
+        selector = selector_from_legacy_original(match)
+
+        if isinstance(selector, OpeningWordsAfterAnchorSelector):
+            result = _rewrite_opening_words_after_anchor(
+                node.text or "",
+                anchor=selector.anchor,
+                replacement=replacement,
+                occurrence=occurrence,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            if not result.applied:
+                return node, False
+            rebuilt = dc_replace(node, text=result.text)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
 
         if match.startswith(f"TEXT_AT_END_OF_STEP{US}"):
             return self._apply_at_end_of_step_text_insert_on_subtree(

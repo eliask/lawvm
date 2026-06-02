@@ -70,6 +70,7 @@ from lawvm.uk_legislation.text_selectors import (
     DefinitionAnchorSelector,
     ExceptChildSelector,
     ExceptPhraseSelector,
+    OpeningWordsAfterAnchorSelector,
     OpeningWordsSelector,
     RangeFromToSelector,
     RangeToEndSelector,
@@ -2683,6 +2684,33 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     # Pattern 1b: Insertion after a quoted fragment.
     # Treat this as a text replacement on the matched fragment so replay can
     # materialize the inserted words without inventing structural descendants.
+    matches_opening_words_after_insert = re.finditer(
+        rf"after (?:(?:the )?words? )?[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
+        r"\s*,?\s+in the opening words"
+        r"\s*,?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
+        rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_opening_words_after_insert:
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=OpeningWordsAfterAnchorSelector(original),
+                    replacement=f"{original}{joiner}{inserted}",
+                    rule_id="uk_effect_opening_words_after_quoted_anchor_insert_text_patch",
+                )
+            )
+        )
+
     matches_after_include = re.finditer(
         r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"

@@ -33479,6 +33479,114 @@ def test_compile_after_the_word_there_is_inserted_to_text_replace() -> None:
     assert ops[0].text_patch.replacement == "possession or an eviction order "
 
 
+def test_compile_opening_words_after_anchor_insert_scopes_to_node_text() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-5-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a after the word “constable” in the opening words there is inserted “ or enforcement officer ” ,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-10873b321831d0fa57cb60ce89aeaf01",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-12-23",
+        affected_uri="/id/ukpga/1970/44/section/21/4BA",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1970",
+        affected_number="44",
+        affected_provisions="s. 21(4BA)",
+        affecting_uri="/id/asp/2014/17",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="17",
+        affecting_provisions="s. 5(2)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2015-03-30", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "21"), ("subsection", "4ba"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_OPENING_WORDS_AFTER\x1fconstable"
+    assert ops[0].text_patch.replacement == "constable or enforcement officer "
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_opening_words_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1970/44",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4BA",
+                            text="A constable may require a person",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="a constable descendant is outside the opening words",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == "A constable or enforcement officer  may require a person"
+    assert subsection.children[0].text == "a constable descendant is outside the opening words"
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/1970/44",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4BA",
+                            text="A constable may require another constable",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    ambiguous_replayed = replay_uk_ops(ambiguous_base, ops)
+    assert ambiguous_replayed.body.children[0].children[0].text == (
+        "A constable may require another constable"
+    )
+
+
 def test_compile_for_insert_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
