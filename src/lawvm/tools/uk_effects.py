@@ -728,6 +728,10 @@ def uk_effects_summary_counts(
     manual_compile_owner_phase_counts: dict[str, int] = {}
     manual_frontier_work_item_family_counts: dict[str, int] = {}
     manual_frontier_work_item_authorization_status_counts: dict[str, int] = {}
+    manual_frontier_work_item_candidate_operation_family_counts: dict[str, int] = {}
+    manual_frontier_work_item_required_validator_check_counts: dict[str, int] = {}
+    manual_frontier_work_item_missing_candidate_operation_family_count = 0
+    manual_frontier_work_item_missing_required_validator_checks_count = 0
     suggested_claim_template_status_counts: dict[str, int] = {}
     lowering_observation_owner_phase_counts: dict[str, int] = {}
     lowering_rejection_owner_phase_counts: dict[str, int] = {}
@@ -785,6 +789,40 @@ def uk_effects_summary_counts(
                     )
                     + 1
                 )
+                work_item = _summary_frontier_work_item(row, statute_id=statute_id)
+                operation_family = str(
+                    work_item.get("candidate_operation_family") or ""
+                )
+                if operation_family:
+                    manual_frontier_work_item_candidate_operation_family_counts[
+                        operation_family
+                    ] = (
+                        manual_frontier_work_item_candidate_operation_family_counts.get(
+                            operation_family,
+                            0,
+                        )
+                        + 1
+                    )
+                else:
+                    manual_frontier_work_item_missing_candidate_operation_family_count += 1
+                validator_checks = tuple(
+                    str(check)
+                    for check in work_item.get("required_validator_checks") or ()
+                    if str(check)
+                )
+                if validator_checks:
+                    for check in validator_checks:
+                        manual_frontier_work_item_required_validator_check_counts[
+                            check
+                        ] = (
+                            manual_frontier_work_item_required_validator_check_counts.get(
+                                check,
+                                0,
+                            )
+                            + 1
+                        )
+                else:
+                    manual_frontier_work_item_missing_required_validator_checks_count += 1
         template_status = _actionable_claim_template_status(
             statute_id=statute_id,
             row=row,
@@ -908,6 +946,18 @@ def uk_effects_summary_counts(
         "manual_frontier_work_item_authorization_status_counts": dict(
             sorted(manual_frontier_work_item_authorization_status_counts.items())
         ),
+        "manual_frontier_work_item_candidate_operation_family_counts": dict(
+            sorted(manual_frontier_work_item_candidate_operation_family_counts.items())
+        ),
+        "manual_frontier_work_item_required_validator_check_counts": dict(
+            sorted(manual_frontier_work_item_required_validator_check_counts.items())
+        ),
+        "manual_frontier_work_item_missing_candidate_operation_family_count": (
+            manual_frontier_work_item_missing_candidate_operation_family_count
+        ),
+        "manual_frontier_work_item_missing_required_validator_checks_count": (
+            manual_frontier_work_item_missing_required_validator_checks_count
+        ),
         "suggested_claim_template_status_counts": dict(
             sorted(suggested_claim_template_status_counts.items())
         ),
@@ -958,6 +1008,16 @@ def uk_effects_summary_counts(
             sorted(blocking_lowering_rejection_owner_phase_counts.items())
         ),
     }
+
+
+def _summary_frontier_work_item(
+    row: _EffectReportRow,
+    *,
+    statute_id: str,
+) -> Mapping[str, Any]:
+    payload = _effect_report_row_jsonable(row, statute_id=statute_id or "")
+    work_item = payload.get("frontier_work_item")
+    return work_item if isinstance(work_item, Mapping) else {}
 
 
 def uk_effects_report_jsonable(

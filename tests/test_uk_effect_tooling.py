@@ -2430,6 +2430,10 @@ def test_uk_effects_summary_counts_are_stable() -> None:
         "manual_frontier_work_item_authorization_status_counts": {
             "source_insufficient": 1,
         },
+        "manual_frontier_work_item_candidate_operation_family_counts": {},
+        "manual_frontier_work_item_required_validator_check_counts": {},
+        "manual_frontier_work_item_missing_candidate_operation_family_count": 1,
+        "manual_frontier_work_item_missing_required_validator_checks_count": 1,
         "suggested_claim_template_status_counts": {},
         "total_compiled_ops": 2,
         "rows_with_resolver_eids": 1,
@@ -6520,6 +6524,18 @@ def test_uk_effects_summary_counts_templates_for_actionable_frontier_only() -> N
         "manual_claim_required": 2,
         "out_of_scope": 1,
     }
+    assert summary["manual_frontier_work_item_candidate_operation_family_counts"] == {
+        "facet_text_rewrite": 1,
+    }
+    assert summary["manual_frontier_work_item_required_validator_check_counts"] == {
+        "changed_paths_are_within_declared_facet_target": 1,
+        "claim_identifies_exact_target_facet_not_host_body": 1,
+        "claim_preserves_host_body_text_and_children": 1,
+        "claim_text_preimage_matches_target_facet_surface": 1,
+        "source_witness_targets_heading_title_or_sidenote_facet": 1,
+    }
+    assert summary["manual_frontier_work_item_missing_candidate_operation_family_count"] == 2
+    assert summary["manual_frontier_work_item_missing_required_validator_checks_count"] == 2
 
 
 def test_uk_effects_summary_counts_preserve_pre_limit_match_count() -> None:
