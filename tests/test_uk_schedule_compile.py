@@ -7648,6 +7648,65 @@ def test_compile_words_inserted_before_fragment_to_text_replace() -> None:
     assert ops[0].text_patch is not None
 
 
+def test_compile_payload_before_anchor_insert_lowers_to_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="article-11-2-c">
+          <Pnumber>c</Pnumber>
+          <Text>c in sub-paragraph (6)(a), insert \u201cpostal\u201d before \u201caddress\u201d; and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-838c13479a23ca2e495e780f86770b2d",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-04-12",
+        affected_uri="/id/ukpga/1992/40/schedule/3/paragraph/14/subparagraph/6/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1992",
+        affected_number="40",
+        affected_provisions="Sch. 3 para. 14(6)(a)",
+        affecting_uri="/id/uksi/2011/593",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2011",
+        affecting_number="593",
+        affecting_provisions="art. 11(2)(c)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2011-04-12", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].payload is None
+    assert ops[0].target.path == (
+        ("schedule", "3"),
+        ("paragraph", "14"),
+        ("subparagraph", "6"),
+        ("item", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "address"
+    assert ops[0].text_patch.replacement == "postal address"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_before_nested_quoted_anchor_block_insert_fragment_parses() -> None:
     fragments = parse_fragment_substitution(
         "3 In section 67A, in subsection (1), before \u201c \u201cregulated modification\u201d\u201d "

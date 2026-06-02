@@ -3854,6 +3854,28 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = "uk_effect_before_quoted_anchor_insert_text_patch"
         subs.append(patch)
 
+    matches_quoted_payload_before_anchor_insert = re.finditer(
+        r"\binsert\s+(?:the\s+)?(?:word|words)?\s*"
+        rf"[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]\s+"
+        r"before\s+(?:the\s+)?(?:word|words)?\s*"
+        rf"[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_quoted_payload_before_anchor_insert:
+        inserted = m.group("inserted").strip()
+        original = m.group("original").strip()
+        if not inserted or not original:
+            continue
+        joiner = _before_anchor_insert_joiner(inserted, original)
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{inserted}{joiner}{original}",
+                "rule_id": "uk_effect_before_quoted_anchor_insert_text_patch",
+            }
+        )
+
     matches_passive_before_insert = re.finditer(
         r"(?:the\s+)?words?\s+"
         r"(?:“(?P<inserted_curly>[^”]{1,500})”|\"(?P<inserted_double>[^\"]{1,500})\"|"

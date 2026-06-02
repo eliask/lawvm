@@ -1881,6 +1881,20 @@ def test_parse_fragment_substitution_handles_parenthesized_before_anchor_all_occ
     ]
 
 
+def test_parse_fragment_substitution_handles_payload_before_anchor_insert() -> None:
+    subs = parse_fragment_substitution(
+        "c in sub-paragraph (6)(a), insert \u201cpostal\u201d before \u201caddress\u201d; and"
+    )
+
+    assert subs == [
+        {
+            "original": "address",
+            "replacement": "postal address",
+            "rule_id": "uk_effect_before_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_beginning_insert() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (1), at the beginning insert \u201cSubject to section 88A,\u201d ;"
