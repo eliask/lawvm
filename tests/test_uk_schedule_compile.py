@@ -52391,6 +52391,105 @@ def test_compile_heading_facet_words_following_anchor_to_tail_replace() -> None:
     assert ops[0].text_patch.replacement == "or Northern Ireland."
 
 
+def test_compile_words_following_anchor_passive_substitution_to_tail_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-4-paragraph-14-b">
+          <Pnumber>b</Pnumber>
+          <Text>b in subsection (2), for the words following “conviction” there is substituted “to imprisonment for a term not exceeding three months, or a fine not exceeding level 5 on the standard scale, or both”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-6906d1f2dc98da3f2cc67da003b8b63a",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-07-02",
+        affected_uri="/id/ukpga/1976/36/section/58/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1976",
+        affected_number="36",
+        affected_provisions="s. 58(2)",
+        affecting_uri="/id/ukpga/2002/38",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2002",
+        affecting_number="38",
+        affecting_provisions="Sch. 4 para. 14(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2003-06-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "58"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_conviction_TO_END"
+    assert (
+        ops[0].text_patch.replacement
+        == "to imprisonment for a term not exceeding three months, or a fine not exceeding level 5 on the standard scale, or both"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_anchor_to_end_passive_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/1976/36",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="58",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text=(
+                                "A person guilty of an offence is liable on summary "
+                                "conviction to a fine not exceeding level 3."
+                            ),
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="Child text is retained.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    subsection = replayed.body.children[0].children[0]
+    assert subsection.text == (
+        "A person guilty of an offence is liable on summary conviction "
+        "to imprisonment for a term not exceeding three months, or a fine not "
+        "exceeding level 5 on the standard scale, or both"
+    )
+    assert subsection.children[0].text == "Child text is retained."
+
+
 def test_compile_unquoted_words_after_anchor_to_tail_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

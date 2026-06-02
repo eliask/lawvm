@@ -2009,6 +2009,28 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             )
         )
 
+    matches_after_anchor_passive_substituted = re.finditer(
+        r"for (?:the )?words? (?:after|following) [“\"'‘]"
+        rf"(?P<anchor>{_NON_QUOTE}{{1,500}})[”\"'’]"
+        r"\s+there\s+(?:is|are|shall\s+be)\s+substituted"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘]"
+        rf"(?P<replacement>{_NON_QUOTE}{{1,1000}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_after_anchor_passive_substituted:
+        if any(start <= m.start() and m.end() <= end for start, end in definition_child_tail_after_anchor_spans):
+            continue
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=AfterAnchorToEndSelector(m.group("anchor").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_after_anchor_to_end_passive_substitution_text_patch",
+                )
+            )
+        )
+
     matches_after_anchor_unquoted_substituted = re.finditer(
         r"for (?:the )?words? (?:after|following) [“\"'‘]"
         rf"(?P<anchor>{_NON_QUOTE}{{1,250}})[”\"'’]"

@@ -2052,6 +2052,21 @@ def test_parse_fragment_substitution_handles_words_following_anchor_substitution
     ]
 
 
+def test_parse_fragment_substitution_handles_words_following_anchor_passive_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "b in subsection (2), for the words following \u201cconviction\u201d there is "
+        "substituted \u201cto imprisonment for a term not exceeding three months\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_conviction_TO_END",
+            "replacement": "to imprisonment for a term not exceeding three months",
+            "rule_id": "uk_effect_after_anchor_to_end_passive_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_unquoted_words_after_anchor_substitution() -> None:
     subs = parse_fragment_substitution(
         "2 In subsection (2), for the words after \u201callowable\u201d "
