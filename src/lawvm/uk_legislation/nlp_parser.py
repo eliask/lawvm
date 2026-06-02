@@ -3734,10 +3734,10 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         rf"before\s+[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
         rf"(?:(?P<ordinal_scope>,\s+in\s+the\s+(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})"
         r"\s+place\s+it\s+(?:occurs|appears))|"
-        r"(?P<all_occurrences>,?\s+in\s+(?:each|both)\s+places?"
+        r"(?P<all_occurrences>,?\s+(?:\(\s*)?in\s+(?:each|both)\s+places?"
         r"(?:\s+(?:(?:where|that)\s+)?"
         r"(?:(?:it|they)\s+|(?:those|these)\s+words?\s+)?"
-        r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;]+)?)?))?"
+        r"(?:occurs?|occurring|appears?|appear)(?:\s+in\s+[^,;()]+)?)?(?:\s*\))?))?"
         r",?\s+(?:there is inserted|there are inserted|there shall be inserted|insert)"
         rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
         text,

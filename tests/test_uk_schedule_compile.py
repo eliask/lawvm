@@ -32121,6 +32121,75 @@ def test_compile_before_anchor_each_place_insert_records_all_occurrences_observa
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_compile_parenthesized_before_anchor_each_place_insert_records_all_occurrences_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="schedule-4-paragraph-3-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 Before  \u201cpassenger transport area\u201d
+            (in each place) insert \u201c
+              integrated transport area or
+            \u201d .</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-181b9a5aaa036c2b70cb961d3775c7d7",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2009-02-09",
+        affected_uri="/id/ukpga/1968/73/section/9A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1968",
+        affected_number="73",
+        affected_provisions="s. 9A",
+        affecting_uri="/id/ukpga/2008/26/schedule/4",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="26",
+        affecting_provisions="Sch. 4 para. 3(2)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2009-02-09", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "9a"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "passenger transport area"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert ops[0].text_patch.replacement == (
+        " integrated transport area or passenger transport area"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["reason_code"] == "explicit_all_occurrences_text_patch"
+    assert observations[0]["owner_phase"] == "canonical_op_compilation"
+    assert observations[0]["text_match"] == "passenger transport area"
+    assert observations[0]["replacement"] == (
+        " integrated transport area or passenger transport area"
+    )
+    assert observations[0]["occurrence"] == 0
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_metadata_carried_after_ordinal_insert_preserves_bounded_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

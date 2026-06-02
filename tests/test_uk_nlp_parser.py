@@ -1804,6 +1804,23 @@ def test_parse_fragment_substitution_handles_before_anchor_ordinal_insert() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_parenthesized_before_anchor_all_occurrences_insert() -> None:
+    subs = parse_fragment_substitution(
+        "2 Before  \u201cpassenger transport area\u201d\n"
+        "\t\t\t\t\t(in each place) insert \u201c\n"
+        "                    integrated transport area or\n"
+        "                  \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "passenger transport area",
+            "replacement": " integrated transport area or passenger transport area",
+            "rule_id": "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_beginning_insert() -> None:
     subs = parse_fragment_substitution(
         "b in subsection (1), at the beginning insert \u201cSubject to section 88A,\u201d ;"
