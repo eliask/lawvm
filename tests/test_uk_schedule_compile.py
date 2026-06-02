@@ -36628,6 +36628,81 @@ def test_compile_overlap_frontier_records_specific_rejection_families(
     assert rejection["blocking"] is True
 
 
+def test_compile_inserted_subsection_child_range_substitution_lowers_replace_and_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-3-paragraph-29-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>3 In section 809ZQ(2) , in the inserted subsection (9),
+            for paragraphs (a) and (b) substitute\u2014 a two people living together
+            as if they were a married couple or civil partners are treated as
+            if they were spouses or civil partners of each other, and .</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-5490e7c29c4da66c08f2265b805105a9",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/809ZQ/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 809ZQ(2)",
+        affecting_uri="/id/uksi/2019/1458/schedule/3/paragraph/29",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="1458",
+        affecting_provisions="Sch. 3 para. 29(3)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2019-12-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE, StructuralAction.REPEAL]
+    assert [str(op.target) for op in ops] == [
+        "section:809zq/subsection:2/subsection:9/paragraph:a",
+        "section:809zq/subsection:2/subsection:9/paragraph:b",
+    ]
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[0].payload.label == "a"
+    assert ops[0].payload.text == (
+        "two people living together as if they were a married couple or civil "
+        "partners are treated as if they were spouses or civil partners of "
+        "each other, and"
+    )
+    assert all(
+        op.witness_rule_id
+        == "uk_effect_source_carried_inserted_subsection_child_range_substitution_lowered"
+        for op in ops
+    )
+    assert not any(record["blocking"] is True for record in lowering_records)
+    observation = next(
+        record
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_source_carried_inserted_subsection_child_range_substitution_lowered"
+    )
+    assert observation["owner_phase"] == "affecting_source_extraction"
+    assert observation["payload_labels"] == ("a",)
+    assert observation["trailing_labels"] == ("b",)
+    assert observation["trailing_targets"] == (
+        "section:809zq/subsection:2/subsection:9/paragraph:b",
+    )
+
+
 def test_compile_appropriate_place_definition_entry_records_specific_rejection() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -58740,6 +58815,7 @@ def test_compile_source_parent_substitution_range_payload_lowers_replace_and_tai
             "payload_labels": ("d",),
             "payload_tag": "P3",
             "payload_tags": ("P3",),
+            "owner_phase": "typed_elaboration",
         }
     ]
 

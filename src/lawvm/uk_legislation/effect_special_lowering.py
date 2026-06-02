@@ -34,6 +34,7 @@ from lawvm.uk_legislation.source_parent_payloads import (
     UK_AFTER_PARAGRAPH_INSERT_SINGLE_LABEL_RULE_ID,
     UK_AFTER_PARAGRAPH_INSERT_CONNECTOR_SIBLING_RULE_ID,
     UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID,
+    UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
     UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID,
 )
 from lawvm.uk_legislation.target_anchors import _target_anchor_eid
@@ -1189,3 +1190,120 @@ def lower_uk_source_carried_parent_quoted_child_substitution(  # noqa: PLR0913
             witness_rule_id=UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID,
         )
     ]
+
+
+def lower_uk_source_carried_inserted_subsection_child_range_substitution(  # noqa: PLR0913
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    sequence: int,
+    inserted_subsection_child_range_substitution: dict[str, Any],
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> list[LegalOperation]:
+    """Lower flattened inserted-subsection child-range substitutions."""
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
+        family="source_context_elaboration",
+        reason_code="source_carried_inserted_subsection_child_range_substitution",
+        reason=(
+            "UK source names an affected parent, an inserted subsection, a "
+            "bounded paragraph range, and visibly labelled replacement "
+            "payloads; lowering emits child replace operations plus explicit "
+            "trailing repeals within that source-owned range."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            key: value
+            for key, value in inserted_subsection_child_range_substitution.items()
+            if key != "rule_id"
+        },
+    )
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    target_expansion_witness = _uk_target_expansion_witness(
+        effect.affected_provisions,
+        [
+            str(payload["target"])
+            for payload in inserted_subsection_child_range_substitution["payloads"]
+        ]
+        + [
+            str(target)
+            for target in inserted_subsection_child_range_substitution["trailing_targets"]
+        ],
+        original_targets_str=[effect.affected_provisions],
+    )
+    ops: list[LegalOperation] = []
+    for index, payload in enumerate(inserted_subsection_child_range_substitution["payloads"]):
+        target = _address_from_serialized_path(str(payload["target"]))
+        payload_node = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=str(payload["label"]),
+            text=str(payload["text"]),
+        )
+        witness = UKLoweredOperationWitness(
+            op_id=f"{effect.effect_id}_inserted_subsection_child_range_replace_{index}",
+            sequence=sequence,
+            action=StructuralAction.REPLACE,
+            target=target,
+            payload=payload_node,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=target_expansion_witness,
+            text_rewrite_witness=None,
+            insertion_anchor_witness=None,
+        )
+        ops.append(
+            LegalOperation(
+                op_id=witness.op_id,
+                sequence=witness.sequence,
+                action=witness.action,
+                target=target,
+                payload=_payload_with_rewrite_witness(payload_node, witness),
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(witness),
+                witness_rule_id=UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
+            )
+        )
+    for index, target_text in enumerate(
+        inserted_subsection_child_range_substitution["trailing_targets"]
+    ):
+        target = _address_from_serialized_path(str(target_text))
+        witness = UKLoweredOperationWitness(
+            op_id=f"{effect.effect_id}_inserted_subsection_child_range_repeal_{index}",
+            sequence=sequence,
+            action=StructuralAction.REPEAL,
+            target=target,
+            payload=None,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=target_expansion_witness,
+            text_rewrite_witness=None,
+            insertion_anchor_witness=None,
+        )
+        ops.append(
+            LegalOperation(
+                op_id=witness.op_id,
+                sequence=witness.sequence,
+                action=witness.action,
+                target=target,
+                payload=None,
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(witness),
+                witness_rule_id=UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
+            )
+        )
+    return ops

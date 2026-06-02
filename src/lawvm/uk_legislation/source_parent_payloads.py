@@ -56,6 +56,9 @@ UK_SOURCE_CARRIED_STRUCTURED_TAIL_SUBSTITUTION_RULE_ID = (
 UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
 )
+UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_source_carried_inserted_subsection_child_range_substitution_lowered"
+)
 
 _SOURCE_PREVIOUS_THAT_ENTRY_INSERT_RE = re.compile(
     r"\bafter\s+that\s+entry\s+insert\b",
@@ -337,6 +340,16 @@ _UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RE = re.compile(
     r"for\s+[“\"'‘](?P<anchor>[^“”\"'‘’]{0,300})[”\"'’] "
     r"(?:there (?:shall be|is|are) substituted|substitute[d]?)"
     r"[”\"'’]? ?[—–-] ?(?P<payload>.{0,1000})$",
+    flags=re.I | re.S,
+)
+_UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:|(?:[0-9A-Za-z]+|[ivxlcdm]+) |(?:[0-9A-Za-z]+|[ivxlcdm]+) (?:[0-9A-Za-z]+|[ivxlcdm]+) )"
+    r"In\s+section\s+(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<parent_subsection>[0-9A-Za-z]+)\)\s*,? "
+    r"in\s+the\s+inserted\s+subsection\s+\((?P<nested_subsection>[0-9A-Za-z]+)\),? "
+    r"for\s+paragraphs\s+\((?P<start>[a-z])\)\s+"
+    r"(?:and|to)\s+\((?P<end>[a-z])\)\s+"
+    r"substitute\s*[—–-]\s*(?P<payload>.{0,1000})$",
     flags=re.I | re.S,
 )
 # Same fix strategy. No captures needed (caller uses
@@ -1530,4 +1543,102 @@ def _source_carried_parent_quoted_child_substitution(
         "replacement": payload_tail,
         "payload_labels": payload_labels,
         "metadata_targets": tuple(str(target) for target in targets),
+    }
+
+
+def _source_carried_inserted_subsection_child_range_substitution(
+    *,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Recognize flattened text substituting a child range in an inserted subsection."""
+    if extracted_el is None or _tag(extracted_el) not in {"P1", "P2", "P3", "P4"}:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if (
+        "inserted subsection" not in lowered
+        or "for paragraphs" not in lowered
+        or "substitute" not in lowered
+    ):
+        return None
+    match = _UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    try:
+        target = canonicalize_uk_address(_parse_affected_target(affected_provisions))
+    except ValueError:
+        return None
+    section = _source_parent_range_label(match.group("section"))
+    parent_subsection = _source_parent_range_label(match.group("parent_subsection"))
+    nested_subsection = _source_parent_range_label(match.group("nested_subsection"))
+    if tuple(target.path) != (("section", section), ("subsection", parent_subsection)):
+        return None
+    start_label = _source_parent_range_label(match.group("start"))
+    end_label = _source_parent_range_label(match.group("end"))
+    if not re.fullmatch(r"[a-z]", start_label, re.I) or not re.fullmatch(r"[a-z]", end_label, re.I):
+        return None
+    start_ord = ord(start_label.lower())
+    end_ord = ord(end_label.lower())
+    if end_ord < start_ord:
+        return None
+    range_labels = tuple(chr(label_ord) for label_ord in range(start_ord, end_ord + 1))
+    payload_tail = " ".join(match.group("payload").split()).strip()
+    if not payload_tail:
+        return None
+    payload_matches = _source_carried_top_level_alpha_matches(payload_tail)
+    if not payload_matches:
+        return None
+    payloads: list[dict[str, str]] = []
+    for index, payload_match in enumerate(payload_matches):
+        label = _source_parent_range_label(payload_match.group("label"))
+        next_start = (
+            payload_matches[index + 1].start()
+            if index + 1 < len(payload_matches)
+            else len(payload_tail)
+        )
+        item_text = payload_tail[payload_match.end() : next_start].strip()
+        item_text = item_text.rstrip(_PAYLOAD_RSTRIP).strip()
+        if not label or not item_text:
+            return None
+        payloads.append(
+            {
+                "label": label,
+                "text": item_text,
+                "target": (
+                    f"section:{section}/subsection:{parent_subsection}/"
+                    f"subsection:{nested_subsection}/paragraph:{label}"
+                ),
+            }
+        )
+    payload_labels = tuple(payload["label"] for payload in payloads)
+    if payload_labels != range_labels[: len(payload_labels)]:
+        return None
+    if len(payload_labels) > len(range_labels):
+        return None
+    trailing_labels = range_labels[len(payload_labels) :]
+    trailing_targets = tuple(
+        f"section:{section}/subsection:{parent_subsection}/"
+        f"subsection:{nested_subsection}/paragraph:{label}"
+        for label in trailing_labels
+    )
+    return {
+        "rule_id": UK_SOURCE_CARRIED_INSERTED_SUBSECTION_CHILD_RANGE_SUBSTITUTION_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": text[: match.start("payload")].strip(),
+        "target_ref": affected_provisions,
+        "target": str(target),
+        "section": section,
+        "parent_subsection": parent_subsection,
+        "nested_subsection": nested_subsection,
+        "start_label": start_label,
+        "end_label": end_label,
+        "range_labels": range_labels,
+        "payload_labels": payload_labels,
+        "payloads": tuple(payloads),
+        "trailing_labels": trailing_labels,
+        "trailing_targets": trailing_targets,
     }
