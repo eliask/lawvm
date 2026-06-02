@@ -211,6 +211,9 @@ UK_AFTER_QUOTED_ANCHOR_ORDINAL_BLOCK_INSERT_RULE_ID = (
 UK_AFTER_QUOTED_ANCHOR_SPACE_BEFORE_COMMA_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_space_before_comma_insert_text_patch"
 )
+UK_AFTER_QUOTED_ANCHOR_INCLUDE_INSERT_RULE_ID = (
+    "uk_effect_after_quoted_anchor_include_text_patch"
+)
 UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
     "uk_effect_after_quoted_anchor_closing_quote_insert_text_patch"
 )
@@ -2427,6 +2430,33 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     # Pattern 1b: Insertion after a quoted fragment.
     # Treat this as a text replacement on the matched fragment so replay can
     # materialize the inserted words without inventing structural descendants.
+    matches_after_include = re.finditer(
+        r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]"
+        r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
+        r"\s*,?\s+include\b"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_after_include:
+        if re.search(r"in the definition of [“\"'‘].*?[”\"'’],?\s*$", text[: m.start()], re.I):
+            continue
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "rule_id": UK_AFTER_QUOTED_ANCHOR_INCLUDE_INSERT_RULE_ID,
+            }
+        )
+
     matches_after_insert = re.finditer(
         r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]"
         r"(?:\s+\([^)]*(?:\([^)]*\)[^)]*)*\))?"
@@ -4393,6 +4423,7 @@ def _parse_fragment_substitution_cached(text: str) -> tuple[UKTextRewriteFragmen
             "repeal",
             "cease",
             "add",
+            "include",
         )
     ):
         return ()

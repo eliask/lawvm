@@ -3096,6 +3096,75 @@ def test_ordinary_quoted_anchor_insert_keeps_normal_quote_rule() -> None:
     ]
 
 
+def test_after_quoted_anchor_include_lowers_as_target_local_text_insert() -> None:
+    fragments = parse_fragment_substitution('after "persons" include "(including nominees)".')
+
+    assert fragments == [
+        {
+            "original": "persons",
+            "replacement": "persons (including nominees)",
+            "rule_id": "uk_effect_after_quoted_anchor_include_text_patch",
+        }
+    ]
+
+
+def test_after_quoted_anchor_include_requires_quoted_payload() -> None:
+    assert parse_fragment_substitution('after "persons" include nominees.') == []
+
+
+def test_compile_after_quoted_anchor_include_from_source_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-10-paragraph-5">
+          <Pnumber>5</Pnumber>
+          <Text>1 After section 330 of ITA 2007 insert— Nominees . 2 In section 284 of that Act (power to make regulations as to procedure), in subsection (1)(d), after “persons” include “(including nominees)”.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-557364bea42aa18afce9aa653c0b889e",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-07-17",
+        affected_uri="/id/ukpga/2007/3/section/284/subsection/1/paragraph/d",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 284(1)(d)",
+        affecting_uri="/id/ukpga/2014/26",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2014",
+        affecting_number="26",
+        affecting_provisions="Sch. 10 para. 5",
+        affecting_title="Finance Act 2014",
+        in_force_dates=[{"date": "2014-07-17", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("section", "284"),
+        ("subsection", "1"),
+        ("paragraph", "d"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "persons"
+    assert ops[0].text_patch.replacement == "persons (including nominees)"
+    assert f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_after_quoted_anchor_include_text_patch" in (
+        ops[0].provenance_tags
+    )
+    assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
+
+
 def test_compile_after_quoted_anchor_insert_recovers_closing_open_quote() -> None:
     extracted_el = ET.fromstring(
         f"""
