@@ -233,6 +233,9 @@ UK_AFTER_QUOTED_ANCHOR_CLOSING_QUOTE_INSERT_RULE_ID = (
 UK_BEFORE_QUOTED_ANCHOR_ALL_OCCURRENCES_INSERT_RULE_ID = (
     "uk_effect_before_quoted_anchor_all_occurrences_insert_text_patch"
 )
+UK_PASSIVE_BEFORE_QUOTED_ANCHOR_INSERT_RULE_ID = (
+    "uk_effect_passive_before_quoted_anchor_insert_text_patch"
+)
 UK_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID = (
     "uk_effect_before_nested_quoted_anchor_insert_text_patch"
 )
@@ -3658,6 +3661,46 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
         else:
             patch["rule_id"] = "uk_effect_before_quoted_anchor_insert_text_patch"
         subs.append(patch)
+
+    matches_passive_before_insert = re.finditer(
+        r"(?:the\s+)?words?\s+"
+        r"(?:“(?P<inserted_curly>[^”]{1,500})”|\"(?P<inserted_double>[^\"]{1,500})\"|"
+        r"‘(?P<inserted_left_single>[^’]{1,500})’|'(?P<inserted_single>[^']{1,500})')"
+        r"\s+(?:is|are|shall\s+be)\s+inserted\s+before\s+(?:the\s+)?words?\s+"
+        r"(?:“(?P<original_curly>[^”]{1,500})”|\"(?P<original_double>[^\"]{1,500})\"|"
+        r"‘(?P<original_left_single>[^’]{1,500})’|'(?P<original_single>[^']{1,500})')",
+        text,
+        re.I,
+    )
+    for m in matches_passive_before_insert:
+        inserted = _first_named_group(
+            m,
+            (
+                "inserted_curly",
+                "inserted_double",
+                "inserted_left_single",
+                "inserted_single",
+            ),
+        ).strip()
+        original = _first_named_group(
+            m,
+            (
+                "original_curly",
+                "original_double",
+                "original_left_single",
+                "original_single",
+            ),
+        ).strip()
+        if not inserted or not original:
+            continue
+        joiner = _before_anchor_insert_joiner(inserted, original)
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{inserted}{joiner}{original}",
+                "rule_id": UK_PASSIVE_BEFORE_QUOTED_ANCHOR_INSERT_RULE_ID,
+            }
+        )
 
     matches_immediately_before_word_insert = re.finditer(
         r"immediately\s+before\s+(?:the\s+)?word\s+[“\"'‘](?P<original>.*?)[”\"'’]"

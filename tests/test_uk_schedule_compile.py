@@ -3488,6 +3488,79 @@ def test_before_anchor_all_occurrences_insert_accepts_each_place_wording() -> No
     ]
 
 
+def test_passive_before_quoted_anchor_insert_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "the words \u201cLocal Health Board,\u201d shall be inserted before the words "
+        "\u201cHealth Authority\u201d."
+    )
+
+    assert fragments == [
+        {
+            "original": "Health Authority",
+            "replacement": "Local Health Board, Health Authority",
+            "rule_id": "uk_effect_passive_before_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
+def test_compile_passive_before_quoted_anchor_insert_lowers_text_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-paragraph-2">
+          <Pnumber>2</Pnumber>
+          <Text>2 In sub-paragraph (3)(a) of paragraph 1A, the words \u201cLocal Health Board,\u201d shall be inserted before the words \u201cHealth Authority\u201d.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-5cad55e255627e3de29aa78838b9b42d",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2003-03-31",
+        affected_uri="/id/ukpga/1989/41/schedule/2/paragraph/1A/subparagraph/3/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="Sch. 2 para. 1A(3)(a)",
+        affecting_uri="/id/wsi/2003/154",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2003",
+        affecting_number="154",
+        affecting_provisions="Sch. para. 2",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2003-03-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "2"),
+        ("paragraph", "1a"),
+        ("subparagraph", "3"),
+        ("item", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Health Authority"
+    assert ops[0].text_patch.replacement == "Local Health Board, Health Authority"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_passive_before_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_subsequently_occurs_substitution_remains_unlowered_without_boundary() -> None:
     fragments = parse_fragment_substitution(
         'for "president" where it subsequently occurs substitute "Chamber President"'
