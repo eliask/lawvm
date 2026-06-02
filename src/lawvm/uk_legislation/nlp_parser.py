@@ -294,6 +294,9 @@ UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID = (
 UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID = (
     "uk_effect_range_to_end_quoted_dash_substitution_text_patch"
 )
+UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID = (
+    "uk_effect_range_to_end_missing_the_substitution_text_patch"
+)
 UK_LABELED_END_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_labeled_end_range_substitution_text_patch"
 )
@@ -1689,7 +1692,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         r"(?P<paren_ordinal_post>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th))\s*\))?"
         r"(?:\s+where it\s+(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|appears))?"
-        r" (?:to the end(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
+        r" (?:(?P<to_end>to\s+(?P<end_article>the\s+)?end)"
+        r"(?: of (?:(?:the|that) )?(?:subsection|paragraph|sub-paragraph|section))?|onwards),?\s+"
         r"(?P<verb>substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
         r"\s*(?P<dash>[—-])?\s+"
         r"(?:(?:the\s+)?words?\s+)?"
@@ -1706,6 +1710,8 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = "uk_effect_range_to_end_there_is_substituted_text_patch"
         elif m.group("dash"):
             patch["rule_id"] = UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID
+        elif m.group("to_end") and not m.group("end_article"):
+            patch["rule_id"] = UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID
         paren_ordinal = m.group("paren_ordinal_pre") or m.group("paren_ordinal_post")
         if paren_ordinal:
             patch["rule_id"] = "uk_effect_range_to_end_parenthetical_occurrence_substitution_text_patch"

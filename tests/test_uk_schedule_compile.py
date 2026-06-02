@@ -33855,6 +33855,68 @@ def test_compile_word_range_to_end_there_is_substituted() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_range_to_end_missing_the_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-11-paragraph-115-7-b">
+          <Pnumber>b</Pnumber>
+          <Text>b for the words from “which” to end substitute “ unless at the time when the order was made the person required to make the payments was ordinarily resident in England and Wales. ”</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_range_to_end_missing_the_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2014-04-22",
+        affected_uri="/id/ukpga/1989/41/schedule/1/paragraph/6A/subparagraph/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="Sch. 1 para. 6A(9)",
+        affecting_uri="/id/ukpga/2013/22",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2013",
+        affecting_number="22",
+        affecting_provisions="Sch. 11 para. 115(7)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2014-04-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (
+        ("schedule", "1"),
+        ("paragraph", "6a"),
+        ("subparagraph", "9"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_which_TO_END"
+    assert ops[0].text_patch.replacement == (
+        "unless at the time when the order was made the person required "
+        "to make the payments was ordinarily resident in England and Wales."
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_to_end_missing_the_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_range_to_end_missing_the_substitution_text_patch"
+    ] == ["uk_effect_range_to_end_missing_the_substitution_text_patch"]
+    assert lowering_records[0]["reason_code"] == "explicit_range_to_end_missing_the_text_patch"
+
+
 def test_parenthetical_occurrence_range_to_end_substitution_fragment_parses() -> None:
     fragments = parse_fragment_substitution(
         "6 In section 126 of the Pensions Act 1995 in paragraph (a) "

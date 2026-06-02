@@ -2539,6 +2539,25 @@ def test_parse_fragment_substitution_handles_range_to_end_of_subsection() -> Non
     ]
 
 
+def test_parse_fragment_substitution_handles_range_to_end_missing_the() -> None:
+    subs = parse_fragment_substitution(
+        "b for the words from \u201cwhich\u201d to end substitute "
+        "\u201c unless at the time when the order was made the person required "
+        "to make the payments was ordinarily resident in England and Wales. \u201d"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_which_TO_END",
+            "replacement": (
+                "unless at the time when the order was made the person required "
+                "to make the payments was ordinarily resident in England and Wales."
+            ),
+            "rule_id": "uk_effect_range_to_end_missing_the_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_preserves_range_to_end_second_occurrence() -> None:
     subs = parse_fragment_substitution(
         "a in subsection (1), for the words from \u201cthe\u201d where it second occurs "

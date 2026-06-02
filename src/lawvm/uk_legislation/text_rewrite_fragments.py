@@ -55,6 +55,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_RANGE_REPEAL_RULE_ID,
     UK_RANGE_SUBSTITUTION_RULE_ID,
     UK_RANGE_UNQUOTED_SUBSTITUTION_RULE_ID,
+    UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID,
     UK_RANGE_TO_END_QUOTED_DASH_SUBSTITUTION_RULE_ID,
     UK_RANGE_TO_END_ORDINAL_BLOCK_SUBSTITUTION_RULE_ID,
     UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID,
@@ -1169,6 +1170,29 @@ def append_basic_text_rewrite_observations(
                 "UK source text uses the drafting form 'there is substituted' "
                 "for a word-level range ending at the end of the target; lowering "
                 "preserves that as a bounded TEXT_FROM_*_TO_END text patch."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_RANGE_TO_END_MISSING_THE_SUBSTITUTION_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_range_to_end_missing_the_text_patch",
+            reason=(
+                "UK source text uses the drafting form 'to end' for a word-level "
+                "range ending at the end of the target; lowering treats this as "
+                "the bounded TEXT_FROM_*_TO_END selector rather than inferring a "
+                "different target or action family."
             ),
             effect=effect,
             extracted_el=extracted_el,
