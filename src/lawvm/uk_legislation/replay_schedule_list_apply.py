@@ -72,12 +72,16 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_END_POSITION_RULE_ID = (
     "uk_replay_schedule_list_entry_end_position_resolved"
 )
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_BEGINNING_POSITION_RULE_ID = (
+    "uk_replay_schedule_list_entry_beginning_position_resolved"
+)
 _UK_DEFINITION_LIST_END_PLACEMENT_FAMILIES = frozenset(
     {
         "definition_list_end_from_source_range",
         "definition_list_end_from_direct_source_row",
     }
 )
+_UK_LIST_BEGINNING_PLACEMENT_FAMILY = "list_beginning_from_explicit_source"
 
 
 @dataclass(frozen=True)
@@ -540,8 +544,8 @@ class UKReplayScheduleListApplyMixin:
         anchor_norm = _compact_normalized_text(str(selector.get("anchor_text") or ""))
         if (
             not anchor_norm
-            and direction not in {"alphabetical", "end"}
-        ) or direction not in {"before", "after", "alphabetical", "end"}:
+            and direction not in {"alphabetical", "end", "beginning"}
+        ) or direction not in {"before", "after", "alphabetical", "end", "beginning"}:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
@@ -565,6 +569,95 @@ class UKReplayScheduleListApplyMixin:
             for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
+        if direction == "beginning":
+            raw_insert_index = selector.get("beginning_insert_index")
+            insert_entry_index = (
+                raw_insert_index
+                if isinstance(raw_insert_index, int) and not isinstance(raw_insert_index, bool)
+                else -1
+            )
+            if (
+                not local_list_insert_carrier
+                or str(selector.get("placement_family") or "") != _UK_LIST_BEGINNING_PLACEMENT_FAMILY
+                or insert_entry_index < 0
+            ):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped list-beginning schedule-entry insert: "
+                        "selector did not carry an owned local-list beginning "
+                        "placement proof."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="unsupported_beginning_selector_family",
+                        entry_count=len(entry_rows),
+                    ),
+                )
+                return False
+            if not entry_rows or insert_entry_index > len(entry_rows):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped list-beginning schedule-entry insert: "
+                        "target carrier had no direct entry boundary or the "
+                        "source entry index exceeded that boundary."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="beginning_direct_entry_boundary_unproved",
+                        entry_count=len(entry_rows),
+                        beginning_insert_index=insert_entry_index,
+                    ),
+                )
+                return False
+            insert_index = (
+                entry_rows[insert_entry_index].index
+                if insert_entry_index < len(entry_rows)
+                else entry_rows[-1].index + 1
+            )
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_BEGINNING_POSITION_RULE_ID,
+                message=(
+                    "UK replay placed an explicit list-beginning schedule-entry "
+                    "insert using the source-owned entry order index."
+                ),
+                op=op,
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="explicit_beginning_direct_entry_boundary",
+                    entry_count=len(entry_rows),
+                    beginning_insert_index=insert_entry_index,
+                    insert_index=insert_index,
+                ),
+            )
+            for key in ("eId", "id"):
+                new_node.attrs.pop(key, None)
+            children = list(carrier_node.children)
+            children.insert(insert_index, new_node)
+            _replace_schedule_list_children_with_event(
+                self,
+                container=carrier_node,
+                children=children,
+                helper="_insert_schedule_list_entry",
+                outcome="schedule_list_entry_inserted",
+                reason_code="explicit_beginning_direct_entry_boundary",
+            )
+            return True
         if direction == "end":
             if (
                 str(selector.get("placement_family") or "")

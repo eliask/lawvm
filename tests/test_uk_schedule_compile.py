@@ -40973,6 +40973,189 @@ def test_compile_parenthesized_entry_anchor_insert_does_not_split_prose_commas()
     )
 
 
+def test_compile_at_beginning_entry_insert_preserves_local_list_order() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-7-a">
+          <Text>a at the beginning insert—
+          section 11CC (income charged at the property basic rate: non-individuals),
+          section 11DA (income charged at the savings basic rate: non-individuals), , and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-1d71c5d49610666e7a34c019085cd99c",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-17",
+        affected_uri="/id/ukpga/2007/3/section/11/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 11(2)",
+        affecting_uri="/id/ukpga/2026/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="Sch. 1 para. 7(a)",
+        affecting_title="Finance Act 2026",
+        in_force_dates=[{"date": "2026-03-18", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "section 11CC (income charged at the property basic rate: non-individuals)",
+        "section 11DA (income charged at the savings basic rate: non-individuals)",
+    ]
+    selectors = []
+    for op in ops:
+        selector_note = next(
+            note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:")
+        )
+        selectors.append(json.loads(selector_note.removeprefix("schedule_list_entry_selector:")))
+    assert [selector["beginning_insert_index"] for selector in selectors] == [0, 1]
+    assert all(selector["direction"] == "beginning" for selector in selectors)
+    assert all(
+        selector["placement_family"] == "list_beginning_from_explicit_source"
+        for selector in selectors
+    )
+    assert all(
+        selector["entry_carrier_family"] == "non_schedule_local_list"
+        for selector in selectors
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+        and record["reason_code"] == "explicit_schedule_list_entry_beginning"
+        and record["inserted_entry_count"] == 2
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="11",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    text="section 12 (income charged at the savings rate),",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.SCHEDULE_ENTRY,
+                                    text=(
+                                        "section 13 (income charged at the dividend ordinary and "
+                                        "dividend upper rates: individuals), and"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "section 11CC (income charged at the property basic rate: non-individuals)",
+        "section 11DA (income charged at the savings basic rate: non-individuals)",
+        "section 12 (income charged at the savings rate),",
+        "section 13 (income charged at the dividend ordinary and dividend upper rates: individuals), and",
+    ]
+    assert [
+        adjudication.detail.get("beginning_insert_index")
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_schedule_list_entry_beginning_position_resolved"
+    ] == [0, 1]
+    assert not any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        for adjudication in adjudications
+    )
+
+
+def test_replay_at_beginning_entry_insert_blocks_without_direct_entry_boundary() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>at the beginning insert—
+          section 11CC (income charged at the property basic rate: non-individuals)</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_beginning_insert_empty_boundary",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-04-17",
+        affected_uri="/id/ukpga/2007/3/section/11/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 11(2)",
+        affecting_uri="/id/ukpga/2026/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="11",
+        affecting_provisions="Sch. 1 para. 7(a)",
+        affecting_title="Finance Act 2026",
+        in_force_dates=[{"date": "2026-03-18", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    assert len(ops) == 1
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="11",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=()),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    assert replayed.body.children[0].children[0].children == ()
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        and adjudication.detail.get("reason_code") == "beginning_direct_entry_boundary_unproved"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in adjudications
+    )
+
+
 def test_compile_exception_entry_omission_lowers_to_local_schedule_entry_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""

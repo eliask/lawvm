@@ -464,11 +464,15 @@ def try_lower_schedule_list_entry_mutation(
             lowering_rejections_out,
             rule_id=selector_rule_id,
             family="source_schedule_list_entry_elaboration",
-            reason_code="explicit_schedule_list_entry_anchor",
+            reason_code=(
+                "explicit_schedule_list_entry_beginning"
+                if str(schedule_list_entry_selector.get("direction") or "") == "beginning"
+                else "explicit_schedule_list_entry_anchor"
+            ),
             reason=(
                 "UK list-entry insertion lowered as a typed schedule-entry "
-                "sibling insert; replay must resolve exactly one anchor entry "
-                "before mutating direct list children."
+                "sibling insert; replay must resolve the source-owned placement "
+                "boundary before mutating direct list children."
             ),
             effect=effect,
             extracted_el=extracted_el,
@@ -499,6 +503,8 @@ def try_lower_schedule_list_entry_mutation(
                 "inserted_entry_index": entry_index,
                 "inserted_entry_count": len(inserted_entries),
             }
+            if direction == "beginning":
+                entry_selector["beginning_insert_index"] = entry_index
             payload_node = IRNode(
                 kind=IRNodeKind.SCHEDULE_ENTRY,
                 label=None,
@@ -513,6 +519,11 @@ def try_lower_schedule_list_entry_mutation(
                     "anchor_direction": direction,
                     "source_inserted_entry_index": str(entry_index),
                     "source_inserted_entry_count": str(len(inserted_entries)),
+                    **(
+                        {"beginning_insert_index": str(entry_index)}
+                        if direction == "beginning"
+                        else {}
+                    ),
                 },
             )
             insert_ops.append(

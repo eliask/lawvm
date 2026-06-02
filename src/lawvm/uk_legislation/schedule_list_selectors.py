@@ -15,6 +15,11 @@ UK_NON_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_non_schedule_list_entry_i
 UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 
+_BEGINNING_LIST_ENTRY_INSERT_RE = re.compile(
+    r"\bat\s+the\s+beginning\s+insert\s*[—–-]?\s*(?P<payload>.+)$",
+    re.I,
+)
+
 _ENTRY_ORDINALS = {
     "first": 1,
     "1st": 1,
@@ -132,9 +137,9 @@ def _schedule_list_entry_selector_from_parts(
     direction = str(direction or "").lower()
     anchor_text = _strip_schedule_entry_phrase(anchor_text)
     inserted_text = _strip_schedule_entry_payload(inserted_text)
-    if direction not in {"before", "after", "alphabetical"} or not inserted_text:
+    if direction not in {"before", "after", "alphabetical", "beginning"} or not inserted_text:
         return None
-    if direction != "alphabetical" and not anchor_text:
+    if direction not in {"alphabetical", "beginning"} and not anchor_text:
         return None
     return {
         "rule_id": rule_id,
@@ -246,6 +251,22 @@ def _uk_schedule_list_entry_insert_selector(
         if selector is not None and ordinal:
             selector["anchor_ordinal"] = _ENTRY_ORDINALS[ordinal.lower()]
         return selector
+
+    if local_list_carrier_target:
+        match = _BEGINNING_LIST_ENTRY_INSERT_RE.search(text)
+        if match is not None:
+            selector = _schedule_list_entry_selector_from_parts(
+                direction="beginning",
+                anchor_text="",
+                inserted_text=match.group("payload"),
+                target_ref=target_ref,
+                target=target,
+                rule_id=rule_id,
+            )
+            if selector is not None:
+                selector["entry_carrier_family"] = entry_carrier_family
+                selector["placement_family"] = "list_beginning_from_explicit_source"
+            return selector
 
     match = re.search(
         r"\bat\s+(?:an?|the)\s+appropriate\s+place,?\s+in\s+alphabetical\s+order,?\s+"
