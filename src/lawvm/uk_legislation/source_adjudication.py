@@ -64,6 +64,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "amendment_text_target_unsupported",
         "conditional_temporal_repeal_unsupported",
         "definition_child_and_tail_substitution_unsupported",
+        "nested_definition_child_structural_substitution_unsupported",
         "definition_child_structural_insert_unsupported",
         "definition_anchor_tail_insert_unsupported",
         "table_entry_target_unsupported",
@@ -230,6 +231,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "manual_compile_candidate",
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "The source substitutes a definition child together with that child's trailing connective; a claim or future multi-patch compiler must own both the child text and the post-child tail boundary.",
+    ),
+    "nested_definition_child_structural_substitution_unsupported": _ManualFrontierClassification(
+        "manual_compile_candidate",
+        "uk_manual_frontier_nested_definition_child_structural_substitution_candidate",
+        "The source substitutes a structural child inside another definition child; a claim or future nested-definition compiler must prove the outer child, nested child, replacement payload shape, and tail ownership before replay.",
     ),
     "definition_child_structural_insert_unsupported": _ManualFrontierClassification(
         "manual_compile_candidate",
@@ -1526,6 +1532,17 @@ def _looks_like_definition_child_structural_substitution_instruction(text: str) 
     )
 
 
+def _looks_like_nested_definition_child_structural_substitution_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(r"\bin\s+paragraph\s+\([0-9A-Za-z]+\)\s+of\s+the\s+definition\s+of\s+[\"“][^\"”]+[\"”]", norm)
+        and re.search(
+            r"\bfor\s+sub-?paragraph\s+\([0-9ivxlcdm]+\).{0,160}\bsubstitute\b",
+            norm,
+        )
+    )
+
+
 def _looks_like_definition_child_structural_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -1933,6 +1950,8 @@ def classify_uk_effect_source_pathology(
             return "conditional_temporal_repeal_unsupported"
         if _looks_like_definition_child_and_tail_substitution(norm_text):
             return "definition_child_and_tail_substitution_unsupported"
+        if _looks_like_nested_definition_child_structural_substitution_instruction(norm_text):
+            return "nested_definition_child_structural_substitution_unsupported"
         if "uk_effect_definition_child_structural_insert_rejected" in lowering_rules:
             return "definition_child_structural_insert_unsupported"
         if _looks_like_definition_child_structural_insert_instruction(norm_text):

@@ -958,6 +958,26 @@ def test_classify_uk_effect_source_pathology_marks_definition_child_and_tail_sub
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_nested_definition_child_structural_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "a in paragraph (a) of the definition of \u201cappropriate "
+            "type-approval certificate\u201d, for sub-paragraph (ii) substitute\u2014 "
+            "ii issued under the equivalent EU Regulation; ;"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_overlap_substitution_unlowered"],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "nested_definition_child_structural_substitution_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_source_pathology_marks_definition_child_structural_insert() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P1",
@@ -2991,6 +3011,35 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_s
 
     assert result["status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_substitution_candidate"
+
+
+def test_classify_uk_manual_compile_frontier_marks_nested_definition_child_structural_substitution() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="nested_definition_child_structural_substitution_unsupported",
+        extracted_tag="P3",
+        extracted_text=(
+            "a in paragraph (a) of the definition of \u201cappropriate "
+            "type-approval certificate\u201d, for sub-paragraph (ii) substitute\u2014 "
+            "ii issued under the equivalent EU Regulation; ;"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "strict_disposition": "block",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_nested_definition_child_structural_substitution_candidate"
+    )
+    assert "nested-definition compiler" in result["reason"]
 
 
 def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_insert() -> None:
