@@ -122,21 +122,40 @@ _SOURCE_CHILD_WHERE_ORDINAL_INSERT_RE = re.compile(
     r"occurs?,? insert [“\"'‘](?P<inserted>[^”\"'’]{1,1000})[”\"'’]",
     flags=re.I,
 )
-_AMOUNT_SPECIFIED_SOURCE_TARGET_RE = re.compile(
+_AMOUNT_SPECIFIED_SECTION_TARGET_RE = re.compile(
     r"\bamount\s+specified\s+in\s+section\s+"
     r"(?P<section>[0-9]+[A-Za-z]?)"
     r"(?P<suffix>(?:\s*\([0-9A-Za-z]+\)){0,4})",
+    flags=re.I,
+)
+_AMOUNT_SPECIFIED_SUBSECTION_TARGET_RE = re.compile(
+    r"\bamount\s+specified\s+in\s+subsection\s+"
+    r"(?P<suffix>(?:\s*\([0-9A-Za-z]+\)){1,4})",
     flags=re.I,
 )
 _AMOUNT_SPECIFIED_SUFFIX_LABEL_RE = re.compile(r"\(([0-9A-Za-z]+)\)")
 
 
 def _amount_specified_source_target_path(text: str) -> tuple[tuple[str, str], ...]:
-    match = _AMOUNT_SPECIFIED_SOURCE_TARGET_RE.search(text)
-    if match is None:
+    section_match = _AMOUNT_SPECIFIED_SECTION_TARGET_RE.search(text)
+    if section_match is not None:
+        path: list[tuple[str, str]] = [
+            ("section", _clean_num(section_match.group("section")))
+        ]
+        suffix_labels = _AMOUNT_SPECIFIED_SUFFIX_LABEL_RE.findall(
+            section_match.group("suffix") or ""
+        )
+        suffix_kinds = ("subsection", "paragraph", "subparagraph", "item")
+        for kind, label in zip(suffix_kinds, suffix_labels):
+            path.append((kind, _clean_num(label)))
+        return tuple(path)
+    subsection_match = _AMOUNT_SPECIFIED_SUBSECTION_TARGET_RE.search(text)
+    if subsection_match is None:
         return ()
-    path: list[tuple[str, str]] = [("section", _clean_num(match.group("section")))]
-    suffix_labels = _AMOUNT_SPECIFIED_SUFFIX_LABEL_RE.findall(match.group("suffix") or "")
+    path = []
+    suffix_labels = _AMOUNT_SPECIFIED_SUFFIX_LABEL_RE.findall(
+        subsection_match.group("suffix") or ""
+    )
     suffix_kinds = ("subsection", "paragraph", "subparagraph", "item")
     for kind, label in zip(suffix_kinds, suffix_labels):
         path.append((kind, _clean_num(label)))
@@ -154,6 +173,9 @@ def _amount_specified_source_target_matches(
     source_path = _amount_specified_source_target_path(extracted_text)
     if not source_path:
         return True
+    if source_path[0][0] == "subsection":
+        target_suffix = tuple(part for part in target.path if part[0] != "section")
+        return target_suffix == source_path
     return tuple(target.path) == source_path
 
 

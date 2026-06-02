@@ -1037,6 +1037,37 @@ def test_parse_fragment_substitution_handles_amount_specified_replaced_with_tax_
     ]
 
 
+def test_parse_fragment_substitution_handles_relative_amount_specified_replaced_with() -> None:
+    subs = parse_fragment_substitution(
+        "ii the amount specified in subsection (3)(b) (married couple\u2019s allowance) "
+        "is replaced with \u201c\u00a36,865\u201d; and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_UNIQUE_FEE_SUM",
+            "replacement": "\u00a36,865",
+            "rule_id": "uk_effect_amount_specified_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_amount_specified_with_quoted_descriptor() -> None:
+    subs = parse_fragment_substitution(
+        "c the amount specified in section 43 of that Act "
+        "(\u201cminimum amount\u201d for calculating tax reductions) "
+        "is replaced with \u201c\n                          \u00a33,220\n                        \u201d ,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_UNIQUE_FEE_SUM",
+            "replacement": "\u00a33,220",
+            "rule_id": "uk_effect_amount_specified_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_first_and_second_occurrence_substitution() -> None:
     subs = parse_fragment_substitution(
         "i for \u201c retained \u201d (in the first and second places it appears) "
