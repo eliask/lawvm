@@ -3572,6 +3572,15 @@ def test_subsequently_occurs_substitution_remains_unlowered_without_boundary() -
     assert fragments == []
 
 
+def test_second_place_deictic_substitution_remains_unlowered_without_boundary() -> None:
+    fragments = parse_fragment_substitution(
+        "b for those words in the second place where they occur, substitute "
+        "\u201cthat national authority\u201d."
+    )
+
+    assert fragments == []
+
+
 def test_compile_subsequently_occurs_substitution_uses_source_sibling_boundary() -> None:
     source_root = ET.fromstring(
         f"""
@@ -3653,6 +3662,147 @@ def test_compile_subsequently_occurs_substitution_uses_source_sibling_boundary()
         "subsequent_occurrence_after_sibling_containing_substitution"
     )
     assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
+def test_compile_second_place_deictic_substitution_uses_nearest_source_sibling() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-7-3">
+          <Pnumber>3</Pnumber>
+          <Text>In subsection (2A)-</Text>
+          <P4 id="schedule-3-paragraph-7-3-a">
+            <Pnumber>a</Pnumber>
+            <Text>a for the words \u201cthe Secretary of State\u201d, in the first place
+            where they occur, substitute \u201can appropriate national authority\u201d;</Text>
+          </P4>
+          <P4 id="schedule-3-paragraph-7-3-b">
+            <Pnumber>b</Pnumber>
+            <Text>b for those words in the second place where they occur,
+            substitute \u201cthat national authority\u201d.</Text>
+          </P4>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P4[@id='schedule-3-paragraph-7-3-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_second_place_deictic_from_source_sibling",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-11-13",
+        affected_uri="/id/ukpga/1989/41/section/23/subsection/2A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="s. 23(2A)",
+        affecting_uri="/id/ukpga/2008/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="23",
+        affecting_provisions="Sch. 3 para. 7(3)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2008-11-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "23"), ("subsection", "2a"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == (
+        f"TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING{US}"
+        f"an appropriate national authority{US}the Secretary of State"
+    )
+    assert op.text_patch.replacement == "that national authority"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}"
+        "uk_effect_sibling_first_then_second_place_deictic_substitution_text_patch"
+        in op.provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_records
+        if record["rule_id"]
+        == "uk_effect_sibling_first_then_second_place_deictic_substitution_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "source_context_elaboration"
+    assert observations[0]["reason_code"] == (
+        "relative_second_place_deictic_resolved_from_first_occurrence_sibling"
+    )
+    assert observations[0]["source_sibling_label"] == "a"
+    assert observations[0]["source_sibling_rule_id"] == (
+        "uk_effect_post_quoted_ordinal_substitution_text_patch"
+    )
+    assert observations[0]["selector_mode"] == (
+        "second_place_deictic_after_first_occurrence_sibling"
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
+def test_compile_second_place_deictic_substitution_requires_nearest_source_sibling() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-7-3">
+          <Pnumber>3</Pnumber>
+          <Text>In subsection (2A)-</Text>
+          <P4 id="schedule-3-paragraph-7-3-b">
+            <Pnumber>b</Pnumber>
+            <Text>b for those words in the second place where they occur,
+            substitute \u201cthat national authority\u201d.</Text>
+          </P4>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P4[@id='schedule-3-paragraph-7-3-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_second_place_deictic_without_source_sibling",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2008-11-13",
+        affected_uri="/id/ukpga/1989/41/section/23/subsection/2A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="s. 23(2A)",
+        affecting_uri="/id/ukpga/2008/23",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2008",
+        affecting_number="23",
+        affecting_provisions="Sch. 3 para. 7(3)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2008-11-13", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
         record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
         for record in lowering_records
     )

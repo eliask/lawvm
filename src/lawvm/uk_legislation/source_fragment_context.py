@@ -174,10 +174,21 @@ _SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RE = re.compile(
     r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{1,500})[“\”’’]",
     flags=re.I,
 )
+_SECOND_PLACE_DEICTIC_SUBSTITUTION_RE = re.compile(
+    r"\bfor those words,? in the "
+    r"(?P<ordinal>second|2nd) place(?: where (?:they|those words?) "
+    r"(?:occur|occurs|appear|appears))?,? "
+    r"(?:substitute|there (?:is|are|shall be) substituted) "
+    r"(|the words? )[“\”’’](?P<replacement>[^”\”’’]{1,500})[“\”’’]",
+    flags=re.I,
+)
 
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
 _UK_SIBLING_FIRST_THEN_SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RULE_ID = (
     "uk_effect_sibling_first_then_subsequent_occurrence_substitution_text_patch"
+)
+_UK_SIBLING_FIRST_THEN_SECOND_PLACE_DEICTIC_SUBSTITUTION_RULE_ID = (
+    "uk_effect_sibling_first_then_second_place_deictic_substitution_text_patch"
 )
 _SOURCE_PARENT_AT_END_TEXT_INSERT_RULE_ID = "uk_effect_source_parent_at_end_text_insertion_patch"
 _SOURCE_PARENT_AT_END_QUOTED_LIST_TEXT_INSERT_RULE_ID = (
@@ -494,18 +505,32 @@ def append_source_fragment_context_observations(
             UK_AFTER_QUOTED_ANCHOR_EACH_OTHER_PLACE_INSERT_RULE_ID,
             UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
             _UK_SIBLING_FIRST_THEN_SUBSEQUENT_OCCURRENCE_SUBSTITUTION_RULE_ID,
+            _UK_SIBLING_FIRST_THEN_SECOND_PLACE_DEICTIC_SUBSTITUTION_RULE_ID,
         }:
             continue
+        if (
+            each_other_rule_id
+            == _UK_SIBLING_FIRST_THEN_SECOND_PLACE_DEICTIC_SUBSTITUTION_RULE_ID
+        ):
+            reason_code = "relative_second_place_deictic_resolved_from_first_occurrence_sibling"
+            reason = (
+                "UK source uses a deictic 'those words in the second place' selector; "
+                "lowering proceeds only because the nearest preceding source sibling "
+                "explicitly claims the first occurrence and supplies the antecedent words."
+            )
+        else:
+            reason_code = "relative_each_other_place_resolved_from_first_occurrence_sibling"
+            reason = (
+                "UK source uses a relative 'each other place' occurrence selector; "
+                "lowering proceeds only because a preceding source sibling explicitly "
+                "claims the first occurrence of the same quoted anchor."
+            )
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
             rule_id=each_other_rule_id,
             family="source_context_elaboration",
-            reason_code="relative_each_other_place_resolved_from_first_occurrence_sibling",
-            reason=(
-                "UK source uses a relative 'each other place' occurrence selector; "
-                "lowering proceeds only because a preceding source sibling explicitly "
-                "claims the first occurrence of the same quoted anchor."
-            ),
+            reason_code=reason_code,
+            reason=reason,
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -880,6 +905,47 @@ def _previous_source_sibling_anchor_containing_substitution(
     return None
 
 
+def _previous_source_sibling_single_first_occurrence_substitution(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+) -> Optional[dict[str, str]]:
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    if not ancestors or extracted_el is None:
+        return None
+    previous_structural_child: Optional[ET._Element] = None
+    parent = ancestors[0]
+    for child in parent:
+        if child is extracted_el or child.get("id") == extracted_el.get("id"):
+            break
+        if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS:
+            previous_structural_child = child
+    if previous_structural_child is None:
+        return None
+    first_occurrence_fragments = [
+        sibling_fragment
+        for sibling_fragment in parse_fragment_substitution(_text_content(previous_structural_child))
+        if str(sibling_fragment.get("occurrence") or "") == "1"
+        and " ".join(str(sibling_fragment.get("original") or "").split()).strip()
+        and " ".join(str(sibling_fragment.get("replacement") or "").split()).strip()
+    ]
+    if len(first_occurrence_fragments) != 1:
+        return None
+    sibling_fragment = first_occurrence_fragments[0]
+    return {
+        "source_sibling_label": _clean_num(_direct_structural_num(previous_structural_child)),
+        "source_sibling_rule_id": str(sibling_fragment.get("rule_id") or "fragment_substitution"),
+        "source_sibling_replacement": " ".join(
+            str(sibling_fragment.get("replacement") or "").split()
+        ).strip(),
+        "source_sibling_original": " ".join(
+            str(sibling_fragment.get("original") or "").split()
+        ).strip(),
+    }
+
+
 def _fragment_substitution_each_other_place_from_sibling(
     *,
     extracted_el: Optional[ET._Element],
@@ -927,6 +993,29 @@ def _fragment_substitution_each_other_place_from_sibling(
             "selector_mode": "all_remaining_after_first_occurrence_sibling",
             **sibling,
             "rule_id": UK_SIBLING_FIRST_THEN_EACH_OTHER_PLACE_SUBSTITUTION_RULE_ID,
+        }
+
+    second_place_deictic_match = _SECOND_PLACE_DEICTIC_SUBSTITUTION_RE.search(text)
+    if second_place_deictic_match is not None:
+        replacement = " ".join(second_place_deictic_match.group("replacement").split()).strip()
+        sibling = _previous_source_sibling_single_first_occurrence_substitution(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        if not replacement or sibling is None:
+            return None
+        original = str(sibling.get("source_sibling_original") or "")
+        if not original:
+            return None
+        return {
+            "original": (
+                f"TEXT_EACH_OTHER_OCCURRENCE_AFTER_FIRST_SIBLING"
+                f"{US}{str(sibling.get('source_sibling_replacement') or '')}{US}{original}"
+            ),
+            "replacement": replacement,
+            "selector_mode": "second_place_deictic_after_first_occurrence_sibling",
+            **sibling,
+            "rule_id": _UK_SIBLING_FIRST_THEN_SECOND_PLACE_DEICTIC_SUBSTITUTION_RULE_ID,
         }
 
     if "subsequently" not in text.lower():
