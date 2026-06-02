@@ -160,6 +160,12 @@ _BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RE = re.compile(
     rf"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>{_NON_QUOTE}{{1,500}})[”\"'’]",
     re.I,
 )
+_BEFORE_QUOTED_ANCHOR_INSERT_PREFIX_RE = re.compile(
+    rf"before\s+[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
+    r",?\s+(?:insert|there\s+(?:is|are|shall\s+be)\s+inserted)"
+    r"(?:\s+(?:the\s+)?words?)?\s*",
+    re.I,
+)
 _AMOUNT_SPECIFIED_SUBSTITUTED_RE = re.compile(
     r"for\s+the\s+amount\s+specified\s+in\s+section\s+[^.;“”\"'‘]{1,180}?\s+"
     r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)\s+"
@@ -228,6 +234,9 @@ UK_BEFORE_QUOTED_ANCHOR_ALL_OCCURRENCES_INSERT_RULE_ID = (
 )
 UK_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID = (
     "uk_effect_before_nested_quoted_anchor_insert_text_patch"
+)
+UK_BEFORE_QUOTED_ANCHOR_NESTED_PAYLOAD_INSERT_RULE_ID = (
+    "uk_effect_before_quoted_anchor_nested_payload_insert_text_patch"
 )
 UK_AFTER_REFERENCE_SECTION_INSERT_RULE_ID = (
     "uk_effect_after_reference_section_insert_text_patch"
@@ -515,6 +524,74 @@ def _last_quoted_term(text: str) -> str | None:
     if not terms:
         return None
     return terms[-1]
+
+
+def _before_anchor_insert_joiner(inserted: str, original: str) -> str:
+    if inserted.endswith((" ", "(", "/", "-")):
+        return ""
+    if original.startswith((" ", ",", ".", ";", ":", ")")):
+        return ""
+    return " "
+
+
+def _extract_balanced_quoted_payload(
+    text: str,
+    start: int,
+    *,
+    max_chars: int = 700,
+) -> tuple[str, int] | None:
+    pos = start
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    if pos >= len(text):
+        return None
+    opener = text[pos]
+    close_by_open = {"\u201c": "\u201d", "\u2018": "\u2019", '"': '"', "'": "'"}
+    closer = close_by_open.get(opener)
+    if closer is None:
+        return None
+    if opener == closer:
+        close = text.find(closer, pos + 1, pos + max_chars + 2)
+        if close < 0:
+            return None
+        return text[pos + 1 : close].strip(), close + 1
+
+    depth = 1
+    payload_chars: list[str] = []
+    limit = min(len(text), pos + max_chars + 2)
+    for index in range(pos + 1, limit):
+        char = text[index]
+        if char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return "".join(payload_chars).strip(), index + 1
+        payload_chars.append(char)
+    return None
+
+
+def _before_quoted_anchor_nested_payload_insert_fragments(
+    text: str,
+) -> list[dict[str, str]]:
+    fragments: list[dict[str, str]] = []
+    for match in _BEFORE_QUOTED_ANCHOR_INSERT_PREFIX_RE.finditer(text):
+        original = match.group("original").strip()
+        payload = _extract_balanced_quoted_payload(text, match.end())
+        if payload is None:
+            continue
+        inserted, _end = payload
+        if not inserted or not any(quote in inserted for quote in _QUOTE_CHARS):
+            continue
+        joiner = _before_anchor_insert_joiner(inserted, original)
+        fragments.append(
+            {
+                "original": original,
+                "replacement": f"{inserted}{joiner}{original}",
+                "rule_id": UK_BEFORE_QUOTED_ANCHOR_NESTED_PAYLOAD_INSERT_RULE_ID,
+            }
+        )
+    return fragments
 
 
 def _ordinal_occurrences_from_phrase(text: str) -> tuple[str, ...]:
@@ -3458,7 +3535,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
     for m in _BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RE.finditer(text):
         original = m.group("original").strip()
         inserted = m.group("inserted").strip()
-        joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "
+        joiner = _before_anchor_insert_joiner(inserted, original)
         subs.append(
             {
                 "original": original,
@@ -3466,6 +3543,8 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                 "rule_id": UK_BEFORE_NESTED_QUOTED_ANCHOR_INSERT_RULE_ID,
             }
         )
+
+    subs.extend(_before_quoted_anchor_nested_payload_insert_fragments(text))
 
     matches_before_insert = re.finditer(
         rf"before\s+[“\"'‘](?P<original>{_NON_QUOTE}{{1,500}})[”\"'’]"
@@ -3491,7 +3570,7 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
             continue
         original = m.group("original")
         inserted = m.group("inserted")
-        joiner = "" if inserted.endswith((" ", "(", "/", "-")) else " "
+        joiner = _before_anchor_insert_joiner(inserted, original)
         patch = {
             "original": original,
             "replacement": f"{inserted}{joiner}{original}",

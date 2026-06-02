@@ -7072,6 +7072,21 @@ def test_before_nested_quoted_anchor_inline_insert_fragment_parses() -> None:
     ]
 
 
+def test_before_quoted_anchor_nested_payload_insert_fragment_parses() -> None:
+    fragments = parse_fragment_substitution(
+        "ii before \u201c, the Secretary of State\u201d insert "
+        "\u201c(an \u201coffshore UK-controlled place\u201d)\u201d;"
+    )
+
+    assert fragments == [
+        {
+            "original": ", the Secretary of State",
+            "replacement": "(an \u201coffshore UK-controlled place\u201d), the Secretary of State",
+            "rule_id": "uk_effect_before_quoted_anchor_nested_payload_insert_text_patch",
+        }
+    ]
+
+
 def test_compile_before_nested_quoted_anchor_block_insert() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -7179,6 +7194,68 @@ def test_compile_before_nested_quoted_anchor_inline_insert() -> None:
     assert op.text_patch.replacement == "subject to paragraph (1A), \u2018qualified\u2019"
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_nested_quoted_anchor_insert_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
+def test_compile_before_quoted_anchor_nested_payload_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="regulation-3-1-a-ii">
+          <Pnumber>ii</Pnumber>
+          <Text>ii before \u201c, the Secretary of State\u201d insert
+          \u201c(an \u201coffshore UK-controlled place\u201d)\u201d;</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-76c445bfe9e18d75386625127c5240f1",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-11-16",
+        affected_uri="/id/ukpga/2008/32/section/18/subsection/2/paragraph/a",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2008",
+        affected_number="32",
+        affected_provisions="s. 18(2)(a)",
+        affecting_uri="/id/uksi/2011/2453",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2011",
+        affecting_number="2453",
+        affecting_provisions="reg. 3(1)(a)(ii)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2011-11-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (
+        ("section", "18"),
+        ("subsection", "2"),
+        ("paragraph", "a"),
+    )
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == ", the Secretary of State"
+    assert (
+        op.text_patch.replacement
+        == "(an \u201coffshore UK-controlled place\u201d), the Secretary of State"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_quoted_anchor_nested_payload_insert_text_patch"
         in op.provenance_tags
     )
     assert not any(
