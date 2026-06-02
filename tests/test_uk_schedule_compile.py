@@ -34931,6 +34931,67 @@ def test_compile_unquoted_range_independent_end_occurrence_block() -> None:
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_parenthetical_end_occurrence_unquoted_range_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-6-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in subsection (6) for the words from \u201cis free\u201d to
+          \u201cNorthern Ireland\u201d (where first appearing) substitute\u2014 \u2014 a is the
+          subject of a Scottish permanence order which includes provision
+          granting authority for the child to be adopted, or b is free for
+          adoption by virtue of an order made, ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-a2183c82ebb7ca8b7df5c9aea1e8b063",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-07-22",
+        affected_uri="/id/ukpga/2002/38/section/47/subsection/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="38",
+        affected_provisions="s. 47(6)",
+        affecting_uri="/id/uksi/2011/1740",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2011",
+        affecting_number="1740",
+        affecting_provisions="Sch. 1 para. 6(2)(a)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2011-07-22", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "47"), ("subsection", "6"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM_is free_TO_Northern Ireland"
+    assert op.text_patch.selector.end_occurrence == 1
+    assert _required_text_patch_replacement(op).startswith(
+        "a is the subject of a Scottish permanence order"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_independent_end_occurrence_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_word_range_repeal_uses_parenthesized_ordinal_start_occurrence() -> None:
     extracted_el = ET.fromstring(
         f"""

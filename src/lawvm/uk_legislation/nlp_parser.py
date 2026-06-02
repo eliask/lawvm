@@ -1673,13 +1673,15 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
         r"\s+to [“\"'‘](?P<end>.*?)[”\"'’]"
         r"(?:,\s+where(?:\s+it)?\s+(?P<end_ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
         r"(?:occurs|occurring),?)?"
+        rf"(?:\s*\(\s*where\s+(?P<end_paren_ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+"
+        r"(?:appears?|appearing|occurs?|occurring)\s*\))?"
         r",?\s+substitute\s*[—-]?\s+"
         r"(?P<replacement>.+?)(?:\s+\.)?$",
         text,
         re.I,
     )
     for m in matches_range_unquoted_substituted:
-        replacement = m.group("replacement").strip()
+        replacement = re.sub(r"^[—-]\s+(?=[a-z]\b)", "", m.group("replacement").strip())
         if replacement.startswith(("“", '"', "'", "‘")):
             continue
         patch = {
@@ -1692,6 +1694,11 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             patch["rule_id"] = UK_RANGE_WHERE_ORDINAL_SUBSTITUTION_RULE_ID
         if m.group("end_ordinal"):
             patch["end_occurrence"] = _ORDINAL_OCCURRENCES[m.group("end_ordinal").lower()]
+            patch["rule_id"] = UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID
+        if m.group("end_paren_ordinal"):
+            patch["end_occurrence"] = _ORDINAL_OCCURRENCES[
+                m.group("end_paren_ordinal").lower()
+            ]
             patch["rule_id"] = UK_RANGE_INDEPENDENT_END_OCCURRENCE_SUBSTITUTION_RULE_ID
         subs.append(patch)
 

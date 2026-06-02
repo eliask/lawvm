@@ -3944,6 +3944,26 @@ def test_parse_fragment_substitution_handles_range_with_independent_end_occurren
     ]
 
 
+def test_parse_fragment_substitution_handles_parenthetical_end_occurrence_unquoted_range() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (6) for the words from \u201cis free\u201d to "
+        "\u201cNorthern Ireland\u201d (where first appearing) substitute\u2014 \u2014 a is the "
+        "subject of a Scottish permanence order, or b is free for adoption;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM_is free_TO_Northern Ireland",
+            "replacement": (
+                "a is the subject of a Scottish permanence order, or b is free "
+                "for adoption;"
+            ),
+            "end_occurrence": "1",
+            "rule_id": "uk_effect_range_independent_end_occurrence_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_unquoted_substitution() -> None:
     subs = parse_fragment_substitution(
         "7 In section 14(5)(a), for the words from \u201cmember\u201d to \u201cand\u201d "
