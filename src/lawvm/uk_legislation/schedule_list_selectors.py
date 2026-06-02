@@ -12,6 +12,9 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
 UK_NON_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_non_schedule_list_entry_insert"
+UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID = (
+    "uk_effect_connector_preceding_child_list_entry_substitution"
+)
 UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 
@@ -41,6 +44,14 @@ _PLURAL_RELATING_ENTRIES_REPLACE_RE = re.compile(
 )
 _INDEX_ENTRY_SECTION_REF_RE = re.compile(
     r"\bsection\s+[0-9A-Za-z]+(?:\([^)]{1,50}\))*\b",
+    re.I,
+)
+_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RE = re.compile(
+    r"\bunder\s+the\s+heading\s+[“\"'‘](?P<heading>[^”\"'’]{1,160})[”\"'’],?\s+"
+    r"for\s+[“\"'‘](?P<connector>[^”\"'’]{1,40})[”\"'’]\s+"
+    r"preceding\s+(?P<child_kind>paragraph|sub-paragraph|subparagraph|subsection)\s+"
+    r"\((?P<child_label>[0-9A-Za-z]+)\)\s+"
+    r"substitute\s*[—–-]?\s*(?P<payload>.+)$",
     re.I,
 )
 
@@ -351,6 +362,52 @@ def _uk_schedule_list_entry_insert_selector(
     if selector is not None:
         selector["entry_carrier_family"] = entry_carrier_family
     return selector
+
+
+def _uk_connector_preceding_child_list_entry_substitution_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract a connector-before-child substitution into a bounded insert selector.
+
+    UK source sometimes expresses insertion of a new labelled list paragraph by
+    substituting the connector immediately before the next child.  This selector
+    only records the source-owned placement claim; lowering/replay must still
+    prove both the contextual connector deletion and the child boundary.
+    """
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_leaf_kind = _addr_leaf_kind(target)
+    if _addr_container(target) == "schedule" or target_leaf_kind not in {"section", "subsection"}:
+        return None
+    match = _CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RE.search(text)
+    if match is None:
+        return None
+    child_kind = str(match.group("child_kind") or "").lower().replace("-", "")
+    inserted_text = _strip_schedule_entry_phrase(match.group("payload"))
+    label_match = re.match(r"^\(?\s*(?P<label>[0-9A-Za-z]+)\s*\)?\s+(?P<body>.+)$", inserted_text)
+    if label_match is None:
+        return None
+    inserted_body = _strip_schedule_entry_phrase(label_match.group("body"))
+    return {
+        "rule_id": UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID,
+        "direction": "before",
+        "anchor_text": "",
+        "inserted_text": inserted_body,
+        "inserted_label": _clean_num(label_match.group("label")),
+        "target_ref": target_ref,
+        "target": str(target),
+        "entry_carrier_family": "non_schedule_local_list",
+        "source_anchor_form": "connector_preceding_child",
+        "heading_text": _strip_schedule_entry_phrase(match.group("heading")),
+        "connector_text": _strip_schedule_entry_phrase(match.group("connector")),
+        "anchor_child_kind": child_kind,
+        "anchor_child_label": _clean_num(match.group("child_label")),
+        "source_inserted_text": inserted_text,
+    }
 
 
 def _strip_schedule_entry_repeal_anchor(raw: str) -> str:

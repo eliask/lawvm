@@ -41269,6 +41269,191 @@ def test_replay_type_label_entry_insert_requires_unique_anchor() -> None:
     )
 
 
+def test_compile_connector_preceding_child_substitution_splits_connector_and_child_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>2 Under the heading “Type 2”, for “or” preceding paragraph (c)
+          substitute— bb section 96 of the Charities Act 2011, or .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-547ef4caa5a45664ab3aa147db4e4edc",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-03-14",
+        affected_uri="/id/ukpga/2007/3/section/558",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 558",
+        affecting_uri="/id/ukpga/2011/25",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="25",
+        affecting_provisions="Sch. 9 para. 2",
+        affecting_title="Charities Act 2011",
+        in_force_dates=[{"date": "2012-03-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPEAL, StructuralAction.INSERT]
+    assert all(
+        op.witness_rule_id == "uk_effect_connector_preceding_child_list_entry_substitution"
+        for op in ops
+    )
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_or_IMMEDIATELY_PRECEDING_paragraph_c"
+    )
+    assert ops[1].payload is not None
+    assert ops[1].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[1].payload.label == "bb"
+    assert ops[1].payload.text == "section 96 of the Charities Act 2011, or"
+    selector_note = next(
+        note for note in ops[1].provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["source_anchor_form"] == "connector_preceding_child"
+    assert selector["heading_text"] == "Type 2"
+    assert selector["connector_text"] == "or"
+    assert selector["anchor_child_kind"] == "paragraph"
+    assert selector["anchor_child_label"] == "c"
+    assert selector["inserted_label"] == "bb"
+    assert any(
+        record["rule_id"] == "uk_effect_connector_preceding_child_list_entry_substitution"
+        and record["reason_code"] == "connector_preceding_child_substitution_split"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_connector_preceding_child_substitution_requires_unique_heading_child_boundary() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>2 Under the heading “Type 2”, for “or” preceding paragraph (c)
+          substitute— bb section 96 of the Charities Act 2011, or .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_connector_preceding_child",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2012-03-14",
+        affected_uri="/id/ukpga/2007/3/section/558",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 558",
+        affecting_uri="/id/ukpga/2011/25",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2011",
+        affecting_number="25",
+        affecting_provisions="Sch. 9 para. 2",
+        affecting_title="Charities Act 2011",
+        in_force_dates=[{"date": "2012-03-14", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    assert len(ops) == 2
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="558",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            text="Type 2",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="section 90,"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="section 95, or"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="section 97."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    group = replayed.body.children[0].children[0]
+    assert [child.label for child in group.children] == ["a", "b", "bb", "c"]
+    assert [child.text for child in group.children] == [
+        "section 90,",
+        "section 95",
+        "section 96 of the Charities Act 2011, or",
+        "section 97.",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_contextual_word_text_rewrite_applied",
+        "uk_replay_connector_preceding_child_list_entry_insert_resolved",
+    ]
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="558",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            text="Type 2",
+                            children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="first"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            text="Type 2",
+                            children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="second"),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ambiguous_adjudications: list[CompileAdjudication] = []
+
+    ambiguous_replayed = replay_uk_ops(
+        ambiguous_base,
+        (ops[1],),
+        adjudications_out=ambiguous_adjudications,
+    )
+
+    assert [len(group.children) for group in ambiguous_replayed.body.children[0].children] == [1, 1]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        and adjudication.detail.get("reason_code") == "connector_child_boundary_not_unique"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in ambiguous_adjudications
+    )
+
+
 def test_compile_type_label_entry_repeal_lowers_to_local_schedule_entry() -> None:
     extracted_el = ET.fromstring(
         f"""

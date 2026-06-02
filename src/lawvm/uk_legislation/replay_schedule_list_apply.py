@@ -75,6 +75,9 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_END_POSITION_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_BEGINNING_POSITION_RULE_ID = (
     "uk_replay_schedule_list_entry_beginning_position_resolved"
 )
+_UK_REPLAY_CONNECTOR_PRECEDING_CHILD_INSERT_RULE_ID = (
+    "uk_replay_connector_preceding_child_list_entry_insert_resolved"
+)
 _UK_DEFINITION_LIST_END_PLACEMENT_FAMILIES = frozenset(
     {
         "definition_list_end_from_source_range",
@@ -492,7 +495,12 @@ class UKReplayScheduleListApplyMixin:
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
-        if _uk_kind_value(new_node.kind) != "schedule_entry":
+        source_anchor_form = str(selector.get("source_anchor_form") or "")
+        anchor_child_kind = str(selector.get("anchor_child_kind") or "")
+        connector_child_insert = source_anchor_form == "connector_preceding_child"
+        if _uk_kind_value(new_node.kind) != "schedule_entry" and not (
+            connector_child_insert and _uk_kind_value(new_node.kind) == anchor_child_kind
+        ):
             return False
         carrier_node, _, _ = self._find_node_by_target(target)
         carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
@@ -557,6 +565,7 @@ class UKReplayScheduleListApplyMixin:
         if (
             not anchor_norm
             and direction not in {"alphabetical", "end", "beginning"}
+            and not connector_child_insert
         ) or direction not in {"before", "after", "alphabetical", "end", "beginning"}:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -581,6 +590,113 @@ class UKReplayScheduleListApplyMixin:
             for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
+        if connector_child_insert:
+            if direction != "before" or anchor_child_kind not in {"paragraph", "subparagraph", "subsection"}:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped connector-before-child list-entry insert: "
+                        "selector did not carry a supported child-boundary proof."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="invalid_connector_child_selector",
+                        entry_count=len(entry_rows),
+                    ),
+                )
+                return False
+            anchor_child_label = str(selector.get("anchor_child_label") or "")
+            heading_text = str(selector.get("heading_text") or "")
+            heading_norm = _compact_normalized_text(heading_text)
+            direct_rows = [
+                _ScheduleListEntryRow(parent=carrier_node, index=idx, child=child)
+                for idx, child in enumerate(carrier_node.children)
+                if _uk_kind_value(child.kind) == anchor_child_kind
+                and _clean_num(child.label or "") == _clean_num(anchor_child_label)
+            ]
+            heading_groups = [
+                child
+                for child in carrier_node.children
+                if _uk_kind_value(child.kind) in {"p1group", "pblock", "crossheading"}
+                and heading_norm
+                and _compact_normalized_text(child.text) == heading_norm
+            ]
+            all_heading_groups = [
+                child
+                for child in carrier_node.children
+                if _uk_kind_value(child.kind) in {"p1group", "pblock", "crossheading"}
+                and _compact_normalized_text(child.text)
+            ]
+            group_rows = [
+                _ScheduleListEntryRow(parent=group, index=idx, child=child)
+                for group in heading_groups
+                for idx, child in enumerate(group.children)
+                if _uk_kind_value(child.kind) == anchor_child_kind
+                and _clean_num(child.label or "") == _clean_num(anchor_child_label)
+            ]
+            matches = group_rows
+            match_scope = "heading_group"
+            if not matches and not (heading_norm and all_heading_groups):
+                matches = direct_rows
+                match_scope = "direct_child"
+            if len(matches) != 1:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped connector-before-child list-entry insert: "
+                        "the source-named child boundary did not resolve uniquely."
+                    ),
+                    op=op,
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="connector_child_boundary_not_unique",
+                        direct_match_count=len(direct_rows),
+                        heading_group_match_count=len(group_rows),
+                        heading_group_count=len(heading_groups),
+                    ),
+                )
+                return False
+            match = matches[0]
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_CONNECTOR_PRECEDING_CHILD_INSERT_RULE_ID,
+                message=(
+                    "UK replay placed a connector-before-child list-entry "
+                    "substitution at the unique source-named child boundary."
+                ),
+                op=op,
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="connector_preceding_child_boundary_unique",
+                    match_scope=match_scope,
+                    insert_index=match.index,
+                ),
+            )
+            for key in ("eId", "id"):
+                new_node.attrs.pop(key, None)
+            children = list(match.parent.children)
+            children.insert(match.index, new_node)
+            _replace_schedule_list_children_with_event(
+                self,
+                container=match.parent,
+                children=children,
+                helper="_insert_schedule_list_entry",
+                outcome="connector_preceding_child_list_entry_inserted",
+                reason_code="connector_preceding_child_boundary_unique",
+            )
+            return True
         if direction == "beginning":
             raw_insert_index = selector.get("beginning_insert_index")
             insert_entry_index = (

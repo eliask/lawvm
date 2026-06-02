@@ -7,8 +7,8 @@ import json
 from lxml import etree as ET
 from typing import Any, Optional
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, TextPatchSpec, TextSelector
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -22,9 +22,11 @@ from lawvm.uk_legislation.provenance_notes import (
     NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR as _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
 )
 from lawvm.uk_legislation.schedule_list_selectors import (
+    UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID as _UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
+    _uk_connector_preceding_child_list_entry_substitution_selector,
     _uk_schedule_list_entry_insert_selector,
     _uk_schedule_list_entry_repeal_selector,
     _uk_schedule_list_entry_replace_selector,
@@ -47,6 +49,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_schedule_table_end_rows_selector,
 )
 from lawvm.uk_legislation.witness_builders import (
+    _uk_text_rewrite_spec,
     _uk_target_expansion_witness,
     _uk_temporal_group_id,
 )
@@ -574,6 +577,132 @@ def try_lower_schedule_list_entry_mutation(
             if direction == "after":
                 anchor_text = inserted_text
         return UKScheduleBatchLoweringResult(handled=True, ops=tuple(insert_ops))
+
+    connector_substitution_selector = (
+        _uk_connector_preceding_child_list_entry_substitution_selector(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if action == "replace" or effect_type in {"words substituted", "word substituted"}
+        else None
+    )
+    if connector_substitution_selector is not None:
+        connector_text = str(connector_substitution_selector["connector_text"])
+        anchor_child_kind = str(connector_substitution_selector["anchor_child_kind"])
+        anchor_child_label = str(connector_substitution_selector["anchor_child_label"])
+        connector_selector = (
+            f"TEXT_WORD_{connector_text}_IMMEDIATELY_PRECEDING_"
+            f"{anchor_child_kind}_{anchor_child_label}"
+        )
+        connector_patch = TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text=connector_selector, occurrence=0),
+        )
+        connector_rewrite = _uk_text_rewrite_spec(
+            fragment_subs=[
+                {
+                    "original": connector_selector,
+                    "replacement": "",
+                    "rule_id": _UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID,
+                    "source_anchor_form": "connector_preceding_child",
+                }
+            ],
+            text_patch=connector_patch,
+            op_text_match=connector_selector,
+            op_text_replacement="",
+            op_text_occurrence=0,
+        )
+        src = OperationSource(
+            statute_id=effect.affecting_act_id,
+            title=effect.affecting_title,
+            effective=effect_witness.applicability.effective_date or "",
+            raw_text=extraction_witness.extracted_text,
+        )
+        connector_witness = UKLoweredOperationWitness(
+            op_id=f"{effect.effect_id}_connector_preceding_child",
+            sequence=sequence,
+            action=StructuralAction.TEXT_REPEAL,
+            target=target,
+            payload=None,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=_uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            ),
+            text_rewrite_witness=connector_rewrite,
+            insertion_anchor_witness=None,
+        )
+        connector_op = LegalOperation(
+            op_id=connector_witness.op_id,
+            sequence=connector_witness.sequence,
+            action=connector_witness.action,
+            target=connector_witness.target,
+            payload=None,
+            source=src,
+            group_id=_uk_temporal_group_id(effect),
+            provenance_tags=_uk_lowered_op_provenance_tags(connector_witness),
+            text_patch=connector_patch,
+            witness_rule_id=_UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID,
+        )
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID,
+            family="source_schedule_list_entry_elaboration",
+            reason_code="connector_preceding_child_substitution_split",
+            reason=(
+                "UK source substituted a connector immediately preceding a "
+                "child with a labelled list entry. Lowering splits the source "
+                "claim into an explicit contextual connector repeal and a "
+                "bounded child-boundary insert; replay must prove both before "
+                "mutating the target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail=dict(connector_substitution_selector),
+        )
+        payload_kind = {
+            "paragraph": IRNodeKind.PARAGRAPH,
+            "subparagraph": IRNodeKind.SUBPARAGRAPH,
+            "subsection": IRNodeKind.SUBSECTION,
+        }.get(anchor_child_kind, IRNodeKind.SCHEDULE_ENTRY)
+        payload_node = IRNode(
+            kind=payload_kind,
+            label=str(connector_substitution_selector["inserted_label"]),
+            text=str(connector_substitution_selector["inserted_text"]),
+            attrs={
+                "source_rule_id": "uk_connector_preceding_child_list_entry_payload",
+                "anchor_direction": "before",
+                "source_anchor_form": "connector_preceding_child",
+                "source_anchor_child_kind": anchor_child_kind,
+                "source_anchor_child_label": anchor_child_label,
+                "source_heading_text": str(connector_substitution_selector["heading_text"]),
+            },
+        )
+        insert_op = _build_schedule_payload_op(
+            effect=effect,
+            sequence=sequence,
+            action=StructuralAction.INSERT,
+            target=target,
+            payload=payload_node,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            t_str=t_str,
+            provenance_note=(
+                f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}"
+                f"{json.dumps(connector_substitution_selector, ensure_ascii=False)}"
+            ),
+            witness_rule_id=_UK_CONNECTOR_PRECEDING_CHILD_LIST_ENTRY_SUBSTITUTION_RULE_ID,
+        )
+        return UKScheduleBatchLoweringResult(
+            handled=True,
+            ops=(connector_op, insert_op),
+        )
 
     schedule_list_entry_repeal_selector = (
         _uk_schedule_list_entry_repeal_selector(
