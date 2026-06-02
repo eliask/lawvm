@@ -481,6 +481,22 @@ _POST_CHILD_QUOTED_WORD_PASSIVE_OMIT_RE = re.compile(
     r"(?:is|are|shall\s+be)\s+(?:omitted|repealed)",
     re.I,
 )
+_TARGET_CONTEXTUAL_WORD_REPEAL_RE = re.compile(
+    rf"(?:the\s+)?(?:word\s+)?[“\"'‘](?P<word>{_NON_QUOTE}{{1,200}})[”\"'’]\s+"
+    r"(?:immediately\s+following|immediately\s+after)\s+"
+    r"(?P<unit_kind>subsection|paragraph|sub-paragraph)\s+"
+    r"\([0-9A-Za-z]+\)\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"(?:is|are)\s+(?:omitted|repealed)",
+    re.I,
+)
+_DEEP_TARGET_CONTEXTUAL_WORD_REPEAL_RE = re.compile(
+    rf"(?:the\s+)?(?:word\s+)?[“\"'‘](?P<word>{_NON_QUOTE}{{1,200}})[”\"'’]\s+"
+    r"(?:immediately\s+following|immediately\s+after)\s+"
+    r"(?P<unit_kind>subsection|paragraph|sub-paragraph)\s+"
+    r"\([0-9A-Za-z]+\)\([0-9A-Za-z]+\)\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"(?:is|are)\s+(?:omitted|repealed)",
+    re.I,
+)
 _AFTER_REFERENCE_SECTION_INSERT_RE = re.compile(
     r"after\s+(?:the\s+)?reference\s+to\s+"
     r"(?P<anchor>section\s+[0-9]+[A-Za-z]?"
@@ -4470,15 +4486,8 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
             }
         )
 
-    matches_target_contextual_word_repeal = re.finditer(
-        r"(?:the )?word [“\"'‘](.*?)[”\"'’]\s+(immediately following)\s+"
-        r"(subsection|paragraph|sub-paragraph)\s+\(([0-9A-Za-z]+)\)\(([0-9A-Za-z]+)\)\s+"
-        r"(?:is|are)\s+(?:omitted|repealed)",
-        text,
-        re.I,
-    )
-    for m in matches_target_contextual_word_repeal:
-        unit_kind = m.group(3).lower().replace("-", "")
+    for m in _TARGET_CONTEXTUAL_WORD_REPEAL_RE.finditer(text):
+        unit_kind = m.group("unit_kind").lower().replace("-", "")
         if unit_kind == "subsection":
             anchor_kind = "paragraph"
         elif unit_kind == "paragraph":
@@ -4487,7 +4496,22 @@ def _parse_trailing_repeals_and_omissions(text: str, subs: list) -> None:
             anchor_kind = "item"
         subs.append(
             {
-                "original": f"TEXT_WORD_{m.group(1).strip()}_IMMEDIATELY_FOLLOWING_{anchor_kind}_{m.group(5).strip()}",
+                "original": f"TEXT_WORD_{m.group('word').strip()}_IMMEDIATELY_FOLLOWING_{anchor_kind}_{m.group('label').strip()}",
+                "replacement": "",
+                "rule_id": "uk_effect_contextual_nested_word_repeal_text_patch",
+            }
+        )
+    for m in _DEEP_TARGET_CONTEXTUAL_WORD_REPEAL_RE.finditer(text):
+        unit_kind = m.group("unit_kind").lower().replace("-", "")
+        if unit_kind == "subsection":
+            anchor_kind = "subparagraph"
+        elif unit_kind == "paragraph":
+            anchor_kind = "item"
+        else:
+            anchor_kind = "subitem"
+        subs.append(
+            {
+                "original": f"TEXT_WORD_{m.group('word').strip()}_IMMEDIATELY_FOLLOWING_{anchor_kind}_{m.group('label').strip()}",
                 "replacement": "",
                 "rule_id": "uk_effect_contextual_nested_word_repeal_text_patch",
             }

@@ -32167,6 +32167,66 @@ def test_compile_nested_contextual_word_repeal_uses_child_anchor() -> None:
     assert paragraph.children[1].text == "the owner;"
 
 
+def test_compile_deep_nested_contextual_word_repeal_uses_child_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-2-paragraph-9-2-a">
+          <Pnumber>a</Pnumber>
+          <Text>a \u201cor\u201d immediately after paragraph (c)(i)(B) is repealed,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-be6448d4b264a98d76f6fab90afdbd9c",
+        effect_type="word repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2017-01-23",
+        affected_uri="/id/asp/2006/1/section/12/subsection/1/paragraph/c/subparagraph/i",
+        affected_class="ScottishAct",
+        affected_year="2006",
+        affected_number="1",
+        affected_provisions="s. 12(1)(c)(i)",
+        affecting_uri="/id/asp/2016/18",
+        affecting_class="ScottishAct",
+        affecting_year="2016",
+        affecting_number="18",
+        affecting_provisions="Sch. 2 para. 9(2)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2017-01-23", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "12"),
+        ("subsection", "1"),
+        ("paragraph", "c"),
+        ("subparagraph", "i"),
+    )
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_item_B"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_contextual_nested_word_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert not any(
+        record.get("rule_id") == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_after_second_insert_to_occurrence_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

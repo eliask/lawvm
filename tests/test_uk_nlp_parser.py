@@ -3355,6 +3355,20 @@ def test_parse_fragment_substitution_handles_nested_paragraph_contextual_word_re
     ]
 
 
+def test_parse_fragment_substitution_handles_deep_nested_contextual_word_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "a \u201cor\u201d immediately after paragraph (c)(i)(B) is repealed,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_item_B",
+            "replacement": "",
+            "rule_id": "uk_effect_contextual_nested_word_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_final_quoted_word_omission() -> None:
     subs = parse_fragment_substitution("a in paragraph (a), omit the final \u201cand\u201d;")
 
