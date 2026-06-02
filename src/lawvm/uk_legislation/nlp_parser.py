@@ -271,6 +271,7 @@ UK_QUOTED_WORD_ORDINAL_PLACES_SUBSTITUTION_RULE_ID = (
 UK_EXCEPT_PHRASE_SUBSTITUTION_RULE_ID = "uk_effect_except_phrase_substitution_text_patch"
 UK_EXCEPT_CHILD_SUBSTITUTION_RULE_ID = "uk_effect_except_child_substitution_text_patch"
 UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_text_patch"
+UK_BARE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_bare_quoted_substitution_text_patch"
 UK_WHEREVER_APPEARING_SUBSTITUTION_RULE_ID = (
     "uk_effect_wherever_appearing_substitution_text_patch"
 )
@@ -437,6 +438,11 @@ _UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RE = re.compile(
     r",?\s+wherever\s+occurring,?\s+substitute\s+"
     r"(?:\(\s*in\s+each\s+case\s*\)\s+)?"
     rf"(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>{_NON_QUOTE}{{0,500}}?)[”\"'’]",
+    re.I,
+)
+_BARE_QUOTED_SUBSTITUTION_RE = re.compile(
+    rf"(?:^|[,;]\s+)[“\"'‘](?P<original>{_NON_QUOTE}{{1,700}})[”\"'’]\s+"
+    rf"substitute\s+[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,700}})[”\"'’]",
     re.I,
 )
 
@@ -1050,6 +1056,15 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                 "original": m.group("original").strip(),
                 "replacement": m.group("replacement"),
                 "rule_id": UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID,
+            }
+        )
+
+    for m in _BARE_QUOTED_SUBSTITUTION_RE.finditer(text):
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement"),
+                "rule_id": UK_BARE_QUOTED_SUBSTITUTION_RULE_ID,
             }
         )
 

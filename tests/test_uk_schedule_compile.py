@@ -31,6 +31,7 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_AT_END_DANGLING_INSERT_QUOTE_RULE_ID,
     UK_AT_END_NOT_AS_PART_INSERT_RULE_ID,
     UK_AT_END_STRAY_FULL_STOP_INSERT_RULE_ID,
+    UK_BARE_QUOTED_SUBSTITUTION_RULE_ID,
     UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
@@ -55308,6 +55309,58 @@ def test_compile_crossheading_child_row_uses_parent_tail_substitution() -> None:
         and record["blocking"] is False
         for record in observations
     )
+
+
+def test_compile_bare_quoted_substitution_after_target_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-24-paragraph-112-5">
+          <Pnumber>5</Pnumber>
+          <Text>5 In paragraph 8(8), “the same meaning as in section 197 of the Criminal Justice Act 2003 (as modified by paragraph 2)” substitute “ the meaning given by paragraph 1 ” .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_bare_quoted_substitution_after_target_context",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-07-29",
+        affected_uri="/id/ukpga/1989/41/schedule/A1/paragraph/8/8",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="Sch. A1 para. 8(8)",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 24 para. 112(5)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2020-12-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "a1"), ("paragraph", "8"), ("subparagraph", "8"))
+    )
+    assert ops[0].text_patch == _replace_patch(
+        "the same meaning as in section 197 of the Criminal Justice Act 2003 "
+        "(as modified by paragraph 2)",
+        " the meaning given by paragraph 1 ",
+    )
+    assert f"{_NOTE_TEXT_REWRITE_RULE}{UK_BARE_QUOTED_SUBSTITUTION_RULE_ID}" in ops[0].provenance_tags
+    assert any(
+        record["rule_id"] == UK_BARE_QUOTED_SUBSTITUTION_RULE_ID
+        and record["reason_code"] == "explicit_bare_quoted_substitution_text_patch"
+        and record["blocking"] is False
+        for record in observations
+    )
+    assert not any(record.get("blocking") is True for record in observations)
 
 
 def test_compile_crossheading_child_row_blocks_parent_tail_wrong_anchor() -> None:

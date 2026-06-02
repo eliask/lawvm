@@ -76,6 +76,25 @@ def test_parse_fragment_substitution_returns_fresh_fragment_dicts() -> None:
     assert second == [{"original": "old words", "replacement": "new words"}]
 
 
+def test_parse_fragment_substitution_handles_bare_quoted_substitution_after_target_context() -> None:
+    subs = parse_fragment_substitution(
+        "5 In paragraph 8(8), “the same meaning as in section 197 of the "
+        "Criminal Justice Act 2003 (as modified by paragraph 2)” substitute "
+        "“ the meaning given by paragraph 1 ” ."
+    )
+
+    assert subs == [
+        {
+            "original": (
+                "the same meaning as in section 197 of the Criminal Justice "
+                "Act 2003 (as modified by paragraph 2)"
+            ),
+            "replacement": " the meaning given by paragraph 1 ",
+            "rule_id": "uk_effect_bare_quoted_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_quoted_substitute_dash_quoted_payload() -> None:
     subs = parse_fragment_substitution(
         "a for \u201c ISSUED IN ACCORDANCE WITH DIRECTIVE 1999/105/EC \u201d "
