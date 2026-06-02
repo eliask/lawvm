@@ -2071,6 +2071,24 @@ def _looks_like_definition_target_without_inserted_payload(
     return bool(re.search(r"\bin\s+section\s*\(?[0-9A-Za-z]+", norm))
 
 
+def _looks_like_sentence_scoped_repeated_insert_instruction(text: str) -> bool:
+    """Return True for source rows needing sentence-boundary insertion lowering.
+
+    This is a deterministic compiler frontier, not replay authorization. The
+    source proves the affected sentence set, but UK replay does not yet have a
+    typed selector for inserting before each selected sentence terminator.
+    """
+    norm = _normalize_effect_text(text)
+    if "insert" not in norm or "sentence" not in norm:
+        return False
+    return bool(
+        re.search(
+            r"\bat\s+the\s+end\s+of\s+each\s+of\s+the\s+final\s+two\s+sentences?\s+insert\b",
+            norm,
+        )
+    )
+
+
 def _uk_manual_frontier_classification(
     table: dict[str, _ManualFrontierClassification],
     source_pathology: str,
@@ -2716,6 +2734,16 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_repeal_table_candidate",
             "reason": "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_sentence_scoped_repeated_insert_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
+            "reason": "The source inserts text at the end of each of a bounded sentence set; a deterministic sentence-boundary compiler must prove sentence segmentation and insert before the selected sentence terminators before replay.",
         }
 
     if (

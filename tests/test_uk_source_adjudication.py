@@ -1503,6 +1503,32 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_insert() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P2",
+        extracted_text=(
+            "2 In subsection (2), at the end of each of the final two sentences "
+            "insert \u201c ; but nothing requires the court to treat such provision "
+            "as setting an upper or lower limit on the provision which may be "
+            "made by an order under section 2. \u201d"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_sentence_scoped_repeated_insert_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_deictic_definition_range_source_context_gap() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
