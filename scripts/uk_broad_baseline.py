@@ -183,6 +183,10 @@ def _retained_repeal_oracle_targets(
     for op in ops:
         if op.action is not StructuralAction.REPEAL:
             continue
+        if str(getattr(op.target, "special", "") or "") == "whole_act":
+            if oracle_only_eids:
+                targets.add("/whole_act")
+            continue
         target_eid = _fallback_target_eid(op.target)
         if target_eid in oracle_only_eids:
             targets.add(target_eid)

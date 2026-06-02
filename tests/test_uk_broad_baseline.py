@@ -4,7 +4,9 @@ import json
 import sys
 from types import SimpleNamespace
 
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.semantic_types import FacetKind, StructuralAction
 
 import scripts.uk_broad_baseline as uk_broad_baseline
 
@@ -809,6 +811,52 @@ def test_summarize_results_classifies_retained_repeal_oracle_branch() -> None:
     )
 
     assert summary["triage_buckets"] == {"retained_repeal_oracle_branch": 1}
+    assert summary["active_unclassified_residual_count"] == 0
+
+
+def test_retained_repeal_oracle_targets_include_whole_act_repeal() -> None:
+    op = LegalOperation(
+        op_id="uk_test_whole_act_repeal",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+    )
+
+    targets = uk_broad_baseline._retained_repeal_oracle_targets(
+        [op],
+        {"section-1", "section-2"},
+    )
+
+    assert targets == ["/whole_act"]
+
+
+def test_summarize_results_classifies_whole_act_repeal_oracle_branch() -> None:
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": "ukpga/1997/4",
+                "score_status": "scored",
+                "aligned": 0.0,
+                "aligned_excluding_grounding_collateral": 0.0,
+                "unaligned": 0.0,
+                "n_grounding_collateral": 0,
+                "n_replay": 0,
+                "n_oracle": 9,
+                "n_only_in_oracle": 9,
+                "n_only_in_replayed": 0,
+                "n_ops": 1,
+                "n_compile_rejections": 2,
+                "n_blocking_compile_rejections": 0,
+                "retained_repeal_oracle_targets": ["/whole_act"],
+                "n_retained_repeal_oracle_targets": 1,
+            },
+        ]
+    )
+
+    assert summary["triage_buckets"] == {"retained_repeal_oracle_branch": 1}
+    assert summary["agreement_residual_family_counts"] == {
+        "oracle_editorial_pathology": 1,
+    }
     assert summary["active_unclassified_residual_count"] == 0
 
 
