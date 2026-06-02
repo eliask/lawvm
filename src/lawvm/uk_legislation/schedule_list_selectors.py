@@ -19,6 +19,12 @@ _BEGINNING_LIST_ENTRY_INSERT_RE = re.compile(
     r"\bat\s+the\s+beginning\s+insert\s*[—–-]?\s*(?P<payload>.+)$",
     re.I,
 )
+_TYPE_LABEL_LIST_ENTRY_INSERT_RE = re.compile(
+    r"\b(?P<direction>before|after)\s+"
+    r"Type\s+(?P<anchor>[0-9A-Z]{1,4})\s+"
+    r"insert\s*[—–-]?\s*(?P<payload>.+)$",
+    re.I,
+)
 
 _ENTRY_ORDINALS = {
     "first": 1,
@@ -254,6 +260,22 @@ def _uk_schedule_list_entry_insert_selector(
         if selector is not None and ordinal:
             selector["anchor_ordinal"] = _ENTRY_ORDINALS[ordinal.lower()]
         return selector
+
+    if local_list_carrier_target:
+        match = _TYPE_LABEL_LIST_ENTRY_INSERT_RE.search(text)
+        if match is not None:
+            selector = _schedule_list_entry_selector_from_parts(
+                direction=str(match.group("direction") or "").lower(),
+                anchor_text=f"Type {match.group('anchor')}",
+                inserted_text=match.group("payload"),
+                target_ref=target_ref,
+                target=target,
+                rule_id=rule_id,
+            )
+            if selector is not None:
+                selector["entry_carrier_family"] = entry_carrier_family
+                selector["source_anchor_form"] = "type_label"
+            return selector
 
     if local_list_carrier_target:
         match = _BEGINNING_LIST_ENTRY_INSERT_RE.search(text)

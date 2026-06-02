@@ -40973,6 +40973,207 @@ def test_compile_parenthesized_entry_anchor_insert_does_not_split_prose_commas()
     )
 
 
+def test_compile_type_label_entry_insert_lowers_to_local_schedule_entry() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-56-2-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>after Type 3 insert—</Text>
+            <BlockAmendment>
+              <Text><Emphasis>Type 3A</Emphasis>
+              The amount of tax at the nominal rate on any amount in respect of which—</Text>
+              <P3>
+                <Pnumber>a</Pnumber>
+                <P3para>
+                  <Text>the trustees are liable to income tax under section 467 of ITTOIA 2005,</Text>
+                </P3para>
+              </P3>
+              <P3>
+                <Pnumber>b</Pnumber>
+                <P3para>
+                  <Text>the trustees are liable to income tax at the trust rate.</Text>
+                </P3para>
+              </P3>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-fc09c548b0a3bed901ccc0ae94378ab3",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-05-06",
+        affected_uri="/id/ukpga/2007/3/section/498/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 498(1)",
+        affecting_uri="/id/ukpga/2007/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="11",
+        affecting_provisions="s. 56(2)(b)",
+        affecting_title="Finance Act 2007",
+        in_force_dates=[{"date": "2007-07-19", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target.path == (("section", "498"), ("subsection", "1"))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == (
+        "Type 3A The amount of tax at the nominal rate on any amount in respect of which— "
+        "a the trustees are liable to income tax under section 467 of ITTOIA 2005, "
+        "b the trustees are liable to income tax at the trust rate"
+    )
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "after"
+    assert selector["anchor_text"] == "Type 3"
+    assert selector["source_anchor_form"] == "type_label"
+    assert selector["entry_carrier_family"] == "non_schedule_local_list"
+    assert any(
+        record["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+        and record["reason_code"] == "explicit_schedule_list_entry_anchor"
+        and record["inserted_entry_count"] == 1
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_type_label_entry_insert_requires_unique_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>after Type 3 insert—
+          Type 3A The amount of tax at the nominal rate on any amount.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_type_label_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-07-19",
+        affected_uri="/id/ukpga/2007/3/section/498/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 498(1)",
+        affecting_uri="/id/ukpga/2007/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="11",
+        affecting_provisions="s. 56(2)(b)",
+        affecting_title="Finance Act 2007",
+        in_force_dates=[{"date": "2007-07-19", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    assert len(ops) == 1
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="498",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 2 earlier amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3 dividend trust rate amount."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 4 basic rate amount."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "Type 2 earlier amount.",
+        "Type 3 dividend trust rate amount.",
+        "Type 3A The amount of tax at the nominal rate on any amount",
+        "Type 4 basic rate amount.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_prefix_normalized"
+        and adjudication.detail.get("reason_code") == "anchor_prefix_unique"
+        for adjudication in adjudications
+    )
+
+    ambiguous_base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="498",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3 first witness."),
+                                IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, text="Type 3 duplicate witness."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ambiguous_adjudications: list[CompileAdjudication] = []
+
+    ambiguous_replayed = replay_uk_ops(
+        ambiguous_base,
+        ops,
+        adjudications_out=ambiguous_adjudications,
+    )
+
+    ambiguous_subsection = ambiguous_replayed.body.children[0].children[0]
+    assert [child.text for child in ambiguous_subsection.children] == [
+        "Type 3 first witness.",
+        "Type 3 duplicate witness.",
+    ]
+    assert any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        and adjudication.detail.get("reason_code") == "anchor_not_unique"
+        and adjudication.detail.get("blocking") is True
+        for adjudication in ambiguous_adjudications
+    )
+
+
 def test_compile_at_beginning_entry_insert_preserves_local_list_order() -> None:
     extracted_el = ET.fromstring(
         f"""
