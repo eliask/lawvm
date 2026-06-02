@@ -90,6 +90,9 @@ UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID = (
 UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_after_substitute_insert_text_patch"
 )
+UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID = (
+    "uk_effect_after_anchor_substitute_tail_substitution_text_patch"
+)
 UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID = (
     "uk_effect_metadata_carried_at_end_substitute_insert_text_patch"
 )
@@ -484,6 +487,35 @@ def append_basic_text_rewrite_observations(
                     "the source phrase says after a quoted anchor substitute quoted "
                     "words; lowering preserves this as an owned after-anchor insert "
                     "rather than silently changing the action family."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(fragment.get("original") or ""),
+                    "replacement": str(fragment.get("replacement") or ""),
+                    "occurrence": int(str(fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+    if UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID in rule_ids:
+        for fragment in fragment_subs or []:
+            if (
+                str(fragment.get("rule_id") or "")
+                != UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID
+            ):
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
+                family="text_rewrite_lowering",
+                reason_code="effect_metadata_substitute_after_anchor_source",
+                reason=(
+                    "UK effect metadata classifies the row as substituted words and "
+                    "the source phrase says after a quoted anchor substitute quoted "
+                    "words; lowering preserves this as a bounded TEXT_AFTER_*_TO_END "
+                    "substitution scoped to the affected target."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,

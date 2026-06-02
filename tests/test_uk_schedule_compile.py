@@ -10797,6 +10797,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         ),
         (
+            "2 In sub-paragraph (2) after “Lord Chancellor may” "
+            "substitute “ , after consulting the Lord Chief Justice, ” .",
+            "words substituted",
+            "Sch. 1 para. 5(2)",
+            "TEXT_AFTER_Lord Chancellor may_TO_END",
+            ", after consulting the Lord Chief Justice,",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_after_anchor_substitute_tail_substitution_text_patch",
+        ),
+        (
             "a in paragraph (a), after “provision”, where it occurs for the first time, "
             "substitute “ (whether or not educational provision) ” ,",
             "words inserted",
@@ -11188,6 +11199,7 @@ def test_compile_additional_frontier_text_patch_idioms(
     if expected_rule_id in {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_anchor_to_end_block_substitution_text_patch",
+        "uk_effect_after_anchor_substitute_tail_substitution_text_patch",
         "uk_effect_metadata_carried_at_end_substitute_insert_text_patch",
         "uk_effect_metadata_carried_after_substitute_insert_text_patch",
         "uk_effect_metadata_carried_range_insert_substitution_text_patch",

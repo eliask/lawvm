@@ -101,6 +101,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_METADATA_CARRIED_DEFINITION_QUOTED_WORD_REPEAL_RULE_ID,
     UK_METADATA_CARRIED_AFTER_ORDINAL_INSERT_RULE_ID,
     UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
+    UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_AT_END_SUBSTITUTE_INSERT_RULE_ID,
     UK_METADATA_CARRIED_RANGE_INSERT_SUBSTITUTION_RULE_ID,
     UK_METADATA_CARRIED_QUOTED_WORDS_REPEAL_RULE_ID,
@@ -146,7 +147,7 @@ def _amount_specified_source_target_path(text: str) -> tuple[tuple[str, str], ..
             section_match.group("suffix") or ""
         )
         suffix_kinds = ("subsection", "paragraph", "subparagraph", "item")
-        for kind, label in zip(suffix_kinds, suffix_labels):
+        for kind, label in zip(suffix_kinds, suffix_labels, strict=False):
             path.append((kind, _clean_num(label)))
         return tuple(path)
     subsection_match = _AMOUNT_SPECIFIED_SUBSECTION_TARGET_RE.search(text)
@@ -157,7 +158,7 @@ def _amount_specified_source_target_path(text: str) -> tuple[tuple[str, str], ..
         subsection_match.group("suffix") or ""
     )
     suffix_kinds = ("subsection", "paragraph", "subparagraph", "item")
-    for kind, label in zip(suffix_kinds, suffix_labels):
+    for kind, label in zip(suffix_kinds, suffix_labels, strict=False):
         path.append((kind, _clean_num(label)))
     return tuple(path)
 
@@ -779,6 +780,15 @@ def _extract_text_fragment_substitutions(
         )
         if metadata_carried_after_substitute_insert is not None:
             subs = [metadata_carried_after_substitute_insert]
+    if not subs:
+        after_anchor_substitute_tail_substitution = (
+            _effect_after_anchor_substitute_tail_substitution_fragment(
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+            )
+        )
+        if after_anchor_substitute_tail_substitution is not None:
+            subs = [after_anchor_substitute_tail_substitution]
     if not subs:
         metadata_carried_at_end_substitute_insert = (
             _effect_metadata_carried_at_end_substitute_insert_fragment(
@@ -1778,6 +1788,34 @@ def _effect_metadata_carried_after_substitute_insert_fragment(
         "original": anchor,
         "replacement": f"{anchor}{joiner}{inserted}".strip(),
         "rule_id": UK_METADATA_CARRIED_AFTER_SUBSTITUTE_INSERT_RULE_ID,
+    }
+    occurrence = _occurrence_from_after_substitute_scope(scope)
+    if occurrence:
+        fragment["occurrence"] = occurrence
+    return fragment
+
+
+def _effect_after_anchor_substitute_tail_substitution_fragment(
+    *,
+    effect_type: str,
+    extracted_text: str,
+) -> Optional[dict[str, str]]:
+    norm_effect_type = " ".join(str(effect_type or "").lower().split())
+    if norm_effect_type not in {"word substituted", "words substituted"}:
+        return None
+    text = " ".join(str(extracted_text or "").split()).strip()
+    if not text:
+        return None
+    parsed = _parse_after_anchor_substitute_insert(text)
+    if parsed is None:
+        return None
+    anchor, scope, replacement = parsed
+    if not anchor or not replacement:
+        return None
+    fragment = {
+        "original": f"TEXT_AFTER_{anchor}_TO_END",
+        "replacement": replacement,
+        "rule_id": UK_AFTER_ANCHOR_SUBSTITUTE_TAIL_SUBSTITUTION_RULE_ID,
     }
     occurrence = _occurrence_from_after_substitute_scope(scope)
     if occurrence:
