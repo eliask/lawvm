@@ -2239,6 +2239,26 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
             )
         )
 
+    matches_from_beginning_active_substituted = re.finditer(
+        r"\bfrom\s+the\s+beginning"
+        r"(?:\s+of\s+(?:(?:the|that)\s+)?(?:subsection|paragraph|sub-paragraph|section))?"
+        rf"\s+to\s+(?:the\s+)?words?\s+[“\"'‘](?P<end>{_NON_QUOTE}{{1,500}})[”\"'’]\s+"
+        r"substitute\s+(?:(?:the\s+)?words?\s+)?"
+        rf"[“\"'‘](?P<replacement>{_NON_QUOTE}{{1,700}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_from_beginning_active_substituted:
+        subs.append(
+            fragment_to_legacy_dict(
+                UKTextRewriteFragment(
+                    selector=RangeFromToSelector("", m.group("end").strip()),
+                    replacement=m.group("replacement").strip(),
+                    rule_id="uk_effect_from_beginning_passive_substitution_text_patch",
+                )
+            )
+        )
+
     matches_bare_from_beginning_end_occurrence_substituted = re.finditer(
         r"\bfrom\s+the\s+beginning\s+to\s+"
         r"[“\"'‘](?P<end>.*?)[”\"'’]\s+"

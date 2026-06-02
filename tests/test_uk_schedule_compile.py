@@ -46651,6 +46651,67 @@ def test_compile_from_beginning_unit_block_substitution_lowers_bounded_selector(
     assert not any(record["rule_id"] == "uk_effect_overlap_substitution_unlowered" for record in lowering_records)
 
 
+def test_compile_from_beginning_to_words_active_substitution_lowers_text_replace() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-1-paragraph-6-5-a">
+          <Pnumber>a</Pnumber>
+          <Text>a in subsection (2) from the beginning to the words
+          \u201ceffect in Scotland\u201d substitute \u201cA Scottish permanence order which
+          includes provision granting authority for the child to be adopted has
+          the same effect in England and Wales as it has in Scotland\u201d;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-1b1d48e1e491faba3b85f261d911f65e",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-05-16",
+        affected_uri="/id/ukpga/2002/38/section/105/subsection/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2002",
+        affected_number="38",
+        affected_provisions="s. 105(2)",
+        affecting_uri="/id/ukpga/2007/20",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2007",
+        affecting_number="20",
+        affecting_provisions="Sch. 1 para. 6(5)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2011-05-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "105"), ("subsection", "2"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_FROM__TO_effect in Scotland"
+    assert op.text_patch.replacement == (
+        "A Scottish permanence order which includes provision granting authority "
+        "for the child to be adopted has the same effect in England and Wales as "
+        "it has in Scotland"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_from_beginning_passive_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert not any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_before_child_block_substitution_strips_source_payload_label() -> None:
     extracted_el = ET.fromstring(
         f"""

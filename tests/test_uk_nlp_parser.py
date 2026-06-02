@@ -3766,6 +3766,21 @@ def test_parse_fragment_substitution_handles_from_beginning_active_comma_substit
     ]
 
 
+def test_parse_fragment_substitution_handles_from_beginning_active_to_words_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "a in subsection (2) from the beginning to the words \u201ceffect in Scotland\u201d "
+        "substitute \u201cA Scottish permanence order\u201d;"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_FROM__TO_effect in Scotland",
+            "replacement": "A Scottish permanence order",
+            "rule_id": "uk_effect_from_beginning_passive_substitution_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_from_beginning_there_shall_be_substituted() -> None:
     subs = parse_fragment_substitution(
         "3 In subsection (6), for the words from the beginning to \u201cshall be made\u201d "
