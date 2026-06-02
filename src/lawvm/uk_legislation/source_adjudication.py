@@ -1569,6 +1569,18 @@ def _looks_like_amendment_program_inserted_anchor_instruction(text: str) -> bool
     )
 
 
+def _looks_like_amendment_program_set_out_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if "as set out in paragraph" not in norm:
+        return False
+    if "which is to have effect" not in norm:
+        return False
+    return bool(
+        re.search(r"\bas\s+set\s+out\s+in\s+paragraph\s+[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))*", norm)
+        and re.search(r"\b(?:omit|insert|substitute|replace|repeal)\b", norm)
+    )
+
+
 def _looks_like_non_substantive_shell(text: str) -> bool:
     norm = " ".join((text or "").split()).strip()
     if not norm:
@@ -1927,7 +1939,9 @@ def classify_uk_effect_source_pathology(
             return "schedule_list_entry_target_unsupported"
         if _looks_like_amendment_program_inserted_parent_instruction(
             norm_text
-        ) or _looks_like_amendment_program_inserted_anchor_instruction(norm_text):
+        ) or _looks_like_amendment_program_inserted_anchor_instruction(
+            norm_text
+        ) or _looks_like_amendment_program_set_out_instruction(norm_text):
             return "amendment_text_target_unsupported"
         if _looks_like_structural_sibling_insert_instruction(norm_text):
             return "structural_sibling_insert_unsupported"

@@ -4041,6 +4041,27 @@ def test_classify_uk_effect_amendment_inserted_parent_structural_insert_target()
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_amendment_program_set_out_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "b in section 13 (trade licences: duration and amount of duty) as "
+            "set out in paragraph 8(1) of Schedule 4 to VERA 1994 which is to "
+            "have effect on and after a day appointed by order, omit subsection "
+            "(7)(a) and the “and” following it,"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["Sch. 4 para. 8(1)"],
+        effect_type="words omitted",
+        is_structural=True,
+    )
+
+    assert pathology == "amendment_text_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_table_entry_target() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P4",
