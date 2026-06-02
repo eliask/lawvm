@@ -919,6 +919,33 @@ def test_parse_fragment_substitution_handles_multiple_wherever_occurring_passive
     ]
 
 
+def test_parse_fragment_substitution_handles_multiple_wherever_occurring_active_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "6 In Part 10A of the Children Act 1989 (including Schedule 9A) "
+        "for \u201cthe registration authority\u201d, \u201ca registration authority\u201d or "
+        "\u201cthe authority\u201d, wherever occurring, substitute (in each case) "
+        "\u201c the Assembly \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "the registration authority",
+            "replacement": " the Assembly ",
+            "rule_id": "uk_effect_multi_wherever_occurring_substitution_text_patch",
+        },
+        {
+            "original": "a registration authority",
+            "replacement": " the Assembly ",
+            "rule_id": "uk_effect_multi_wherever_occurring_substitution_text_patch",
+        },
+        {
+            "original": "the authority",
+            "replacement": " the Assembly ",
+            "rule_id": "uk_effect_multi_wherever_occurring_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_parenthesized_all_occurrences_substitution() -> None:
     subs = parse_fragment_substitution(
         "e in subsection (7), for \u201c retained EU \u201d "

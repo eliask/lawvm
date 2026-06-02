@@ -30461,6 +30461,75 @@ def test_compile_wherever_occurring_records_all_occurrences_lowering_observation
     ]
 
 
+def test_compile_multi_wherever_occurring_active_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-2-paragraph-6">
+          <Pnumber>6</Pnumber>
+          <Text>6 In Part 10A of the Children Act 1989 (including Schedule 9A) for “the registration authority”, “a registration authority” or “the authority”, wherever occurring, substitute (in each case) “ the Assembly ” .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_multi_wherever_occurring_active_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-01",
+        affected_uri="/id/ukpga/1989/41/part/10A",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1989",
+        affected_number="41",
+        affected_provisions="Pt. 10A",
+        affecting_uri="/id/ukpga/2006/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2006",
+        affecting_number="21",
+        affecting_provisions="Sch. 2 para. 6",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2007-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 3
+    assert {op.action for op in ops} == {StructuralAction.TEXT_REPLACE}
+    assert {op.target.path for op in ops} == {(
+        ("part", "10a"),
+    )}
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch] == [
+        "the registration authority",
+        "a registration authority",
+        "the authority",
+    ]
+    assert [op.text_patch.replacement for op in ops if op.text_patch] == [
+        " the Assembly ",
+        " the Assembly ",
+        " the Assembly ",
+    ]
+    assert all(
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_multi_wherever_occurring_substitution_text_patch"
+        in op.provenance_tags
+        for op in ops
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_multi_wherever_occurring_substitution_text_patch"
+    ] == [
+        "uk_effect_multi_wherever_occurring_substitution_text_patch",
+        "uk_effect_multi_wherever_occurring_substitution_text_patch",
+        "uk_effect_multi_wherever_occurring_substitution_text_patch",
+    ]
+    assert all(record["blocking"] is False for record in lowering_records)
+
+
 def test_compile_wherever_they_occur_in_any_enactment_substitution() -> None:
     extracted_el = ET.fromstring(
         f"""

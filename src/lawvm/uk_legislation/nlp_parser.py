@@ -274,6 +274,9 @@ UK_PASSIVE_QUOTED_SUBSTITUTION_RULE_ID = "uk_effect_passive_quoted_substitution_
 UK_WHEREVER_APPEARING_SUBSTITUTION_RULE_ID = (
     "uk_effect_wherever_appearing_substitution_text_patch"
 )
+UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RULE_ID = (
+    "uk_effect_multi_wherever_occurring_substitution_text_patch"
+)
 UK_QUOTED_SUBSTITUTION_SCOPE_NOTE_RULE_ID = (
     "uk_effect_quoted_substitution_scope_note_text_patch"
 )
@@ -423,6 +426,17 @@ _UK_MULTI_OCCURRENCE_SUBSTITUTION_RE = re.compile(
     r"(?:\s*\))?,?\s+"
     r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
     rf"\s+(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>{_NON_QUOTE}{{0,500}}?)[”\"'’]",
+    re.I,
+)
+_UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RE = re.compile(
+    r"for\s+(?:(?:the\s+)?words?\s+)?"
+    r"(?P<originals>"
+    rf"[“”\"'‘]{_NON_QUOTE}{{0,500}}?[”\"'’]"
+    rf"(?:\s*(?:,|and|or)\s*[“”\"'‘]{_NON_QUOTE}{{0,500}}?[”\"'’]){{1,{_MULTI_TERM_LIST_MAX}}}"
+    r")"
+    r",?\s+wherever\s+occurring,?\s+substitute\s+"
+    r"(?:\(\s*in\s+each\s+case\s*\)\s+)?"
+    rf"(?:(?:the\s+)?words?\s+)?[“”\"'‘](?P<replacement>{_NON_QUOTE}{{0,500}}?)[”\"'’]",
     re.I,
 )
 
@@ -1138,6 +1152,25 @@ def _parse_respectively_and_anchored_inserts(text: str, subs: list) -> None:
                     "original": original,
                     "replacement": replacement,
                     "rule_id": "uk_effect_all_occurrences_substitution_text_patch",
+                }
+            )
+    matches_multi_wherever_occurring_substituted = (
+        _UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RE.finditer(text)
+    )
+    for m in matches_multi_wherever_occurring_substituted:
+        if _span_overlaps(m.span(), respectively_spans):
+            continue
+        originals = _quoted_terms(m.group("originals"))
+        if len(originals) < 2:
+            continue
+        all_occurrences_multi_spans.append(m.span())
+        replacement = m.group("replacement")
+        for original in originals:
+            subs.append(
+                {
+                    "original": original,
+                    "replacement": replacement,
+                    "rule_id": UK_MULTI_WHEREVER_OCCURRING_SUBSTITUTION_RULE_ID,
                 }
             )
 
