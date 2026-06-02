@@ -70,10 +70,12 @@ from lawvm.uk_legislation.nlp_parser import (
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     UK_RANGE_REPEAL_PRE_PREDICATE_COMMA_RULE_ID,
     UK_SECTION_REFERENCE_REPEAL_RULE_ID,
+    UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
     UK_UNQUOTED_DEFINITION_RANGE_TO_END_SUBSTITUTION_RULE_ID,
     _COMPOUND_LETTERED_TEXT_PATCH_RULE_ID,
 )
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
+from lawvm.uk_legislation.phase_discipline import UK_PHASE_CANONICAL_OP_COMPILATION
 from lawvm.uk_legislation.source_amendment_program_fragments import (
     UK_AMENDMENT_PROGRAM_INSERTED_PARENT_CHILD_INSERT_RULE_ID,
 )
@@ -2209,6 +2211,31 @@ def append_basic_text_rewrite_observations(
             extracted_el=extracted_el,
             extracted_text=extracted_text,
             detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
+    if UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="explicit_definition_at_end_target_context_insert_text_patch",
+            reason=(
+                "UK source text inserts a quoted payload at the end of a named "
+                "definition while also restating the containing target context. "
+                "Lowering preserves the definition term as a bounded "
+                "TEXT_IN_DEFINITION_* at-end selector and treats the intervening "
+                "target context as source scope evidence rather than payload."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "owner_phase": UK_PHASE_CANONICAL_OP_COMPILATION,
                 "target_ref": target_ref,
                 "target": str(target),
                 "text_match": op_text_match,

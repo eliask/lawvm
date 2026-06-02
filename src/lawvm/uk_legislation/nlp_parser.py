@@ -367,6 +367,9 @@ UK_AFTER_ORDINAL_PARAGRAPH_INSERT_RULE_ID = (
 UK_IN_DEFINITION_AFTER_PARAGRAPHS_INSERT_RULE_ID = (
     "uk_effect_in_definition_after_paragraphs_insert_text_patch"
 )
+UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID = (
+    "uk_effect_in_definition_at_end_target_context_insert_text_patch"
+)
 UK_ORDINAL_PARAGRAPH_RANGE_SUBSTITUTION_RULE_ID = (
     "uk_effect_ordinal_paragraph_range_substitution_text_patch"
 )
@@ -3279,6 +3282,28 @@ def _parse_trailing_inserts(text: str, subs: list) -> None:
                     "original": f"TEXT_IN_DEFINITION_{term}{US}AT_END",
                     "replacement": inserted,
                     "rule_id": "uk_effect_in_definition_at_end_insert_text_patch",
+                }
+            )
+
+    matches_definition_at_end_target_context_insert = re.finditer(
+        r"at\s+the\s+end\s+of\s+the\s+definition\s+of\s+"
+        r"[“\"'‘](?P<term>[^“”\"'‘’]{1,300})[”\"'’]\s+"
+        r"in\s+(?:subsection|paragraph|sub-paragraph|section)\s+\([^)]{1,40}\),?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘]"
+        rf"(?P<inserted>{_NON_QUOTE}{{1,1200}})[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_definition_at_end_target_context_insert:
+        inserted = m.group("inserted").strip()
+        term = m.group("term").strip()
+        if inserted and term:
+            subs.append(
+                {
+                    "original": f"TEXT_IN_DEFINITION_{term}{US}AT_END",
+                    "replacement": inserted,
+                    "rule_id": UK_IN_DEFINITION_AT_END_TARGET_CONTEXT_INSERT_RULE_ID,
                 }
             )
 
