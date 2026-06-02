@@ -49,6 +49,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "relative_other_place_occurrence_unsupported",
         "referent_qualified_text_substitution_unsupported",
         "sentence_scoped_repeated_insert_unsupported",
+        "scoped_occurrence_text_patch_with_exclusions_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
         "appropriate_place_definition_entry_insert_unsupported",
@@ -274,6 +275,11 @@ _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClas
         "deterministic_frontend_candidate",
         "uk_manual_frontier_referent_qualified_text_substitution_candidate",
         "The source limits substitution to quoted words only where they refer to a named actor; compile needs a referent-sensitive text predicate instead of replacing every phrase occurrence.",
+    ),
+    "scoped_occurrence_text_patch_with_exclusions_unsupported": _ManualFrontierClassification(
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
+        "The source applies a quoted text patch only to each occurrence outside named exclusions; compile needs an owned occurrence selector with exclusion proof instead of all-occurrences replay.",
     ),
     "structural_sibling_insert_unsupported": _ManualFrontierClassification(
         "deterministic_frontend_candidate",
@@ -1770,6 +1776,23 @@ def _looks_like_relative_other_place_occurrence(text: str) -> bool:
     )
 
 
+_SCOPED_OCCURRENCE_TEXT_PATCH_WITH_EXCLUSIONS_RE = re.compile(
+    r"\beach\s+(?:place|occurrence)\s+except\b.{0,240}"
+    r"\b(?:insert|substitute|omit)\b"
+)
+
+
+def _looks_like_scoped_occurrence_text_patch_with_exclusions(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not norm or "except" not in norm:
+        return False
+    if "each place" not in norm and "each occurrence" not in norm:
+        return False
+    if not any(action in norm for action in ("insert", "substitute", "omit")):
+        return False
+    return bool(_SCOPED_OCCURRENCE_TEXT_PATCH_WITH_EXCLUSIONS_RE.search(norm))
+
+
 # Compiled at module scope per §1.11.  Bounded quantifiers prevent
 # catastrophic backtracking from the three unanchored .+ quantifiers that
 # previously cost ~1.18 s/call (104.74 s total on ukpga/1970/9, 51.4 % of
@@ -1922,6 +1945,8 @@ def classify_uk_effect_source_pathology(
             return "referent_qualified_text_substitution_unsupported"
         if _looks_like_sentence_scoped_repeated_insert_instruction(norm_text):
             return "sentence_scoped_repeated_insert_unsupported"
+        if _looks_like_scoped_occurrence_text_patch_with_exclusions(norm_text):
+            return "scoped_occurrence_text_patch_with_exclusions_unsupported"
         if _looks_like_savings_qualified_text_omission(norm_text):
             return "savings_qualified_text_omission_unsupported"
         if "uk_effect_application_modification_payload_rejected" in lowering_rules:

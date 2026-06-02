@@ -3326,6 +3326,35 @@ def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology
     assert "sibling-aware occurrence selection" in result["reason"]
 
 
+def test_classify_uk_manual_compile_frontier_marks_scoped_occurrence_exclusion_pathology() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="scoped_occurrence_text_patch_with_exclusions_unsupported",
+        extracted_tag="P2",
+        extracted_text=(
+            "2 In subsections (4) and (5), after \u201cwife or husband\u201d in each place "
+            "except paragraph (a)(ii) to the proviso to subsection (4) "
+            "insert \u201c or civil partner \u201d ."
+        ),
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
+    )
+    assert "exclusion proof" in result["reason"]
+
+
 def test_classify_uk_manual_compile_frontier_marks_definition_anchor_tail_insert() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -3970,6 +3999,25 @@ def test_classify_uk_effect_bare_relative_other_place_occurrence() -> None:
     )
 
     assert pathology == "relative_other_place_occurrence_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_scoped_occurrence_text_patch_with_exclusions() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P2",
+        extracted_text=(
+            "2 In subsections (4) and (5), after \u201cwife or husband\u201d in each place "
+            "except paragraph (a)(ii) to the proviso to subsection (4) "
+            "insert \u201c or civil partner \u201d ."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "scoped_occurrence_text_patch_with_exclusions_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
