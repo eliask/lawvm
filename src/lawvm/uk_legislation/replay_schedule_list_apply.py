@@ -499,7 +499,14 @@ class UKReplayScheduleListApplyMixin:
         )
         local_list_insert_carrier = (
             str(selector.get("entry_carrier_family") or "") == "non_schedule_local_list"
-            and carrier_kind in {"section", "subsection"}
+            and (
+                carrier_kind in {"section", "subsection"}
+                or (
+                    carrier_kind in {"paragraph", "subparagraph"}
+                    and str(selector.get("source_anchor_form") or "")
+                    == "that_entry_previous_sibling"
+                )
+            )
         )
         if carrier_node is None or (
             carrier_kind not in {"schedule", "part", "chapter", "division", "paragraph", "subparagraph"}

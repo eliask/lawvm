@@ -41156,6 +41156,209 @@ def test_replay_at_beginning_entry_insert_blocks_without_direct_entry_boundary()
     )
 
 
+def test_compile_after_that_entry_insert_uses_previous_source_sibling_anchor() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-8-paragraph-73">
+          <P1para>
+            <P2 id="schedule-8-paragraph-73-3">
+              <Pnumber>3</Pnumber>
+              <P2para>
+                <Text>Omit “and” before the entry for sections 677 and 678 of ITTOIA 2005.</Text>
+              </P2para>
+            </P2>
+            <P2 id="schedule-8-paragraph-73-4">
+              <Pnumber>4</Pnumber>
+              <P2para>
+                <Text>After that entry insert—</Text>
+                <BlockAmendment>
+                  <P2para>
+                    <Text>sections 2 and 6 of TIOPA 2010 (double taxation relief: relief by agreement), and</Text>
+                  </P2para>
+                  <P2para>
+                    <Text>section 18(1)(b) and (2) of TIOPA 2010 (relief for foreign tax where no double taxation arrangements).</Text>
+                  </P2para>
+                </BlockAmendment>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P2[@id='schedule-8-paragraph-73-4']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-bd1fcd4f69b0cb98c6cf29b32d7a1737",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-01",
+        affected_uri="/id/ukpga/2007/3/section/26/subsection/1/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 26(1)(b)",
+        affecting_uri="/id/ukpga/2010/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="Sch. 8 para. 73(4)",
+        affecting_title="Taxation (International and Other Provisions) Act 2010",
+        in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 2
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "sections 2 and 6 of TIOPA 2010 (double taxation relief: relief by agreement)",
+        "section 18(1)(b) and (2) of TIOPA 2010 (relief for foreign tax where no double taxation arrangements)",
+    ]
+    selector_note = next(
+        note for note in ops[0].provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "after"
+    assert selector["anchor_text"] == "sections 677 and 678 of ITTOIA 2005"
+    assert selector["source_anchor_form"] == "that_entry_previous_sibling"
+    assert selector["source_antecedent_id"] == "schedule-8-paragraph-73-3"
+    assert any(
+        record["rule_id"] == "uk_effect_non_schedule_list_entry_insert"
+        and record["reason_code"] == "explicit_schedule_list_entry_anchor"
+        and record["inserted_entry_count"] == 2
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+    base = IRStatute(
+        statute_id="ukpga/2007/3",
+        title="Income Tax Act 2007",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="26",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                                            text="sections 675 and 676 of ITTOIA 2005 (earlier entry),",
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                                            text="sections 677 and 678 of ITTOIA 2005 (certain discretionary trust income),",
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SCHEDULE_ENTRY,
+                                            text="section 682(4) of ITTOIA 2005 (later entry).",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    paragraph = replayed.body.children[0].children[0].children[0]
+    assert [child.text for child in paragraph.children] == [
+        "sections 675 and 676 of ITTOIA 2005 (earlier entry),",
+        "sections 677 and 678 of ITTOIA 2005 (certain discretionary trust income),",
+        "sections 2 and 6 of TIOPA 2010 (double taxation relief: relief by agreement)",
+        "section 18(1)(b) and (2) of TIOPA 2010 (relief for foreign tax where no double taxation arrangements)",
+        "section 682(4) of ITTOIA 2005 (later entry).",
+    ]
+    assert not any(
+        adjudication.kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+        for adjudication in adjudications
+    )
+
+
+def test_compile_after_that_entry_insert_blocks_without_previous_entry_anchor() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <P1para>
+            <P2 id="previous">
+              <Pnumber>3</Pnumber>
+              <P2para>
+                <Text>Omit an unrelated entry.</Text>
+              </P2para>
+            </P2>
+            <P2 id="current">
+              <Pnumber>4</Pnumber>
+              <P2para>
+                <Text>After that entry insert—</Text>
+                <BlockAmendment>
+                  <P2para>
+                    <Text>section 18 of TIOPA 2010.</Text>
+                  </P2para>
+                </BlockAmendment>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P2[@id='current']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_that_entry_missing_antecedent",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-04-01",
+        affected_uri="/id/ukpga/2007/3/section/26/subsection/1/paragraph/b",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2007",
+        affected_number="3",
+        affected_provisions="s. 26(1)(b)",
+        affecting_uri="/id/ukpga/2010/8",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="Sch. 8 para. 73(4)",
+        affecting_title="Taxation (International and Other Provisions) Act 2010",
+        in_force_dates=[{"date": "2010-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert all(
+        record["rule_id"] != "uk_effect_non_schedule_list_entry_insert"
+        for record in lowering_records
+    )
+
+
 def test_compile_exception_entry_omission_lowers_to_local_schedule_entry_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""

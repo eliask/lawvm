@@ -156,6 +156,7 @@ def _uk_schedule_list_entry_insert_selector(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    allow_local_paragraph_carrier: bool = False,
 ) -> dict[str, Any] | None:
     """Extract a deterministic schedule-list-entry sibling insertion selector."""
     text = " ".join((extracted_text or "").split())
@@ -174,10 +175,12 @@ def _uk_schedule_list_entry_insert_selector(
         "paragraph",
         "subparagraph",
     }
-    local_list_carrier_target = target_container != "schedule" and target_leaf_kind in {
-        "section",
-        "subsection",
-    }
+    local_list_leaf_kinds = {"section", "subsection"}
+    if allow_local_paragraph_carrier:
+        local_list_leaf_kinds = {*local_list_leaf_kinds, "paragraph", "subparagraph"}
+    local_list_carrier_target = (
+        target_container != "schedule" and target_leaf_kind in local_list_leaf_kinds
+    )
     if not schedule_carrier_target and not local_list_carrier_target:
         return None
     rule_id = (

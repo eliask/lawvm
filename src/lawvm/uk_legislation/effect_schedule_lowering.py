@@ -38,6 +38,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE as _SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
+    _source_previous_that_entry_insert_context,
     _source_parent_instruction_with_payload,
 )
 from lawvm.uk_legislation.table_selectors import (
@@ -394,6 +395,32 @@ def try_lower_schedule_list_entry_mutation(
                 "source_parent_id": source_parent_schedule_entry_insert["source_parent_id"],
                 "source_parent_instruction": source_parent_schedule_entry_insert[
                     "source_parent_instruction"
+                ],
+            }
+
+    source_previous_that_entry_insert = (
+        _source_previous_that_entry_insert_context(extracted_el=extracted_el)
+        if schedule_list_entry_selector is None and action == "insert" and not heading_facet_target
+        else None
+    )
+    if source_previous_that_entry_insert is not None:
+        schedule_list_entry_selector = _uk_schedule_list_entry_insert_selector(
+            target_ref=t_str,
+            target=target,
+            extracted_text=source_previous_that_entry_insert["combined_text"],
+            allow_local_paragraph_carrier=True,
+        )
+        if schedule_list_entry_selector is not None:
+            schedule_list_entry_selector = {
+                **schedule_list_entry_selector,
+                "source_anchor_form": source_previous_that_entry_insert[
+                    "source_anchor_form"
+                ],
+                "source_antecedent_id": source_previous_that_entry_insert[
+                    "source_antecedent_id"
+                ],
+                "source_antecedent_text": source_previous_that_entry_insert[
+                    "source_antecedent_text"
                 ],
             }
 

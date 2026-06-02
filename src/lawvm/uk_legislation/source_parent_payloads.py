@@ -57,6 +57,16 @@ UK_SOURCE_CARRIED_PARENT_QUOTED_CHILD_SUBSTITUTION_RULE_ID = (
     "uk_effect_source_carried_parent_quoted_child_substitution_lowered"
 )
 
+_SOURCE_PREVIOUS_THAT_ENTRY_INSERT_RE = re.compile(
+    r"\bafter\s+that\s+entry\s+insert\b",
+    flags=re.I,
+)
+_SOURCE_PREVIOUS_ENTRY_ANTECEDENT_RE = re.compile(
+    r"\bbefore\s+(?:the\s+)?entry\s+(?:relating\s+to|relation\s+to|for)\s+"
+    r"(?P<anchor>[^.;]{1,300})",
+    flags=re.I,
+)
+
 SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE = re.compile(
     r"\b(?:before|after)\s+(?:the\s+)?(?:"
     r"entry\s+(?:relating\s+to|relation\s+to|for)\s+.+?|"
@@ -229,6 +239,68 @@ _UK_INLINE_LABELLED_SERIES_FIRST_ITEM_RE = re.compile(
     r"^\s*(?P<label>[a-z])\s+",
     flags=re.I,
 )
+
+
+def _source_previous_that_entry_insert_context(
+    *,
+    extracted_el: Optional[ET._Element],
+) -> dict[str, str] | None:
+    """Resolve "that entry" from the immediately preceding source sibling.
+
+    This is intentionally narrower than general source-parent context: it only
+    accepts the common drafting pair "omit 'and' before the entry for X" followed
+    by "After that entry insert".  Replay still has to resolve X uniquely in the
+    live target before mutating.
+    """
+    if extracted_el is None:
+        return None
+    current_text = " ".join(_text_content(extracted_el).split())
+    if not _SOURCE_PREVIOUS_THAT_ENTRY_INSERT_RE.search(current_text):
+        return None
+    block = next(
+        (
+            child
+            for child in extracted_el.iter()
+            if _tag(child).lower() == "blockamendment"
+        ),
+        None,
+    )
+    if block is None:
+        return None
+    payload_text = " ".join(_text_content(block).split()).strip()
+    if not payload_text:
+        return None
+    parent = extracted_el.getparent()
+    if parent is None:
+        return None
+    siblings = list(parent)
+    matching_indices = [
+        index for index, sibling in enumerate(siblings) if sibling is extracted_el
+    ]
+    if not matching_indices:
+        return None
+    current_index = matching_indices[0]
+    previous_sibling = None
+    for candidate in reversed(siblings[:current_index]):
+        if not isinstance(candidate.tag, str):
+            continue
+        previous_sibling = candidate
+        break
+    if previous_sibling is None:
+        return None
+    previous_text = " ".join(_text_content(previous_sibling).split())
+    antecedent_match = _SOURCE_PREVIOUS_ENTRY_ANTECEDENT_RE.search(previous_text)
+    if antecedent_match is None:
+        return None
+    anchor_text = antecedent_match.group("anchor").strip(" ,")
+    if not anchor_text:
+        return None
+    return {
+        "combined_text": f"after entry for {anchor_text} insert— {payload_text}",
+        "source_antecedent_id": str(previous_sibling.get("id") or ""),
+        "source_antecedent_text": previous_text,
+        "source_anchor_form": "that_entry_previous_sibling",
+    }
 # Nested+adjacent-repeat fixes on carried-tail pattern.
 # Changes from original:
 # - {0,2} repeat of (LABEL\s+) → explicit (|A |A A ) alternation — no nesting
